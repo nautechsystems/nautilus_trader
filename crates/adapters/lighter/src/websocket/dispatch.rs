@@ -88,15 +88,19 @@ pub(crate) struct OrderIdentity {
 /// In-flight sendTx awaiting a venue response.
 ///
 /// Every signed sendTx (create, cancel, modify, update_leverage) enqueues an
-/// entry so the queue's FIFO order matches the venue's ACK order. The `kind`
-/// records whether the entry has an originating Nautilus order that should
-/// receive a typed `OrderRejected` on a venue rejection.
+/// entry keyed by the signed `tx_hash`, which the venue echoes in its ACK.
+/// Responses that carry the hash remove their matching entry directly;
+/// responses without one fall back to FIFO-head attribution, so the queue
+/// order still matches the send order. The `kind` records whether the entry
+/// has an originating Nautilus order that should receive a typed
+/// order event on a venue rejection.
 #[derive(Debug, Clone)]
 pub(crate) struct PendingSendTx {
     pub(crate) kind: PendingSendTxKind,
     pub(crate) submitted_at: UnixNanos,
     pub(crate) nonce: i64,
     pub(crate) api_key_index: u8,
+    pub(crate) tx_hash: String,
 }
 
 /// What kind of sendTx is sitting at this queue position, and whether the
@@ -109,9 +113,22 @@ pub(crate) enum PendingSendTxKind {
         order: Box<OrderAny>,
         client_order_index: i64,
     },
-    /// Cancel, modify, or update-leverage submit. Tracked for FIFO alignment
-    /// so the venue's ACK or rejection pops the correct head; the consumption
-    /// loop logs but does not emit a typed event for these yet.
+    /// Cancel-order submit. On rejection: emit `OrderCancelRejected`.
+    Cancel {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+    /// Modify-order submit. On rejection: emit `OrderModifyRejected`.
+    Modify {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+    /// Non-order sendTx, such as update-leverage. Tracked for FIFO alignment
+    /// so the venue's ACK or rejection pops the correct head.
     Other,
 }
 
@@ -303,6 +320,7 @@ pub(crate) struct AccountStreamsReady {
     trades: AtomicBool,
     positions: AtomicBool,
     assets: AtomicBool,
+    user_stats: AtomicBool,
     notify: tokio::sync::Notify,
 }
 
@@ -313,6 +331,7 @@ impl AccountStreamsReady {
             trades: AtomicBool::new(false),
             positions: AtomicBool::new(false),
             assets: AtomicBool::new(false),
+            user_stats: AtomicBool::new(false),
             notify: tokio::sync::Notify::new(),
         }
     }
@@ -324,6 +343,7 @@ impl AccountStreamsReady {
         self.trades.store(false, Ordering::Release);
         self.positions.store(false, Ordering::Release);
         self.assets.store(false, Ordering::Release);
+        self.user_stats.store(false, Ordering::Release);
     }
 
     /// Mark the `account_all_orders` stream as having delivered a frame.
@@ -350,6 +370,12 @@ impl AccountStreamsReady {
         self.mark("assets", &self.assets);
     }
 
+    /// Mark the `user_stats` stream as having delivered a frame.
+    /// Idempotent: only the first call logs and notifies waiters.
+    pub(crate) fn mark_user_stats(&self) {
+        self.mark("user_stats", &self.user_stats);
+    }
+
     fn mark(&self, name: &str, flag: &AtomicBool) {
         if !flag.swap(true, Ordering::AcqRel) {
             log::debug!("Lighter {name}: first frame received");
@@ -363,6 +389,7 @@ impl AccountStreamsReady {
             && self.trades.load(Ordering::Acquire)
             && self.positions.load(Ordering::Acquire)
             && self.assets.load(Ordering::Acquire)
+            && self.user_stats.load(Ordering::Acquire)
     }
 
     fn pending(&self) -> Vec<&'static str> {
@@ -381,6 +408,10 @@ impl AccountStreamsReady {
 
         if !self.assets.load(Ordering::Acquire) {
             pending.push("assets");
+        }
+
+        if !self.user_stats.load(Ordering::Acquire) {
+            pending.push("user_stats");
         }
 
         pending
@@ -475,9 +506,9 @@ impl WsDispatchState {
             .push_back(pending);
     }
 
-    /// Pop the oldest pending entry unconditionally. Use for `SendTxAck`
-    /// (success or non-200): both are direct responses to our own request
-    /// and are always attributable to the head.
+    /// Pop the oldest pending entry unconditionally. Fallback for direct
+    /// sendTx responses that carry no `tx_hash` to correlate on; the head is
+    /// the best guess because queue order matches send order.
     pub(crate) fn pop_pending_sendtx_head(&self) -> Option<PendingSendTx> {
         self.pending_sendtx
             .lock()
@@ -508,6 +539,33 @@ impl WsDispatchState {
         let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
         let pos = q.iter().position(|p| p.nonce == nonce)?;
         q.remove(pos)
+    }
+
+    /// Remove a pending entry by its signed transaction hash
+    /// (case-insensitive hex comparison, optional `0x` prefix tolerated).
+    /// The venue echoes the hash the client computed at signing time, so a
+    /// match is exact attribution regardless of queue position.
+    pub(crate) fn remove_pending_sendtx_by_hash(&self, tx_hash: &str) -> Option<PendingSendTx> {
+        let tx_hash = tx_hash
+            .strip_prefix("0x")
+            .or_else(|| tx_hash.strip_prefix("0X"))
+            .unwrap_or(tx_hash);
+        let mut q = self.pending_sendtx.lock().expect(MUTEX_POISONED);
+        let pos = q
+            .iter()
+            .position(|p| p.tx_hash.eq_ignore_ascii_case(tx_hash))?;
+        q.remove(pos)
+    }
+
+    /// Drain every pending entry. Used on reconnect: responses to txs sent
+    /// on the previous connection are lost, so retained entries would only
+    /// misattribute responses arriving on the new connection.
+    pub(crate) fn drain_pending_sendtx(&self) -> Vec<PendingSendTx> {
+        self.pending_sendtx
+            .lock()
+            .expect(MUTEX_POISONED)
+            .drain(..)
+            .collect()
     }
 
     /// Returns the current pending-sendTx queue length. Test-only helper.
@@ -599,6 +657,13 @@ impl WsDispatchState {
     /// and inserts it, returns `false` if it was already routed.
     pub(crate) fn mark_trade_seen(&self, trade_id: TradeId) -> bool {
         self.seen_trade_ids.insert(trade_id)
+    }
+
+    /// Roll back a [`Self::mark_trade_seen`] marker when the trade could not be
+    /// parsed, so a later replay of the same `trade_id` is retried instead of
+    /// being permanently suppressed by the dedup set.
+    pub(crate) fn unmark_trade_seen(&self, trade_id: &TradeId) {
+        self.seen_trade_ids.remove(trade_id);
     }
 
     /// Record a market_index as having reported account activity.
@@ -719,15 +784,26 @@ impl WsDispatchState {
     /// Instruments absent from `snapshot` are evicted; an empty input
     /// clears the cache entirely.
     pub(crate) fn replace_positions(&self, snapshot: &[PositionStatusReport]) -> Vec<InstrumentId> {
+        self.replace_positions_except(snapshot, &[])
+    }
+
+    /// Replace the cache from a snapshot while retaining instruments whose
+    /// venue rows were skipped and therefore cannot be treated as closed.
+    pub(crate) fn replace_positions_except(
+        &self,
+        snapshot: &[PositionStatusReport],
+        retained: &[InstrumentId],
+    ) -> Vec<InstrumentId> {
         let mut guard = self.last_positions.lock().expect(MUTEX_POISONED);
         let new_ids: ahash::AHashSet<InstrumentId> =
             snapshot.iter().map(|r| r.instrument_id).collect();
+        let retained_ids: ahash::AHashSet<InstrumentId> = retained.iter().copied().collect();
         let removed: Vec<InstrumentId> = guard
             .keys()
-            .filter(|id| !new_ids.contains(id))
+            .filter(|id| !new_ids.contains(id) && !retained_ids.contains(id))
             .copied()
             .collect();
-        guard.clear();
+        guard.retain(|id, _| retained_ids.contains(id));
         for report in snapshot {
             guard.insert(report.instrument_id, report.clone());
         }
@@ -1418,6 +1494,37 @@ mod tests {
         state.replace_positions(&[]);
 
         assert!(state.snapshot_positions(None).is_empty());
+    }
+
+    #[rstest]
+    fn replace_positions_except_keeps_only_retained_absent_positions() {
+        let state = WsDispatchState::new();
+        state.replace_positions(&[
+            stub_position_report("ETH-PERP.LIGHTER", "1.0"),
+            stub_position_report("BTC-PERP.LIGHTER", "2.0"),
+            stub_position_report("DOGE-PERP.LIGHTER", "4.0"),
+        ]);
+
+        let removed = state.replace_positions_except(
+            &[stub_position_report("ETH-PERP.LIGHTER", "3.0")],
+            &[InstrumentId::from("BTC-PERP.LIGHTER")],
+        );
+
+        let mut actual: Vec<(String, String)> = state
+            .snapshot_positions(None)
+            .into_iter()
+            .map(|r| (r.instrument_id.to_string(), r.quantity.to_string()))
+            .collect();
+        actual.sort();
+
+        assert_eq!(removed, vec![InstrumentId::from("DOGE-PERP.LIGHTER")]);
+        assert_eq!(
+            actual,
+            vec![
+                ("BTC-PERP.LIGHTER".to_string(), "2.0".to_string()),
+                ("ETH-PERP.LIGHTER".to_string(), "3.0".to_string()),
+            ],
+        );
     }
 
     #[rstest]
@@ -2266,6 +2373,7 @@ mod tests {
             submitted_at: UnixNanos::from(submitted_at_ns),
             nonce,
             api_key_index: 0,
+            tx_hash: format!("hash{nonce:02x}"),
         }
     }
 
@@ -2275,12 +2383,19 @@ mod tests {
             submitted_at: UnixNanos::from(submitted_at_ns),
             nonce,
             api_key_index: 0,
+            tx_hash: format!("hash{nonce:02x}"),
         }
     }
 
     fn pending_cloid(p: &PendingSendTx) -> Option<ClientOrderId> {
         match &p.kind {
             PendingSendTxKind::Create { order, .. } => Some(order.client_order_id()),
+            PendingSendTxKind::Cancel {
+                client_order_id, ..
+            }
+            | PendingSendTxKind::Modify {
+                client_order_id, ..
+            } => Some(*client_order_id),
             PendingSendTxKind::Other => None,
         }
     }
@@ -2363,12 +2478,58 @@ mod tests {
     }
 
     #[rstest]
+    fn remove_pending_by_hash_targets_the_matching_entry() {
+        // Hash removal must attribute regardless of queue position so an
+        // out-of-order venue response never pops the wrong entry.
+        let state = WsDispatchState::new();
+        let now = UnixNanos::from(1_000_000_000);
+        state.enqueue_pending_sendtx(stub_pending_create("A", 10, now.as_u64()));
+        state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
+        state.enqueue_pending_sendtx(stub_pending_create("B", 12, now.as_u64() + 2));
+
+        let removed = state
+            .remove_pending_sendtx_by_hash("hash0b")
+            .expect("hash for nonce 11 removed");
+        assert_eq!(removed.nonce, 11);
+        assert_eq!(state.pending_sendtx_len(), 2);
+
+        assert!(
+            state.remove_pending_sendtx_by_hash("hash0b").is_none(),
+            "removed hash must not match again",
+        );
+
+        let upper = state
+            .remove_pending_sendtx_by_hash("0xHASH0C")
+            .expect("hash comparison is case-insensitive and prefix-tolerant");
+        assert_eq!(pending_cloid(&upper), Some(cloid("B")));
+
+        let head = state.pop_pending_sendtx_head().expect("A still queued");
+        assert_eq!(pending_cloid(&head), Some(cloid("A")));
+    }
+
+    #[rstest]
+    fn drain_pending_returns_all_entries_in_order() {
+        let state = WsDispatchState::new();
+        let now = UnixNanos::from(1_000_000_000);
+        state.enqueue_pending_sendtx(stub_pending_create("A", 10, now.as_u64()));
+        state.enqueue_pending_sendtx(stub_pending_other(11, now.as_u64() + 1));
+
+        let drained = state.drain_pending_sendtx();
+
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0].nonce, 10);
+        assert_eq!(drained[1].nonce, 11);
+        assert_eq!(state.pending_sendtx_len(), 0);
+        assert!(state.drain_pending_sendtx().is_empty());
+    }
+
+    #[rstest]
     fn account_streams_ready_starts_pending() {
         let ready = AccountStreamsReady::new();
         assert!(!ready.all_ready());
         assert_eq!(
             ready.pending(),
-            vec!["orders", "trades", "positions", "assets"]
+            vec!["orders", "trades", "positions", "assets", "user_stats"]
         );
     }
 
@@ -2379,6 +2540,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         assert!(ready.all_ready());
         assert!(ready.pending().is_empty());
     }
@@ -2389,7 +2551,7 @@ mod tests {
         ready.mark_orders();
         ready.mark_positions();
         assert!(!ready.all_ready());
-        assert_eq!(ready.pending(), vec!["trades", "assets"]);
+        assert_eq!(ready.pending(), vec!["trades", "assets", "user_stats"]);
     }
 
     #[tokio::test]
@@ -2399,6 +2561,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         ready
             .await_all(Duration::from_millis(50))
             .await
@@ -2418,6 +2581,7 @@ mod tests {
             producer.mark_trades();
             producer.mark_positions();
             producer.mark_assets();
+            producer.mark_user_stats();
         });
 
         ready
@@ -2504,13 +2668,14 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
         assert!(ready.all_ready());
 
         ready.reset();
         assert!(!ready.all_ready());
         assert_eq!(
             ready.pending(),
-            vec!["orders", "trades", "positions", "assets"]
+            vec!["orders", "trades", "positions", "assets", "user_stats"]
         );
     }
 }

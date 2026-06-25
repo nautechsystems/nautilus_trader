@@ -29,6 +29,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, datetime::NANOSECONDS_IN_SECOND,
     nanos::UnixNanos, time::get_atomic_clock_realtime,
@@ -75,7 +76,10 @@ use crate::{
         },
         urls::get_kraken_http_base_url,
     },
-    http::error::{KrakenHttpError, kraken_http_should_retry},
+    http::{
+        apply_count_limit,
+        error::{KrakenHttpError, kraken_http_should_retry},
+    },
 };
 
 /// Default Kraken Spot REST API rate limit (requests per second).
@@ -1440,9 +1444,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}",
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
@@ -1469,12 +1473,6 @@ impl KrakenSpotHttpClient {
                             continue;
                         }
                         trades.push(trade_tick);
-
-                        if let Some(limit_count) = limit
-                            && trades.len() >= limit_count as usize
-                        {
-                            return Ok(trades);
-                        }
                     }
                     Err(e) => {
                         log::warn!("Failed to parse trade tick: {e}");
@@ -1482,6 +1480,9 @@ impl KrakenSpotHttpClient {
                 }
             }
         }
+
+        // Count-only keeps the most recent `limit` trades, not the oldest
+        apply_count_limit(&mut trades, start, limit);
 
         Ok(trades)
     }
@@ -1498,9 +1499,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}"
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
@@ -1549,12 +1550,6 @@ impl KrakenSpotHttpClient {
                             continue;
                         }
                         bars.push(bar);
-
-                        if let Some(limit_count) = limit
-                            && bars.len() >= limit_count as usize
-                        {
-                            return Ok(bars);
-                        }
                     }
                     Err(e) => {
                         log::warn!("Failed to parse bar: {e}");
@@ -1562,6 +1557,10 @@ impl KrakenSpotHttpClient {
                 }
             }
         }
+
+        // Kraken returns the page oldest-first; keep the most recent `limit`
+        // bars for count-only requests rather than the oldest (issue #4254).
+        apply_count_limit(&mut bars, start, limit);
 
         Ok(bars)
     }
@@ -1575,9 +1574,9 @@ impl KrakenSpotHttpClient {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| {
-                KrakenHttpError::ParseError(format!(
-                    "Instrument not found in cache: {instrument_id}"
-                ))
+                KrakenHttpError::ParseError(
+                    InstrumentLookupError::not_found(instrument_id).to_string(),
+                )
             })?;
 
         let raw_symbol = instrument.raw_symbol().to_string();
@@ -2066,11 +2065,7 @@ impl KrakenSpotHttpClient {
         for (_, (signed_qty, inst_id)) in agg {
             let instrument = self
                 .get_cached_instrument(&inst_id.symbol.inner())
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "OpenPositions: instrument disappeared from cache for {inst_id}"
-                    )
-                })?;
+                .ok_or_else(|| InstrumentLookupError::not_found(inst_id))?;
 
             let side = if signed_qty.is_sign_positive() && !signed_qty.is_zero() {
                 PositionSideSpecified::Long
@@ -2478,7 +2473,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<VenueOrderId> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
         let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
@@ -2539,7 +2534,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<()> {
         let _ = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let txid = venue_order_id.as_ref().map(|id| id.to_string());
         let cl_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
@@ -2612,7 +2607,7 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<KrakenSpotAddOrderParams> {
         let instrument = self
             .get_cached_instrument(&instrument_id.symbol.inner())
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let raw_symbol = instrument.raw_symbol().inner();
         let asset_class = Self::asset_class_for(&instrument);
@@ -3091,6 +3086,7 @@ mod tests {
             8,
             Price::from("0.1"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

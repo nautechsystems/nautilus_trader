@@ -248,13 +248,14 @@ impl HyperliquidDataConverter {
         ts_init: UnixNanos,
     ) -> Result<OrderBookDeltas, ConversionError> {
         let config = self.get_config(&data.coin);
-        let mut deltas = Vec::new();
+        let ts_event = UnixNanos::from(data.time * 1_000_000);
+        let mut deltas = Vec::with_capacity(1 + data.levels[0].len() + data.levels[1].len());
 
         // Add a clear delta first to reset the book
         deltas.push(OrderBookDelta::clear(
             instrument_id,
-            0,                                      // sequence starts at 0 for snapshots
-            UnixNanos::from(data.time * 1_000_000), // Convert millis to nanos
+            0, // sequence starts at 0 for snapshots
+            ts_event,
             ts_init,
         ));
 
@@ -271,7 +272,7 @@ impl HyperliquidDataConverter {
                     order,
                     RecordFlag::F_LAST as u8, // Mark as last for snapshot
                     order_id,
-                    UnixNanos::from(data.time * 1_000_000),
+                    ts_event,
                     ts_init,
                 ));
                 order_id += 1;
@@ -289,7 +290,7 @@ impl HyperliquidDataConverter {
                     order,
                     RecordFlag::F_LAST as u8, // Mark as last for snapshot
                     order_id,
-                    UnixNanos::from(data.time * 1_000_000),
+                    ts_event,
                     ts_init,
                 ));
                 order_id += 1;
@@ -307,13 +308,14 @@ impl HyperliquidDataConverter {
         ts_init: UnixNanos,
     ) -> Result<OrderBookDeltas, ConversionError> {
         let config = self.get_config(&data.coin);
-        let mut deltas = Vec::new();
+        let ts_event = UnixNanos::from(data.time * 1_000_000);
+        let mut deltas = Vec::with_capacity(1 + data.levels[0].len() + data.levels[1].len());
 
         // Add a clear delta first to reset the book
         deltas.push(OrderBookDelta::clear(
             instrument_id,
-            0,                                      // sequence starts at 0 for snapshots
-            UnixNanos::from(data.time * 1_000_000), // Convert millis to nanos
+            0, // sequence starts at 0 for snapshots
+            ts_event,
             ts_init,
         ));
 
@@ -330,7 +332,7 @@ impl HyperliquidDataConverter {
                     order,
                     RecordFlag::F_LAST as u8,
                     order_id,
-                    UnixNanos::from(data.time * 1_000_000),
+                    ts_event,
                     ts_init,
                 ));
                 order_id += 1;
@@ -348,7 +350,7 @@ impl HyperliquidDataConverter {
                     order,
                     RecordFlag::F_LAST as u8,
                     order_id,
-                    UnixNanos::from(data.time * 1_000_000),
+                    ts_event,
                     ts_init,
                 ));
                 order_id += 1;
@@ -479,20 +481,20 @@ impl HyperliquidDataConverter {
 /// Convert HTTP level to price and size
 fn parse_level(
     level: &HyperliquidLevel,
-    inst_info: &HyperliquidInstrumentInfo,
+    _inst_info: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
-    let price = parse_price(&level.px, inst_info)?;
-    let size = parse_size(&level.sz, inst_info)?;
+    let price = price_from_decimal(level.px)?;
+    let size = size_from_decimal(level.sz)?;
     Ok((price, size))
 }
 
 /// Convert WebSocket level to price and size
 fn parse_ws_level(
     level: &WsLevelData,
-    config: &HyperliquidInstrumentInfo,
+    _config: &HyperliquidInstrumentInfo,
 ) -> Result<(Price, Quantity), ConversionError> {
-    let price = parse_price(&level.px, config)?;
-    let size = parse_size(&level.sz, config)?;
+    let price = price_from_decimal(level.px)?;
+    let size = size_from_decimal(level.sz)?;
     Ok((price, size))
 }
 
@@ -501,11 +503,11 @@ fn parse_price(
     price_str: &str,
     _config: &HyperliquidInstrumentInfo,
 ) -> Result<Price, ConversionError> {
-    let _decimal = Decimal::from_str(price_str).map_err(|_| ConversionError::InvalidPrice {
+    let decimal = Decimal::from_str(price_str).map_err(|_| ConversionError::InvalidPrice {
         value: price_str.to_string(),
     })?;
 
-    Price::from_str(price_str).map_err(|_| ConversionError::InvalidPrice {
+    Price::from_decimal(decimal).map_err(|_| ConversionError::InvalidPrice {
         value: price_str.to_string(),
     })
 }
@@ -515,12 +517,26 @@ fn parse_size(
     size_str: &str,
     _config: &HyperliquidInstrumentInfo,
 ) -> Result<Quantity, ConversionError> {
-    let _decimal = Decimal::from_str(size_str).map_err(|_| ConversionError::InvalidSize {
+    let decimal = Decimal::from_str(size_str).map_err(|_| ConversionError::InvalidSize {
         value: size_str.to_string(),
     })?;
 
-    Quantity::from_str(size_str).map_err(|_| ConversionError::InvalidSize {
+    Quantity::from_decimal(decimal).map_err(|_| ConversionError::InvalidSize {
         value: size_str.to_string(),
+    })
+}
+
+/// Convert a decimal price to a `Price`, inferring precision from its scale.
+fn price_from_decimal(value: Decimal) -> Result<Price, ConversionError> {
+    Price::from_decimal(value).map_err(|_| ConversionError::InvalidPrice {
+        value: value.to_string(),
+    })
+}
+
+/// Convert a decimal size to a `Quantity`, inferring precision from its scale.
+fn size_from_decimal(value: Decimal) -> Result<Quantity, ConversionError> {
+    Quantity::from_decimal(value).map_err(|_| ConversionError::InvalidSize {
+        value: value.to_string(),
     })
 }
 

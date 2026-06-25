@@ -61,7 +61,7 @@ fn test_new_actor_starts_with_empty_states() {
     let actor = BookImbalanceActor::new(vec![instrument_a()], 0, None);
 
     assert!(actor.states().is_empty());
-    assert_eq!(actor.actor_id, ActorId::from("BOOK_IMBALANCE-001"));
+    assert_eq!(actor.actor_id(), ActorId::from("BOOK_IMBALANCE-001"));
 }
 
 #[rstest]
@@ -252,7 +252,9 @@ fn test_empty_deltas_batch_increments_count() {
 #[rstest]
 fn test_config_new_sets_defaults() {
     let ids = vec![instrument_a()];
-    let config = BookImbalanceActorConfig::new(ids.clone());
+    let config = BookImbalanceActorConfig::builder()
+        .instrument_ids(ids.clone())
+        .build();
     assert_eq!(config.instrument_ids, ids);
     assert_eq!(config.log_interval, 100);
     assert!(config.actor_id.is_none());
@@ -261,9 +263,11 @@ fn test_config_new_sets_defaults() {
 #[rstest]
 fn test_config_builder_overrides() {
     let ids = vec![instrument_a()];
-    let config = BookImbalanceActorConfig::new(ids)
-        .with_log_interval(50)
-        .with_actor_id(ActorId::from("MY_ACTOR-001"));
+    let config = BookImbalanceActorConfig::builder()
+        .instrument_ids(ids)
+        .log_interval(50)
+        .actor_id(ActorId::from("MY_ACTOR-001"))
+        .build();
     assert_eq!(config.log_interval, 50);
     assert_eq!(config.actor_id, Some(ActorId::from("MY_ACTOR-001")));
 }
@@ -271,10 +275,12 @@ fn test_config_builder_overrides() {
 #[rstest]
 fn test_from_config_creates_actor() {
     let ids = vec![instrument_a(), instrument_b()];
-    let config = BookImbalanceActorConfig::new(ids)
-        .with_log_interval(50)
-        .with_actor_id(ActorId::from("MY_ACTOR-001"));
+    let config = BookImbalanceActorConfig::builder()
+        .instrument_ids(ids)
+        .log_interval(50)
+        .actor_id(ActorId::from("MY_ACTOR-001"))
+        .build();
     let actor = BookImbalanceActor::from_config(config);
     assert!(actor.states().is_empty());
-    assert_eq!(actor.actor_id, ActorId::from("MY_ACTOR-001"));
+    assert_eq!(actor.actor_id(), ActorId::from("MY_ACTOR-001"));
 }

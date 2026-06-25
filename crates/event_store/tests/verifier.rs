@@ -35,8 +35,8 @@ use nautilus_core::UnixNanos;
 use nautilus_event_store::{
     AppendEntry, DataClass, DataCursorSnapshot, EventStore, EventStoreEntry, GapRange, Headers,
     IndexKey, IndexKind, MarkerBackend, MarkerManifest, RedbBackend, RedbMarkerBackend,
-    RegisteredComponents, RunManifest, RunStatus, StreamCursor, Topic, Verifier, VerifyFinding,
-    compute_entry_hash, compute_marker_hash,
+    RegisteredComponents, RunManifest, RunStatus, SnapshotAnchor, StreamCursor, Topic, Verifier,
+    VerifyFinding, compute_entry_hash, compute_marker_hash,
 };
 use redb::ReadableTable;
 use rstest::rstest;
@@ -611,6 +611,89 @@ fn manufactured_seq_swap_surfaces_as_finding() {
                 table_key: 2,
                 embedded_seq: 99,
             }
+        )),
+        "findings was: {:?}",
+        report.findings,
+    );
+}
+
+#[rstest]
+fn corrupt_snapshot_anchor_is_a_finding_not_clean() {
+    // The restore path reads the anchor before tail replay; a run whose anchor fails
+    // to decode must not verify clean and then fail at restore time.
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0110";
+    write_sealed_run(&tmp, run_id);
+
+    let path = run_path(&tmp, run_id);
+    let snapshot_anchor: redb::TableDefinition<&str, &[u8]> =
+        redb::TableDefinition::new("snapshot_anchor");
+    {
+        let db = redb::Database::create(&path).expect("open redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut table = txn.open_table(snapshot_anchor).expect("open table");
+            table
+                .insert("latest", b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF".as_slice())
+                .expect("overwrite latest snapshot anchor");
+        }
+        txn.commit().expect("commit overwrite");
+    }
+
+    let verifier = Verifier::open_redb_file(&path).expect("open verifier");
+    let report = verifier.verify().expect("verify");
+
+    assert!(!report.is_clean(), "findings was: {:?}", report.findings);
+    assert!(
+        report.findings.iter().any(|f| matches!(
+            f,
+            VerifyFinding::SnapshotAnchorInvalid { reason } if reason.contains("unreadable")
+        )),
+        "findings was: {:?}",
+        report.findings,
+    );
+}
+
+#[rstest]
+fn snapshot_anchor_past_durable_watermark_is_a_finding() {
+    // A tail-trimmed run whose anchor points past the durable watermark cannot
+    // restore (the reader rejects the plan); the verifier must surface it.
+    let tmp = TempDir::new().expect("tempdir");
+    let run_id = "1700000000-cafe0111";
+    {
+        let mut backend = RedbBackend::new(tmp.path());
+        backend.open_run(manifest(run_id)).expect("open run");
+        backend
+            .append_batch(&[
+                append_with(1, 10, Vec::new()),
+                append_with(2, 11, Vec::new()),
+            ])
+            .expect("append");
+        backend
+            .record_snapshot_anchor(SnapshotAnchor::new(2, "cache://snapshots/2", "blake3:abc"))
+            .expect("record anchor");
+        backend.seal(RunStatus::Ended).expect("seal");
+    }
+
+    let path = run_path(&tmp, run_id);
+    let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+    {
+        let db = redb::Database::create(&path).expect("open redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut table = txn.open_table(entries).expect("open table");
+            table.remove(2_u64).expect("remove seq 2");
+        }
+        txn.commit().expect("commit removal");
+    }
+
+    let verifier = Verifier::open_redb_file(&path).expect("open verifier");
+    let report = verifier.verify().expect("verify");
+
+    assert!(
+        report.findings.iter().any(|f| matches!(
+            f,
+            VerifyFinding::SnapshotAnchorInvalid { reason } if reason.contains("exceeds durable")
         )),
         "findings was: {:?}",
         report.findings,

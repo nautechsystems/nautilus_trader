@@ -15,14 +15,21 @@
 
 import os
 import sys
+from decimal import Decimal
 
+import pyarrow as pa
 import pytest
 
+from nautilus_trader.core.nautilus_pyo3 import FundingRateUpdate
+from nautilus_trader.core.nautilus_pyo3 import IndexPriceUpdate
+from nautilus_trader.core.nautilus_pyo3 import MarkPriceUpdate
+from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import StreamingFeatherWriter
 from nautilus_trader.core.nautilus_pyo3.common import Cache
 from nautilus_trader.core.nautilus_pyo3.common import Clock
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
+from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
@@ -103,6 +110,126 @@ def test_streaming_feather_writer_write_all_types(catalog: ParquetDataCatalog):
 
     # Assert
     writer.flush()
+
+
+@pytest.mark.parametrize(
+    ("data_name", "data_factory", "expected_metadata"),
+    [
+        (
+            "mark_prices",
+            lambda instrument_id: MarkPriceUpdate(
+                instrument_id,
+                Price.from_str("100.00"),
+                1_000,
+                1_000,
+            ),
+            {b"price_precision": b"2"},
+        ),
+        (
+            "index_prices",
+            lambda instrument_id: IndexPriceUpdate(
+                instrument_id,
+                Price.from_str("100.00"),
+                1_000,
+                1_000,
+            ),
+            {b"price_precision": b"2"},
+        ),
+        (
+            "funding_rate_update",
+            lambda instrument_id: FundingRateUpdate(
+                instrument_id,
+                Decimal("0.0001"),
+                1_000,
+                1_000,
+                480,
+                2_000,
+            ),
+            {b"type": b"FundingRateUpdate"},
+        ),
+    ],
+)
+def test_streaming_feather_writer_market_data_uses_per_instrument_path(
+    catalog: ParquetDataCatalog,
+    data_name,
+    data_factory,
+    expected_metadata,
+):
+    """
+    Test writing instrument-scoped market data to per-instrument paths.
+    """
+    # Arrange
+    path = os.path.join(catalog.path, f"streaming_test_{data_name}")
+    instrument_id = TestIdProviderPyo3.ethusdt_binance_id()
+    writer = _make_writer(path, include_types=[data_name])
+    data = data_factory(instrument_id)
+
+    # Act
+    writer.write(data)
+    writer.close()
+
+    # Assert
+    feather_files = list(
+        catalog.fs.glob(f"{path}/{data_name}/{instrument_id.value}/*.feather"),
+    )
+    assert len(feather_files) == 1
+
+    with catalog.fs.open(feather_files[0], "rb") as f:
+        table = pa.ipc.open_stream(f).read_all()
+
+    assert table.schema.metadata is not None
+    assert table.schema.metadata[b"instrument_id"] == instrument_id.value.encode()
+    for key, expected_value in expected_metadata.items():
+        assert table.schema.metadata[key] == expected_value
+
+
+def test_streaming_feather_writer_replace_rejects_remote_root():
+    """
+    Test rejecting remote root replacement for pyo3 streaming writer.
+    """
+    # Arrange
+    storage_options = {
+        "region": "us-east-1",
+        "access_key_id": "test_key",
+        "secret_access_key": "test_secret",
+    }
+
+    # Act, Assert
+    with pytest.raises(
+        OSError,
+        match="replace=True for remote streaming paths requires a non-empty prefix",
+    ):
+        StreamingFeatherWriter(
+            path="test-bucket",
+            cache=Cache(),
+            clock=Clock.new_test(),
+            fs_protocol="s3",
+            fs_storage_options=storage_options,
+            replace=True,
+        )
+
+
+def test_streaming_feather_writer_replace_removes_existing_files(catalog: ParquetDataCatalog):
+    """
+    Test replacing an existing local pyo3 streaming writer path.
+    """
+    # Arrange
+    path = os.path.join(catalog.path, "streaming_test_replace")
+    instrument_id = TestIdProviderPyo3.ethusdt_binance_id()
+    writer = _make_writer(path, include_types=["quotes"])
+    writer.write(TestDataProviderPyo3.quote_tick(instrument_id=instrument_id))
+    writer.close()
+
+    existing_files = list(catalog.fs.glob(f"{path}/quotes/{instrument_id.value}/*.feather"))
+    assert len(existing_files) == 1
+
+    # Act
+    writer = _make_writer(path, include_types=["quotes"], replace=True)
+    writer.close()
+
+    # Assert
+    replaced_files = list(catalog.fs.glob(f"{path}/quotes/{instrument_id.value}/*.feather"))
+    assert replaced_files == []
 
 
 def test_streaming_feather_writer_flush(catalog: ParquetDataCatalog):

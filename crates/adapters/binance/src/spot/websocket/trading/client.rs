@@ -308,7 +308,7 @@ impl BinanceSpotWsTradingClient {
             .await
             .send(BinanceSpotWsTradingCommand::Disconnect)
         {
-            log::warn!("Failed to send disconnect command: {e}");
+            log::debug!("Failed to send disconnect command: {e}");
         }
 
         self.cancellation_token.cancel();

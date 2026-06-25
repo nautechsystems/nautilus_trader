@@ -49,7 +49,7 @@ use nautilus_event_store::{
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce},
     events::{
-        OrderFilled,
+        OrderEventAny, OrderFilled,
         order::spec::{OrderFilledSpec, OrderInitializedSpec},
     },
     identifiers::{
@@ -341,6 +341,70 @@ fn end_to_end_capture_writes_command_event_and_report() {
     let manifest = backend.manifest().expect("manifest");
     assert_eq!(manifest.status, RunStatus::Ended);
     assert_eq!(manifest.high_watermark, 4);
+}
+
+#[rstest]
+fn capture_dedups_order_event_across_dispatch_hops() {
+    // The execution engine sends the same OrderEventAny to the portfolio endpoint and
+    // publishes it on the strategy topic; both boundaries reach the tap. The log must
+    // record the event once or tail replay aborts on OrderError::DuplicateFill.
+    let (writer, backend_arc) = writer_with_open_run("run-capture-dedup", noop_halt());
+    let registry = Arc::new(default_registry());
+    let adapter = BusCaptureAdapter::new(Arc::clone(&writer), registry, noop_halt());
+
+    let fill = make_order_filled(
+        ClientOrderId::from("O-20260510-000002"),
+        VenueOrderId::from("V-12346"),
+    );
+    let event = OrderEventAny::Filled(fill);
+
+    let first = adapter
+        .capture::<OrderEventAny>(
+            Topic::from("Portfolio.update_order"),
+            &event,
+            Headers::empty(),
+            UnixNanos::from(11),
+        )
+        .expect("first capture");
+    let second = adapter
+        .capture::<OrderEventAny>(
+            Topic::from("events.order.S-001"),
+            &event,
+            Headers::empty(),
+            UnixNanos::from(11),
+        )
+        .expect("second capture");
+
+    assert!(first, "first dispatch hop must capture");
+    assert!(!second, "second dispatch hop must dedup on event identity");
+
+    // A distinct event still captures.
+    let other_fill = make_order_filled(
+        ClientOrderId::from("O-20260510-000003"),
+        VenueOrderId::from("V-12347"),
+    );
+    let captured_other = adapter
+        .capture::<OrderEventAny>(
+            Topic::from("events.order.S-001"),
+            &OrderEventAny::Filled(other_fill),
+            Headers::empty(),
+            UnixNanos::from(12),
+        )
+        .expect("third capture");
+    assert!(captured_other, "distinct event identity must capture");
+
+    drain(&writer, 2);
+
+    let backend = backend_arc.lock().expect("backend");
+    assert_eq!(backend.high_watermark().expect("hwm"), 2);
+
+    let entry = backend.scan_seq(1).expect("scan").expect("present");
+    assert_eq!(entry.payload_type.as_str(), "OrderFilled");
+    assert_eq!(
+        entry.topic.as_ref(),
+        "Portfolio.update_order",
+        "first dispatch hop wins the captured topic"
+    );
 }
 
 #[rstest]

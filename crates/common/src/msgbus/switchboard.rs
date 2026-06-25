@@ -413,29 +413,54 @@ define_switchboard! {
     get_option_chain_topic(series_id: OptionSeriesId) -> series_id,
     "data.option_chain.{}", series_id;
 
-    order_fills_topics: InstrumentId,
-    get_order_fills_topic(instrument_id: InstrumentId) -> instrument_id,
-    "events.fills.{}", instrument_id;
+    order_submitted_topics: InstrumentId,
+    get_order_submitted_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_submitted.{}", instrument_id;
 
-    order_cancels_topics: InstrumentId,
-    get_order_cancels_topic(instrument_id: InstrumentId) -> instrument_id,
-    "events.cancels.{}", instrument_id;
+    order_rejected_topics: InstrumentId,
+    get_order_rejected_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_rejected.{}", instrument_id;
 
-    order_snapshots_topics: ClientOrderId,
-    get_order_snapshots_topic(client_order_id: ClientOrderId) -> client_order_id,
-    "order.snapshots.{}", client_order_id;
+    order_pending_update_topics: InstrumentId,
+    get_order_pending_update_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_pending_update.{}", instrument_id;
 
-    positions_snapshots_topics: PositionId,
-    get_positions_snapshots_topic(position_id: PositionId) -> position_id,
-    "positions.snapshots.{}", position_id;
+    order_pending_cancel_topics: InstrumentId,
+    get_order_pending_cancel_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_pending_cancel.{}", instrument_id;
 
-    event_orders_topics: StrategyId,
-    get_event_orders_topic(strategy_id: StrategyId) -> strategy_id,
+    order_modify_rejected_topics: InstrumentId,
+    get_order_modify_rejected_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_modify_rejected.{}", instrument_id;
+
+    order_cancel_rejected_topics: InstrumentId,
+    get_order_cancel_rejected_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_cancel_rejected.{}", instrument_id;
+
+    order_canceled_topics: InstrumentId,
+    get_order_canceled_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_canceled.{}", instrument_id;
+
+    order_filled_topics: InstrumentId,
+    get_order_filled_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_filled.{}", instrument_id;
+
+    event_order_topics: StrategyId,
+    get_event_order_topic(strategy_id: StrategyId) -> strategy_id,
     "events.order.{}", strategy_id;
 
-    event_positions_topics: StrategyId,
-    get_event_positions_topic(strategy_id: StrategyId) -> strategy_id,
+    event_position_topics: StrategyId,
+    get_event_position_topic(strategy_id: StrategyId) -> strategy_id,
     "events.position.{}", strategy_id;
+
+    snapshot_order_topics: ClientOrderId,
+    get_snapshot_order_topic(client_order_id: ClientOrderId) -> client_order_id,
+    "snapshots.order.{}", client_order_id;
+
+    snapshot_position_topics: PositionId,
+    get_snapshot_position_topic(position_id: PositionId) -> position_id,
+    "snapshots.position.{}", position_id;
+
 }
 
 impl MessagingSwitchboard {
@@ -626,12 +651,18 @@ define_wrappers! {
     get_pipeline_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
-    get_order_fills_topic(instrument_id: InstrumentId) -> MStr<Topic>,
-    get_order_cancels_topic(instrument_id: InstrumentId) -> MStr<Topic>,
-    get_order_snapshots_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
-    get_positions_snapshots_topic(position_id: PositionId) -> MStr<Topic>,
-    get_event_orders_topic(strategy_id: StrategyId) -> MStr<Topic>,
-    get_event_positions_topic(strategy_id: StrategyId) -> MStr<Topic>,
+    get_order_submitted_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_pending_update_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_pending_cancel_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_modify_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_cancel_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_canceled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_filled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_snapshot_order_topic(client_order_id: ClientOrderId) -> MStr<Topic>,
+    get_snapshot_position_topic(position_id: PositionId) -> MStr<Topic>,
+    get_event_order_topic(strategy_id: StrategyId) -> MStr<Topic>,
+    get_event_position_topic(strategy_id: StrategyId) -> MStr<Topic>,
 }
 
 /// Returns a wildcard subscription pattern that matches all instrument topics
@@ -907,16 +938,92 @@ mod tests {
         assert_eq!(switchboard.pipeline_topics.len(), 1);
     }
 
+    type OrderEventTopicFn = fn(&mut MessagingSwitchboard, InstrumentId) -> MStr<Topic>;
+
     #[rstest]
-    fn test_get_order_snapshots_topic(mut switchboard: MessagingSwitchboard) {
+    #[case::submitted(
+        MessagingSwitchboard::get_order_submitted_topic as OrderEventTopicFn,
+        "events.order_submitted.ESZ24.XCME",
+    )]
+    #[case::rejected(
+        MessagingSwitchboard::get_order_rejected_topic as OrderEventTopicFn,
+        "events.order_rejected.ESZ24.XCME",
+    )]
+    #[case::pending_update(
+        MessagingSwitchboard::get_order_pending_update_topic as OrderEventTopicFn,
+        "events.order_pending_update.ESZ24.XCME",
+    )]
+    #[case::pending_cancel(
+        MessagingSwitchboard::get_order_pending_cancel_topic as OrderEventTopicFn,
+        "events.order_pending_cancel.ESZ24.XCME",
+    )]
+    #[case::modify_rejected(
+        MessagingSwitchboard::get_order_modify_rejected_topic as OrderEventTopicFn,
+        "events.order_modify_rejected.ESZ24.XCME",
+    )]
+    #[case::cancel_rejected(
+        MessagingSwitchboard::get_order_cancel_rejected_topic as OrderEventTopicFn,
+        "events.order_cancel_rejected.ESZ24.XCME",
+    )]
+    #[case::canceled(
+        MessagingSwitchboard::get_order_canceled_topic as OrderEventTopicFn,
+        "events.order_canceled.ESZ24.XCME",
+    )]
+    #[case::filled(
+        MessagingSwitchboard::get_order_filled_topic as OrderEventTopicFn,
+        "events.order_filled.ESZ24.XCME",
+    )]
+    fn test_get_order_event_topic(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+        #[case] topic_fn: OrderEventTopicFn,
+        #[case] expected: &str,
+    ) {
+        let result = topic_fn(&mut switchboard, instrument_id);
+        assert_eq!(result.as_ref(), expected);
+    }
+
+    #[rstest]
+    #[case::submitted(MessagingSwitchboard::get_order_submitted_topic as OrderEventTopicFn)]
+    #[case::rejected(MessagingSwitchboard::get_order_rejected_topic as OrderEventTopicFn)]
+    #[case::pending_update(MessagingSwitchboard::get_order_pending_update_topic as OrderEventTopicFn)]
+    #[case::pending_cancel(MessagingSwitchboard::get_order_pending_cancel_topic as OrderEventTopicFn)]
+    #[case::modify_rejected(MessagingSwitchboard::get_order_modify_rejected_topic as OrderEventTopicFn)]
+    #[case::cancel_rejected(MessagingSwitchboard::get_order_cancel_rejected_topic as OrderEventTopicFn)]
+    #[case::canceled(MessagingSwitchboard::get_order_canceled_topic as OrderEventTopicFn)]
+    #[case::filled(MessagingSwitchboard::get_order_filled_topic as OrderEventTopicFn)]
+    fn test_order_event_topic_does_not_match_strategy_order_pattern(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+        #[case] topic_fn: OrderEventTopicFn,
+    ) {
+        let topic = topic_fn(&mut switchboard, instrument_id);
+        assert!(!is_matching_backtracking(topic, "events.order.*".into()));
+    }
+
+    #[rstest]
+    fn test_get_snapshot_order_topic(mut switchboard: MessagingSwitchboard) {
         let client_order_id = ClientOrderId::from("O-123456789");
-        let expected_topic = format!("order.snapshots.{client_order_id}").into();
-        let result = switchboard.get_order_snapshots_topic(client_order_id);
+        let expected_topic = format!("snapshots.order.{client_order_id}").into();
+        let result = switchboard.get_snapshot_order_topic(client_order_id);
         assert_eq!(result, expected_topic);
         assert!(
             switchboard
-                .order_snapshots_topics
+                .snapshot_order_topics
                 .contains_key(&client_order_id)
+        );
+    }
+
+    #[rstest]
+    fn test_get_snapshot_position_topic(mut switchboard: MessagingSwitchboard) {
+        let position_id = PositionId::from("P-123456789");
+        let expected_topic = format!("snapshots.position.{position_id}").into();
+        let result = switchboard.get_snapshot_position_topic(position_id);
+        assert_eq!(result, expected_topic);
+        assert!(
+            switchboard
+                .snapshot_position_topics
+                .contains_key(&position_id)
         );
     }
 

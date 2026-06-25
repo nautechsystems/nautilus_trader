@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API** –
+//! Provides an ergonomic wrapper around the **dYdX v4 Indexer REST API**:
 //! <https://docs.dydx.xyz/api_integration-indexer/indexer_api>.
 //!
 //! This module exports two complementary HTTP clients following the standardized
@@ -54,10 +54,12 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
+use ahash::AHashMap;
 use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     UnixNanos,
     consts::NAUTILUS_USER_AGENT,
@@ -80,7 +82,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     http::{HttpClient, Method, USER_AGENT},
-    ratelimiter::quota::Quota,
+    ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota},
     retry::{RetryConfig, RetryManager},
 };
 use rust_decimal::Decimal;
@@ -136,10 +138,28 @@ pub static DYDX_REST_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
     Quota::per_second(NonZeroU32::new(9).expect("non-zero")).expect("valid constant")
 });
 
+type DydxRestRateLimiter = Arc<RateLimiter<Ustr, MonotonicClock>>;
+
+// Process-global registry of dYdX Indexer REST rate limiters, keyed by resolved base URL.
+// Clients on the same URL (a network's data and execution clients) share one 9 req/s bucket
+// matching the Indexer per-IP limit; distinct URLs (testnet, or a mock server in tests) stay
+// isolated so unrelated traffic never contends for the same tokens.
+static DYDX_REST_RATE_LIMITERS: LazyLock<Mutex<AHashMap<String, DydxRestRateLimiter>>> =
+    LazyLock::new(|| Mutex::new(AHashMap::new()));
+
 static DYDX_RATE_LIMIT_KEY: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("dydx:rest"));
 
 fn rate_limit_keys() -> Vec<Ustr> {
     vec![*DYDX_RATE_LIMIT_KEY]
+}
+
+fn rest_rate_limiter(base_url: &str) -> DydxRestRateLimiter {
+    DYDX_REST_RATE_LIMITERS
+        .lock()
+        .expect("dYdX REST rate limiter registry mutex poisoned")
+        .entry(base_url.to_string())
+        .or_insert_with(|| Arc::new(RateLimiter::new_with_quota(Some(*DYDX_REST_QUOTA), vec![])))
+        .clone()
 }
 
 /// Represents a dYdX HTTP response wrapper.
@@ -221,13 +241,12 @@ impl DydxRawHttpClient {
         let mut headers = HashMap::new();
         headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
-        let client = HttpClient::new(
+        let client = HttpClient::new_with_rate_limiter(
             headers,
-            vec![], // No specific headers to extract from responses
-            vec![], // No keyed quotas (we use a single global quota)
-            Some(*DYDX_REST_QUOTA),
+            vec![],
             Some(timeout_secs),
             proxy_url,
+            rest_rate_limiter(&base_url),
         )
         .map_err(|e| {
             DydxHttpError::ValidationError(format!("Failed to create HTTP client: {e}"))
@@ -1091,7 +1110,7 @@ impl DydxHttpClient {
 
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let price_precision = instrument.price_precision();
@@ -1223,7 +1242,7 @@ impl DydxHttpClient {
 
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let price_precision = instrument.price_precision();
@@ -1407,7 +1426,7 @@ impl DydxHttpClient {
     ) -> anyhow::Result<OrderBookDeltas> {
         let instrument = self
             .get_instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("Instrument not found in cache: {instrument_id}"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         let ticker = extract_raw_symbol(instrument_id.symbol.as_str());
         let response = self.inner.get_orderbook(ticker).await?;
@@ -1800,6 +1819,18 @@ mod tests {
         let client = client.unwrap();
         assert!(client.is_testnet());
         assert_eq!(client.base_url(), DYDX_TESTNET_HTTP_URL);
+    }
+
+    #[rstest]
+    fn test_rest_rate_limiter_shared_per_base_url() {
+        let shared_a = rest_rate_limiter(DYDX_HTTP_URL);
+        let shared_b = rest_rate_limiter(DYDX_HTTP_URL);
+        let isolated = rest_rate_limiter("http://rate-limiter-test.invalid");
+
+        // Same base URL: data and execution clients on a network share one bucket.
+        assert!(Arc::ptr_eq(&shared_a, &shared_b));
+        // Distinct base URL: custom endpoints and mock servers stay isolated.
+        assert!(!Arc::ptr_eq(&shared_a, &isolated));
     }
 
     #[tokio::test]

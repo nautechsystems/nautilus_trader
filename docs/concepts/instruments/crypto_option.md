@@ -66,37 +66,34 @@ use rust_decimal_macros::dec;
 let activation = Utc.with_ymd_and_hms(2022, 12, 22, 0, 0, 0).unwrap();
 let expiration = Utc.with_ymd_and_hms(2023, 1, 13, 8, 0, 0).unwrap();
 
-let btc_option = CryptoOption::new(
-    InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"),
-    Symbol::from("BTC-13JAN23-16000-P"),
-    Currency::from("BTC"),
-    Currency::from("USD"),
-    Currency::from("BTC"),
-    false,
-    OptionKind::Put,
-    Price::from("16000.00"),
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    2,
-    1,
-    Price::from("0.01"),
-    Quantity::from("0.1"),
-    Some(Quantity::from("1")),
-    Some(Quantity::from("1")),
-    Some(Quantity::from("9000")),
-    Some(Quantity::from("0.1")),
-    None,
-    Some(Money::from("10.00 USD")),
-    None,
-    None,
-    Some(dec!(0)),
-    Some(dec!(0)),
-    Some(dec!(0.0003)),
-    Some(dec!(0.0003)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let btc_option = CryptoOption::builder()
+    .instrument_id(InstrumentId::from("BTC-13JAN23-16000-P.DERIBIT"))
+    .raw_symbol(Symbol::from("BTC-13JAN23-16000-P"))
+    .underlying(Currency::from("BTC"))
+    .quote_currency(Currency::from("USD"))
+    .settlement_currency(Currency::from("BTC"))
+    .is_inverse(false)
+    .option_kind(OptionKind::Put)
+    .strike_price(Price::from("16000.00"))
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .price_precision(2)
+    .size_precision(1)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("0.1"))
+    .multiplier(Quantity::from("1"))
+    .lot_size(Quantity::from("1"))
+    .max_quantity(Quantity::from("9000"))
+    .min_quantity(Quantity::from("0.1"))
+    .min_notional(Money::from("10.00 USD"))
+    .margin_init(dec!(0))
+    .margin_maint(dec!(0))
+    .maker_fee(dec!(0.0003))
+    .taker_fee(dec!(0.0003))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

@@ -16,6 +16,7 @@
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _BTCUSDT = TestInstrumentProviderPyo3.btcusdt_binance()
@@ -43,6 +44,7 @@ def test_to_dict():
         "price_precision": 2,
         "size_precision": 6,
         "price_increment": "0.01",
+        "tick_scheme": None,
         "size_increment": "0.000001",
         "multiplier": "1",
         "lot_size": None,
@@ -67,7 +69,6 @@ def test_pyo3_cython_conversion():
     currency_pair_pyo3_dict = currency_pair_pyo3.to_dict()
     currency_pair_cython = CurrencyPair.from_pyo3(currency_pair_pyo3)
     currency_pair_cython_dict = CurrencyPair.to_dict(currency_pair_cython)
-    del currency_pair_cython_dict["tick_scheme_name"]  # TODO: Under development
     currency_pair_pyo3_back = nautilus_pyo3.CurrencyPair.from_dict(currency_pair_cython_dict)
-    assert currency_pair_cython_dict == currency_pair_pyo3_dict
+    assert as_pyo3_instrument_dict(currency_pair_cython_dict) == currency_pair_pyo3_dict
     assert currency_pair_pyo3 == currency_pair_pyo3_back

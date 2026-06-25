@@ -112,6 +112,13 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
+            if error_code == 326:
+                self._randomize_client_id_on_next_connect = True
+                self._fetch_all_open_orders = True
+                self._log.warning(
+                    "Enabling `fetch_all_open_orders` for client ID fallback after IB error 326",
+                )
+
             if self._is_ib_connected.is_set():
                 self._log.debug(
                     f"`_is_ib_connected` unset by code {error_code} in `_process_error`",

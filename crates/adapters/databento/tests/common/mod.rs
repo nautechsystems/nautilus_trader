@@ -53,7 +53,7 @@ pub(crate) fn create_test_handler(
     dataset: &str,
 ) -> (
     tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
-    tokio::sync::mpsc::Receiver<DatabentoMessage>,
+    tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
     DatabentoFeedHandler,
 ) {
     create_test_handler_with_config(addr, dataset, &TestHandlerConfig::default())
@@ -65,11 +65,11 @@ pub(crate) fn create_test_handler_with_config(
     config: &TestHandlerConfig,
 ) -> (
     tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
-    tokio::sync::mpsc::Receiver<DatabentoMessage>,
+    tokio::sync::mpsc::UnboundedReceiver<DatabentoMessage>,
     DatabentoFeedHandler,
 ) {
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
-    let (msg_tx, msg_rx) = tokio::sync::mpsc::channel(100);
+    let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let handler = DatabentoFeedHandler::new(
         Credential::new(TEST_KEY),

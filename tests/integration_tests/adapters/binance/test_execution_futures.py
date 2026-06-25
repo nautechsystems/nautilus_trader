@@ -17,6 +17,7 @@ import asyncio
 import json
 from decimal import Decimal
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -3059,3 +3060,109 @@ class TestBinanceFuturesExecutionClient:
 
         # Assert - should NOT generate cancel rejected for "Unknown order sent"
         mock_generate_cancel_rejected.assert_not_called()
+
+
+# Best-effort leverage initialization in `_update_account_state`: a `set_leverage`
+# venue reject or a symbolConfig entry with leverage=0 (Binance testnet/demo
+# returns 0 for every untraded symbol) must not abort `_connect`. Exercised as a
+# bound call on a lightweight stub so the tests do not need the full live
+# exec-client / event-loop fixture.
+
+
+def _account_info_stub():
+    info = MagicMock()
+    info.canTrade = True
+    info.updateTime = 0
+    info.parse_to_account_balances = MagicMock(return_value=[])
+    info.parse_to_margin_balances = MagicMock(return_value=[])
+    return info
+
+
+class _UpdateAccountStateStub:
+    """
+    Minimal stand-in exposing only what `_update_account_state` touches.
+    """
+
+    def __init__(self, *, leverages, set_leverage, symbol_configs):
+        self._log = MagicMock()
+        self._http_client = MagicMock()
+        self._leverages = leverages
+        self._set_leverage_warned = set()
+        self._margin_types = {}
+        self._futures_http_account = MagicMock()
+        self._futures_http_account.query_futures_account_info = AsyncMock(
+            return_value=_account_info_stub(),
+        )
+        self._futures_http_account.set_leverage = set_leverage
+        self._futures_http_account.query_futures_symbol_config = AsyncMock(
+            return_value=symbol_configs,
+        )
+        self.generate_account_state = MagicMock()
+        self._await_account_registered = AsyncMock()
+        self.account = MagicMock()
+        self.get_account = MagicMock(return_value=self.account)
+        self._get_cached_instrument_id = MagicMock(side_effect=lambda s: f"id-{s}")
+
+
+def test_update_account_state_set_leverage_failure_is_non_fatal():
+    """
+    A per-symbol `set_leverage` rejection must not abort `_update_account_state`.
+    """
+    from nautilus_trader.adapters.binance.http.error import BinanceError
+
+    set_leverage = AsyncMock(
+        side_effect=BinanceError(400, {"code": -4028, "msg": "leverage too large"}, {}),
+    )
+    stub = _UpdateAccountStateStub(
+        leverages={"BTCUSDT": 10},
+        set_leverage=set_leverage,
+        symbol_configs=[],
+    )
+
+    # Must NOT raise. Before the fix the TaskGroup propagated an ExceptionGroup.
+    asyncio.run(BinanceFuturesExecutionClient._update_account_state(stub))
+
+    set_leverage.assert_awaited_once()
+    stub._log.warning.assert_called()  # warned, then continued
+
+
+def test_update_account_state_skips_zero_leverage_symbol_config():
+    """
+    SymbolConfig entries with leverage<1 are skipped before mirroring.
+
+    Uses a real `MarginAccount` so that, before the fix, mirroring the leverage=0
+    entry would hit the `leverage >= 1` assertion in `MarginAccount.set_leverage`.
+
+    """
+    from types import SimpleNamespace
+
+    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.test_kit.stubs.execution import TestExecStubs
+
+    account = TestExecStubs.margin_account()
+    ids = {
+        "BTCUSDT": InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+        "SNTUSDT": InstrumentId.from_str("SNTUSDT-PERP.BINANCE"),
+        "MSTRUSDT": InstrumentId.from_str("MSTRUSDT-PERP.BINANCE"),
+    }
+    configs = [
+        SimpleNamespace(symbol="BTCUSDT", leverage=10),
+        SimpleNamespace(symbol="SNTUSDT", leverage=0),  # untraded symbol on demo
+        SimpleNamespace(symbol="MSTRUSDT", leverage=5),
+    ]
+    stub = _UpdateAccountStateStub(
+        leverages={},  # skip the venue-push branch, exercise the symbolConfig mirror
+        set_leverage=AsyncMock(),
+        symbol_configs=configs,
+    )
+    stub.get_account = MagicMock(return_value=account)
+    stub._get_cached_instrument_id = MagicMock(side_effect=lambda s: ids[s])
+
+    # Must not raise. Before the fix, mirroring SNTUSDT leverage=0 raised
+    # ValueError from MarginAccount.set_leverage's `leverage >= 1` assertion.
+    asyncio.run(BinanceFuturesExecutionClient._update_account_state(stub))
+
+    # leverage=0 SNTUSDT skipped; only the two valid symbols are mirrored.
+    assert account.leverage(ids["BTCUSDT"]) == Decimal(10)
+    assert account.leverage(ids["MSTRUSDT"]) == Decimal(5)
+    assert account.leverage(ids["SNTUSDT"]) is None  # skipped, never mirrored

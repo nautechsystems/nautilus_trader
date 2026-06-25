@@ -15,9 +15,12 @@
 
 //! Example demonstrating live data testing with the Hyperliquid adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and subscriptions.
+//!
 //! Run with: `cargo run --example hyperliquid-data-tester --package nautilus-hyperliquid --features examples`
-
-use std::num::NonZeroUsize;
+//!
+//! Credentials are read from the environment when set:
+//! - `HYPERLIQUID_PK` (or `HYPERLIQUID_TESTNET_PK` for testnet).
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -26,22 +29,24 @@ use nautilus_hyperliquid::{
     common::{consts::HYPERLIQUID_CLIENT_ID, enums::HyperliquidEnvironment},
 };
 use nautilus_live::node::LiveNode;
-use nautilus_model::{
-    identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
-};
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+const HYPERLIQUID_ENVIRONMENT: HyperliquidEnvironment = HyperliquidEnvironment::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "HYPERLIQUID-DATA-TESTER-001";
+const INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let nt_environment = Environment::Live;
-    let hl_environment = HyperliquidEnvironment::Mainnet;
-    let trader_id = TraderId::test_default();
-    let node_name = "HYPERLIQUID-DATA-TESTER-001".to_string();
+    let hl_environment = HYPERLIQUID_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
     let instrument_ids = vec![
-        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
+        InstrumentId::from(INSTRUMENT_ID),
         // InstrumentId::from("ETH-USD-PERP.HYPERLIQUID"),
     ];
 
@@ -74,9 +79,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe_index_prices(true)
         .subscribe_funding_rates(true)
         // .subscribe_book_at_interval(true)
-        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .book_interval_ms(10)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

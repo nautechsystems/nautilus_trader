@@ -165,7 +165,7 @@ async fn stream_from_websocket(
                         if frame.code == CloseCode::Normal {
                             log::debug!("Connection closed normally: {reason}");
                         } else {
-                            log::error!(
+                            log::warn!(
                                 "Connection closed abnormally with code: {:?}, reason: {reason}", frame.code
                             );
                             yield Err(Error::ConnectionClosed { reason });
@@ -173,7 +173,7 @@ async fn stream_from_websocket(
                         break;
                     }
                     tungstenite::Message::Close(None) => {
-                        log::error!("Connection closed without a frame");
+                        log::warn!("Connection closed without a frame");
                         yield Err(Error::ConnectionClosed {
                             reason: "No close frame provided".to_string()
                         });
@@ -190,12 +190,12 @@ async fn stream_from_websocket(
                     }
                 },
                 Some(Err(e)) => {
-                    log::error!("WebSocket error: {e}");
+                    log::warn!("WebSocket error: {e}");
                     yield Err(Error::ConnectFailed(e));
                     break;
                 }
                 None => {
-                    log::error!("Connection closed unexpectedly");
+                    log::warn!("Connection closed unexpectedly");
                     yield Err(Error::ConnectionClosed {
                         reason: "Unexpected connection close".to_string(),
                     });

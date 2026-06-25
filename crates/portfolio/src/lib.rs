@@ -48,6 +48,7 @@
 //! - `extension-module`: Builds the crate as a Python extension module.
 
 #![warn(rustc::all)]
+#![warn(clippy::pedantic)]
 #![deny(unsafe_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![deny(nonstandard_style)]
@@ -55,6 +56,22 @@
 #![deny(clippy::missing_errors_doc)]
 #![deny(clippy::missing_panics_doc)]
 #![deny(rustdoc::broken_intra_doc_links)]
+#![allow(
+    clippy::similar_names,
+    reason = "portfolio timing and domain terms such as interval_ms/interval_ns are intentionally parallel"
+)]
+#![allow(
+    clippy::manual_let_else,
+    reason = "match and if-let early returns are consistent with surrounding portfolio flow code"
+)]
+#![allow(
+    clippy::single_match_else,
+    reason = "match can be clearer than if-let-else for some portfolio state transitions"
+)]
+#![allow(
+    clippy::too_many_lines,
+    reason = "portfolio calculation and event update flows exceed the default threshold by design"
+)]
 
 pub mod config;
 pub mod manager;

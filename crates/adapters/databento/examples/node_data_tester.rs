@@ -15,7 +15,12 @@
 
 //! Example demonstrating live data testing with the Databento adapter.
 //!
+//! Edit the constants below to change the target instrument and price precision.
+//!
 //! Run with: `cargo run --example databento-data-tester --package nautilus-databento`
+//!
+//! Required credential environment variables:
+//! - `DATABENTO_API_KEY`.
 
 use std::path::PathBuf;
 
@@ -34,27 +39,30 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::{QuoteTick, TradeTick},
     identifiers::{ClientId, InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use serde_json::json;
 
 const PRICE_PRECISION_PARAM: &str = "price_precision";
+
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "DATABENTO-TESTER-001";
+const INSTRUMENT_ID: &str = "ESZ6.XCME";
+const PRICE_PRECISION: Option<u8> = None;
+
+// Alternative instrument with a price-precision override:
+// const INSTRUMENT_ID: &str = "6EM6.XCME";
+// const PRICE_PRECISION: Option<u8> = Some(5);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "DATABENTO-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
 
-    // Get Databento API key from environment
-    let api_key = get_env_var("DATABENTO_API_KEY").unwrap_or_else(|_| {
-        println!("WARNING: DATABENTO_API_KEY not found, using placeholder");
-        "db-placeholder-key".to_string()
-    });
+    let api_key = get_env_var("DATABENTO_API_KEY")?;
 
-    // Determine publishers file path
     let publishers_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
     if !publishers_filepath.exists() {
         println!(
@@ -72,13 +80,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let client_factory = DatabentoDataClientFactory::new();
 
-    // ESM6.XCME
-    let instrument_id = InstrumentId::from("ESM6.XCME");
-    let price_precision = None; // Default
-
-    // 6EM6.XCME
-    // let instrument_id = InstrumentId::from("6EM6.XCME");
-    // let price_precision = Some(5); // Override default
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let price_precision = PRICE_PRECISION;
 
     let client_id = *DATABENTO_CLIENT_ID;
     let instrument_ids = vec![instrument_id];

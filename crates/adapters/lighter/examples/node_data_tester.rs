@@ -15,6 +15,8 @@
 
 //! Example smoke-test for the Lighter live data client.
 //!
+//! Edit the constants below to change the environment and target instrument.
+//!
 //! Run with: `cargo run --example lighter-data-tester --package nautilus-lighter --features examples`
 
 use log::LevelFilter;
@@ -28,19 +30,23 @@ use nautilus_model::{
     data::{BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::{ClientId, InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+const LIGHTER_ENVIRONMENT: LighterEnvironment = LighterEnvironment::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "LIGHTER-DATA-TESTER-001";
+const CLIENT_ID: &str = "LIGHTER";
+const INSTRUMENT_ID: &str = "BTC-PERP.LIGHTER";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "LIGHTER-DATA-TESTER-001".to_string();
-    let instrument_id = InstrumentId::from("BTC-PERP.LIGHTER");
-    // let instrument_id = InstrumentId::from("0G-PERP.LIGHTER");
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
     let instrument_ids = vec![
         instrument_id,
         // InstrumentId::from("ETH-PERP.LIGHTER"),
@@ -53,12 +59,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )];
 
     let lighter_config = LighterDataClientConfig {
-        environment: LighterEnvironment::Mainnet,
+        environment: LIGHTER_ENVIRONMENT,
         ..Default::default()
     };
 
     let client_factory = LighterDataClientFactory::new();
-    let client_id = ClientId::new("LIGHTER");
+    let client_id = ClientId::new(CLIENT_ID);
 
     let log_config = LoggerConfig {
         stdout_level: LevelFilter::Info,
@@ -88,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .subscribe_index_prices(true)
         // .subscribe_mark_prices(true)
         // .subscribe_funding_rates(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

@@ -28,14 +28,14 @@ use ustr::Ustr;
 use crate::{
     enums::SerializationEncoding,
     msgbus::{
-        self as msgbus_api, BusMessage, MessageBus,
+        self as msgbus_api, BusMessage, MessageBus, MessageBusConfig,
         core::Subscription,
-        database::{DatabaseConfig, MessageBusConfig},
         get_message_bus,
         matching::is_matching,
         mstr::{Endpoint, MStr, Pattern, Topic},
         typed_handler::{Handler, ShareableMessageHandler, TypedHandler},
     },
+    python::config_error_to_pyvalue_err,
 };
 
 #[pymethods]
@@ -48,9 +48,21 @@ impl BusMessage {
     }
 
     #[getter]
+    #[pyo3(name = "payload_type")]
+    fn py_payload_type(&self) -> String {
+        self.payload_type.to_string()
+    }
+
+    #[getter]
     #[pyo3(name = "payload")]
     fn py_payload(&self, py: Python<'_>) -> Py<PyBytes> {
         PyBytes::new(py, self.payload.as_ref()).into()
+    }
+
+    #[getter]
+    #[pyo3(name = "encoding")]
+    fn py_encoding(&self) -> SerializationEncoding {
+        self.encoding
     }
 
     fn __repr__(&self) -> String {
@@ -64,125 +76,15 @@ impl BusMessage {
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl DatabaseConfig {
-    /// Configuration for database connections.
-    ///
-    /// # Notes
-    ///
-    /// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
-    #[new]
-    #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (database_type=None, host=None, port=None, username=None, password=None, ssl=None, connection_timeout=None, response_timeout=None, number_of_retries=None, exponent_base=None, max_delay=None, factor=None))]
-    fn py_new(
-        database_type: Option<String>,
-        host: Option<String>,
-        port: Option<u16>,
-        username: Option<String>,
-        password: Option<String>,
-        ssl: Option<bool>,
-        connection_timeout: Option<u16>,
-        response_timeout: Option<u16>,
-        number_of_retries: Option<usize>,
-        exponent_base: Option<u64>,
-        max_delay: Option<u64>,
-        factor: Option<u64>,
-    ) -> Self {
-        let default = Self::default();
-        Self {
-            database_type: database_type.unwrap_or(default.database_type),
-            host,
-            port,
-            username,
-            password,
-            ssl: ssl.unwrap_or(default.ssl),
-            connection_timeout: connection_timeout.unwrap_or(default.connection_timeout),
-            response_timeout: response_timeout.unwrap_or(default.response_timeout),
-            number_of_retries: number_of_retries.unwrap_or(default.number_of_retries),
-            exponent_base: exponent_base.unwrap_or(default.exponent_base),
-            max_delay: max_delay.unwrap_or(default.max_delay),
-            factor: factor.unwrap_or(default.factor),
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    fn __str__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn database_type(&self) -> &str {
-        &self.database_type
-    }
-
-    #[getter]
-    fn host(&self) -> Option<&str> {
-        self.host.as_deref()
-    }
-
-    #[getter]
-    fn port(&self) -> Option<u16> {
-        self.port
-    }
-
-    #[getter]
-    fn username(&self) -> Option<&str> {
-        self.username.as_deref()
-    }
-
-    #[getter]
-    fn password(&self) -> Option<&str> {
-        self.password.as_deref()
-    }
-
-    #[getter]
-    fn ssl(&self) -> bool {
-        self.ssl
-    }
-
-    #[getter]
-    fn connection_timeout(&self) -> u16 {
-        self.connection_timeout
-    }
-
-    #[getter]
-    fn response_timeout(&self) -> u16 {
-        self.response_timeout
-    }
-
-    #[getter]
-    fn number_of_retries(&self) -> usize {
-        self.number_of_retries
-    }
-
-    #[getter]
-    fn exponent_base(&self) -> u64 {
-        self.exponent_base
-    }
-
-    #[getter]
-    fn max_delay(&self) -> u64 {
-        self.max_delay
-    }
-
-    #[getter]
-    fn factor(&self) -> u64 {
-        self.factor
-    }
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MessageBusConfig {
     /// Configuration for `MessageBus` instances.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (database=None, encoding=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
+    #[pyo3(signature = (encoding=None, encoding_market_data=None, encoding_builtin=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
     fn py_new(
-        database: Option<DatabaseConfig>,
         encoding: Option<SerializationEncoding>,
+        encoding_market_data: Option<SerializationEncoding>,
+        encoding_builtin: Option<SerializationEncoding>,
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<u32>,
         autotrim_mins: Option<u32>,
@@ -194,11 +96,12 @@ impl MessageBusConfig {
         external_streams: Option<Vec<String>>,
         types_filter: Option<Vec<String>>,
         heartbeat_interval_secs: Option<u16>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
-            database,
+        let config = Self {
             encoding: encoding.unwrap_or(default.encoding),
+            encoding_market_data,
+            encoding_builtin,
             timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(default.timestamps_as_iso8601),
             buffer_interval_ms,
             autotrim_mins,
@@ -210,7 +113,10 @@ impl MessageBusConfig {
             external_streams,
             types_filter,
             heartbeat_interval_secs,
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -222,13 +128,18 @@ impl MessageBusConfig {
     }
 
     #[getter]
-    fn database(&self) -> Option<DatabaseConfig> {
-        self.database.clone()
+    fn encoding(&self) -> SerializationEncoding {
+        self.encoding
     }
 
     #[getter]
-    fn encoding(&self) -> SerializationEncoding {
-        self.encoding
+    fn encoding_market_data(&self) -> Option<SerializationEncoding> {
+        self.encoding_market_data
+    }
+
+    #[getter]
+    fn encoding_builtin(&self) -> Option<SerializationEncoding> {
+        self.encoding_builtin
     }
 
     #[getter]
@@ -370,7 +281,7 @@ pub struct PyMessageBus {
     name: String,
     has_backing: bool,
     serializer: Option<Py<PyAny>>,
-    database: Option<Py<PyAny>>,
+    backing: Option<Py<PyAny>>,
     listeners: Vec<Py<PyAny>>,
     types_filter: Option<Py<PyAny>>,
     streaming_types: Vec<Py<PyAny>>,
@@ -398,7 +309,7 @@ impl PyMessageBus {
     /// This creates and registers the underlying Rust `MessageBus` as the
     /// thread-local bus, then wraps it for Python access.
     #[new]
-    #[pyo3(signature = (trader_id, clock=None, instance_id=None, name=None, serializer=None, database=None, config=None))]
+    #[pyo3(signature = (trader_id, clock=None, instance_id=None, name=None, serializer=None, backing=None, config=None))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
     fn py_new(
         py: Python<'_>,
@@ -407,13 +318,13 @@ impl PyMessageBus {
         instance_id: Option<UUID4>,
         name: Option<String>,
         serializer: Option<Py<PyAny>>,
-        database: Option<Py<PyAny>>,
+        backing: Option<Py<PyAny>>,
         config: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         let _ = clock;
         let instance_id = instance_id.unwrap_or_default();
         let bus_name = name.clone();
-        let has_backing = database.is_some();
+        let has_backing = backing.is_some();
 
         let msgbus = MessageBus::new(trader_id, instance_id, bus_name, None);
         msgbus.register_message_bus();
@@ -440,7 +351,7 @@ impl PyMessageBus {
             name: name.unwrap_or_else(|| "MessageBus".to_owned()),
             has_backing,
             serializer,
-            database,
+            backing,
             listeners: Vec::new(),
             types_filter,
             streaming_types: Vec::new(),
@@ -473,7 +384,7 @@ impl PyMessageBus {
         &self.name
     }
 
-    /// Returns whether the message bus is backed by a database.
+    /// Returns whether the message bus has an external backing.
     #[getter]
     #[pyo3(name = "has_backing")]
     fn py_has_backing(&self) -> bool {
@@ -742,8 +653,8 @@ impl PyMessageBus {
         self.listeners.clear();
         self.streaming_types.clear();
 
-        if let Some(ref database) = self.database {
-            let db = database.bind(py);
+        if let Some(ref backing) = self.backing {
+            let db = backing.bind(py);
             if !db.call_method0("is_closed")?.extract::<bool>()? {
                 db.call_method0("close")?;
             }
@@ -789,8 +700,8 @@ impl PyMessageBus {
             return Ok(());
         };
 
-        if let Some(ref database) = self.database {
-            let db = database.bind(py);
+        if let Some(ref backing) = self.backing {
+            let db = backing.bind(py);
             if !db.call_method0("is_closed")?.extract::<bool>()? {
                 db.call_method1("publish", (topic, &payload))?;
             }
@@ -812,10 +723,43 @@ impl PyMessageBus {
 mod tests {
     use std::any::Any;
 
-    use pyo3::ffi::c_str;
+    use pyo3::{exceptions::PyValueError, ffi::c_str};
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn message_bus_config_py_new_maps_validate_error_to_value_error() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let err = MessageBusConfig::py_new(
+                Some(SerializationEncoding::Json),
+                None,
+                Some(SerializationEncoding::Capnp),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                err.value(py).to_string(),
+                format!(
+                    "MessageBusConfig.encoding_builtin has unsupported value: {} is not supported by AccountState, OrderEventAny, PositionEvent, PortfolioSnapshot",
+                    SerializationEncoding::Capnp
+                )
+            );
+        });
+    }
 
     #[rstest]
     fn test_py_message_downcast() {

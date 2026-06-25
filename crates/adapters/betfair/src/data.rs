@@ -430,7 +430,7 @@ impl BetfairDataClient {
                 }
                 StreamMessage::Status(status) => {
                     if status.connection_closed {
-                        log::error!(
+                        log::warn!(
                             "Betfair stream closed: {:?} - {:?}",
                             status.error_code,
                             status.error_message,
@@ -712,7 +712,7 @@ impl DataClient for BetfairDataClient {
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Betfair session expired, attempting re-login: {e}");
                         if let Err(e) = keep_alive_client.reconnect().await {
-                            log::error!("Betfair re-login failed: {e}");
+                            log::warn!("Betfair re-login failed: {e}");
                             continue;
                         }
                     }
@@ -748,7 +748,7 @@ impl DataClient for BetfairDataClient {
                     Err(ref e) if e.is_login_failed() => {
                         log::warn!("Session expired on reconnect, attempting re-login: {e}");
                         if let Err(e) = reconnect_http.reconnect().await {
-                            log::error!("Re-login failed on reconnect: {e}");
+                            log::warn!("Re-login failed on reconnect: {e}");
                             continue;
                         }
                     }
@@ -850,7 +850,7 @@ impl DataClient for BetfairDataClient {
                 .subscribe_markets(market_filter, data_filter, None, conflate_ms)
                 .await
             {
-                log::error!("Failed to subscribe to market data: {e}");
+                log::warn!("Failed to subscribe to market data: {e}");
             }
         });
 

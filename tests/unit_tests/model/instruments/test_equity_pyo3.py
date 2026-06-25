@@ -21,6 +21,7 @@ from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
+from tests.unit_tests.model.instruments import as_pyo3_instrument_dict
 
 
 _AAPL_EQUITY = TestInstrumentProviderPyo3.aapl_equity()
@@ -51,6 +52,7 @@ def test_to_dict():
         "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
+        "tick_scheme": None,
         "maker_fee": "0",
         "taker_fee": "0",
         "margin_init": "0",
@@ -77,9 +79,8 @@ def test_pyo3_cython_conversion():
     equity_pyo3_dict = equity_pyo3.to_dict()
     equity_cython = Equity.from_pyo3(equity_pyo3)
     equity_cython_dict = Equity.to_dict(equity_cython)
-    del equity_cython_dict["tick_scheme_name"]  # TODO: Under development
     equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
-    assert equity_cython_dict == equity_pyo3_dict
+    assert as_pyo3_instrument_dict(equity_cython_dict) == equity_pyo3_dict
     assert equity_pyo3 == equity_pyo3_back
 
 
@@ -118,6 +119,5 @@ def test_pyo3_cython_conversion_with_fees():
 
     # Round-trip conversion
     equity_cython_dict = Equity.to_dict(equity_cython)
-    del equity_cython_dict["tick_scheme_name"]
     equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
     assert equity_pyo3_back == equity_pyo3

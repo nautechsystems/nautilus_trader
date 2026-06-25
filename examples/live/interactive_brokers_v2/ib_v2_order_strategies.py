@@ -18,6 +18,7 @@ from _common import default_es_put_spread_instrument_id
 from _common import default_ym_future_instrument_id
 
 from nautilus_trader.core import nautilus_pyo3 as pyo3
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 
 
 def env_bool(name: str, default: bool = False) -> bool:
@@ -691,7 +692,7 @@ class DatabentoInstrumentIdStrategy(IbV2OrderStrategy):
         self._startup_requested = True
         start_ns = self.clock.timestamp_ns() - (30 * 60 * 1_000_000_000)
         print(f"{self.strategy_id}: requesting historical bars for {self.bar_type}", flush=True)
-        self.request_bars(self.bar_type, start=start_ns, client_id=ib_client_id())
+        self.request_bars(self.bar_type, start=unix_nanos_to_dt(start_ns), client_id=ib_client_id())
 
         if env_bool("IB_V2_ENABLE_LIVE_TRADES"):
             self._live_trades_subscribed = True

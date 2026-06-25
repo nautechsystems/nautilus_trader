@@ -68,7 +68,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
-    types::{Currency, Quantity},
+    types::{Currency, Money, Quantity},
 };
 use nautilus_system::{KernelEventStore, NautilusKernelBuilder};
 use rstest::rstest;
@@ -1273,7 +1273,7 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(AHashMap::new())
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
         Ok(AHashMap::new())
     }
 
@@ -1471,11 +1471,19 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(())
     }
 
-    fn update_actor(&self) -> anyhow::Result<()> {
+    fn update_actor(
+        &self,
+        _component_id: &ComponentId,
+        _state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
+    fn update_strategy(
+        &self,
+        _strategy_id: &StrategyId,
+        _state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -1495,7 +1503,12 @@ impl CacheDatabaseAdapter for StubCacheDatabase {
         Ok(())
     }
 
-    fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+    fn snapshot_position_state(
+        &self,
+        _position: &Position,
+        _ts_snapshot: UnixNanos,
+        _unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 

@@ -13,18 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a Redis backed `CacheDatabase` and `MessageBusDatabase` implementation.
+//! Provides Redis-backed cache database and message bus backing implementations.
 
 pub mod cache;
 pub mod msgbus;
 pub mod queries;
 
-use std::time::Duration;
+use std::{fmt::Write as _, time::Duration};
 
-use nautilus_common::{
-    logging::log_task_awaiting,
-    msgbus::database::{DatabaseConfig, MessageBusConfig},
-};
+use nautilus_common::{logging::log_task_awaiting, msgbus::MessageBusConfig};
 use nautilus_core::{UUID4, string::semver::SemVer};
 use nautilus_model::identifiers::TraderId;
 use redis::RedisError;
@@ -38,8 +35,8 @@ const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 /// Extracts the index key from a full Redis key.
 ///
-/// Handles keys with instance_id prefix by finding the `:index:` pattern.
-/// e.g., "trader-id:uuid:index:order_position" -> "index:order_position"
+/// Handles keys with `instance_id` prefix by finding the `:index:` pattern.
+/// For example, `trader-id:uuid:index:order_position` -> `index:order_position`.
 pub(crate) fn get_index_key(key: &str) -> anyhow::Result<&str> {
     if let Some(pos) = key.find(REDIS_INDEX_PATTERN) {
         return Ok(&key[pos + 1..]);
@@ -64,13 +61,28 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
                 }
             }
             Err(_) => {
-                log::error!("Timeout {timeout:?} awaiting task '{task_name}'");
+                log::warn!("Timeout {timeout:?} awaiting task '{task_name}'");
             }
         }
     }
 }
 
-/// Parses a Redis connection URL from the given database config, returning the
+/// Redis connection settings shared by Redis-owned config structs.
+pub trait RedisConnectionConfig {
+    fn host(&self) -> Option<&str>;
+    fn port(&self) -> Option<u16>;
+    fn username(&self) -> Option<&str>;
+    fn password(&self) -> Option<&str>;
+    fn ssl(&self) -> bool;
+    fn connection_timeout(&self) -> u16;
+    fn response_timeout(&self) -> u16;
+    fn number_of_retries(&self) -> usize;
+    fn exponent_base(&self) -> u64;
+    fn max_delay(&self) -> u64;
+    fn factor(&self) -> u64;
+}
+
+/// Parses a Redis connection URL from the given Redis config, returning the
 /// full URL and a redacted version with the password obfuscated.
 ///
 /// Authentication matrix handled:
@@ -86,12 +98,12 @@ async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &s
 ///
 /// Panics if a username is provided without a corresponding password.
 #[must_use]
-pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
-    let host = config.host.unwrap_or("127.0.0.1".to_string());
-    let port = config.port.unwrap_or(6379);
-    let username = config.username.unwrap_or_default();
-    let password = config.password.unwrap_or_default();
-    let ssl = config.ssl;
+pub fn get_redis_url(config: &impl RedisConnectionConfig) -> (String, String) {
+    let host = config.host().unwrap_or("127.0.0.1");
+    let port = config.port().unwrap_or(6379);
+    let username = config.username().unwrap_or_default();
+    let password = config.password().unwrap_or_default();
+    let ssl = config.ssl();
 
     // Redact the password for logging/metrics: keep the first & last two chars.
     let redact_pw = |pw: &str| {
@@ -107,12 +119,12 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
         // user:pass@
         (false, false) => (
             format!("{username}:{password}@"),
-            format!("{username}:{}@", redact_pw(&password)),
+            format!("{username}:{}@", redact_pw(password)),
         ),
         // :pass@
         (true, false) => (
             format!(":{password}@"),
-            format!(":{}@", redact_pw(&password)),
+            format!(":{}@", redact_pw(password)),
         ),
         // username but no password ⇒  configuration error
         (false, true) => panic!(
@@ -147,20 +159,24 @@ pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
 /// Each connection attempt to the server will time out after `connection_timeout`.
 pub async fn create_redis_connection(
     con_name: &str,
-    config: DatabaseConfig,
+    config: &impl RedisConnectionConfig,
 ) -> anyhow::Result<redis::aio::ConnectionManager> {
     log::debug!("Creating {con_name} redis connection");
-    let (redis_url, redacted_url) = get_redis_url(config.clone());
+    let (redis_url, redacted_url) = get_redis_url(config);
     log::debug!("Connecting to {redacted_url}");
 
-    let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout));
-    let response_timeout = Duration::from_secs(u64::from(config.response_timeout));
-    let number_of_retries = config.number_of_retries;
-    let exponent_base = config.exponent_base as f32;
+    let connection_timeout = Duration::from_secs(u64::from(config.connection_timeout()));
+    let response_timeout = Duration::from_secs(u64::from(config.response_timeout()));
+    let number_of_retries = config.number_of_retries();
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "redis connection manager API accepts exponent base as f32"
+    )]
+    let exponent_base = config.exponent_base() as f32;
 
     // Use factor as min_delay base for backoff: factor * (exponent_base ^ tries)
-    let min_delay = Duration::from_millis(config.factor);
-    let max_delay = Duration::from_secs(config.max_delay);
+    let min_delay = Duration::from_millis(config.factor());
+    let max_delay = Duration::from_secs(config.max_delay());
 
     let client = redis::Client::open(redis_url)?;
 
@@ -219,7 +235,7 @@ pub fn get_stream_key(
     }
 
     if config.use_instance_id {
-        stream_key.push_str(&format!("{instance_id}"));
+        write!(stream_key, "{instance_id}").expect("writing to String cannot fail");
         stream_key.push(REDIS_DELIMITER);
     }
 
@@ -229,17 +245,14 @@ pub fn get_stream_key(
 
 async fn get_redis_version(conn: &mut redis::aio::ConnectionManager) -> anyhow::Result<SemVer> {
     let info: String = redis::cmd("INFO").query_async(conn).await?;
-    let version_str = match info.lines().find_map(|line| {
+    let Some(version_str) = info.lines().find_map(|line| {
         if line.starts_with("redis_version:") {
             line.split(':').nth(1).map(|s| s.trim().to_string())
         } else {
             None
         }
-    }) {
-        Some(info) => info,
-        None => {
-            anyhow::bail!("Redis version not available");
-        }
+    }) else {
+        anyhow::bail!("Redis version not available");
     };
 
     SemVer::parse(&version_str)
@@ -251,11 +264,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::redis::cache::RedisCacheConfig;
 
     #[rstest]
     fn test_get_redis_url_default_values() {
-        let config: DatabaseConfig = serde_json::from_value(json!({})).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(json!({})).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://127.0.0.1:6379");
         assert_eq!(redacted_url, "redis://127.0.0.1:6379");
     }
@@ -268,8 +282,8 @@ mod tests {
             "port": 6380,
             "password": "secretpw",   // >4 chars ⇒ will be redacted
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://:secretpw@example.com:6380");
         assert_eq!(redacted_url, "redis://:se...pw@example.com:6380");
     }
@@ -283,8 +297,8 @@ mod tests {
             "password": "pass",
             "ssl": true,
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "rediss://user:pass@example.com:6380");
         assert_eq!(redacted_url, "rediss://user:pass@example.com:6380");
     }
@@ -298,8 +312,8 @@ mod tests {
             "password": "password",
             "ssl": false,
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://username:password@example.com:6380");
         assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
     }
@@ -311,8 +325,8 @@ mod tests {
             "port": 6380,
             "ssl": false,
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://example.com:6380");
         assert_eq!(redacted_url, "redis://example.com:6380");
     }
@@ -326,8 +340,8 @@ mod tests {
             "password": "password",
             // "ssl" is intentionally omitted to test default behavior
         });
-        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
-        let (url, redacted_url) = get_redis_url(config);
+        let config: RedisCacheConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(&config);
         assert_eq!(url, "redis://username:password@example.com:6380");
         assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
     }

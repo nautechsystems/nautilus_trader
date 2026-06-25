@@ -31,15 +31,30 @@ pub mod custom;
 pub mod enums;
 pub mod fifo;
 pub mod greeks;
+pub mod indicators;
 pub mod listener;
 pub mod logging;
 pub mod msgbus;
+pub mod order_factory;
 pub mod runtime;
 pub mod signal;
 pub mod timer;
 pub mod xrate;
 
-use pyo3::prelude::*;
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{PyErr, prelude::*};
+
+use crate::config::ConfigError;
+
+/// Converts a config validation failure to a Python `ValueError`.
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err passes owned errors to conversion functions"
+)]
+pub fn config_error_to_pyvalue_err(e: ConfigError) -> PyErr {
+    to_pyvalue_err(e)
+}
 
 /// Loaded as `nautilus_pyo3.common`.
 ///
@@ -57,13 +72,13 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::python::cache::PyCache>()?;
     m.add_class::<crate::python::fifo::PyFifoCache>()?;
     m.add_class::<crate::python::clock::PyClock>()?;
+    m.add_class::<crate::python::order_factory::PyOrderFactory>()?;
     m.add_class::<crate::python::greeks::PyGreeksCalculator>()?;
     m.add_class::<crate::python::logging::PyLogger>()?;
     m.add_class::<crate::actor::data_actor::DataActorConfig>()?;
     m.add_class::<crate::actor::data_actor::ImportableActorConfig>()?;
     m.add_class::<crate::msgbus::BusMessage>()?;
-    m.add_class::<crate::msgbus::database::DatabaseConfig>()?;
-    m.add_class::<crate::msgbus::database::MessageBusConfig>()?;
+    m.add_class::<crate::msgbus::config::MessageBusConfig>()?;
     m.add_class::<crate::python::msgbus::PyMessageBus>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
@@ -93,4 +108,38 @@ pub fn common(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::live::listener::MessageBusListener>()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use pyo3::{Python, exceptions::PyValueError};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn ensure_python_initialized() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            Python::initialize();
+        });
+    }
+
+    #[rstest]
+    fn test_config_error_to_pyvalue_err_preserves_display_text() {
+        ensure_python_initialized();
+
+        let error = ConfigError::invalid_format("rate_limit", "expected 'limit/HH:MM:SS'");
+
+        Python::attach(|py| {
+            let py_err = config_error_to_pyvalue_err(error);
+
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                py_err.value(py).to_string(),
+                "invalid rate_limit: expected 'limit/HH:MM:SS'"
+            );
+        });
+    }
 }

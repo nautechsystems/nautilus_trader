@@ -173,6 +173,7 @@ fn test_on_instrument(config: DataTesterConfig) {
         None,
         None,
         None,
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),

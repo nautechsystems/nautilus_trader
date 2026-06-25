@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::serialization::default_true;
 use serde::{Deserialize, Serialize};
 
@@ -28,7 +29,19 @@ use serde::{Deserialize, Serialize};
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.portfolio")
 )]
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "config deserializes plain fields; unsafe methods come from generated PyO3 integration"
+    )
+)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "config fields mirror the existing Python and serialization surface"
+)]
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(deny_unknown_fields)]
 pub struct PortfolioConfig {
     /// The type of prices used for portfolio calculations, such as unrealized PnLs.
@@ -73,8 +86,107 @@ pub struct PortfolioConfig {
     pub debug: bool,
 }
 
+impl<S: portfolio_config_builder::IsComplete> PortfolioConfigBuilder<S> {
+    /// Validates and builds the [`PortfolioConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`PortfolioConfig::validate`]).
+    pub fn build(self) -> ConfigResult<PortfolioConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
+impl PortfolioConfig {
+    /// Validates the portfolio configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        for (field, value) in [
+            (
+                "min_account_state_logging_interval_ms",
+                self.min_account_state_logging_interval_ms,
+            ),
+            ("snapshot_interval_ms", self.snapshot_interval_ms),
+        ] {
+            if let Some(ms) = value {
+                errors.check(
+                    ms > 0,
+                    ConfigError::range(
+                        field,
+                        format!("must be a positive number of milliseconds, was {ms}"),
+                    ),
+                );
+            }
+        }
+
+        errors.into_result()
+    }
+}
+
 impl Default for PortfolioConfig {
     fn default() -> Self {
-        Self::builder().build()
+        Self::builder()
+            .build()
+            .expect("default `PortfolioConfig` should be valid")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_default_config_is_valid() {
+        assert!(PortfolioConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_zero_min_account_state_logging_interval_rejected() {
+        let result = PortfolioConfig::builder()
+            .min_account_state_logging_interval_ms(0)
+            .build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "min_account_state_logging_interval_ms")
+        );
+    }
+
+    #[rstest]
+    fn test_zero_snapshot_interval_rejected() {
+        let result = PortfolioConfig::builder().snapshot_interval_ms(0).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "snapshot_interval_ms")
+        );
+    }
+
+    #[rstest]
+    fn test_positive_intervals_accepted() {
+        let result = PortfolioConfig::builder()
+            .min_account_state_logging_interval_ms(1_000)
+            .snapshot_interval_ms(5_000)
+            .build();
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_multiple_violations_collected() {
+        let result = PortfolioConfig::builder()
+            .min_account_state_logging_interval_ms(0)
+            .snapshot_interval_ms(0)
+            .build();
+        let ConfigError::Multiple { errors } = result.unwrap_err() else {
+            panic!("expected ConfigError::Multiple");
+        };
+        assert_eq!(errors.len(), 2);
     }
 }

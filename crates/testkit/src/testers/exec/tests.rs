@@ -51,13 +51,14 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_portfolio::portfolio::Portfolio;
+use nautilus_trading::Strategy;
 use rstest::*;
 use rust_decimal::Decimal;
 
 use super::*;
 
-/// Register an ExecTester with all required components.
-/// This gives the tester access to OrderFactory for actual order creation.
+/// Register an `ExecTester` with all required components.
+/// This gives the tester access to `OrderFactory` for actual order creation.
 fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
@@ -169,7 +170,8 @@ fn test_config_with_stop_orders(mut config: ExecTesterConfig) {
 fn test_config_with_batch_cancel() {
     let config = ExecTesterConfig::builder()
         .use_batch_cancel_on_stop(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.use_batch_cancel_on_stop);
 }
 
@@ -213,7 +215,8 @@ fn test_config_with_position_opening(mut config: ExecTesterConfig) {
 fn test_config_with_close_positions_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .close_positions_time_in_force(TimeInForce::Ioc)
-        .build();
+        .build()
+        .unwrap();
 
     assert_eq!(config.close_positions_time_in_force, Some(TimeInForce::Ioc));
 }
@@ -293,20 +296,18 @@ fn test_get_price_offset_single_tick(instrument: InstrumentAny) {
 }
 
 #[rstest]
-fn test_is_order_active_initialized(config: ExecTesterConfig) {
-    let tester = ExecTester::new(config);
+fn test_is_order_active_initialized() {
     let order = create_initialized_limit_order();
 
-    assert!(tester.is_order_active(&order));
+    assert!(ExecTester::is_order_active(&order));
     assert_eq!(order.status(), OrderStatus::Initialized);
 }
 
 #[rstest]
-fn test_get_order_trigger_price_limit_order_returns_none(config: ExecTesterConfig) {
-    let tester = ExecTester::new(config);
+fn test_get_order_trigger_price_limit_order_returns_none() {
     let order = create_initialized_limit_order();
 
-    assert!(tester.get_order_trigger_price(&order).is_none());
+    assert!(ExecTester::get_order_trigger_price(&order).is_none());
 }
 
 #[rstest]
@@ -468,13 +469,13 @@ fn test_on_quote_opens_start_position_when_configured(
 
     let first_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     let result = tester.on_quote(&quote);
     let second_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     assert!(result.is_ok());
@@ -510,7 +511,7 @@ fn test_on_quote_does_not_open_start_position_without_first_quote_flag(
     let result = tester.on_quote(&quote);
     let order_count = tester
         .cache()
-        .orders(None, Some(&instrument_id), None, None, None)
+        .client_order_ids(None, Some(&instrument_id), None, None)
         .len();
 
     assert!(result.is_ok());
@@ -559,7 +560,11 @@ fn test_on_instrument_opens_start_position_immediately_by_default(
     let result = tester.on_instrument(&instrument);
 
     let cache_ref = tester.cache();
-    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    let orders = cache_ref
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .into_iter()
+        .filter_map(|client_order_id| cache_ref.order(&client_order_id))
+        .collect::<Vec<_>>();
     assert!(result.is_ok());
     assert!(tester.open_position_submitted);
     assert_eq!(orders.len(), 1);
@@ -899,7 +904,10 @@ fn test_open_position_zero_quantity_returns_ok(
 
 #[rstest]
 fn test_config_with_enable_brackets() {
-    let config = ExecTesterConfig::builder().enable_brackets(true).build();
+    let config = ExecTesterConfig::builder()
+        .enable_brackets(true)
+        .build()
+        .unwrap();
     assert!(config.enable_brackets);
 }
 
@@ -907,7 +915,8 @@ fn test_config_with_enable_brackets() {
 fn test_config_with_bracket_offset_ticks() {
     let config = ExecTesterConfig::builder()
         .bracket_offset_ticks(1000)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.bracket_offset_ticks, 1000);
 }
 
@@ -915,7 +924,8 @@ fn test_config_with_bracket_offset_ticks() {
 fn test_config_with_test_reject_post_only() {
     let config = ExecTesterConfig::builder()
         .test_reject_post_only(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_reject_post_only);
 }
 
@@ -923,7 +933,8 @@ fn test_config_with_test_reject_post_only() {
 fn test_config_with_test_reject_reduce_only() {
     let config = ExecTesterConfig::builder()
         .test_reject_reduce_only(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_reject_reduce_only);
 }
 
@@ -931,13 +942,17 @@ fn test_config_with_test_reject_reduce_only() {
 fn test_config_with_emulation_trigger() {
     let config = ExecTesterConfig::builder()
         .emulation_trigger(TriggerType::LastPrice)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.emulation_trigger, Some(TriggerType::LastPrice));
 }
 
 #[rstest]
 fn test_config_with_use_quote_quantity() {
-    let config = ExecTesterConfig::builder().use_quote_quantity(true).build();
+    let config = ExecTesterConfig::builder()
+        .use_quote_quantity(true)
+        .build()
+        .unwrap();
     assert!(config.use_quote_quantity);
 }
 
@@ -948,7 +963,8 @@ fn test_config_with_order_params() {
     params.insert("key".to_string(), Value::String("value".to_string()));
     let config = ExecTesterConfig::builder()
         .order_params(params.clone())
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.order_params, Some(params));
 }
 
@@ -1370,7 +1386,11 @@ fn test_open_position_creates_market_order(config: ExecTesterConfig, instrument:
     let result = tester.open_position(Decimal::from(1));
 
     let cache_ref = tester.cache();
-    let orders = cache_ref.orders(None, Some(&instrument_id), None, None, None);
+    let orders = cache_ref
+        .client_order_ids(None, Some(&instrument_id), None, None)
+        .into_iter()
+        .filter_map(|client_order_id| cache_ref.order(&client_order_id))
+        .collect::<Vec<_>>();
     assert!(result.is_ok());
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].order_type(), OrderType::Market);
@@ -1452,7 +1472,8 @@ fn test_config_new_fields_default_values(config: ExecTesterConfig) {
 fn test_config_with_limit_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .limit_time_in_force(TimeInForce::Ioc)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.limit_time_in_force, Some(TimeInForce::Ioc));
 }
 
@@ -1460,7 +1481,8 @@ fn test_config_with_limit_time_in_force_builder() {
 fn test_config_with_stop_time_in_force_builder() {
     let config = ExecTesterConfig::builder()
         .stop_time_in_force(TimeInForce::Day)
-        .build();
+        .build()
+        .unwrap();
     assert_eq!(config.stop_time_in_force, Some(TimeInForce::Day));
 }
 
@@ -1553,7 +1575,10 @@ fn test_config_limit_aggressive_default() {
 
 #[rstest]
 fn test_config_limit_aggressive_builder() {
-    let config = ExecTesterConfig::builder().limit_aggressive(true).build();
+    let config = ExecTesterConfig::builder()
+        .limit_aggressive(true)
+        .build()
+        .unwrap();
     assert!(config.limit_aggressive);
 }
 
@@ -1567,7 +1592,8 @@ fn test_config_test_modify_rejected_default() {
 fn test_config_test_modify_rejected_builder() {
     let config = ExecTesterConfig::builder()
         .test_modify_rejected(true)
-        .build();
+        .build()
+        .unwrap();
     assert!(config.test_modify_rejected);
 }
 
@@ -1974,8 +2000,7 @@ fn test_modify_rejected_one_shot_guard_consumed(
 fn ack_buy_order_in_cache(tester: &ExecTester, cache: &Rc<RefCell<Cache>>) {
     let order = tester
         .buy_order
-        .as_ref()
-        .cloned()
+        .clone()
         .expect("buy order should be tracked locally");
     let cid = order.client_order_id();
     let strategy_id = order.strategy_id();
@@ -2298,7 +2323,7 @@ fn tracked_limit_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
     match side {
         OrderSide::Buy => tester.buy_order.as_ref().expect("buy order should exist"),
         OrderSide::Sell => tester.sell_order.as_ref().expect("sell order should exist"),
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2312,7 +2337,7 @@ fn tracked_stop_order(tester: &ExecTester, side: OrderSide) -> &OrderAny {
             .sell_stop_order
             .as_ref()
             .expect("sell stop order should exist"),
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2320,7 +2345,7 @@ fn cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_cancel_replace_attempted,
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2328,7 +2353,7 @@ fn stop_cancel_replace_attempted(tester: &ExecTester, side: OrderSide) -> bool {
     match side {
         OrderSide::Buy => tester.buy_stop_cancel_replace_attempted,
         OrderSide::Sell => tester.sell_stop_cancel_replace_attempted,
-        _ => panic!("Unsupported order side {side:?}"),
+        OrderSide::NoOrderSide => panic!("Unsupported order side {side:?}"),
     }
 }
 
@@ -2417,10 +2442,9 @@ fn test_collect_cancellable_orders_dedupes_and_skips_pending_cancel(
     ack_order_in_cache(&cache, sell_id, "V-PENDING");
     apply_pending_cancel_in_cache(&cache, sell_id);
 
-    let strategy_id = StrategyId::from(tester.core.actor_id.inner().as_str());
+    let strategy_id = StrategyId::from(tester.actor_id().inner().as_str());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
-    let candidate_ids: Vec<ClientOrderId> =
-        candidates.iter().map(|o| o.client_order_id()).collect();
+    let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 
     assert!(candidate_ids.contains(&buy_id));
     assert!(!candidate_ids.contains(&sell_id));
@@ -2636,7 +2660,7 @@ fn test_batch_submit_limit_pair_flows_through_batch_cancel(
     let messages = saver.get_messages();
     let batch_count = messages
         .iter()
-        .filter(|c| matches!(c, TradingCommand::BatchCancelOrders(_)))
+        .filter(|c| matches!(c, TradingCommand::CancelOrders(_)))
         .count();
     let cancel_count = messages
         .iter()
@@ -2710,7 +2734,7 @@ fn test_collect_cancellable_orders_excludes_contingency_group(
         .expect("bracket order_list_id");
 
     // Plain limit added directly so it lands in cache without an OrderList.
-    let plain = tester.core.order_factory().limit(
+    let plain = tester.order().limit(
         instrument.id(),
         OrderSide::Sell,
         Quantity::from("0.01"),
@@ -2734,10 +2758,9 @@ fn test_collect_cancellable_orders_excludes_contingency_group(
         .add_order(plain, None, None, true)
         .unwrap();
 
-    let strategy_id = StrategyId::from(tester.core.actor_id.inner().as_str());
+    let strategy_id = StrategyId::from(tester.actor_id().inner().as_str());
     let candidates = tester.collect_cancellable_orders(tester.config.instrument_id, strategy_id);
-    let candidate_ids: Vec<ClientOrderId> =
-        candidates.iter().map(|o| o.client_order_id()).collect();
+    let candidate_ids: Vec<ClientOrderId> = candidates.iter().map(Order::client_order_id).collect();
 
     assert!(
         candidate_ids.contains(&plain_id),
@@ -2861,4 +2884,41 @@ fn test_clamp_passes_through_when_instrument_unbounded(mut config: ExecTesterCon
         buy_price < Price::from("0.0"),
         "expected negative pass-through price, was {buy_price}",
     );
+}
+
+#[rstest]
+fn test_on_start_rejects_bypassed_zero_book_interval_ms(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    // A config that reaches the actor without going through `build()`/`validate()`
+    // (serde or a struct-literal mutation) can carry a zero, which the subscribe
+    // path must reject rather than treat as a default depth/interval.
+    config.instrument_id = instrument.id();
+    config.subscribe_book = true;
+    config.book_interval_ms = 0;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = DataActor::on_start(&mut tester);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("book_interval_ms"));
+}
+
+#[rstest]
+fn test_on_start_rejects_bypassed_zero_book_depth(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    config.instrument_id = instrument.id();
+    config.subscribe_book = true;
+    config.book_depth = Some(0);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache);
+
+    let result = DataActor::on_start(&mut tester);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("book_depth"));
 }

@@ -39,6 +39,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     backoff::ExponentialBackoff,
+    http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, PingHandler, SubscriptionState, TransportBackend, WebSocketClient,
@@ -596,7 +597,11 @@ impl BybitWebSocketClient {
 
                         // Forward to out_tx so caller sees the Reconnected message
                         if out_tx.send(BybitWsMessage::Reconnected).is_err() {
-                            log::debug!("Receiver dropped, stopping");
+                            if handler.is_stopped() {
+                                log::debug!("Receiver dropped, stopping");
+                            } else {
+                                log::error!("Receiver dropped, stopping");
+                            }
                             break;
                         }
                     }
@@ -608,13 +613,21 @@ impl BybitWebSocketClient {
                         }
 
                         if out_tx.send(BybitWsMessage::Auth(auth.clone())).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }
@@ -1878,7 +1891,7 @@ impl BybitWebSocketClient {
     fn default_headers() -> Vec<(String, String)> {
         vec![
             ("Content-Type".to_string(), "application/json".to_string()),
-            ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
+            (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
         ]
     }
 

@@ -444,7 +444,7 @@ pub fn parse_ws_order_status_report(
         .transpose()
         .context("Failed to parse cum_qty")?
         .or(last_qty)
-        .unwrap_or_else(|| Quantity::new(0.0, size_precision));
+        .unwrap_or_else(|| Quantity::zero(size_precision));
 
     let quantity = exec
         .order_qty
@@ -588,10 +588,10 @@ pub fn parse_ws_fill_report(
             let currency = Currency::get_or_create_crypto(&fee.asset);
             Money::new(fee.qty.abs(), currency)
         } else {
-            Money::new(0.0, instrument.quote_currency())
+            Money::zero(instrument.quote_currency())
         }
     } else {
-        Money::new(0.0, instrument.quote_currency())
+        Money::zero(instrument.quote_currency())
     };
 
     let ts_event = datetime_to_nanos(exec.timestamp, "execution.timestamp")?;
@@ -686,6 +686,7 @@ mod tests {
             8, // size_precision
             Price::from("0.1"),
             Quantity::from("0.00000001"),
+            None,
             None,
             None,
             None,

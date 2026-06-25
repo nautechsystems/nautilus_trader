@@ -15,13 +15,11 @@
 
 //! Provides a `Cache` database backing.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
+use std::fmt::Debug;
 
 use ahash::AHashMap;
 use bytes::Bytes;
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
@@ -31,16 +29,17 @@ use nautilus_model::{
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
-        VenueOrderId,
+        TraderId, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     orders::OrderAny,
     position::Position,
-    types::Currency,
+    types::{Currency, Money},
 };
 use ustr::Ustr;
 
+use super::config::CacheConfig;
 use crate::signal::Signal;
 
 #[derive(Debug, Default)]
@@ -53,6 +52,25 @@ pub struct CacheMap {
     pub positions: AHashMap<PositionId, Position>,
     pub greeks: AHashMap<InstrumentId, GreeksData>,
     pub yield_curves: AHashMap<String, YieldCurveData>,
+}
+
+/// Factory for constructing cache database adapters at runtime.
+///
+/// Implementations own the concrete database configuration and return the transport-neutral
+/// [`CacheDatabaseAdapter`] surface used by the cache.
+#[async_trait::async_trait]
+pub trait CacheDatabaseFactory: Debug + Send + Sync {
+    /// Creates a cache database adapter for the given cache runtime.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adapter construction or connection setup fails.
+    async fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: CacheConfig,
+    ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>>;
 }
 
 #[async_trait::async_trait]
@@ -150,7 +168,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if loading the index order-position mapping fails.
-    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>>;
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>>;
 
     /// Loads mapping from order IDs to client IDs.
     ///
@@ -404,7 +422,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if adding greeks data fails.
-    fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
+    fn add_greeks(&self, _greeks: &GreeksData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -413,7 +431,7 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if adding yield curve data fails.
-    fn add_yield_curve(&self, yield_curve: &YieldCurveData) -> anyhow::Result<()> {
+    fn add_yield_curve(&self, _yield_curve: &YieldCurveData) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -479,14 +497,22 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if updating actor state fails.
-    fn update_actor(&self) -> anyhow::Result<()>;
+    fn update_actor(
+        &self,
+        component_id: &ComponentId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()>;
 
     /// Updates strategy state in the cache.
     ///
     /// # Errors
     ///
     /// Returns an error if updating strategy state fails.
-    fn update_strategy(&self) -> anyhow::Result<()>;
+    fn update_strategy(
+        &self,
+        strategy_id: &StrategyId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()>;
 
     /// Updates an account in the cache.
     ///
@@ -521,7 +547,12 @@ pub trait CacheDatabaseAdapter {
     /// # Errors
     ///
     /// Returns an error if snapshotting position state fails.
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()>;
+    fn snapshot_position_state(
+        &self,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()>;
 
     /// Records a heartbeat timestamp.
     ///

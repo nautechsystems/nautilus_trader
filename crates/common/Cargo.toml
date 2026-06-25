@@ -43,7 +43,12 @@ live = ["tokio"]
 simulation = ["live", "madsim", "nautilus-core/simulation"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
 high-precision = ["nautilus-model/high-precision"]
-capnp = ["nautilus-serialization/capnp"]
+capnp = [
+  "dep:capnp",
+  "dep:nautilus-serialization",
+  "nautilus-serialization/capnp",
+]
+sbe = ["dep:nautilus-serialization", "nautilus-serialization/sbe"]
 tracing-bridge = ["tracing", "tracing-subscriber"]
 
 [package.metadata.cargo-machete]
@@ -63,7 +68,6 @@ nautilus-serialization = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-arraydeque = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
@@ -75,15 +79,18 @@ indexmap = { workspace = true }
 itoa = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
+rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 smallvec = { workspace = true }
 strum = { workspace = true }
 sysinfo = { workspace = true }
+thiserror = { workspace = true }
 ustr = { workspace = true }
 
 alloy-primitives = { workspace = true, optional = true }
+capnp = { workspace = true, optional = true }
 madsim = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }
@@ -93,7 +100,6 @@ tracing = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true }
 
 [dev-dependencies]
-capnp = { workspace = true }
 criterion = { workspace = true }
 futures = { workspace = true, features = ["executor"] }
 iai = { workspace = true }

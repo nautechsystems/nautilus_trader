@@ -7,13 +7,17 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, str::FromStr};
 
 use ibapi::{
-    contracts::{Contract, Currency as IBCurrency, Exchange, SecurityType, Symbol as IBSymbol},
+    contracts::{
+        Contract, Currency as IBCurrency, Exchange, LegAction, OptionRight, SecurityType,
+        Symbol as IBSymbol,
+    },
     orders::{
-        CommissionReport, Execution, ExecutionData, Liquidity, Order as IBOrder,
-        OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus, OrderUpdate,
+        CommissionReport, Execution, ExecutionData, ExecutionSide, Liquidity, Order as IBOrder,
+        OrderData as IBOrderData, OrderState, OrderStatus as IBOrderStatus, OrderStatusKind,
+        OrderUpdate,
     },
     subscriptions::Subscription,
 };
@@ -21,6 +25,7 @@ use nautilus_common::{cache::Cache, live::runner::replace_exec_event_sender};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     enums::{AccountType, AssetClass, LiquiditySide, OmsType, OrderSide, OrderType},
+    events::OrderInitialized,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         Venue, VenueOrderId,
@@ -146,7 +151,7 @@ fn ib_order_selector_parses_perm_venue_order_id() {
 }
 
 #[rstest]
-fn submit_order_rejects_when_client_not_ready() {
+fn submit_order_denies_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = SubmitOrder::from_order(
@@ -161,19 +166,19 @@ fn submit_order_rejects_when_client_not_ready() {
     client.submit_order(cmd).unwrap();
 
     match next_order_event(&mut rx) {
-        OrderEventAny::Rejected(event) => {
+        OrderEventAny::Denied(event) => {
             assert_eq!(event.client_order_id, order.client_order_id());
             assert_eq!(
                 event.reason.to_string(),
                 "Interactive Brokers client is not ready; refusing to submit order"
             );
         }
-        event => panic!("Expected OrderRejected, was {event:?}"),
+        event => panic!("Expected OrderDenied, was {event:?}"),
     }
 }
 
 #[rstest]
-fn submit_order_list_rejects_all_orders_when_client_not_ready() {
+fn submit_order_list_denies_all_orders_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order1 = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let order2 = create_test_limit_order(ClientOrderId::from("O-IB-002"));
@@ -205,20 +210,20 @@ fn submit_order_list_rejects_all_orders_when_client_not_ready() {
 
     for expected_client_order_id in [order1.client_order_id(), order2.client_order_id()] {
         match next_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, expected_client_order_id);
                 assert_eq!(
                     event.reason.to_string(),
                     "Interactive Brokers client is not ready; refusing to submit order list"
                 );
             }
-            event => panic!("Expected OrderRejected, was {event:?}"),
+            event => panic!("Expected OrderDenied, was {event:?}"),
         }
     }
 }
 
 #[rstest]
-fn modify_order_rejects_when_client_not_ready() {
+fn modify_order_emits_no_event_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = ModifyOrder::new(
@@ -239,21 +244,12 @@ fn modify_order_rejects_when_client_not_ready() {
 
     client.modify_order(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::ModifyRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to modify order"
-            );
-        }
-        event => panic!("Expected OrderModifyRejected, was {event:?}"),
-    }
+    // Local validation failure: no rejection event, awaiting in-flight resolution
+    assert!(rx.try_recv().is_err(), "expected no event");
 }
 
 #[rstest]
-fn cancel_order_rejects_when_client_not_ready() {
+fn cancel_order_emits_no_event_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let cmd = CancelOrder::new(
@@ -271,21 +267,12 @@ fn cancel_order_rejects_when_client_not_ready() {
 
     client.cancel_order(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::CancelRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to cancel order"
-            );
-        }
-        event => panic!("Expected OrderCancelRejected, was {event:?}"),
-    }
+    // Local validation failure: no rejection event, awaiting in-flight resolution
+    assert!(rx.try_recv().is_err(), "expected no event");
 }
 
 #[rstest]
-fn cancel_all_orders_rejects_open_orders_when_client_not_ready() {
+fn cancel_all_orders_emits_no_events_when_client_not_ready() {
     let (client, mut rx, cache) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let accepted = OrderEventAny::Accepted(OrderAccepted::new(
@@ -321,16 +308,8 @@ fn cancel_all_orders_rejects_open_orders_when_client_not_ready() {
 
     client.cancel_all_orders(cmd).unwrap();
 
-    match next_order_event(&mut rx) {
-        OrderEventAny::CancelRejected(event) => {
-            assert_eq!(event.client_order_id, order.client_order_id());
-            assert_eq!(
-                event.reason.to_string(),
-                "Interactive Brokers client is not ready; refusing to cancel orders"
-            );
-        }
-        event => panic!("Expected OrderCancelRejected, was {event:?}"),
-    }
+    // A whole-request local failure must not become one rejection per order
+    assert!(rx.try_recv().is_err(), "expected no events");
 }
 
 fn create_test_execution_data(
@@ -346,7 +325,7 @@ fn create_test_execution_data(
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -360,7 +339,11 @@ fn create_test_execution_data(
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: side.to_string(),
+        side: if side == "BOT" {
+            ExecutionSide::Bought
+        } else {
+            ExecutionSide::Sold
+        },
         shares,
         price,
         perm_id: 0,
@@ -404,7 +387,7 @@ fn create_test_stock_execution_data(
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: String::from("BOT"),
+        side: ExecutionSide::Bought,
         shares: 10.0,
         price: 150.25,
         perm_id: 0,
@@ -441,7 +424,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
             ibapi::contracts::ComboLeg {
                 contract_id: 12345,
                 ratio: 1,
-                action: String::from("BUY"),
+                action: LegAction::Buy,
                 exchange: String::from("SMART"),
                 open_close: ibapi::contracts::ComboLegOpenClose::Same,
                 short_sale_slot: 0,
@@ -451,7 +434,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
             ibapi::contracts::ComboLeg {
                 contract_id: 67890,
                 ratio: 1,
-                action: String::from("SELL"),
+                action: LegAction::Sell,
                 exchange: String::from("SMART"),
                 open_close: ibapi::contracts::ComboLegOpenClose::Same,
                 short_sale_slot: 0,
@@ -466,7 +449,7 @@ fn create_test_bag_execution_data(order_id: i32, execution_id: &str) -> Executio
         execution_id: execution_id.to_string(),
         order_id,
         time: String::from("20250101 08:00:00"),
-        side: String::from("BOT"),
+        side: ExecutionSide::Bought,
         shares: 1.0,
         price: 1.25,
         perm_id: 0,
@@ -537,6 +520,7 @@ fn create_test_option_spread() -> OptionSpread {
         None,
         None,
         None,
+        None,
         UnixNanos::new(0),
         UnixNanos::new(0),
     )
@@ -545,16 +529,16 @@ fn create_test_option_spread() -> OptionSpread {
 fn create_test_order_status(order_id: i32, status: &str) -> IBOrderStatus {
     IBOrderStatus {
         order_id,
-        status: status.to_string(),
+        status: OrderStatusKind::from_str(status).unwrap(),
         filled: 0.0,
         remaining: 0.0,
-        average_fill_price: 0.0,
+        average_fill_price: Some(0.0),
         perm_id: 0,
         parent_id: 0,
-        last_fill_price: 0.0,
+        last_fill_price: Some(0.0),
         client_id: 0,
         why_held: String::new(),
-        market_cap_price: 0.0,
+        market_cap_price: Some(0.0),
     }
 }
 
@@ -574,7 +558,7 @@ fn create_test_open_order(order_id: i32, status: &str, order_ref: &str) -> IBOrd
             ..Default::default()
         },
         order_state: OrderState {
-            status: status.to_string(),
+            status: OrderStatusKind::from_str(status).unwrap(),
             ..Default::default()
         },
     }
@@ -641,7 +625,7 @@ async fn test_get_leg_instrument_id_and_ratio() {
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -650,7 +634,7 @@ async fn test_get_leg_instrument_id_and_ratio() {
         combo_legs: vec![ibapi::contracts::ComboLeg {
             contract_id: 12345,
             ratio: 1,
-            action: String::from("BUY"),
+            action: LegAction::Buy,
             exchange: String::from("SMART"),
             open_close: ibapi::contracts::ComboLegOpenClose::Same,
             short_sale_slot: 0,
@@ -683,7 +667,7 @@ async fn test_get_leg_instrument_id_and_ratio_with_sell_action() {
         security_type: SecurityType::Option,
         last_trade_date_or_contract_month: String::from("20250101"),
         strike: 400.0,
-        right: String::from("C"),
+        right: Some(OptionRight::Call),
         multiplier: String::from("100"),
         exchange: Exchange::from("SMART"),
         currency: IBCurrency::from("USD"),
@@ -692,7 +676,7 @@ async fn test_get_leg_instrument_id_and_ratio_with_sell_action() {
         combo_legs: vec![ibapi::contracts::ComboLeg {
             contract_id: 12345,
             ratio: 2,
-            action: String::from("SELL"),
+            action: LegAction::Sell,
             exchange: String::from("SMART"),
             open_close: ibapi::contracts::ComboLegOpenClose::Same,
             short_sale_slot: 0,

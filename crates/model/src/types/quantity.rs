@@ -349,11 +349,11 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// Panics if a correctness check fails. See [`Quantity::new_checked`] for more details.
+    /// Panics if `precision` exceeds the maximum allowed by [`check_fixed_precision`].
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect_display(FAILED);
-        Self::new(0.0, precision)
+        Self { raw: 0, precision }
     }
 
     /// Returns `true` if the value of this instance is undefined.
@@ -881,8 +881,7 @@ impl<'de> Deserialize<'de> for Quantity {
         D: Deserializer<'de>,
     {
         let qty_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
-        let qty: Self = qty_str.as_ref().into();
-        Ok(qty)
+        Self::from_str(qty_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
 
@@ -1619,6 +1618,26 @@ mod tests {
         let deserialized: Quantity = serde_json::from_value(value).unwrap();
         assert_eq!(deserialized, original);
         assert_eq!(deserialized.precision, 3);
+    }
+
+    #[rstest]
+    fn test_quantity_deserialize_invalid_string_returns_error() {
+        let result = serde_json::from_str::<Quantity>("\"not-a-quantity\"");
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("Error parsing"),
+            "unexpected message: {error}"
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_deserialize_negative_returns_error() {
+        let result = serde_json::from_str::<Quantity>("\"-1.5\"");
+        let error = result.unwrap_err();
+        assert!(
+            error.to_string().contains("negative"),
+            "unexpected message: {error}"
+        );
     }
 
     #[rstest]

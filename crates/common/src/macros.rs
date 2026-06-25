@@ -15,13 +15,22 @@
 
 //! Convenience macros for implementing actor boilerplate.
 
-/// Implements `Deref<Target = DataActorCore>` and `DerefMut` for an actor type.
+/// Wires an actor type's core field into the native runtime contract.
 ///
-/// The struct must contain a field that dereferences to
-/// [`DataActorCore`](crate::actor::DataActorCore), either directly or through
-/// an intermediate type (e.g. `ExecutionAlgorithmCore`).
+/// The struct must contain a field that provides a
+/// [`DataActorCore`](crate::actor::DataActorCore) reference, either directly or
+/// by deref coercion through an intermediate core type (e.g. `ExecutionAlgorithmCore`).
 /// By default the macro expects the field to be named `core`; pass a second argument
 /// to use a different name.
+///
+/// The generated native access implementation is runtime wiring. Normal actor code
+/// should use [`DataActor`](crate::actor::DataActor) facade methods such as
+/// `actor_id()`, `trader_id()`, `config()`, `clock()`, `cache()`, and the
+/// subscription methods.
+///
+/// This macro only wires the data actor core. Components with a wider native
+/// core, such as execution algorithms, keep their component-specific core
+/// access behind their own native trait.
 ///
 /// # Examples
 ///
@@ -52,16 +61,12 @@ macro_rules! nautilus_actor {
         $crate::nautilus_actor!($ty, core);
     };
     ($ty:ty, $field:ident) => {
-        impl ::std::ops::Deref for $ty {
-            type Target = $crate::actor::DataActorCore;
-
-            fn deref(&self) -> &Self::Target {
+        impl $crate::actor::DataActorNative for $ty {
+            fn core(&self) -> &$crate::actor::DataActorCore {
                 &self.$field
             }
-        }
 
-        impl ::std::ops::DerefMut for $ty {
-            fn deref_mut(&mut self) -> &mut Self::Target {
+            fn core_mut(&mut self) -> &mut $crate::actor::DataActorCore {
                 &mut self.$field
             }
         }

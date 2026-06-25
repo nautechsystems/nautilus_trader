@@ -30,6 +30,7 @@ use crate::{
         parse_level_filter_str,
         writer::FileWriterConfig,
     },
+    python::config_error_to_pyvalue_err,
 };
 
 #[pymethods]
@@ -50,7 +51,10 @@ impl LoggerConfig {
         fileout_sync_on_flush=None,
         buffered_stdout=None,
     ))]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "PyO3 constructor mirrors LoggerConfig keyword arguments"
+    )]
     fn py_new(
         stdout_level: Option<LogLevel>,
         fileout_level: Option<LogLevel>,
@@ -80,6 +84,7 @@ impl LoggerConfig {
         );
         config.fileout_sync_on_flush = fileout_sync_on_flush.unwrap_or(true);
         config.buffered_stdout = buffered_stdout.unwrap_or(false);
+        config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
     }
 
@@ -155,6 +160,9 @@ pub fn py_init_logging(
     let component_levels = parse_component_levels(component_levels).map_err(to_pyvalue_err)?;
 
     let file_config = FileWriterConfig::new(directory, file_name, file_format, file_rotate);
+    file_config
+        .validate()
+        .map_err(config_error_to_pyvalue_err)?;
 
     let mut config = LoggerConfig::new(
         map_log_level_to_filter(level_stdout),

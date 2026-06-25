@@ -437,6 +437,21 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_option_greeks))
 
+    cpdef bint is_subscribed_order_book_deltas(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return instrument_id in self._subscriptions_order_book_delta
+
+    cpdef bint is_subscribed_quote_ticks(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return instrument_id in self._subscriptions_quote_tick
+
+    cpdef bint is_subscribed_trade_ticks(self, InstrumentId instrument_id):
+        Condition.not_none(instrument_id, "instrument_id")
+
+        return instrument_id in self._subscriptions_trade_tick
+
     cpdef void subscribe(self, SubscribeData command):
         """
         Subscribe to data for the given data type.

@@ -29,7 +29,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
-    cache::quote::QuoteCache,
+    cache::{InstrumentLookupError, quote::QuoteCache},
     clients::DataClient,
     live::{get_runtime, runner::get_data_event_sender},
     messages::{
@@ -490,7 +490,7 @@ impl DeriveDataClient {
         }
 
         if !found {
-            anyhow::bail!("Derive instrument {instrument_id} not found");
+            anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
         }
 
         Ok(())
@@ -1109,9 +1109,10 @@ impl DataClient for DeriveDataClient {
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
         // No historical quote endpoint; `public/get_tickers` is a current snapshot.
         let instrument_id = request.instrument_id;
-        let instrument = self.instruments.get_cloned(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Derive instrument {instrument_id} not found in cache")
-        })?;
+        let instrument = self
+            .instruments
+            .get_cloned(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
@@ -1179,9 +1180,10 @@ impl DataClient for DeriveDataClient {
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let instrument_id = request.instrument_id;
-        let instrument = self.instruments.get_cloned(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Derive instrument {instrument_id} not found in cache")
-        })?;
+        let instrument = self
+            .instruments
+            .get_cloned(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
@@ -1279,9 +1281,10 @@ impl DataClient for DeriveDataClient {
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
         let instrument_id = request.instrument_id;
-        let instrument = self.instruments.get_cloned(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Derive instrument {instrument_id} not found in cache")
-        })?;
+        let instrument = self
+            .instruments
+            .get_cloned(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoPerpetual(_)),
             "Funding rates are only available for Derive perpetual instruments (got {instrument_id})",
@@ -1368,9 +1371,10 @@ impl DataClient for DeriveDataClient {
         );
 
         let instrument_id = bar_type.instrument_id();
-        let instrument = self.instruments.get_cloned(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Derive instrument {instrument_id} not found in cache")
-        })?;
+        let instrument = self
+            .instruments
+            .get_cloned(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
@@ -1535,9 +1539,10 @@ impl DataClient for DeriveDataClient {
                 "Derive request_forward_prices requires an `instrument_id`; bulk fetch is not supported",
             );
         };
-        let instrument = self.instruments.get_cloned(&instrument_id).ok_or_else(|| {
-            anyhow::anyhow!("Derive instrument {instrument_id} not found in cache")
-        })?;
+        let instrument = self
+            .instruments
+            .get_cloned(&instrument_id)
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         anyhow::ensure!(
             matches!(instrument, InstrumentAny::CryptoOption(_)),
             "Derive forward prices are only meaningful for options (got {instrument_id})",

@@ -62,7 +62,7 @@ impl OrderBookDeltas {
     ///
     /// # Panics
     ///
-    /// Panics if `deltas` is empty and correctness check fails.
+    /// Panics if `deltas` is empty.
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
         Self::new_checked(instrument_id, deltas).expect(FAILED)
@@ -70,15 +70,17 @@ impl OrderBookDeltas {
 
     /// Creates a new [`OrderBookDeltas`] instance with correctness checking.
     ///
-    /// # Notes
-    ///
-    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    /// Creates a new [`OrderBookDeltas`] instance with correctness checking.
-    ///
     /// # Errors
     ///
     /// Returns an error if `deltas` is empty.
-    #[expect(clippy::missing_panics_doc)] // Guarded by predicate check above
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "the unwrapped last element is guarded by the non-empty check"
+    )]
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

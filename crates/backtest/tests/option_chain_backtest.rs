@@ -102,6 +102,7 @@ fn make_btc_option(strike: &str, kind: OptionKind) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     ))
@@ -115,6 +116,7 @@ fn deribit_venue_config() -> BacktestVenueConfig {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec!["10 BTC".to_string()])
         .build()
+        .unwrap()
 }
 
 fn series_id() -> OptionSeriesId {
@@ -226,29 +228,22 @@ fn build_catalog() -> (
     // metadata), so each instrument must be written separately or the put rows would be relabelled
     // as calls. Per-instrument batches stay ascending in `ts_init` and land in disjoint directories.
     for id in [call_id, put_id] {
+        let quotes_for_instrument = quotes
+            .iter()
+            .filter(|q| q.instrument_id == id)
+            .copied()
+            .collect::<Vec<_>>();
         catalog
-            .write_to_parquet(
-                quotes
-                    .iter()
-                    .filter(|q| q.instrument_id == id)
-                    .copied()
-                    .collect(),
-                None,
-                None,
-                None,
-            )
+            .write_to_parquet(&quotes_for_instrument, None, None, None)
             .unwrap();
+
+        let greeks_for_instrument = greeks
+            .iter()
+            .filter(|g| g.instrument_id == id)
+            .copied()
+            .collect::<Vec<_>>();
         catalog
-            .write_to_parquet(
-                greeks
-                    .iter()
-                    .filter(|g| g.instrument_id == id)
-                    .copied()
-                    .collect(),
-                None,
-                None,
-                None,
-            )
+            .write_to_parquet(&greeks_for_instrument, None, None, None)
             .unwrap();
     }
 
@@ -319,18 +314,21 @@ fn run_chain_backtest(
         .data_type(NautilusDataType::QuoteTick)
         .catalog_path(catalog_path.to_string())
         .instrument_ids(instrument_ids.clone())
-        .build();
+        .build()
+        .unwrap();
     let greeks_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OptionGreeks)
         .catalog_path(catalog_path.to_string())
         .instrument_ids(instrument_ids)
-        .build();
+        .build()
+        .unwrap();
 
     let config = BacktestRunConfig::builder()
         .venues(vec![deribit_venue_config()])
         .data(vec![quote_data, greeks_data])
         .maybe_chunk_size(chunk_size)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();

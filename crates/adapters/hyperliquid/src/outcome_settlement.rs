@@ -130,7 +130,7 @@ pub fn build_settlement_fills(
         let instrument_id = match outcome_asset_id_to_instrument_id(asset_id) {
             Ok(id) => id,
             Err(e) => {
-                log::error!("Outcome settlement skipped, instrument id resolution failed: {e}",);
+                log::warn!("Outcome settlement skipped, instrument id resolution failed: {e}",);
                 continue;
             }
         };

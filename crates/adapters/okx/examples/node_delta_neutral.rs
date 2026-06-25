@@ -29,20 +29,25 @@
 //! The strategy uses `px_vol` to price option orders by implied volatility,
 //! which the OKX adapter translates to the `pxVol` API field.
 //!
-//! Configuration defaults:
-//! - Target deltas: +0.20 (call), -0.20 (put)
-//! - 1 contract per leg
-//! - Rehedge when portfolio delta exceeds 0.5
-//! - Rehedge check every 30 seconds
-//! - Entry disabled by default (set `enter_strangle` to enable live orders)
+//! Edit the constants below to change the environment, option family, hedge
+//! instrument, target deltas, contracts, and hedging behavior. Entry is
+//! disabled by default (`ENTER_STRANGLE`).
 //!
 //! Run with: `cargo run --example okx-delta-neutral --package nautilus-okx --features examples`
+//!
+//! Required credential environment variables:
+//! - `OKX_API_KEY`.
+//! - `OKX_API_SECRET`.
+//! - `OKX_API_PASSPHRASE`.
 
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use nautilus_okx::{
-    common::{consts::OKX_CLIENT_ID, enums::OKXInstrumentType},
+    common::{
+        consts::OKX_CLIENT_ID,
+        enums::{OKXEnvironment, OKXInstrumentType},
+    },
     config::{OKXDataClientConfig, OKXExecClientConfig},
     factories::{OKXDataClientFactory, OKXExecutionClientFactory},
 };
@@ -50,21 +55,40 @@ use nautilus_trading::examples::strategies::delta_neutral_vol::{
     DeltaNeutralVol, DeltaNeutralVolConfig,
 };
 
+const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "OKX-001";
+const NODE_NAME: &str = "OKX-DELTA-NEUTRAL-001";
+
+const OPTION_FAMILY: &str = "BTC";
+const INSTRUMENT_FAMILY: &str = "BTC-USD";
+const HEDGE_INSTRUMENT_ID: &str = "BTC-USD-SWAP.OKX";
+
+const ENTER_STRANGLE: bool = false;
+const TARGET_CALL_DELTA: f64 = 0.20;
+const TARGET_PUT_DELTA: f64 = -0.20;
+const CONTRACTS: u64 = 1;
+const REHEDGE_DELTA_THRESHOLD: f64 = 0.5;
+const REHEDGE_INTERVAL_SECS: u64 = 30;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("OKX-001");
+    let okx_environment = OKX_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
     let client_id = *OKX_CLIENT_ID;
+    let hedge_instrument_id = InstrumentId::from(HEDGE_INSTRUMENT_ID);
 
     let data_config = OKXDataClientConfig {
         api_key: None,        // Will use 'OKX_API_KEY' env var
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Option, OKXInstrumentType::Swap],
-        instrument_families: Some(vec!["BTC-USD".to_string()]),
+        instrument_families: Some(vec![INSTRUMENT_FAMILY.to_string()]),
+        environment: okx_environment,
         ..Default::default()
     };
 
@@ -75,21 +99,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Option, OKXInstrumentType::Swap],
-        instrument_families: Some(vec!["BTC-USD".to_string()]),
+        instrument_families: Some(vec![INSTRUMENT_FAMILY.to_string()]),
+        environment: okx_environment,
         ..Default::default()
     };
 
     let data_factory = OKXDataClientFactory::new();
     let exec_factory = OKXExecutionClientFactory::new();
 
-    let hedge_instrument_id = InstrumentId::from("BTC-USD-SWAP.OKX");
-
-    let mut strategy_config =
-        DeltaNeutralVolConfig::new("BTC".to_string(), hedge_instrument_id, client_id)
-            .with_contracts(1)
-            .with_rehedge_delta_threshold(0.5)
-            .with_rehedge_interval_secs(30)
-            .with_enter_strangle(false);
+    let mut strategy_config = DeltaNeutralVolConfig::builder()
+        .option_family(OPTION_FAMILY.to_string())
+        .hedge_instrument_id(hedge_instrument_id)
+        .client_id(client_id)
+        .target_call_delta(TARGET_CALL_DELTA)
+        .target_put_delta(TARGET_PUT_DELTA)
+        .contracts(CONTRACTS)
+        .rehedge_delta_threshold(REHEDGE_DELTA_THRESHOLD)
+        .rehedge_interval_secs(REHEDGE_INTERVAL_SECS)
+        .enter_strangle(ENTER_STRANGLE)
+        .build();
 
     // OKX forbids hyphens in client order IDs
     strategy_config.base.use_hyphens_in_client_order_ids = false;
@@ -97,7 +125,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let strategy = DeltaNeutralVol::new(strategy_config);
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name("OKX-DELTA-NEUTRAL-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(data_factory), Box::new(data_config))?
         .add_exec_client(None, Box::new(exec_factory), Box::new(exec_config))?
         .with_reconciliation(true)

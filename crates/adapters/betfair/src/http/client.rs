@@ -525,7 +525,7 @@ impl BetfairHttpClient {
                     Err(_) => {
                         let error_body = String::from_utf8_lossy(&resp.body);
                         let preview: String = error_body.chars().take(500).collect();
-                        log::error!(
+                        log::warn!(
                             "Non-JSON response: method={method}, status={}, body={}",
                             resp.status.as_u16(),
                             preview,
@@ -539,7 +539,7 @@ impl BetfairHttpClient {
 
                 let rpc_resp: JsonRpcResponse<T> =
                     serde_json::from_value(json_value).map_err(|e| {
-                        log::error!(
+                        log::warn!(
                             "Failed to deserialize JSON-RPC response: method={method}, error={e}",
                         );
                         BetfairHttpError::JsonError(e.to_string())
@@ -579,7 +579,8 @@ impl BetfairHttpClient {
             .expect(MUTEX_POISONED)
             .clone();
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry_with_cancel(
                 &operation_id,
                 operation,
@@ -587,7 +588,15 @@ impl BetfairHttpClient {
                 create_error,
                 &token,
             )
-            .await
+            .await;
+
+        if let Err(ref e) = result
+            && e.is_retryable()
+        {
+            log::error!("Request exhausted retries: method={method}, error={e}");
+        }
+
+        result
     }
 }
 

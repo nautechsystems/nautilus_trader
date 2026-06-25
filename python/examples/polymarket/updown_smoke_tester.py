@@ -107,7 +107,7 @@ def main() -> None:
     live_orders = not args.dry_run
 
     if instrument_id is not None and args.data_only:
-        node.add_native_actor(
+        node.add_builtin_actor(
             "DataTester",
             DataTesterConfig(
                 client_id=ClientId.from_str(POLYMARKET),
@@ -119,7 +119,7 @@ def main() -> None:
             ),
         )
     elif instrument_id is not None:
-        node.add_native_strategy(
+        node.add_builtin_strategy(
             "ExecTester",
             ExecTesterConfig(
                 strategy_id=StrategyId.from_str("UPDOWN_SMOKE-001"),

@@ -27,8 +27,6 @@ ignore = [
   { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile unmaintained, transitive via nautilus-network (not a vulnerability)" },
 
   # unic-* unmaintained, transitive via pyo3-stub-gen -> rustpython-parser (dev tool only).
-  # Upstream advisory-db duplicates each entry under both a specific RUSTSEC-2025-* ID and an
-  # umbrella RUSTSEC-0000-0000 entry; cargo-deny matches whichever it sees first, so ignore both.
   # TODO: Monitor https://github.com/Jij-Inc/pyo3-stub-gen for migration away from rustpython-parser
   { id = "RUSTSEC-2025-0075", reason = "unic-char-range unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0080", reason = "unic-common unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
@@ -36,7 +34,6 @@ ignore = [
   { id = "RUSTSEC-2025-0090", reason = "unic-emoji-char unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0098", reason = "unic-ucd-version unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
   { id = "RUSTSEC-2025-0100", reason = "unic-ucd-ident unmaintained, transitive via pyo3-stub-gen (dev tool only)" },
-  { id = "RUSTSEC-0000-0000", reason = "umbrella ID for unic-* unmaintained announcement (rustsec/advisory-db#2414)" },
 
   # bincode 1.3.3 unmaintained, transitive via hypersync-client. Not a vulnerability.
   # TODO: Monitor https://github.com/enviodev/hypersync-client-rust for migration
@@ -190,9 +187,6 @@ skip = [
   { crate = "arrow-string" },
   { crate = "parquet" },
 
-  # Redox OS syscall - parking_lot (0.5.x) vs sqlx-postgres/whoami (0.7.x)
-  { crate = "redox_syscall" },
-
   # Common utility crates with version fragmentation across ecosystem
   { crate = "hashbrown" },
   { crate = "itertools" },
@@ -216,8 +210,9 @@ skip = [
   { crate = "reqwest" },
   { crate = "wasm-streams" },
 
-  # WASI bindings - getrandom pulls distinct wit-bindgen generations via wasip2/wasip3
-  { crate = "wit-bindgen" },
+  # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
+  { crate = "prost" },
+  { crate = "prost-derive" },
 
   # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.25.0
   { crate = "capnp" },
@@ -232,14 +227,6 @@ skip = [
 
   # Windows platform crates - notoriously fragmented across Windows SDK versions
   { crate = "windows-sys" },
-  { crate = "windows-targets" },
-  { crate = "windows_aarch64_gnullvm" },
-  { crate = "windows_aarch64_msvc" },
-  { crate = "windows_i686_gnu" },
-  { crate = "windows_i686_msvc" },
-  { crate = "windows_x86_64_gnu" },
-  { crate = "windows_x86_64_gnullvm" },
-  { crate = "windows_x86_64_msvc" },
 ]
 
 skip-tree = []
@@ -253,12 +240,6 @@ unknown-registry = "deny"
 unknown-git = "deny"
 
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# `pornin/ecgfp5` is the upstream MIT-licensed Rust reference implementation
-# of the curve and field underpinning the Lighter L2 signer. Pulled in as a
-# `#[cfg(test)]` dev-dep (zero transitive deps; pinned by commit) for the
-# Lighter signing module's differential proptest and fuzz parity layer; never
-# linked into the production binary.
-allow-git = ["https://github.com/pornin/ecgfp5"]
 
 [sources.allow-org]
 github = []

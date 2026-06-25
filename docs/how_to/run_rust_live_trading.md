@@ -15,11 +15,11 @@ Add the live crate, your venue adapter, and supporting crates to
 
 ```toml
 [dependencies]
-nautilus-common = "0.55"
-nautilus-live = "0.55"
-nautilus-model = "0.55"
-nautilus-okx = "0.55"
-nautilus-trading = { version = "0.55", features = ["examples"] }
+nautilus-common = "0.59"
+nautilus-live = "0.59"
+nautilus-model = "0.59"
+nautilus-okx = "0.59"
+nautilus-trading = { version = "0.59", features = ["examples"] }
 
 anyhow = "1"
 dotenvy = "0.15"
@@ -95,16 +95,16 @@ use nautilus_trading::examples::strategies::{
     GridMarketMaker, GridMarketMakerConfig,
 };
 
-let mut config = GridMarketMakerConfig::new(
-    InstrumentId::from("ETH-USDT-SWAP.OKX"),
-    Quantity::from("0.10"),
-)
-    .with_num_levels(3)
-    .with_grid_step_bps(100)
-    .with_skew_factor(0.5)
-    .with_requote_threshold_bps(10)
-    .with_expire_time_secs(8)
-    .with_on_cancel_resubmit(true);
+let mut config = GridMarketMakerConfig::builder()
+    .instrument_id(InstrumentId::from("ETH-USDT-SWAP.OKX"))
+    .max_position(Quantity::from("0.10"))
+    .num_levels(3)
+    .grid_step_bps(100)
+    .skew_factor(0.5)
+    .requote_threshold_bps(10)
+    .expire_time_secs(8)
+    .on_cancel_resubmit(true)
+    .build();
 
 // OKX rejects hyphens in client order IDs
 config.base.use_hyphens_in_client_order_ids = false;

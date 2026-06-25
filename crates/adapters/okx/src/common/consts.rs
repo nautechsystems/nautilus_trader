@@ -56,6 +56,9 @@ pub const OKX_WS_HEARTBEAT_SECS: u64 = 20;
 /// OKX success response code for WebSocket operations.
 pub const OKX_SUCCESS_CODE: &str = "0";
 
+/// OKX WebSocket code indicating a service upgrade and required reconnect.
+pub const OKX_SERVICE_UPGRADE_RECONNECT_CODE: &str = "64008";
+
 /// JSON field key for sub-error code in order operation responses.
 pub const OKX_FIELD_SCODE: &str = "sCode";
 
@@ -170,6 +173,7 @@ pub static OKX_RETRY_ERROR_CODES: LazyLock<AHashSet<&'static str>> = LazyLock::n
     // WebSocket connection issues (temporary)
     codes.insert("60001"); // OK not received in time
     codes.insert("60005"); // Connection closed as there was no data transmission in the last 30 seconds
+    codes.insert(OKX_SERVICE_UPGRADE_RECONNECT_CODE); // Service upgrade, please reconnect
 
     codes
 });
@@ -263,6 +267,15 @@ mod tests {
     #[case("", false)]
     fn test_is_slippage_rejection(#[case] code: &str, #[case] expected: bool) {
         assert_eq!(is_slippage_rejection(code), expected);
+    }
+
+    #[rstest]
+    #[case("50001", true)]
+    #[case("60005", true)]
+    #[case(OKX_SERVICE_UPGRADE_RECONNECT_CODE, true)]
+    #[case("60012", false)]
+    fn test_should_retry_error_code(#[case] code: &str, #[case] expected: bool) {
+        assert_eq!(should_retry_error_code(code), expected);
     }
 
     #[rstest]

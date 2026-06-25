@@ -113,7 +113,7 @@ pub fn order_denied_max_submitted_rate(
         .strategy_id(strategy_id_ema_cross)
         .instrument_id(instrument_id_btc_usdt)
         .client_order_id(client_order_id)
-        .reason(Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"))
+        .reason(Ustr::from("RATE_LIMIT_EXCEEDED"))
         .event_id(uuid4)
         .build()
 }

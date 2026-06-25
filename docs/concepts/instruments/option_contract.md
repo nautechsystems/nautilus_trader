@@ -64,33 +64,25 @@ use ustr::Ustr;
 let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
 let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
 
-let aapl_call = OptionContract::new(
-    InstrumentId::from("AAPL211217C00150000.OPRA"),
-    Symbol::from("AAPL211217C00150000"),
-    AssetClass::Equity,
-    Some(Ustr::from("GMNI")),
-    Ustr::from("AAPL"),
-    OptionKind::Call,
-    Price::from("150.00"),
-    Currency::from("USD"),
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    2,
-    Price::from("0.01"),
-    Quantity::from("100"),
-    Quantity::from("1"),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let aapl_call = OptionContract::builder()
+    .instrument_id(InstrumentId::from("AAPL211217C00150000.OPRA"))
+    .raw_symbol(Symbol::from("AAPL211217C00150000"))
+    .asset_class(AssetClass::Equity)
+    .exchange(Ustr::from("GMNI"))
+    .underlying(Ustr::from("AAPL"))
+    .option_kind(OptionKind::Call)
+    .strike_price(Price::from("150.00"))
+    .currency(Currency::from("USD"))
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .price_precision(2)
+    .price_increment(Price::from("0.01"))
+    .multiplier(Quantity::from("100"))
+    .lot_size(Quantity::from("1"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

@@ -34,7 +34,6 @@
 //!   multi-threaded ordering in **static mode**, you must coordinate higher-level synchronization yourself.
 
 use std::{
-    ops::Deref,
     sync::{
         OnceLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -132,17 +131,9 @@ fn wall_clock_now() -> SystemTime {
 /// Panics if the duration in nanoseconds exceeds `u64::MAX`.
 #[inline(always)]
 #[must_use]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "value is guarded by the assert above (ns <= u64::MAX)"
-)]
 pub fn nanos_since_unix_epoch() -> u64 {
-    let ns = duration_since_unix_epoch().as_nanos();
-    assert!(
-        ns <= u128::from(u64::MAX),
-        "System time overflow: value exceeds u64::MAX nanoseconds"
-    );
-    ns as u64
+    u64::try_from(duration_since_unix_epoch().as_nanos())
+        .expect("System time overflow: value exceeds u64::MAX nanoseconds")
 }
 
 /// Represents an atomic timekeeping structure.
@@ -155,22 +146,14 @@ pub fn nanos_since_unix_epoch() -> u64 {
 /// For concurrency, this struct uses atomic operations with appropriate memory orderings:
 /// - **Acquire/Release** for reading/writing in **static mode**.
 /// - **Compare-and-exchange (`AcqRel`)** in real-time mode to guarantee monotonic increments.
+///
+/// The mode flag and timestamp are private so every update flows through the methods
+/// that uphold the monotonicity and mode invariants.
 #[repr(C)]
 #[derive(Debug)]
 pub struct AtomicTime {
-    /// Indicates whether the clock is operating in **real-time mode** (`true`) or **static mode** (`false`)
-    pub realtime: AtomicBool,
-    /// The last recorded time (in UNIX nanoseconds). Updated atomically with compare-and-exchange
-    /// in **real-time mode**, or simple store/fetch in **static mode**.
-    pub timestamp_ns: AtomicU64,
-}
-
-impl Deref for AtomicTime {
-    type Target = AtomicU64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.timestamp_ns
-    }
+    realtime: AtomicBool,
+    timestamp_ns: AtomicU64,
 }
 
 impl Default for AtomicTime {
@@ -267,7 +250,7 @@ impl AtomicTime {
             "Cannot set time while clock is in realtime mode"
         );
 
-        self.store(time.into(), Ordering::Release);
+        self.timestamp_ns.store(time.into(), Ordering::Release);
 
         debug_assert!(
             !self.realtime.load(Ordering::SeqCst),
@@ -277,7 +260,7 @@ impl AtomicTime {
 
     /// Increments the current (static-mode) time by `delta` nanoseconds and returns the updated value.
     ///
-    /// Internally this uses [`AtomicU64::fetch_update`] with [`Ordering::AcqRel`] to ensure the increment is
+    /// Internally this uses [`AtomicU64::try_update`] with [`Ordering::AcqRel`] to ensure the increment is
     /// atomic and visible to readers using `Acquire` loads.
     ///
     /// # Errors
@@ -301,7 +284,7 @@ impl AtomicTime {
         let previous =
             match self
                 .timestamp_ns
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                     current.checked_add(delta)
                 }) {
                 Ok(prev) => prev,
@@ -344,12 +327,14 @@ impl AtomicTime {
 
         loop {
             // Acquire to observe the latest stored value
-            let last = self.load(Ordering::Acquire);
+            let last = self.timestamp_ns.load(Ordering::Acquire);
+
             // Ensure we never wrap past u64::MAX – treat that as a fatal error
             let incremented = last
                 .checked_add(1)
                 .expect("AtomicTime overflow: reached u64::MAX");
             let next = now.max(incremented);
+
             // AcqRel on success ensures this new value is published,
             // Acquire on failure reloads if we lost a CAS race.
             //
@@ -363,6 +348,7 @@ impl AtomicTime {
             //
             // The concurrent stress test (4 threads × 100k iterations) validates this approach.
             if self
+                .timestamp_ns
                 .compare_exchange(last, next, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
             {
@@ -382,6 +368,14 @@ impl AtomicTime {
     /// timestamp set during static mode (e.g. a backtest far in the future).
     ///
     /// Uses [`Ordering::SeqCst`] for the mode flag to ensure global ordering.
+    ///
+    /// # Thread Safety
+    ///
+    /// The mode swap and the counter reset are two separate atomic operations. A thread
+    /// reading between them can observe real-time mode with the stale static-mode counter
+    /// and return a timestamp derived from it (potentially far in the future), after which
+    /// the reset moves the clock backwards. Mode switching is a setup-time operation and
+    /// must not run concurrently with time reads.
     pub fn make_realtime(&self) {
         if !self.realtime.swap(true, Ordering::SeqCst) {
             self.timestamp_ns
@@ -396,6 +390,12 @@ impl AtomicTime {
     /// rather than a stale or zero placeholder.
     ///
     /// Uses [`Ordering::SeqCst`] for the mode flag to ensure global ordering.
+    ///
+    /// # Thread Safety
+    ///
+    /// The mode swap and the counter snapshot are two separate atomic operations; see
+    /// [`AtomicTime::make_realtime`] for the race this implies. Mode switching is a
+    /// setup-time operation and must not run concurrently with time reads.
     pub fn make_static(&self) {
         if self.realtime.swap(false, Ordering::SeqCst) {
             self.timestamp_ns
@@ -558,15 +558,21 @@ mod tests {
     }
 
     #[rstest]
-    #[expect(
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        reason = "Intentional cast for Python interop"
-    )]
+    fn test_increment_time_after_make_static() {
+        // Switching from realtime snapshots wall time; increments build on the snapshot
+        let clock = AtomicTime::new(true, UnixNanos::default());
+        clock.make_static();
+        let before = clock.get_time_ns();
+        let after = clock.increment_time(1_000).unwrap();
+        assert_eq!(after, before + 1_000_u64);
+        assert_eq!(clock.get_time_ns(), after);
+    }
+
+    #[rstest]
     fn test_nanos_since_unix_epoch_vs_system_time() {
         let unix_nanos = nanos_since_unix_epoch();
-        let system_ns = duration_since_unix_epoch().as_nanos() as u64;
-        assert!((unix_nanos as i64 - system_ns as i64).abs() < NANOSECONDS_IN_SECOND as i64);
+        let system_ns = u64::try_from(duration_since_unix_epoch().as_nanos()).unwrap();
+        assert!(unix_nanos.abs_diff(system_ns) < NANOSECONDS_IN_SECOND);
     }
 
     #[rstest]
@@ -780,7 +786,7 @@ mod tests {
 
     #[rstest]
     fn test_acquire_release_contract_increment_time() {
-        // Similar test for increment_time, which uses fetch_update with AcqRel (see AtomicTime::increment_time)
+        // Similar test for increment_time, which uses try_update with AcqRel (see AtomicTime::increment_time)
 
         let clock = Arc::new(AtomicTime::new(false, UnixNanos::from(0)));
         let aux_data = Arc::new(AtomicU64::new(0));

@@ -659,6 +659,11 @@ pub fn resolution_to_bar_type(
 /// Converts a single OHLCV data point from the `chart.trades.{instrument}.{resolution}` channel
 /// into a Nautilus Bar object.
 ///
+/// When `use_cost_for_volume` is true, `Bar.volume` is populated from `chart_msg.cost` (USD) to
+/// match instruments whose trade `amount` is in USD (inverse perpetuals / inverse futures).
+/// Otherwise `chart_msg.volume` (base currency) is used. Callers derive this from the instrument
+/// via [`crate::common::parse::use_cost_for_bar_volume`].
+///
 /// # Errors
 ///
 /// Returns an error if:
@@ -669,6 +674,7 @@ pub fn parse_chart_msg(
     bar_type: BarType,
     price_precision: u8,
     size_precision: u8,
+    use_cost_for_volume: bool,
     timestamp_on_close: bool,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Bar> {
@@ -677,8 +683,12 @@ pub fn parse_chart_msg(
     let low = Price::new_checked(chart_msg.low, price_precision).context("Invalid low price")?;
     let close =
         Price::new_checked(chart_msg.close, price_precision).context("Invalid close price")?;
-    let volume =
-        Quantity::new_checked(chart_msg.volume, size_precision).context("Invalid volume")?;
+    let raw_volume = if use_cost_for_volume {
+        chart_msg.cost
+    } else {
+        chart_msg.volume
+    };
+    let volume = Quantity::new_checked(raw_volume, size_precision).context("Invalid volume")?;
 
     // Convert timestamp from milliseconds to nanoseconds
     let mut ts_event = UnixNanos::from(chart_msg.tick * NANOSECONDS_IN_MILLISECOND);
@@ -934,10 +944,10 @@ pub fn parse_user_trade_msg(
 /// Parses a Deribit position into a Nautilus `PositionStatusReport`.
 ///
 /// # Arguments
-/// * `position` - The Deribit position data from `/private/get_positions`
-/// * `instrument` - The corresponding Nautilus instrument
-/// * `account_id` - The account ID for the report
-/// * `ts_init` - Initialization timestamp
+/// - `position` - The Deribit position data from `/private/get_positions`
+/// - `instrument` - The corresponding Nautilus instrument
+/// - `account_id` - The account ID for the report
+/// - `ts_init` - Initialization timestamp
 ///
 /// # Returns
 /// A `PositionStatusReport` representing the current position state.
@@ -952,7 +962,7 @@ pub fn parse_position_status_report(
     let size_precision = instrument.size_precision();
 
     let signed_qty = Quantity::from_decimal_dp(position.size.abs(), size_precision)
-        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
 
     let position_side = match position.direction.as_str() {
         "buy" => PositionSideSpecified::Long,
@@ -1122,7 +1132,7 @@ pub fn parse_order_updated(
     let client_order_id =
         extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
     let quantity = Quantity::from_decimal_dp(msg.amount, size_precision)
-        .unwrap_or_else(|_| Quantity::new(0.0, size_precision));
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
     let price = msg
         .price
         .and_then(|p| Price::from_decimal_dp(p, price_precision).ok());
@@ -1156,9 +1166,9 @@ pub fn parse_order_updated(
 /// It's used by the handler to determine which event to emit for a given order update.
 ///
 /// # Arguments
-/// * `order_state` - The Deribit order state string ("open", "filled", "cancelled", etc.)
-/// * `is_new_order` - Whether this is the first time we're seeing this order
-/// * `was_amended` - Whether this update is due to an amendment (edit) operation
+/// - `order_state` - The Deribit order state string ("open", "filled", "cancelled", etc.)
+/// - `is_new_order` - Whether this is the first time we're seeing this order
+/// - `was_amended` - Whether this update is due to an amendment (edit) operation
 ///
 /// # Returns
 /// The type of event that should be emitted, or `None` if no event should be emitted.
@@ -1872,8 +1882,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_chart_msg() {
+    fn test_parse_chart_msg_uses_cost() {
         let instrument = test_perpetual_instrument();
+        assert!(
+            instrument.is_inverse(),
+            "test fixture is expected to be an inverse perp"
+        );
+
         let json = load_test_json("ws_chart.json");
         let response: serde_json::Value = serde_json::from_str(&json).unwrap();
         let chart_msg: DeribitChartMsg =
@@ -1896,6 +1911,7 @@ mod tests {
             bar_type,
             instrument.price_precision(),
             instrument.size_precision(),
+            true, // use_cost_for_volume
             true,
             UnixNanos::default(),
         )
@@ -1906,7 +1922,7 @@ mod tests {
         assert_eq!(bar.high, instrument.make_price(87500.0));
         assert_eq!(bar.low, instrument.make_price(87465.0));
         assert_eq!(bar.close, instrument.make_price(87474.0));
-        assert_eq!(bar.volume, instrument.make_qty(1.0, None)); // Rounded to 1.0 with size_precision=0
+        assert_eq!(bar.volume, instrument.make_qty(83970.0, None));
 
         // ts_event should be close time (open + 1 minute)
         assert_eq!(bar.ts_event, UnixNanos::new(1_767_200_100_000_000_000));

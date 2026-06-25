@@ -307,6 +307,9 @@ fn print_finding(finding: &VerifyFinding) {
         VerifyFinding::ManifestMismatch { kind, reason } => {
             println!("- manifest mismatch {kind:?}: {reason}");
         }
+        VerifyFinding::SnapshotAnchorInvalid { reason } => {
+            println!("- snapshot anchor invalid: {reason}");
+        }
     }
 }
 

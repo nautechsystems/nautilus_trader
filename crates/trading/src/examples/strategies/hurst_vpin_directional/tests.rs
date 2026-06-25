@@ -58,6 +58,7 @@ fn pf_xbtusd() -> CryptoPerpetual {
         Some(dec!(0.0002)),
         Some(dec!(0.0005)),
         None,
+        None,
         0.into(),
         0.into(),
     )
@@ -72,11 +73,11 @@ fn bar_type(instrument_id: InstrumentId) -> BarType {
 }
 
 fn create_strategy(instrument_id: InstrumentId) -> HurstVpinDirectional {
-    let config = HurstVpinDirectionalConfig::new(
-        instrument_id,
-        bar_type(instrument_id),
-        Quantity::from("0.01"),
-    );
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .build();
     HurstVpinDirectional::new(config)
 }
 
@@ -85,13 +86,13 @@ fn create_strategy_with_windows(
     hurst_window: usize,
     hurst_lags: Vec<usize>,
 ) -> HurstVpinDirectional {
-    let config = HurstVpinDirectionalConfig::new(
-        instrument_id,
-        bar_type(instrument_id),
-        Quantity::from("0.01"),
-    )
-    .with_hurst_window(hurst_window)
-    .with_hurst_lags(hurst_lags);
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(instrument_id))
+        .trade_size(Quantity::from("0.01"))
+        .hurst_window(hurst_window)
+        .hurst_lags(hurst_lags)
+        .build();
     HurstVpinDirectional::new(config)
 }
 
@@ -402,8 +403,11 @@ fn test_signals_ready_false_during_warmup() {
 fn test_on_start_rejects_mismatched_bar_type() {
     let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
     let other_id = InstrumentId::from("OTHER.KRAKEN");
-    let config =
-        HurstVpinDirectionalConfig::new(instrument_id, bar_type(other_id), Quantity::from("0.01"));
+    let config = HurstVpinDirectionalConfig::builder()
+        .instrument_id(instrument_id)
+        .bar_type(bar_type(other_id))
+        .trade_size(Quantity::from("0.01"))
+        .build();
     let mut strategy = HurstVpinDirectional::new(config);
     register_strategy(&mut strategy);
 

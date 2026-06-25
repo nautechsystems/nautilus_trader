@@ -7,6 +7,8 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
+use ibapi::subscriptions::SubscriptionItem;
+
 use super::*;
 use crate::{
     common::enums::{IbAction, IbOrderStatus},
@@ -111,7 +113,7 @@ impl InteractiveBrokersExecutionClient {
 
         while let Some(update_result) = subscription.next().await {
             match update_result {
-                Ok(update) => {
+                Ok(SubscriptionItem::Data(update)) => {
                     if let Err(e) = Self::handle_order_update(
                         &update,
                         order_id_map,
@@ -138,6 +140,9 @@ impl InteractiveBrokersExecutionClient {
                     {
                         tracing::error!("Error handling order update: {e}");
                     }
+                }
+                Ok(SubscriptionItem::Notice(notice)) => {
+                    tracing::debug!("Received IB order update notice: {notice:?}");
                 }
                 Err(e) => {
                     tracing::error!("Error receiving order update: {e}");
@@ -245,9 +250,16 @@ impl InteractiveBrokersExecutionClient {
                     let mut cache = commission_cache
                         .lock()
                         .map_err(|_| anyhow::anyhow!("Failed to lock commission cache"))?;
+                    // IB uses -1.0 as a pending-sentinel before the real commission arrives;
+                    // clamp only that sentinel to zero (legitimate rebates can be negative).
+                    let commission_value = if commission.commission == -1.0_f64 {
+                        0.0_f64
+                    } else {
+                        commission.commission
+                    };
                     cache.insert(
                         commission.execution_id.clone(),
-                        (commission.commission, commission.currency.clone()),
+                        (commission_value, commission.currency.clone()),
                     );
                 }
 
@@ -301,7 +313,7 @@ impl InteractiveBrokersExecutionClient {
             }
             OrderUpdate::OpenOrder(order_data) => {
                 if order_data.order.what_if
-                    && IbOrderStatus::from_str(&order_data.order_state.status)
+                    && IbOrderStatus::from_str(order_data.order_state.status.as_str())
                         .is_ok_and(|status| status == IbOrderStatus::PreSubmitted)
                 {
                     Self::handle_whatif_order(
@@ -403,9 +415,6 @@ impl InteractiveBrokersExecutionClient {
                         )?;
                     }
                 }
-            }
-            OrderUpdate::Message(notice) => {
-                tracing::debug!("Received notice: {notice:?}");
             }
         }
 
@@ -516,7 +525,7 @@ impl InteractiveBrokersExecutionClient {
         Self::update_order_avg_price(
             client_order_id,
             &instrument_id,
-            status.average_fill_price,
+            status.average_fill_price.unwrap_or(0.0),
             status.filled,
             instrument_provider,
             order_avg_prices,
@@ -524,7 +533,7 @@ impl InteractiveBrokersExecutionClient {
             order_fill_progress,
         )?;
 
-        let ib_order_status = IbOrderStatus::from_str(&status.status).ok();
+        let ib_order_status = IbOrderStatus::from_str(status.status.as_str()).ok();
 
         if ib_order_status == Some(IbOrderStatus::Inactive) && status.why_held == "locate" {
             tracing::warn!(
@@ -1305,7 +1314,7 @@ impl InteractiveBrokersExecutionClient {
                     false
                 }
             }) {
-                let ratio = IbAction::from_str(&combo_leg.action)
+                let ratio = IbAction::from_str(combo_leg.action.as_str())
                     .map_or(-combo_leg.ratio, |action| {
                         action.signed_multiplier() * combo_leg.ratio
                     });
@@ -1342,7 +1351,7 @@ impl InteractiveBrokersExecutionClient {
             Quantity::new(combo_quantity_value, spread_instrument.size_precision());
 
         let execution_side_numeric =
-            IbAction::from_str(&exec_data.execution.side)?.signed_multiplier();
+            IbAction::from_str(exec_data.execution.side.as_str())?.signed_multiplier();
         let leg_side_numeric = if ratio >= 0 { 1 } else { -1 };
         let combo_order_side = if execution_side_numeric == leg_side_numeric {
             OrderSide::Buy
@@ -1404,7 +1413,7 @@ impl InteractiveBrokersExecutionClient {
         let leg_quantity =
             Quantity::new(exec_data.execution.shares, leg_instrument.size_precision());
 
-        let order_side = IbAction::from_str(&exec_data.execution.side)?.order_side();
+        let order_side = IbAction::from_str(exec_data.execution.side.as_str())?.order_side();
 
         let commission_money = Money::new(commission, Currency::from(commission_currency));
 

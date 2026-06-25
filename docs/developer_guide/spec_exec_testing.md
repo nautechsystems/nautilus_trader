@@ -1408,7 +1408,9 @@ WebSocket boundary rather than a live venue.
 ### Ambiguous outcome failures
 
 These cases prove that adapter request failures do not turn into terminal rejection events when
-the venue outcome is unknown.
+the venue outcome is unknown. The pass criteria also define the local prepare-failure carve-out:
+when a command is known not to have been sent and is attributable to one cancel or modify command,
+the adapter may emit the matching rejection event.
 
 **Pass criteria:**
 
@@ -1418,8 +1420,10 @@ the venue outcome is unknown.
   whole-request server failures do not emit `OrderCancelRejected`.
 - Modify failures from transport errors, timeouts, WebSocket send failures, retry exhaustion, or
   whole-request server failures do not emit `OrderModifyRejected`.
-- Local cancel validation failures log a warning and do not emit `OrderCancelRejected`.
-- Local modify validation failures log a warning and do not emit `OrderModifyRejected`.
+- Local cancel prepare failures that prove the command cannot be sent may emit
+  `OrderCancelRejected` when the adapter can attribute the failure to one cancel command.
+- Local modify prepare failures that prove the command cannot be sent may emit
+  `OrderModifyRejected` when the adapter can attribute the failure to one modify command.
 - Whole-batch request failures do not emit one rejection per order when the venue did not return
   per-order results.
 - Explicit per-order venue rejections still emit the matching rejection event with the venue

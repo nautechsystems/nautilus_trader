@@ -15,33 +15,50 @@
 
 //! Python bindings for fee model types.
 
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_core::python::{to_pyruntime_err, to_pytype_err};
 use nautilus_model::types::Money;
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::models::fee::{
-    CappedOptionFeeModel, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
-    TieredNotionalOptionFeeModel,
+    CappedOptionFeeModel, FeeModelAny, FixedFeeModel, MakerTakerFeeModel, PerContractFeeModel,
+    ProbabilityPriceFeeModel, TieredNotionalOptionFeeModel,
 };
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FixedFeeModel {
     /// Creates a new `FixedFeeModel` instance.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if `commission` is negative.
     #[new]
-    #[pyo3(signature = (commission, change_commission_once=None))]
-    fn py_new(commission: Money, change_commission_once: Option<bool>) -> PyResult<Self> {
-        Self::new(commission, change_commission_once).map_err(to_pyruntime_err)
+    #[pyo3(signature = (commission, charge_commission_once=None, change_commission_once=None))]
+    fn py_new(
+        commission: Money,
+        charge_commission_once: Option<bool>,
+        change_commission_once: Option<bool>,
+    ) -> PyResult<Self> {
+        let charge_commission_once = resolve_fixed_fee_charge_commission_once(
+            charge_commission_once,
+            change_commission_once,
+        )?;
+        Self::new(commission, charge_commission_once).map_err(to_pyruntime_err)
     }
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
+}
+
+fn resolve_fixed_fee_charge_commission_once(
+    charge_commission_once: Option<bool>,
+    change_commission_once: Option<bool>,
+) -> PyResult<Option<bool>> {
+    if charge_commission_once.is_some() && change_commission_once.is_some() {
+        return Err(to_pytype_err(
+            "Provide only one of `charge_commission_once` or `change_commission_once`",
+        ));
+    }
+
+    Ok(charge_commission_once.or(change_commission_once))
 }
 
 #[pymethods]
@@ -68,6 +85,29 @@ impl PerContractFeeModel {
     #[new]
     fn py_new(commission: Money) -> PyResult<Self> {
         Self::new(commission).map_err(to_pyruntime_err)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ProbabilityPriceFeeModel {
+    /// Fee model for probability-priced outcome shares.
+    ///
+    /// Applies `qty * fee_rate * p * (1 - p)` using the instrument's maker or
+    /// taker fee rate. This matches venues that represent outcome shares as
+    /// `InstrumentAny.BinaryOption` instruments quoted on a `[0, 1]`
+    /// probability scale.
+    ///
+    /// This model covers quote-currency match-time exchange fees only.
+    /// Venue-specific rebate programs or non-quote fee assets remain outside the
+    /// core execution layer.
+    #[new]
+    fn py_new() -> Self {
+        Self
     }
 
     fn __repr__(&self) -> String {
@@ -110,5 +150,57 @@ impl TieredNotionalOptionFeeModel {
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+}
+
+/// Extracts a Python fee model object into a Rust [`FeeModelAny`].
+///
+/// # Errors
+///
+/// Returns an error if `obj` is not a supported fee model binding.
+pub fn pyobject_to_fee_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FeeModelAny> {
+    if let Ok(m) = obj.extract::<FixedFeeModel>() {
+        return Ok(FeeModelAny::Fixed(m));
+    }
+
+    if let Ok(m) = obj.extract::<MakerTakerFeeModel>() {
+        return Ok(FeeModelAny::MakerTaker(m));
+    }
+
+    if let Ok(m) = obj.extract::<PerContractFeeModel>() {
+        return Ok(FeeModelAny::PerContract(m));
+    }
+
+    if let Ok(m) = obj.extract::<ProbabilityPriceFeeModel>() {
+        return Ok(FeeModelAny::ProbabilityPrice(m));
+    }
+
+    if let Ok(m) = obj.extract::<CappedOptionFeeModel>() {
+        return Ok(FeeModelAny::CappedOption(m));
+    }
+
+    if let Ok(m) = obj.extract::<TieredNotionalOptionFeeModel>() {
+        return Ok(FeeModelAny::TieredNotionalOption(m));
+    }
+
+    let type_name = obj.get_type().name()?;
+    Err(to_pytype_err(format!(
+        "Cannot convert {type_name} to FeeModel"
+    )))
+}
+
+/// Converts a Rust [`FeeModelAny`] into its Python binding object.
+///
+/// # Errors
+///
+/// Returns an error if conversion to a Python object fails.
+pub fn fee_model_any_to_pyobject(py: Python<'_>, model: &FeeModelAny) -> PyResult<Py<PyAny>> {
+    match model {
+        FeeModelAny::Fixed(model) => model.clone().into_py_any(py),
+        FeeModelAny::MakerTaker(model) => model.clone().into_py_any(py),
+        FeeModelAny::PerContract(model) => model.clone().into_py_any(py),
+        FeeModelAny::ProbabilityPrice(model) => model.clone().into_py_any(py),
+        FeeModelAny::CappedOption(model) => model.clone().into_py_any(py),
+        FeeModelAny::TieredNotionalOption(model) => model.clone().into_py_any(py),
     }
 }

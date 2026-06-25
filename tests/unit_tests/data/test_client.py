@@ -271,6 +271,43 @@ class TestMarketDataClient:
         # Assert
         assert self.data_engine.data_count == 1
 
+    def test_is_subscribed_methods_reflect_subscription_membership(self):
+        # Arrange
+        instrument_id = AUDUSD_SIM.id
+        other_instrument_id = ETHUSDT_BINANCE.id
+        checks = [
+            (
+                "order book deltas",
+                self.client.is_subscribed_order_book_deltas,
+                self.client._add_subscription_order_book_deltas,
+                self.client._remove_subscription_order_book_deltas,
+            ),
+            (
+                "quote ticks",
+                self.client.is_subscribed_quote_ticks,
+                self.client._add_subscription_quote_ticks,
+                self.client._remove_subscription_quote_ticks,
+            ),
+            (
+                "trade ticks",
+                self.client.is_subscribed_trade_ticks,
+                self.client._add_subscription_trade_ticks,
+                self.client._remove_subscription_trade_ticks,
+            ),
+        ]
+
+        for name, is_subscribed, add_subscription, remove_subscription in checks:
+            # Act, Assert
+            assert not is_subscribed(instrument_id), name
+            assert not is_subscribed(other_instrument_id), name
+
+            add_subscription(instrument_id)
+            assert is_subscribed(instrument_id), name
+            assert not is_subscribed(other_instrument_id), name
+
+            remove_subscription(instrument_id)
+            assert not is_subscribed(instrument_id), name
+
     def test_handle_quote_ticks_sends_to_data_engine(self):
         # Arrange, Act
         self.client._handle_quote_ticks_py(

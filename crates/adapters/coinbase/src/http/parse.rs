@@ -189,6 +189,7 @@ pub fn parse_spot_instrument(
         None, // margin_maint
         None, // maker_fee (loaded separately via transaction_summary)
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_init,
         ts_init,
@@ -243,6 +244,7 @@ pub fn parse_perpetual_instrument(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_init,
         ts_init,
@@ -315,6 +317,7 @@ pub fn parse_future_instrument(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_init,
         ts_init,

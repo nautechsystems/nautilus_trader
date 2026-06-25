@@ -101,7 +101,8 @@ pub fn parse_instrument_any(
         BitmexInstrumentState::Open | BitmexInstrumentState::Closed => {}
         state @ (BitmexInstrumentState::Unlisted
         | BitmexInstrumentState::Settled
-        | BitmexInstrumentState::Delisted) => {
+        | BitmexInstrumentState::Delisted
+        | BitmexInstrumentState::Unknown) => {
             return InstrumentParseResult::Inactive { symbol, state };
         }
     }
@@ -134,7 +135,7 @@ pub fn parse_instrument_any(
                 error: e.to_string(),
             },
         },
-        BitmexInstrumentType::FuturesSpread => {
+        BitmexInstrumentType::FuturesSpread | BitmexInstrumentType::FuturesSpreads => {
             match parse_crypto_futures_spread_instrument(instrument, ts_init) {
                 Ok(inst) => InstrumentParseResult::Ok(Box::new(inst)),
                 Err(e) => InstrumentParseResult::Failed {
@@ -144,8 +145,10 @@ pub fn parse_instrument_any(
                 },
             }
         }
-        BitmexInstrumentType::PredictionMarket => {
-            // Prediction markets work similarly to futures (bounded 0-100, cash settled)
+        BitmexInstrumentType::PredictionMarket
+        | BitmexInstrumentType::LegacyFutures
+        | BitmexInstrumentType::LegacyFuturesN => {
+            // Prediction markets and legacy futures share the futures field structure
             match parse_futures_instrument(instrument, ts_init) {
                 Ok(inst) => InstrumentParseResult::Ok(Box::new(inst)),
                 Err(e) => InstrumentParseResult::Failed {
@@ -159,11 +162,12 @@ pub fn parse_instrument_any(
         | BitmexInstrumentType::CryptoIndex
         | BitmexInstrumentType::FxIndex
         | BitmexInstrumentType::LendingIndex
+        | BitmexInstrumentType::ReferenceBasket
         | BitmexInstrumentType::VolatilityIndex
         | BitmexInstrumentType::StockIndex
         | BitmexInstrumentType::YieldIndex => {
-            // Parse index instruments as perpetuals for cache purposes
-            // They need to be in cache for WebSocket price updates
+            // Parse index and reference basket instruments for cache purposes;
+            // they are needed for WebSocket price updates
             match parse_index_instrument(instrument, ts_init) {
                 Ok(inst) => InstrumentParseResult::Ok(Box::new(inst)),
                 Err(e) => InstrumentParseResult::Failed {
@@ -174,15 +178,14 @@ pub fn parse_instrument_any(
             }
         }
 
-        // Explicitly list unsupported types for clarity
-        BitmexInstrumentType::StockPerpetual
+        // TradFi perpetuals (FFSCSX) parse correctly but CryptoPerpetual carries
+        // AssetClass::Cryptocurrency, which misclassifies equity/FX/commodity perps.
+        // Keep unsupported until a PerpetualContract parse path is wired up.
+        // Options require a strike price field not yet present in BitmexInstrument.
+        BitmexInstrumentType::TradFiPerpetual
         | BitmexInstrumentType::CallOption
         | BitmexInstrumentType::PutOption
         | BitmexInstrumentType::SwapRate
-        | BitmexInstrumentType::ReferenceBasket
-        | BitmexInstrumentType::LegacyFutures
-        | BitmexInstrumentType::LegacyFuturesN
-        | BitmexInstrumentType::FuturesSpreads
         | BitmexInstrumentType::Other => InstrumentParseResult::Unsupported {
             symbol,
             instrument_type,
@@ -235,6 +238,7 @@ pub fn parse_index_instrument(
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
+        None, // tick_scheme
         None, // info
         ts_init,
         ts_init,
@@ -327,6 +331,7 @@ pub fn parse_spot_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -425,6 +430,7 @@ pub fn parse_perpetual_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -531,6 +537,7 @@ pub fn parse_futures_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -636,6 +643,7 @@ pub fn parse_crypto_futures_spread_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         None,
         ts_event,
         ts_init,
@@ -1191,6 +1199,20 @@ mod tests {
         assert_eq!(
             instrument.timestamp.to_rfc3339(),
             "2024-11-24T23:33:19.034+00:00"
+        );
+    }
+
+    #[rstest]
+    fn test_parse_instrument_any_skips_unknown_instrument_state() {
+        let json_data = load_test_json("http_get_instrument_xbtusd.json");
+        let mut instrument: BitmexInstrument = serde_json::from_str(&json_data).unwrap();
+        instrument.state = BitmexInstrumentState::Unknown;
+
+        let result = parse_instrument_any(&instrument, UnixNanos::default());
+
+        assert!(
+            matches!(result, InstrumentParseResult::Inactive { .. }),
+            "expected Inactive for unknown state, was {result:?}"
         );
     }
 

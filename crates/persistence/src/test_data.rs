@@ -33,6 +33,13 @@ use nautilus_persistence_macros::custom_data;
 ///
 /// Used in persistence integration tests (`test_catalog.rs`) and Python roundtrip tests.
 /// Tests call `ensure_custom_data_registered::<RustTestCustomData>()` before using the catalog.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "test data uses the custom data macro output under test"
+    )
+)]
 #[custom_data(pyo3)]
 pub struct RustTestCustomData {
     pub instrument_id: InstrumentId,
@@ -44,7 +51,14 @@ pub struct RustTestCustomData {
 
 /// YieldCurveData-equivalent custom data type using the macro with `Vec<f64>` fields.
 ///
-/// Tests `Vec<f64>` / ListFloat64 support. Exposed to Python for roundtrip tests.
+/// Tests `Vec<f64>` / `ListFloat64` support. Exposed to Python for roundtrip tests.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "test data uses the custom data macro output under test"
+    )
+)]
 #[custom_data(pyo3)]
 pub struct MacroYieldCurveData {
     pub curve_name: String,
@@ -55,6 +69,13 @@ pub struct MacroYieldCurveData {
 }
 
 /// Rust custom data type that exercises `Params` field support in the macro.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "test data uses the custom data macro output under test"
+    )
+)]
 #[custom_data(pyo3)]
 pub struct RustTestParamsCustomData {
     pub name: String,
@@ -64,6 +85,13 @@ pub struct RustTestParamsCustomData {
 }
 
 /// Rust custom data type that exercises typed map field support in the macro.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "test data uses the custom data macro output under test"
+    )
+)]
 #[custom_data(pyo3)]
 pub struct RustTestPriceMapCustomData {
     pub name: String,
@@ -74,6 +102,13 @@ pub struct RustTestPriceMapCustomData {
 }
 
 /// Rust custom data type that exercises typed JSON map values across PyO3-supported types.
+#[cfg_attr(
+    feature = "python",
+    expect(
+        clippy::unsafe_derive_deserialize,
+        reason = "test data uses the custom data macro output under test"
+    )
+)]
 #[custom_data(pyo3)]
 pub struct RustTestTypedMapCustomData {
     pub name: String,

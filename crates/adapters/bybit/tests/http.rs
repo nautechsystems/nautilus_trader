@@ -29,19 +29,19 @@ use nautilus_bybit::{
     common::{
         consts::BYBIT_VENUE,
         enums::{
-            BybitAccountType, BybitBboSideType, BybitMarginMode, BybitPositionIdx,
-            BybitProductType, BybitUnifiedMarginStatus,
+            BybitAccountType, BybitBboSideType, BybitMarginMode, BybitOrderType, BybitPositionIdx,
+            BybitProductType, BybitTpSlMode, BybitTriggerType, BybitUnifiedMarginStatus,
         },
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
         query::{
-            BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitPositionListParamsBuilder,
-            BybitWalletBalanceParams,
+            BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitNativeTpSlParams,
+            BybitPositionListParamsBuilder, BybitWalletBalanceParams,
         },
     },
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     data::BarType,
     enums::{OrderSide, OrderType, PositionSideSpecified, TimeInForce, TriggerType},
@@ -54,6 +54,14 @@ use rstest::rstest;
 use serde_json::{Value, json};
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Trades,
+    FundingRates,
+    OrderbookSnapshot,
+    Bars,
+}
 
 /// Captured order submission for validation in tests.
 #[allow(dead_code)]
@@ -75,6 +83,7 @@ struct CapturedOrder {
     position_idx: Option<i64>,
     bbo_side_type: Option<String>,
     bbo_level: Option<String>,
+    raw_body: Value,
 }
 
 #[allow(dead_code)]
@@ -442,6 +451,7 @@ async fn handle_post_order_with_capture(
             .get("bboLevel")
             .and_then(|v| v.as_str())
             .map(String::from),
+        raw_body: order_req.clone(),
     };
 
     {
@@ -932,6 +942,55 @@ async fn start_test_server()
     // Give server time to start
     wait_for_server(addr, "/v5/market/time").await;
     Ok((addr, state))
+}
+
+#[rstest]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::funding_rates(RequiredInstrumentCachePath::FundingRates)]
+#[case::orderbook_snapshot(RequiredInstrumentCachePath::OrderbookSnapshot)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = BybitHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        1,
+        0,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE);
+
+    let result = match path {
+        RequiredInstrumentCachePath::Trades => client
+            .request_trades(BybitProductType::Linear, instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::FundingRates => client
+            .request_funding_rates(BybitProductType::Linear, instrument_id, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::OrderbookSnapshot => client
+            .request_orderbook_snapshot(BybitProductType::Linear, instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTCUSDT-LINEAR.BYBIT-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(BybitProductType::Linear, bar_type, None, None, None, true)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]
@@ -2120,6 +2179,7 @@ async fn test_spot_position_report_short_from_borrowed_balance() {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     );
@@ -2653,6 +2713,7 @@ async fn test_submit_order_stop_market_with_trigger_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -2740,6 +2801,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -2828,6 +2890,7 @@ async fn test_submit_order_market_if_touched_trigger_direction() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -2899,6 +2962,7 @@ async fn test_submit_order_post_only() {
             None,
             None,
             None,
+            None,
         )
         .await;
 
@@ -2963,6 +3027,7 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
             None,
             Some(BybitBboSideType::Queue),
             Some("3".to_string()),
+            None,
         )
         .await;
 
@@ -2976,6 +3041,182 @@ async fn test_submit_order_with_bbo_sends_bbo_and_omits_price() {
     assert_eq!(order.price, None);
     assert_eq!(order.bbo_side_type.as_deref(), Some("Queue"));
     assert_eq!(order.bbo_level.as_deref(), Some("3"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_with_native_tp_sl_serializes_fields() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let native_tp_sl = BybitNativeTpSlParams {
+        take_profit: Some("55000".to_string()),
+        stop_loss: Some("47000".to_string()),
+        tp_trigger_by: Some(BybitTriggerType::LastPrice),
+        sl_trigger_by: Some(BybitTriggerType::MarkPrice),
+        tp_order_type: Some(BybitOrderType::Limit),
+        sl_order_type: Some(BybitOrderType::Market),
+        tp_limit_price: Some("55100".to_string()),
+        sl_limit_price: None,
+        // Left unset: the client must default it to `Full` because TP/SL are present.
+        tpsl_mode: None,
+        close_on_trigger: Some(true),
+        order_iv: None,
+        mmp: None,
+    };
+
+    let result = client
+        .submit_order(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
+            ClientOrderId::from("native-tpsl-test-1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::new(0.001, 3),
+            Some(TimeInForce::Gtc),
+            Some(Price::new(50_000.0, 2)),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            Some(&native_tp_sl),
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    let body = &orders[0].raw_body;
+    assert_eq!(
+        body.get("takeProfit").and_then(|v| v.as_str()),
+        Some("55000")
+    );
+    assert_eq!(body.get("stopLoss").and_then(|v| v.as_str()), Some("47000"));
+    assert_eq!(
+        body.get("tpTriggerBy").and_then(|v| v.as_str()),
+        Some("LastPrice")
+    );
+    assert_eq!(
+        body.get("slTriggerBy").and_then(|v| v.as_str()),
+        Some("MarkPrice")
+    );
+    assert_eq!(
+        body.get("tpOrderType").and_then(|v| v.as_str()),
+        Some("Limit")
+    );
+    assert_eq!(
+        body.get("slOrderType").and_then(|v| v.as_str()),
+        Some("Market")
+    );
+    assert_eq!(
+        body.get("tpLimitPrice").and_then(|v| v.as_str()),
+        Some("55100")
+    );
+    assert_eq!(
+        body.get("closeOnTrigger").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    // No explicit mode set, so the client must default to `Full`.
+    assert_eq!(body.get("tpslMode").and_then(|v| v.as_str()), Some("Full"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_with_explicit_partial_tpsl_mode_is_preserved() {
+    let (addr, state) = start_order_capture_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let native_tp_sl = BybitNativeTpSlParams {
+        take_profit: Some("55000".to_string()),
+        tpsl_mode: Some(BybitTpSlMode::Partial),
+        ..Default::default()
+    };
+
+    let result = client
+        .submit_order(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            InstrumentId::new(Symbol::from("BTCUSDT-LINEAR"), *BYBIT_VENUE),
+            ClientOrderId::from("native-tpsl-partial-1"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::new(0.001, 3),
+            Some(TimeInForce::Gtc),
+            Some(Price::new(50_000.0, 2)),
+            None,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            Some(&native_tp_sl),
+        )
+        .await;
+
+    assert!(result.is_ok(), "Order submission should succeed");
+
+    let orders = state.order_submissions.lock().await;
+    assert_eq!(orders.len(), 1);
+
+    // A user-set `Partial` must survive instead of being overwritten with `Full`.
+    let body = &orders[0].raw_body;
+    assert_eq!(
+        body.get("tpslMode").and_then(|v| v.as_str()),
+        Some("Partial")
+    );
 }
 
 #[rstest]
@@ -3030,6 +3271,7 @@ async fn test_submit_order_spot_market_base_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3105,6 +3347,7 @@ async fn test_submit_order_spot_market_quote_quantity() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3180,6 +3423,7 @@ async fn test_submit_order_linear_does_not_send_market_unit() {
             None,  // position_idx
             None,  // bbo_side_type
             None,  // bbo_level
+            None,  // native_tp_sl
         )
         .await;
 
@@ -3252,6 +3496,7 @@ async fn test_submit_order_limit_if_touched_trigger_direction() {
             false,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -3336,6 +3581,7 @@ async fn test_submit_order_serializes_position_idx(
             false,
             false,
             position_idx,
+            None,
             None,
             None,
         )

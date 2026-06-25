@@ -32,6 +32,7 @@ use nautilus_model::{
 };
 
 use crate::{
+    actor::DataActorNative,
     cache::{Cache, refs::PositionRef},
     clock::Clock,
     msgbus,
@@ -327,6 +328,15 @@ impl GreeksCalculator {
         }
     }
 
+    /// Creates a new [`GreeksCalculator`] from a registered native actor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not been registered with a trader.
+    pub fn from_actor(actor: &impl DataActorNative) -> Self {
+        Self::new(actor.cache_rc(), actor.clock_rc())
+    }
+
     /// Calculates option or underlying greeks for a given instrument and a quantity of 1.
     ///
     /// Additional features:
@@ -374,10 +384,7 @@ impl GreeksCalculator {
 
         let instrument = {
             let cache = self.cache.borrow();
-            match cache.instrument(&instrument_id) {
-                Some(instrument) => instrument.clone(),
-                None => anyhow::bail!("Instrument definition for {instrument_id} not found"),
-            }
+            cache.try_instrument(&instrument_id)?.clone()
         };
 
         if instrument.instrument_class() != InstrumentClass::Option {
@@ -844,7 +851,7 @@ impl GreeksCalculator {
             }
 
             if let Some(ref mut idx_price) = used_index_price {
-                #[allow(clippy::float_cmp, reason = "exact-equality baseline check")]
+                #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
                 if underlying_price != unshocked_underlying_price {
                     *idx_price += 1.0 / beta
                         * (*idx_price / unshocked_underlying_price)
@@ -874,12 +881,11 @@ impl GreeksCalculator {
             if let Some(ref mut idx_vol) = used_index_vol {
                 *idx_vol *= 0.01;
 
-                #[allow(clippy::float_cmp, reason = "exact-equality baseline check")]
+                #[expect(clippy::float_cmp, reason = "exact-equality baseline check")]
                 if vol != used_vol && used_vol != 0.0 {
                     *idx_vol += 1.0 / vega_beta * (*idx_vol / used_vol) * (vol - used_vol);
                 }
 
-                #[allow(clippy::float_cmp, reason = "zero price guard")]
                 if *idx_vol != 0.0 {
                     vega *= vega_beta * vol / *idx_vol;
                 }
@@ -1756,6 +1762,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1769,6 +1776,7 @@ mod tests {
             Currency::from("USD"),
             2,
             Price::from("0.01"),
+            None,
             None,
             None,
             None,
@@ -1826,6 +1834,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         )
@@ -1854,6 +1863,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from(1),
             Quantity::from(1),
+            None,
             None,
             None,
             None,

@@ -137,15 +137,23 @@ The contract holds only when all of the following are true:
 
 ## Static enforcement
 
-A pre-commit hook named `check-dst-conventions` enforces the structural conditions in source.
+Static enforcement has two layers:
+
+- Clippy policy in `clippy.toml` and `[workspace.lints.clippy]` blocks APIs that are invalid
+  across the workspace DST contract: direct `getrandom::{fill,u32,u64}` calls and
+  `tokio::task::LocalSet`.
+- A pre-commit hook named `check-dst-conventions` enforces scoped, path-aware, and cfg-aware
+  structural checks that Clippy cannot express cleanly.
+
 The hook lives at `.pre-commit-hooks/check_dst_conventions.sh`, runs as part of the standard
 pre-commit suite, and runs in continuous integration. It covers the 16 in-scope workspace crates
 and fails the commit when it detects any of:
 
-- Raw `std::time::Instant::now()` or `SystemTime::now()` reads, including bare forms when the
-  enclosing file imports the type from `std::time`.
+- Raw `std::time::Instant::now()`, `SystemTime::now()`, or `chrono::Utc::now()` reads,
+  including bare forms when the enclosing file imports the type from `std::time`, or from
+  `chrono` for `Utc`.
 - Raw RNG usage (`rand::thread_rng`, `rand::rng()`, `fastrand::`, `getrandom::`, `OsRng`)
-  without cfg gating.
+  or `Uuid::new_v4()` without cfg gating.
 - `tokio::select!` blocks missing `biased;` within the first three lines.
 - `std::thread::spawn`, `std::thread::Builder::new`, or `tokio::task::spawn_blocking` calls that
   lack a preceding `#[cfg(test)]`, `#[cfg(not(madsim))]`, or

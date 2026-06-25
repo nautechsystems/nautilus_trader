@@ -18,19 +18,19 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::{
-    Decimal,
-    prelude::{FromPrimitive, ToPrimitive},
-};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
 
 /// Calculates the position size based on fixed risk parameters.
 ///
 /// # Panics
 ///
 /// Panics if converting `units` to a decimal fails,
-/// or if converting the final size to `f64` fails.
+/// or if converting the final size to a [`Quantity`] fails.
 #[must_use]
-#[expect(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "position sizing API mirrors fixed-risk inputs used by callers"
+)]
 pub fn calculate_fixed_risk_position_size(
     instrument: &InstrumentAny,
     entry: Price,
@@ -44,14 +44,14 @@ pub fn calculate_fixed_risk_position_size(
     units: usize,
 ) -> Quantity {
     if exchange_rate.is_zero() {
-        return instrument.make_qty(0.0, None);
+        return Quantity::zero(instrument.size_precision());
     }
 
     let risk_points = calculate_risk_ticks(entry, stop_loss, instrument);
     let risk_money = calculate_riskable_money(equity.as_decimal(), risk, commission_rate);
 
     if risk_points <= Decimal::ZERO {
-        return instrument.make_qty(0.0, None);
+        return Quantity::zero(instrument.size_precision());
     }
 
     let mut position_size =
@@ -69,19 +69,14 @@ pub fn calculate_fixed_risk_position_size(
         position_size_batched = (position_size_batched / unit_batch_size).floor() * unit_batch_size;
     }
 
-    let final_size: Decimal = position_size_batched.min(
-        instrument
-            .max_quantity()
-            .unwrap_or_else(|| instrument.make_qty(0.0, None))
-            .as_decimal(),
-    );
+    let final_size = instrument
+        .max_quantity()
+        .map_or(position_size_batched, |max_quantity| {
+            position_size_batched.min(max_quantity.as_decimal())
+        });
 
-    Quantity::new(
-        final_size
-            .to_f64()
-            .expect("Error: Decimal to f64 conversion failed"),
-        instrument.size_precision(),
-    )
+    Quantity::from_decimal_dp(final_size, instrument.size_precision())
+        .expect("Error: Failed to convert final size to Quantity")
 }
 
 // Helper functions
@@ -106,6 +101,7 @@ mod tests {
         identifiers::Symbol, instruments::stubs::default_fx_ccy, types::Currency,
     };
     use rstest::*;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -116,9 +112,16 @@ mod tests {
         InstrumentAny::CurrencyPair(default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None))
     }
 
+    #[fixture]
+    fn instrument_gbpusd_without_max_quantity() -> InstrumentAny {
+        let mut instrument = default_fx_ccy(Symbol::from_str_unchecked("GBP/USD"), None);
+        instrument.max_quantity = None;
+        InstrumentAny::CurrencyPair(instrument)
+    }
+
     #[rstest]
     fn test_calculate_with_zero_equity_returns_quantity_zero(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(0.0, instrument_gbpusd.quote_currency());
+        let equity = Money::zero(instrument_gbpusd.quote_currency());
         let entry = Price::new(1.00100, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
@@ -140,7 +143,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_with_zero_exchange_rate(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, instrument_gbpusd.quote_currency());
+        let equity = Money::new(100_000.0, instrument_gbpusd.quote_currency());
         let entry = Price::new(1.00100, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
@@ -162,7 +165,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_with_zero_risk(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, instrument_gbpusd.quote_currency());
+        let equity = Money::new(100_000.0, instrument_gbpusd.quote_currency());
         let price = Price::new(1.00100, instrument_gbpusd.price_precision());
 
         let result = calculate_fixed_risk_position_size(
@@ -227,7 +230,7 @@ mod tests {
 
     #[rstest]
     fn test_calculate_single_unit_size_when_risk_too_high(instrument_gbpusd: InstrumentAny) {
-        let equity = Money::new(100000.0, Currency::USD());
+        let equity = Money::new(100_000.0, Currency::USD());
         let entry = Price::new(3.00000, instrument_gbpusd.price_precision());
         let stop_loss = Price::new(1.00000, instrument_gbpusd.price_precision());
 
@@ -261,12 +264,36 @@ mod tests {
             Decimal::new(1, 2), // 1%
             Decimal::ZERO,
             EXCHANGE_RATE,
-            Some(Decimal::from(500000)),
+            Some(Decimal::from(500_000)),
             Decimal::from(1000),
             1,
         );
 
         assert_eq!(result, Quantity::from("500000.0"));
+    }
+
+    #[rstest]
+    fn test_calculate_without_max_quantity_leaves_size_uncapped(
+        instrument_gbpusd_without_max_quantity: InstrumentAny,
+    ) {
+        let equity = Money::from("1000000 USD");
+        let entry = Price::from("1.00010");
+        let stop_loss = Price::from("1.00000");
+
+        let result = calculate_fixed_risk_position_size(
+            &instrument_gbpusd_without_max_quantity,
+            entry,
+            stop_loss,
+            equity,
+            dec!(0.01),
+            Decimal::ZERO,
+            EXCHANGE_RATE,
+            None,
+            Decimal::from(1000),
+            1,
+        );
+
+        assert_eq!(result.as_decimal(), dec!(100000000));
     }
 
     #[rstest]
@@ -324,9 +351,9 @@ mod tests {
             entry,
             stop_loss,
             equity,
-            Decimal::new(1, 2),                   // 1%
-            Decimal::new(2, 4),                   // 0.0002
-            Decimal::from_f64(0.009931).unwrap(), // 1/107.403
+            Decimal::new(1, 2),                    // 1%
+            Decimal::new(2, 4),                    // 0.0002
+            Decimal::from_f64(0.009_931).unwrap(), // 1/107.403
             None,
             Decimal::from(1000),
             1,

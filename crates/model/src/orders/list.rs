@@ -14,18 +14,36 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashSet,
     fmt::Display,
     hash::{Hash, Hasher},
 };
 
+use ahash::AHashSet;
 use nautilus_core::UnixNanos;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::{
     identifiers::{ClientOrderId, InstrumentId, OrderListId, StrategyId},
     orders::{Order, OrderAny},
 };
+
+/// Error returned when [`OrderList::validate`] fails.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum OrderListValidationError {
+    /// The order list contains no client order IDs.
+    #[error("OrderList {order_list_id} has no orders")]
+    EmptyClientOrderIds {
+        /// The invalid order list ID.
+        order_list_id: OrderListId,
+    },
+    /// The order list contains duplicate client order IDs.
+    #[error("OrderList {order_list_id} contains duplicate client_order_ids")]
+    DuplicateClientOrderIds {
+        /// The invalid order list ID.
+        order_list_id: OrderListId,
+    },
+}
 
 /// Lightweight identifier container for a group of related orders.
 ///
@@ -134,14 +152,18 @@ impl OrderList {
     /// # Errors
     ///
     /// Returns an error if `client_order_ids` is empty or contains duplicates.
-    pub fn validate(&self) -> anyhow::Result<()> {
+    pub fn validate(&self) -> Result<(), OrderListValidationError> {
         if self.client_order_ids.is_empty() {
-            anyhow::bail!("OrderList {} has no orders", self.id);
+            return Err(OrderListValidationError::EmptyClientOrderIds {
+                order_list_id: self.id,
+            });
         }
 
-        let unique: HashSet<&ClientOrderId> = self.client_order_ids.iter().collect();
+        let unique: AHashSet<&ClientOrderId> = self.client_order_ids.iter().collect();
         if unique.len() != self.client_order_ids.len() {
-            anyhow::bail!("OrderList {} contains duplicate client_order_ids", self.id);
+            return Err(OrderListValidationError::DuplicateClientOrderIds {
+                order_list_id: self.id,
+            });
         }
 
         Ok(())
@@ -428,10 +450,13 @@ mod tests {
             UnixNanos::default(),
         );
         let err = order_list.validate().expect_err("empty list should fail");
-        assert!(
-            err.to_string().contains("OL-EMPTY-001") && err.to_string().contains("no orders"),
-            "unexpected error: {err}",
+        assert_eq!(
+            err,
+            OrderListValidationError::EmptyClientOrderIds {
+                order_list_id: OrderListId::from("OL-EMPTY-001"),
+            },
         );
+        assert_eq!(err.to_string(), "OrderList OL-EMPTY-001 has no orders");
     }
 
     #[rstest]
@@ -447,9 +472,15 @@ mod tests {
         let err = order_list
             .validate()
             .expect_err("duplicate client_order_ids should fail");
-        assert!(
-            err.to_string().contains("duplicate client_order_ids"),
-            "unexpected error: {err}",
+        assert_eq!(
+            err,
+            OrderListValidationError::DuplicateClientOrderIds {
+                order_list_id: OrderListId::from("OL-DUP-001"),
+            },
+        );
+        assert_eq!(
+            err.to_string(),
+            "OrderList OL-DUP-001 contains duplicate client_order_ids",
         );
     }
 }

@@ -215,7 +215,7 @@ impl OrderSubmitter {
             block_height,
         )?;
 
-        // Market orders are always short-term — use cached sequence (no increment)
+        // Market orders are always short-term: use cached sequence (no increment)
         let operation = format!("Submit market order {client_order_id}");
         let tx_hash = self
             .broadcaster

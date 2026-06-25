@@ -36,7 +36,7 @@ use nautilus_binance::{
         sbe::spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
     },
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::time::get_atomic_clock_realtime;
 use nautilus_model::{
     data::BarType,
@@ -73,6 +73,12 @@ const CANCEL_ORDER_BLOCK_LENGTH: u16 = 137;
 // Filter template IDs (from Binance SBE schema)
 const PRICE_FILTER_TEMPLATE_ID: u16 = 1;
 const LOT_SIZE_FILTER_TEMPLATE_ID: u16 = 4;
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Trades,
+    Bars,
+}
 
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
     let mut header = [0u8; 8];
@@ -1624,6 +1630,45 @@ async fn create_domain_client_with_instruments(
     // Cache instruments for domain methods
     client.request_instruments().await.unwrap();
     client
+}
+
+#[rstest]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = BinanceSpotHttpClient::new(
+        BinanceEnvironment::Live,
+        get_atomic_clock_realtime(),
+        None,
+        None,
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        Some(1),
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let result = match path {
+        RequiredInstrumentCachePath::Trades => {
+            client.request_trades(instrument_id, None).await.map(|_| ())
+        }
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]

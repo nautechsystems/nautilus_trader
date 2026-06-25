@@ -16,7 +16,7 @@
 //! Shared OCM stream handler state.
 
 use ahash::{AHashMap, AHashSet};
-use nautilus_model::identifiers::ClientOrderId;
+use nautilus_model::identifiers::{ClientOrderId, StrategyId};
 use rust_decimal::Decimal;
 
 use crate::{
@@ -36,6 +36,12 @@ pub struct OcmState {
     pub fill_tracker: FillTracker,
     /// Maps customer_order_ref (rfo) to ClientOrderId for stream resolution.
     pub customer_order_refs: AHashMap<String, ClientOrderId>,
+    /// Maps client_order_id to submitting strategy. Captured at submit so the stream task
+    /// builds direct events for tracked orders without cache access.
+    pub order_strategies: AHashMap<ClientOrderId, StrategyId>,
+    /// Client order IDs that already had an `OrderAccepted` emitted (via the HTTP
+    /// place response or stream synthesis), so acceptance is applied exactly once.
+    pub accepted_orders: AHashSet<ClientOrderId>,
     /// Client order IDs that already received an OCM order status update.
     pub stream_reported_client_orders: AHashSet<ClientOrderId>,
     /// Bet IDs that have received a terminal event (cancel, lapse, fill-complete).
@@ -67,23 +73,41 @@ impl OcmState {
         }
     }
 
+    /// Records the submitting strategy for a tracked order.
+    pub fn register_order_identity(
+        &mut self,
+        client_order_id: ClientOrderId,
+        strategy_id: StrategyId,
+    ) {
+        self.order_strategies.insert(client_order_id, strategy_id);
+    }
+
+    /// Returns the submitting strategy for a tracked order, if known.
+    pub fn order_strategy_id(&self, client_order_id: &ClientOrderId) -> Option<StrategyId> {
+        self.order_strategies.get(client_order_id).copied()
+    }
+
+    /// Records that acceptance has been emitted for a tracked order.
+    ///
+    /// Returns `true` when this call newly marks the order accepted (the caller
+    /// should emit `OrderAccepted`), or `false` when acceptance was already emitted.
+    pub fn mark_accepted(&mut self, client_order_id: ClientOrderId) -> bool {
+        self.accepted_orders.insert(client_order_id)
+    }
+
     /// Removes customer_order_ref mappings for a client_order_id.
     pub fn remove_customer_order_refs(&mut self, client_order_id: &ClientOrderId) {
         let rfo = make_customer_order_ref(client_order_id.as_str());
         let rfo_legacy = make_customer_order_ref_legacy(client_order_id.as_str());
         self.customer_order_refs.remove(&rfo);
         self.customer_order_refs.remove(&rfo_legacy);
+        self.order_strategies.remove(client_order_id);
+        self.accepted_orders.remove(client_order_id);
     }
 
     /// Resolves a client_order_id from the unmatched order's rfo field.
     pub fn resolve_client_order_id(&self, rfo: Option<&str>) -> Option<ClientOrderId> {
         rfo.and_then(|r| self.customer_order_refs.get(r).copied())
-    }
-
-    /// Returns `true` if the bet_id already has a terminal event and should be skipped.
-    /// Otherwise marks it as terminal and returns `false`.
-    pub fn try_mark_terminal(&mut self, bet_id: &str) -> bool {
-        !self.terminal_orders.insert(bet_id.to_string())
     }
 
     /// Returns `true` if a cancel/lapse for this bet should be suppressed

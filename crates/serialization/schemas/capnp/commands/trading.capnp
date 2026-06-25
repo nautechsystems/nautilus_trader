@@ -175,6 +175,7 @@ struct TradingCommand {
         generateFillReports @10 :GenerateFillReports;
         generatePositionStatusReports @11 :GeneratePositionStatusReports;
         generateExecutionMassStatus @12 :GenerateExecutionMassStatus;
+        batchModifyOrders @13 :BatchModifyOrders;
     }
 }
 
@@ -200,6 +201,12 @@ struct ModifyOrder {
     price @4 :Types.Price;
     triggerPrice @5 :Types.Price;
     params @6 :Base.StringMap;
+}
+
+struct BatchModifyOrders {
+    header @0 :TradingCommandHeader;
+    modifications @1 :List(ModifyOrder);
+    params @2 :Base.StringMap;
 }
 
 struct CancelOrder {

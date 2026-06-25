@@ -33,15 +33,32 @@ use axum::{
     http::{HeaderMap, StatusCode},
     response::Response,
 };
-use nautilus_common::testing::wait_until_async;
-use nautilus_kraken::{
-    common::enums::{
-        KrakenApiResult, KrakenEnvironment, KrakenOrderSide, KrakenOrderStatus, KrakenOrderType,
-        KrakenSendStatus,
+use chrono::{DateTime, Utc};
+use nautilus_common::{
+    cache::INSTRUMENT_NOT_FOUND,
+    clients::DataClient,
+    live::runner::replace_data_event_sender,
+    messages::{
+        DataEvent, DataResponse,
+        data::{InstrumentResponse, RequestInstrument},
     },
+    testing::wait_until_async,
+};
+use nautilus_core::{UUID4, UnixNanos};
+use nautilus_kraken::{
+    common::{
+        consts::KRAKEN_CLIENT_ID,
+        enums::{
+            KrakenApiResult, KrakenEnvironment, KrakenOrderSide, KrakenOrderStatus,
+            KrakenOrderType, KrakenProductType, KrakenSendStatus,
+        },
+    },
+    config::KrakenDataClientConfig,
+    data::{KrakenFuturesDataClient, KrakenSpotDataClient},
     http::{
-        KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenSpotAddOrderParamsBuilder,
-        KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient, KrakenSpotRawHttpClient,
+        KrakenFuturesHttpClient, KrakenFuturesRawHttpClient, KrakenHttpError,
+        KrakenSpotAddOrderParamsBuilder, KrakenSpotCancelOrderParamsBuilder, KrakenSpotHttpClient,
+        KrakenSpotRawHttpClient,
     },
 };
 use nautilus_model::{
@@ -65,6 +82,7 @@ struct TestServerState {
     rate_limit_after: Arc<AtomicUsize>,
     last_trades_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     last_ohlc_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+    last_executions_query: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     add_order_calls: Arc<AtomicUsize>,
     add_order_batch_calls: Arc<AtomicUsize>,
     /// When true, `/0/private/TradeBalance` returns an API error instead of the normal fixture.
@@ -77,6 +95,10 @@ struct TestServerState {
     open_positions_empty: Arc<AtomicBool>,
     /// When set, `/0/private/OpenPositions` returns this JSON string instead of the fixture file.
     open_positions_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    spot_asset_pairs_empty: Arc<AtomicBool>,
+    spot_asset_pairs_request_count: Arc<AtomicUsize>,
+    futures_instruments_empty: Arc<AtomicBool>,
+    futures_instruments_request_count: Arc<AtomicUsize>,
 }
 
 impl Default for TestServerState {
@@ -86,6 +108,7 @@ impl Default for TestServerState {
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)), // No rate limit
             last_trades_query: Arc::new(tokio::sync::Mutex::new(None)),
             last_ohlc_query: Arc::new(tokio::sync::Mutex::new(None)),
+            last_executions_query: Arc::new(tokio::sync::Mutex::new(None)),
             add_order_calls: Arc::new(AtomicUsize::new(0)),
             add_order_batch_calls: Arc::new(AtomicUsize::new(0)),
             trade_balance_error: Arc::new(AtomicBool::new(false)),
@@ -93,6 +116,10 @@ impl Default for TestServerState {
             last_trade_balance_body: Arc::new(tokio::sync::Mutex::new(None)),
             open_positions_empty: Arc::new(AtomicBool::new(false)),
             open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_asset_pairs_empty: Arc::new(AtomicBool::new(false)),
+            spot_asset_pairs_request_count: Arc::new(AtomicUsize::new(0)),
+            futures_instruments_empty: Arc::new(AtomicBool::new(false)),
+            futures_instruments_request_count: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -145,7 +172,8 @@ fn create_test_futures_instrument() -> InstrumentAny {
         None, // margin_maint
         None, // maker_fee
         None, // taker_fee
-        None,
+        None, // tick_scheme
+        None, // info
         0.into(),
         0.into(),
     ))
@@ -185,7 +213,19 @@ async fn mock_system_status() -> Response {
         .unwrap()
 }
 
-async fn mock_asset_pairs(aclass_base: Option<&str>) -> Response {
+async fn mock_asset_pairs(aclass_base: Option<&str>, state: Arc<TestServerState>) -> Response {
+    state
+        .spot_asset_pairs_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if state.spot_asset_pairs_empty.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"error":[],"result":{}}"#))
+            .unwrap();
+    }
+
     let filename = match aclass_base {
         Some("tokenized_asset") => "http_asset_pairs_tokenized.json",
         _ => "http_asset_pairs.json",
@@ -276,7 +316,19 @@ async fn mock_rate_limit_error() -> Response {
         .unwrap()
 }
 
-async fn mock_futures_instruments() -> Response {
+async fn mock_futures_instruments(state: Arc<TestServerState>) -> Response {
+    state
+        .futures_instruments_request_count
+        .fetch_add(1, Ordering::Relaxed);
+
+    if state.futures_instruments_empty.load(Ordering::Relaxed) {
+        return Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"result":"success","instruments":[]}"#))
+            .unwrap();
+    }
+
     let data = load_test_data("http_futures_instruments.json");
     Response::builder()
         .status(StatusCode::OK)
@@ -463,7 +515,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         // Strip query string for matching (some endpoints embed params in the path)
         let match_path = path.split('?').next().unwrap_or(path);
         return match match_path {
-            "/derivatives/api/v3/instruments" => mock_futures_instruments().await,
+            "/derivatives/api/v3/instruments" => mock_futures_instruments(state.clone()).await,
             "/derivatives/api/v3/tickers" => mock_futures_tickers().await,
             "/derivatives/api/v3/fills" => mock_futures_fills().await,
             "/derivatives/api/v3/openpositions" => mock_futures_open_positions().await,
@@ -488,6 +540,10 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
         return match path {
             p if p.starts_with("/api/history/v2/orders") => mock_futures_order_events().await,
             p if p.contains("/market/") && p.contains("/executions") => {
+                let params = Query::<HashMap<String, String>>::try_from_uri(req.uri())
+                    .map(|q| q.0)
+                    .unwrap_or_default();
+                *state.last_executions_query.lock().await = Some(params);
                 mock_futures_public_executions().await
             }
             _ => Response::builder()
@@ -508,7 +564,7 @@ async fn mock_handler(req: Request, state: Arc<TestServerState>) -> Response {
             let query =
                 Query::<HashMap<String, String>>::try_from_uri(req.uri()).unwrap_or_default();
             let aclass_base = query.get("aclass_base").map(|s| s.as_str());
-            mock_asset_pairs(aclass_base).await
+            mock_asset_pairs(aclass_base, state.clone()).await
         }
         "/0/public/Ticker" => mock_ticker().await,
         "/0/public/OHLC" => {
@@ -657,6 +713,200 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         let state = state.clone();
         async move { mock_handler(req, state).await }
     })
+}
+
+async fn start_test_server() -> (SocketAddr, Arc<TestServerState>) {
+    let state = Arc::new(TestServerState::default());
+    let app = create_router(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    wait_for_server(addr, "/0/public/Time").await;
+
+    (addr, state)
+}
+
+async fn drain_data_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    timeout: Duration,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+    let deadline = tokio::time::Instant::now() + timeout;
+    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
+        events.push(event);
+    }
+    events
+}
+
+fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
+    events.iter().find_map(|event| match event {
+        DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
+        _ => None,
+    })
+}
+
+fn create_data_config(addr: SocketAddr, product_type: KrakenProductType) -> KrakenDataClientConfig {
+    KrakenDataClientConfig {
+        product_type,
+        environment: KrakenEnvironment::Live,
+        base_url: Some(format!("http://{addr}")),
+        ws_public_url: Some(format!("ws://{addr}/ws-public")),
+        ws_private_url: Some(format!("ws://{addr}/ws-private")),
+        ws_l3_url: Some(format!("ws://{addr}/ws-l3")),
+        timeout_secs: 10,
+        max_requests_per_second: Some(5),
+        ..KrakenDataClientConfig::default()
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_spot_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenSpotDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Spot),
+    )
+    .expect("Kraken spot data client");
+    let instrument_id = InstrumentId::from("BTC/USDT.KRAKEN");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async {
+            state.spot_asset_pairs_request_count.load(Ordering::Relaxed) >= 1 && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *KRAKEN_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    let count_after_first = state.spot_asset_pairs_request_count.load(Ordering::Relaxed);
+    state.spot_asset_pairs_empty.store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async {
+            state.spot_asset_pairs_request_count.load(Ordering::Relaxed) > count_after_first
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when Kraken Spot returns no instruments; events were: {events:?}",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_data_client_request_instrument_refetches_when_cached() {
+    let (addr, state) = start_test_server().await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let client = KrakenFuturesDataClient::new(
+        *KRAKEN_CLIENT_ID,
+        create_data_config(addr, KrakenProductType::Futures),
+    )
+    .expect("Kraken futures data client");
+    let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
+
+    let first_request_id = UUID4::new();
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            first_request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("first request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 1
+                && !rx.is_empty()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+    let events = drain_data_events(&mut rx, Duration::from_millis(200)).await;
+    let response = instrument_response(&events).expect("instrument response");
+    assert_eq!(response.correlation_id, first_request_id);
+    assert_eq!(response.client_id, *KRAKEN_CLIENT_ID);
+    assert_eq!(response.instrument_id, instrument_id);
+
+    state
+        .futures_instruments_empty
+        .store(true, Ordering::Relaxed);
+
+    client
+        .request_instrument(RequestInstrument::new(
+            instrument_id,
+            None,
+            None,
+            Some(*KRAKEN_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("second request_instrument");
+
+    wait_until_async(
+        || async {
+            state
+                .futures_instruments_request_count
+                .load(Ordering::Relaxed)
+                >= 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = drain_data_events(&mut rx, Duration::from_millis(300)).await;
+    assert!(
+        instrument_response(&events).is_none(),
+        "request_instrument must not emit a stale cached response when Kraken Futures returns no instruments; events were: {events:?}",
+    );
 }
 
 #[rstest]
@@ -1177,6 +1427,24 @@ async fn test_spot_raw_get_websockets_token_with_credentials() {
 
 #[rstest]
 #[tokio::test]
+async fn test_spot_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenSpotHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_spot_domain_request_trades() {
     let state = Arc::new(TestServerState::default());
     let app = create_router(state);
@@ -1212,8 +1480,19 @@ async fn test_spot_domain_request_trades() {
     let result = client.request_trades(instrument_id, None, None, None).await;
     assert!(result.is_ok(), "Failed to request trades: {result:?}");
 
-    let trades = result.unwrap();
-    assert!(!trades.is_empty());
+    let all = result.unwrap();
+    assert!(!all.is_empty());
+
+    // `ts_init` is stamped per request and differs between the two calls, so
+    // compare the most recent trades by trade id rather than by value
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(3))
+        .await
+        .unwrap();
+    assert_eq!(limited.len(), 3);
+    let recent_ids: Vec<_> = all[all.len() - 3..].iter().map(|t| t.trade_id).collect();
+    let limited_ids: Vec<_> = limited.iter().map(|t| t.trade_id).collect();
+    assert_eq!(limited_ids, recent_ids);
 }
 
 #[rstest]
@@ -2120,9 +2399,27 @@ async fn test_spot_raw_api_error_response() {
 
 #[rstest]
 #[tokio::test]
+async fn test_futures_domain_request_trades_missing_cached_instrument_returns_parse_error() {
+    let client =
+        KrakenFuturesHttpClient::new(KrakenEnvironment::Live, None, 10, None, None, None, None, 5)
+            .unwrap();
+
+    let instrument_id = InstrumentId::from("UNKNOWN.KRAKEN");
+    let result = client.request_trades(instrument_id, None, None, None).await;
+
+    match result {
+        Err(KrakenHttpError::ParseError(message)) => {
+            assert_eq!(message, format!("{INSTRUMENT_NOT_FOUND}: {instrument_id}"));
+        }
+        other => panic!("Expected parse error, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_futures_domain_request_trades() {
     let state = Arc::new(TestServerState::default());
-    let app = create_router(state);
+    let app = create_router(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let base_url = format!("http://{addr}");
@@ -2152,11 +2449,49 @@ async fn test_futures_domain_request_trades() {
     // due to mock execution data having BTC-level prices
     let instrument_id = InstrumentId::from("PF_ETHUSD.KRAKEN");
 
-    let result = client.request_trades(instrument_id, None, None, None).await;
+    // Count-only requests fetch the most recent page with `sort=desc`
+    let trades = client
+        .request_trades(instrument_id, None, None, None)
+        .await
+        .expect("Failed to request futures trades");
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("desc"));
+    }
+    // The `sort=desc` page is reversed back to ascending chronological order
+    assert!(
+        trades.len() >= 2,
+        "need >=2 parsed trades to assert ordering, was {}",
+        trades.len()
+    );
+    assert!(
+        trades.windows(2).all(|w| w[0].ts_event <= w[1].ts_event),
+        "count-only futures trades must be ascending by ts_event"
+    );
+
+    // A count-only limit keeps the most recent trade (tail after reversal)
+    let limited = client
+        .request_trades(instrument_id, None, None, Some(1))
+        .await
+        .expect("Failed to request limited futures trades");
+    assert_eq!(limited.len(), 1);
+    assert_eq!(limited[0].trade_id, trades[trades.len() - 1].trade_id);
+
+    // Anchored requests page forward from `start` with `sort=asc`
+    let start = DateTime::<Utc>::from_timestamp(1_700_000_000, 0);
+    let result = client
+        .request_trades(instrument_id, start, None, None)
+        .await;
     assert!(
         result.is_ok(),
-        "Failed to request futures trades: {result:?}"
+        "Failed to request anchored futures trades: {result:?}"
     );
+    {
+        let query = state.last_executions_query.lock().await;
+        let sort = query.as_ref().and_then(|params| params.get("sort"));
+        assert_eq!(sort.map(String::as_str), Some("asc"));
+    }
 }
 
 #[rstest]
@@ -2435,6 +2770,7 @@ async fn test_spot_domain_submit_orders_batch_preserves_status_order() {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     )));
@@ -2552,6 +2888,7 @@ async fn test_spot_domain_submit_orders_batch_singleton_falls_back_to_add_order(
         8,
         Price::from("0.1"),
         Quantity::from("0.00000001"),
+        None,
         None,
         None,
         None,
@@ -3259,6 +3596,7 @@ fn create_xbtusd_spot_instrument() -> (InstrumentId, InstrumentAny) {
         None,
         None,
         None,
+        None,
         0.into(),
         0.into(),
     ));
@@ -3313,6 +3651,7 @@ async fn test_spot_margin_position_flat_when_fully_closed() {
         8,
         Price::from("0.1"),
         Quantity::from("0.00000001"),
+        None,
         None,
         None,
         None,

@@ -31,7 +31,7 @@ use nautilus_common::{
     clock::Clock,
     msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
     data::{
         Bar, CatalogPathPrefix, CustomData, CustomDataTrait, Data, FundingRateUpdate,
@@ -85,6 +85,10 @@ pub struct FeatherBuffer {
 
 impl FeatherBuffer {
     /// Creates a new [`FeatherBuffer`] using the given path, schema and maximum buffer size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Arrow stream writer cannot be created.
     pub fn new(schema: &Schema, rotation_config: RotationConfig) -> Result<Self, ArrowError> {
         let writer = StreamWriter::try_new(Vec::new(), schema)?;
         let mut max_buffer_size = 1_000_000_000_000; // 1 GB
@@ -106,6 +110,10 @@ impl FeatherBuffer {
     /// Writes the given `RecordBatch` to the internal buffer.
     ///
     /// Returns true if it should be rotated according rotation policy
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Arrow IPC writing fails.
     pub fn write_record_batch(&mut self, batch: &RecordBatch) -> Result<bool, ArrowError> {
         self.writer.write(batch)?;
         self.size += batch.get_array_memory_size() as u64;
@@ -113,6 +121,11 @@ impl FeatherBuffer {
     }
 
     /// Consumes the writer and returns the buffer of bytes from the `StreamWriter`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the replacement writer cannot be created or the previous
+    /// writer cannot be finalized.
     pub fn take_buffer(&mut self) -> Result<Vec<u8>, ArrowError> {
         let mut writer = StreamWriter::try_new(Vec::new(), &self.schema)?;
         std::mem::swap(&mut self.writer, &mut writer);
@@ -227,6 +240,11 @@ impl FeatherWriter {
     /// This is the user entry point. The data is encoded into a `RecordBatch` and written to the appropriate `FileWriter`.
     /// If the writer's buffer reaches capacity or meets rotation criteria (based on the rotation configuration),
     /// the `FileWriter` is flushed to the object store and replaced.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if path selection, Arrow encoding, writer creation, buffering,
+    /// rotation, or flushing fails.
     pub async fn write<T>(&mut self, data: T) -> Result<(), Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
@@ -268,6 +286,11 @@ impl FeatherWriter {
     ///
     /// Per-instrument types are partitioned by instrument so a mixed-instrument
     /// batch lands in the correct file for each instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if path selection, Arrow encoding, writer creation, buffering,
+    /// rotation, or flushing fails.
     pub async fn write_batch<T>(&mut self, data: Vec<T>) -> Result<(), Box<dyn std::error::Error>>
     where
         T: EncodeToRecordBatch + CatalogPathPrefix + 'static,
@@ -394,8 +417,9 @@ impl FeatherWriter {
         let now_utc = self.clock.borrow().utc_now();
         let now_tz = now_utc.with_timezone(&rotation_timezone);
 
-        let rotation_time_secs = (*rotation_time / 1_000_000_000) as u32;
-        let rotation_time_nanos = (*rotation_time % 1_000_000_000) as u32;
+        let rotation_time_secs = u32::try_from(*rotation_time / NANOSECONDS_IN_SECOND).unwrap_or(0);
+        let rotation_time_nanos =
+            u32::try_from(*rotation_time % NANOSECONDS_IN_SECOND).unwrap_or(0);
         let rotation_time_naive = chrono::NaiveTime::from_num_seconds_from_midnight_opt(
             rotation_time_secs,
             rotation_time_nanos,
@@ -414,20 +438,19 @@ impl FeatherWriter {
                 // Add interval_ns to next_rotation_tz
                 // Since chrono::Duration doesn't take u64 nanos directly comfortably for large values,
                 // we'll convert to seconds and nanos.
-                let secs = (interval_ns / 1_000_000_000) as i64;
-                let nanos = (interval_ns % 1_000_000_000) as u32;
+                let secs = i64::try_from(interval_ns / NANOSECONDS_IN_SECOND).unwrap_or(i64::MAX);
+                let nanos = u32::try_from(interval_ns % NANOSECONDS_IN_SECOND).unwrap_or(0);
                 next_rotation_tz = next_rotation_tz
                     + chrono::Duration::seconds(secs)
-                    + chrono::Duration::nanoseconds(nanos as i64);
+                    + chrono::Duration::nanoseconds(i64::from(nanos));
             }
         }
 
-        UnixNanos::from(
-            next_rotation_tz
-                .with_timezone(&chrono::Utc)
-                .timestamp_nanos_opt()
-                .unwrap_or(0) as u64,
-        )
+        let timestamp_ns = next_rotation_tz
+            .with_timezone(&chrono::Utc)
+            .timestamp_nanos_opt()
+            .unwrap_or(0);
+        UnixNanos::from(u64::try_from(timestamp_ns.max(0)).unwrap_or(0))
     }
 
     /// Flushes and rotates `FileWriter` associated with `key`.
@@ -528,6 +551,10 @@ impl FeatherWriter {
     /// Note: In Rust, we use in-memory buffers. Flushing writes the current buffer to the
     /// object store and creates a new buffer for continued writing. This is different from
     /// Python which just flushes OS buffers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if buffer finalization or object store writes fail.
     pub async fn flush(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Collect paths and their current buffers before flushing
         let paths_to_flush: Vec<FileWriterPath> = self.writers.keys().cloned().collect();
@@ -554,6 +581,10 @@ impl FeatherWriter {
     /// Closes all writers by flushing and removing them.
     ///
     /// After calling this, no further writes should be performed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if flushing buffered data fails.
     pub async fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.flush().await?;
         self.writers.clear();
@@ -561,14 +592,16 @@ impl FeatherWriter {
     }
 
     /// Returns whether the writer has been closed (all writers cleared).
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.writers.is_empty()
     }
 
     /// Returns information about the current files being written.
     ///
-    /// Each entry maps a writer key (type_str and optional instrument_id) to
+    /// Each entry maps a writer key (`type_str` and optional `instrument_id`) to
     /// its current buffer size and file path.
+    #[must_use]
     pub fn get_current_file_info(&self) -> HashMap<String, (u64, String)> {
         let mut info = HashMap::new();
 
@@ -583,6 +616,7 @@ impl FeatherWriter {
     }
 
     /// Returns the next rotation time for a specific writer key, if set.
+    #[must_use]
     pub fn get_next_rotation_time(
         &self,
         type_str: &str,
@@ -652,7 +686,7 @@ impl FeatherWriter {
         }
     }
 
-    /// Builds `FileWriterPath` for custom data using DataType identifier as folder partition (catalog layout).
+    /// Builds `FileWriterPath` for custom data using `DataType` identifier as folder partition (catalog layout).
     fn get_writer_path_custom(&self, type_name: &str, identifier: Option<&str>) -> FileWriterPath {
         let timestamp = self.clock.borrow().timestamp_ns();
         let type_str = format!("data/custom/{type_name}");
@@ -680,7 +714,7 @@ impl FeatherWriter {
     }
 
     /// Generates a key for a `FileWriter` based on type T and optional instrument ID.
-    /// Reuses an existing writer key (same type_str and instrument_id) if present, so we
+    /// Reuses an existing writer key (same `type_str` and `instrument_id`) if present, so we
     /// buffer multiple items in the same file until rotation; otherwise creates a new path with current timestamp.
     fn get_writer_path<T>(&self, data: &T) -> Result<FileWriterPath, Box<dyn std::error::Error>>
     where
@@ -731,6 +765,14 @@ impl FeatherWriter {
     ///
     /// This is a convenience method that routes the Data enum to the appropriate
     /// typed write method.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the routed typed or custom data write fails.
+    #[allow(
+        clippy::match_wildcard_for_single_variants,
+        reason = "Data::Defi appears through nautilus-model feature unification"
+    )]
     pub async fn write_data(&mut self, data: Data) -> Result<(), Box<dyn std::error::Error>> {
         match data {
             Data::Quote(quote) => self.write(quote).await,
@@ -741,20 +783,22 @@ impl FeatherWriter {
             Data::IndexPriceUpdate(price) => self.write(price).await,
             Data::MarkPriceUpdate(price) => self.write(price).await,
             Data::FundingRateUpdate(funding) => self.write(funding).await,
-            Data::InstrumentStatus(status) => self.write(status).await,
             Data::OptionGreeks(greeks) => self.write(greeks).await,
+            Data::InstrumentStatus(status) => self.write(status).await,
             Data::InstrumentClose(close) => self.write(close).await,
             Data::Custom(custom) => self.write_custom_data(&custom).await,
             Data::Deltas(deltas_api) => {
                 // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
                 self.write_batch(deltas_api.deltas.clone()).await
             }
+            #[cfg(feature = "defi")]
+            Data::Defi(_) => Err("Unsupported Data::Defi variant for feather writes".into()),
             #[allow(unreachable_patterns)]
             _ => Err("Unsupported Data variant for feather writes".into()),
         }
     }
 
-    /// Writes a single custom data value (catalog layout: data/custom/{type_name}/[{identifier}/]).
+    /// Writes a single custom data value (catalog layout: `data/custom/{type_name}/[{identifier}/]`).
     async fn write_custom_data(
         &mut self,
         custom: &CustomData,
@@ -796,6 +840,10 @@ impl FeatherWriter {
     ///
     /// Instruments are written to feather files and organized by instrument ID.
     /// This method supports writing instruments that implement `EncodeToRecordBatch` and `CatalogPathPrefix`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument write fails.
     pub async fn write_instrument(
         &mut self,
         instrument: InstrumentAny,
@@ -812,6 +860,10 @@ impl FeatherWriter {
     ///
     /// Note: The handler spawns async tasks to write data, so writes happen asynchronously
     /// and won't block the message bus.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription setup fails.
     pub fn subscribe_to_message_bus(
         writer: Rc<RefCell<Self>>,
     ) -> Result<ShareableMessageHandler, Box<dyn std::error::Error>> {
@@ -844,10 +896,10 @@ impl FeatherWriter {
             try_write!(message, OrderBookDepth10, "OrderBookDepth10");
             try_write!(message, IndexPriceUpdate, "IndexPriceUpdate");
             try_write!(message, MarkPriceUpdate, "MarkPriceUpdate");
-            try_write!(message, InstrumentStatus, "InstrumentStatus");
-            try_write!(message, OptionGreeks, "OptionGreeks");
-            try_write!(message, InstrumentClose, "InstrumentClose");
             try_write!(message, FundingRateUpdate, "FundingRateUpdate");
+            try_write!(message, OptionGreeks, "OptionGreeks");
+            try_write!(message, InstrumentStatus, "InstrumentStatus");
+            try_write!(message, InstrumentClose, "InstrumentClose");
             try_write!(message, AccountState, "AccountState");
             try_write!(message, OrderInitialized, "OrderInitialized");
             try_write!(message, OrderDenied, "OrderDenied");
@@ -970,8 +1022,8 @@ mod tests {
             Price::from("100.0"),
             Quantity::from("100.0"),
             Quantity::from("100.0"),
-            UnixNanos::from(1000000000000000000),
-            UnixNanos::from(1000000000000000000),
+            UnixNanos::from(1_000_000_000_000_000_000),
+            UnixNanos::from(1_000_000_000_000_000_000),
         );
 
         let trade = TradeTick::new(
@@ -980,8 +1032,8 @@ mod tests {
             Quantity::from("100.0"),
             AggressorSide::Buyer,
             TradeId::from("1"),
-            UnixNanos::from(1000000000000000000),
-            UnixNanos::from(1000000000000000000),
+            UnixNanos::from(1_000_000_000_000_000_000),
+            UnixNanos::from(1_000_000_000_000_000_000),
         );
 
         manager.write(quote).await.unwrap();
@@ -1343,8 +1395,8 @@ mod tests {
             UnixNanos::from(2000),
         );
 
-        let deltas = OrderBookDeltas::new(instrument_id, vec![delta1, delta2]);
-        let deltas_api = OrderBookDeltas_API::new(deltas);
+        let book_deltas = OrderBookDeltas::new(instrument_id, vec![delta1, delta2]);
+        let deltas_api = OrderBookDeltas_API::new(book_deltas);
 
         // Test writing OrderBookDeltas via write_data
         writer.write_data(Data::Deltas(deltas_api)).await.unwrap();

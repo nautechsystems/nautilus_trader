@@ -87,6 +87,7 @@ pub fn crypto_future_btcusdt(
         None,
         None,
         None,
+        None,
         None, // info
         0.into(),
         0.into(),
@@ -123,6 +124,7 @@ pub fn ethbtc_quanto(
         Some(Money::new(1.0, Currency::from("USDT"))),
         Some(Price::from("1.0")),
         Some(Price::from("0.00001")),
+        None,
         None,
         None,
         None,
@@ -165,6 +167,7 @@ pub fn xbtusd_inverse_perp(
         Some(dec!(0.0035)),                // margin_maint
         Some(dec!(-0.00025)),              // maker_fee (rebate)
         Some(dec!(0.00075)),               // taker_fee
+        None,                              // tick_scheme
         None,                              // info
         UnixNanos::default(),              // ts_event
         UnixNanos::default(),              // ts_init
@@ -207,6 +210,7 @@ pub fn crypto_option_btc_deribit(
         None,
         Some(dec!(0.0003)),
         Some(dec!(0.0003)),
+        None,
         None, // info
         0.into(),
         0.into(),
@@ -238,6 +242,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Some(dec!(0.35)),
         Some(dec!(0.0002)),
         Some(dec!(0.0004)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -269,6 +274,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -300,6 +306,7 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         Some(dec!(0.0035)),
         Some(dec!(-0.00025)),
         Some(dec!(0.00075)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -329,6 +336,7 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
         Some(dec!(0.001)),
         Some(dec!(0.001)),
         Some(dec!(0.001)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -358,6 +366,7 @@ pub fn currency_pair_ethusdt() -> CurrencyPair {
         Some(dec!(0.0035)),
         Some(dec!(0.0001)),
         Some(dec!(0.0001)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -374,6 +383,11 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
     let base_currency = symbol.as_str().split('/').next().unwrap();
     let quote_currency = symbol.as_str().split('/').next_back().unwrap();
     let price_precision = if quote_currency == "JPY" { 3 } else { 5 };
+    let tick_scheme = if quote_currency == "JPY" {
+        "FOREX_3DECIMAL"
+    } else {
+        "FOREX_5DECIMAL"
+    };
     let price_increment = Price::new(
         1.0 / 10.0f64.powi(i32::from(price_precision)),
         price_precision,
@@ -399,6 +413,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         Some(dec!(0.03)),
         Some(dec!(0.00002)),
         Some(dec!(0.00002)),
+        Some(Ustr::from(tick_scheme)),
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -438,6 +453,7 @@ pub fn equity_aapl() -> Equity {
         None,
         None,
         None,
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -454,6 +470,7 @@ pub fn equity_aapl_itch() -> Equity {
         Currency::from("USD"),
         4,
         Price::from("0.0001"),
+        None,
         None,
         None,
         None,
@@ -511,6 +528,7 @@ pub fn futures_contract_es(
         None,
         None,
         None,
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -535,6 +553,7 @@ pub fn futures_spread_es() -> FuturesSpread {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
         None,
         None,
         None,
@@ -576,6 +595,7 @@ pub fn option_contract_appl() -> OptionContract {
         None,
         None,
         None,
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -600,6 +620,7 @@ pub fn option_spread() -> OptionSpread {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
         None,
         None,
         None,
@@ -644,6 +665,7 @@ pub fn crypto_futures_spread_btc_deribit() -> CryptoFuturesSpread {
         None,
         Some(dec!(0.0003)),
         Some(dec!(0.0003)),
+        None,
         None, // info
         0.into(),
         0.into(),
@@ -680,6 +702,7 @@ pub fn crypto_option_spread_btc_deribit() -> CryptoOptionSpread {
         None,
         Some(dec!(0.0003)),
         Some(dec!(0.0003)),
+        None,
         None, // info
         0.into(),
         0.into(),
@@ -766,6 +789,7 @@ pub fn betting() -> BettingInstrument {
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         None, // info
         ts_event,
         ts_init,
@@ -794,6 +818,7 @@ pub fn commodity_gold() -> Commodity {
         None,
         None,
         None,
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -810,6 +835,7 @@ pub fn index_instrument_spx() -> IndexInstrument {
         0,
         Price::from("0.01"),
         Quantity::from("1"),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -829,6 +855,7 @@ pub fn cfd_gold() -> Cfd {
         Price::from("0.01"),
         Quantity::from("1"),
         Some(Quantity::from("1")),
+        None,
         None,
         None,
         None,
@@ -872,6 +899,7 @@ pub fn perpetual_contract_eurusd() -> PerpetualContract {
         Some(dec!(0.03)),
         Some(dec!(0.00002)),
         Some(dec!(0.00002)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),
@@ -898,6 +926,7 @@ pub fn binary_option() -> BinaryOption {
         size_increment.precision,
         price_increment,
         size_increment,
+        None,
         None,
         None,
         None,
@@ -941,6 +970,7 @@ pub fn tokenized_asset_aaplx() -> TokenizedAsset {
         None,
         Some(dec!(-0.0002)),
         Some(dec!(0.001)),
+        None,
         None, // info
         UnixNanos::default(),
         UnixNanos::default(),

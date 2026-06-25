@@ -29,7 +29,7 @@ node = [
   "dep:nautilus-system",
   "dep:nautilus-trading",
 ]
-plugin = ["node", "dep:aws-lc-rs", "dep:nautilus-plugin"]
+plugin = ["node"]
 examples = ["node", "dep:nautilus-testkit", "nautilus-trading/examples"]
 streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
 extension-module = [
@@ -57,7 +57,12 @@ python = [
   "pyo3-stub-gen",
   "streaming",
 ]
-defi = ["dep:nautilus-data", "nautilus-common/defi", "nautilus-data/defi"]
+defi = [
+  "dep:nautilus-data",
+  "nautilus-common/defi",
+  "nautilus-data/defi",
+  "nautilus-persistence?/defi",
+]
 simulation = [
   "node",
   "nautilus-common/simulation",
@@ -81,7 +86,6 @@ nautilus-model = { workspace = true, features = ["stubs"] }
 
 nautilus-data = { workspace = true, optional = true }
 nautilus-persistence = { workspace = true, optional = true }
-nautilus-plugin = { workspace = true, features = ["host"], optional = true }
 nautilus-portfolio = { workspace = true, optional = true }
 nautilus-risk = { workspace = true, optional = true }
 nautilus-system = { workspace = true, features = ["live"], optional = true }
@@ -91,7 +95,6 @@ nautilus-trading = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-aws-lc-rs = { workspace = true, optional = true }
 bon = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
@@ -106,6 +109,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+bytes = { workspace = true }
 criterion = { workspace = true }
 madsim = { workspace = true }
 rstest = { workspace = true }
@@ -122,16 +126,6 @@ harness = false
 name = "manager"
 path = "tests/manager.rs"
 required-features = ["node"]
-
-[[test]]
-name = "plugin"
-path = "tests/plugin.rs"
-required-features = ["plugin"]
-
-[[test]]
-name = "plugin_dispatch"
-path = "tests/plugin_dispatch.rs"
-required-features = ["plugin"]
 
 [[test]]
 name = "node"

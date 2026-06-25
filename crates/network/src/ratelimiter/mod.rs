@@ -321,6 +321,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_enormous_quota_denies_after_burst() {
+        // Regression: a period beyond ~584 years panicked in Gcra::new; with
+        // clamping it must admit the burst and then deny, not admit everything
+        let quota = Quota::with_period(Duration::MAX)
+            .unwrap()
+            .allow_burst(NonZeroU32::new(u32::MAX).unwrap());
+        let clock = FakeRelativeClock::default();
+        let limiter: RateLimiter<String, FakeRelativeClock> =
+            RateLimiter::new_with_clock(Some(quota), vec![], clock);
+
+        let key = "key".to_string();
+        assert!(limiter.check_key(&key).is_ok());
+        assert!(limiter.check_key(&key).is_err());
+    }
+
+    #[rstest]
     fn test_default_quota() {
         let mock_limiter = initialize_mock_rate_limiter();
 
@@ -480,9 +496,6 @@ mod tests {
 
         use crate::ratelimiter::{gcra::StateSnapshot, nanos::Nanos};
 
-        // Upper bound: ~1 hour in nanoseconds (realistic GCRA range)
-        const MAX_NANOS: u64 = 3_600_000_000_000;
-
         proptest! {
             #![proptest_config(ProptestConfig {
                 failure_persistence: Some(Box::new(
@@ -491,12 +504,13 @@ mod tests {
                 ..ProptestConfig::default()
             })]
 
+            // Full u64 domain: the historical overflow lived above the narrowed one-hour range
             #[rstest]
             fn remaining_burst_capacity_never_panics(
-                t in 0u64..=MAX_NANOS,
-                tau in 0u64..=MAX_NANOS,
-                time_of_measurement in 0u64..=MAX_NANOS,
-                tat in 0u64..=MAX_NANOS,
+                t in proptest::num::u64::ANY,
+                tau in proptest::num::u64::ANY,
+                time_of_measurement in proptest::num::u64::ANY,
+                tat in proptest::num::u64::ANY,
             ) {
                 let snapshot = StateSnapshot::new(
                     Nanos::from(t),
@@ -506,6 +520,17 @@ mod tests {
                 );
 
                 let _ = snapshot.remaining_burst_capacity();
+            }
+
+            // Operators must saturate across the full u64 domain (a wrapped TAT admits everything)
+            #[rstest]
+            fn nanos_operators_never_panic(a in proptest::num::u64::ANY, b in proptest::num::u64::ANY) {
+                let na = Nanos::from(a);
+                let nb = Nanos::from(b);
+
+                prop_assert_eq!((na + nb).as_u64(), a.saturating_add(b));
+                prop_assert_eq!((na * b).as_u64(), a.saturating_mul(b));
+                prop_assert_eq!(na.saturating_sub(nb).as_u64(), a.saturating_sub(b));
             }
         }
     }

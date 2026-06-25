@@ -22,6 +22,7 @@ crate-type = ["rlib", "staticlib"]
 
 [features]
 default = []
+defi = ["nautilus-model/defi"]
 cloud = [
   "object_store/aws",
   "object_store/azure",
@@ -49,6 +50,7 @@ python = [
 ]
 high-precision = [
   "nautilus-model/high-precision",
+  "nautilus-testkit/high-precision",
   "nautilus-serialization/high-precision",
 ]
 
@@ -72,7 +74,6 @@ chrono-tz = { workspace = true }
 datafusion = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
-itertools = { workspace = true }
 log = { workspace = true }
 object_store = { workspace = true }
 parquet = { workspace = true }

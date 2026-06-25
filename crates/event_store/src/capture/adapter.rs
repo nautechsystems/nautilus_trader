@@ -33,14 +33,16 @@
 //! tests.
 
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, Mutex, PoisonError,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
-use nautilus_core::UnixNanos;
+use ahash::AHashSet;
+use nautilus_core::{UUID4, UnixNanos};
 
 use crate::{
     capture::{encoder::EncodeError, registry::EncoderRegistry},
@@ -48,6 +50,10 @@ use crate::{
     headers::Headers,
     writer::{EntryDraft, EventStoreWriter, HaltCallback, HaltReason, SubmitError},
 };
+
+// Duplicate dispatches of the same message land within one engine cycle (endpoint send
+// followed by topic publish), so a small dedup window suffices and keeps memory flat.
+const RECENT_IDENTITY_CAPACITY: usize = 128;
 
 /// Errors returned by [`BusCaptureAdapter::capture`].
 ///
@@ -86,6 +92,32 @@ pub struct BusCaptureAdapter {
     halt: HaltCallback,
     halted: AtomicBool,
     submit_counter: Option<Arc<AtomicU64>>,
+    recent_identities: Mutex<RecentIdentities>,
+}
+
+// Insertion-ordered set of recently captured message identities with FIFO eviction.
+#[derive(Debug, Default)]
+struct RecentIdentities {
+    order: VecDeque<UUID4>,
+    seen: AHashSet<UUID4>,
+}
+
+impl RecentIdentities {
+    // Returns false when `identity` was already noted; records it otherwise.
+    fn note_fresh(&mut self, identity: UUID4) -> bool {
+        if self.seen.contains(&identity) {
+            return false;
+        }
+
+        if self.order.len() == RECENT_IDENTITY_CAPACITY
+            && let Some(evicted) = self.order.pop_front()
+        {
+            self.seen.remove(&evicted);
+        }
+        self.order.push_back(identity);
+        self.seen.insert(identity);
+        true
+    }
 }
 
 impl Debug for BusCaptureAdapter {
@@ -116,6 +148,7 @@ impl BusCaptureAdapter {
             halt,
             halted: AtomicBool::new(false),
             submit_counter: None,
+            recent_identities: Mutex::new(RecentIdentities::default()),
         }
     }
 
@@ -149,7 +182,10 @@ impl BusCaptureAdapter {
     /// Looks up the encoder for `T`, builds an [`EntryDraft`], and forwards it to the
     /// writer. Returns `Ok(false)` when the type has no registered encoder so the adapter
     /// can be wired into bus dispatch paths that carry a mix of state-affecting and
-    /// non-state-affecting messages without surfacing per-message errors.
+    /// non-state-affecting messages without surfacing per-message errors, and when the
+    /// message's registered identity was already captured on another dispatch hop (the
+    /// same order event reaches the tap via the portfolio endpoint send and the strategy
+    /// topic publish; the log records it once).
     ///
     /// `topic` is the bus topic the message was dispatched on, `headers` are the
     /// dispatch-time correlation headers (defaulting to [`Headers::empty`] until header
@@ -196,6 +232,12 @@ impl BusCaptureAdapter {
             return Err(CaptureError::Halted);
         }
 
+        if let Some(identity) = self.registry.identity_for_any(message)
+            && !self.note_fresh_identity(identity)
+        {
+            return Ok(false);
+        }
+
         let Some((payload_type, encoded)) = self.registry.encode_any(message)? else {
             return Ok(false);
         };
@@ -221,6 +263,15 @@ impl BusCaptureAdapter {
                 Err(CaptureError::Submit(e))
             }
         }
+    }
+
+    fn note_fresh_identity(&self, identity: UUID4) -> bool {
+        // The dedup window is a cache: on the (panic-only) poisoned path the prior state
+        // is still internally consistent, so recover the guard rather than propagate.
+        self.recent_identities
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .note_fresh(identity)
     }
 
     fn fail_stop(&self, err: &SubmitError) {

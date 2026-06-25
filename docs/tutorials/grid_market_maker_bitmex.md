@@ -369,11 +369,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("300"))
-        .with_num_levels(3)
-        .with_grid_step_bps(100)
-        .with_skew_factor(0.5)
-        .with_requote_threshold_bps(10);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("300"))
+        .num_levels(3)
+        .grid_step_bps(100)
+        .skew_factor(0.5)
+        .requote_threshold_bps(10)
+        .build();
     let strategy = GridMarketMaker::new(config);
 
     node.add_strategy(strategy)?;

@@ -15,8 +15,9 @@
 
 //! Python bindings for execution engine and order emulator configuration.
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::identifiers::ClientId;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 
 use crate::{engine::config::ExecutionEngineConfig, order_emulator::config::OrderEmulatorConfig};
 
@@ -59,7 +60,7 @@ impl ExecutionEngineConfig {
         purge_account_events_lookback_mins: Option<u32>,
         purge_from_database: Option<bool>,
         debug: Option<bool>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         Self::builder()
             .maybe_load_cache(load_cache)
             .maybe_manage_own_order_books(manage_own_order_books)
@@ -77,6 +78,7 @@ impl ExecutionEngineConfig {
             .maybe_purge_from_database(purge_from_database)
             .maybe_debug(debug)
             .build()
+            .map_err(to_pyvalue_err)
     }
 
     #[getter]

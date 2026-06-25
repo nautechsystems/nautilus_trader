@@ -289,7 +289,7 @@ pub fn compute_greeks<T: BlackScholesReal>(
 ///
 /// # Parameters
 ///
-/// * `initial_guess`: Must be a reasonable estimate of the true volatility. Poor initial guesses
+/// - `initial_guess`: Must be a reasonable estimate of the true volatility. Poor initial guesses
 ///   (especially for deep ITM/OTM options) may result in significant errors.
 ///
 /// # Accuracy

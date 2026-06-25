@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.execution import ExecutionEngineConfig
 from nautilus_trader.execution import OrderEmulatorConfig
 
@@ -48,6 +50,21 @@ def test_execution_engine_config_with_overrides():
     assert config.allow_overfills is True
     assert config.purge_from_database is True
     assert config.debug is True
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"snapshot_positions_interval_secs": 0.0},
+        {"snapshot_positions_interval_secs": -1.0},
+        {"purge_closed_orders_interval_mins": 0},
+        {"purge_closed_positions_interval_mins": 0},
+        {"purge_account_events_interval_mins": 0},
+    ],
+)
+def test_execution_engine_config_rejects_non_positive_intervals(kwargs):
+    with pytest.raises(ValueError, match="must be a positive"):
+        ExecutionEngineConfig(**kwargs)
 
 
 def test_execution_engine_config_repr():

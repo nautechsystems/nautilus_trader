@@ -16,13 +16,19 @@
 //! Example demonstrating live option greeks subscription with the Bybit adapter.
 //!
 //! On start, this actor:
-//! 1. Queries the cache for all BTC option instruments
+//! 1. Queries the cache for all `UNDERLYING` option instruments
 //! 2. Finds the nearest expiry
 //! 3. Filters for CALL options at that expiry
 //! 4. Subscribes to OptionGreeks for each one
 //! 5. Logs received greeks in the `on_option_greeks` handler
 //!
+//! Edit the constants below to change the underlying and node name.
+//!
 //! Run with: `cargo run --example bybit-greeks-tester --package nautilus-bybit --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `BYBIT_API_KEY`.
+//! - `BYBIT_API_SECRET`.
 
 use std::fmt::Debug;
 
@@ -46,13 +52,13 @@ use nautilus_model::{
     enums::OptionKind,
     identifiers::{ClientId, InstrumentId, TraderId},
     instruments::Instrument,
-    stubs::TestDefault,
 };
 use ustr::Ustr;
 
-// ---------------------------------------------------------------------------
-// GreeksTester actor
-// ---------------------------------------------------------------------------
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "BYBIT-GREEKS-TESTER-001";
+const ACTOR_ID: &str = "GREEKS_TESTER-001";
+const UNDERLYING: &str = "BTC";
 
 #[derive(Debug)]
 struct GreeksTester {
@@ -67,7 +73,7 @@ impl GreeksTester {
     fn new(client_id: ClientId) -> Self {
         Self {
             core: DataActorCore::new(DataActorConfig {
-                actor_id: Some("GREEKS_TESTER-001".into()),
+                actor_id: Some(ACTOR_ID.into()),
                 ..Default::default()
             }),
             client_id,
@@ -79,7 +85,7 @@ impl GreeksTester {
 impl DataActor for GreeksTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let venue = *BYBIT_VENUE;
-        let underlying_filter = Ustr::from("BTC");
+        let underlying_filter = Ustr::from(UNDERLYING);
 
         // Collect option instrument data from cache (owned copies to release borrow)
         // Each entry: (instrument_id, strike_f64, expiry_ns)
@@ -102,11 +108,11 @@ impl DataActor for GreeksTester {
         }; // cache borrow dropped here
 
         // Discard already-expired options
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
         options.retain(|(_, _, exp)| *exp > now_ns);
 
         if options.is_empty() {
-            log::warn!("No BTC CALL options found in cache (all expired)");
+            log::warn!("No {UNDERLYING} CALL options found in cache (all expired)");
             return Ok(());
         }
 
@@ -118,7 +124,7 @@ impl DataActor for GreeksTester {
         options.sort_by(|(_, a, _), (_, b, _)| a.partial_cmp(b).unwrap());
 
         log::info!(
-            "Found {} BTC CALL options at nearest expiry (ts={})",
+            "Found {} {UNDERLYING} CALL options at nearest expiry (ts={})",
             options.len(),
             nearest_expiry,
         );
@@ -183,16 +189,12 @@ impl DataActor for GreeksTester {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
+    let trader_id = TraderId::from(TRADER_ID);
     let client_id = *BYBIT_CLIENT_ID;
 
     let bybit_config = BybitDataClientConfig {
@@ -205,7 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_factory = BybitDataClientFactory::new();
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name("BYBIT-GREEKS-TESTER-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(client_factory), Box::new(bybit_config))?
         .with_delay_post_stop_secs(5)
         .build()?;

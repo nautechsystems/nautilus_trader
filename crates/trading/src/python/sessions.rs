@@ -26,6 +26,10 @@ use crate::sessions::{
 
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "PyO3 enum methods must keep by-reference receivers for Python instance methods"
+)]
 impl ForexSession {
     /// Represents a major Forex market session based on trading hours.
     #[new]

@@ -328,6 +328,12 @@ impl OptionChainManager {
         self.aggregator.series_id().venue
     }
 
+    /// Returns whether the active instrument set has been bootstrapped.
+    #[must_use]
+    pub const fn is_bootstrapped(&self) -> bool {
+        self.bootstrapped
+    }
+
     /// Tears down this manager: unregisters all msgbus handlers and cancels the timer.
     pub fn teardown(&mut self, clock: &Rc<RefCell<dyn Clock>>) {
         // Unsubscribe from all currently active instruments
@@ -378,13 +384,19 @@ impl OptionChainManager {
             return;
         }
 
-        // Update ATM tracker from forward price (ForwardPrice source only)
-        self.aggregator
+        if let Err(e) = self
+            .aggregator
             .atm_tracker_mut()
-            .update_from_option_greeks(greeks);
-        // Route greeks to aggregator for storage
+            .try_update_from_option_greeks(greeks)
+        {
+            log::warn!(
+                "Dropping greeks for {}: invalid forward price: {e}",
+                greeks.instrument_id,
+            );
+            return;
+        }
+
         self.aggregator.update_greeks(greeks);
-        // Check if first ATM arrival triggers deferred bootstrap
         self.maybe_bootstrap();
 
         if self.raw_mode
@@ -1070,6 +1082,64 @@ mod tests {
         };
         manager.handle_greeks(&greeks);
         assert!(!manager.bootstrapped);
+    }
+
+    #[rstest]
+    fn test_manager_forward_price_rejects_invalid_underlying() {
+        use nautilus_model::data::option_chain::OptionGreeks;
+
+        let (mut manager, queue) = make_option_chain_manager();
+        let greeks = OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-20240101-50000-C.DERIBIT"),
+            underlying_price: Some(f64::NAN),
+            ..Default::default()
+        };
+
+        manager.handle_greeks(&greeks);
+
+        assert!(!manager.bootstrapped);
+        assert!(manager.aggregator.atm_tracker().atm_price().is_none());
+        assert!(queue.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_manager_forward_price_rejects_invalid_underlying_without_buffering_greeks() {
+        use nautilus_model::data::{greeks::OptionGreekValues, option_chain::OptionGreeks};
+
+        let (mut manager, queue) = make_option_chain_manager();
+        bootstrap_via_greeks(&mut manager);
+        queue.borrow_mut().clear();
+
+        let instrument_id = InstrumentId::from("BTC-20240101-50000-C.DERIBIT");
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from("1.0"),
+            Quantity::from("1.0"),
+            UnixNanos::from(1u64),
+            UnixNanos::from(1u64),
+        );
+        manager.handle_quote(&quote);
+
+        let greeks = OptionGreeks {
+            instrument_id,
+            underlying_price: Some(f64::NAN),
+            greeks: OptionGreekValues {
+                delta: 0.55,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        manager.handle_greeks(&greeks);
+
+        let slice = manager.aggregator.snapshot(UnixNanos::from(2u64));
+        assert_eq!(
+            manager.aggregator.atm_tracker().atm_price().unwrap(),
+            Price::from("50000.00")
+        );
+        assert!(slice.get_call_greeks(&Price::from("50000")).is_none());
+        assert!(queue.borrow().is_empty());
     }
 
     #[rstest]

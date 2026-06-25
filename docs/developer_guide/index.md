@@ -21,6 +21,7 @@ This approach combines Python's simplicity and ecosystem with Rust's performance
 - [Test Datasets](test_datasets.md)
 - [Docs Style](docs.md)
 - [Release Notes](releases.md)
+- [Release Security Architecture](release_security.md)
 - [Adapters](adapters.md)
 - [Data Testing Spec](spec_data_testing.md)
 - [Execution Testing Spec](spec_exec_testing.md)

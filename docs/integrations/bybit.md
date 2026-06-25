@@ -159,7 +159,8 @@ Environment variables: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
 **Demo environment limitations:**
 
 - The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode.
-- Some advanced order features available via WebSocket (trigger orders, post-only with is_quote_quantity) are not available in demo mode.
+- Native TP/SL and option params (`order_iv`, `mmp`) on new orders work in demo via the HTTP create-order endpoint.
+- The custom TP/SL trigger prices `tp_trigger_price` and `sl_trigger_price` are not supported in demo (orders setting them are denied); the create-order endpoint cannot carry them.
 - Demo private streams use `wss://stream-demo.bybit.com`, but public market data uses Bybit's mainnet public stream `wss://stream.bybit.com`.
 
 :::
@@ -392,8 +393,10 @@ Individual orders can be customized using the `params` dictionary when submittin
 | `bbo_level`        | `str` or `int`         | Linear/inverse BBO book level: `"1"` through `"5"`.                     |
 
 :::note
-Native TP/SL params are not supported in demo mode. The `is_leverage` param applies to
-Spot products only. See [Bybit's isLeverage documentation](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters).
+On demo, native TP/SL params route through the HTTP create-order endpoint, with one exception:
+the custom trigger prices `tp_trigger_price` and `sl_trigger_price` are not supported because that
+endpoint cannot carry them, and orders that set either are denied. The `is_leverage` param applies
+to Spot products only. See [Bybit's isLeverage documentation](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters).
 :::
 
 When `bbo_side_type` and `bbo_level` are set, Nautilus sends Bybit's
@@ -643,12 +646,13 @@ In addition to the standard order parameters, option orders accept:
 | `order_iv` | `str` or `float` | Place or amend the order by implied volatility instead of price. |
 | `mmp`      | `bool`           | Enable Market Maker Protection for the order.            |
 
-These parameters are passed through `params` on `SubmitOrder` and flow through
-the WebSocket trade channel on mainnet. They are not supported in demo mode.
+These parameters are passed through `params` on `SubmitOrder`. On mainnet they flow through the
+WebSocket trade channel; on demo they route through the HTTP create-order endpoint. Amending an
+existing order by `order_iv` is not supported in demo mode.
 
 #### Options trading limitations
 
-- IV-based option orders and WS-trade-only features are not supported in demo mode.
+- Amending an order by implied volatility (`order_iv`) and other WS-trade-only features are not supported in demo mode.
 - Leverage is not configurable. Option buyers pay premium; sellers post margin.
 - Position mode is one-way only. Hedge mode is not supported.
 - Conditional order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,

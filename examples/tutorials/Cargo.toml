@@ -1,0 +1,58 @@
+[package]
+name = "nautilus-tutorials"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Runnable tutorial examples for NautilusTrader"
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = []
+examples = [
+  "dep:dotenvy",
+  "dep:nautilus-common",
+  "dep:nautilus-core",
+  "dep:nautilus-databento",
+  "dep:nautilus-lighter",
+  "dep:nautilus-live",
+  "dep:nautilus-model",
+  "dep:nautilus-trading",
+  "dep:tokio",
+]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"], optional = true }
+nautilus-core = { workspace = true, optional = true }
+nautilus-databento = { workspace = true, features = [
+  "high-precision",
+  "live",
+], optional = true }
+nautilus-lighter = { workspace = true, features = [
+  "examples",
+  "high-precision",
+], optional = true }
+nautilus-live = { workspace = true, features = ["node"], optional = true }
+nautilus-model = { workspace = true, features = [
+  "high-precision",
+], optional = true }
+nautilus-trading = { workspace = true, features = [
+  "examples",
+  "high-precision",
+], optional = true }
+
+dotenvy = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[[bin]]
+name = "lighter-nvda-composite-mm"
+path = "src/bin/lighter_nvda_composite_mm.rs"
+required-features = ["examples"]
+doc = false
+test = false

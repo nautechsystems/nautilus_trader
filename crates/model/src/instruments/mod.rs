@@ -46,7 +46,8 @@ use enum_dispatch::enum_dispatch;
 use nautilus_core::{
     UnixNanos,
     correctness::{
-        CorrectnessResult, check_equal_u8, check_positive_decimal, check_predicate_true,
+        CorrectnessError, CorrectnessResult, check_equal_u8, check_positive_decimal,
+        check_predicate_true,
     },
     string::parsing::min_increment_precision_from_str,
 };
@@ -73,16 +74,22 @@ pub use crate::instruments::{
     option_contract::OptionContract,
     option_spread::OptionSpread,
     perpetual_contract::PerpetualContract,
-    synthetic::SyntheticInstrument,
-    tick_scheme::{FixedTickScheme, TickScheme, TickSchemeRule, TieredTickScheme},
+    synthetic::{SyntheticInstrument, SyntheticInstrumentError},
+    tick_scheme::{
+        FixedTickScheme, TickScheme, TickSchemeError, TickSchemeRule, TieredTickScheme,
+        tick_scheme_rule_from_name,
+    },
     tokenized_asset::TokenizedAsset,
 };
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol, Venue},
     types::{
-        Currency, Money, Price, Quantity, money::check_positive_money, price::check_positive_price,
-        quantity::check_positive_quantity,
+        Currency, ERROR_PRICE, Money, PRICE_ERROR, Price, Quantity,
+        fixed::{FIXED_PRECISION, raw_scales_match},
+        money::check_positive_money,
+        price::{PriceRaw, check_positive_price},
+        quantity::{QuantityRaw, check_positive_quantity},
     },
 };
 
@@ -188,8 +195,13 @@ fn is_usd_equivalent_currency(currency: Currency) -> bool {
 
 #[enum_dispatch]
 pub trait Instrument: 'static + Send {
-    fn tick_scheme(&self) -> Option<&dyn TickSchemeRule> {
+    fn tick_scheme(&self) -> Option<Ustr> {
         None
+    }
+
+    fn tick_scheme_rule(&self) -> Option<&dyn TickSchemeRule> {
+        self.tick_scheme()
+            .and_then(|scheme| tick_scheme_rule_from_name(scheme.as_str()))
     }
 
     fn into_any(self) -> InstrumentAny
@@ -245,6 +257,10 @@ pub trait Instrument: 'static + Send {
         self.instrument_class().has_expiration()
     }
 
+    fn allows_negative_price(&self) -> bool {
+        self.instrument_class().allows_negative_price()
+    }
+
     fn is_inverse(&self) -> bool;
     fn is_quanto(&self) -> bool {
         self.base_currency().is_some_and(|base_currency| {
@@ -298,59 +314,212 @@ pub trait Instrument: 'static + Send {
 
     /// # Errors
     ///
-    /// Returns an error if the value is not finite or cannot be converted to a `Price`.
+    /// Returns an error if the value is not finite, not representable as a `Decimal`, or cannot
+    /// be converted to a `Price`.
     #[inline(always)]
     fn try_make_price(&self, value: f64) -> anyhow::Result<Price> {
         let dec_value = Decimal::from_str(&value.to_string())
-            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_price"))?;
+            .map_err(|_| anyhow::anyhow!("invalid `value` for make_price, was {value}"))?;
         let precision = u32::from(self.min_price_increment_precision());
         let rounded_decimal =
             dec_value.round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Price::from_decimal_dp(rounded_decimal, self.price_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Price` (see `try_make_price`).
     fn make_price(&self, value: f64) -> Price {
         self.try_make_price(value).unwrap()
     }
 
+    /// Returns `price` rebuilt with the instrument precision when it is on the price grid.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the value is not finite or cannot be converted to a `Quantity`.
+    /// Returns an error when `price` is a sentinel value or would require rounding.
+    #[inline(always)]
+    fn try_normalize_price(&self, price: Price) -> CorrectnessResult<Price> {
+        if price == ERROR_PRICE {
+            return Err(CorrectnessError::InvalidValue {
+                param: "price".to_string(),
+                value: "ERROR_PRICE".to_string(),
+                type_name: "`Price`",
+            });
+        }
+
+        if price.raw == PRICE_ERROR {
+            return Err(CorrectnessError::InvalidValue {
+                param: "price".to_string(),
+                value: "PRICE_ERROR".to_string(),
+                type_name: "`Price`",
+            });
+        }
+
+        if price.is_undefined() {
+            return Err(CorrectnessError::InvalidValue {
+                param: "price".to_string(),
+                value: "PRICE_UNDEF".to_string(),
+                type_name: "`Price`",
+            });
+        }
+
+        let precision = self.price_precision();
+        let increment = self.price_increment();
+
+        if !raw_scales_match(price.precision, precision) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`price` raw scale does not match instrument price precision, price precision was {}, instrument price precision was {precision}",
+                    price.precision
+                ),
+            });
+        }
+
+        if !raw_scales_match(price.precision, increment.precision) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`price` raw scale does not match price increment precision, price precision was {}, price increment precision was {}",
+                    price.precision, increment.precision
+                ),
+            });
+        }
+
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = PriceRaw::pow(10, u32::from(precision_diff));
+
+        if price.raw % scale != 0 {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`price` requires rounding to instrument price precision {precision}, was {price}"
+                ),
+            });
+        }
+
+        let increment_raw = increment.raw.abs();
+        if increment_raw != 0 && price.raw % increment_raw != 0 {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`price` is not aligned to price increment {increment}, was {price}"
+                ),
+            });
+        }
+
+        Price::from_raw_checked(price.raw, precision)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error if the value is not finite, not representable as a `Decimal`, rounds to
+    /// zero, or cannot be converted to a `Quantity`.
     #[inline(always)]
     fn try_make_qty(&self, value: f64, round_down: Option<bool>) -> anyhow::Result<Quantity> {
         let dec_value = Decimal::from_str(&value.to_string())
-            .map_err(|_| anyhow::anyhow!("non-finite value passed to make_qty"))?;
+            .map_err(|_| anyhow::anyhow!("invalid `value` for make_qty, was {value}"))?;
         let precision = u32::from(self.min_size_increment_precision());
+
         let strategy = if round_down.unwrap_or(false) {
             RoundingStrategy::ToZero
         } else {
             RoundingStrategy::MidpointNearestEven
         };
+
         let rounded = dec_value.round_dp_with_strategy(precision, strategy);
         if dec_value > Decimal::ZERO && rounded.is_zero() {
             anyhow::bail!("value rounded to zero for quantity");
         }
+
         Quantity::from_decimal_dp(rounded, self.size_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if the value cannot be converted to a `Quantity` (see `try_make_qty`).
     fn make_qty(&self, value: f64, round_down: Option<bool>) -> Quantity {
         self.try_make_qty(value, round_down).unwrap()
     }
 
+    /// Returns `quantity` rebuilt with the instrument precision when it is on the size grid.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the value cannot be converted to a `Quantity`.
+    /// Returns an error when `quantity` is undefined or would require rounding.
+    #[inline(always)]
+    fn try_normalize_qty(&self, quantity: Quantity) -> CorrectnessResult<Quantity> {
+        if quantity.is_undefined() {
+            return Err(CorrectnessError::InvalidValue {
+                param: "quantity".to_string(),
+                value: "QUANTITY_UNDEF".to_string(),
+                type_name: "`Quantity`",
+            });
+        }
+
+        let precision = self.size_precision();
+        let increment = self.size_increment();
+
+        if !raw_scales_match(quantity.precision, precision) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`quantity` raw scale does not match instrument size precision, quantity precision was {}, instrument size precision was {precision}",
+                    quantity.precision
+                ),
+            });
+        }
+
+        if !raw_scales_match(quantity.precision, increment.precision) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`quantity` raw scale does not match size increment precision, quantity precision was {}, size increment precision was {}",
+                    quantity.precision, increment.precision
+                ),
+            });
+        }
+
+        let precision_diff = FIXED_PRECISION.saturating_sub(precision);
+        let scale = QuantityRaw::pow(10, u32::from(precision_diff));
+
+        if !quantity.raw.is_multiple_of(scale) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`quantity` requires rounding to instrument size precision {precision}, was {quantity}"
+                ),
+            });
+        }
+
+        if increment.raw != 0 && !quantity.raw.is_multiple_of(increment.raw) {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`quantity` is not aligned to size increment {increment}, was {quantity}"
+                ),
+            });
+        }
+
+        Quantity::from_raw_checked(quantity.raw, precision)
+    }
+
+    /// # Errors
+    ///
+    /// Returns an error if `last_price` is zero, or if the value cannot be converted to a
+    /// `Quantity`.
     fn try_calculate_base_quantity(
         &self,
         quantity: Quantity,
         last_price: Price,
     ) -> anyhow::Result<Quantity> {
+        let last_px = last_price.as_decimal();
+        if last_px.is_zero() {
+            anyhow::bail!("`last_price` was zero when calculating base quantity");
+        }
         let precision = u32::from(self.min_size_increment_precision());
-        let value = (quantity.as_decimal() / last_price.as_decimal())
+        let value = (quantity.as_decimal() / last_px)
             .round_dp_with_strategy(precision, RoundingStrategy::MidpointNearestEven);
         Quantity::from_decimal_dp(value, self.size_precision()).map_err(Into::into)
     }
 
+    /// # Panics
+    ///
+    /// Panics if `last_price` is zero, or if the value cannot be converted to a `Quantity`
+    /// (see `try_calculate_base_quantity`).
     fn calculate_base_quantity(&self, quantity: Quantity, last_price: Price) -> Quantity {
         self.try_calculate_base_quantity(quantity, last_price)
             .unwrap()
@@ -358,7 +527,9 @@ pub trait Instrument: 'static + Send {
 
     /// # Panics
     ///
-    /// Panics if the instrument is inverse and does not have a base currency.
+    /// Panics if the instrument is inverse and does not have a base currency, if the
+    /// instrument is inverse and `price` is zero, or if the notional amount cannot be
+    /// represented as `Money`.
     #[inline(always)]
     fn calculate_notional_value(
         &self,
@@ -393,7 +564,11 @@ pub trait Instrument: 'static + Send {
 
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32) -> Option<Price> {
-        let price = if let Some(scheme) = self.tick_scheme() {
+        if n < 0 {
+            return None;
+        }
+
+        let price = if let Some(scheme) = self.tick_scheme_rule() {
             scheme.next_bid_price(value, n, self.price_precision())?
         } else {
             let value = Decimal::from_str(&value.to_string()).ok()?;
@@ -417,7 +592,11 @@ pub trait Instrument: 'static + Send {
 
     #[inline(always)]
     fn next_ask_price(&self, value: f64, n: i32) -> Option<Price> {
-        let price = if let Some(scheme) = self.tick_scheme() {
+        if n < 0 {
+            return None;
+        }
+
+        let price = if let Some(scheme) = self.tick_scheme_rule() {
             scheme.next_ask_price(value, n, self.price_precision())?
         } else {
             let value = Decimal::from_str(&value.to_string()).ok()?;
@@ -444,7 +623,8 @@ pub trait Instrument: 'static + Send {
         let mut prices = Vec::with_capacity(n);
 
         for i in 0..n {
-            if let Some(price) = self.next_bid_price(value, i as i32) {
+            let Ok(i) = i32::try_from(i) else { break };
+            if let Some(price) = self.next_bid_price(value, i) {
                 prices.push(price);
             } else {
                 break;
@@ -459,7 +639,8 @@ pub trait Instrument: 'static + Send {
         let mut prices = Vec::with_capacity(n);
 
         for i in 0..n {
-            if let Some(price) = self.next_ask_price(value, i as i32) {
+            let Ok(i) = i32::try_from(i) else { break };
+            if let Some(price) = self.next_ask_price(value, i) {
                 prices.push(price);
             } else {
                 break;
@@ -499,7 +680,10 @@ mod tests {
     use rust_decimal::{Decimal, prelude::*};
 
     use super::*;
-    use crate::{instruments::stubs::*, types::Money};
+    use crate::{
+        instruments::stubs::*,
+        types::{ERROR_PRICE, Money, PRICE_ERROR, PRICE_UNDEF, QUANTITY_UNDEF},
+    };
 
     pub(super) fn default_price_increment(precision: u8) -> Price {
         let step = 10f64.powi(-i32::from(precision));
@@ -595,6 +779,271 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Price::from("10000"), "10000.00")]
+    #[case(Price::from("10000.0000"), "10000.00")]
+    fn try_normalize_price_rewrites_grid_aligned_values(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: Price,
+        #[case] expected: &str,
+    ) {
+        let normalized = currency_pair_btcusdt.try_normalize_price(input).unwrap();
+
+        assert_eq!(normalized.raw, input.raw);
+        assert_eq!(
+            normalized.precision,
+            currency_pair_btcusdt.price_precision()
+        );
+        assert_eq!(normalized, Price::from(expected));
+    }
+
+    #[rstest]
+    fn try_normalize_price_rejects_sub_precision_value(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_normalize_price(Price::from("10000.001"))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("requires rounding to instrument price precision")
+        ));
+    }
+
+    #[rstest]
+    #[case(Price::from_raw(PRICE_UNDEF, 0), "PRICE_UNDEF")]
+    #[case(Price::from_raw(PRICE_ERROR, 0), "PRICE_ERROR")]
+    #[case(ERROR_PRICE, "ERROR_PRICE")]
+    fn try_normalize_price_rejects_sentinel_values(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: Price,
+        #[case] expected_value: &str,
+    ) {
+        let error = currency_pair_btcusdt
+            .try_normalize_price(input)
+            .unwrap_err();
+
+        match error {
+            CorrectnessError::InvalidValue {
+                param,
+                value,
+                type_name,
+            } => {
+                assert_eq!(param, "price");
+                assert_eq!(value, expected_value);
+                assert_eq!(type_name, "`Price`");
+            }
+            _ => panic!("expected invalid price error, was {error}"),
+        }
+    }
+
+    #[rstest]
+    #[case(Price::from("-10000"), Some(Price::from("-10000.00")))]
+    #[case(Price::from("-10000.001"), None)]
+    fn try_normalize_price_handles_negative_values(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: Price,
+        #[case] expected: Option<Price>,
+    ) {
+        let normalized = currency_pair_btcusdt.try_normalize_price(input).ok();
+
+        assert_eq!(normalized, expected);
+    }
+
+    #[rstest]
+    fn try_normalize_price_rejects_sub_increment_value() {
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::from("0.50"),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None, // info
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            instrument.try_normalize_price(Price::from("1.500")),
+            Ok(Price::from("1.50"))
+        );
+        let error = instrument
+            .try_normalize_price(Price::from("1.20"))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("not aligned to price increment")
+        ));
+    }
+
+    #[rstest]
+    #[case(Quantity::from("1"), "1.000000")]
+    #[case(Quantity::from("1.0000000"), "1.000000")]
+    fn try_normalize_qty_rewrites_grid_aligned_values(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] input: Quantity,
+        #[case] expected: &str,
+    ) {
+        let normalized = currency_pair_btcusdt.try_normalize_qty(input).unwrap();
+
+        assert_eq!(normalized.raw, input.raw);
+        assert_eq!(normalized.precision, currency_pair_btcusdt.size_precision());
+        assert_eq!(normalized, Quantity::from(expected));
+    }
+
+    #[rstest]
+    fn try_normalize_qty_rejects_sub_precision_value(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_normalize_qty(Quantity::from("1.0000001"))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("requires rounding to instrument size precision")
+        ));
+    }
+
+    #[rstest]
+    fn try_normalize_qty_rejects_undefined_value(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_normalize_qty(Quantity::from_raw(QUANTITY_UNDEF, 0))
+            .unwrap_err();
+
+        match error {
+            CorrectnessError::InvalidValue {
+                param,
+                value,
+                type_name,
+            } => {
+                assert_eq!(param, "quantity");
+                assert_eq!(value, "QUANTITY_UNDEF");
+                assert_eq!(type_name, "`Quantity`");
+            }
+            _ => panic!("expected invalid quantity error, was {error}"),
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn try_normalize_values_reject_mixed_raw_scales() {
+        let defi_precision = 18;
+        let price_increment = Price::from_raw(PriceRaw::from(5) * PriceRaw::pow(10, 17), 18);
+        let size_increment =
+            Quantity::from_raw(QuantityRaw::from(5_u8) * QuantityRaw::pow(10, 17), 18);
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            defi_precision,
+            defi_precision,
+            price_increment,
+            size_increment,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None, // info
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let fixed_scale = u32::from(FIXED_PRECISION);
+        let fixed_price = Price::from_raw(
+            PriceRaw::pow(10, fixed_scale) * PriceRaw::from(100),
+            FIXED_PRECISION,
+        );
+        let fixed_qty = Quantity::from_raw(
+            QuantityRaw::pow(10, fixed_scale) * QuantityRaw::from(100_u8),
+            FIXED_PRECISION,
+        );
+
+        let price_error = instrument.try_normalize_price(fixed_price).unwrap_err();
+        let qty_error = instrument.try_normalize_qty(fixed_qty).unwrap_err();
+
+        assert!(matches!(
+            price_error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("raw scale does not match instrument price precision")
+        ));
+        assert!(matches!(
+            qty_error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("raw scale does not match instrument size precision")
+        ));
+    }
+
+    #[rstest]
+    fn try_normalize_qty_rejects_sub_increment_value() {
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::from("0.01"),
+            Quantity::from("0.50"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None, // info
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            instrument.try_normalize_qty(Quantity::from("1.500")),
+            Ok(Quantity::from("1.50"))
+        );
+        let error = instrument
+            .try_normalize_qty(Quantity::from("1.20"))
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            CorrectnessError::PredicateViolation { ref message }
+                if message.contains("not aligned to size increment")
+        ));
+    }
+
+    #[rstest]
     #[should_panic(expected = "value rounded to zero")]
     fn make_qty_rounds_to_zero(currency_pair_btcusdt: CurrencyPair) {
         currency_pair_btcusdt.make_qty(1e-12, None);
@@ -624,6 +1073,82 @@ mod tests {
         let asks = currency_pair_btcusdt.next_ask_prices(start, 3);
         assert_eq!(asks.len(), 3);
         assert!(asks[0] > bid_0);
+    }
+
+    #[rstest]
+    fn tick_navigation_uses_tick_scheme() {
+        let instrument = CurrencyPair::new(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::new(0.01, 2),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Ustr::from("FIXED_PRECISION_1")),
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            instrument.tick_scheme(),
+            Some(Ustr::from("FIXED_PRECISION_1"))
+        );
+        assert_eq!(instrument.next_bid_price(1.23, 0), Some(Price::new(1.2, 2)));
+        assert_eq!(instrument.next_ask_price(1.23, 0), Some(Price::new(1.3, 2)));
+    }
+
+    #[rstest]
+    #[case("BOGUS")]
+    #[case("FIXED_PRECISION_99")]
+    fn invalid_tick_scheme_returns_error(#[case] tick_scheme: &str) {
+        let err = CurrencyPair::new_checked(
+            InstrumentId::from("TEST.VENUE"),
+            Symbol::from("TEST"),
+            Currency::from("BTC"),
+            Currency::from("USD"),
+            2,
+            2,
+            Price::new(0.01, 2),
+            Quantity::from("0.01"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Ustr::from(tick_scheme)),
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .expect_err("invalid tick scheme must fail");
+
+        assert!(
+            err.to_string()
+                .contains("tick_scheme not found in tick schemes"),
+            "{err}"
+        );
     }
 
     #[rstest]
@@ -711,6 +1236,44 @@ mod tests {
         let price = currency_pair_btcusdt.make_price(10_000.0);
         let base = currency_pair_btcusdt.calculate_base_quantity(quantity, price);
         assert_eq!(base.to_string(), "0.000200");
+    }
+
+    #[rstest]
+    fn base_quantity_zero_last_price_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let quantity = currency_pair_btcusdt.make_qty(2.0, None);
+        let error = currency_pair_btcusdt
+            .try_calculate_base_quantity(quantity, Price::new(0.0, 2))
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("`last_price` was zero"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    #[case(f64::NAN)]
+    #[case(f64::INFINITY)]
+    #[case(1e30)] // Finite but not representable as a Decimal
+    fn make_price_invalid_value_returns_error(
+        currency_pair_btcusdt: CurrencyPair,
+        #[case] value: f64,
+    ) {
+        let error = currency_pair_btcusdt.try_make_price(value).unwrap_err();
+        assert!(
+            error.to_string().contains("invalid `value` for make_price"),
+            "{error}"
+        );
+    }
+
+    #[rstest]
+    fn make_qty_invalid_value_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let error = currency_pair_btcusdt
+            .try_make_qty(f64::NAN, None)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("invalid `value` for make_qty"),
+            "{error}"
+        );
     }
 
     #[rstest]
@@ -1259,6 +1822,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         )
@@ -1277,6 +1841,7 @@ mod tests {
             2,                   // size_precision
             Price::new(0.50, 2), // price_increment with trailing zero
             Quantity::from("0.01"),
+            None,
             None,
             None,
             None,
@@ -1326,6 +1891,7 @@ mod tests {
             2, // size_precision
             Price::new(0.01, 2),
             Quantity::new(0.50, 2), // size_increment with trailing zero
+            None,
             None,
             None,
             None,

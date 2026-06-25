@@ -20,6 +20,9 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceExecutionType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderStatus
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggregatedTradeMsg
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookData
+from nautilus_trader.adapters.binance.common.schemas.market import BinanceQuoteData
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAlgoUpdateWrapper
@@ -384,3 +387,77 @@ class TestBinanceWebSocketParsing:
         # Assert: Status should be CANCELED (aq=0 means no fills)
         assert report.order_status == OrderStatus.CANCELED
         assert report.filled_qty.as_decimal() == 0
+
+
+class TestBinanceWebSocketMarketDataForwardCompat:
+    """
+    Verify market-data stream parsers tolerate the new ``st`` (symbol type) and ``ps``
+    (pair symbol) fields introduced by the COIN-M / USD-M architecture integration
+    effective 2026-06-30.
+
+    See: https://developers.binance.com/docs/derivatives/coin-margined-futures/Important-CM-UM-Integration-Notice
+    Sections D.4 and D.5.
+
+    """
+
+    def test_agg_trade_with_st_field(self):
+        # Arrange: Fixture includes the new ``st`` field
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_spot_agg_trade.json",
+        )
+        assert raw
+
+        # Act: msgspec must ignore the unknown ``st`` field
+        msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg).decode(raw)
+
+        # Assert: core fields parse correctly despite the extra field
+        assert msg.data.s == "ETHUSDT"
+        assert msg.data.a == 226532
+
+    def test_book_ticker_with_st_and_ps_fields(self):
+        # Arrange: Fixture includes ``st`` and ``ps``
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_book_ticker.json",
+        )
+        assert raw
+
+        # Act: Flat JSON (no stream wrapper) decodes into BinanceQuoteData
+        data = msgspec.json.Decoder(BinanceQuoteData).decode(raw)
+
+        # Assert: core fields parse correctly
+        assert data.s == "BNBUSDT"
+        assert data.b == "25.35190000"
+
+    def test_depth_update_with_st_and_ps_fields(self):
+        # Arrange: Fixture includes ``st`` and ``ps``
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_depth_update.json",
+        )
+        assert raw
+
+        # Act: Flat JSON decodes into BinanceOrderBookData
+        data = msgspec.json.Decoder(BinanceOrderBookData).decode(raw)
+
+        # Assert: core fields parse correctly; existing ``ps`` field is
+        # already declared on BinanceOrderBookData so it maps cleanly
+        assert data.s == "BTCUSDT"
+        assert data.U == 390497796
+        assert data.u == 390497878
+
+    def test_ticker_with_st_field(self):
+        # Arrange: Fixture includes ``st``
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_ticker_24hr.json",
+        )
+        assert raw
+
+        # Act: BinanceTickerData must ignore the unknown ``st`` field
+        data = msgspec.json.Decoder(BinanceTickerData).decode(raw)
+
+        # Assert: core fields parse correctly
+        assert data.s == "BTCUSDT"
+        assert data.c == "0.0025"

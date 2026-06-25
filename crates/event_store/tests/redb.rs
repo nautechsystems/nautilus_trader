@@ -983,13 +983,30 @@ fn scan_returns_corrupted_when_entry_bytes_are_garbled() {
     let err = recovered
         .open_run(manifest("run-decode"))
         .expect_err("must flag crashed predecessor");
-    // compute_progress walks every entry to recover max ts_init; a malformed row
-    // surfaces there before we ever reach the scan paths.
-    match err {
+    // A malformed row must not make the run unopenable: open_run recovers progress
+    // leniently and surfaces the crashed-predecessor handshake; the corruption itself
+    // classifies as Corrupted on the scan paths, where the recovery sweep keys
+    // quarantine off it.
+    assert!(
+        matches!(err, EventStoreError::CrashedPredecessor),
+        "err was: {err:?}",
+    );
+
+    match recovered.scan_seq(2).expect_err("scan_seq must reject") {
         EventStoreError::Corrupted(msg) => {
-            assert!(msg.contains("decode entry on load"), "msg was: {msg}",);
+            assert!(msg.contains("decode entry seq=2"), "msg was: {msg}");
         }
-        other => panic!("expected Corrupted from compute_progress, was {other:?}"),
+        other => panic!("expected Corrupted, was {other:?}"),
+    }
+
+    match recovered
+        .scan_range(1, 3, ScanDirection::Forward)
+        .expect_err("scan_range must reject")
+    {
+        EventStoreError::Corrupted(msg) => {
+            assert!(msg.contains("decode entry seq=2"), "msg was: {msg}");
+        }
+        other => panic!("expected Corrupted, was {other:?}"),
     }
 }
 

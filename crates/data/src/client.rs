@@ -39,6 +39,7 @@ use nautilus_common::{
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
     },
+    msgbus::{self, switchboard::get_custom_topic},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::Blockchain;
@@ -264,6 +265,10 @@ impl DataClientAdapter {
     /// Returns an error if the underlying client unsubscribe operation fails.
     pub fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
         if self.subscriptions_custom.contains(&cmd.data_type) {
+            if msgbus::subscriptions_count_any(get_custom_topic(&cmd.data_type))? > 0 {
+                return Ok(());
+            }
+
             self.subscriptions_custom.remove(&cmd.data_type);
             self.client.unsubscribe(cmd)?;
         }

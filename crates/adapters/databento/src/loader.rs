@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    env, fs,
+    env,
     path::{Path, PathBuf},
 };
 
@@ -41,7 +41,11 @@ use super::{
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
 };
-use crate::{decode::decode_instrument_def_msg, symbology::MetadataCache};
+use crate::{
+    common::{build_publisher_venue_map, load_publishers},
+    decode::decode_instrument_def_msg,
+    symbology::MetadataCache,
+};
 
 /// A Nautilus data loader for Databento Binary Encoding (DBN) format data.
 ///
@@ -126,12 +130,11 @@ impl DatabentoDataLoader {
     ///
     /// Returns an error if the file cannot be read or parsed as JSON.
     pub fn load_publishers(&mut self, filepath: PathBuf) -> anyhow::Result<()> {
-        let file_content = fs::read_to_string(filepath)?;
-        let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
+        let publishers = load_publishers(filepath)?;
 
         self.publishers_map = publishers
-            .clone()
-            .into_iter()
+            .iter()
+            .cloned()
             .map(|p| (p.publisher_id, p))
             .collect();
 
@@ -147,10 +150,7 @@ impl DatabentoDataLoader {
         self.venue_dataset_map = venue_dataset_map;
         apply_default_venue_dataset_mappings(&mut self.venue_dataset_map);
 
-        self.publisher_venue_map = publishers
-            .into_iter()
-            .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
-            .collect();
+        self.publisher_venue_map = build_publisher_venue_map(&publishers);
 
         Ok(())
     }
@@ -581,7 +581,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false, None)?
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, true, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -606,7 +606,7 @@ impl DatabentoDataLoader {
         instrument_id: Option<InstrumentId>,
         price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::CbboMsg>(filepath, instrument_id, price_precision, false, None)?
+        self.read_records::<dbn::TcbboMsg>(filepath, instrument_id, price_precision, true, None)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -869,7 +869,8 @@ impl DatabentoDataLoader {
 }
 
 /// Applies default venue-to-dataset mappings for consolidated Databento feeds.
-/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues.
+/// GLBX.MDP3 covers CME Globex exchange MICs; OPRA.PILLAR covers OPRA option venues;
+/// EQUS.MINI is the consolidated US equities default.
 fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, Dataset>) {
     let glbx = Dataset::from("GLBX.MDP3");
 
@@ -885,6 +886,10 @@ fn apply_default_venue_dataset_mappings(venue_dataset_map: &mut IndexMap<Venue, 
     ] {
         _ = venue_dataset_map.insert(venue, glbx);
     }
+
+    // publishers.json seeds the consolidated EQUS venue with the unreleased EQUS.PLUS,
+    // so pin it to EQUS.MINI, the cheapest released US equities feed.
+    _ = venue_dataset_map.insert(Venue::from("EQUS"), Dataset::from("EQUS.MINI"));
 
     let opra = Dataset::from("OPRA.PILLAR");
     for venue_code in [
@@ -945,6 +950,10 @@ mod tests {
         let xcbo = Venue::from("XCBO");
         let result = loader.get_dataset_for_venue(&xcbo).unwrap();
         assert_eq!(*result, Ustr::from("OPRA.PILLAR"));
+
+        let equs = Venue::from("EQUS");
+        let result = loader.get_dataset_for_venue(&equs).unwrap();
+        assert_eq!(*result, Ustr::from("EQUS.MINI"));
     }
 
     #[rstest]
@@ -1156,22 +1165,20 @@ mod tests {
             .load_tbbo_trades(&path, Some(instrument_id), None)
             .unwrap();
 
-        // TBBO test data doesn't contain valid trade data (size/price may be 0)
-        assert_eq!(trades.len(), 0);
+        assert_eq!(trades.len(), 2);
+        assert_eq!(trades[0].instrument_id, instrument_id);
+        assert_eq!(trades[0].price, Price::from("3720.25"));
+        assert_eq!(trades[0].size, Quantity::from("5"));
     }
 
     #[rstest]
-    fn test_load_tcbbo_trades(loader: DatabentoDataLoader) {
-        // Since we don't have dedicated TCBBO test data, we'll use CBBO data
-        // In practice, TCBBO would be CBBO messages with trade data
+    fn test_load_tcbbo_trades_rejects_cbbo_fixture(loader: DatabentoDataLoader) {
         let path = test_data_path().join("test_data.cbbo-1s.dbn.zst");
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let result = loader.load_tcbbo_trades(&path, Some(instrument_id), None);
 
-        assert!(result.is_ok());
-        let trades = result.unwrap();
-        assert_eq!(trades.len(), 2);
+        assert!(result.is_err());
     }
 
     #[rstest]

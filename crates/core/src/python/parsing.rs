@@ -149,6 +149,6 @@ pub fn get_required_list<'py>(
 ) -> PyResult<Bound<'py, PyList>> {
     dict.get_item(key)?
         .ok_or_else(|| to_pykey_err(format!("Missing required key: {key}")))?
-        .downcast_into()
+        .cast_into()
         .map_err(Into::into)
 }

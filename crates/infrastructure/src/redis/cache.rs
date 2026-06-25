@@ -35,7 +35,7 @@
 
 use std::{
     collections::VecDeque,
-    fmt::Debug,
+    fmt::{Debug, Write as _},
     ops::ControlFlow,
     pin::Pin,
     sync::mpsc::{self, SyncSender},
@@ -43,11 +43,13 @@ use std::{
 };
 
 use ahash::AHashMap;
+use anyhow::Context;
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use nautilus_common::{
     cache::{
         CacheConfig,
-        database::{CacheDatabaseAdapter, CacheMap},
+        database::{CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap},
     },
     enums::SerializationEncoding,
     live::get_runtime,
@@ -59,22 +61,27 @@ use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::AccountAny,
     data::{Bar, CustomData, DataType, FundingRateUpdate, HasTsInit, QuoteTick, TradeTick},
-    events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
+    enums::TriggerType,
+    events::{
+        AccountState, OrderEventAny, OrderFilled, OrderSnapshot,
+        position::snapshot::PositionSnapshot,
+    },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
-    types::Currency,
+    types::{Currency, Money},
 };
-use redis::{Pipeline, aio::ConnectionManager};
+use redis::{AsyncCommands, Pipeline, aio::ConnectionManager};
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB, get_index_key};
-use crate::redis::{create_redis_connection, queries::DatabaseQueries};
+use crate::redis::{RedisConnectionConfig, create_redis_connection, queries::DatabaseQueries};
 
 // Task and connection names
 const CACHE_READ: &str = "cache-read";
@@ -112,11 +119,137 @@ const INDEX_POSITIONS: &str = "index:positions";
 const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
 const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
+/// Configuration for a Redis-backed cache database.
+///
+/// Redis 6.2 or higher is required for correct operation.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.infrastructure",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.infrastructure")
+)]
+pub struct RedisCacheConfig {
+    /// The Redis host address. If `None`, `127.0.0.1` is used.
+    pub host: Option<String>,
+    /// The Redis port. If `None`, `6379` is used.
+    pub port: Option<u16>,
+    /// The Redis account username.
+    pub username: Option<String>,
+    /// The Redis account password.
+    pub password: Option<String>,
+    /// If Redis should use an SSL-enabled connection.
+    pub ssl: bool,
+    /// The timeout (in seconds) to wait for a new connection.
+    pub connection_timeout: u16,
+    /// The timeout (in seconds) to wait for a response.
+    pub response_timeout: u16,
+    /// The number of retry attempts with exponential backoff for connection attempts.
+    pub number_of_retries: usize,
+    /// The base value for exponential backoff calculation.
+    pub exponent_base: u64,
+    /// The maximum delay between retry attempts (in seconds).
+    pub max_delay: u64,
+    /// The multiplication factor for retry delay calculation.
+    pub factor: u64,
+}
+
+impl Debug for RedisCacheConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let redacted = self.password.as_ref().map(|_| "***");
+        f.debug_struct(stringify!(RedisCacheConfig))
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("username", &self.username)
+            .field("password", &redacted)
+            .field("ssl", &self.ssl)
+            .field("connection_timeout", &self.connection_timeout)
+            .field("response_timeout", &self.response_timeout)
+            .field("number_of_retries", &self.number_of_retries)
+            .field("exponent_base", &self.exponent_base)
+            .field("max_delay", &self.max_delay)
+            .field("factor", &self.factor)
+            .finish()
+    }
+}
+
+impl Default for RedisCacheConfig {
+    fn default() -> Self {
+        Self {
+            host: None,
+            port: None,
+            username: None,
+            password: None,
+            ssl: false,
+            connection_timeout: 20,
+            response_timeout: 20,
+            number_of_retries: 100,
+            exponent_base: 2,
+            max_delay: 1000,
+            factor: 2,
+        }
+    }
+}
+
+impl RedisConnectionConfig for RedisCacheConfig {
+    fn host(&self) -> Option<&str> {
+        self.host.as_deref()
+    }
+
+    fn port(&self) -> Option<u16> {
+        self.port
+    }
+
+    fn username(&self) -> Option<&str> {
+        self.username.as_deref()
+    }
+
+    fn password(&self) -> Option<&str> {
+        self.password.as_deref()
+    }
+
+    fn ssl(&self) -> bool {
+        self.ssl
+    }
+
+    fn connection_timeout(&self) -> u16 {
+        self.connection_timeout
+    }
+
+    fn response_timeout(&self) -> u16 {
+        self.response_timeout
+    }
+
+    fn number_of_retries(&self) -> usize {
+        self.number_of_retries
+    }
+
+    fn exponent_base(&self) -> u64 {
+        self.exponent_base
+    }
+
+    fn max_delay(&self) -> u64 {
+        self.max_delay
+    }
+
+    fn factor(&self) -> u64 {
+        self.factor
+    }
+}
+
 /// A type of database operation.
 #[derive(Clone, Debug)]
 pub enum DatabaseOperation {
     Insert,
     Update,
+    UpdateOrder,
+    ReplaceList,
     Delete,
     Flush(SyncSender<()>),
     Close,
@@ -174,7 +307,7 @@ impl Debug for RedisCacheDatabase {
         f.debug_struct(stringify!(RedisCacheDatabase))
             .field("trader_id", &self.trader_id)
             .field("encoding", &self.encoding)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -191,14 +324,11 @@ impl RedisCacheDatabase {
         trader_id: TraderId,
         instance_id: UUID4,
         config: CacheConfig,
+        database: RedisCacheConfig,
     ) -> anyhow::Result<Self> {
         install_cryptographic_provider();
 
-        let db_config = config
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-        let con = create_redis_connection(CACHE_READ, db_config.clone()).await?;
+        let con = create_redis_connection(CACHE_READ, &database).await?;
 
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
@@ -207,7 +337,9 @@ impl RedisCacheDatabase {
         let bulk_read_batch_size = config.bulk_read_batch_size;
 
         let handle = get_runtime().spawn(async move {
-            if let Err(e) = process_commands(rx, trader_key_clone, config.clone()).await {
+            if let Err(e) =
+                process_commands(rx, trader_key_clone, config.clone(), database.clone()).await
+            {
                 log::error!("Error in task '{CACHE_PROCESS}': {e}");
             }
         });
@@ -501,9 +633,8 @@ impl RedisCacheDatabase {
 }
 
 fn blocking_recv<T>(rx: &mpsc::Receiver<T>) -> Result<T, mpsc::RecvError> {
-    let on_nautilus_runtime = tokio::runtime::Handle::try_current()
-        .ok()
-        .is_some_and(|h| h.id() == get_runtime().handle().id());
+    let on_nautilus_runtime =
+        tokio::runtime::Handle::try_current().is_ok_and(|h| h.id() == get_runtime().handle().id());
 
     if on_nautilus_runtime {
         tokio::task::block_in_place(|| rx.recv())
@@ -516,14 +647,11 @@ async fn process_commands(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseCommand>,
     trader_key: String,
     config: CacheConfig,
+    database: RedisCacheConfig,
 ) -> anyhow::Result<()> {
     log_task_started(CACHE_PROCESS);
 
-    let db_config = config
-        .database
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("No database config"))?;
-    let mut con = create_redis_connection(CACHE_WRITE, db_config.clone()).await?;
+    let mut con = create_redis_connection(CACHE_WRITE, &database).await?;
 
     // Buffering
     let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
@@ -545,6 +673,7 @@ async fn process_commands(
                     buffer_interval,
                     &mut con,
                     &trader_key,
+                    config.encoding,
                 ).await;
 
                 if result.is_break() {
@@ -552,14 +681,21 @@ async fn process_commands(
                 }
             }
             () = &mut flush_timer, if !buffer_interval.is_zero() => {
-                flush_buffer(&mut buffer, &mut con, &trader_key, &mut flush_timer, buffer_interval).await;
+                flush_buffer(
+                    &mut buffer,
+                    &mut con,
+                    &trader_key,
+                    config.encoding,
+                    &mut flush_timer,
+                    buffer_interval,
+                ).await;
             }
         }
     }
 
     // Drain any remaining messages
     if !buffer.is_empty() {
-        drain_buffer(&mut con, &trader_key, &mut buffer).await;
+        drain_buffer(&mut con, &trader_key, config.encoding, &mut buffer).await;
     }
 
     log_task_stopped(CACHE_PROCESS);
@@ -572,6 +708,7 @@ async fn handle_command(
     buffer_interval: Duration,
     con: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
 ) -> ControlFlow<()> {
     let Some(cmd) = maybe_cmd else {
         log::debug!("Command channel closed");
@@ -583,13 +720,13 @@ async fn handle_command(
     match cmd.op_type {
         DatabaseOperation::Close => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await;
             }
             return ControlFlow::Break(());
         }
         DatabaseOperation::Flush(reply_tx) => {
             if !buffer.is_empty() {
-                drain_buffer(con, trader_key, buffer).await;
+                drain_buffer(con, trader_key, encoding, buffer).await;
             }
 
             if let Err(e) = redis::cmd(REDIS_FLUSHDB).query_async::<()>(con).await {
@@ -604,7 +741,7 @@ async fn handle_command(
     buffer.push_back(cmd);
 
     if buffer_interval.is_zero() {
-        drain_buffer(con, trader_key, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await;
     }
 
     ControlFlow::Continue(())
@@ -614,11 +751,12 @@ async fn flush_buffer(
     buffer: &mut VecDeque<DatabaseCommand>,
     con: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
     flush_timer: &mut Pin<&mut tokio::time::Sleep>,
     buffer_interval: Duration,
 ) {
     if !buffer.is_empty() {
-        drain_buffer(con, trader_key, buffer).await;
+        drain_buffer(con, trader_key, encoding, buffer).await;
     }
     flush_timer
         .as_mut()
@@ -628,15 +766,15 @@ async fn flush_buffer(
 async fn drain_buffer(
     conn: &mut ConnectionManager,
     trader_key: &str,
+    encoding: SerializationEncoding,
     buffer: &mut VecDeque<DatabaseCommand>,
 ) {
     let mut pipe = redis::pipe();
     pipe.atomic();
+    let mut has_pending_ops = false;
 
     for msg in buffer.drain(..) {
-        let key = if let Some(key) = msg.key {
-            key
-        } else {
+        let Some(key) = msg.key else {
             log::error!("Null key found for message: {msg:?}");
             continue;
         };
@@ -656,6 +794,8 @@ async fn drain_buffer(
                     log::debug!("Processing INSERT for collection: {collection}, key: {key}");
                     if let Err(e) = insert(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
+                    } else {
+                        has_pending_ops = true;
                     }
                 } else {
                     log::error!("Null `payload` for `insert`");
@@ -666,9 +806,37 @@ async fn drain_buffer(
                     log::debug!("Processing UPDATE for collection: {collection}, key: {key}");
                     if let Err(e) = update(&mut pipe, collection, &key, &payload) {
                         log::error!("{e}");
+                    } else {
+                        has_pending_ops = true;
                     }
                 } else {
                     log::error!("Null `payload` for `update`");
+                }
+            }
+            DatabaseOperation::UpdateOrder => {
+                flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await;
+
+                if let Some(payload) = msg.payload {
+                    log::debug!("Processing UPDATE_ORDER for key: {key}");
+                    if let Err(e) =
+                        update_order_event_log(conn, trader_key, encoding, &key, &payload).await
+                    {
+                        log::error!("{e}");
+                    }
+                } else {
+                    log::error!("Null `payload` for `update_order`");
+                }
+            }
+            DatabaseOperation::ReplaceList => {
+                if let Some(payload) = msg.payload {
+                    log::debug!("Processing REPLACE_LIST for key: {key}");
+                    if let Err(e) = replace_list_operation(&mut pipe, collection, &key, &payload) {
+                        log::error!("{e}");
+                    } else {
+                        has_pending_ops = true;
+                    }
+                } else {
+                    log::error!("Null `payload` for `replace_list`");
                 }
             }
             DatabaseOperation::Delete => {
@@ -681,6 +849,8 @@ async fn drain_buffer(
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     log::error!("{e}");
+                } else {
+                    has_pending_ops = true;
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -688,9 +858,73 @@ async fn drain_buffer(
         }
     }
 
+    flush_pending_pipeline(conn, &mut pipe, &mut has_pending_ops).await;
+}
+
+async fn flush_pending_pipeline(
+    conn: &mut ConnectionManager,
+    pipe: &mut Pipeline,
+    has_pending_ops: &mut bool,
+) {
+    if !*has_pending_ops {
+        return;
+    }
+
     if let Err(e) = pipe.query_async::<()>(conn).await {
         log::error!("{e}");
     }
+
+    *pipe = redis::pipe();
+    pipe.atomic();
+    *has_pending_ops = false;
+}
+
+async fn update_order_event_log(
+    conn: &mut ConnectionManager,
+    trader_key: &str,
+    encoding: SerializationEncoding,
+    key: &str,
+    value: &[Bytes],
+) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
+
+    let result: Vec<Bytes> = conn.lrange(key, 0, -1).await?;
+    if result.is_empty() {
+        log::warn!("Cannot update order in Redis, no existing state at {key}");
+        return Ok(());
+    }
+
+    let mut append_pipe = redis::pipe();
+    append_pipe.atomic();
+    update_list(&mut append_pipe, key, value[0].as_ref());
+    append_pipe.query_async::<()>(conn).await?;
+
+    let mut events: Vec<OrderEventAny> = result
+        .iter()
+        .map(|payload| DatabaseQueries::deserialize_payload(encoding, payload))
+        .collect::<anyhow::Result<_>>()
+        .with_context(|| {
+            format!(
+                "Order event append succeeded for {key}, but index replay failed decoding history"
+            )
+        })?;
+    let event: OrderEventAny = DatabaseQueries::deserialize_payload(encoding, value[0].as_ref())
+        .with_context(|| {
+            format!(
+                "Order event append succeeded for {key}, but index replay failed decoding appended event"
+            )
+        })?;
+    events.push(event);
+    let order = OrderAny::from_events(events).with_context(|| {
+        format!("Order event append succeeded for {key}, but index replay failed rebuilding order")
+    })?;
+
+    let mut pipe = redis::pipe();
+    pipe.atomic();
+    update_order_indexes(&mut pipe, trader_key, &order);
+    pipe.query_async::<()>(conn).await?;
+
+    Ok(())
 }
 
 fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
@@ -698,52 +932,12 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
 
     match collection {
         INDEX => insert_index(pipe, key, value),
-        GENERAL => {
+        GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES | HEALTH | CUSTOM => {
             insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
-        CURRENCIES => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INSTRUMENTS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        SYNTHETICS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ACCOUNTS => {
+        ACCOUNTS | ORDERS | POSITIONS | SNAPSHOTS => {
             insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ORDERS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        POSITIONS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ACTORS => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        STRATEGIES => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        SNAPSHOTS => {
-            insert_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        HEALTH => {
-            insert_string(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        CUSTOM => {
-            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `insert` for collection '{collection}'"),
@@ -753,48 +947,20 @@ fn insert(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> 
 fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
-        INDEX_ORDER_IDS => {
+        INDEX_ORDER_IDS
+        | INDEX_ORDERS
+        | INDEX_ORDERS_OPEN
+        | INDEX_ORDERS_CLOSED
+        | INDEX_ORDERS_EMULATED
+        | INDEX_ORDERS_INFLIGHT
+        | INDEX_POSITIONS
+        | INDEX_POSITIONS_OPEN
+        | INDEX_POSITIONS_CLOSED => {
             insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
-        INDEX_ORDER_POSITION => {
+        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => {
             insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
-            Ok(())
-        }
-        INDEX_ORDER_CLIENT => {
-            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_OPEN => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_CLOSED => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_EMULATED => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_INFLIGHT => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_OPEN => {
-            insert_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_CLOSED => {
-            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Index unknown '{index_key}' on insert"),
@@ -817,19 +983,33 @@ fn insert_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
     pipe.rpush(key, value);
 }
 
+fn replace_list(pipe: &mut Pipeline, key: &str, value: &[u8]) {
+    pipe.del(key);
+    pipe.rpush(key, value);
+}
+
+fn replace_list_operation(
+    pipe: &mut Pipeline,
+    collection: &str,
+    key: &str,
+    value: &[Bytes],
+) -> anyhow::Result<()> {
+    check_slice_not_empty(value, stringify!(value))?;
+
+    match collection {
+        ACCOUNTS | ORDERS | POSITIONS => {
+            replace_list(pipe, key, value[0].as_ref());
+            Ok(())
+        }
+        _ => anyhow::bail!("Unsupported operation: `replace_list` for collection '{collection}'"),
+    }
+}
+
 fn update(pipe: &mut Pipeline, collection: &str, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
     check_slice_not_empty(value, stringify!(value))?;
 
     match collection {
-        ACCOUNTS => {
-            update_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        ORDERS => {
-            update_list(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        POSITIONS => {
+        ACCOUNTS | ORDERS | POSITIONS => {
             update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
@@ -856,23 +1036,7 @@ fn delete(
 
     match collection {
         INDEX => delete_from_index(pipe, key, value),
-        ORDERS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        POSITIONS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        ACCOUNTS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        ACTORS => {
-            delete_string(pipe, key);
-            Ok(())
-        }
-        STRATEGIES => {
+        ORDERS | POSITIONS | ACCOUNTS | ACTORS | STRATEGIES => {
             delete_string(pipe, key);
             Ok(())
         }
@@ -889,48 +1053,20 @@ fn delete_from_index(
     let index_key = get_index_key(key)?;
 
     match index_key {
-        INDEX_ORDER_IDS => {
+        INDEX_ORDER_IDS
+        | INDEX_ORDERS
+        | INDEX_ORDERS_OPEN
+        | INDEX_ORDERS_CLOSED
+        | INDEX_ORDERS_EMULATED
+        | INDEX_ORDERS_INFLIGHT
+        | INDEX_POSITIONS
+        | INDEX_POSITIONS_OPEN
+        | INDEX_POSITIONS_CLOSED => {
             remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
-        INDEX_ORDER_POSITION => {
+        INDEX_ORDER_POSITION | INDEX_ORDER_CLIENT => {
             remove_from_hash(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDER_CLIENT => {
-            remove_from_hash(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_OPEN => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_CLOSED => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_EMULATED => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_ORDERS_INFLIGHT => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_OPEN => {
-            remove_from_set(pipe, key, value[0].as_ref());
-            Ok(())
-        }
-        INDEX_POSITIONS_CLOSED => {
-            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported index operation: remove from '{index_key}'"),
@@ -949,6 +1085,90 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
 }
 
+fn full_redis_key(trader_key: &str, key: &str) -> String {
+    format!("{trader_key}{REDIS_DELIMITER}{key}")
+}
+
+fn update_order_indexes(pipe: &mut Pipeline, trader_key: &str, order: &OrderAny) {
+    let client_order_id = order.client_order_id();
+    let order_id_bytes = client_order_id.to_string();
+
+    insert_set(
+        pipe,
+        &full_redis_key(trader_key, INDEX_ORDERS),
+        order_id_bytes.as_bytes(),
+    );
+
+    if order.venue_order_id().is_some() {
+        insert_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDER_IDS),
+            order_id_bytes.as_bytes(),
+        );
+    }
+
+    if order.is_inflight() {
+        insert_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_INFLIGHT),
+            order_id_bytes.as_bytes(),
+        );
+    } else {
+        remove_from_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_INFLIGHT),
+            order_id_bytes.as_bytes(),
+        );
+    }
+
+    if order.is_open() {
+        remove_from_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_CLOSED),
+            order_id_bytes.as_bytes(),
+        );
+        insert_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_OPEN),
+            order_id_bytes.as_bytes(),
+        );
+    } else if order.is_closed() {
+        remove_from_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_OPEN),
+            order_id_bytes.as_bytes(),
+        );
+        insert_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_CLOSED),
+            order_id_bytes.as_bytes(),
+        );
+    }
+
+    if order
+        .emulation_trigger()
+        .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
+        && !order.is_closed()
+    {
+        insert_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_EMULATED),
+            order_id_bytes.as_bytes(),
+        );
+    } else {
+        remove_from_set(
+            pipe,
+            &full_redis_key(trader_key, INDEX_ORDERS_EMULATED),
+            order_id_bytes.as_bytes(),
+        );
+    }
+}
+
+fn format_timestamp(timestamp: UnixNanos) -> String {
+    let dt = DateTime::<Utc>::from_timestamp_nanos(timestamp.as_u64().cast_signed());
+    dt.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+}
+
 fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {
     let mut key = String::new();
 
@@ -960,7 +1180,7 @@ fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig)
 
     if config.use_instance_id {
         key.push(REDIS_DELIMITER);
-        key.push_str(&format!("{instance_id}"));
+        write!(key, "{instance_id}").expect("writing to String cannot fail");
     }
 
     key
@@ -974,15 +1194,104 @@ fn get_collection_key(key: &str) -> anyhow::Result<&str> {
         })
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub struct RedisCacheDatabaseAdapter {
-    pub encoding: SerializationEncoding,
     pub database: RedisCacheDatabase,
 }
 
-#[allow(dead_code)]
-#[allow(unused)]
+impl RedisCacheDatabaseAdapter {
+    fn encoding(&self) -> SerializationEncoding {
+        self.database.get_encoding()
+    }
+
+    fn send_command(
+        &self,
+        op_type: DatabaseOperation,
+        key: String,
+        payload: Option<Vec<Bytes>>,
+    ) -> anyhow::Result<()> {
+        let op = DatabaseCommand::new(op_type, key, payload);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
+    }
+
+    fn append_list(&self, key: String, payload: Bytes) -> anyhow::Result<()> {
+        self.send_command(DatabaseOperation::Update, key, Some(vec![payload]))
+    }
+
+    fn serialize_account_event(&self, account: &AccountAny) -> anyhow::Result<Bytes> {
+        let event: AccountState = account.last_event().ok_or_else(|| {
+            anyhow::anyhow!("Cannot persist account with no events: {}", account.id())
+        })?;
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+        Ok(Bytes::from(payload))
+    }
+
+    fn serialize_order_event(&self, order_event: &OrderEventAny) -> anyhow::Result<Bytes> {
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), order_event)?;
+        Ok(Bytes::from(payload))
+    }
+
+    fn serialize_position_event(&self, position: &Position) -> anyhow::Result<Bytes> {
+        let event: OrderFilled = position.last_event().ok_or_else(|| {
+            anyhow::anyhow!("Cannot persist position with no events: {}", position.id)
+        })?;
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+        Ok(Bytes::from(payload))
+    }
+
+    fn load_state(&self, key: String) -> anyhow::Result<AHashMap<String, Bytes>> {
+        let mut con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let encoding = self.encoding();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = async {
+                let full_key = format!("{trader_key}{REDIS_DELIMITER}{key}");
+                let value: Option<Bytes> = con.get(&full_key).await?;
+                let Some(value) = value else {
+                    return Ok(AHashMap::new());
+                };
+
+                DatabaseQueries::deserialize_payload(encoding, &value)
+            }
+            .await;
+
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send state load result for '{key}': {e:?}");
+            }
+        });
+
+        blocking_recv(&rx).map_err(|e| anyhow::anyhow!("load_state channel closed: {e}"))?
+    }
+
+    fn update_state(&self, key: String, state: &AHashMap<String, Bytes>) -> anyhow::Result<()> {
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), state)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
+    }
+
+    fn replace_list(&self, key: String, payload: Bytes) -> anyhow::Result<()> {
+        self.send_command(DatabaseOperation::ReplaceList, key, Some(vec![payload]))
+    }
+}
+
+#[async_trait::async_trait]
+impl CacheDatabaseFactory for RedisCacheConfig {
+    async fn create(
+        &self,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: CacheConfig,
+    ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
+        let database =
+            RedisCacheDatabase::new(trader_id, instance_id, config, self.clone()).await?;
+        Ok(Box::new(RedisCacheDatabaseAdapter { database }))
+    }
+}
+
 #[async_trait::async_trait]
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()> {
@@ -1031,15 +1340,50 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
-        // self.database.load()
-        Ok(AHashMap::new()) // TODO
+        let con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = async {
+                let pattern = format!("{trader_key}{REDIS_DELIMITER}{GENERAL}:*");
+                let mut con_scan = con.clone();
+                let keys = DatabaseQueries::scan_keys(&mut con_scan, pattern).await?;
+                if keys.is_empty() {
+                    return Ok(AHashMap::new());
+                }
+
+                let values = DatabaseQueries::read_bulk(&con, &keys).await?;
+                let prefix = format!("{trader_key}{REDIS_DELIMITER}{GENERAL}{REDIS_DELIMITER}");
+                let mut general = AHashMap::new();
+
+                for (key, value) in keys.into_iter().zip(values) {
+                    let Some(value) = value else {
+                        continue;
+                    };
+
+                    if let Some(clean_key) = key.strip_prefix(&prefix) {
+                        general.insert(clean_key.to_string(), value);
+                    }
+                }
+
+                Ok(general)
+            }
+            .await;
+
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send general load result: {e:?}");
+            }
+        });
+
+        blocking_recv(&rx).map_err(|e| anyhow::anyhow!("load channel closed: {e}"))?
     }
 
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         DatabaseQueries::load_currencies(
             &self.database.con,
             &self.database.trader_key,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1048,7 +1392,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         DatabaseQueries::load_instruments(
             &self.database.con,
             &self.database.trader_key,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1057,36 +1401,68 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         DatabaseQueries::load_synthetics(
             &self.database.con,
             &self.database.trader_key,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
 
     async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
-        DatabaseQueries::load_accounts(&self.database.con, &self.database.trader_key, self.encoding)
-            .await
+        DatabaseQueries::load_accounts(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding(),
+        )
+        .await
     }
 
     async fn load_orders(&self) -> anyhow::Result<AHashMap<ClientOrderId, OrderAny>> {
-        DatabaseQueries::load_orders(&self.database.con, &self.database.trader_key, self.encoding)
-            .await
+        DatabaseQueries::load_orders(
+            &self.database.con,
+            &self.database.trader_key,
+            self.encoding(),
+        )
+        .await
     }
 
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
         DatabaseQueries::load_positions(
             &self.database.con,
             &self.database.trader_key,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
 
-    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
-        todo!()
+    fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
+        let con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = DatabaseQueries::load_index_order_position(&con, &trader_key).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_index_order_position result: {e:?}");
+            }
+        });
+
+        blocking_recv(&rx)
+            .map_err(|e| anyhow::anyhow!("load_index_order_position channel closed: {e}"))?
     }
 
     fn load_index_order_client(&self) -> anyhow::Result<AHashMap<ClientOrderId, ClientId>> {
-        todo!()
+        let con = self.database.con.clone();
+        let trader_key = self.database.trader_key.clone();
+        let (tx, rx) = mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result = DatabaseQueries::load_index_order_client(&con, &trader_key).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_index_order_client result: {e:?}");
+            }
+        });
+
+        blocking_recv(&rx)
+            .map_err(|e| anyhow::anyhow!("load_index_order_client channel closed: {e}"))?
     }
 
     async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
@@ -1094,7 +1470,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             code,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1107,7 +1483,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             instrument_id,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1120,7 +1496,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             instrument_id,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1130,7 +1506,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             account_id,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1143,7 +1519,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             client_order_id,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
@@ -1153,20 +1529,22 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.con,
             &self.database.trader_key,
             position_id,
-            self.encoding,
+            self.encoding(),
         )
         .await
     }
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+        self.load_state(key)
     }
 
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}{REDIS_DELIMITER}state");
+        self.load_state(key)
     }
 
-    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>> {
+    fn load_signals(&self, _name: &str) -> anyhow::Result<Vec<Signal>> {
         anyhow::bail!("Loading signals from Redis cache adapter not supported")
     }
 
@@ -1176,78 +1554,148 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_order_snapshot(
         &self,
-        client_order_id: &ClientOrderId,
+        _client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderSnapshot>> {
         anyhow::bail!("Loading order snapshots from Redis cache adapter not supported")
     }
 
     fn load_position_snapshot(
         &self,
-        position_id: &PositionId,
+        _position_id: &PositionId,
     ) -> anyhow::Result<Option<PositionSnapshot>> {
         anyhow::bail!("Loading position snapshots from Redis cache adapter not supported")
     }
 
-    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+    fn load_quotes(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
         anyhow::bail!("Loading quote data for Redis cache adapter not supported")
     }
 
-    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+    fn load_trades(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
         anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 
     fn load_funding_rates(
         &self,
-        instrument_id: &InstrumentId,
+        _instrument_id: &InstrumentId,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
         anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 
-    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+    fn load_bars(&self, _instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
         anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{GENERAL}{REDIS_DELIMITER}{key}");
+        self.database.insert(key, Some(vec![value]))
     }
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{CURRENCIES}{REDIS_DELIMITER}{}", currency.code);
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), currency)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{}", instrument.id());
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), instrument)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
     fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{SYNTHETICS}{REDIS_DELIMITER}{}", synthetic.id);
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), synthetic)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
     fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+        let account_id = account.id();
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+
+        let payload = self.serialize_account_event(account)?;
+        self.database.insert(key, Some(vec![payload]))
     }
 
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
-        todo!()
+        let client_order_id = order.client_order_id();
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+
+        let event = OrderEventAny::Initialized(order.init_event().clone());
+        let payload = self.serialize_order_event(&event)?;
+        self.replace_list(key, payload)?;
+
+        let order_id_bytes = Bytes::from(client_order_id.to_string());
+        self.database
+            .insert(INDEX_ORDERS.to_string(), Some(vec![order_id_bytes.clone()]))?;
+
+        if order
+            .emulation_trigger()
+            .is_some_and(|trigger| trigger != TriggerType::NoTrigger)
+        {
+            self.database.insert(
+                INDEX_ORDERS_EMULATED.to_string(),
+                Some(vec![order_id_bytes.clone()]),
+            )?;
+        }
+
+        if let Some(client_id) = client_id {
+            self.database.insert(
+                INDEX_ORDER_CLIENT.to_string(),
+                Some(vec![order_id_bytes, Bytes::from(client_id.to_string())]),
+            )?;
+        }
+
+        Ok(())
     }
 
     fn add_order_snapshot(&self, snapshot: &OrderSnapshot) -> anyhow::Result<()> {
-        todo!()
+        let key = format!(
+            "{SNAPSHOTS}{REDIS_DELIMITER}{ORDERS}{REDIS_DELIMITER}{}",
+            snapshot.client_order_id
+        );
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), snapshot)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+        let position_id = position.id;
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+
+        let payload = self.serialize_position_event(position)?;
+        self.replace_list(key, payload)?;
+
+        let position_id_bytes = Bytes::from(position_id.to_string());
+        self.database.insert(
+            INDEX_POSITIONS.to_string(),
+            Some(vec![position_id_bytes.clone()]),
+        )?;
+        self.database.insert(
+            INDEX_POSITIONS_OPEN.to_string(),
+            Some(vec![position_id_bytes.clone()]),
+        )?;
+        self.send_command(
+            DatabaseOperation::Delete,
+            INDEX_POSITIONS_CLOSED.to_string(),
+            Some(vec![position_id_bytes]),
+        )?;
+
+        Ok(())
     }
 
     fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
-        todo!()
+        let key = format!(
+            "{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{}",
+            snapshot.position_id
+        );
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), snapshot)?;
+        self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
-    fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()> {
+    fn add_order_book(&self, _order_book: &OrderBook) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
-    fn add_signal(&self, signal: &Signal) -> anyhow::Result<()> {
+    fn add_signal(&self, _signal: &Signal) -> anyhow::Result<()> {
         anyhow::bail!("Saving signals for Redis cache adapter not supported")
     }
 
@@ -1264,28 +1712,38 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             .insert(key, Some(vec![Bytes::from(json_bytes)]))
     }
 
-    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
+    fn add_quote(&self, _quote: &QuoteTick) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
-    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
+    fn add_trade(&self, _trade: &TradeTick) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
-    fn add_funding_rate(&self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+    fn add_funding_rate(&self, _funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
-    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()> {
+    fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
     fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
     }
 
     fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
-        todo!()
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
     }
 
     fn delete_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<()> {
@@ -1371,7 +1829,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
-        todo!()
+        log::warn!(
+            "Deleting account events currently a no-op (pending redesign), {account_id}: {event_id}"
+        );
+        Ok(())
     }
 
     fn index_venue_order_id(
@@ -1379,7 +1840,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()> {
-        todo!()
+        self.database.insert(
+            INDEX_ORDER_IDS.to_string(),
+            Some(vec![Bytes::from(client_order_id.to_string())]),
+        )?;
+        log::debug!("Indexed {client_order_id:?} -> {venue_order_id:?}");
+        Ok(())
     }
 
     fn index_order_position(
@@ -1387,39 +1853,110 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()> {
-        todo!()
+        self.database.insert(
+            INDEX_ORDER_POSITION.to_string(),
+            Some(vec![
+                Bytes::from(client_order_id.to_string()),
+                Bytes::from(position_id.to_string()),
+            ]),
+        )
     }
 
-    fn update_actor(&self) -> anyhow::Result<()> {
-        todo!()
+    fn update_actor(
+        &self,
+        component_id: &ComponentId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        let key = format!("{ACTORS}{REDIS_DELIMITER}{component_id}{REDIS_DELIMITER}state");
+        self.update_state(key, state)
     }
 
-    fn update_strategy(&self) -> anyhow::Result<()> {
-        todo!()
+    fn update_strategy(
+        &self,
+        strategy_id: &StrategyId,
+        state: &AHashMap<String, Bytes>,
+    ) -> anyhow::Result<()> {
+        let key = format!("{STRATEGIES}{REDIS_DELIMITER}{strategy_id}{REDIS_DELIMITER}state");
+        self.update_state(key, state)
     }
 
     fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+        let account_id = account.id();
+        let key = format!("{ACCOUNTS}{REDIS_DELIMITER}{account_id}");
+        let payload = self.serialize_account_event(account)?;
+        self.append_list(key, payload)
     }
 
     fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
-        todo!()
+        let client_order_id = order_event.client_order_id();
+        let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
+        let payload = DatabaseQueries::serialize_payload(self.encoding(), order_event)?;
+        let op = DatabaseCommand::new(
+            DatabaseOperation::UpdateOrder,
+            key,
+            Some(vec![Bytes::from(payload)]),
+        );
+        self.database
+            .tx
+            .send(op)
+            .map_err(|e| anyhow::anyhow!("{FAILED_TX_CHANNEL}: {e}"))
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+        let position_id = position.id;
+        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let payload = self.serialize_position_event(position)?;
+        self.append_list(key, payload)?;
+
+        let position_id_bytes = Bytes::from(position_id.to_string());
+
+        if position.is_open() {
+            self.database.insert(
+                INDEX_POSITIONS_OPEN.to_string(),
+                Some(vec![position_id_bytes.clone()]),
+            )?;
+            self.send_command(
+                DatabaseOperation::Delete,
+                INDEX_POSITIONS_CLOSED.to_string(),
+                Some(vec![position_id_bytes]),
+            )?;
+        } else if position.is_closed() {
+            self.database.insert(
+                INDEX_POSITIONS_CLOSED.to_string(),
+                Some(vec![position_id_bytes.clone()]),
+            )?;
+            self.send_command(
+                DatabaseOperation::Delete,
+                INDEX_POSITIONS_OPEN.to_string(),
+                Some(vec![position_id_bytes]),
+            )?;
+        }
+
+        Ok(())
     }
 
     fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
-        todo!()
+        let snapshot = OrderSnapshot::from(order.clone());
+        self.add_order_snapshot(&snapshot)
     }
 
-    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()> {
-        todo!()
+    fn snapshot_position_state(
+        &self,
+        position: &Position,
+        ts_snapshot: UnixNanos,
+        unrealized_pnl: Option<Money>,
+    ) -> anyhow::Result<()> {
+        let mut snapshot = PositionSnapshot::from(position, unrealized_pnl);
+        snapshot.ts_init = ts_snapshot;
+        self.add_position_snapshot(&snapshot)
     }
 
     fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
-        todo!()
+        let timestamp = format_timestamp(timestamp);
+        self.database.insert(
+            format!("{HEALTH}{REDIS_DELIMITER}heartbeat"),
+            Some(vec![Bytes::from(timestamp)]),
+        )
     }
 }
 

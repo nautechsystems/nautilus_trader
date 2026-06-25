@@ -61,31 +61,27 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let btcusdt = CurrencyPair::new(
-    InstrumentId::from("BTCUSDT.BINANCE"),
-    Symbol::from("BTCUSDT"),
-    Currency::from("BTC"),
-    Currency::from("USDT"),
-    2,
-    6,
-    Price::from("0.01"),
-    Quantity::from("0.000001"),
-    None,
-    None,
-    None,
-    Some(Quantity::from("0.000001")),
-    None,
-    Some(Money::from("10.00 USDT")),
-    Some(Price::from("1000000.00")),
-    Some(Price::from("0.01")),
-    Some(dec!(0.001)),
-    Some(dec!(0.001)),
-    Some(dec!(0.001)),
-    Some(dec!(0.001)),
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let btcusdt = CurrencyPair::builder()
+    .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+    .raw_symbol(Symbol::from("BTCUSDT"))
+    .base_currency(Currency::from("BTC"))
+    .quote_currency(Currency::from("USDT"))
+    .price_precision(2)
+    .size_precision(6)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("0.000001"))
+    .min_quantity(Quantity::from("0.000001"))
+    .min_notional(Money::from("10.00 USDT"))
+    .max_price(Price::from("1000000.00"))
+    .min_price(Price::from("0.01"))
+    .margin_init(dec!(0.001))
+    .margin_maint(dec!(0.001))
+    .maker_fee(dec!(0.001))
+    .taker_fee(dec!(0.001))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 
 let instrument = InstrumentAny::CurrencyPair(btcusdt);
 ```

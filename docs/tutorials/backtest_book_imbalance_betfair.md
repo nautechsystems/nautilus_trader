@@ -186,8 +186,9 @@ A `DataActor` in Rust needs three pieces:
 3. The `DataActor` trait implementation with your callbacks.
 
 The framework provides blanket `Actor` and `Component` implementations for
-any type that implements `DataActor + Debug`, so you do not need to
-implement those manually.
+runtime actors. The `nautilus_actor!` macro supplies the native runtime wiring
+when your struct holds a `DataActorCore`, so normal actor code only implements
+the callbacks it needs.
 
 On start the actor subscribes to `OrderBookDeltas` for each instrument. On
 each update it sums per-side volume from the individual deltas and
@@ -217,7 +218,7 @@ engine.add_venue(
         .account_type(AccountType::Cash)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 GBP")])
-        .build(),
+        .build()?,
 )?;
 ```
 

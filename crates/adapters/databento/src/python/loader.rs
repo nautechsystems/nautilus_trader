@@ -25,7 +25,10 @@ use nautilus_model::{
         TradeTick,
     },
     identifiers::{InstrumentId, Symbol, Venue},
-    python::{data::DataFfiCVec, instruments::instrument_any_to_pyobject},
+    python::{
+        data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
+        instruments::instrument_any_to_pyobject,
+    },
 };
 use pyo3::{
     prelude::*,
@@ -421,7 +424,7 @@ impl DatabentoDataLoader {
         price_precision: Option<u8>,
     ) -> PyResult<Py<PyAny>> {
         let iter = self
-            .read_records::<dbn::CbboMsg>(&filepath, instrument_id, price_precision, false, None)
+            .read_records::<dbn::TcbboMsg>(&filepath, instrument_id, price_precision, false, None)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -596,10 +599,10 @@ fn exhaust_data_iter_to_pycapsule(
         .map_err(to_pyvalue_err)?;
     let cvec: DataFfiCVec = ffi_data.into();
     // No destructor: Python must call drop_cvec_pycapsule to take ownership and free.
-    let capsule = PyCapsule::new_with_destructor::<DataFfiCVec, _>(
+    let capsule = PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(
         py,
         cvec,
-        Some(DataFfiCVec::capsule_name()),
+        DATA_FFI_CVEC_CAPSULE_NAME,
         |_, _| {},
     )?;
 

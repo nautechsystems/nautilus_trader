@@ -241,7 +241,7 @@ mod tests {
             ),
         ];
         catalog
-            .write_to_parquet(quotes.clone(), None, None, None)
+            .write_to_parquet(&quotes, None, None, None)
             .expect("write quotes");
 
         let query = CatalogSliceQuery {
@@ -300,7 +300,7 @@ mod tests {
             ),
         ];
         catalog
-            .write_to_parquet(trades.clone(), None, None, None)
+            .write_to_parquet(&trades, None, None, None)
             .expect("write trades");
 
         let query = CatalogSliceQuery {
@@ -367,7 +367,7 @@ mod tests {
             ),
         ];
         catalog
-            .write_to_parquet(bars.clone(), None, None, None)
+            .write_to_parquet(&bars, None, None, None)
             .expect("write bars");
 
         let query = CatalogSliceQuery {

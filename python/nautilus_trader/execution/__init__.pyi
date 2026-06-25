@@ -19,6 +19,7 @@ __all__ = [
     "OrderEmulatorConfig",
     "PerContractFeeModel",
     "ProbabilisticFillModel",
+    "ProbabilityPriceFeeModel",
     "SizeAwareFillModel",
     "StaticLatencyModel",
     "ThreeTierFillModel",
@@ -102,7 +103,10 @@ class ExecutionEngineConfig:
 @typing.final
 class FixedFeeModel:
     def __init__(
-        self, commission: model.Money, change_commission_once: bool | None = None
+        self,
+        commission: model.Money,
+        charge_commission_once: bool | None = None,
+        change_commission_once: bool | None = None,
     ) -> None: ...
 
 @typing.final
@@ -142,6 +146,10 @@ class ProbabilisticFillModel:
     def __init__(
         self, prob_fill_on_limit: float, prob_slippage: float, random_seed: int | None = ...
     ) -> None: ...
+
+@typing.final
+class ProbabilityPriceFeeModel:
+    def __init__(self) -> None: ...
 
 @typing.final
 class SizeAwareFillModel:

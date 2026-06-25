@@ -30,8 +30,10 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import BitmexEnvironment
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestFundingRates
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
+from nautilus_trader.data.messages import RequestOrderBookSnapshot
 from nautilus_trader.data.messages import RequestTradeTicks
 from nautilus_trader.data.messages import SubscribeBars
 from nautilus_trader.data.messages import SubscribeInstrument
@@ -51,14 +53,21 @@ from nautilus_trader.live.cancellation import DEFAULT_FUTURE_CANCELLATION_TIMEOU
 from nautilus_trader.live.cancellation import cancel_tasks_with_timeout
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 
@@ -218,6 +227,15 @@ class BitmexDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
+    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
+        # Subscribe to instrument updates for the entire venue via WebSocket
+        await self._ws_client.subscribe_instruments()
+
+    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
+        # Subscribe to instrument updates for specific instrument via WebSocket
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_instrument(pyo3_instrument_id)
+
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
             self._log.warning(
@@ -248,15 +266,6 @@ class BitmexDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_trades(pyo3_instrument_id)
 
-    async def _subscribe_instruments(self, command: SubscribeInstruments) -> None:
-        # Subscribe to instrument updates for the entire venue via WebSocket
-        await self._ws_client.subscribe_instruments()
-
-    async def _subscribe_instrument(self, command: SubscribeInstrument) -> None:
-        # Subscribe to instrument updates for specific instrument via WebSocket
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_instrument(pyo3_instrument_id)
-
     async def _subscribe_mark_prices(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_mark_prices(pyo3_instrument_id)
@@ -265,17 +274,26 @@ class BitmexDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_index_prices(pyo3_instrument_id)
 
-    async def _subscribe_funding_rates(self, command) -> None:
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
-
     async def _subscribe_bars(self, command: SubscribeBars) -> None:
         pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
         await self._ws_client.subscribe_bars(pyo3_bar_type)
 
+    async def _subscribe_funding_rates(self, command) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.subscribe_funding_rates(pyo3_instrument_id)
+
     async def _subscribe_instrument_status(self, command: SubscribeInstrumentStatus) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_instrument(pyo3_instrument_id)
+
+    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
+        # Unsubscribe from all instrument updates for the venue
+        await self._ws_client.unsubscribe_instruments()
+
+    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
+        # Unsubscribe from specific instrument updates
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
+        await self._ws_client.unsubscribe_instrument(pyo3_instrument_id)
 
     async def _unsubscribe_order_book_deltas(self, command: UnsubscribeOrderBook) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
@@ -290,19 +308,6 @@ class BitmexDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_trades(pyo3_instrument_id)
 
-    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
-        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
-        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
-
-    async def _unsubscribe_instruments(self, command: UnsubscribeInstruments) -> None:
-        # Unsubscribe from all instrument updates for the venue
-        await self._ws_client.unsubscribe_instruments()
-
-    async def _unsubscribe_instrument(self, command: UnsubscribeInstrument) -> None:
-        # Unsubscribe from specific instrument updates
-        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.unsubscribe_instrument(pyo3_instrument_id)
-
     async def _unsubscribe_mark_prices(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_mark_prices(pyo3_instrument_id)
@@ -311,6 +316,10 @@ class BitmexDataClient(LiveMarketDataClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_index_prices(pyo3_instrument_id)
 
+    async def _unsubscribe_bars(self, command: UnsubscribeBars) -> None:
+        pyo3_bar_type = nautilus_pyo3.BarType.from_str(str(command.bar_type))
+        await self._ws_client.unsubscribe_bars(pyo3_bar_type)
+
     async def _unsubscribe_funding_rates(self, command) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
@@ -318,18 +327,6 @@ class BitmexDataClient(LiveMarketDataClient):
     async def _unsubscribe_instrument_status(self, command: UnsubscribeInstrumentStatus) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.unsubscribe_instrument(pyo3_instrument_id)
-
-    async def _request_instruments(self, request: RequestInstruments) -> None:
-        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
-        instruments = [transform_instrument_from_pyo3(i) for i in pyo3_instruments]
-        self._handle_instruments(
-            request.venue,
-            instruments,
-            request.id,
-            request.start,
-            request.end,
-            request.params,
-        )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         pyo3_instruments = await self._http_client.request_instruments(self._active_only)
@@ -347,6 +344,123 @@ class BitmexDataClient(LiveMarketDataClient):
                 return
 
         self._log.warning(f"Instrument {request.instrument_id} not found")
+
+    async def _request_instruments(self, request: RequestInstruments) -> None:
+        pyo3_instruments = await self._http_client.request_instruments(self._active_only)
+        instruments = [transform_instrument_from_pyo3(i) for i in pyo3_instruments]
+        self._handle_instruments(
+            request.venue,
+            instruments,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_order_book_snapshot(self, request: RequestOrderBookSnapshot) -> None:
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+        depth = request.limit or None
+
+        try:
+            pyo3_book = await self._http_client.request_book_snapshot(
+                instrument_id=pyo3_instrument_id,
+                depth=depth,
+            )
+        except Exception as e:  # pragma: no cover - network failures
+            self._log.exception(
+                f"Failed to request book snapshot for {request.instrument_id}",
+                e,
+            )
+            return
+
+        instrument = self._cache.instrument(request.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {request.instrument_id}")
+            return
+
+        ts_event = pyo3_book.ts_last
+        ts_init = self._clock.timestamp_ns()
+        sequence = pyo3_book.sequence
+        snapshot_flag = RecordFlag.F_SNAPSHOT
+        deltas: list[OrderBookDelta] = [
+            OrderBookDelta(
+                instrument_id=request.instrument_id,
+                action=BookAction.CLEAR,
+                order=BookOrder(
+                    side=OrderSide.NO_ORDER_SIDE,
+                    price=instrument.make_price(0),
+                    size=instrument.make_qty(0),
+                    order_id=0,
+                ),
+                flags=snapshot_flag,
+                sequence=sequence,
+                ts_event=ts_event,
+                ts_init=ts_init,
+            ),
+        ]
+
+        bids = list(pyo3_book.bids())
+        asks = list(pyo3_book.asks())
+
+        for i, level in enumerate(bids):
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=request.instrument_id,
+                    action=BookAction.ADD,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=instrument.make_price(level.price.as_double()),
+                        size=instrument.make_qty(level.size()),
+                        order_id=i,
+                    ),
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        for i, level in enumerate(asks):
+            deltas.append(
+                OrderBookDelta(
+                    instrument_id=request.instrument_id,
+                    action=BookAction.ADD,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=instrument.make_price(level.price.as_double()),
+                        size=instrument.make_qty(level.size()),
+                        order_id=len(bids) + i,
+                    ),
+                    flags=snapshot_flag,
+                    sequence=sequence,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                ),
+            )
+
+        last = deltas[-1]
+        deltas[-1] = OrderBookDelta(
+            instrument_id=last.instrument_id,
+            action=last.action,
+            order=last.order,
+            flags=snapshot_flag | RecordFlag.F_LAST,
+            sequence=last.sequence,
+            ts_event=last.ts_event,
+            ts_init=last.ts_init,
+        )
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={"instrument_id": request.instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=[OrderBookDeltas(instrument_id=request.instrument_id, deltas=deltas)],
+            correlation_id=request.id,
+            start=None,
+            end=None,
+            params=request.params,
+        )
 
     async def _request_trade_ticks(self, request: RequestTradeTicks) -> None:
         limit = request.limit or None
@@ -444,6 +558,37 @@ class BitmexDataClient(LiveMarketDataClient):
         self._handle_bars(
             bar_type,
             bars,
+            request.id,
+            request.start,
+            request.end,
+            request.params,
+        )
+
+    async def _request_funding_rates(self, request: RequestFundingRates) -> None:
+        limit = request.limit or None
+        start = ensure_pydatetime_utc(request.start) if request.start else None
+        end = ensure_pydatetime_utc(request.end) if request.end else None
+        pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(request.instrument_id.value)
+
+        try:
+            pyo3_rates = await self._http_client.request_funding_rates(
+                instrument_id=pyo3_instrument_id,
+                start=start,
+                end=end,
+                limit=limit,
+            )
+        except Exception as e:  # pragma: no cover - network failures
+            self._log.exception(
+                f"Failed to request funding rates for {request.instrument_id}",
+                e,
+            )
+            return
+
+        funding_rates = FundingRateUpdate.from_pyo3_list(pyo3_rates)
+
+        self._handle_funding_rates(
+            request.instrument_id,
+            funding_rates,
             request.id,
             request.start,
             request.end,

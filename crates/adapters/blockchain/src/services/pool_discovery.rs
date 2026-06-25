@@ -19,7 +19,7 @@ use alloy::primitives::Address;
 use futures_util::StreamExt;
 use nautilus_core::string::formatting::Separable;
 use nautilus_model::defi::{
-    SharedDex,
+    Block, SharedDex,
     amm::Pool,
     chain::SharedChain,
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
@@ -41,6 +41,7 @@ use crate::{
 
 const BLOCKS_PROCESS_IN_SYNC_REPORT: u64 = 50_000;
 const POOL_DB_BATCH_SIZE: usize = 2000;
+const POOL_EVENT_BLOCK_DB_BATCH_SIZE: usize = 20_000;
 
 /// Sanitizes a string by removing null bytes and other invalid characters for PostgreSQL UTF-8.
 ///
@@ -195,6 +196,7 @@ impl<'a> PoolDiscoveryService<'a> {
         // LEVEL 2: DB buffers (large, optimize for throughput)
         let mut token_db_buffer: Vec<Token> = Vec::new();
         let mut pool_events_buffer: Vec<PoolCreatedEvent> = Vec::new();
+        let mut block_db_buffer: Vec<Block> = Vec::new();
 
         let mut last_block_saved = effective_from_block;
 
@@ -213,9 +215,15 @@ impl<'a> PoolDiscoveryService<'a> {
 
             result = async {
                 while let Some(item) = pools_stream.next().await {
-                    // Pool discovery does not need block data
                     let log = match item {
-                        PoolEventStreamItem::Block(_) => continue,
+                        PoolEventStreamItem::Block(block) => {
+                            self.cache.cache_block_timestamp(block.number, block.timestamp);
+                            block_db_buffer.push(block);
+                            if block_db_buffer.len() >= POOL_EVENT_BLOCK_DB_BATCH_SIZE {
+                                self.flush_pool_event_blocks(&mut block_db_buffer).await?;
+                            }
+                            continue;
+                        }
                         PoolEventStreamItem::Log(log) => log,
                     };
                     let block_number = extract_block_number(&log)?;
@@ -319,6 +327,7 @@ impl<'a> PoolDiscoveryService<'a> {
                     self.cache.add_pools_batch(pools).await?;
                 }
 
+                self.flush_pool_event_blocks(&mut block_db_buffer).await?;
                 metrics.log_final_stats();
 
                 // Update the last synced block after successful completion.
@@ -348,6 +357,16 @@ impl<'a> PoolDiscoveryService<'a> {
         }
 
         Ok(())
+    }
+
+    async fn flush_pool_event_blocks(&mut self, blocks: &mut Vec<Block>) -> anyhow::Result<()> {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+
+        self.cache
+            .add_pool_event_blocks_batch(std::mem::take(blocks))
+            .await
     }
 
     /// Fetches token metadata via RPC and updates in-memory cache immediately.
@@ -455,6 +474,12 @@ impl<'a> PoolDiscoveryService<'a> {
                 }
             };
 
+            let ts_init = self
+                .cache
+                .get_block_timestamp(pool_event.block_number)
+                .copied()
+                .unwrap_or_default();
+
             let mut pool = Pool::new(
                 self.chain.clone(),
                 dex.clone(),
@@ -465,7 +490,7 @@ impl<'a> PoolDiscoveryService<'a> {
                 token1,
                 pool_event.fee,
                 pool_event.tick_spacing,
-                nautilus_core::UnixNanos::default(),
+                ts_init,
             );
 
             // Set hooks if available (UniswapV4)

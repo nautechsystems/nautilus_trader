@@ -55,6 +55,18 @@ def test_live_node_builder_accepts_databento_data_factory() -> None:
     assert node.environment == Environment.LIVE
 
 
+def test_databento_live_config_stores_venue_dataset_map() -> None:
+    config = DatabentoLiveClientConfig(
+        api_key=SMOKE_API_KEY,
+        publishers_filepath=publishers_filepath(),
+        venue_dataset_map={"EQUS": "EQUS.PLUS"},
+    )
+
+    # No field getter is exposed, so the repr is the observable for the stored override.
+    assert "EQUS" in repr(config)
+    assert "EQUS.PLUS" in repr(config)
+
+
 def test_databento_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = capture_data_tester_main(monkeypatch, databento_data_tester, [])
     kwargs = captured["data_tester_kwargs"]

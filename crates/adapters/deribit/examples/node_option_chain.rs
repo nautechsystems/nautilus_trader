@@ -16,14 +16,20 @@
 //! Example demonstrating live option chain subscription with the Deribit adapter.
 //!
 //! On start, this actor:
-//! 1. Queries the cache for all BTC option instruments
+//! 1. Queries the cache for all `UNDERLYING` option instruments
 //! 2. Finds the nearest expiry
 //! 3. Builds an `OptionSeriesId` for that expiry
-//! 4. Subscribes to an option chain with 5 strikes above and 5 below ATM
-//! 5. Uses the BTC index price as the ATM source
+//! 4. Subscribes to an option chain with `STRIKES_ABOVE` strikes above and `STRIKES_BELOW` below ATM
+//! 5. Uses the `UNDERLYING` index price as the ATM source
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!
+//! Edit the constants below to change the underlying, strike range, snapshot interval, and node name.
+//!
 //! Run with: `cargo run --example deribit-option-chain-tester --package nautilus-deribit --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `DERIBIT_API_KEY`.
+//! - `DERIBIT_API_SECRET`.
 
 use std::fmt::Debug;
 
@@ -47,13 +53,17 @@ use nautilus_model::{
     data::option_chain::{OptionChainSlice, StrikeRange},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, TraderId},
     instruments::{Instrument, any::InstrumentAny},
-    stubs::TestDefault,
 };
 use ustr::Ustr;
 
-// ---------------------------------------------------------------------------
-// OptionChainTester actor
-// ---------------------------------------------------------------------------
+const DERIBIT_ENVIRONMENT: DeribitEnvironment = DeribitEnvironment::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "DERIBIT-OPTION-CHAIN-TESTER-001";
+const ACTOR_ID: &str = "OPTION_CHAIN_TESTER-001";
+const UNDERLYING: &str = "BTC";
+const STRIKES_ABOVE: usize = 3;
+const STRIKES_BELOW: usize = 3;
+const SNAPSHOT_INTERVAL_MS: Option<u64> = Some(2_000);
 
 #[derive(Debug)]
 struct OptionChainTester {
@@ -68,7 +78,7 @@ impl OptionChainTester {
     fn new(client_id: ClientId) -> Self {
         Self {
             core: DataActorCore::new(DataActorConfig {
-                actor_id: Some("OPTION_CHAIN_TESTER-001".into()),
+                actor_id: Some(ACTOR_ID.into()),
                 ..Default::default()
             }),
             client_id,
@@ -80,7 +90,7 @@ impl OptionChainTester {
 impl DataActor for OptionChainTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let venue = *DERIBIT_VENUE;
-        let underlying_filter = Ustr::from("BTC");
+        let underlying_filter = Ustr::from(UNDERLYING);
 
         // Collect option instrument data from cache (owned copies to release borrow)
         // Each entry: (instrument_id, underlying, settlement_currency, expiry_ns)
@@ -113,7 +123,7 @@ impl DataActor for OptionChainTester {
         }; // cache borrow dropped here
 
         if options.is_empty() {
-            log::warn!("No BTC options found in cache");
+            log::warn!("No {UNDERLYING} options found in cache");
             return Ok(());
         }
 
@@ -142,7 +152,7 @@ impl DataActor for OptionChainTester {
             .count();
 
         log::info!(
-            "Found {count} BTC options at nearest expiry (ts={nearest_expiry}, settlement={settlement_currency})"
+            "Found {count} {UNDERLYING} options at nearest expiry (ts={nearest_expiry}, settlement={settlement_currency})"
         );
 
         // Build OptionSeriesId for the nearest expiry
@@ -155,18 +165,15 @@ impl DataActor for OptionChainTester {
 
         log::info!("Subscribing to option chain: {series_id}");
         let strike_range = StrikeRange::AtmRelative {
-            strikes_above: 3,
-            strikes_below: 3,
+            strikes_above: STRIKES_ABOVE,
+            strikes_below: STRIKES_BELOW,
         };
-
-        // Snapshot every 2 seconds (use None for raw stream mode)
-        let snapshot_interval_ms = Some(2_000u64);
 
         let client_id = self.client_id;
         self.subscribe_option_chain(
             series_id,
             strike_range,
-            snapshot_interval_ms,
+            SNAPSHOT_INTERVAL_MS,
             Some(client_id),
             None,
         );
@@ -245,30 +252,26 @@ impl DataActor for OptionChainTester {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
+    let trader_id = TraderId::from(TRADER_ID);
     let client_id = *DERIBIT_CLIENT_ID;
 
     let deribit_config = DeribitDataClientConfig {
         api_key: None,    // Will use 'DERIBIT_API_KEY' env var
         api_secret: None, // Will use 'DERIBIT_API_SECRET' env var
         product_types: vec![DeribitProductType::Option, DeribitProductType::Future],
-        environment: DeribitEnvironment::Mainnet,
+        environment: DERIBIT_ENVIRONMENT,
         ..Default::default()
     };
 
     let client_factory = DeribitDataClientFactory::new();
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name("DERIBIT-OPTION-CHAIN-TESTER-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(client_factory), Box::new(deribit_config))?
         .with_delay_post_stop_secs(5)
         .build()?;

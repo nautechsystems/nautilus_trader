@@ -230,7 +230,6 @@ mod tests {
         assert_eq!(trade.aggressor_side, AggressorSide::Seller);
     }
 
-    #[cfg(feature = "high-precision")] // TODO: Add 64-bit precision version of test
     #[rstest]
     #[should_panic(expected = "invalid `Quantity` for 'size' not positive, was 0")]
     fn test_trade_tick_new_with_zero_size_panics() {

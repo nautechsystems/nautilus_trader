@@ -93,12 +93,12 @@ impl AccountsManager {
         match account.base_currency() {
             Some(base_currency) => {
                 let pnl = pnls.map_or_else(
-                    |_| Money::new(0.0, base_currency),
+                    |_| Money::zero(base_currency),
                     |pnl_list| {
                         pnl_list
                             .first()
                             .copied()
-                            .unwrap_or_else(|| Money::new(0.0, base_currency))
+                            .unwrap_or_else(|| Money::zero(base_currency))
                     },
                 );
 
@@ -106,7 +106,7 @@ impl AccountsManager {
             }
             None => {
                 if let Ok(mut pnl_list) = pnls {
-                    self.update_balance_multi_currency(&mut account, fill, &mut pnl_list);
+                    self.update_balance_multi_currency(&mut account, &fill, &mut pnl_list);
                 }
             }
         }
@@ -815,7 +815,7 @@ impl AccountsManager {
     fn update_balance_multi_currency(
         &self,
         account: &mut AccountAny,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         pnls: &mut [Money],
     ) {
         let mut new_balances = Vec::new();
@@ -871,7 +871,7 @@ impl AccountsManager {
                     );
                     return;
                 }
-                AccountBalance::new(*pnl, Money::new(0.0, currency), *pnl)
+                AccountBalance::new(*pnl, Money::zero(currency), *pnl)
             };
 
             new_balances.push(new_balance);
@@ -1089,7 +1089,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(1_000_000.0, usd),
             )],
             Vec::new(),
@@ -1190,7 +1190,7 @@ mod tests {
             AccountType::Betting,
             vec![AccountBalance::new(
                 Money::new(1_000.0, gbp),
-                Money::new(0.0, gbp),
+                Money::zero(gbp),
                 Money::new(1_000.0, gbp),
             )],
             Vec::new(),
@@ -1288,7 +1288,7 @@ mod tests {
             AccountType::Betting,
             vec![AccountBalance::new(
                 Money::new(1_000.0, gbp),
-                Money::new(0.0, gbp),
+                Money::zero(gbp),
                 Money::new(1_000.0, gbp),
             )],
             Vec::new(),
@@ -1364,7 +1364,7 @@ mod tests {
         if let AccountAny::Betting(betting_account) = final_account {
             assert_eq!(
                 betting_account.balance_locked(Some(gbp)),
-                Some(Money::new(0.0, gbp))
+                Some(Money::zero(gbp))
             );
             assert_eq!(
                 betting_account.balance_free(Some(gbp)),
@@ -1389,12 +1389,12 @@ mod tests {
             vec![
                 AccountBalance::new(
                     Money::new(1_000_000.0, usd),
-                    Money::new(0.0, usd),
+                    Money::zero(usd),
                     Money::new(1_000_000.0, usd),
                 ),
                 AccountBalance::new(
                     Money::new(1_000_000.0, aud),
-                    Money::new(0.0, aud),
+                    Money::zero(aud),
                     Money::new(1_000_000.0, aud),
                 ),
             ],
@@ -1490,7 +1490,7 @@ mod tests {
         if let AccountAny::Cash(cash_account) = final_account {
             assert_eq!(
                 cash_account.balance_locked(Some(usd)),
-                Some(Money::new(0.0, usd))
+                Some(Money::zero(usd))
             );
             assert_eq!(
                 cash_account.balance_locked(Some(aud)),
@@ -1509,7 +1509,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, eur),
-                Money::new(0.0, eur),
+                Money::zero(eur),
                 Money::new(1_000_000.0, eur),
             )],
             Vec::new(),
@@ -1567,7 +1567,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(1_000.0, eur),
-                Money::new(0.0, eur),
+                Money::zero(eur),
                 Money::new(1_000.0, eur),
             )],
             Vec::new(),
@@ -1623,7 +1623,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000.0, eur),
-                Money::new(0.0, eur),
+                Money::zero(eur),
                 Money::new(1_000.0, eur),
             )],
             Vec::new(),
@@ -1682,7 +1682,7 @@ mod tests {
         let instrument_any = InstrumentAny::CurrencyPair(instrument.clone());
         account.update_margin(MarginBalance::new(
             Money::new(25.0, usd),
-            Money::new(0.0, usd),
+            Money::zero(usd),
             Some(instrument.id()),
         ));
 
@@ -1722,7 +1722,7 @@ mod tests {
         let margin = account
             .margin(&instrument.id())
             .expect("maintenance margin should remain");
-        assert_eq!(margin.initial, Money::new(0.0, usd));
+        assert_eq!(margin.initial, Money::zero(usd));
         assert_eq!(margin.maintenance, maintenance);
         assert_eq!(state.margins, vec![margin]);
     }
@@ -1735,7 +1735,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(1_000.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(1_000.0, usd),
             )],
             Vec::new(),
@@ -1750,7 +1750,7 @@ mod tests {
 
         let negative_balances = vec![AccountBalance::new(
             Money::new(-500.0, usd),
-            Money::new(0.0, usd),
+            Money::zero(usd),
             Money::new(-500.0, usd),
         )];
 
@@ -1770,7 +1770,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(100.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(100.0, usd),
             )],
             Vec::new(),
@@ -1869,7 +1869,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(100_000.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(100_000.0, usd),
             )],
             Vec::new(),
@@ -1940,7 +1940,7 @@ mod tests {
         let (final_account, _) = result.unwrap();
 
         if let AccountAny::Cash(cash) = final_account {
-            assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+            assert_eq!(cash.balance_locked(Some(usd)), Some(Money::zero(usd)));
             assert_eq!(
                 cash.balance_free(Some(usd)),
                 Some(Money::new(100_000.0, usd))
@@ -1963,7 +1963,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(1_000_000.0, usd),
             )],
             Vec::new(),
@@ -2027,7 +2027,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(1_000_000.0, usd),
             )],
             Vec::new(),
@@ -2112,12 +2112,12 @@ mod tests {
             vec![
                 AccountBalance::new(
                     Money::new(10_000.0, aud),
-                    Money::new(0.0, aud),
+                    Money::zero(aud),
                     Money::new(10_000.0, aud),
                 ),
                 AccountBalance::new(
                     Money::new(100.0, usd),
-                    Money::new(0.0, usd),
+                    Money::zero(usd),
                     Money::new(100.0, usd),
                 ),
             ],
@@ -2258,7 +2258,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2292,7 +2292,7 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
@@ -2326,12 +2326,12 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-100.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
                 assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(880.0, usd)));
-                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::zero(usd)));
                 assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(880.0, usd)));
                 assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
             }
@@ -2360,12 +2360,12 @@ mod tests {
         let mut account = AccountAny::Cash(account);
         let mut pnls = vec![Money::new(-200.0, usd)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Cash(cash) => {
                 assert_eq!(cash.balance_total(Some(usd)), Some(Money::new(-120.0, usd)));
-                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::new(0.0, usd)));
+                assert_eq!(cash.balance_locked(Some(usd)), Some(Money::zero(usd)));
                 assert_eq!(cash.balance_free(Some(usd)), Some(Money::new(-120.0, usd)));
                 assert_eq!(cash.commission(&usd), Some(Money::new(20.0, usd)));
             }
@@ -2394,7 +2394,7 @@ mod tests {
         let mut account = AccountAny::Betting(account);
         let mut pnls = vec![Money::new(-100.0, gbp)];
 
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         match account {
             AccountAny::Betting(betting_account) => {
@@ -2507,7 +2507,7 @@ mod tests {
             AccountType::Cash,
             vec![AccountBalance::new(
                 Money::new(10_000.0, aud),
-                Money::new(0.0, aud),
+                Money::zero(aud),
                 Money::new(10_000.0, aud),
             )],
             Vec::new(),
@@ -2599,7 +2599,7 @@ mod tests {
         let pnl =
             Money::from_decimal(Decimal::from_str_exact("0.00000064").unwrap(), usdt).unwrap();
         let mut pnls = [pnl];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let balances = account.balances();
         let balance = balances.get(&usdt).expect("USDT balance");
@@ -2629,7 +2629,7 @@ mod tests {
 
         // No PnL entries: only the commission branch runs.
         let mut pnls: [Money; 0] = [];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let balances = account.balances();
         let balance = balances.get(&usdt).expect("USDT balance");
@@ -2669,14 +2669,14 @@ mod tests {
             .commission(Money::new(-1.0, usd))
             .build();
         let mut pnls: [Money; 0] = [];
-        manager.update_balance_multi_currency(&mut account, fill, &mut pnls);
+        manager.update_balance_multi_currency(&mut account, &fill, &mut pnls);
 
         let AccountAny::Cash(cash) = account else {
             panic!("Expected CashAccount");
         };
         let balance = cash.balance(Some(usd)).expect("USD rebate balance");
         assert_eq!(balance.total, Money::new(1.0, usd));
-        assert_eq!(balance.locked, Money::new(0.0, usd));
+        assert_eq!(balance.locked, Money::zero(usd));
         assert_eq!(balance.free, Money::new(1.0, usd));
         assert_eq!(cash.commission(&usd), Some(Money::new(-1.0, usd)));
     }
@@ -2688,7 +2688,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(balance, usd),
-                Money::new(0.0, usd),
+                Money::zero(usd),
                 Money::new(balance, usd),
             )],
             Vec::new(),
@@ -2708,7 +2708,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(balance, usdt),
-                Money::new(0.0, usdt),
+                Money::zero(usdt),
                 Money::new(balance, usdt),
             )],
             Vec::new(),
@@ -2833,10 +2833,7 @@ mod tests {
 
         assert!(account.margin(&instrument.id()).is_none());
         assert!(state.margins.is_empty());
-        assert_eq!(
-            account.balance_locked(Some(usd)),
-            Some(Money::new(0.0, usd))
-        );
+        assert_eq!(account.balance_locked(Some(usd)), Some(Money::zero(usd)));
     }
 
     #[rstest]
@@ -2912,10 +2909,7 @@ mod tests {
 
         assert!(account.margin(&instrument.id()).is_none());
         assert!(state.margins.is_empty());
-        assert_eq!(
-            account.balance_locked(Some(usdt)),
-            Some(Money::new(0.0, usdt))
-        );
+        assert_eq!(account.balance_locked(Some(usdt)), Some(Money::zero(usdt)));
     }
 
     #[rstest]
@@ -2928,7 +2922,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, usdt),
-                Money::new(0.0, usdt),
+                Money::zero(usdt),
                 Money::new(1_000_000.0, usdt),
             )],
             Vec::new(),
@@ -2958,10 +2952,10 @@ mod tests {
         );
         assert!(first.is_some());
         let prior_margin = account.maintenance_margin(instrument.id());
-        assert!(prior_margin.as_f64() > 0.0);
+        assert!(prior_margin.as_decimal() > Decimal::ZERO);
         assert_eq!(prior_margin.currency, usdt);
         let prior_locked = account.balance_locked(Some(usdt)).unwrap();
-        assert!(prior_locked.as_f64() > 0.0);
+        assert!(prior_locked.as_decimal() > Decimal::ZERO);
 
         // Second snapshot: offsetting short closes the net exposure.
         let short = build_hedging_position(
@@ -2984,7 +2978,7 @@ mod tests {
         assert!(second_state.margins.is_empty());
         assert_eq!(
             account.balance_locked(Some(usdt)).unwrap(),
-            Money::new(0.0, usdt)
+            Money::zero(usdt)
         );
     }
 
@@ -3021,7 +3015,7 @@ mod tests {
             .margin(&instrument.id())
             .expect("initial margin should remain");
         assert_eq!(margin.initial, initial);
-        assert_eq!(margin.maintenance, Money::new(0.0, usd));
+        assert_eq!(margin.maintenance, Money::zero(usd));
         assert_eq!(state.margins, vec![margin]);
     }
 
@@ -3162,7 +3156,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000_000.0, eur),
-                Money::new(0.0, eur),
+                Money::zero(eur),
                 Money::new(1_000_000.0, eur),
             )],
             Vec::new(),
@@ -3199,7 +3193,7 @@ mod tests {
             AccountType::Margin,
             vec![AccountBalance::new(
                 Money::new(1_000.0, eur),
-                Money::new(0.0, eur),
+                Money::zero(eur),
                 Money::new(1_000.0, eur),
             )],
             Vec::new(),

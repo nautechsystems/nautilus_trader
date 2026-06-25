@@ -23,9 +23,11 @@
 //!
 //! Two epsilon thresholds are used in this module:
 //!
-//! - **`f64::EPSILON * 2.0` (~4.44e-16):** Used for detecting near-zero denominators
-//!   in `linear_weight` and `quad_polynomial` to prevent division instability.
-//!   This is a machine-precision threshold.
+//! - **`f64::EPSILON * 2.0` (~4.44e-16), scaled by magnitude:** Used for detecting
+//!   near-coincident abscissas in `linear_weight` and `quad_polynomial` to prevent
+//!   division instability. The threshold scales with `max(1, |x1|, |x2|)` so that
+//!   large-magnitude inputs whose difference is below their floating-point
+//!   resolution are also rejected.
 //!
 //! - **`1e-8`:** Used in `quadratic_interpolation` for detecting exact sample points.
 //!   This is an application-level threshold appropriate for typical financial data.
@@ -62,22 +64,19 @@ macro_rules! approx_eq {
 /// # Panics
 ///
 /// - If any input is NaN or infinite.
-/// - If `x1` and `x2` are too close (within machine epsilon), which would
+/// - If `x1` and `x2` are too close relative to their magnitude, which would
 ///   cause division by zero or numerical instability.
 #[inline]
 #[must_use]
 pub fn linear_weight(x1: f64, x2: f64, x: f64) -> f64 {
-    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
-
     assert!(
         x1.is_finite() && x2.is_finite() && x.is_finite(),
         "All inputs must be finite: x1={x1}, x2={x2}, x={x}"
     );
 
-    let diff = (x2 - x1).abs();
     assert!(
-        diff >= EPSILON,
-        "`x1` ({x1}) and `x2` ({x2}) are too close for stable interpolation (diff: {diff}, min: {EPSILON})"
+        !too_close_for_interpolation(x1, x2),
+        "`x1` ({x1}) and `x2` ({x2}) are too close for stable interpolation"
     );
     (x - x1) / (x2 - x1)
 }
@@ -112,7 +111,7 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 
     let n_elem = xs.len();
     let pos = xs.partition_point(|&val| val < x);
-    std::cmp::min(std::cmp::max(pos.saturating_sub(1), 0), n_elem - 1)
+    pos.saturating_sub(1).min(n_elem - 1)
 }
 
 /// Evaluates the quadratic Lagrange polynomial defined by three points.
@@ -124,13 +123,11 @@ pub fn pos_search(x: f64, xs: &[f64]) -> usize {
 /// # Panics
 ///
 /// - If any input is NaN or infinite.
-/// - If any two abscissas are too close (within machine epsilon), which would
+/// - If any two abscissas are too close relative to their magnitude, which would
 ///   cause division by zero or numerical instability.
 #[inline]
 #[must_use]
 pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: f64) -> f64 {
-    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
-
     assert!(
         x.is_finite()
             && x0.is_finite()
@@ -143,13 +140,11 @@ pub fn quad_polynomial(x: f64, x0: f64, x1: f64, x2: f64, y0: f64, y1: f64, y2: 
     );
 
     // Protect against coincident x values that would lead to division by zero
-    let diff_01 = (x0 - x1).abs();
-    let diff_02 = (x0 - x2).abs();
-    let diff_12 = (x1 - x2).abs();
-
     assert!(
-        diff_01 >= EPSILON && diff_02 >= EPSILON && diff_12 >= EPSILON,
-        "Abscissas are too close for stable interpolation: x0={x0}, x1={x1}, x2={x2} (diffs: {diff_01:.2e}, {diff_02:.2e}, {diff_12:.2e}, min: {EPSILON})"
+        !too_close_for_interpolation(x0, x1)
+            && !too_close_for_interpolation(x0, x2)
+            && !too_close_for_interpolation(x1, x2),
+        "Abscissas are too close for stable interpolation: x0={x0}, x1={x1}, x2={x2}"
     );
 
     y0 * (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2))
@@ -228,6 +223,17 @@ pub fn quadratic_interpolation(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
     )
 }
 
+// Returns `true` if `x1` and `x2` are too close, relative to their magnitude,
+// for numerically stable interpolation. The threshold scales with
+// `max(1, |x1|, |x2|)`, giving an absolute floor of `2 * f64::EPSILON` for
+// small values and a relative bound for large values.
+#[inline]
+fn too_close_for_interpolation(x1: f64, x2: f64) -> bool {
+    const EPSILON: f64 = f64::EPSILON * 2.0; // ~4.44e-16
+    let scale = 1.0_f64.max(x1.abs()).max(x2.abs());
+    (x2 - x1).abs() < EPSILON * scale
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::*;
@@ -279,6 +285,21 @@ mod tests {
         let result = linear_weight(1.0, 1.0 + 1e-9, 1.0 + 5e-10);
         // Should not panic and return a reasonable value
         assert!(result.is_finite());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "too close for stable interpolation")]
+    fn test_linear_weight_large_magnitude_near_equal_panics() {
+        // At magnitude 1e16 the f64 resolution is 2.0, so a spacing of 2.0 is
+        // below the scaled threshold (~4.44) and must be rejected
+        let _ = linear_weight(1e16, 1e16 + 2.0, 1e16 + 1.0);
+    }
+
+    #[rstest]
+    fn test_linear_weight_large_magnitude_adequate_spacing() {
+        let result = linear_weight(1e16, 1e16 + 1e10, 1e16 + 5e9);
+        assert!(result.is_finite());
+        assert!((result - 0.5).abs() < 1e-6);
     }
 
     #[rstest]
@@ -373,6 +394,13 @@ mod tests {
         let result = quad_polynomial(0.5, 0.0, 1.0 + 1e-9, 2.0, 0.0, 1.0, 4.0);
         // Should not panic and return a reasonable value
         assert!(result.is_finite());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "too close for stable interpolation")]
+    fn test_quad_polynomial_large_magnitude_near_equal_panics() {
+        // x0 and x1 are adjacent representable values at magnitude 1e16
+        let _ = quad_polynomial(1e16, 1e16, 1e16 + 2.0, 2e16, 0.0, 1.0, 4.0);
     }
 
     #[rstest]

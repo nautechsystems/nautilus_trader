@@ -122,6 +122,7 @@ pub mod cache;
 pub mod clients;
 pub mod clock;
 pub mod component;
+pub mod config;
 pub mod custom;
 pub mod enums;
 pub mod factories;

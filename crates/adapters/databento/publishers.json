@@ -658,5 +658,155 @@
         "dataset": "CGIF.TITANIUM",
         "venue": "CGIF",
         "description": "Cboe Global Indices Feed"
+    },
+    {
+        "publisher_id": 111,
+        "dataset": "EQUS.SIP",
+        "venue": "XASE",
+        "description": "US Equities SIP - NYSE American"
+    },
+    {
+        "publisher_id": 112,
+        "dataset": "EQUS.SIP",
+        "venue": "XBOS",
+        "description": "US Equities SIP - Nasdaq Texas"
+    },
+    {
+        "publisher_id": 113,
+        "dataset": "EQUS.SIP",
+        "venue": "XCIS",
+        "description": "US Equities SIP - NYSE National"
+    },
+    {
+        "publisher_id": 114,
+        "dataset": "EQUS.SIP",
+        "venue": "TXSE",
+        "description": "US Equities SIP - Texas Stock Exchange"
+    },
+    {
+        "publisher_id": 115,
+        "dataset": "EQUS.SIP",
+        "venue": "24EQ",
+        "description": "US Equities SIP - 24X National Exchange"
+    },
+    {
+        "publisher_id": 116,
+        "dataset": "EQUS.SIP",
+        "venue": "EPRL",
+        "description": "US Equities SIP - MIAX Pearl"
+    },
+    {
+        "publisher_id": 117,
+        "dataset": "EQUS.SIP",
+        "venue": "XISX",
+        "description": "US Equities SIP - Nasdaq ISE"
+    },
+    {
+        "publisher_id": 118,
+        "dataset": "EQUS.SIP",
+        "venue": "EDGA",
+        "description": "US Equities SIP - Cboe EDGA"
+    },
+    {
+        "publisher_id": 119,
+        "dataset": "EQUS.SIP",
+        "venue": "EDGX",
+        "description": "US Equities SIP - Cboe EDGX"
+    },
+    {
+        "publisher_id": 120,
+        "dataset": "EQUS.SIP",
+        "venue": "LTSE",
+        "description": "US Equities SIP - Long-Term Stock Exchange"
+    },
+    {
+        "publisher_id": 121,
+        "dataset": "EQUS.SIP",
+        "venue": "XCHI",
+        "description": "US Equities SIP - NYSE Texas"
+    },
+    {
+        "publisher_id": 122,
+        "dataset": "EQUS.SIP",
+        "venue": "XNYS",
+        "description": "US Equities SIP - NYSE"
+    },
+    {
+        "publisher_id": 123,
+        "dataset": "EQUS.SIP",
+        "venue": "ARCX",
+        "description": "US Equities SIP - NYSE Arca"
+    },
+    {
+        "publisher_id": 124,
+        "dataset": "EQUS.SIP",
+        "venue": "XNAS",
+        "description": "US Equities SIP - Nasdaq"
+    },
+    {
+        "publisher_id": 125,
+        "dataset": "EQUS.SIP",
+        "venue": "MEMX",
+        "description": "US Equities SIP - MEMX"
+    },
+    {
+        "publisher_id": 126,
+        "dataset": "EQUS.SIP",
+        "venue": "IEXG",
+        "description": "US Equities SIP - IEX"
+    },
+    {
+        "publisher_id": 127,
+        "dataset": "EQUS.SIP",
+        "venue": "XPSX",
+        "description": "US Equities SIP - Nasdaq PSX"
+    },
+    {
+        "publisher_id": 128,
+        "dataset": "EQUS.SIP",
+        "venue": "BATY",
+        "description": "US Equities SIP - Cboe BYX"
+    },
+    {
+        "publisher_id": 129,
+        "dataset": "EQUS.SIP",
+        "venue": "BATS",
+        "description": "US Equities SIP - Cboe BZX"
+    },
+    {
+        "publisher_id": 130,
+        "dataset": "EQUS.SIP",
+        "venue": "FINN",
+        "description": "US Equities SIP - FINRA/Nasdaq TRF Carteret"
+    },
+    {
+        "publisher_id": 131,
+        "dataset": "EQUS.SIP",
+        "venue": "FINY",
+        "description": "US Equities SIP - FINRA/NYSE TRF"
+    },
+    {
+        "publisher_id": 132,
+        "dataset": "EQUS.SIP",
+        "venue": "FINC",
+        "description": "US Equities SIP - FINRA/Nasdaq TRF Chicago"
+    },
+    {
+        "publisher_id": 133,
+        "dataset": "EQUS.SIP",
+        "venue": "XADF",
+        "description": "US Equities SIP - FINRA Alternative Display Facility"
+    },
+    {
+        "publisher_id": 134,
+        "dataset": "EQUS.SIP",
+        "venue": "CTA",
+        "description": "US Equities SIP - CTA"
+    },
+    {
+        "publisher_id": 135,
+        "dataset": "EQUS.SIP",
+        "venue": "UTP",
+        "description": "US Equities SIP - UTP"
     }
 ]

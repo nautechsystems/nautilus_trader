@@ -67,22 +67,9 @@ fn main() {
         let mut config_c = cbindgen::Config::from_file("cbindgen.toml")
             .expect("unable to find cbindgen.toml configuration file");
 
-        // Check HIGH_PRECISION environment variable for C header too
-        let high_precision_c = env::var("HIGH_PRECISION").map_or_else(
-            |_| {
-                #[cfg(feature = "high-precision")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "high-precision"))]
-                {
-                    false
-                }
-            },
-            |v| v.to_lowercase() == "true" || v == "1",
-        );
+        let high_precision = high_precision_enabled();
 
-        if high_precision_c && let Some(mut includes) = config_c.after_includes {
+        if high_precision && let Some(mut includes) = config_c.after_includes {
             includes.insert_str(0, "\n#define HIGH_PRECISION\n");
             config_c.after_includes = Some(includes);
         }
@@ -95,21 +82,6 @@ fn main() {
         // Generate Cython definitions
         let mut config_cython = cbindgen::Config::from_file("cbindgen_cython.toml")
             .expect("unable to find cbindgen_cython.toml configuration file");
-
-        // Check HIGH_PRECISION environment variable first, then fall back to feature flag
-        let high_precision = env::var("HIGH_PRECISION").map_or_else(
-            |_| {
-                #[cfg(feature = "high-precision")]
-                {
-                    true
-                }
-                #[cfg(not(feature = "high-precision"))]
-                {
-                    false
-                }
-            },
-            |v| v.to_lowercase() == "true" || v == "1",
-        );
 
         let flag = if high_precision {
             Some("\nDEF HIGH_PRECISION = True  # or False".to_string())
@@ -160,4 +132,19 @@ fn main() {
         dst.write_all(data.as_bytes())
             .expect("I/O error on `dist.write`");
     }
+}
+
+#[cfg(feature = "ffi")]
+fn high_precision_enabled() -> bool {
+    env::var("HIGH_PRECISION").map_or_else(
+        |_| cfg!(feature = "high-precision"),
+        |value| {
+            let value = value.trim();
+            if value.is_empty() {
+                cfg!(feature = "high-precision")
+            } else {
+                value.eq_ignore_ascii_case("true") || value == "1"
+            }
+        },
+    )
 }

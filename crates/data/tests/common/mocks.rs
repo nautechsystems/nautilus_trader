@@ -19,7 +19,6 @@
 
 // Under development
 #![allow(dead_code)]
-#![allow(clippy::redundant_clone)]
 
 use std::{cell::RefCell, rc::Rc};
 

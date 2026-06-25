@@ -50,12 +50,16 @@ fn create_strategy(
     max_position: Quantity,
     requote_threshold_bps: u32,
 ) -> CompositeMarketMaker {
-    let config = CompositeMarketMakerConfig::new(instrument_id(), signal_id(), max_position)
-        .with_trade_size(Quantity::from("0.100"))
-        .with_half_spread_bps(half_spread_bps)
-        .with_inventory_skew_factor(inventory_skew_factor)
-        .with_signal_skew_factor(signal_skew_factor)
-        .with_requote_threshold_bps(requote_threshold_bps);
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(max_position)
+        .trade_size(Quantity::from("0.100"))
+        .half_spread_bps(half_spread_bps)
+        .inventory_skew_factor(inventory_skew_factor)
+        .signal_skew_factor(signal_skew_factor)
+        .requote_threshold_bps(requote_threshold_bps)
+        .build();
 
     let mut strategy = CompositeMarketMaker::new(config);
     strategy.price_precision = Some(PRECISION);
@@ -77,6 +81,29 @@ fn quote(instrument: InstrumentId, bid: &str, ask: &str) -> QuoteTick {
         UnixNanos::default(),
         UnixNanos::default(),
     )
+}
+
+#[rstest]
+fn test_config_defaults() {
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .build();
+
+    assert_eq!(
+        config.base.strategy_id,
+        Some(StrategyId::from("COMPOSITE_MM-001")),
+    );
+    assert_eq!(config.base.order_id_tag, Some("001".to_string()));
+    assert_eq!(config.trade_size, None);
+    assert_eq!(config.half_spread_bps, 5);
+    assert_eq!(config.inventory_skew_factor, 0.0);
+    assert_eq!(config.signal_skew_factor, 0.0);
+    assert_eq!(config.signal_baseline, None);
+    assert_eq!(config.requote_threshold_bps, 5);
+    assert_eq!(config.expire_time_secs, None);
+    assert!(!config.on_cancel_resubmit);
 }
 
 #[rstest]
@@ -298,9 +325,12 @@ fn test_compute_quotes_skew_preserves_spread() {
 
 #[rstest]
 fn test_compute_quotes_errors_when_instrument_not_resolved() {
-    let config =
-        CompositeMarketMakerConfig::new(instrument_id(), signal_id(), Quantity::from("10.0"))
-            .with_trade_size(Quantity::from("0.100"));
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .build();
     let strategy = CompositeMarketMaker::new(config);
 
     let err = strategy
@@ -313,9 +343,12 @@ fn test_compute_quotes_errors_when_instrument_not_resolved() {
 
 #[rstest]
 fn test_on_quote_errors_when_price_precision_not_resolved() {
-    let config =
-        CompositeMarketMakerConfig::new(instrument_id(), signal_id(), Quantity::from("10.0"))
-            .with_trade_size(Quantity::from("0.100"));
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .build();
     let mut strategy = CompositeMarketMaker::new(config);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
 
@@ -335,10 +368,13 @@ fn order_canceled(client_order_id: &str) -> OrderCanceled {
 }
 
 fn create_cancel_resubmit_strategy() -> CompositeMarketMaker {
-    let config =
-        CompositeMarketMakerConfig::new(instrument_id(), signal_id(), Quantity::from("10.0"))
-            .with_trade_size(Quantity::from("0.100"))
-            .with_on_cancel_resubmit(true);
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .on_cancel_resubmit(true)
+        .build();
 
     let mut strategy = CompositeMarketMaker::new(config);
     strategy.price_precision = Some(PRECISION);
@@ -364,11 +400,14 @@ fn test_signal_tick_updates_last_signal_and_captures_baseline_once() {
 fn test_signal_tick_does_not_overwrite_explicit_baseline() {
     // When the config carries an explicit baseline, signal ticks update
     // last_signal but never the baseline.
-    let config =
-        CompositeMarketMakerConfig::new(instrument_id(), signal_id(), Quantity::from("10.0"))
-            .with_trade_size(Quantity::from("0.100"))
-            .with_signal_skew_factor(1.0)
-            .with_signal_baseline(50.0);
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .signal_skew_factor(1.0)
+        .signal_baseline(50.0)
+        .build();
     let mut strategy = CompositeMarketMaker::new(config);
     strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));
@@ -546,10 +585,13 @@ fn test_on_reset_clears_all_state() {
 fn test_on_reset_reverts_signal_baseline_to_config_value() {
     // When the config carries an explicit baseline, reset reverts to that
     // configured value, not None.
-    let config =
-        CompositeMarketMakerConfig::new(instrument_id(), signal_id(), Quantity::from("10.0"))
-            .with_trade_size(Quantity::from("0.100"))
-            .with_signal_baseline(50.0);
+    let config = CompositeMarketMakerConfig::builder()
+        .instrument_id(instrument_id())
+        .signal_instrument_id(signal_id())
+        .max_position(Quantity::from("10.0"))
+        .trade_size(Quantity::from("0.100"))
+        .signal_baseline(50.0)
+        .build();
     let mut strategy = CompositeMarketMaker::new(config);
     strategy.price_precision = Some(PRECISION);
     strategy.instrument = Some(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()));

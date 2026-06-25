@@ -94,29 +94,31 @@ impl PyGreeksCalculator {
         vega_time_weight_base: Option<i32>,
         vol_index_instrument_id: Option<InstrumentId>,
         vol_beta_weights: Option<HashMap<InstrumentId, f64>>,
-    ) -> PyResult<GreeksData> {
-        self.0
-            .instrument_greeks(
-                instrument_id,
-                Some(flat_interest_rate),
-                flat_dividend_yield,
-                Some(spot_shock),
-                Some(vol_shock),
-                Some(time_to_expiry_shock),
-                Some(use_cached_greeks),
-                Some(update_vol),
-                Some(cache_greeks),
-                Some(false),
-                (ts_event != 0).then(|| UnixNanos::from(ts_event)),
-                position,
-                Some(percent_greeks),
-                index_instrument_id,
-                beta_weights.as_ref(),
-                vega_time_weight_base,
-                vol_index_instrument_id,
-                vol_beta_weights.as_ref(),
-            )
-            .map_err(to_pyvalue_err)
+    ) -> PyResult<Option<GreeksData>> {
+        match self.0.instrument_greeks(
+            instrument_id,
+            Some(flat_interest_rate),
+            flat_dividend_yield,
+            Some(spot_shock),
+            Some(vol_shock),
+            Some(time_to_expiry_shock),
+            Some(use_cached_greeks),
+            Some(update_vol),
+            Some(cache_greeks),
+            Some(false),
+            (ts_event != 0).then(|| UnixNanos::from(ts_event)),
+            position,
+            Some(percent_greeks),
+            index_instrument_id,
+            beta_weights.as_ref(),
+            vega_time_weight_base,
+            vol_index_instrument_id,
+            vol_beta_weights.as_ref(),
+        ) {
+            Ok(greeks) => Ok(Some(greeks)),
+            Err(e) if is_missing_market_data_error(&e) => Ok(None),
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
     }
 
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
@@ -292,5 +294,173 @@ impl PyGreeksCalculator {
     ) -> Option<Price> {
         self.0
             .get_cached_futures_spread_price(underlying_instrument_id)
+    }
+}
+
+fn is_missing_market_data_error(error: &anyhow::Error) -> bool {
+    error.to_string().starts_with("No price available for ")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_model::{
+        data::QuoteTick,
+        identifiers::InstrumentId,
+        instruments::{
+            Instrument, InstrumentAny,
+            stubs::{equity_aapl, option_contract_appl},
+        },
+        types::{Price, Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
+        cache::{Cache, INSTRUMENT_NOT_FOUND},
+        clock::TestClock,
+    };
+
+    #[derive(Clone, Copy)]
+    enum MissingPriceCase {
+        Option,
+        Underlying,
+        VolIndex,
+        NonOption,
+    }
+
+    #[rstest]
+    #[case::option_price(MissingPriceCase::Option)]
+    #[case::underlying_price(MissingPriceCase::Underlying)]
+    #[case::vol_index_price(MissingPriceCase::VolIndex)]
+    #[case::non_option_price(MissingPriceCase::NonOption)]
+    fn test_py_instrument_greeks_returns_none_when_market_price_missing(
+        #[case] case: MissingPriceCase,
+    ) {
+        let (calculator, instrument_id, vol_index_instrument_id) =
+            calculator_for_missing_price_case(case);
+
+        let result =
+            py_instrument_greeks(&calculator, instrument_id, vol_index_instrument_id).unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_py_instrument_greeks_raises_when_instrument_missing() {
+        Python::initialize();
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let calculator = make_calculator(cache);
+
+        let error = py_instrument_greeks(
+            &calculator,
+            InstrumentId::from("AAPL211217C00150000.OPRA"),
+            None,
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("{INSTRUMENT_NOT_FOUND}: AAPL211217C00150000.OPRA"))
+        );
+    }
+
+    fn py_instrument_greeks(
+        calculator: &PyGreeksCalculator,
+        instrument_id: InstrumentId,
+        vol_index_instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Option<GreeksData>> {
+        calculator.py_instrument_greeks(
+            instrument_id,
+            0.0425,
+            None,
+            0.0,
+            0.0,
+            0.0,
+            false,
+            false,
+            false,
+            0,
+            None,
+            false,
+            None,
+            None,
+            None,
+            vol_index_instrument_id,
+            None,
+        )
+    }
+
+    fn calculator_for_missing_price_case(
+        case: MissingPriceCase,
+    ) -> (PyGreeksCalculator, InstrumentId, Option<InstrumentId>) {
+        let cache = Rc::new(RefCell::new(Cache::new(None, None)));
+        let option = option_contract_appl();
+        let option_id = option.id();
+        let underlying_id = InstrumentId::from("AAPL.OPRA");
+        let vol_index_id = InstrumentId::from("VIX.XCBF");
+
+        match case {
+            MissingPriceCase::Option => {
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::OptionContract(option))
+                    .unwrap();
+
+                (make_calculator(cache), option_id, None)
+            }
+            MissingPriceCase::Underlying => {
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::OptionContract(option))
+                    .unwrap();
+                add_quote(&cache, option_id, "10.50");
+
+                (make_calculator(cache), option_id, None)
+            }
+            MissingPriceCase::VolIndex => {
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::OptionContract(option))
+                    .unwrap();
+                add_quote(&cache, option_id, "10.50");
+                add_quote(&cache, underlying_id, "150.00");
+
+                (make_calculator(cache), option_id, Some(vol_index_id))
+            }
+            MissingPriceCase::NonOption => {
+                let equity = equity_aapl();
+                let instrument_id = equity.id();
+                cache
+                    .borrow_mut()
+                    .add_instrument(InstrumentAny::Equity(equity))
+                    .unwrap();
+
+                (make_calculator(cache), instrument_id, None)
+            }
+        }
+    }
+
+    fn add_quote(cache: &Rc<RefCell<Cache>>, instrument_id: InstrumentId, price: &str) {
+        let ts = UnixNanos::from(1u64);
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                instrument_id,
+                Price::from(price),
+                Price::from(price),
+                Quantity::from(100),
+                Quantity::from(100),
+                ts,
+                ts,
+            ))
+            .unwrap();
+    }
+
+    fn make_calculator(cache: Rc<RefCell<Cache>>) -> PyGreeksCalculator {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        PyGreeksCalculator(GreeksCalculator::new(cache, clock))
     }
 }

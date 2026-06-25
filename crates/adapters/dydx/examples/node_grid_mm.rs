@@ -15,11 +15,15 @@
 
 //! Example demonstrating the GridMarketMaker strategy on dYdX v4.
 //!
-//! Prerequisites:
-//! - Set `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet)
-//! - Optionally set `DYDX_WALLET_ADDRESS` (or `DYDX_TESTNET_WALLET_ADDRESS` for testnet)
+//! Edit the constants below to change the network, target instrument, and grid
+//! market-making parameters.
 //!
 //! Run with: `cargo run --example dydx-grid-mm --package nautilus-dydx --features examples`
+//!
+//! Required credential environment variables:
+//! - `DYDX_PRIVATE_KEY` (or `DYDX_TESTNET_PRIVATE_KEY` for testnet).
+//! - `DYDX_WALLET_ADDRESS` (or `DYDX_TESTNET_WALLET_ADDRESS` for testnet; optional,
+//!   derived from the private key if not set).
 
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
@@ -35,29 +39,31 @@ use nautilus_model::{
 };
 use nautilus_trading::examples::strategies::{GridMarketMaker, GridMarketMakerConfig};
 
+const DYDX_NETWORK: DydxNetwork = DydxNetwork::Mainnet;
+const TRADER_ID: &str = "TESTER-001";
+const ACCOUNT_ID: &str = "DYDX-001";
+const NODE_NAME: &str = "DYDX-GRID-MM-001";
+const INSTRUMENT_ID: &str = "ETH-USD-PERP.DYDX";
+
+const MAX_POSITION: &str = "0.10";
+const NUM_LEVELS: usize = 3;
+const GRID_STEP_BPS: u32 = 100;
+const SKEW_FACTOR: f64 = 0.5;
+const REQUOTE_THRESHOLD_BPS: u32 = 10;
+const EXPIRE_TIME_SECS: u64 = 8;
+const ON_CANCEL_RESUBMIT: bool = true;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let network = match std::env::var("DYDX_NETWORK") {
-        Err(_) => DydxNetwork::Mainnet,
-        Ok(value) => match value.to_ascii_lowercase().as_str() {
-            "testnet" => DydxNetwork::Testnet,
-            "mainnet" | "" => DydxNetwork::Mainnet,
-            other => {
-                return Err(format!(
-                    "DYDX_NETWORK must be 'mainnet' or 'testnet' (case-insensitive), received '{other}'",
-                )
-                .into());
-            }
-        },
-    };
+    let network = DYDX_NETWORK;
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("DYDX-001");
-    let node_name = "DYDX-GRID-MM-001".to_string();
-    let instrument_id = InstrumentId::from("ETH-USD-PERP.DYDX");
+    let trader_id = TraderId::from(TRADER_ID);
+    let account_id = AccountId::from(ACCOUNT_ID);
+    let node_name = NODE_NAME.to_string();
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
     let data_config = DydxDataClientConfig {
         network,
@@ -88,13 +94,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_delay_post_stop_secs(5)
         .build()?;
 
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("0.10"))
-        .with_num_levels(3)
-        .with_grid_step_bps(100)
-        .with_skew_factor(0.5)
-        .with_requote_threshold_bps(10)
-        .with_expire_time_secs(8)
-        .with_on_cancel_resubmit(true);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from(MAX_POSITION))
+        .num_levels(NUM_LEVELS)
+        .grid_step_bps(GRID_STEP_BPS)
+        .skew_factor(SKEW_FACTOR)
+        .requote_threshold_bps(REQUOTE_THRESHOLD_BPS)
+        .expire_time_secs(EXPIRE_TIME_SECS)
+        .on_cancel_resubmit(ON_CANCEL_RESUBMIT)
+        .build();
     let strategy = GridMarketMaker::new(config);
 
     node.add_strategy(strategy)?;

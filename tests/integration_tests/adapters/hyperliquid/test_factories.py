@@ -93,6 +93,7 @@ class TestHyperliquidExecClientConfig:
         assert config.environment is None
         assert config.http_timeout_secs == 10
         assert config.ws_post_timeout_secs == 10
+        assert config.include_builder_attribution is True
 
     def test_with_private_key(self):
         # Arrange & Act
@@ -154,6 +155,13 @@ class TestHyperliquidExecClientConfig:
 
         # Assert
         assert config.ws_post_timeout_secs == 7
+
+    def test_include_builder_attribution_can_be_disabled(self):
+        # Arrange & Act
+        config = HyperliquidExecClientConfig(include_builder_attribution=False)
+
+        # Assert
+        assert config.include_builder_attribution is False
 
     def test_custom_base_urls(self):
         # Arrange & Act
@@ -234,6 +242,7 @@ def test_exec_factory_passes_rust_resolved_account_address(monkeypatch):
     assert client is execution_client
     assert http_kwargs["account_address"] is None
     assert http_kwargs["vault_address"] == " 0xvault "
+    assert http_kwargs["include_builder_attribution"] is True
     assert execution_kwargs["client"] is http_client
     assert execution_kwargs["instrument_provider"] is provider
     assert execution_kwargs["account_address"] == "0xvault"

@@ -263,9 +263,12 @@ impl BookSnapshotter {
         topic: MStr<Topic>,
         cache: &Ref<Cache>,
     ) {
-        let Some(book) = cache.order_book(instrument_id) else {
-            log::error!("Cannot publish OrderBook snapshot: no book found for {instrument_id}");
-            return;
+        let book = match cache.try_order_book(instrument_id) {
+            Ok(book) => book,
+            Err(e) => {
+                log::error!("Cannot publish OrderBook snapshot: {e}");
+                return;
+            }
         };
 
         if book.update_count == 0 {

@@ -17,20 +17,15 @@
 //!
 //! The catalog must already contain option instruments plus per-instrument
 //! `QuoteTick` and `OptionGreeks` data, such as data written by the Tardis
-//! Machine replay pipeline.
+//! Machine replay pipeline. Edit `CATALOG_PATH` below to point at it.
+//!
+//! Edit the constants below to change the catalog, underlying, contract
+//! selection, and fee model.
 //!
 //! Run with:
-//! `NAUTILUS_TARDIS_OPTION_CATALOG=/path/to/catalog cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
-//!
-//! Optional environment variables:
-//! - `NAUTILUS_OPTION_UNDERLYING=BTC`
-//! - `NAUTILUS_OPTION_SELECTION=delta` or `strike`
-//! - `NAUTILUS_OPTION_TARGET_DELTA=0.25`
-//! - `NAUTILUS_OPTION_DELTA_TOLERANCE=0.05`
-//! - `NAUTILUS_OPTION_TARGET_STRIKE=50000`
-//! - `NAUTILUS_OPTION_FEE_MODEL=capped` or `tiered`
+//! `cargo run -p nautilus-backtest --features examples,streaming --example tardis-option-chain`
 
-use std::{env, fmt::Debug, path::Path, str::FromStr};
+use std::{fmt::Debug, path::Path, str::FromStr};
 
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType},
@@ -57,6 +52,13 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 const VENUE: &str = "DERIBIT";
+const CATALOG_PATH: &str = "./catalog";
+const UNDERLYING: &str = "BTC";
+const SELECTION: &str = "delta"; // "delta" or "strike"
+const TARGET_DELTA: f64 = 0.25;
+const DELTA_TOLERANCE: f64 = 0.05;
+const TARGET_STRIKE: Option<&str> = None; // None selects the median strike
+const FEE_MODEL: &str = "capped"; // "capped" or "tiered"
 
 #[derive(Debug, Clone)]
 struct OptionMetadata {
@@ -177,10 +179,11 @@ impl OptionChainBacktest {
             selected.delta,
         );
 
-        let maker_order = self.core.order_factory().limit(
+        let trade_size = self.trade_size;
+        let maker_order = self.order().limit(
             selected.instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             selected.quote.bid_price,
             Some(TimeInForce::Gtc),
             None,
@@ -197,10 +200,10 @@ impl OptionChainBacktest {
         );
         self.submit_order(maker_order, None, None, None)?;
 
-        let taker_order = self.core.order_factory().market(
+        let taker_order = self.order().market(
             selected.instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             Some(TimeInForce::Gtc),
             None,
             None,
@@ -260,9 +263,8 @@ impl DataActor for OptionChainBacktest {
 fn main() -> anyhow::Result<()> {
     nautilus_common::logging::ensure_logging_initialized();
 
-    let catalog_path =
-        env::var("NAUTILUS_TARDIS_OPTION_CATALOG").unwrap_or_else(|_| "./catalog".to_string());
-    let underlying = env::var("NAUTILUS_OPTION_UNDERLYING").unwrap_or_else(|_| "BTC".to_string());
+    let catalog_path = CATALOG_PATH.to_string();
+    let underlying = UNDERLYING.to_string();
     let venue = Venue::new(VENUE);
 
     let options = load_option_metadata(&catalog_path, venue, &underlying)?;
@@ -277,25 +279,25 @@ fn main() -> anyhow::Result<()> {
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![starting_balance(series_id.settlement_currency)])
         .fee_model(option_fee_model()?)
-        .build();
+        .build()?;
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
         .catalog_path(catalog_path.clone())
         .instrument_ids(instrument_ids.clone())
-        .build();
+        .build()?;
     let greeks_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OptionGreeks)
         .catalog_path(catalog_path)
         .instrument_ids(instrument_ids)
-        .build();
+        .build()?;
 
     let run_config = BacktestRunConfig::builder()
         .id("tardis-option-chain".to_string())
         .venues(vec![venue_config])
         .data(vec![quote_data, greeks_data])
         .chunk_size(10_000)
-        .build();
+        .build()?;
     let config_id = run_config.id().to_string();
 
     let mut node = BacktestNode::new(vec![run_config])?;
@@ -409,24 +411,21 @@ fn option_metadata(instrument: &InstrumentAny) -> Option<OptionMetadata> {
 }
 
 fn selection_mode(options: &[OptionMetadata]) -> anyhow::Result<SelectionMode> {
-    match env::var("NAUTILUS_OPTION_SELECTION")
-        .unwrap_or_else(|_| "delta".to_string())
-        .as_str()
-    {
+    match SELECTION {
         "delta" => Ok(SelectionMode::Delta {
-            target: env_f64("NAUTILUS_OPTION_TARGET_DELTA", 0.25)?,
-            tolerance: env_f64("NAUTILUS_OPTION_DELTA_TOLERANCE", 0.05)?,
+            target: TARGET_DELTA,
+            tolerance: DELTA_TOLERANCE,
         }),
         "strike" => {
-            let strike = match env::var("NAUTILUS_OPTION_TARGET_STRIKE") {
-                Ok(raw) => Price::from(raw.as_str()),
-                Err(_) => median_strike(options)?,
+            let strike = match TARGET_STRIKE {
+                Some(raw) => Price::from(raw),
+                None => median_strike(options)?,
             };
             Ok(SelectionMode::Strike { strike })
         }
-        other => anyhow::bail!(
-            "Invalid NAUTILUS_OPTION_SELECTION '{other}', expected 'delta' or 'strike'"
-        ),
+        other => {
+            anyhow::bail!("Invalid SELECTION '{other}', expected 'delta' or 'strike'")
+        }
     }
 }
 
@@ -438,10 +437,7 @@ fn strike_range(selection_mode: SelectionMode) -> StrikeRange {
 }
 
 fn option_fee_model() -> anyhow::Result<FeeModelAny> {
-    match env::var("NAUTILUS_OPTION_FEE_MODEL")
-        .unwrap_or_else(|_| "capped".to_string())
-        .as_str()
-    {
+    match FEE_MODEL {
         "capped" => Ok(FeeModelAny::CappedOption(CappedOptionFeeModel::new(
             Some(parse_decimal("0.0003")?),
             Some(parse_decimal("0.0003")?),
@@ -453,21 +449,14 @@ fn option_fee_model() -> anyhow::Result<FeeModelAny> {
                 Some(parse_decimal("0.0005")?),
             )?,
         )),
-        other => anyhow::bail!(
-            "Invalid NAUTILUS_OPTION_FEE_MODEL '{other}', expected 'capped' or 'tiered'"
-        ),
+        other => {
+            anyhow::bail!("Invalid FEE_MODEL '{other}', expected 'capped' or 'tiered'")
+        }
     }
 }
 
 fn parse_decimal(raw: &str) -> anyhow::Result<Decimal> {
     Decimal::from_str(raw).map_err(Into::into)
-}
-
-fn env_f64(name: &str, default: f64) -> anyhow::Result<f64> {
-    env::var(name).map_or(Ok(default), |raw| {
-        raw.parse::<f64>()
-            .map_err(|e| anyhow::anyhow!("Invalid {name} value '{raw}': {e}"))
-    })
 }
 
 fn median_strike(options: &[OptionMetadata]) -> anyhow::Result<Price> {

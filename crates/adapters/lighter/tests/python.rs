@@ -120,7 +120,6 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             .trader_id(trader_id)
             .account_id(account_id)
             .environment(LighterEnvironment::Testnet)
-            .active_markets(vec![0])
             .rest_quota_per_min(24_000)
             .sendtx_quota_per_min(4_000)
             .build(),
@@ -153,7 +152,6 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     assert_eq!(lighter_config.trader_id, trader_id);
     assert_eq!(lighter_config.account_id, account_id);
     assert_eq!(lighter_config.environment, LighterEnvironment::Testnet);
-    assert_eq!(lighter_config.active_markets, [0]);
     assert_eq!(lighter_config.rest_quota_per_min, Some(24_000));
     assert_eq!(lighter_config.sendtx_quota_per_min, Some(4_000));
     assert_eq!(client.client_id(), ClientId::from("LIGHTER-EXEC-EXTRACTED"));

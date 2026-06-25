@@ -15,5 +15,26 @@
 
 //! Order management component.
 
-pub mod handlers;
+use nautilus_common::messages::execution::SubmitOrder;
+use nautilus_model::{
+    events::OrderEventAny, identifiers::ExecAlgorithmId, orders::OrderAny, types::Quantity,
+};
+
 pub mod manager;
+
+/// Describes work decided by [`manager::OrderManager`] for its owner.
+#[derive(Debug, Clone)]
+pub enum OrderManagerAction {
+    PublishInitialized(OrderEventAny),
+    SubmitToEmulator(SubmitOrder),
+    SubmitToRisk(SubmitOrder),
+    SubmitToAlgorithm {
+        command: SubmitOrder,
+        exec_algorithm_id: ExecAlgorithmId,
+    },
+    CancelLocal(OrderAny),
+    ModifyLocalQuantity {
+        order: OrderAny,
+        quantity: Quantity,
+    },
+}

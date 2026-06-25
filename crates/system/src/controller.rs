@@ -17,14 +17,15 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use nautilus_common::{
     actor::{
-        DataActor, DataActorCore, data_actor::DataActorConfig, registry::try_get_actor_unchecked,
+        DataActor, DataActorCore, DataActorNative, data_actor::DataActorConfig,
+        registry::try_get_actor_unchecked,
     },
     component::Component,
     msgbus::{Endpoint, MStr, TypedHandler, get_message_bus},
     nautilus_actor,
 };
 use nautilus_model::identifiers::{ActorId, StrategyId};
-use nautilus_trading::Strategy;
+use nautilus_trading::{Strategy, StrategyNative};
 
 use crate::{messages::ControllerCommand, trader::Trader};
 
@@ -104,12 +105,12 @@ impl Controller {
     /// Returns an error if actor registration or startup fails.
     pub fn create_actor<T>(&self, actor: T, start: bool) -> anyhow::Result<ActorId>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor_id = actor.actor_id();
         self.trader.borrow_mut().add_actor(actor)?;
 
-        self.start_created_actor(&actor_id, start)?;
+        self.start_created_actor(actor_id, start)?;
 
         Ok(actor_id)
     }
@@ -126,7 +127,7 @@ impl Controller {
     ) -> anyhow::Result<ActorId>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor = factory()?;
         self.create_actor(actor, start)
@@ -139,7 +140,7 @@ impl Controller {
     /// Returns an error if strategy registration or startup fails.
     pub fn create_strategy<T>(&self, mut strategy: T, start: bool) -> anyhow::Result<StrategyId>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         let strategy_id = self
             .trader
@@ -147,7 +148,7 @@ impl Controller {
             .prepare_strategy_for_registration(&mut strategy)?;
         self.trader.borrow_mut().add_strategy(strategy)?;
 
-        self.start_created_strategy(&strategy_id, start)?;
+        self.start_created_strategy(strategy_id, start)?;
 
         Ok(strategy_id)
     }
@@ -164,7 +165,7 @@ impl Controller {
     ) -> anyhow::Result<StrategyId>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         let strategy = factory()?;
         self.create_strategy(strategy, start)
@@ -194,7 +195,7 @@ impl Controller {
     ///
     /// Returns an error if the actor cannot be removed.
     pub fn remove_actor(&self, actor_id: &ActorId) -> anyhow::Result<()> {
-        if actor_id.inner() == self.actor_id().inner() {
+        if actor_id.inner() == self.core.actor_id().inner() {
             return Ok(());
         }
 
@@ -237,24 +238,24 @@ impl Controller {
         self.trader.borrow_mut().remove_strategy(strategy_id)
     }
 
-    fn start_created_actor(&self, actor_id: &ActorId, start: bool) -> anyhow::Result<()> {
+    fn start_created_actor(&self, actor_id: ActorId, start: bool) -> anyhow::Result<()> {
         if !start {
             return Ok(());
         }
 
-        if let Err(start_err) = self.start_actor(actor_id) {
+        if let Err(start_err) = self.start_actor(&actor_id) {
             return Err(self.rollback_actor_start_failure(actor_id, start_err));
         }
 
         Ok(())
     }
 
-    fn start_created_strategy(&self, strategy_id: &StrategyId, start: bool) -> anyhow::Result<()> {
+    fn start_created_strategy(&self, strategy_id: StrategyId, start: bool) -> anyhow::Result<()> {
         if !start {
             return Ok(());
         }
 
-        if let Err(start_err) = self.start_strategy(strategy_id) {
+        if let Err(start_err) = self.start_strategy(&strategy_id) {
             return Err(self.rollback_strategy_start_failure(strategy_id, start_err));
         }
 
@@ -263,10 +264,10 @@ impl Controller {
 
     fn rollback_actor_start_failure(
         &self,
-        actor_id: &ActorId,
+        actor_id: ActorId,
         start_err: anyhow::Error,
     ) -> anyhow::Error {
-        match self.remove_actor(actor_id) {
+        match self.remove_actor(&actor_id) {
             Ok(()) => start_err,
             Err(rollback_err) => anyhow::anyhow!(
                 "Failed to start actor {actor_id}: {start_err}; rollback failed: {rollback_err}"
@@ -276,10 +277,10 @@ impl Controller {
 
     fn rollback_strategy_start_failure(
         &self,
-        strategy_id: &StrategyId,
+        strategy_id: StrategyId,
         start_err: anyhow::Error,
     ) -> anyhow::Error {
-        match self.remove_strategy(strategy_id) {
+        match self.remove_strategy(&strategy_id) {
             Ok(()) => start_err,
             Err(rollback_err) => anyhow::anyhow!(
                 "Failed to start strategy {strategy_id}: {start_err}; rollback failed: {rollback_err}"
@@ -288,7 +289,7 @@ impl Controller {
     }
 
     fn register_execute_endpoint(&self) {
-        let controller_id = self.actor_id().inner();
+        let controller_id = self.core.actor_id().inner();
         let handler = TypedHandler::from(move |command: &ControllerCommand| {
             if let Some(mut controller) = try_get_actor_unchecked::<Self>(&controller_id) {
                 if let Err(e) = controller.execute(command.clone()) {
@@ -305,7 +306,7 @@ impl Controller {
             .register(Self::execute_endpoint(), handler);
     }
 
-    fn deregister_execute_endpoint(&self) {
+    fn deregister_execute_endpoint() {
         get_message_bus()
             .borrow_mut()
             .endpoint_map::<ControllerCommand>()
@@ -342,7 +343,7 @@ impl DataActor for Controller {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
-        self.deregister_execute_endpoint();
+        Self::deregister_execute_endpoint();
         Ok(())
     }
 
@@ -352,7 +353,7 @@ impl DataActor for Controller {
     }
 
     fn on_dispose(&mut self) -> anyhow::Result<()> {
-        self.deregister_execute_endpoint();
+        Self::deregister_execute_endpoint();
         Ok(())
     }
 }
@@ -546,7 +547,7 @@ mod tests {
                 ..Default::default()
             }),
         );
-        let controller_id = controller.actor_id();
+        let controller_id = controller.core.actor_id();
 
         trader.borrow_mut().add_actor(controller).unwrap();
         trader.borrow_mut().start().unwrap();

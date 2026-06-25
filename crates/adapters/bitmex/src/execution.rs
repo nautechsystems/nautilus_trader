@@ -953,14 +953,7 @@ impl ExecutionClient for BitmexExecutionClient {
             .and_then(|p| p.get_usize("submit_tries"))
             .filter(|&n| n > 0);
 
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         let peg_price_type = match parse_peg_price_type(cmd.params.as_ref()) {
             Ok(value) => value,
@@ -1065,7 +1058,11 @@ impl ExecutionClient for BitmexExecutionClient {
                 )
                 .await
             {
-                Ok(report) => emitter.send_order_status_report(report),
+                Ok(_) => {
+                    log::debug!(
+                        "BitMEX modify accepted by REST, awaiting websocket confirmation: client_order_id={client_order_id}"
+                    );
+                }
                 Err(e) => handle_modify_failure(&ModifyFailure {
                     err: &e,
                     emitter: &emitter,
@@ -1250,7 +1247,7 @@ fn handle_submit_failure(failure: &SubmitFailure<'_>) {
             failure.post_only,
         );
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous BitMEX submit failure for {}, awaiting reconciliation: {:?}",
             failure.client_order_id,
             failure.err,
@@ -1280,7 +1277,7 @@ fn handle_modify_failure(failure: &ModifyFailure<'_>) {
             ts_event,
         );
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous BitMEX modify failure for {}, awaiting reconciliation: {:?}",
             failure.client_order_id,
             failure.err,
@@ -1477,6 +1474,7 @@ mod tests {
             0,
             Price::new(0.5, 1),
             Quantity::new(1.0, 0),
+            None,
             None,
             None,
             None,

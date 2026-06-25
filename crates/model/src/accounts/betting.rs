@@ -22,6 +22,7 @@ use std::{
 
 use ahash::AHashMap;
 use indexmap::IndexMap;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -123,7 +124,8 @@ impl BettingAccount {
     ///
     /// # Panics
     ///
-    /// Panics if `order_side` is `NoOrderSide`.
+    /// Panics if `order_side` is `NoOrderSide`, or if the impact cannot be represented in the
+    /// quote currency.
     #[must_use]
     pub fn balance_impact(
         &self,
@@ -133,14 +135,12 @@ impl BettingAccount {
         order_side: OrderSide,
     ) -> Money {
         let currency = instrument.quote_currency();
-        let quantity_f64 = quantity.as_f64();
-        let price_f64 = price.as_f64();
         let impact = match order_side {
-            OrderSide::Sell => -quantity_f64,
-            OrderSide::Buy => -(quantity_f64 * (price_f64 - 1.0)),
+            OrderSide::Sell => -quantity.as_decimal(),
+            OrderSide::Buy => -(quantity.as_decimal() * (price.as_decimal() - Decimal::ONE)),
             OrderSide::NoOrderSide => panic!("invalid `OrderSide`, was {order_side}"),
         };
-        Money::new(impact, currency)
+        Money::from_decimal(impact, currency).expect("invalid betting balance impact")
     }
 
     /// Recalculates the account balance for the specified currency based on per-instrument locks.
@@ -295,14 +295,14 @@ impl Account for BettingAccount {
         );
 
         let locked = match side {
-            OrderSide::Sell => quantity.as_f64(),
-            OrderSide::Buy => quantity.as_f64() * (price.as_f64() - 1.0),
+            OrderSide::Sell => quantity.as_decimal(),
+            OrderSide::Buy => quantity.as_decimal() * (price.as_decimal() - Decimal::ONE),
             OrderSide::NoOrderSide => {
                 anyhow::bail!("Invalid `OrderSide` in `calculate_balance_locked`: {side}")
             }
         };
 
-        Ok(Money::new(locked, instrument.quote_currency()))
+        Ok(Money::from_decimal(locked, instrument.quote_currency())?)
     }
 
     fn calculate_pnls(
@@ -332,26 +332,26 @@ impl Account for BettingAccount {
             );
         }
 
-        let quote_pnl = Money::new(fill.last_px.as_f64() * fill_qty.as_f64(), quote_currency);
+        let quote_pnl = Money::from_decimal(
+            fill.last_px.as_decimal() * fill_qty.as_decimal(),
+            quote_currency,
+        )?;
 
         match fill.order_side {
             OrderSide::Buy => {
                 if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                     pnls.insert(
                         base_currency_value,
-                        Money::new(fill_qty.as_f64(), base_currency_value),
+                        Money::from_decimal(fill_qty.as_decimal(), base_currency_value)?,
                     );
                 }
-                pnls.insert(
-                    quote_currency,
-                    Money::new(-quote_pnl.as_f64(), quote_currency),
-                );
+                pnls.insert(quote_currency, -quote_pnl);
             }
             OrderSide::Sell => {
                 if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                     pnls.insert(
                         base_currency_value,
-                        Money::new(-fill_qty.as_f64(), base_currency_value),
+                        -Money::from_decimal(fill_qty.as_decimal(), base_currency_value)?,
                     );
                 }
                 pnls.insert(quote_currency, quote_pnl);
@@ -631,7 +631,12 @@ mod tests {
             LiquiditySide::NoLiquiditySide,
             None,
         );
-        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Invalid `LiquiditySide`: NO_LIQUIDITY_SIDE")
+        );
     }
 
     #[rstest]

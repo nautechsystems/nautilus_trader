@@ -25,6 +25,7 @@ use std::{
     collections::VecDeque,
     fmt::Debug,
     marker::PhantomData,
+    num::{NonZeroU64, NonZeroUsize},
     rc::Rc,
 };
 
@@ -43,18 +44,40 @@ use crate::{
 };
 
 /// Represents a throttling limit per interval.
+///
+/// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
+/// underflows the throttler's `limit - 1` indexing, and a zero `interval_ns` disables
+/// throttling entirely.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimit {
-    pub limit: usize,
-    pub interval_ns: u64,
+    pub limit: NonZeroUsize,
+    pub interval_ns: NonZeroU64,
 }
 
 impl RateLimit {
+    /// Creates a new [`RateLimit`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `limit` or `interval_ns` is zero.
+    pub fn new_checked(limit: usize, interval_ns: u64) -> anyhow::Result<Self> {
+        let limit = NonZeroUsize::new(limit)
+            .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))?;
+        let interval_ns = NonZeroU64::new(interval_ns).ok_or_else(|| {
+            anyhow::anyhow!("Invalid interval_ns: {interval_ns} (must be non-zero)")
+        })?;
+        Ok(Self { limit, interval_ns })
+    }
+
     /// Creates a new [`RateLimit`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limit` or `interval_ns` is zero.
     #[must_use]
-    pub const fn new(limit: usize, interval_ns: u64) -> Self {
-        Self { limit, interval_ns }
+    pub fn new(limit: usize, interval_ns: u64) -> Self {
+        Self::new_checked(limit, interval_ns).expect(FAILED)
     }
 }
 
@@ -254,6 +277,51 @@ where
         (self.output_send)(msg);
     }
 
+    /// Reserves capacity for `count` messages without sending callbacks.
+    ///
+    /// Returns `false` when the current window cannot accept all messages. No partial
+    /// reservation is made in that case.
+    #[inline]
+    pub fn try_reserve(&mut self, count: usize) -> bool {
+        self.recv_count += count;
+
+        if count == 0 {
+            return true;
+        }
+
+        let delta = self.delta_next();
+        if self.is_limiting && delta == 0 && self.buffer.is_empty() {
+            self.is_limiting = false;
+        }
+
+        if self.is_limiting {
+            return false;
+        }
+
+        let now = self.clock.borrow().timestamp_ns();
+        let interval_start = now.as_i64() - self.interval as i64;
+        let used = self
+            .timestamps
+            .iter()
+            .take_while(|&&ts| ts.as_i64() > interval_start)
+            .count();
+
+        if self.limit.saturating_sub(used) < count {
+            self.is_limiting = true;
+            self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
+            return false;
+        }
+
+        for _ in 0..count {
+            if self.timestamps.len() >= self.limit {
+                self.timestamps.pop_back();
+            }
+            self.timestamps.push_front(now);
+        }
+        self.sent_count += count;
+        true
+    }
+
     #[inline]
     pub fn limit_msg(&mut self, msg: T) {
         if self.output_drop.is_none() {
@@ -425,6 +493,21 @@ mod tests {
         }
     }
 
+    #[rstest]
+    #[case(0, 1_000)]
+    #[case(1_000, 0)]
+    fn test_rate_limit_new_checked_rejects_zero(#[case] limit: usize, #[case] interval_ns: u64) {
+        assert!(RateLimit::new_checked(limit, interval_ns).is_err());
+    }
+
+    #[rstest]
+    fn test_rate_limit_new_checked_accepts_positive() {
+        let rate = RateLimit::new_checked(5, 10).unwrap();
+
+        assert_eq!(rate.limit.get(), 5);
+        assert_eq!(rate.interval_ns.get(), 10);
+    }
+
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
@@ -433,13 +516,13 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns;
+        let interval = rate_limit.interval_ns.get();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit,
-                rate_limit.interval_ns,
+                rate_limit.limit.get(),
+                rate_limit.interval_ns.get(),
                 clock,
                 "buffer_timer",
                 output_send,
@@ -463,13 +546,13 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns;
+        let interval = rate_limit.interval_ns.get();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit,
-                rate_limit.interval_ns,
+                rate_limit.limit.get(),
+                rate_limit.interval_ns.get(),
                 clock,
                 "dropper_timer",
                 output_send,
@@ -544,6 +627,35 @@ mod tests {
         assert_eq!(throttler.used(), 0.6);
         assert_eq!(throttler.recv_count, 3);
         assert_eq!(throttler.sent_count, 3);
+    }
+
+    #[rstest]
+    fn test_try_reserve_counts_messages_without_output(test_throttler_buffered: TestThrottler) {
+        let throttler = test_throttler_buffered.get_throttler();
+
+        assert!(throttler.try_reserve(3));
+
+        assert_eq!(throttler.used(), 0.6);
+        assert_eq!(throttler.recv_count, 3);
+        assert_eq!(throttler.sent_count, 3);
+        assert_eq!(throttler.qsize(), 0);
+    }
+
+    #[rstest]
+    fn test_try_reserve_rejects_when_full_batch_exceeds_limit(
+        test_throttler_buffered: TestThrottler,
+    ) {
+        let throttler = test_throttler_buffered.get_throttler();
+
+        assert!(throttler.try_reserve(3));
+        assert!(!throttler.try_reserve(3));
+
+        assert_eq!(throttler.used(), 0.6);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 3);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_names(), vec!["buffer_timer"]);
     }
 
     #[rstest]

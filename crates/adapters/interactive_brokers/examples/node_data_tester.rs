@@ -21,17 +21,12 @@
 //! Run embedded config unit tests with:
 //! `cargo test --example ib-data-tester --package nautilus-interactive-brokers --features examples`
 //!
-//! Environment variables:
-//! - `NAUTILUS_IB_HOST` defaults to `127.0.0.1`.
-//! - `NAUTILUS_IB_PORT` defaults to `7497` for paper TWS.
-//! - `NAUTILUS_IB_CLIENT_ID` defaults to `1`.
-//! - `NAUTILUS_IB_INSTRUMENT_ID` defaults to `AAPL=STK.SMART`.
-//! - `NAUTILUS_IB_MARKET_DATA_TYPE` defaults to `realtime`.
-//! - `NAUTILUS_IB_AUTO_STOP_SECS` defaults to `0` (run until stopped).
-//! - `NAUTILUS_IB_DATA_SPEC_PROFILE` defaults to `supported`.
-//!   Supported values: `supported`, `unsupported-surfaces`, `options`.
+//! Edit the constants below to change the TWS/Gateway connection, target
+//! instrument, market data type, and data spec profile. The adapter connects to
+//! a locally running TWS or IB Gateway, so no credential environment variables
+//! are required.
 
-use std::{collections::HashSet, env, num::NonZeroUsize, time::Duration};
+use std::{collections::HashSet, time::Duration};
 
 use nautilus_common::{enums::Environment, live::get_runtime};
 use nautilus_interactive_brokers::{
@@ -49,6 +44,9 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+// Each variant is exercised by the tests and selected by editing DATA_SPEC_PROFILE,
+// but only the default is constructed in a non-test build
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IbDataSpecProfile {
     Supported,
@@ -56,29 +54,33 @@ enum IbDataSpecProfile {
     Options,
 }
 
+const TRADER_ID: &str = "IB-DATA-TESTER-001";
+const NODE_NAME: &str = "IB-DATA-TESTER-001";
+const HOST: &str = DEFAULT_HOST;
+const PORT: u16 = DEFAULT_TWS_PORT;
+const CLIENT_ID: i32 = DEFAULT_CLIENT_ID;
+const INSTRUMENT_ID: &str = "AAPL=STK.SMART";
+const MARKET_DATA_TYPE: &str = "realtime";
+const AUTO_STOP_SECS: u64 = 0;
+const DATA_SPEC_PROFILE: IbDataSpecProfile = IbDataSpecProfile::Supported;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let host = env_string("NAUTILUS_IB_HOST", DEFAULT_HOST);
-    let port = env_u16("NAUTILUS_IB_PORT", DEFAULT_TWS_PORT)?;
-    let client_id = env_i32("NAUTILUS_IB_CLIENT_ID", DEFAULT_CLIENT_ID)?;
-    let instrument_id =
-        InstrumentId::from(env_string("NAUTILUS_IB_INSTRUMENT_ID", "AAPL=STK.SMART"));
-    let market_data_type = market_data_type_from_env();
-    let profile = data_spec_profile_from_env();
-    let auto_stop_secs = env_u64("NAUTILUS_IB_AUTO_STOP_SECS", 0)?;
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let market_data_type = parse_market_data_type(MARKET_DATA_TYPE);
     let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL").as_str());
 
     let data_config = InteractiveBrokersDataClientConfig {
-        host,
-        port,
-        client_id,
+        host: HOST.to_string(),
+        port: PORT,
+        client_id: CLIENT_ID,
         market_data_type,
         instrument_provider: instrument_provider_config(instrument_id),
         ..Default::default()
     };
 
-    let mut node = LiveNode::builder(TraderId::from("IB-DATA-TESTER-001"), Environment::Live)?
-        .with_name("IB-DATA-TESTER-001".to_string())
+    let mut node = LiveNode::builder(TraderId::from(TRADER_ID), Environment::Live)?
+        .with_name(NODE_NAME.to_string())
         .with_delay_post_stop_secs(2)
         .add_data_client(
             None,
@@ -87,34 +89,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?
         .build()?;
 
-    let tester_config =
-        data_tester_config_for_profile(profile, ClientId::new(IB), instrument_id, bar_type);
+    let tester_config = data_tester_config_for_profile(
+        DATA_SPEC_PROFILE,
+        ClientId::new(IB),
+        instrument_id,
+        bar_type,
+    );
 
     node.add_actor(DataTester::new(tester_config))?;
-    schedule_auto_stop(&node, auto_stop_secs);
+    schedule_auto_stop(&node, AUTO_STOP_SECS);
     node.run().await?;
 
     Ok(())
-}
-
-fn env_string(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-fn env_i32(key: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn env_u16(key: &str, default: u16) -> Result<u16, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn env_u64(key: &str, default: u64) -> Result<u64, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn market_data_type_from_env() -> MarketDataType {
-    parse_market_data_type(&env_string("NAUTILUS_IB_MARKET_DATA_TYPE", "realtime"))
 }
 
 fn parse_market_data_type(value: &str) -> MarketDataType {
@@ -152,15 +138,6 @@ fn schedule_auto_stop(node: &LiveNode, delay_secs: u64) {
     });
 }
 
-fn data_spec_profile_from_env() -> IbDataSpecProfile {
-    match env_string("NAUTILUS_IB_DATA_SPEC_PROFILE", "supported").as_str() {
-        "supported" => IbDataSpecProfile::Supported,
-        "unsupported-surfaces" => IbDataSpecProfile::UnsupportedSurfaces,
-        "options" => IbDataSpecProfile::Options,
-        value => panic!("invalid NAUTILUS_IB_DATA_SPEC_PROFILE={value}"),
-    }
-}
-
 fn data_tester_config_for_profile(
     profile: IbDataSpecProfile,
     client_id: ClientId,
@@ -182,21 +159,24 @@ fn data_tester_config_for_profile(
             .request_quotes(true)
             .request_trades(true)
             .request_bars(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbDataSpecProfile::UnsupportedSurfaces => builder
             .subscribe_book_depth(true)
             .subscribe_instrument_status(true)
             .subscribe_instrument_close(true)
             .request_book_snapshot(true)
-            .book_depth(NonZeroUsize::new(10).unwrap())
+            .book_depth(10)
             .stats_interval_secs(0)
-            .build(),
+            .build()
+            .unwrap(),
         IbDataSpecProfile::Options => builder
             .subscribe_quotes(true)
             .subscribe_option_greeks(true)
             .request_quotes(true)
             .stats_interval_secs(0)
-            .build(),
+            .build()
+            .unwrap(),
     }
 }
 
@@ -245,7 +225,7 @@ mod tests {
         assert!(config.subscribe_instrument_status);
         assert!(config.subscribe_instrument_close);
         assert!(config.request_book_snapshot);
-        assert_eq!(config.book_depth, NonZeroUsize::new(10));
+        assert_eq!(config.book_depth, Some(10));
     }
 
     #[rstest::rstest]

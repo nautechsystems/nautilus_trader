@@ -61,7 +61,10 @@ pub enum NautilusWsMessage {
     IndexPrice(IndexPriceUpdate),
     FundingRate(FundingRateUpdate),
     ExecutionReports(Vec<ExecutionReport>),
-    PositionSnapshot(Vec<PositionStatusReport>),
+    PositionSnapshot {
+        reports: Vec<PositionStatusReport>,
+        skipped_market_ids: Vec<i16>,
+    },
     AccountState(Box<AccountState>),
     SendTxAck {
         tx_hash: Option<String>,
@@ -71,6 +74,7 @@ pub enum NautilusWsMessage {
         source: SendTxRejectionSource,
         code: Option<i64>,
         message: String,
+        tx_hash: Option<String>,
     },
     Raw(serde_json::Value),
     Reconnected,
@@ -82,7 +86,7 @@ pub enum NautilusWsMessage {
     AccountStreamFirstFrame(AccountStream),
 }
 
-/// Identifier for one of the four account-scoped WebSocket streams the
+/// Identifier for one of the five account-scoped WebSocket streams the
 /// execution client subscribes to on connect.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AccountStream {
@@ -90,14 +94,17 @@ pub enum AccountStream {
     Trades,
     Positions,
     Assets,
+    UserStats,
 }
 
 /// Origin of a Lighter `sendTx` rejection signal.
 ///
-/// `Ack` is a direct non-200 response to our own `jsonapi/sendtx` request and
-/// is always attributable to the most recent pending sendTx. `BareError` is a
-/// standalone error frame that carries no correlation field, so attribution
-/// relies on the FIFO pending queue plus a short attribution window.
+/// `Ack` is a direct non-200 response to our own `jsonapi/sendtx` request,
+/// attributable via the echoed `tx_hash` when present and the FIFO head
+/// otherwise. `BareError` is a standalone error frame that carries no
+/// correlation field, so attribution relies on the FIFO pending queue plus a
+/// short attribution window; only codes in the venue's transaction range are
+/// routed here at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendTxRejectionSource {
     Ack,
@@ -221,6 +228,7 @@ pub enum LighterWsChannelKind {
     AccountAllTrades,
     AccountAllPositions,
     AccountAllAssets,
+    UserStats,
     Height,
 }
 
@@ -241,6 +249,7 @@ impl LighterWsChannelKind {
             Self::AccountAllTrades => "account_all_trades",
             Self::AccountAllPositions => "account_all_positions",
             Self::AccountAllAssets => "account_all_assets",
+            Self::UserStats => "user_stats",
             Self::Height => "height",
         }
     }
@@ -261,6 +270,7 @@ impl LighterWsChannelKind {
             "account_all_trades" => Some(Self::AccountAllTrades),
             "account_all_positions" => Some(Self::AccountAllPositions),
             "account_all_assets" => Some(Self::AccountAllAssets),
+            "user_stats" => Some(Self::UserStats),
             "height" => Some(Self::Height),
             _ => None,
         }
@@ -287,6 +297,7 @@ pub enum LighterWsChannel {
     AccountAllTrades(i64),
     AccountAllPositions(i64),
     AccountAllAssets(i64),
+    UserStats(i64),
     Height,
 }
 
@@ -307,6 +318,7 @@ impl LighterWsChannel {
             Self::AccountAllTrades(_) => LighterWsChannelKind::AccountAllTrades,
             Self::AccountAllPositions(_) => LighterWsChannelKind::AccountAllPositions,
             Self::AccountAllAssets(_) => LighterWsChannelKind::AccountAllAssets,
+            Self::UserStats(_) => LighterWsChannelKind::UserStats,
             Self::Height => LighterWsChannelKind::Height,
         }
     }
@@ -330,7 +342,8 @@ impl LighterWsChannel {
             | Self::AccountAllOrders(account_index)
             | Self::AccountAllTrades(account_index)
             | Self::AccountAllPositions(account_index)
-            | Self::AccountAllAssets(account_index) => format!("{kind}/{account_index}"),
+            | Self::AccountAllAssets(account_index)
+            | Self::UserStats(account_index) => format!("{kind}/{account_index}"),
             Self::AccountOrders {
                 market_index,
                 account_index,
@@ -362,6 +375,7 @@ impl LighterWsChannel {
                 | Self::AccountAllTrades(_)
                 | Self::AccountAllPositions(_)
                 | Self::AccountAllAssets(_)
+                | Self::UserStats(_)
         )
     }
 }
@@ -504,6 +518,12 @@ pub enum LighterWsFrame {
     AccountAllAssets {
         assets: AHashMap<Ustr, LighterAsset>,
         channel: Ustr,
+        timestamp: u64,
+    },
+    #[serde(rename = "update/user_stats", alias = "subscribed/user_stats")]
+    UserStats {
+        channel: Ustr,
+        stats: LighterUserStats,
         timestamp: u64,
     },
     #[serde(rename = "update/height")]
@@ -679,14 +699,66 @@ pub struct LighterPoolShares {
     pub entry_timestamp: u64,
 }
 
+/// Inner shape of the `user_stats.stats.cross_stats` and `.total_stats`
+/// substructs. Every field is a stringified decimal on the wire and
+/// denominated in USDC.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct LighterUserStatsScoped {
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub available_balance: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub buying_power: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub collateral: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub leverage: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub margin_usage: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub portfolio_value: Decimal,
+}
+
+/// Body of the `user_stats` frame. Top-level equity numbers mirror
+/// `total_stats`; `cross_stats` reports cross-margin equity only.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct LighterUserStats {
+    #[serde(default)]
+    pub account_trading_mode: i32,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub available_balance: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub buying_power: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub collateral: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub leverage: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub margin_usage: Decimal,
+    #[serde(deserialize_with = "deserialize_decimal_from_str")]
+    pub portfolio_value: Decimal,
+    pub cross_stats: Option<LighterUserStatsScoped>,
+    pub total_stats: Option<LighterUserStatsScoped>,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct LighterAsset {
     pub symbol: Ustr,
     pub asset_id: i16,
+    /// Spot-side balance for this asset (USDC sitting in the wallet bucket,
+    /// non-USDC spot holdings, etc).
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub balance: Decimal,
+    /// Spot-side amount reserved by resting spot orders.
     #[serde(deserialize_with = "deserialize_decimal_from_str")]
     pub locked_balance: Decimal,
+    /// Perp-side collateral for this asset. USDC on Lighter today; defaults
+    /// to zero when the wire omits the field (spot-only frames).
+    #[serde(default, deserialize_with = "deserialize_decimal_from_str")]
+    pub margin_balance: Decimal,
+    /// Per-asset margin treatment. Observed values: "disabled" (asset not
+    /// pledged as collateral). Defaults to empty when the wire omits it.
+    #[serde(default)]
+    pub margin_mode: Ustr,
 }
 
 fn deserialize_trade_vec<'de, D>(deserializer: D) -> Result<Vec<LighterTrade>, D::Error>
@@ -1218,6 +1290,9 @@ mod tests {
 
     #[rstest]
     fn test_account_all_assets_frame_deserializes() {
+        // Fixture is the captured production no-position payload: USDC
+        // sits at asset_id=3, balance=10 on spot, margin_balance=40 on
+        // perp, margin_mode="disabled", no spot-order reservation.
         let frame: LighterWsFrame = serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
 
         match frame {
@@ -1227,10 +1302,17 @@ mod tests {
                 timestamp,
             } => {
                 assert_eq!(channel, Ustr::from("account_all_assets:1234"));
-                let asset = assets.get(&Ustr::from("0")).unwrap();
+                let asset = assets.get(&Ustr::from("3")).unwrap();
                 assert_eq!(asset.symbol, Ustr::from("USDC"));
-                assert_eq!(asset.locked_balance, Decimal::from_str("1.000000").unwrap());
-                assert_eq!(timestamp, 1_774_883_844_933);
+                assert_eq!(asset.asset_id, 3);
+                assert_eq!(asset.balance, Decimal::from_str("10.000000").unwrap());
+                assert_eq!(asset.locked_balance, Decimal::ZERO);
+                assert_eq!(
+                    asset.margin_balance,
+                    Decimal::from_str("40.000000").unwrap()
+                );
+                assert_eq!(asset.margin_mode, Ustr::from("disabled"));
+                assert_eq!(timestamp, 1_781_161_199_648);
             }
             _ => panic!("expected account all assets frame"),
         }

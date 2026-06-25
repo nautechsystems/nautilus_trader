@@ -28,20 +28,20 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   release publication and attestation verification. Uses Depot 8-core runners for Linux and Windows
   builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on
   Python-only changes.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Uses Depot 8-core runners for Linux builds.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux builds on the self-hosted `build-v2` pool.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
   `nightly`, and manual dispatch.
-- **copilot-setup-steps.yml**: environment setup for GitHub Copilot coding agent.
 - **coverage.yml**: coverage report generation, currently paused and runs only on `workflow_dispatch`.
 - **docker.yml**: builds and pushes multi-platform Docker images (`nautilus_trader`, `jupyterlab`)
   using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests plus
-  macOS, Windows, and Linux ARM build-and-test jobs that run daily at 12:00 UTC to give early
-  visibility on develop before `nightly-merge` at 14:00 UTC.
+- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests,
+  macOS, Windows, and Linux ARM build-and-test jobs, plus final Cargo publish-plan and dry-run
+  checks that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge`
+  at 14:00 UTC.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
@@ -109,11 +109,16 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
   job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
 - **Post-publish verification**: `publish-release-integrity` verifies PyPI files against
-  `dist-manifest.json`, verifies PyPI provenance publisher metadata, verifies crates.io entries
-  were trusted-published by this repository, records whether each crate matches the release commit
-  or was already published, uploads `crates-manifest.json`, attaches attestation siblings, and
-  cleans up release workflow artifacts. `publish-github-release` then publishes the draft release
-  and verifies GitHub's release attestation.
+  `dist-manifest.json`, verifies PyPI provenance publisher metadata, and verifies crates.io entries
+  were trusted-published by this repository. These verifier calls retry transient
+  Sigstore/Rekor/TUF lag, while provenance and identity mismatches fail fast. The job records
+  whether each crate matches the release commit, was already published, or matched an explicit
+  `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry for emergency token-publish
+  recovery. Manual entries are recorded in `crates-manifest.json` with
+  `release_status: "manual_token_publish"`. Malformed or unused exception entries fail the job. The
+  job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
+  artifacts. `publish-github-release` then publishes the draft release and verifies GitHub's
+  release attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

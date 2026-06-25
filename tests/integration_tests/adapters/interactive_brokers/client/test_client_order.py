@@ -31,6 +31,11 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestExecStubs
 
 
+def test_get_venue_order_id_prefers_perm_id():
+    assert get_venue_order_id(order_id=123, perm_id=456) == VenueOrderId("PERM-456")
+    assert get_venue_order_id(order_id=123, perm_id=0) == VenueOrderId("123")
+
+
 def test_place_order(ib_client):
     """
     Test case for placing an order with the Interactive Brokers client.
@@ -176,6 +181,10 @@ async def test_openOrder(ib_client):
     # Assert
     venue_order_id = get_venue_order_id(order.orderId, order.permId)
     assert ib_client._order_id_to_order_ref[venue_order_id]
+    assert (
+        ib_client._order_id_to_order_ref[VenueOrderId(str(order_id))]
+        == (ib_client._order_id_to_order_ref[venue_order_id])
+    )
     assert mock_request.result == [order]
     handler_mock.assert_not_called()
 
@@ -215,9 +224,9 @@ async def test_process_open_order_when_request_not_present(ib_client):
 @pytest.mark.asyncio
 async def test_orderStatus(ib_client):
     # Arrange
-    venue_order_id = VenueOrderId("1")
+    venue_order_id = get_venue_order_id(1, 1916994655)
     ib_client._order_id_to_order_ref = {
-        venue_order_id: AccountOrderRef(
+        VenueOrderId("1"): AccountOrderRef(
             order_id="O-20240102-1754-001-000-1",
             account_id="DU123456",
         ),
@@ -242,6 +251,10 @@ async def test_orderStatus(ib_client):
     )
 
     # Assert
+    assert ib_client._order_id_to_order_ref[venue_order_id] == AccountOrderRef(
+        order_id="O-20240102-1754-001-000-1",
+        account_id="DU123456",
+    )
     ib_client._event_subscriptions.get.assert_called_with("orderStatus-DU123456", None)
     handler_func.assert_called_with(
         venue_order_id=venue_order_id,
@@ -257,7 +270,7 @@ async def test_orderStatus(ib_client):
 @pytest.mark.asyncio
 async def test_orderStatus_with_zero_avg_fill_price(ib_client):
     # Arrange
-    venue_order_id = VenueOrderId("1")
+    venue_order_id = get_venue_order_id(1, 1916994655)
     ib_client._order_id_to_order_ref = {
         venue_order_id: AccountOrderRef(
             order_id="O-20240102-1754-001-000-1",

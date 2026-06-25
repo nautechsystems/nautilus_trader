@@ -421,6 +421,49 @@ Configure option fees explicitly on the simulated venue with structural fee mode
 as `CappedOptionFeeModel` or `TieredNotionalOptionFeeModel`. There is no automatic
 Tardis exchange to fee model mapping.
 
+### Option-chain CSV catalog conversion
+
+For historical option chains from downloadable Tardis CSV files, use
+`TardisCSVDataLoader.convert_options_chain_csv(...)` to convert `options_chain` rows into
+Nautilus catalog data. This path does not call Tardis Machine or the instrument metadata API, so
+it is useful when you already have Tardis CSV files or want a no-API-key catalog bootstrap from
+downloaded data.
+
+The converter writes `OptionGreeks` for every selected row. With the default
+`extract_bbo_as_quotes=True`, complete best bid/offer rows also write `QuoteTick`. Keep this
+enabled for option-chain backtests: greeks-only catalogs do not provide quotes, so the chain
+manager cannot publish populated `OptionChainSlice` snapshots for strikes without BBO data.
+
+Instrument derivation currently supports Deribit options. For other option venues, set
+`write_instruments=False` before conversion and load the instruments through another source
+before backtesting. Leaving it enabled for a non-Deribit file can fail after data files have
+been written to the catalog. Pass daily `options_chain` CSV paths in chronological order. The
+`underlyings` filter matches symbol prefixes such as `["BTC-"]`. Set `snapshot_interval_ms` to
+keep the last row per instrument per interval within each input file, or use `None` to write
+every selected row. Rows must be ordered by `local_timestamp` within each file when thinning.
+
+Provide explicit `price_precision` and `size_precision` on the loader for deterministic quote
+metadata. Inferred precision can increase as later rows are read, so data written earlier in a
+file can keep lower precision metadata.
+
+```python
+from pathlib import Path
+
+from nautilus_trader.adapters.tardis import TardisCSVDataLoader
+
+
+loader = TardisCSVDataLoader(
+    price_precision=4,
+    size_precision=1,
+)
+loader.convert_options_chain_csv(
+    filepaths=[Path("deribit_options_chain_2020-06-08.csv")],
+    catalog_path=Path("catalog"),
+    underlyings=["BTC-"],
+    snapshot_interval_ms=60_000,
+)
+```
+
 ## Loading Tardis CSV data
 
 Tardis-format CSV data can be loaded using either Python or Rust. The loader reads the CSV text data
@@ -433,6 +476,11 @@ maximum number of rows loaded.
 :::note
 Loading mixed-instrument CSV files is challenging due to precision requirements and is not
 recommended. Use single-instrument CSV files instead.
+
+The `load_options_chain`, `stream_options_chain`, and `convert_options_chain_csv` methods are
+the exception: Tardis `options_chain` files are mixed-instrument chain files, and these paths
+track precision per instrument. Explicit precisions are still recommended for deterministic
+output.
 :::
 
 ### Loading CSV data in Python
@@ -518,8 +566,9 @@ The Python streaming functionality is available for the high-volume CSV types:
 - Quote ticks (`stream_quotes`).
 - Trade ticks (`stream_trades`).
 - Order book depth snapshots (`stream_depth10`).
+- Options chain rows (`stream_options_chain`).
 
-Rust also exposes streaming functions for batched deltas and funding rates.
+Rust also exposes streaming functions for these CSV types, plus batched deltas and funding rates.
 
 ### Streaming CSV data in Python
 

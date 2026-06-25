@@ -86,6 +86,23 @@ class TestInstrument:
         # Arrange, Act, Assert
         assert BTCUSDT_BINANCE.symbol == BTCUSDT_BINANCE.id.symbol
 
+    @pytest.mark.parametrize(
+        ("instrument", "expected"),
+        [
+            (AUDUSD_SIM, False),
+            (BTCUSDT_BINANCE, False),
+            (AAPL_EQUITY, False),
+            (ES_FUTURE, False),
+            (AAPL_OPTION, True),
+            (TestInstrumentProvider.futures_spread(), True),
+            (TestInstrumentProvider.option_spread(), True),
+            (TestInstrumentProvider.commodity(), True),
+        ],
+    )
+    def test_allows_negative_price(self, instrument, expected):
+        # Arrange, Act, Assert
+        assert instrument.allows_negative_price() == expected
+
     def test_base_to_dict_returns_expected_dict(self):
         # Arrange, Act
         result = Instrument.base_to_dict(BTCUSDT_BINANCE)

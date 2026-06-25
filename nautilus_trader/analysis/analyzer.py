@@ -47,6 +47,7 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
+        self._recorded_realized_pnls: dict[Currency, pd.Series] = {}
         self._position_returns: pd.Series = self._empty_returns()
         self._portfolio_returns: pd.Series = self._empty_returns()
         self._returns: pd.Series = self._empty_returns()
@@ -88,6 +89,7 @@ class PortfolioAnalyzer:
         self._account_balances = {}
         self._positions = []
         self._realized_pnls = {}
+        self._recorded_realized_pnls = {}
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
@@ -224,6 +226,30 @@ class PortfolioAnalyzer:
         realized_pnls.loc[position_id.value] = realized_pnl.as_double()
         self._realized_pnls[currency] = realized_pnls
 
+    def record_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
+        """
+        Record realized PnL observed during portfolio processing.
+
+        Parameters
+        ----------
+        position_id : PositionId
+            The position ID for the trade.
+        realized_pnl : Money
+            The realized PnL for the trade.
+
+        """
+        currency = realized_pnl.currency
+        trade_pnl = pd.Series(
+            [realized_pnl.as_double()],
+            index=[position_id.value],
+            dtype=float64,
+        )
+        realized_pnls = self._recorded_realized_pnls.get(currency)
+        realized_pnls = (
+            trade_pnl if realized_pnls is None else pd.concat([realized_pnls, trade_pnl])
+        )
+        self._recorded_realized_pnls[currency] = realized_pnls
+
     def add_position_return(self, timestamp: datetime, value: float) -> None:
         """
         Add position return data to the analyzer.
@@ -273,20 +299,35 @@ class PortfolioAnalyzer:
         -------
         pd.Series or ``None``
 
-        Raises
-        ------
-        ValueError
-            If `currency` is ``None`` when analyzing multi-currency portfolios.
+        Returns ``None`` when no unambiguous currency can be selected.
 
         """
-        if not self._realized_pnls:
+        if not self._realized_pnls and not self._recorded_realized_pnls:
             return None
         if currency is None:
-            if len(self._account_balances) > 1:
-                raise ValueError("`currency` was `None` for multi-currency portfolio")
-            currency = next(iter(self._account_balances.keys()))
+            if len(self._account_balances) == 1:
+                currency = next(iter(self._account_balances.keys()))
+            else:
+                currencies = set(self._realized_pnls) | set(self._recorded_realized_pnls)
+                if len(currencies) != 1:
+                    return None
 
-        return self._realized_pnls.get(currency)
+                currency = next(iter(currencies))
+
+        realized_pnls = self._realized_pnls.get(currency)
+        recorded_realized_pnls = self._recorded_realized_pnls.get(currency)
+
+        if realized_pnls is None:
+            return recorded_realized_pnls
+
+        if recorded_realized_pnls is None:
+            return realized_pnls
+
+        output = realized_pnls.drop(
+            recorded_realized_pnls.index.unique(),
+            errors="ignore",
+        )
+        return pd.concat([output, recorded_realized_pnls])
 
     def total_pnl(
         self,
@@ -483,6 +524,64 @@ class PortfolioAnalyzer:
         """
         return self._calculate_returns_stats(self._portfolio_returns)
 
+    def get_performance_stats_returns_vs_benchmark(
+        self,
+        benchmark_returns: pd.Series,
+        returns: pd.Series | None = None,
+    ) -> dict[str, Any]:
+        """
+        Return the benchmark-relative performance statistics.
+
+        Only registered benchmark-relative statistics (those exposing
+        ``calculate_from_returns_with_benchmark``) contribute values; all other
+        statistics are skipped.
+
+        Parameters
+        ----------
+        benchmark_returns : pd.Series
+            The benchmark returns series for comparison. Must be indexed by
+            ``pd.Timestamp``.
+        returns : pd.Series, optional
+            The strategy returns series to evaluate against the benchmark. If
+            ``None``, the primary `returns` series is used (portfolio returns
+            when available, otherwise position returns). Callers that resolve a
+            specific series (e.g., the tearsheet's equity-curve series) should
+            pass it explicitly so the metrics match that series.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
+        output: dict[str, Any] = {}
+
+        returns_dict: dict[int, float] | None = None
+        benchmark_dict: dict[int, float] | None = None
+
+        for name, stat in self._statistics.items():
+            if not _is_pyo3_statistic(stat):
+                continue  # Benchmark-relative statistics are pyo3-only
+
+            calculate = getattr(stat, "calculate_from_returns_with_benchmark", None)
+            if calculate is None:
+                continue  # Not a benchmark-relative statistic
+
+            if returns_dict is None or benchmark_dict is None:
+                strategy_returns = self._returns if returns is None else returns
+                returns_dict = self._returns_to_dict(strategy_returns)
+                benchmark_dict = self._returns_to_dict(benchmark_returns)
+
+            value = calculate(returns_dict, benchmark_dict)
+            if value is None:
+                continue
+
+            if not isinstance(value, int | float | str | bool):
+                value = str(value)
+
+            output[name] = value
+
+        return output
+
     def get_performance_stats_general(self) -> dict[str, Any]:
         """
         Return the `general` performance statistics.
@@ -656,13 +755,7 @@ class PortfolioAnalyzer:
 
         for name, stat in self._statistics.items():
             if _is_pyo3_statistic(stat):
-                returns_dict: dict[int, float] = {}
-
-                if not returns.empty:
-                    for timestamp, value in returns.items():
-                        returns_dict[timestamp.value] = float(value)
-
-                value = stat.calculate_from_returns(returns_dict)
+                value = stat.calculate_from_returns(self._returns_to_dict(returns))
             else:
                 value = stat.calculate_from_returns(returns)
 
@@ -675,6 +768,15 @@ class PortfolioAnalyzer:
             output[name] = value
 
         return output
+
+    def _returns_to_dict(self, returns: pd.Series) -> dict[int, float]:
+        returns_dict: dict[int, float] = {}
+
+        if not returns.empty:
+            for timestamp, value in returns.items():
+                returns_dict[timestamp.value] = float(value)
+
+        return returns_dict
 
     def _format_stats(self, stats: dict[str, Any]) -> list[str]:
         max_length: int = self._get_max_length_name()

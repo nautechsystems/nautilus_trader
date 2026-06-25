@@ -63,31 +63,23 @@ use ustr::Ustr;
 let activation = Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0).unwrap();
 let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
 
-let esz21 = FuturesContract::new(
-    InstrumentId::from("ESZ21.GLBX"),
-    Symbol::from("ESZ21"),
-    AssetClass::Index,
-    Some(Ustr::from("XCME")),
-    Ustr::from("ES"),
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    Currency::from("USD"),
-    2,
-    Price::from("0.25"),
-    Quantity::from("1"),
-    Quantity::from("1"),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let esz21 = FuturesContract::builder()
+    .instrument_id(InstrumentId::from("ESZ21.GLBX"))
+    .raw_symbol(Symbol::from("ESZ21"))
+    .asset_class(AssetClass::Index)
+    .exchange(Ustr::from("XCME"))
+    .underlying(Ustr::from("ES"))
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .currency(Currency::from("USD"))
+    .price_precision(2)
+    .price_increment(Price::from("0.25"))
+    .multiplier(Quantity::from("1"))
+    .lot_size(Quantity::from("1"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

@@ -15,20 +15,28 @@
 
 //! WebSocket message dispatch for the Polymarket execution client.
 //!
-//! Routes user-channel WS messages (order updates and trades) into Nautilus
-//! order status reports and fill reports. Reports are emitted immediately if
-//! the order is already accepted, otherwise buffered until acceptance.
-//! Trade fills are deduped via a FIFO cache. Maker and taker fills are
-//! handled separately to account for multi-leg maker order matching.
+//! Routes user-channel WS messages (order updates and trades) for orders submitted through this
+//! client into Nautilus order events (`OrderAccepted` / `OrderFilled` / `OrderCanceled` /
+//! `OrderRejected` / `OrderExpired`), building them from the identity captured at submit
+//! (`OrderIdentityRegistry`). Order-channel messages drive lifecycle events; trade-channel
+//! messages drive fills, and acceptance is synthesized before a fill or cancel that races ahead.
+//! Messages are emitted once the order is known (accepted, or with a submit in flight), otherwise
+//! buffered until acceptance. Reports are reserved for the `generate_*` query and reconciliation
+//! methods. Trade fills are deduped via a FIFO cache; maker and taker fills are handled separately
+//! to account for multi-leg maker order matching.
 
-use std::{str::FromStr, sync::Mutex};
+use std::str::FromStr;
 
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
+use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    identifiers::{AccountId, ClientOrderId, VenueOrderId},
+    events::{
+        OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
+        OrderUpdated,
+    },
+    identifiers::{AccountId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
@@ -43,11 +51,14 @@ use super::{
 use crate::{
     common::enums::{PolymarketLiquiditySide, PolymarketOrderStatus},
     execution::{
+        get_pusd_currency,
+        identity::{OrderIdentity, OrderIdentityRegistry},
         order_fill_tracker::OrderFillTrackerMap,
         parse::{
             build_maker_fill_report, compute_commission, determine_order_side,
             instrument_taker_fee, make_composite_trade_id, parse_liquidity_side,
         },
+        pending::PendingSubmitTracker,
     },
 };
 
@@ -70,9 +81,8 @@ pub(crate) struct WsDispatchState {
 pub(crate) struct WsDispatchContext<'a> {
     pub token_instruments: &'a AtomicMap<Ustr, InstrumentAny>,
     pub fill_tracker: &'a OrderFillTrackerMap,
-    pub pending_submits: &'a Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
-    pub pending_fills: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
-    pub pending_order_reports: &'a Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
+    pub pending_submits: &'a PendingSubmitTracker,
+    pub order_identities: &'a OrderIdentityRegistry,
     pub emitter: &'a ExecutionEventEmitter,
     pub account_id: AccountId,
     pub clock: &'static AtomicTime,
@@ -115,32 +125,28 @@ fn dispatch_order_update(
     let ts_init = ctx.clock.get_time_ns();
     let mut report =
         build_ws_order_status_report(order, instrument, ctx.account_id, ts_event, ts_init);
-    let local_client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
+    let local_client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     let mut is_accepted = ctx.fill_tracker.contains(&venue_order_id);
     report.client_order_id = local_client_order_id;
 
-    if local_client_order_id.is_some()
+    // A known own order (submit in flight) self-registers on its first WS update
+    let buffered_fills = if local_client_order_id.is_some()
         && !is_accepted
         && report.order_status != OrderStatus::Rejected
     {
-        ctx.fill_tracker.register(
+        is_accepted = true;
+        ctx.fill_tracker.register_and_take_pending_fills(
             venue_order_id,
+            local_client_order_id,
             report.quantity,
             report.order_side,
             report.instrument_id,
             instrument.size_precision(),
             instrument.price_precision(),
-        );
-        is_accepted = true;
-    }
-
-    let buffered_fills = if is_accepted {
-        drain_pending_fills_for_known_order(
-            venue_order_id,
-            local_client_order_id,
-            ctx.fill_tracker,
-            ctx.pending_fills,
         )
+    } else if is_accepted {
+        ctx.fill_tracker
+            .take_pending_fills(venue_order_id, local_client_order_id)
     } else {
         Vec::new()
     };
@@ -168,19 +174,34 @@ fn dispatch_order_update(
             .insert(venue_order_id, report.clone());
     }
 
-    emit_or_buffer_order_report(
-        report,
-        venue_order_id,
-        is_accepted || local_client_order_id.is_some(),
-        ctx.emitter,
-        ctx.pending_order_reports,
-    );
-
-    for fill in buffered_fills {
-        ctx.emitter.send_fill_report(fill);
+    // Tracked own orders route through order events; externally-managed orders
+    // (no captured identity) buffer until accepted or fall back to reports.
+    let identity = ctx.order_identities.get(&venue_order_id);
+    if is_accepted || local_client_order_id.is_some() {
+        match identity {
+            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+            None => ctx.emitter.send_order_status_report(report),
+        }
+    } else if let Some(report) = ctx
+        .fill_tracker
+        .accept_or_buffer_report(venue_order_id, report)
+    {
+        // Registered between the early accepted-check and here: emit rather than buffer
+        match ctx.order_identities.get(&venue_order_id) {
+            Some(identity) => emit_tracked_order_status(&report, &identity, ts_event, ctx),
+            None => ctx.emitter.send_order_status_report(report),
+        }
     }
 
-    // MATCHED convergence: check for dust residual
+    for fill in buffered_fills {
+        match identity {
+            Some(identity) => emit_order_filled(&identity, &fill, ctx),
+            None => ctx.emitter.send_fill_report(fill),
+        }
+    }
+
+    // MATCHED convergence: check for dust residual. A dust fill is only built for a
+    // registered order, so it always emits (accepted by construction, no gate).
     if order.status == PolymarketOrderStatus::Matched {
         let price_precision = instrument.price_precision();
         let price = Decimal::from_str(&order.price)
@@ -193,17 +214,14 @@ fn dispatch_order_update(
             ctx.account_id,
             &order.id,
             price.as_f64(),
-            crate::execution::get_pusd_currency(),
+            get_pusd_currency(),
             ts_event,
             ts_init,
         ) {
-            emit_or_buffer_fill_report(
-                dust_fill,
-                venue_order_id,
-                is_accepted,
-                ctx.emitter,
-                ctx.pending_fills,
-            );
+            match ctx.order_identities.get(&venue_order_id) {
+                Some(identity) => emit_order_filled(&identity, &dust_fill, ctx),
+                None => ctx.emitter.send_fill_report(dust_fill),
+            }
         }
     }
 }
@@ -306,31 +324,20 @@ fn dispatch_maker_fills(
             ts_init,
         );
         let maker_venue_order_id = report.venue_order_id;
-        report.client_order_id = local_client_order_id(&maker_venue_order_id, ctx.pending_submits);
+        report.client_order_id = ctx.pending_submits.client_order_id(&maker_venue_order_id);
         report.last_qty = ctx
             .fill_tracker
             .snap_fill_qty(&maker_venue_order_id, report.last_qty);
-        let is_accepted = ctx.fill_tracker.contains(&maker_venue_order_id);
 
-        if is_accepted {
-            ctx.fill_tracker.record_fill(
-                &maker_venue_order_id,
-                report.last_qty.as_f64(),
-                report.last_px.as_f64(),
-                report.ts_event,
-            );
-        }
-
-        emit_or_buffer_fill_report(
-            report,
-            maker_venue_order_id,
-            is_accepted,
-            ctx.emitter,
-            ctx.pending_fills,
-        );
-
-        if is_accepted {
-            reemit_terminal_cancel(maker_venue_order_id, state, ctx.fill_tracker, ctx.emitter);
+        if let Some(report) = ctx
+            .fill_tracker
+            .accept_or_buffer_fill(maker_venue_order_id, report)
+        {
+            match ctx.order_identities.get(&maker_venue_order_id) {
+                Some(identity) => emit_order_filled(&identity, &report, ctx),
+                None => ctx.emitter.send_fill_report(report),
+            }
+            reemit_terminal_cancel(maker_venue_order_id, state, ctx);
         }
     }
 }
@@ -362,32 +369,20 @@ fn dispatch_taker_fill(
         ts_event,
         ts_init,
     );
-    report.client_order_id = local_client_order_id(&venue_order_id, ctx.pending_submits);
+    report.client_order_id = ctx.pending_submits.client_order_id(&venue_order_id);
     report.last_qty = ctx
         .fill_tracker
         .snap_fill_qty(&venue_order_id, report.last_qty);
 
-    let is_accepted = ctx.fill_tracker.contains(&venue_order_id);
-
-    if is_accepted {
-        ctx.fill_tracker.record_fill(
-            &venue_order_id,
-            report.last_qty.as_f64(),
-            report.last_px.as_f64(),
-            report.ts_event,
-        );
-    }
-
-    emit_or_buffer_fill_report(
-        report,
-        venue_order_id,
-        is_accepted,
-        ctx.emitter,
-        ctx.pending_fills,
-    );
-
-    if is_accepted {
-        reemit_terminal_cancel(venue_order_id, state, ctx.fill_tracker, ctx.emitter);
+    if let Some(report) = ctx
+        .fill_tracker
+        .accept_or_buffer_fill(venue_order_id, report)
+    {
+        match ctx.order_identities.get(&venue_order_id) {
+            Some(identity) => emit_order_filled(&identity, &report, ctx),
+            None => ctx.emitter.send_fill_report(report),
+        }
+        reemit_terminal_cancel(venue_order_id, state, ctx);
     }
 }
 
@@ -403,18 +398,20 @@ fn dispatch_taker_fill(
 fn reemit_terminal_cancel(
     venue_order_id: VenueOrderId,
     state: &WsDispatchState,
-    fill_tracker: &OrderFillTrackerMap,
-    emitter: &ExecutionEventEmitter,
+    ctx: &WsDispatchContext<'_>,
 ) {
-    if fill_tracker.is_fully_filled(&venue_order_id) {
+    if ctx.fill_tracker.is_fully_filled(&venue_order_id) {
         return;
     }
 
     if let Some(cancel_report) = state.terminal_cancel_reports.get(&venue_order_id) {
-        log::debug!(
-            "Re-emitting cancel report for {venue_order_id} after fill to restore terminal state"
-        );
-        emitter.send_order_status_report(cancel_report.clone());
+        log::debug!("Re-emitting cancel for {venue_order_id} after fill to restore terminal state");
+        match ctx.order_identities.get(&venue_order_id) {
+            Some(identity) => {
+                emit_order_canceled(&identity, venue_order_id, cancel_report.ts_last, ctx);
+            }
+            None => ctx.emitter.send_order_status_report(cancel_report.clone()),
+        }
     }
 }
 
@@ -514,83 +511,202 @@ fn build_ws_taker_fill_report(
     }
 }
 
-fn local_client_order_id(
-    venue_order_id: &VenueOrderId,
-    pending_submits: &Mutex<FifoCacheMap<VenueOrderId, ClientOrderId, 10_000>>,
-) -> Option<ClientOrderId> {
-    pending_submits
-        .lock()
-        .expect(MUTEX_POISONED)
-        .get(venue_order_id)
-        .copied()
-}
-
-fn drain_pending_fills_for_known_order(
-    venue_order_id: VenueOrderId,
-    client_order_id: Option<ClientOrderId>,
-    fill_tracker: &OrderFillTrackerMap,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
-) -> Vec<FillReport> {
-    let Some(buffered) = pending
-        .lock()
-        .expect(MUTEX_POISONED)
-        .remove(&venue_order_id)
-    else {
-        return Vec::new();
-    };
-
-    buffered
-        .into_iter()
-        .map(|mut fill| {
-            fill.client_order_id = client_order_id;
-            fill.last_qty = fill_tracker.snap_fill_qty(&venue_order_id, fill.last_qty);
-            fill_tracker.record_fill(
-                &venue_order_id,
-                fill.last_qty.as_f64(),
-                fill.last_px.as_f64(),
-                fill.ts_event,
-            );
-            fill
-        })
-        .collect()
-}
-
-fn emit_or_buffer_order_report(
-    report: OrderStatusReport,
-    venue_order_id: VenueOrderId,
-    is_accepted: bool,
-    emitter: &ExecutionEventEmitter,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<OrderStatusReport>, 1_000>>,
+/// Emits order events for a tracked own-order status update.
+///
+/// Order-channel messages drive lifecycle events only; fills arrive separately on the trade
+/// channel as `OrderFilled`. `PartiallyFilled` / `Filled` statuses therefore emit no fill here,
+/// they only ensure acceptance has been emitted so the order lifecycle stays well-formed.
+fn emit_tracked_order_status(
+    report: &OrderStatusReport,
+    identity: &OrderIdentity,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
 ) {
-    if is_accepted {
-        emitter.send_order_status_report(report);
-    } else {
-        let mut guard = pending.lock().expect(MUTEX_POISONED);
-        if let Some(reports) = guard.get_mut(&venue_order_id) {
-            reports.push(report);
-        } else {
-            guard.insert(venue_order_id, vec![report]);
+    let venue_order_id = report.venue_order_id;
+    match report.order_status {
+        OrderStatus::Accepted => ensure_accepted(identity, venue_order_id, ts_event, ctx),
+        OrderStatus::PartiallyFilled | OrderStatus::Filled => {
+            ensure_accepted(identity, venue_order_id, ts_event, ctx);
         }
+        OrderStatus::Canceled => {
+            ensure_accepted(identity, venue_order_id, ts_event, ctx);
+            emit_order_canceled(identity, venue_order_id, ts_event, ctx);
+        }
+        OrderStatus::Expired => {
+            ensure_accepted(identity, venue_order_id, ts_event, ctx);
+            emit_order_expired(identity, venue_order_id, ts_event, ctx);
+        }
+        OrderStatus::Rejected => {
+            let reason = report
+                .cancel_reason
+                .clone()
+                .unwrap_or_else(|| "REJECTED".to_string());
+            emit_order_rejected(identity, &reason, ts_event, ctx);
+        }
+        other => log::debug!("No order event for status {other:?} on {venue_order_id}"),
     }
 }
 
-fn emit_or_buffer_fill_report(
-    report: FillReport,
+/// Emits `OrderAccepted` for a tracked order if acceptance has not yet been emitted.
+///
+/// Acceptance is also emitted on the submit happy path; the registry's dedup set ensures it
+/// fires exactly once across the submit confirmation and the WS stream, including when a fill or
+/// cancel races ahead of the acceptance message.
+fn ensure_accepted(
+    identity: &OrderIdentity,
     venue_order_id: VenueOrderId,
-    is_accepted: bool,
-    emitter: &ExecutionEventEmitter,
-    pending: &Mutex<FifoCacheMap<VenueOrderId, Vec<FillReport>, 1_000>>,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
 ) {
-    if is_accepted {
-        emitter.send_fill_report(report);
-    } else {
-        let mut guard = pending.lock().expect(MUTEX_POISONED);
-        if let Some(fills) = guard.get_mut(&venue_order_id) {
-            fills.push(report);
-        } else {
-            guard.insert(venue_order_id, vec![report]);
-        }
+    if !ctx.order_identities.mark_accepted(venue_order_id) {
+        return;
     }
+    let accepted = OrderAccepted::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        venue_order_id,
+        ctx.account_id,
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Accepted(accepted));
+}
+
+/// Builds and emits an `OrderFilled` event for a tracked order, synthesizing acceptance first.
+fn emit_order_filled(identity: &OrderIdentity, fill: &FillReport, ctx: &WsDispatchContext<'_>) {
+    ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
+
+    if let Some(new_qty) = ctx.fill_tracker.buy_overfill_bump(&fill.venue_order_id) {
+        emit_buy_overfill_update(identity, fill.venue_order_id, new_qty, fill.ts_event, ctx);
+    }
+
+    let filled = OrderFilled::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        fill.venue_order_id,
+        ctx.account_id,
+        fill.trade_id,
+        identity.order_side,
+        identity.order_type,
+        fill.last_qty,
+        fill.last_px,
+        get_pusd_currency(),
+        fill.liquidity_side,
+        UUID4::new(),
+        fill.ts_event,
+        fill.ts_init,
+        false,
+        fill.venue_position_id,
+        Some(fill.commission),
+    );
+    ctx.emitter.send_order_event(OrderEventAny::Filled(filled));
+}
+
+/// Emits an `OrderUpdated` raising the order quantity to the actual BUY fill, before the fill.
+///
+/// A Polymarket BUY is bounded by the USDC it spends, so a marketable fill below the limit price
+/// returns more shares than the nominal quantity. The engine rejects a fill past the order
+/// quantity, so the quantity is raised first. The price is left unchanged (`None`).
+fn emit_buy_overfill_update(
+    identity: &OrderIdentity,
+    venue_order_id: VenueOrderId,
+    new_qty: Quantity,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
+) {
+    let updated = OrderUpdated::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        new_qty,
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+        Some(venue_order_id),
+        Some(ctx.account_id),
+        None,
+        None,
+        None,
+        false,
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Updated(updated));
+}
+
+fn emit_order_canceled(
+    identity: &OrderIdentity,
+    venue_order_id: VenueOrderId,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
+) {
+    let canceled = OrderCanceled::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+        Some(venue_order_id),
+        Some(ctx.account_id),
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Canceled(canceled));
+}
+
+fn emit_order_expired(
+    identity: &OrderIdentity,
+    venue_order_id: VenueOrderId,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
+) {
+    let expired = OrderExpired::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+        Some(venue_order_id),
+        Some(ctx.account_id),
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Expired(expired));
+}
+
+fn emit_order_rejected(
+    identity: &OrderIdentity,
+    reason: &str,
+    ts_event: UnixNanos,
+    ctx: &WsDispatchContext<'_>,
+) {
+    let rejected = OrderRejected::new(
+        ctx.emitter.trader_id(),
+        identity.strategy_id,
+        identity.instrument_id,
+        identity.client_order_id,
+        ctx.account_id,
+        Ustr::from(reason),
+        UUID4::new(),
+        ts_event,
+        ctx.clock.get_time_ns(),
+        false,
+        false,
+    );
+    ctx.emitter
+        .send_order_event(OrderEventAny::Rejected(rejected));
 }
 
 #[cfg(test)]
@@ -599,7 +715,8 @@ mod tests {
     use nautilus_core::time::AtomicTime;
     use nautilus_model::{
         enums::{AccountType, OrderStatus},
-        identifiers::TraderId,
+        events::OrderEventAny,
+        identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
         types::Currency,
     };
     use rstest::rstest;
@@ -609,6 +726,25 @@ mod tests {
         models::GammaMarket,
         parse::{create_instrument_from_def, parse_gamma_market},
     };
+
+    /// Registers a tracked-order identity so the dispatch routes the order through events.
+    fn register_identity(
+        order_identities: &OrderIdentityRegistry,
+        venue_order_id: VenueOrderId,
+        instrument_id: InstrumentId,
+        client_order_id: &str,
+    ) {
+        order_identities.register_order_identity(
+            venue_order_id,
+            OrderIdentity {
+                client_order_id: ClientOrderId::from(client_order_id),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+    }
 
     fn load<T: serde::de::DeserializeOwned>(filename: &str) -> T {
         let path = format!("test_data/{filename}");
@@ -703,17 +839,15 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -726,9 +860,8 @@ mod tests {
         assert!(result.is_none());
 
         // Order not registered in fill_tracker, so should be buffered
-        let guard = pending_order_reports.lock().unwrap();
         let venue_order_id = VenueOrderId::from(order.id.as_str());
-        assert!(guard.get(&venue_order_id).is_some());
+        assert!(fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]
@@ -740,26 +873,27 @@ mod tests {
         token_instruments.insert(order.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
 
         let venue_order_id = VenueOrderId::from(order.id.as_str());
         let client_order_id = ClientOrderId::from("O-UNKNOWN-SUBMIT");
-        pending_submits
-            .lock()
-            .unwrap()
-            .insert(venue_order_id, client_order_id);
+        pending_submits.insert(venue_order_id, client_order_id);
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            test_instrument().id(),
+            "O-UNKNOWN-SUBMIT",
+        );
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -770,19 +904,16 @@ mod tests {
 
         let _ = dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
 
-        let event = receiver.try_recv().expect("expected order report");
+        // The tracked own order emits an OrderAccepted event carrying the client order ID.
+        let event = receiver.try_recv().expect("expected accepted event");
         match event {
-            ExecutionEvent::Report(report) => match report {
-                ExecutionReport::Order(order_report) => {
-                    assert_eq!(order_report.client_order_id, Some(client_order_id));
-                }
-                other => panic!("Expected order report, was {other:?}"),
-            },
-            other => panic!("Expected report event, was {other:?}"),
+            ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) => {
+                assert_eq!(accepted.client_order_id, client_order_id);
+            }
+            other => panic!("Expected accepted event, was {other:?}"),
         }
 
-        let guard = pending_order_reports.lock().unwrap();
-        assert!(guard.get(&venue_order_id).is_none());
+        assert!(!fill_tracker.has_pending_report(&venue_order_id));
     }
 
     #[rstest]
@@ -794,17 +925,15 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -813,23 +942,15 @@ mod tests {
         };
         let mut state = WsDispatchState::default();
 
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
         // First dispatch processes the trade
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
-        let fills_count = {
-            let guard = pending_fills.lock().unwrap();
-            let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-            guard.get(&venue_order_id).map_or(0, |v| v.len())
-        };
-        assert_eq!(fills_count, 1);
+        assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 1);
 
         // Second dispatch should be deduped, no additional fill
-        let _ = dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
-        let fills_count_after = {
-            let guard = pending_fills.lock().unwrap();
-            let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-            guard.get(&venue_order_id).map_or(0, |v| v.len())
-        };
-        assert_eq!(fills_count_after, 1);
+        let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+        assert_eq!(fill_tracker.pending_fills_for(&venue_order_id).len(), 1);
     }
 
     #[rstest]
@@ -841,24 +962,19 @@ mod tests {
         token_instruments.insert(trade.asset_id, instrument);
 
         let fill_tracker = OrderFillTrackerMap::new();
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
         let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
         let client_order_id = ClientOrderId::from("O-UNKNOWN-FILL");
-        pending_submits
-            .lock()
-            .unwrap()
-            .insert(venue_order_id, client_order_id);
+        pending_submits.insert(venue_order_id, client_order_id);
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -869,10 +985,7 @@ mod tests {
 
         let _ = dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
-        let guard = pending_fills.lock().unwrap();
-        let fills = guard
-            .get(&venue_order_id)
-            .expect("expected buffered fill report");
+        let fills = fill_tracker.pending_fills_for(&venue_order_id);
         assert_eq!(fills[0].client_order_id, Some(client_order_id));
     }
 
@@ -897,9 +1010,10 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        // No identity registered, so the order surfaces as a report (the external/reconciliation
+        // fallback), where filled_qty is capped to tracked fills.
+        let order_identities = OrderIdentityRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -908,8 +1022,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -954,9 +1067,10 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 50.0, 0.5, UnixNanos::from(1_000u64));
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        // No identity registered, so the order surfaces as a report (the external/reconciliation
+        // fallback), where filled_qty is capped to tracked fills.
+        let order_identities = OrderIdentityRegistry::default();
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -965,8 +1079,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1009,9 +1122,15 @@ mod tests {
         );
         fill_tracker.record_fill(&venue_order_id, 99.995, 0.5, UnixNanos::from(1_000u64));
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-MATCHED",
+        );
+        order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -1025,8 +1144,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock,
@@ -1037,23 +1155,18 @@ mod tests {
 
         dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
 
-        let first = receiver.try_recv().expect("Expected order report");
-        let second = receiver.try_recv().expect("Expected dust fill report");
-
-        match first {
-            ExecutionEvent::Report(ExecutionReport::Order(_)) => {}
-            other => panic!("Expected order report, was {other:?}"),
-        }
-
-        match second {
-            ExecutionEvent::Report(ExecutionReport::Fill(fill_report)) => {
+        // Acceptance was already emitted at submit, so the MATCHED message emits no order
+        // event; the dust residual converts to an OrderFilled event carrying the local ts_init.
+        let event = receiver.try_recv().expect("Expected dust filled event");
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
                 assert_eq!(
-                    fill_report.ts_event,
+                    filled.ts_event,
                     UnixNanos::from(1_703_875_201_000_000_000u64)
                 );
-                assert_eq!(fill_report.ts_init, UnixNanos::from(2_000_000_000u64));
+                assert_eq!(filled.ts_init, UnixNanos::from(2_000_000_000u64));
             }
-            other => panic!("Expected fill report, was {other:?}"),
+            other => panic!("Expected filled event, was {other:?}"),
         }
     }
 
@@ -1079,9 +1192,15 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-CANCEL",
+        );
+        order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -1090,8 +1209,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1102,36 +1220,35 @@ mod tests {
 
         // Step 1: Dispatch cancel (simulates message A from the bug)
         dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
-        let cancel_event = receiver.try_recv().expect("Expected cancel report");
+        let cancel_event = receiver.try_recv().expect("Expected canceled event");
         match &cancel_event {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
-            other => panic!("Expected order report, was {other:?}"),
+            other => panic!("Expected canceled event, was {other:?}"),
         }
 
         // Step 2: Dispatch trade fill (simulates trade arriving after cancel)
         dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
 
-        // Should get: fill report, then re-emitted cancel report
-        let fill_event = receiver.try_recv().expect("Expected fill report");
+        // Should get: filled event, then re-emitted canceled event
+        let fill_event = receiver.try_recv().expect("Expected filled event");
         match &fill_event {
-            ExecutionEvent::Report(ExecutionReport::Fill(f)) => {
+            ExecutionEvent::Order(OrderEventAny::Filled(f)) => {
                 assert_eq!(f.venue_order_id, venue_order_id);
             }
-            other => panic!("Expected fill report, was {other:?}"),
+            other => panic!("Expected filled event, was {other:?}"),
         }
 
         let reemitted_cancel = receiver
             .try_recv()
-            .expect("Expected re-emitted cancel report");
+            .expect("Expected re-emitted canceled event");
 
         match &reemitted_cancel {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
-                assert_eq!(r.venue_order_id, venue_order_id);
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
-            other => panic!("Expected order cancel report, was {other:?}"),
+            other => panic!("Expected canceled event, was {other:?}"),
         }
     }
 
@@ -1157,9 +1274,15 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-CANCEL-FULL",
+        );
+        order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -1168,8 +1291,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1180,10 +1302,10 @@ mod tests {
 
         // Cancel then fill that completes the order
         dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
-        let _cancel = receiver.try_recv().expect("Expected cancel report");
+        let _cancel = receiver.try_recv().expect("Expected canceled event");
 
         dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
-        let _fill = receiver.try_recv().expect("Expected fill report");
+        let _fill = receiver.try_recv().expect("Expected filled event");
 
         // Channel should be empty: no re-emitted cancel for a fully-filled order
         assert!(
@@ -1204,17 +1326,15 @@ mod tests {
         let fill_tracker = OrderFillTrackerMap::new();
         let venue_order_id = VenueOrderId::from(cancel_order.id.as_str());
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
         let emitter = test_emitter();
 
         let ctx = WsDispatchContext {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1227,10 +1347,7 @@ mod tests {
         dispatch_user_message(&UserWsMessage::Order(cancel_order), &ctx, &mut state);
 
         // Cancel should be buffered (not emitted) AND saved to terminal_cancel_reports
-        let guard = pending_order_reports.lock().unwrap();
-        assert!(guard.get(&venue_order_id).is_some());
-        drop(guard);
-
+        assert!(fill_tracker.has_pending_report(&venue_order_id));
         assert!(state.terminal_cancel_reports.get(&venue_order_id).is_some());
     }
 
@@ -1276,9 +1393,10 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(&order_identities, venue_order_id, instrument.id(), "O-3797");
+        order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -1287,8 +1405,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1357,31 +1474,30 @@ mod tests {
         let msg_a = make_order("0", "1775074738031", PolymarketEventType::Cancellation);
         dispatch_user_message(&UserWsMessage::Order(msg_a), &ctx, &mut state);
 
-        let evt = receiver.try_recv().expect("(A) cancel report");
+        let evt = receiver.try_recv().expect("(A) canceled event");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
-                assert_eq!(r.filled_qty, Quantity::from("0"));
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
-            other => panic!("(A) expected order report, was {other:?}"),
+            other => panic!("(A) expected canceled event, was {other:?}"),
         }
 
         // (B) Trade fill 1.219511
         let msg_b = make_trade("trade-b", 1.219511, "1775074738032");
         dispatch_user_message(&UserWsMessage::Trade(msg_b), &ctx, &mut state);
 
-        let evt = receiver.try_recv().expect("(B) fill report");
+        let evt = receiver.try_recv().expect("(B) filled event");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Fill(f)) => {
+            ExecutionEvent::Order(OrderEventAny::Filled(f)) => {
                 assert_eq!(f.venue_order_id, venue_order_id);
             }
-            other => panic!("(B) expected fill report, was {other:?}"),
+            other => panic!("(B) expected filled event, was {other:?}"),
         }
         // Re-emitted cancel after fill (B)
         let evt = receiver.try_recv().expect("(B) re-emitted cancel");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
             other => panic!("(B) expected re-emitted cancel, was {other:?}"),
         }
@@ -1390,46 +1506,43 @@ mod tests {
         let msg_c = make_order("1.219511", "1775074738034", PolymarketEventType::Update);
         dispatch_user_message(&UserWsMessage::Order(msg_c), &ctx, &mut state);
 
-        let evt = receiver.try_recv().expect("(C) cancel report");
+        let evt = receiver.try_recv().expect("(C) canceled event");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
-            other => panic!("(C) expected order report, was {other:?}"),
+            other => panic!("(C) expected canceled event, was {other:?}"),
         }
 
         // (D) Cancel with size_matched=2.560972 (capped to tracked 1.219511)
         let msg_d = make_order("2.560972", "1775074738038", PolymarketEventType::Update);
         dispatch_user_message(&UserWsMessage::Order(msg_d), &ctx, &mut state);
 
-        let evt = receiver.try_recv().expect("(D) cancel report");
+        let evt = receiver.try_recv().expect("(D) canceled event");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
-                // filled_qty capped to tracked amount
-                assert_eq!(r.filled_qty, Quantity::new(1.219511, 6));
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
-            other => panic!("(D) expected order report, was {other:?}"),
+            other => panic!("(D) expected canceled event, was {other:?}"),
         }
 
         // (E) Trade fill 1.341461
         let msg_e = make_trade("trade-e", 1.341461, "1775074738036");
         dispatch_user_message(&UserWsMessage::Trade(msg_e), &ctx, &mut state);
 
-        let evt = receiver.try_recv().expect("(E) fill report");
+        let evt = receiver.try_recv().expect("(E) filled event");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Fill(f)) => {
+            ExecutionEvent::Order(OrderEventAny::Filled(f)) => {
                 assert_eq!(f.venue_order_id, venue_order_id);
             }
-            other => panic!("(E) expected fill report, was {other:?}"),
+            other => panic!("(E) expected filled event, was {other:?}"),
         }
 
         // The fix: re-emitted cancel after (E) restores terminal state
         let evt = receiver.try_recv().expect("(E) re-emitted cancel");
         match &evt {
-            ExecutionEvent::Report(ExecutionReport::Order(r)) => {
-                assert_eq!(r.order_status, OrderStatus::Canceled);
-                assert_eq!(r.venue_order_id, venue_order_id);
+            ExecutionEvent::Order(OrderEventAny::Canceled(c)) => {
+                assert_eq!(c.venue_order_id, Some(venue_order_id));
             }
             other => panic!("(E) expected re-emitted cancel, was {other:?}"),
         }
@@ -1469,9 +1582,15 @@ mod tests {
             instrument.price_precision(),
         );
 
-        let pending_submits = Mutex::new(FifoCacheMap::default());
-        let pending_fills = Mutex::new(FifoCacheMap::default());
-        let pending_order_reports = Mutex::new(FifoCacheMap::default());
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-OVERFILL",
+        );
+        order_identities.mark_accepted(venue_order_id);
         let mut emitter = test_emitter();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         emitter.set_sender(sender);
@@ -1480,8 +1599,7 @@ mod tests {
             token_instruments: &token_instruments,
             fill_tracker: &fill_tracker,
             pending_submits: &pending_submits,
-            pending_fills: &pending_fills,
-            pending_order_reports: &pending_order_reports,
+            order_identities: &order_identities,
             emitter: &emitter,
             account_id: AccountId::from("POLY-001"),
             clock: nautilus_core::time::get_atomic_clock_realtime(),
@@ -1530,18 +1648,216 @@ mod tests {
             "cumulative_filled {cumulative} must be snapped to submitted {expected_snapped}",
         );
 
-        // The emitted FillReport must carry the snapped qty so the engine
+        // The emitted OrderFilled must carry the snapped qty so the engine
         // does not reject it as an overfill.
-        let event = receiver.try_recv().expect("expected a fill report");
+        let event = receiver.try_recv().expect("expected a filled event");
         match event {
-            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
                 assert_eq!(
-                    report.last_qty, submitted,
-                    "fill report qty must be snapped to submitted",
+                    filled.last_qty, submitted,
+                    "filled qty must be snapped to submitted",
                 );
-                assert_eq!(report.venue_order_id, venue_order_id);
+                assert_eq!(filled.venue_order_id, venue_order_id);
             }
-            other => panic!("expected fill report, was {other:?}"),
+            other => panic!("expected filled event, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_dispatch_taker_fill_gross_overfill_raises_qty_then_fills() {
+        // A marketable BUY filled below its limit returns more shares than the nominal qty (a
+        // gross overfill, beyond the dust band). The dispatcher must raise the order qty via
+        // OrderUpdated before the OrderFilled, or the engine drops the fill as an overfill.
+        use crate::common::enums::{
+            PolymarketEventType, PolymarketOrderSide, PolymarketOutcome, PolymarketTradeStatus,
+        };
+
+        let instrument = test_instrument();
+        let asset_id = instrument.id().symbol.inner();
+        let size_precision = instrument.size_precision();
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        let venue_order_id = VenueOrderId::from("0xtaker-gross-overfill");
+        let submitted = Quantity::new(30.0, size_precision);
+        fill_tracker.register(
+            venue_order_id,
+            submitted,
+            OrderSide::Buy,
+            instrument.id(),
+            size_precision,
+            instrument.price_precision(),
+        );
+
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-GROSS-OVERFILL",
+        );
+        order_identities.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        // 33.846152 shares against a nominal 30: a marketable fill below the limit price.
+        let trade = PolymarketUserTrade {
+            asset_id,
+            bucket_index: 0,
+            fee_rate_bps: "0".to_string(),
+            id: "trade-gross-overfill".to_string(),
+            last_update: "1700000001".to_string(),
+            maker_address: Ustr::from("0xmaker"),
+            maker_orders: vec![],
+            market: Ustr::from("0xmarket"),
+            match_time: "1700000000".to_string(),
+            outcome: PolymarketOutcome::yes(),
+            owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            price: "0.014".to_string(),
+            side: PolymarketOrderSide::Buy,
+            size: "33.846152".to_string(),
+            status: PolymarketTradeStatus::Matched,
+            taker_order_id: venue_order_id.as_str().to_string(),
+            timestamp: "1700000000000".to_string(),
+            trade_owner: Ustr::from("00000000-0000-0000-0000-000000000001"),
+            trader_side: PolymarketLiquiditySide::Taker,
+            event_type: PolymarketEventType::Trade,
+        };
+
+        dispatch_user_message(&UserWsMessage::Trade(trade), &ctx, &mut state);
+
+        let expected_qty = Quantity::new(33.846152, size_precision);
+
+        // The raise must precede the fill so the engine accepts the larger quantity.
+        match receiver.try_recv().expect("expected an updated event") {
+            ExecutionEvent::Order(OrderEventAny::Updated(updated)) => {
+                assert_eq!(updated.quantity, expected_qty);
+                assert_eq!(updated.venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected updated event raising qty to the fill, was {other:?}"),
+        }
+
+        match receiver.try_recv().expect("expected a filled event") {
+            ExecutionEvent::Order(OrderEventAny::Filled(filled)) => {
+                assert_eq!(filled.last_qty, expected_qty);
+                assert_eq!(filled.venue_order_id, venue_order_id);
+            }
+            other => panic!("expected filled event, was {other:?}"),
+        }
+    }
+
+    // Unmatched -> Rejected (placement never became live); CanceledMarketResolved -> Expired
+    // (market settled). Both are tracked own-order terminal states emitted as order events.
+    #[rstest]
+    #[case(crate::common::enums::PolymarketOrderStatus::Unmatched, "Rejected")]
+    #[case(
+        crate::common::enums::PolymarketOrderStatus::CanceledMarketResolved,
+        "Expired"
+    )]
+    fn test_dispatch_order_terminal_status_emits_event(
+        #[case] status: crate::common::enums::PolymarketOrderStatus,
+        #[case] expected: &str,
+    ) {
+        use crate::common::enums::{
+            PolymarketEventType, PolymarketOrderSide, PolymarketOrderType, PolymarketOutcome,
+        };
+
+        let instrument = test_instrument();
+        let asset_id = instrument.id().symbol.inner();
+        let order_id = "0xterminal-order".to_string();
+        let venue_order_id = VenueOrderId::from(order_id.as_str());
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("10"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-TERMINAL",
+        );
+        order_identities.mark_accepted(venue_order_id);
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xabc",
+            user_api_key: "xxx",
+        };
+        let mut state = WsDispatchState::default();
+
+        let order = PolymarketUserOrder {
+            asset_id,
+            associate_trades: None,
+            created_at: "1775074735".to_string(),
+            expiration: Some("0".to_string()),
+            id: order_id,
+            maker_address: Ustr::from("0xabc"),
+            market: Ustr::from("0x4134"),
+            order_owner: Ustr::from("xxx"),
+            order_type: PolymarketOrderType::FOK,
+            original_size: "10".to_string(),
+            outcome: PolymarketOutcome::yes(),
+            owner: Ustr::from("xxx"),
+            price: "0.50".to_string(),
+            side: PolymarketOrderSide::Buy,
+            size_matched: "0".to_string(),
+            status,
+            timestamp: "1775074738031".to_string(),
+            event_type: PolymarketEventType::Placement,
+        };
+
+        dispatch_user_message(&UserWsMessage::Order(order), &ctx, &mut state);
+
+        let event = receiver.try_recv().expect("expected terminal order event");
+        match event {
+            ExecutionEvent::Order(order_event) => {
+                assert!(
+                    format!("{order_event:?}").starts_with(expected),
+                    "expected {expected}, was {order_event:?}"
+                );
+                assert_eq!(
+                    order_event.client_order_id(),
+                    ClientOrderId::from("O-TERMINAL")
+                );
+            }
+            other => panic!("expected order event, was {other:?}"),
         }
     }
 }

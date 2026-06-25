@@ -73,6 +73,44 @@ pub trait PortfolioStatistic: Debug {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
 
+    /// Calculates the statistic from time-indexed strategy returns relative to a benchmark.
+    ///
+    /// Defaults to `None`; only benchmark-relative statistics (beta, alpha, information
+    /// ratio, tracking error, Treynor ratio) override this method. The `None` default
+    /// lets analyzer loops filter results by `Option` — non-benchmark statistics are
+    /// simply skipped, as `get_performance_stats_general` already does with
+    /// `calculate_from_positions` results — rather than panicking.
+    fn calculate_from_returns_with_benchmark(
+        &self,
+        returns: &Returns,
+        benchmark: &Returns,
+    ) -> Option<Self::Item> {
+        None
+    }
+
+    /// Aligns two returns series onto a common daily grid.
+    ///
+    /// Both series are first downsampled to daily bins (geometric compounding within each
+    /// UTC day), then inner-joined on shared timestamps. Timestamps present in only one
+    /// series are dropped (not zero-filled). Returns the aligned `(strategy, benchmark)`
+    /// value vectors, in ascending timestamp order.
+    fn align_returns(&self, a: &Returns, b: &Returns) -> (Vec<f64>, Vec<f64>) {
+        let a_daily = self.downsample_to_daily_bins(a);
+        let b_daily = self.downsample_to_daily_bins(b);
+
+        let mut aligned_a = Vec::new();
+        let mut aligned_b = Vec::new();
+
+        for (timestamp, &a_value) in &a_daily {
+            if let Some(&b_value) = b_daily.get(timestamp) {
+                aligned_a.push(a_value);
+                aligned_b.push(b_value);
+            }
+        }
+
+        (aligned_a, aligned_b)
+    }
+
     /// Validates that returns data is not empty.
     fn check_valid_returns(&self, returns: &Returns) -> bool {
         !returns.is_empty()

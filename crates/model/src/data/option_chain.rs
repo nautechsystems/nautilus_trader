@@ -121,7 +121,10 @@ impl StrikeRange {
                     }
                 };
                 let start = atm_idx.saturating_sub(*strikes_below);
-                let end = (atm_idx + strikes_above + 1).min(all_strikes.len());
+                let end = atm_idx
+                    .saturating_add(*strikes_above)
+                    .saturating_add(1)
+                    .min(all_strikes.len());
                 all_strikes[start..end].to_vec()
             }
             Self::AtmPercent { pct } => {
@@ -653,6 +656,24 @@ mod tests {
         assert_eq!(result.len(), 5);
         assert_eq!(result[0], Price::from("45000"));
         assert_eq!(result[4], Price::from("55000"));
+    }
+
+    #[rstest]
+    fn test_strike_range_resolve_atm_relative_saturates_extreme_window() {
+        // An extreme window must clamp to the available strikes without overflowing
+        let range = StrikeRange::AtmRelative {
+            strikes_above: usize::MAX,
+            strikes_below: usize::MAX,
+        };
+        let strikes: Vec<Price> = [45000, 50000, 55000]
+            .iter()
+            .map(|s| Price::from(&s.to_string()))
+            .collect();
+        let atm = Some(Price::from("50000"));
+
+        let result = range.resolve(atm, &strikes);
+
+        assert_eq!(result, strikes);
     }
 
     #[rstest]

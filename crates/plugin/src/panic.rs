@@ -62,6 +62,50 @@ pub fn guard_infallible<T>(thunk_name: &str, f: impl FnOnce() -> T) -> T {
     }
 }
 
+/// Runs a closure under `catch_unwind` for thunks that return a raw pointer
+/// where null already signals failure (`create`, `clone_handle`).
+///
+/// On panic, logs the message and returns null so the host can surface a
+/// recoverable error instead of the process aborting.
+pub fn guard_or_null<T>(thunk_name: &str, f: impl FnOnce() -> *mut T) -> *mut T {
+    match catch_unwind(AssertUnwindSafe(f)) {
+        Ok(ptr) => ptr,
+        Err(payload) => {
+            let msg = panic_message(payload.as_ref());
+            drop_payload(payload);
+            // A panicking logger must not unwind out of the thunk; the
+            // null-return contract holds even when reporting fails.
+            let _ = catch_unwind(AssertUnwindSafe(|| {
+                log::error!(
+                    target: "nautilus_plugin",
+                    "plug-in panicked in `{thunk_name}` thunk; returning null: {msg}",
+                );
+            }));
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Runs a destructor closure under `catch_unwind` for `drop_handle` thunks.
+///
+/// On panic, logs the message and returns normally, leaking whatever the
+/// destructor failed to release. A leaked value is recoverable; unwinding
+/// across the FFI boundary or aborting the process is not.
+pub fn guard_drop(thunk_name: &str, f: impl FnOnce()) {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(f)) {
+        let msg = panic_message(payload.as_ref());
+        drop_payload(payload);
+        // A panicking logger must not unwind out of the thunk; the
+        // swallow-and-leak contract holds even when reporting fails.
+        let _ = catch_unwind(AssertUnwindSafe(|| {
+            log::error!(
+                target: "nautilus_plugin",
+                "plug-in panicked in `{thunk_name}` thunk; value leaked: {msg}",
+            );
+        }));
+    }
+}
+
 /// Drops a panic payload while suppressing any unwind from its `Drop` impl.
 ///
 /// `std::panic::catch_unwind` catches the original panic, but if the payload
@@ -74,7 +118,7 @@ pub fn drop_payload(payload: Box<dyn std::any::Any + Send>) {
     let _ = catch_unwind(AssertUnwindSafe(move || drop(payload)));
 }
 
-fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
     if let Some(s) = payload.downcast_ref::<&'static str>() {
         (*s).to_string()
     } else if let Some(s) = payload.downcast_ref::<String>() {
@@ -128,6 +172,33 @@ mod tests {
     fn guard_infallible_returns_inner_on_success() {
         let v = guard_infallible("test", || 42u64);
         assert_eq!(v, 42);
+    }
+
+    #[rstest]
+    fn guard_or_null_returns_inner_on_success() {
+        let boxed = Box::into_raw(Box::new(7u32));
+        let v = guard_or_null("test", || boxed);
+        assert_eq!(v, boxed);
+        // SAFETY: pointer originates from Box::into_raw above.
+        unsafe { drop(Box::from_raw(boxed)) };
+    }
+
+    #[rstest]
+    fn guard_or_null_returns_null_on_panic() {
+        let v: *mut u32 = guard_or_null("test", || panic!("create panic"));
+        assert!(v.is_null());
+    }
+
+    #[rstest]
+    fn guard_drop_runs_inner_on_success() {
+        let mut ran = false;
+        guard_drop("test", || ran = true);
+        assert!(ran);
+    }
+
+    #[rstest]
+    fn guard_drop_swallows_panic() {
+        guard_drop("test", || panic!("drop panic"));
     }
 
     #[rstest]

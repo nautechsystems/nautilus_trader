@@ -9,7 +9,8 @@ runs:
       if: >-
         github.event_name == 'push' &&
         (github.ref_name == 'develop' || github.ref_name == 'nightly' ||
-        github.ref_name == 'master' || github.ref_name == 'test-ci')
+        github.ref_name == 'master' || github.ref_name == 'test-ci' ||
+        github.ref_name == 'test-ci-v2')
       id: vars
       run: |
         if [ ! -d "./dist" ]; then
@@ -17,7 +18,7 @@ runs:
           exit 1
         fi
 
-        ASSET_PATH=$(find ./dist -name "nautilus_trader-*.whl" -type f | xargs ls -t 2>/dev/null | head -n 1)
+        ASSET_PATH=$(find ./dist -name "nautilus_trader-*.whl" -type f -print | sort | head -n 1)
 
         if [ -z "$ASSET_PATH" ]; then
           echo "Error: No nautilus_trader wheel files found in dist directory"
@@ -30,11 +31,13 @@ runs:
       if: >-
         github.event_name == 'push' &&
         (github.ref_name == 'develop' || github.ref_name == 'nightly' ||
-        github.ref_name == 'master' || github.ref_name == 'test-ci')
+        github.ref_name == 'master' || github.ref_name == 'test-ci' ||
+        github.ref_name == 'test-ci-v2')
       # https://github.com/actions/upload-artifact
       # Use wildcard to flatten dist/ prefix: path before first wildcard is stripped
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: ${{ env.ASSET_NAME }}
         path: dist/nautilus_trader-*.whl
+        if-no-files-found: error
         retention-days: 1

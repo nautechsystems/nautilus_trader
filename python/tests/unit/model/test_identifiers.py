@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
+import re
 
 import pytest
 
@@ -183,16 +184,26 @@ def test_instrument_id_from_str_with_utf8():
     [
         (
             "BTCUSDT",
-            "Error parsing `InstrumentId` from 'BTCUSDT': "
+            "invalid `InstrumentId` value 'BTCUSDT': "
             "missing '.' separator between symbol and venue components",
         ),
-        (".USDT", "invalid string for 'value', was empty"),
-        ("BTC.", "invalid string for 'value', was empty"),
+        (
+            ".USDT",
+            "invalid `InstrumentId` value '.USDT': "
+            "invalid symbol: invalid string for 'value', was empty",
+        ),
+        (
+            "BTC.",
+            "invalid `InstrumentId` value 'BTC.': "
+            "invalid venue: invalid string for 'value', was empty",
+        ),
     ],
 )
 def test_instrument_id_from_str_invalid(value, expected_err):
-    with pytest.raises(ValueError, match=expected_err.replace("(", r"\(").replace(")", r"\)")):
+    with pytest.raises(ValueError, match=re.escape(expected_err)) as exc_info:
         InstrumentId.from_str(value)
+
+    assert str(exc_info.value) == expected_err
 
 
 def test_instrument_id_pickle():

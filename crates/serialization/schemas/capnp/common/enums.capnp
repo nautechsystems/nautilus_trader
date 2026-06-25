@@ -47,6 +47,11 @@ enum OptionKind {
     put @1;
 }
 
+enum GreeksConvention {
+    blackScholes @0;
+    priceAdjusted @1;
+}
+
 enum OrderSide {
     noOrderSide @0;
     buy @1;

@@ -97,6 +97,9 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
         dynamic constraint that depends on the price magnitude and cannot be fully encoded
         in the static instrument tick size. When enabled, prices are automatically rounded
         to comply with this rule. Disable if you want full control over price formatting.
+    include_builder_attribution : bool, default True
+        If True, eligible mainnet orders include the zero-fee Nautilus builder code.
+        Set False to opt out of builder attribution.
 
     Warnings
     --------
@@ -117,3 +120,4 @@ class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):
     http_timeout_secs: PositiveInt = 10
     ws_post_timeout_secs: PositiveInt = 10
     normalize_prices: bool = True
+    include_builder_attribution: bool = True

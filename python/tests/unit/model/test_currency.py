@@ -185,8 +185,12 @@ def test_from_str_unknown_defaults_to_crypto():
 
 
 def test_from_str_strict_unknown_raises():
-    with pytest.raises(ValueError, match="Unknown currency"):
+    expected_err = "Unknown currency: SOME_CURRENCY"
+
+    with pytest.raises(ValueError, match=expected_err) as exc_info:
         Currency.from_str("SOME_CURRENCY", strict=True)
+
+    assert str(exc_info.value) == expected_err
 
 
 def test_from_str_not_strict_returns_crypto():
@@ -218,6 +222,15 @@ def test_from_str_builtins(code, expected):
 )
 def test_is_fiat(code, expected):
     assert Currency.is_fiat(code) == expected
+
+
+def test_is_fiat_unknown_currency_raises():
+    expected_err = "Unknown currency: NON_EXISTENT"
+
+    with pytest.raises(ValueError, match=expected_err) as exc_info:
+        Currency.is_fiat("NON_EXISTENT")
+
+    assert str(exc_info.value) == expected_err
 
 
 @pytest.mark.parametrize(

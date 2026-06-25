@@ -28,7 +28,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let order = self.core.order_factory().market(
+let order = self.order().market(
     InstrumentId::from("AUD/USD.IDEALPRO"),
     OrderSide::Buy,
     Quantity::from(100_000),

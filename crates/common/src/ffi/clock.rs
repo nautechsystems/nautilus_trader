@@ -643,10 +643,8 @@ mod tests {
     fn record_arg_type_callback(py: Python<'_>, seen: &Bound<'_, PyList>) -> Py<PyAny> {
         let seen_obj = seen.clone().unbind().into_any();
 
-        PyCFunction::new_closure(
+        new_sync_py_callback(
             py,
-            None,
-            None,
             move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<()> {
                 let arg = args.get_item(0)?;
                 let type_name = arg.get_type().name()?.to_string();
@@ -657,6 +655,16 @@ mod tests {
         .expect("callback should create")
         .into_any()
         .unbind()
+    }
+
+    fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
+    where
+        F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()>
+            + Send
+            + Sync
+            + 'static,
+    {
+        PyCFunction::new_closure(py, None, None, closure)
     }
 
     fn time_event(name: &str) -> TimeEvent {

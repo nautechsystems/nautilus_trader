@@ -15,14 +15,13 @@
 
 //! Bounded FIFO caches for tracking IDs and key-value pairs with O(1) lookups.
 
-use std::{fmt::Debug, hash::Hash};
+use std::{collections::VecDeque, fmt::Debug, hash::Hash};
 
 use ahash::{AHashMap, AHashSet};
-use arraydeque::ArrayDeque;
 
 /// A bounded cache that maintains a set of IDs with O(1) lookups.
 ///
-/// Uses an `ArrayDeque` for FIFO ordering and an `AHashSet` for fast membership checks.
+/// Uses a `VecDeque` for FIFO ordering and an `AHashSet` for fast membership checks.
 /// When capacity is exceeded, the oldest entry is automatically evicted.
 ///
 /// # Examples
@@ -64,7 +63,7 @@ pub struct FifoCache<T, const N: usize>
 where
     T: Clone + Debug + Eq + Hash,
 {
-    order: ArrayDeque<T, N>,
+    order: VecDeque<T>,
     index: AHashSet<T>,
 }
 
@@ -82,7 +81,7 @@ where
         const { assert!(N > 0, "FifoCache capacity must be greater than zero") };
 
         Self {
-            order: ArrayDeque::new(),
+            order: VecDeque::with_capacity(N),
             index: AHashSet::with_capacity(N),
         }
     }
@@ -120,15 +119,14 @@ where
             return;
         }
 
-        if self.order.is_full()
+        if self.order.len() == N
             && let Some(evicted) = self.order.pop_back()
         {
             self.index.remove(&evicted);
         }
 
-        if self.order.push_front(id.clone()).is_ok() {
-            self.index.insert(id);
-        }
+        self.order.push_front(id.clone());
+        self.index.insert(id);
     }
 
     /// Removes an ID from the cache.
@@ -156,7 +154,7 @@ where
 
 /// A bounded cache that maintains key-value pairs with O(1) lookups.
 ///
-/// Uses an `ArrayDeque` for FIFO ordering and an `AHashMap` for fast key-value access.
+/// Uses a `VecDeque` for FIFO ordering and an `AHashMap` for fast key-value access.
 /// When capacity is exceeded, the oldest entry is automatically evicted.
 ///
 /// # Examples
@@ -189,7 +187,7 @@ pub struct FifoCacheMap<K, V, const N: usize>
 where
     K: Clone + Debug + Eq + Hash,
 {
-    order: ArrayDeque<K, N>,
+    order: VecDeque<K>,
     index: AHashMap<K, V>,
 }
 
@@ -207,7 +205,7 @@ where
         const { assert!(N > 0, "FifoCacheMap capacity must be greater than zero") };
 
         Self {
-            order: ArrayDeque::new(),
+            order: VecDeque::with_capacity(N),
             index: AHashMap::with_capacity(N),
         }
     }
@@ -257,15 +255,14 @@ where
             return;
         }
 
-        if self.order.is_full()
+        if self.order.len() == N
             && let Some(evicted) = self.order.pop_back()
         {
             self.index.remove(&evicted);
         }
 
-        if self.order.push_front(key.clone()).is_ok() {
-            self.index.insert(key, value);
-        }
+        self.order.push_front(key.clone());
+        self.index.insert(key, value);
     }
 
     /// Removes a key from the cache, returning the value if present.

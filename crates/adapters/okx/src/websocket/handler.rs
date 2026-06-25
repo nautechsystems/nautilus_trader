@@ -330,15 +330,17 @@ impl OKXWsFeedHandler {
         match channel {
             OKXWsChannel::Account => Some(OKXWsMessage::Account(data)),
             OKXWsChannel::Positions => Some(OKXWsMessage::Positions(data)),
-            OKXWsChannel::Orders => parse_array_items(data, "orders").map(OKXWsMessage::Orders),
+            OKXWsChannel::Orders => {
+                parse_array_items(data, "orders", false).map(OKXWsMessage::Orders)
+            }
             OKXWsChannel::SprdOrders => {
-                parse_array_items(data, "spread orders").map(OKXWsMessage::SpreadOrders)
+                parse_array_items(data, "spread orders", false).map(OKXWsMessage::SpreadOrders)
             }
             OKXWsChannel::OrdersAlgo | OKXWsChannel::AlgoAdvance => {
-                parse_array_items(data, "algo orders").map(OKXWsMessage::AlgoOrders)
+                parse_array_items(data, "algo orders", false).map(OKXWsMessage::AlgoOrders)
             }
             OKXWsChannel::Instruments => {
-                parse_array_items(data, "instruments").map(OKXWsMessage::Instruments)
+                parse_array_items(data, "instruments", true).map(OKXWsMessage::Instruments)
             }
             _ => Some(OKXWsMessage::ChannelData {
                 channel,
@@ -455,7 +457,11 @@ impl OKXWsFeedHandler {
                 match serde_json::from_str(&text) {
                     Ok(ws_event) => match &ws_event {
                         OKXWsFrame::Error { code, msg } => {
-                            log::error!("WebSocket error: {code} - {msg}");
+                            if should_retry_error_code(code) {
+                                log::warn!("WebSocket error: {code} - {msg}");
+                            } else {
+                                log::error!("WebSocket error: {code} - {msg}");
+                            }
                             Some(ws_event)
                         }
                         OKXWsFrame::Login {
@@ -590,9 +596,17 @@ pub fn is_post_only_auto_cancel(msg: &OKXOrderMsg) -> bool {
 }
 
 // Per-item deserialization so one malformed entry does not drop the batch.
-fn parse_array_items<T: serde::de::DeserializeOwned>(data: Value, label: &str) -> Option<Vec<T>> {
+fn parse_array_items<T: serde::de::DeserializeOwned>(
+    data: Value,
+    label: &str,
+    warn_on_parse_error: bool,
+) -> Option<Vec<T>> {
     let Value::Array(items) = data else {
-        log::error!("Expected {label} payload to be a JSON array");
+        if warn_on_parse_error {
+            log::warn!("Expected {label} payload to be a JSON array");
+        } else {
+            log::error!("Expected {label} payload to be a JSON array");
+        }
         return None;
     };
 
@@ -600,7 +614,13 @@ fn parse_array_items<T: serde::de::DeserializeOwned>(data: Value, label: &str) -
     for (idx, item) in items.into_iter().enumerate() {
         match serde_json::from_value::<T>(item) {
             Ok(value) => parsed.push(value),
-            Err(e) => log::error!("Failed to parse {label} item at index {idx}: {e}"),
+            Err(e) => {
+                if warn_on_parse_error {
+                    log::warn!("Failed to parse {label} item at index {idx}: {e}");
+                } else {
+                    log::error!("Failed to parse {label} item at index {idx}: {e}");
+                }
+            }
         }
     }
 
@@ -653,10 +673,30 @@ fn create_okx_timeout_error(msg: String) -> OKXWsError {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use nautilus_network::websocket::{AuthTracker, SubscriptionState};
     use rstest::rstest;
     use serde_json::json;
 
     use super::*;
+    use crate::common::{consts::OKX_WS_TOPIC_DELIMITER, testing::load_test_json};
+
+    fn create_handler() -> OKXWsFeedHandler {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        OKXWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+        )
+    }
 
     #[rstest]
     #[case("Connection reset by peer", true)]
@@ -685,7 +725,8 @@ mod tests {
             {"value": 3},
         ]);
 
-        let parsed: Vec<ParseArrayItem> = parse_array_items(data, "test").expect("non-empty");
+        let parsed: Vec<ParseArrayItem> =
+            parse_array_items(data, "test", false).expect("non-empty");
         assert_eq!(
             parsed,
             vec![ParseArrayItem { value: 1 }, ParseArrayItem { value: 3 }],
@@ -695,14 +736,41 @@ mod tests {
     #[rstest]
     fn test_parse_array_items_returns_none_when_payload_not_array() {
         let data = json!({"not": "an array"});
-        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test");
+        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test", false);
         assert!(parsed.is_none());
     }
 
     #[rstest]
     fn test_parse_array_items_returns_none_when_all_items_fail() {
         let data = json!([{"value": "bad"}]);
-        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test");
+        let parsed: Option<Vec<ParseArrayItem>> = parse_array_items(data, "test", false);
         assert!(parsed.is_none());
+    }
+
+    #[rstest]
+    fn test_route_instruments_keeps_valid_items_when_one_item_fails() {
+        let handler = create_handler();
+        let mut frame: Value =
+            serde_json::from_str(&load_test_json("ws_instruments.json")).expect("valid fixture");
+        let data = frame
+            .get_mut("data")
+            .and_then(Value::as_array_mut)
+            .expect("data array");
+        let mut invalid_item = data[0].clone();
+        invalid_item["tickSz"] = json!(7);
+        data.insert(0, invalid_item);
+
+        let arg: OKXWebSocketArg = serde_json::from_value(frame["arg"].clone()).expect("valid arg");
+        let msg = handler
+            .route_data_message(arg, frame["data"].clone())
+            .expect("instruments message");
+
+        match msg {
+            OKXWsMessage::Instruments(instruments) => {
+                assert_eq!(instruments.len(), 1);
+                assert_eq!(instruments[0].inst_id.as_str(), "BTC-USDT-SWAP");
+            }
+            other => panic!("Expected Instruments, was {other:?}"),
+        }
     }
 }

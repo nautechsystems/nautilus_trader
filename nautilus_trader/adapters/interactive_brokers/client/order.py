@@ -106,7 +106,7 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         )
         self._eclient.reqGlobalCancel()
 
-    async def get_open_orders(self, account_id: str) -> list[IBOrder]:
+    async def get_open_orders(self, account_id: str) -> list[IBOrder] | None:
         """
         Retrieve a list of open orders for a specific account. Once the request is
         completed, openOrderEnd() will be called.
@@ -124,8 +124,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         Returns
         -------
-        list[IBOrder]
-            List of open orders filtered by the specified account_id.
+        list[IBOrder] or None
+            None if the request failed (socket error / timeout) — callers must not
+            treat None as "confirmed zero open orders".  An empty list means IB
+            explicitly confirmed no open orders.
 
         """
         self._log.debug(f"Requesting open orders for {account_id}")
@@ -154,18 +156,18 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             self._request_timeout_secs,
         )
 
-        if all_orders:
-            orders: list[IBOrder] = [order for order in all_orders if order.account == account_id]
-        else:
-            orders = []
+        if all_orders is None:
+            return None  # request failed — caller must not infer "no open orders"
+        if not all_orders:
+            return []
 
-        return orders
+        return [order for order in all_orders if order.account == account_id]
 
     async def get_executions(
         self,
         account_id: str,
         execution_filter: ExecutionFilter | None = None,
-    ) -> list[dict]:
+    ) -> list[dict] | None:
         """
         Retrieve execution reports for a specific account.
 
@@ -178,8 +180,10 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
 
         Returns
         -------
-        list[dict]
-            List of execution details with associated contracts and commission reports.
+        list[dict] or None
+            None if the request failed (socket error / timeout) — callers must not
+            treat None as "confirmed zero executions".  An empty list means IB
+            explicitly confirmed no executions matched the filter.
             Each dict contains 'execution', 'contract', and 'commission_report' keys.
 
         """
@@ -215,18 +219,17 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             self._request_timeout_secs,
         )
 
-        if execution_details:
-            # Filter by account if needed (in case filter didn't work perfectly)
-            filtered_executions = [
-                exec_detail
-                for exec_detail in execution_details
-                if exec_detail.get("execution")
-                and exec_detail["execution"].acctNumber == account_id
-            ]
-        else:
-            filtered_executions = []
+        if execution_details is None:
+            return None  # request failed — caller must not infer "no executions"
+        if not execution_details:
+            return []
 
-        return filtered_executions
+        # Filter by account if needed (in case filter didn't work perfectly)
+        return [
+            exec_detail
+            for exec_detail in execution_details
+            if exec_detail.get("execution") and exec_detail["execution"].acctNumber == account_id
+        ]
 
     def next_order_id(self) -> int:
         """
@@ -288,6 +291,13 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
             order_id=order.orderRef,
         )
 
+        if order.permId != 0 and order.orderId != 0:
+            self._set_order_id_ref(
+                venue_order_id=VenueOrderId(str(order.orderId)),
+                account_id=order.account,
+                order_id=order.orderRef,
+            )
+
         # Handle response to on-demand request
         if request := self._requests.get(name="OpenOrders"):
             request.result.append(order)
@@ -333,6 +343,16 @@ class InteractiveBrokersClientOrderMixin(BaseMixin):
         """
         venue_order_id = get_venue_order_id(order_id, perm_id)
         order_ref = self._order_id_to_order_ref.get(venue_order_id, None)
+
+        if order_ref is None and perm_id != 0 and order_id != 0:
+            raw_venue_order_id = VenueOrderId(str(order_id))
+            order_ref = self._order_id_to_order_ref.get(raw_venue_order_id, None)
+            if order_ref is not None:
+                self._set_order_id_ref(
+                    venue_order_id=venue_order_id,
+                    account_id=order_ref.account_id,
+                    order_id=order_ref.order_id,
+                )
 
         if order_ref is None:
             order_ref = self._resolve_order_ref_from_cache(venue_order_id)

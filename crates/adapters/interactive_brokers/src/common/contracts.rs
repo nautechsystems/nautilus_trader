@@ -18,12 +18,13 @@
 use std::str::FromStr;
 
 use ibapi::contracts::{
-    Contract, Currency as IBCurrency, Exchange as IBExchange, SecurityType, Symbol,
+    Contract, Currency as IBCurrency, Exchange as IBExchange, OptionRight, SecurityIdType,
+    SecurityType, Symbol,
 };
 use nautilus_core::Params;
 use serde_json::Value;
 
-use crate::common::enums::IbSecurityType;
+use crate::common::enums::{IbOptionRight, IbSecurityType};
 
 /// Convert an IB contract into JSON metadata suitable for instrument `info["contract"]`.
 #[must_use]
@@ -104,6 +105,24 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
     // Helper to get bool field with default
     let get_bool = |key: &str| -> bool { obj.get(key).and_then(|v| v.as_bool()).unwrap_or(false) };
 
+    let parse_option_right = |key: &str| -> Option<OptionRight> {
+        match IbOptionRight::from_str(&get_str(key)).ok()? {
+            IbOptionRight::Call => Some(OptionRight::Call),
+            IbOptionRight::Put => Some(OptionRight::Put),
+        }
+    };
+
+    let parse_security_id_type = |key: &str| -> Option<SecurityIdType> {
+        match get_str(key).to_ascii_uppercase().as_str() {
+            "CUSIP" => Some(SecurityIdType::Cusip),
+            "ISIN" => Some(SecurityIdType::Isin),
+            "SEDOL" => Some(SecurityIdType::Sedol),
+            "RIC" => Some(SecurityIdType::Ric),
+            "FIGI" => Some(SecurityIdType::Figi),
+            _ => None,
+        }
+    };
+
     // Parse security type
     let sec_type_str = get_str("secType");
     let security_type = if sec_type_str.is_empty() {
@@ -121,7 +140,7 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
         security_type,
         last_trade_date_or_contract_month: get_str("lastTradeDateOrContractMonth"),
         strike: get_f64("strike"),
-        right: get_str("right"),
+        right: parse_option_right("right"),
         multiplier: get_str("multiplier"),
         exchange: IBExchange::from(get_str("exchange")),
         currency: IBCurrency::from(get_str("currency")),
@@ -129,7 +148,7 @@ pub fn parse_contract_from_json(json: &Value) -> anyhow::Result<Contract> {
         primary_exchange: IBExchange::from(get_str("primaryExchange")),
         trading_class: get_str("tradingClass"),
         include_expired: get_bool("includeExpired"),
-        security_id_type: get_str("secIdType"),
+        security_id_type: parse_security_id_type("secIdType"),
         security_id: get_str("secId"),
         last_trade_date: None,
         combo_legs_description: get_str("comboLegsDescrip"),

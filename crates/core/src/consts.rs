@@ -15,8 +15,6 @@
 
 //! Core constants.
 
-use std::env;
-
 /// The NautilusTrader string constant.
 pub static NAUTILUS_TRADER: &str = "NautilusTrader";
 

@@ -70,7 +70,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money},
 };
@@ -86,6 +86,7 @@ use crate::{
         parse::nanos_to_secs_i64,
     },
     config::DydxAdapterConfig,
+    error::DydxError,
     execution::{
         broadcaster::TxBroadcaster,
         encoder::ClientOrderIdEncoder,
@@ -771,9 +772,9 @@ impl DydxExecutionClient {
                         block_time_monitor.record_block(height, time);
                     }
                     DydxWsOutputMessage::Error(err) => {
-                        log::error!("WebSocket error: {err:?}");
+                        log::warn!("WebSocket error: {err:?}");
                     }
-                    DydxWsOutputMessage::Reconnected => {
+                    DydxWsOutputMessage::Reconnected { .. } => {
                         log::info!("WebSocket reconnected");
                     }
                     _ => {}
@@ -860,7 +861,9 @@ impl DydxExecutionClient {
 
     /// Spawns an order submission task with error handling and rejection generation.
     ///
-    /// If the submission fails, generates an `OrderRejected` event with the error details.
+    /// Generates an `OrderRejected` event only when the chain definitively rejected
+    /// the broadcast at CheckTx; any other failure leaves the order in flight for
+    /// in-flight checks and reconciliation to resolve.
     fn spawn_order_task<F>(
         &self,
         label: &'static str,
@@ -876,18 +879,24 @@ impl DydxExecutionClient {
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) = fut.await {
-                let error_msg = format!("{label} failed: {e:?}");
-                log::error!("{error_msg}");
+                if is_definitive_broadcast_rejection(&e) {
+                    let error_msg = format!("{label} failed: {e:?}");
+                    log::error!("{error_msg}");
 
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &error_msg,
-                    ts_event,
-                    false,
-                );
+                    let ts_event = clock.get_time_ns();
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        &error_msg,
+                        ts_event,
+                        false,
+                    );
+                } else {
+                    log::warn!(
+                        "Ambiguous dYdX {label} failure for {client_order_id}, awaiting reconciliation: {e:?}"
+                    );
+                }
             }
         });
 
@@ -1039,12 +1048,16 @@ async fn broadcast_partitioned_cancels(
                     Err(e) => {
                         let msg = format!("Short-term batch cancel failed: {e:?}");
                         log::error!("{msg}");
-                        emit_partitioned_cancel_rejections(
-                            &short_term_orders,
-                            &emitter,
-                            clock,
-                            &msg,
-                        );
+                        // A CheckTx rejection refuses the whole transaction
+                        // atomically: a venue result for every cancel in it.
+                        if e.is_definitive_broadcast_rejection() {
+                            emit_partitioned_cancel_rejections(
+                                &short_term_orders,
+                                &emitter,
+                                clock,
+                                &msg,
+                            );
+                        }
                         errors.push(msg);
                     }
                 }
@@ -1052,7 +1065,6 @@ async fn broadcast_partitioned_cancels(
             Err(e) => {
                 let msg = format!("Failed to build MsgBatchCancel: {e:?}");
                 log::error!("{msg}");
-                emit_partitioned_cancel_rejections(&short_term_orders, &emitter, clock, &msg);
                 errors.push(msg);
             }
         }
@@ -1087,12 +1099,15 @@ async fn broadcast_partitioned_cancels(
                     Err(e) => {
                         let msg = format!("Long-term batch cancel failed: {e:?}");
                         log::error!("{msg}");
-                        emit_partitioned_cancel_rejections(
-                            &long_term_orders,
-                            &emitter,
-                            clock,
-                            &msg,
-                        );
+
+                        if e.is_definitive_broadcast_rejection() {
+                            emit_partitioned_cancel_rejections(
+                                &long_term_orders,
+                                &emitter,
+                                clock,
+                                &msg,
+                            );
+                        }
                         errors.push(msg);
                     }
                 }
@@ -1100,7 +1115,6 @@ async fn broadcast_partitioned_cancels(
             Err(e) => {
                 let msg = format!("Failed to build long-term cancel messages: {e:?}");
                 log::error!("{msg}");
-                emit_partitioned_cancel_rejections(&long_term_orders, &emitter, clock, &msg);
                 errors.push(msg);
             }
         }
@@ -1129,6 +1143,11 @@ fn emit_partitioned_cancel_rejections(
             clock.get_time_ns(),
         );
     }
+}
+
+fn is_definitive_broadcast_rejection(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<DydxError>()
+        .is_some_and(DydxError::is_definitive_broadcast_rejection)
 }
 
 #[async_trait(?Send)]
@@ -1210,7 +1229,7 @@ impl ExecutionClient for DydxExecutionClient {
     /// Trailing stop orders are NOT supported by dYdX v4 protocol.
     ///
     /// Validates synchronously, generates OrderSubmitted event, then spawns async task for
-    /// gRPC submission to avoid blocking. Unsupported order types generate OrderRejected.
+    /// gRPC submission to avoid blocking. Unsupported order types generate OrderDenied.
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         // Check connection status first (doesn't need order)
         if !self.is_connected() {
@@ -1221,14 +1240,7 @@ impl ExecutionClient for DydxExecutionClient {
 
         // Check block height is available for short-term orders
         let current_block = self.block_time_monitor.current_block_height();
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         let client_order_id = order.client_order_id();
         let instrument_id = order.instrument_id();
@@ -1237,15 +1249,7 @@ impl ExecutionClient for DydxExecutionClient {
         if current_block == 0 {
             let reason = "Block height not initialized";
             log::warn!("Cannot submit order {client_order_id}: {reason}");
-            let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_rejected_event(
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                reason,
-                ts_event,
-                false,
-            );
+            self.emitter.emit_order_denied(&order, reason);
             return Ok(());
         }
 
@@ -1258,20 +1262,12 @@ impl ExecutionClient for DydxExecutionClient {
         if order.is_quote_quantity() {
             let reason = "Quote quantity orders are not supported by dYdX";
             log::error!("{reason}");
-            let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_rejected_event(
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                reason,
-                ts_event,
-                false,
-            );
+            self.emitter.emit_order_denied(&order, reason);
             return Ok(());
         }
 
-        // Reject unsupported time-in-force values up front so the strategy gets
-        // an immediate `OrderRejected` rather than a venue-side `code=48` (FOK
+        // Deny unsupported time-in-force values up front so the strategy gets
+        // an immediate `OrderDenied` rather than a venue-side `code=48` (FOK
         // deprecated) or a silent translation to GTC (DAY).
         let unsupported_tif_reason = match order.time_in_force() {
             TimeInForce::Fok => Some(
@@ -1283,19 +1279,11 @@ impl ExecutionClient for DydxExecutionClient {
 
         if let Some(reason) = unsupported_tif_reason {
             log::error!("{reason}");
-            let ts_event = self.clock.get_time_ns();
-            self.emitter.emit_order_rejected_event(
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                reason,
-                ts_event,
-                false,
-            );
+            self.emitter.emit_order_denied(&order, reason);
             return Ok(());
         }
 
-        // Reject unsupported order types
+        // Deny unsupported order types
         match order.order_type() {
             OrderType::Market
             | OrderType::Limit
@@ -1307,49 +1295,23 @@ impl ExecutionClient for DydxExecutionClient {
             OrderType::TrailingStopMarket | OrderType::TrailingStopLimit => {
                 let reason = "Trailing stop orders not supported by dYdX v4 protocol";
                 log::error!("{reason}");
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    reason,
-                    ts_event,
-                    false,
-                );
+                self.emitter.emit_order_denied(&order, reason);
                 return Ok(());
             }
             order_type => {
                 let reason = format!("Order type {order_type:?} not supported by dYdX");
                 log::error!("{reason}");
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &reason,
-                    ts_event,
-                    false,
-                );
+                self.emitter.emit_order_denied(&order, &reason);
                 return Ok(());
             }
         }
-
-        self.emitter.emit_order_submitted(&order);
 
         // Get execution components (must be initialized after connect())
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
                 log::error!("Failed to get execution components: {e}");
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &e.to_string(),
-                    ts_event,
-                    false,
-                );
+                self.emitter.emit_order_denied(&order, &e.to_string());
                 return Ok(());
             }
         };
@@ -1361,18 +1323,12 @@ impl ExecutionClient for DydxExecutionClient {
             Ok(enc) => enc,
             Err(e) => {
                 log::error!("Failed to generate client order ID: {e}");
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &e.to_string(),
-                    ts_event,
-                    false,
-                );
+                self.emitter.emit_order_denied(&order, &e.to_string());
                 return Ok(());
             }
         };
+
+        self.emitter.emit_order_submitted(&order);
         let client_id_u32 = encoded.client_id;
         let client_metadata = encoded.client_metadata;
 
@@ -1598,38 +1554,29 @@ impl ExecutionClient for DydxExecutionClient {
             anyhow::bail!(reason);
         }
 
-        // Pre-submission TIF gate: reject FOK and DAY before doing any further
+        // Pre-submission TIF gate: deny FOK and DAY before doing any further
         // work, mirroring `submit_order`'s gate. Done up front so the strategy
-        // sees an immediate `OrderRejected` even when the rest of the pipeline
+        // sees an immediate `OrderDenied` even when the rest of the pipeline
         // (block height, TX manager) is not yet ready.
-        let mut had_unsupported_tif = false;
+        let unsupported_tif_reason = |order: &OrderAny| match order.time_in_force() {
+            TimeInForce::Fok => Some(
+                "Fill-or-kill (FOK) orders are deprecated by dYdX v4 (chain rejects with code=48)",
+            ),
+            TimeInForce::Day => Some("DAY time-in-force is not supported by dYdX v4"),
+            _ => None,
+        };
 
-        for order in &orders {
-            let unsupported_tif_reason = match order.time_in_force() {
-                TimeInForce::Fok => Some(
-                    "Fill-or-kill (FOK) orders are deprecated by dYdX v4 (chain rejects with code=48)",
-                ),
-                TimeInForce::Day => Some("DAY time-in-force is not supported by dYdX v4"),
-                _ => None,
-            };
-
-            if let Some(reason) = unsupported_tif_reason {
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    reason,
-                    ts_event,
-                    false,
-                );
-                had_unsupported_tif = true;
+        if orders
+            .iter()
+            .any(|order| unsupported_tif_reason(order).is_some())
+        {
+            // Deny the whole list: dYdX has no atomic batch semantics worth
+            // preserving, and siblings must not be left unresolved.
+            for order in &orders {
+                let reason = unsupported_tif_reason(order)
+                    .unwrap_or("Order list denied: sibling order has unsupported time in force");
+                self.emitter.emit_order_denied(order, reason);
             }
-        }
-
-        if had_unsupported_tif {
-            // The whole list is rejected if any order has an unsupported TIF;
-            // dYdX has no atomic batch semantics worth preserving here.
             return Ok(());
         }
 
@@ -1638,18 +1585,8 @@ impl ExecutionClient for DydxExecutionClient {
         if current_block == 0 {
             let reason = "Block height not initialized";
             log::warn!("Cannot submit order list: {reason}");
-            // Reject all orders in the list
-            let ts_event = self.clock.get_time_ns();
-
             for order in &orders {
-                self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    reason,
-                    ts_event,
-                    false,
-                );
+                self.emitter.emit_order_denied(order, reason);
             }
             return Ok(());
         }
@@ -1659,18 +1596,8 @@ impl ExecutionClient for DydxExecutionClient {
             Ok(components) => components,
             Err(e) => {
                 log::error!("Failed to get execution components for batch: {e}");
-                // Reject all orders in the list
-                let ts_event = self.clock.get_time_ns();
-
                 for order in &orders {
-                    self.emitter.emit_order_rejected_event(
-                        order.strategy_id(),
-                        order.instrument_id(),
-                        order.client_order_id(),
-                        &e.to_string(),
-                        ts_event,
-                        false,
-                    );
+                    self.emitter.emit_order_denied(order, &e.to_string());
                 }
                 return Ok(());
             }
@@ -1715,29 +1642,15 @@ impl ExecutionClient for DydxExecutionClient {
             }
 
             if order.is_quote_quantity() {
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    "Quote quantity orders are not supported by dYdX",
-                    ts_event,
-                    false,
-                );
+                self.emitter
+                    .emit_order_denied(order, "Quote quantity orders are not supported by dYdX");
                 continue;
             }
 
             // Get price (required for limit orders)
             let Some(price) = order.price() else {
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_rejected_event(
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    "Limit order missing price",
-                    ts_event,
-                    false,
-                );
+                self.emitter
+                    .emit_order_denied(order, "Limit order missing price");
                 continue;
             };
 
@@ -1746,15 +1659,7 @@ impl ExecutionClient for DydxExecutionClient {
                 Ok(enc) => enc,
                 Err(e) => {
                     log::error!("Failed to generate client order ID: {e}");
-                    let ts_event = self.clock.get_time_ns();
-                    self.emitter.emit_order_rejected_event(
-                        order.strategy_id(),
-                        order.instrument_id(),
-                        order.client_order_id(),
-                        &e.to_string(),
-                        ts_event,
-                        false,
-                    );
+                    self.emitter.emit_order_denied(order, &e.to_string());
                     continue;
                 }
             };
@@ -1863,16 +1768,10 @@ impl ExecutionClient for DydxExecutionClient {
                         {
                             Ok(m) => m,
                             Err(e) => {
-                                let error_msg = format!("Failed to build order message: {e:?}");
-                                log::error!("{error_msg}");
-                                let ts_event = clock.get_time_ns();
-                                emitter.emit_order_rejected_event(
-                                    strategy_id,
-                                    instrument_id,
-                                    client_order_id,
-                                    &error_msg,
-                                    ts_event,
-                                    false,
+                                // Local failure after OrderSubmitted: leave the
+                                // order for in-flight resolution.
+                                log::error!(
+                                    "Failed to build order message for {client_order_id}: {e:?}"
                                 );
                                 return;
                             }
@@ -1885,17 +1784,23 @@ impl ExecutionClient for DydxExecutionClient {
                             .broadcast_short_term(&tx_manager, vec![msg], &operation)
                             .await
                         {
-                            let error_msg = format!("Order submission failed: {e:?}");
-                            log::error!("{error_msg}");
-                            let ts_event = clock.get_time_ns();
-                            emitter.emit_order_rejected_event(
-                                strategy_id,
-                                instrument_id,
-                                client_order_id,
-                                &error_msg,
-                                ts_event,
-                                false,
-                            );
+                            if e.is_definitive_broadcast_rejection() {
+                                let error_msg = format!("Order submission failed: {e:?}");
+                                log::error!("{error_msg}");
+                                let ts_event = clock.get_time_ns();
+                                emitter.emit_order_rejected_event(
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    &error_msg,
+                                    ts_event,
+                                    false,
+                                );
+                            } else {
+                                log::warn!(
+                                    "Ambiguous dYdX submit failure for {client_order_id}, awaiting reconciliation: {e:?}"
+                                );
+                            }
                         }
                     });
 
@@ -1930,9 +1835,25 @@ impl ExecutionClient for DydxExecutionClient {
                 let msgs = match msgs {
                     Ok(m) => m,
                     Err(e) => {
-                        let error_msg = format!("Failed to build batch order messages: {e:?}");
+                        // Local failure after OrderSubmitted: leave the orders
+                        // for in-flight resolution.
+                        log::error!("Failed to build batch order messages: {e:?}");
+                        return;
+                    }
+                };
+
+                // Broadcast batch with retry
+                let operation = format!("Submit batch of {} limit orders", msgs.len());
+
+                if let Err(e) = broadcaster
+                    .broadcast_with_retry(&tx_manager, msgs, &operation)
+                    .await
+                {
+                    if e.is_definitive_broadcast_rejection() {
+                        // A CheckTx rejection refuses the whole transaction
+                        // atomically: a venue result for every order in it.
+                        let error_msg = format!("Batch order submission failed: {e:?}");
                         log::error!("{error_msg}");
-                        // Send OrderRejected for all orders
                         let ts_event = clock.get_time_ns();
 
                         for (client_order_id, instrument_id, strategy_id) in order_info {
@@ -1945,31 +1866,9 @@ impl ExecutionClient for DydxExecutionClient {
                                 false,
                             );
                         }
-                        return;
-                    }
-                };
-
-                // Broadcast batch with retry
-                let operation = format!("Submit batch of {} limit orders", msgs.len());
-
-                if let Err(e) = broadcaster
-                    .broadcast_with_retry(&tx_manager, msgs, &operation)
-                    .await
-                {
-                    let error_msg = format!("Batch order submission failed: {e:?}");
-                    log::error!("{error_msg}");
-
-                    // Send OrderRejected for all orders in the batch
-                    let ts_event = clock.get_time_ns();
-
-                    for (client_order_id, instrument_id, strategy_id) in order_info {
-                        emitter.emit_order_rejected_event(
-                            strategy_id,
-                            instrument_id,
-                            client_order_id,
-                            &error_msg,
-                            ts_event,
-                            false,
+                    } else {
+                        log::warn!(
+                            "Ambiguous dYdX batch submit failure, awaiting reconciliation: {e:?}"
                         );
                     }
                 }
@@ -2125,15 +2024,10 @@ impl ExecutionClient for DydxExecutionClient {
             ) {
                 Ok(msg) => msg,
                 Err(e) => {
-                    log::error!("Failed to build cancel message for {client_order_id}: {e:?}");
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_cancel_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &format!("Cancel build failed: {e:?}"),
-                        ts_event,
+                    // Local validation failure: leave the cancel outcome for
+                    // in-flight resolution.
+                    log::warn!(
+                        "Cancel command failed local validation for {client_order_id}: {e:?}"
                     );
                     return Ok(());
                 }
@@ -2155,7 +2049,7 @@ impl ExecutionClient for DydxExecutionClient {
                 Ok(_) => {
                     log::debug!("Successfully cancelled order: {client_order_id}");
                 }
-                Err(e) => {
+                Err(e) if e.is_definitive_broadcast_rejection() => {
                     log::error!("Failed to cancel order {client_order_id}: {e:?}");
 
                     let ts_event = clock.get_time_ns();
@@ -2166,6 +2060,11 @@ impl ExecutionClient for DydxExecutionClient {
                         venue_order_id,
                         &format!("Cancel order failed: {e:?}"),
                         ts_event,
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Ambiguous dYdX cancel failure for {client_order_id}, awaiting reconciliation: {e:?}"
                     );
                 }
             }
@@ -3212,6 +3111,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         ))
@@ -3320,7 +3220,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_rejects_quote_quantity() {
+    fn test_submit_order_denies_quote_quantity() {
         let (client, cache, mut rx) = create_execution_client();
         let mut factory = test_order_factory();
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
@@ -3349,7 +3249,7 @@ mod tests {
         client.submit_order(command).unwrap();
 
         match recv_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.instrument_id, instrument_id);
                 assert_eq!(
@@ -3357,12 +3257,12 @@ mod tests {
                     "Quote quantity orders are not supported by dYdX"
                 );
             }
-            event => panic!("Expected order rejected event, was {event:?}"),
+            event => panic!("Expected order denied event, was {event:?}"),
         }
     }
 
     #[rstest]
-    fn test_submit_order_rejects_market_fok() {
+    fn test_submit_order_denies_market_fok() {
         let (client, cache, mut rx) = create_execution_client();
         let mut factory = test_order_factory();
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
@@ -3391,7 +3291,7 @@ mod tests {
         client.submit_order(command).unwrap();
 
         match recv_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert_eq!(event.instrument_id, instrument_id);
                 assert!(
@@ -3400,15 +3300,15 @@ mod tests {
                     event.reason,
                 );
             }
-            event => panic!("Expected order rejected event, was {event:?}"),
+            event => panic!("Expected order denied event, was {event:?}"),
         }
     }
 
     #[rstest]
-    fn test_submit_order_rejects_limit_fok() {
+    fn test_submit_order_denies_limit_fok() {
         // dYdX v4 deprecated FOK at the protocol level (chain returns code=48).
-        // The adapter must reject FOK pre-submission so the strategy gets an
-        // immediate `OrderRejected` instead of a venue-side broadcast failure.
+        // The adapter must deny FOK pre-submission so the strategy gets an
+        // immediate `OrderDenied` instead of a venue-side broadcast failure.
         let (client, cache, mut rx) = create_execution_client();
         let mut factory = test_order_factory();
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
@@ -3443,7 +3343,7 @@ mod tests {
         client.submit_order(command).unwrap();
 
         match recv_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert!(
                     event.reason.contains("Fill-or-kill") && event.reason.contains("deprecated"),
@@ -3451,12 +3351,12 @@ mod tests {
                     event.reason,
                 );
             }
-            event => panic!("Expected order rejected event, was {event:?}"),
+            event => panic!("Expected order denied event, was {event:?}"),
         }
     }
 
     #[rstest]
-    fn test_submit_order_rejects_day_tif() {
+    fn test_submit_order_denies_day_tif() {
         // DAY TIF is not supported by dYdX v4; the adapter must deny pre-submission
         // rather than silently translate to GTC.
         let (client, cache, mut rx) = create_execution_client();
@@ -3493,7 +3393,7 @@ mod tests {
         client.submit_order(command).unwrap();
 
         match recv_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert!(
                     event.reason.contains("DAY"),
@@ -3501,17 +3401,17 @@ mod tests {
                     event.reason,
                 );
             }
-            event => panic!("Expected order rejected event, was {event:?}"),
+            event => panic!("Expected order denied event, was {event:?}"),
         }
     }
 
     // `submit_order_list` mirrors the single-submit TIF gate; an order in the
-    // list with FOK or DAY must be rejected pre-submission rather than
+    // list with FOK or DAY must be denied pre-submission rather than
     // forwarded to the gRPC builder.
     #[rstest]
     #[case(TimeInForce::Fok, "Fill-or-kill")]
     #[case(TimeInForce::Day, "DAY")]
-    fn test_submit_order_list_rejects_unsupported_tif(
+    fn test_submit_order_list_denies_unsupported_tif(
         #[case] tif: TimeInForce,
         #[case] reason_substring: &str,
     ) {
@@ -3566,7 +3466,7 @@ mod tests {
         client.submit_order_list(cmd).unwrap();
 
         match recv_order_event(&mut rx) {
-            OrderEventAny::Rejected(event) => {
+            OrderEventAny::Denied(event) => {
                 assert_eq!(event.client_order_id, order.client_order_id());
                 assert!(
                     event.reason.contains(reason_substring),
@@ -3574,8 +3474,104 @@ mod tests {
                     event.reason,
                 );
             }
-            event => panic!("Expected order rejected event, was {event:?}"),
+            event => panic!("Expected order denied event, was {event:?}"),
         }
+    }
+
+    // A mixed list must not leave supported sibling orders unresolved: when
+    // the list is aborted for an unsupported TIF, every order is denied.
+    #[rstest]
+    fn test_submit_order_list_denies_supported_siblings_on_abort() {
+        use nautilus_common::messages::execution::SubmitOrderList;
+        use nautilus_model::{identifiers::OrderListId, orders::OrderList};
+
+        let (client, cache, mut rx) = create_execution_client();
+        let mut factory = test_order_factory();
+        let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
+        let order_gtc = factory.limit(
+            instrument_id,
+            OrderSide::Buy,
+            Quantity::from("0.1"),
+            Price::from("50000.0"),
+            Some(TimeInForce::Gtc),
+            None,
+            Some(false),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(ClientOrderId::from("O-MIXED-GTC")),
+        );
+        let order_fok = factory.limit(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("0.1"),
+            Price::from("51000.0"),
+            Some(TimeInForce::Fok),
+            None,
+            Some(false),
+            None,
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(ClientOrderId::from("O-MIXED-FOK")),
+        );
+        cache_order(&cache, order_gtc.clone());
+        cache_order(&cache, order_fok.clone());
+
+        let order_list = OrderList::new(
+            OrderListId::from("OL-MIXED"),
+            instrument_id,
+            order_gtc.strategy_id(),
+            vec![order_gtc.client_order_id(), order_fok.client_order_id()],
+            UnixNanos::default(),
+        );
+
+        let cmd = SubmitOrderList::new(
+            order_gtc.trader_id(),
+            Some(*DYDX_CLIENT_ID),
+            order_gtc.strategy_id(),
+            order_list,
+            vec![
+                order_gtc.init_event().clone(),
+                order_fok.init_event().clone(),
+            ],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None, // correlation_id
+        );
+        client.submit_order_list(cmd).unwrap();
+
+        let mut denied_reasons = std::collections::HashMap::new();
+
+        for _ in 0..2 {
+            match recv_order_event(&mut rx) {
+                OrderEventAny::Denied(event) => {
+                    denied_reasons.insert(event.client_order_id, event.reason);
+                }
+                event => panic!("Expected order denied event, was {event:?}"),
+            }
+        }
+
+        assert!(
+            denied_reasons[&order_gtc.client_order_id()].contains("sibling order"),
+            "GTC sibling should be denied with list-abort reason",
+        );
+        assert!(
+            denied_reasons[&order_fok.client_order_id()].contains("Fill-or-kill"),
+            "FOK order should be denied with TIF reason",
+        );
     }
 
     // `abort_pending_tasks` should classify cancel-related tasks separately from

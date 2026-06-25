@@ -77,6 +77,35 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> Result<Self, HttpClientError> {
+        let keyed_quotas = keyed_quotas
+            .into_iter()
+            .map(|(key, quota)| (Ustr::from(&key), quota))
+            .collect();
+
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+
+        Self::new_with_rate_limiter(headers, header_keys, timeout_secs, proxy_url, rate_limiter)
+    }
+
+    /// Creates a new [`HttpClient`] instance sharing an externally-owned rate limiter.
+    ///
+    /// Use this constructor to share a single [`RateLimiter`] across multiple
+    /// [`HttpClient`] instances (for example, the HTTP clients owned by an
+    /// exchange adapter's data and execution clients). All quota state lives
+    /// inside the limiter, so passing the same `Arc` produces a single shared
+    /// bucket.
+    ///
+    /// # Errors
+    ///
+    /// - Returns `InvalidProxy` if the proxy URL is malformed.
+    /// - Returns `ClientBuildError` if building the underlying `reqwest::Client` fails.
+    pub fn new_with_rate_limiter(
+        headers: HashMap<String, String>,
+        header_keys: Vec<String>,
+        timeout_secs: Option<u64>,
+        proxy_url: Option<String>,
+        rate_limiter: Arc<RateLimiter<Ustr, MonotonicClock>>,
+    ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
         // Build default headers
@@ -115,24 +144,24 @@ impl HttpClient {
             .build()
             .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?;
 
-        // Pre-intern header keys as HeaderName, keeping both vectors aligned
+        // Pre-intern header keys as HeaderName, keeping both vectors aligned,
+        // an invalid key is an error: a silent drop would make response extraction read nothing.
         let (valid_keys, header_names): (Vec<String>, Vec<HeaderName>) = header_keys
             .into_iter()
-            .filter_map(|k| HeaderName::from_str(&k).ok().map(|name| (k, name)))
+            .map(|k| {
+                HeaderName::from_str(&k)
+                    .map(|name| (k.clone(), name))
+                    .map_err(|e| HttpClientError::Error(format!("Invalid header key '{k}': {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .unzip();
 
         let client = InnerHttpClient {
             client,
-            header_keys: Arc::new(valid_keys),
-            header_names: Arc::new(header_names),
+            header_keys: Arc::from(valid_keys),
+            header_names: Arc::from(header_names),
         };
-
-        let keyed_quotas = keyed_quotas
-            .into_iter()
-            .map(|(key, quota)| (Ustr::from(&key), quota))
-            .collect();
-
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         Ok(Self {
             client,
@@ -317,8 +346,8 @@ impl HttpClient {
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
-    pub(crate) header_keys: Arc<Vec<String>>,
-    pub(crate) header_names: Arc<Vec<HeaderName>>,
+    pub(crate) header_keys: Arc<[String]>,
+    pub(crate) header_names: Arc<[HeaderName]>,
 }
 
 impl InnerHttpClient {

@@ -34,11 +34,12 @@ pub struct SemVer {
 impl SemVer {
     /// Parses a `"major.minor.patch"` string into a [`SemVer`].
     ///
-    /// Missing components default to zero.
+    /// Missing components default to zero; components beyond patch are ignored.
     ///
     /// # Errors
     ///
-    /// Returns an error if any component of `s` fails to parse as a [`u64`].
+    /// Returns an error if any of the first three components of `s` fails to parse
+    /// as a [`u64`].
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         let mut parts = s.split('.').map(str::parse::<u64>);
         let major = parts.next().unwrap_or(Ok(0))?;

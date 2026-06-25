@@ -17,8 +17,12 @@
 
 use bytes::Bytes;
 use futures::stream::Stream;
+use ustr::Ustr;
 
-use crate::msgbus::{BusMessage, MStr, Topic};
+use crate::{
+    enums::SerializationEncoding,
+    msgbus::{BusMessage, BusPayloadType, MStr, Topic},
+};
 
 #[cfg_attr(
     feature = "python",
@@ -71,7 +75,15 @@ impl MessageBusListener {
     /// Publishes a message with the given `topic` and `payload`.
     pub fn publish<T: Into<MStr<Topic>>>(&self, topic: T, payload: Bytes) {
         let topic = topic.into();
-        let msg = BusMessage::new(*topic, payload);
+
+        // Listener messages are untyped, so they use default bus headers.
+        let msg = BusMessage::new(
+            *topic,
+            BusPayloadType::Custom(Ustr::default()),
+            payload,
+            SerializationEncoding::default(),
+        );
+
         if let Err(e) = self.tx.send(msg) {
             log::error!("Failed to send message: {e}");
         }

@@ -16,6 +16,8 @@
 import pytest
 
 from nautilus_trader.common import CacheConfig
+from nautilus_trader.common import DataActor
+from nautilus_trader.common import DataActorConfig
 from nautilus_trader.common import Environment
 from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.live import LiveDataEngineConfig
@@ -32,6 +34,30 @@ from nautilus_trader.trading import ImportableStrategyConfig
 def live_node():
     trader_id = TraderId("TESTER-001")
     return LiveNode.builder("TEST", trader_id, Environment.SANDBOX).build()
+
+
+class RequiredConfigLiveActorConfig(DataActorConfig):
+    def __init__(
+        self,
+        required_label: str,
+        actor_id=None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ):
+        self.actor_id = actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+        self.required_label = required_label
+
+
+class RequiredConfigLiveActor(DataActor):
+    received_actor_id: str | None = None
+    received_label: str | None = None
+
+    def __init__(self, config: RequiredConfigLiveActorConfig):
+        super().__init__()
+        type(self).received_actor_id = str(config.actor_id)
+        type(self).received_label = config.required_label
 
 
 def test_importable_actor_config_construction():
@@ -131,6 +157,24 @@ def test_add_actor_from_config_registers(live_node):
     )
 
     live_node.add_actor_from_config(config)
+
+
+def test_add_actor_from_config_accepts_required_subclass_kwargs(live_node):
+    RequiredConfigLiveActor.received_actor_id = None
+    RequiredConfigLiveActor.received_label = None
+    config = ImportableActorConfig(
+        actor_path="tests.unit.test_live_node:RequiredConfigLiveActor",
+        config_path="tests.unit.test_live_node:RequiredConfigLiveActorConfig",
+        config={
+            "actor_id": "LIVE-CONFIG-ACTOR-001",
+            "required_label": "configured",
+        },
+    )
+
+    live_node.add_actor_from_config(config)
+
+    assert RequiredConfigLiveActor.received_actor_id == "LIVE-CONFIG-ACTOR-001"
+    assert RequiredConfigLiveActor.received_label == "configured"
 
 
 def test_add_actor_from_config_rejects_invalid_path(live_node):

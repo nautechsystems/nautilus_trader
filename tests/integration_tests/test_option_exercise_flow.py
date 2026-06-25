@@ -526,6 +526,39 @@ def test_option_expiry_timer_reschedules_after_instrument_update():
     engine.dispose()
 
 
+def test_instruments_with_same_expiration_share_expiry_timer():
+    venue = Venue("NASDAQ")
+    expiry_ns = dt_to_unix_nanos(pd.Timestamp("2024-03-15 16:00:00", tz="UTC"))
+    engine = BacktestEngine(config=BacktestEngineConfig())
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
+
+    engine.add_instrument(_timer_underlying_equity())
+    engine.add_instrument(_timer_call_option(expiration_ns=expiry_ns))
+    engine.add_instrument(
+        _timer_call_option(
+            expiration_ns=expiry_ns,
+            instrument_id="AAPL240315C00155000.NASDAQ",
+            raw_symbol="AAPL240315C00155000",
+            strike_price=155.0,
+        ),
+    )
+
+    expiry_timer_names = [
+        name
+        for name in engine.kernel.clock.timer_names
+        if name.startswith("INSTRUMENT-EXPIRATION:")
+    ]
+    assert expiry_timer_names == [f"INSTRUMENT-EXPIRATION:{venue.value}:{expiry_ns}"]
+
+    engine.dispose()
+
+
 def _build_timer_engine_with_call_option(
     underlying_price: float,
     expiry_ns: int,
@@ -594,14 +627,17 @@ def _timer_call_option(
     expiration_ns: int,
     ts_event: int = 0,
     ts_init: int = 0,
+    instrument_id: str = "AAPL240315C00150000.NASDAQ",
+    raw_symbol: str = "AAPL240315C00150000",
+    strike_price: float = 150.0,
 ) -> OptionContract:
     return OptionContract(
-        instrument_id=InstrumentId.from_str("AAPL240315C00150000.NASDAQ"),
-        raw_symbol=Symbol("AAPL240315C00150000"),
+        instrument_id=InstrumentId.from_str(instrument_id),
+        raw_symbol=Symbol(raw_symbol),
         asset_class=AssetClass.EQUITY,
         underlying="AAPL",
         option_kind=OptionKind.CALL,
-        strike_price=Price(150.0, 2),
+        strike_price=Price(strike_price, 2),
         currency=USD,
         activation_ns=dt_to_unix_nanos(pd.Timestamp("2024-03-01", tz="UTC")),
         expiration_ns=expiration_ns,

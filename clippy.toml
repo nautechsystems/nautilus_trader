@@ -1,6 +1,14 @@
 cognitive-complexity-threshold = 10
 allow-expect-in-tests = true
 allow-unwrap-in-tests = true
+disallowed-methods = [
+  { path = "getrandom::fill", reason = "raw OS RNG bypasses DST seed control", replacement = "a cfg-gated DST RNG seam", allow-invalid = true },
+  { path = "getrandom::u32", reason = "raw OS RNG bypasses DST seed control", replacement = "a cfg-gated DST RNG seam", allow-invalid = true },
+  { path = "getrandom::u64", reason = "raw OS RNG bypasses DST seed control", replacement = "a cfg-gated DST RNG seam", allow-invalid = true },
+]
+disallowed-types = [
+  { path = "tokio::task::LocalSet", reason = "LocalSet is not available under the madsim runtime", replacement = "nautilus_common::live::dst::task::spawn_local", allow-invalid = true },
+]
 doc-valid-idents = [
   "BaseSwap",
   "BaseX",

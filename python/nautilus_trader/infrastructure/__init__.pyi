@@ -3,8 +3,14 @@
 import typing
 
 __all__ = [
+    "PostgresCacheConfig",
     "PostgresConnectOptions",
+    "RedisCacheConfig",
+    "RedisMessageBusConfig",
 ]
+
+@typing.final
+class PostgresCacheConfig: ...
 
 @typing.final
 class PostgresConnectOptions:
@@ -19,3 +25,9 @@ class PostgresConnectOptions:
     def password(self) -> str: ...
     @property
     def database(self) -> str: ...
+
+@typing.final
+class RedisCacheConfig: ...
+
+@typing.final
+class RedisMessageBusConfig: ...

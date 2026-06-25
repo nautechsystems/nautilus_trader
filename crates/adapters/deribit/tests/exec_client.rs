@@ -65,10 +65,10 @@ use nautilus_deribit::{
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce},
+    enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::{AccountState, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, Order, OrderAny},
+    orders::{LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny, StopMarketOrder},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -130,6 +130,7 @@ struct TestServerState {
     disconnect_trigger: Arc<AtomicBool>,
     command_responses: Arc<tokio::sync::Mutex<CommandResponses>>,
     command_request_count: Arc<AtomicUsize>,
+    command_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_jsonrpc_request(
@@ -378,6 +379,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     }
                     Some(DeribitWsMethod::Buy | DeribitWsMethod::Sell) => {
                         state.command_request_count.fetch_add(1, Ordering::Relaxed);
+                        state.command_requests.lock().await.push(payload.clone());
                         let response_kind = state.command_responses.lock().await.submit;
                         let result = order_response_result(&payload);
                         if !send_command_response(&mut socket, id, response_kind, &result).await {
@@ -830,6 +832,81 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
 }
 
 #[rstest]
+#[case(OrderType::Market, "market")]
+#[case(OrderType::StopMarket, "stop_market")]
+#[case(OrderType::MarketIfTouched, "take_market")]
+#[tokio::test]
+async fn test_market_style_submit_omits_time_in_force(
+    #[case] order_type: OrderType,
+    #[case] deribit_order_type: &str,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_requests = state.command_requests.clone();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("market-submit-tif-test-001");
+    let order_any = add_order_to_cache(&cache, client_order_id, order_type, TimeInForce::Ioc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let requests = command_requests.lock().await;
+    let params = find_command_request_params(&requests, client_order_id);
+
+    assert_eq!(
+        params.get("type").and_then(Value::as_str),
+        Some(deribit_order_type)
+    );
+    assert_eq!(params.get("amount").and_then(Value::as_f64), Some(1.0));
+    assert!(params.get("contracts").is_none());
+    assert!(
+        params.get("time_in_force").is_none(),
+        "market-style order params should omit time_in_force, was {params:?}"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_limit_submit_sends_time_in_force() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let request_count = state.command_request_count.clone();
+    let command_requests = state.command_requests.clone();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("limit-submit-tif-test-001");
+    let order_any = add_order_to_cache(&cache, client_order_id, OrderType::Limit, TimeInForce::Fok);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+
+    let requests = command_requests.lock().await;
+    let params = find_command_request_params(&requests, client_order_id);
+
+    assert_eq!(params.get("type").and_then(Value::as_str), Some("limit"));
+    assert_eq!(params.get("amount").and_then(Value::as_f64), Some(1.0));
+    assert!(params.get("contracts").is_none());
+    assert_eq!(
+        params.get("time_in_force").and_then(Value::as_str),
+        Some("fill_or_kill")
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_ambiguous_cancel_failure_does_not_emit_cancel_rejected() {
     let (client, mut rx, cache, request_count) =
@@ -1230,6 +1307,154 @@ fn add_limit_order_to_cache(
         .add_order(order_any.clone(), None, None, false)
         .unwrap();
     order_any
+}
+
+fn add_market_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    let order = MarketOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        time_in_force,
+        UUID4::new(),
+        UnixNanos::default(),
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let order_any = OrderAny::Market(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn add_stop_market_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    let order = StopMarketOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("49000.0"),
+        TriggerType::LastPrice,
+        time_in_force,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::StopMarket(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn add_market_if_touched_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    let order = MarketIfTouchedOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("51000.0"),
+        TriggerType::LastPrice,
+        time_in_force,
+        None,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::MarketIfTouched(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn add_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+    order_type: OrderType,
+    time_in_force: TimeInForce,
+) -> OrderAny {
+    match order_type {
+        OrderType::Limit => add_limit_order_to_cache(cache, client_order_id, time_in_force),
+        OrderType::Market => add_market_order_to_cache(cache, client_order_id, time_in_force),
+        OrderType::StopMarket => {
+            add_stop_market_order_to_cache(cache, client_order_id, time_in_force)
+        }
+        OrderType::MarketIfTouched => {
+            add_market_if_touched_order_to_cache(cache, client_order_id, time_in_force)
+        }
+        _ => panic!("Unsupported test order type {order_type:?}"),
+    }
+}
+
+fn find_command_request_params(requests: &[Value], client_order_id: ClientOrderId) -> &Value {
+    requests
+        .iter()
+        .filter_map(|request| request.get("params"))
+        .find(|params| {
+            params
+                .get("label")
+                .and_then(Value::as_str)
+                .is_some_and(|label| label == client_order_id.as_str())
+        })
+        .expect("order request should be captured")
 }
 
 fn submit_order_command(order: &OrderAny) -> SubmitOrder {

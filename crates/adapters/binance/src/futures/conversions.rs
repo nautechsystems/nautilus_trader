@@ -15,10 +15,31 @@
 
 //! Value conversions between Nautilus domain types and Binance Futures venue types.
 
-use nautilus_model::enums::OrderSide;
+use nautilus_model::{enums::OrderSide, types::Currency};
 use rust_decimal::Decimal;
 
 use crate::common::enums::BinancePositionSide;
+
+const BNFCR_ASSET: &str = "BNFCR";
+
+/// Resolves a Binance Futures asset code to a Nautilus [`Currency`].
+///
+/// In Credits Trading Mode (EU), the futures wallet is denominated in `BNFCR`, a
+/// USD-pegged credit unit absent from the currency table; it resolves to
+/// `bnfcr_currency` so the account reconciles against stablecoin-settled instruments.
+/// Any other unrecognized asset is registered as a generic crypto rather than panicking.
+#[must_use]
+pub(crate) fn normalize_futures_asset<T: AsRef<str>>(
+    asset: T,
+    bnfcr_currency: Currency,
+) -> Currency {
+    let code = asset.as_ref().trim();
+    if code.eq_ignore_ascii_case(BNFCR_ASSET) {
+        bnfcr_currency
+    } else {
+        Currency::get_or_create_crypto_with_context(code, Some("futures asset"))
+    }
+}
 
 /// Determines the Binance `positionSide` for hedge mode from the Nautilus order side.
 ///
@@ -48,6 +69,19 @@ pub(crate) fn determine_position_side(
             _ => BinancePositionSide::Both,
         }
     })
+}
+
+#[must_use]
+pub(crate) const fn reduce_only_param(
+    reduce_only: bool,
+    position_side: Option<BinancePositionSide>,
+) -> Option<bool> {
+    // Binance rejects reduceOnly when positionSide is present in hedge mode
+    if reduce_only && position_side.is_none() {
+        Some(true)
+    } else {
+        None
+    }
 }
 
 /// Converts a Nautilus trailing offset (percent) into a Binance `callbackRate` decimal.
@@ -94,6 +128,7 @@ pub(crate) fn format_callback_rate(rate: Decimal) -> String {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::CurrencyType;
     use rstest::rstest;
 
     use super::*;
@@ -138,5 +173,40 @@ mod tests {
             determine_position_side(is_hedge_mode, order_side, reduce_only),
             expected,
         );
+    }
+
+    #[rstest]
+    #[case::one_way(false, None, None)]
+    #[case::one_way_reduce(true, None, Some(true))]
+    #[case::hedge_open(false, Some(BinancePositionSide::Long), None)]
+    #[case::hedge_close_long(true, Some(BinancePositionSide::Long), None)]
+    #[case::hedge_close_short(true, Some(BinancePositionSide::Short), None)]
+    fn test_reduce_only_param(
+        #[case] reduce_only: bool,
+        #[case] position_side: Option<BinancePositionSide>,
+        #[case] expected: Option<bool>,
+    ) {
+        assert_eq!(reduce_only_param(reduce_only, position_side), expected);
+    }
+
+    #[rstest]
+    #[case::bnfcr_to_usdt("BNFCR", Currency::USDT(), Currency::USDT())]
+    #[case::bnfcr_to_usdc("BNFCR", Currency::USDC(), Currency::USDC())]
+    #[case::bnfcr_trim_and_case(" bnfcr ", Currency::USDC(), Currency::USDC())]
+    #[case::known_asset_bypasses_alias("USDT", Currency::USDC(), Currency::USDT())]
+    fn test_normalize_futures_asset_resolves_currency(
+        #[case] asset: &str,
+        #[case] bnfcr_currency: Currency,
+        #[case] expected: Currency,
+    ) {
+        assert_eq!(normalize_futures_asset(asset, bnfcr_currency), expected);
+    }
+
+    #[rstest]
+    fn test_normalize_futures_asset_registers_unknown_as_crypto() {
+        let currency = normalize_futures_asset("XYZ", Currency::USDT());
+
+        assert_eq!(currency.code.as_str(), "XYZ");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 }

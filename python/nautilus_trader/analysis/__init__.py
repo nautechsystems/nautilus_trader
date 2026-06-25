@@ -19,3 +19,5 @@ from nautilus_trader._libnautilus.analysis import *  # noqa: F403 (undefined-loc
 
 fixup_module_names(globals(), __name__)
 del fixup_module_names
+
+from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider  # noqa: E402

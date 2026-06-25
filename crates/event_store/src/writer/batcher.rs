@@ -84,7 +84,10 @@ pub(super) enum WriterMessage {
 /// Runs the writer loop until the channel disconnects, a halt-worthy backend error fires,
 /// or a Close message is received.
 #[cfg(not(madsim))]
-#[allow(clippy::needless_pass_by_value)] // arguments are owned by the writer thread
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "writer thread owns the backend, config, halt callback, and clock"
+)]
 pub(super) fn run(
     mut backend: Box<dyn EventStore + Send>,
     rx: Receiver<WriterMessage>,

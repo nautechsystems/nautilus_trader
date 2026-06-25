@@ -23,7 +23,7 @@ use nautilus_model::{
     data::QuoteTick,
     enums::{OrderSide, TimeInForce},
     events::{OrderCanceled, OrderExpired, OrderFilled, OrderRejected},
-    identifiers::{ClientOrderId, StrategyId},
+    identifiers::ClientOrderId,
     instruments::{Instrument, InstrumentAny},
     orders::Order,
     types::{Price, Quantity},
@@ -217,14 +217,10 @@ impl DataActor for CompositeMarketMaker {
 
         let (instrument, size_precision, min_quantity) = {
             let cache = self.cache();
-            let instrument = cache
-                .instrument(&instrument_id)
-                .ok_or_else(|| anyhow::anyhow!("Instrument {instrument_id} not found in cache"))?;
-            (
-                instrument.clone(),
-                instrument.size_precision(),
-                instrument.min_quantity(),
-            )
+            let instrument = cache.try_instrument(&instrument_id)?;
+            let size_precision = instrument.size_precision();
+            let min_quantity = instrument.min_quantity();
+            (instrument, size_precision, min_quantity)
         };
         self.price_precision = Some(instrument.price_precision());
         self.instrument = Some(instrument);
@@ -251,7 +247,7 @@ impl DataActor for CompositeMarketMaker {
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if quote.instrument_id == self.config.signal_instrument_id {
-            let signal_mid = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+            let signal_mid = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
             self.last_signal = Some(signal_mid);
             if self.signal_baseline.is_none() {
                 self.signal_baseline = Some(signal_mid);
@@ -263,7 +259,7 @@ impl DataActor for CompositeMarketMaker {
             return Ok(());
         }
 
-        let anchor_f64 = (quote.bid_price.as_f64() + quote.ask_price.as_f64()) / 2.0;
+        let anchor_f64 = f64::midpoint(quote.bid_price.as_f64(), quote.ask_price.as_f64());
         let price_precision = self.price_precision.ok_or_else(|| {
             anyhow::anyhow!("Cannot handle quote: price_precision is not resolved")
         })?;
@@ -271,7 +267,7 @@ impl DataActor for CompositeMarketMaker {
 
         let signal_residual = self.signal_residual();
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
         let has_resting = {
             let cache = self.cache();
@@ -296,14 +292,10 @@ impl DataActor for CompositeMarketMaker {
             let strategy = Some(&strategy_id);
             let ids: Vec<ClientOrderId> = {
                 let cache = self.cache();
-                cache
-                    .orders_open(None, inst, strategy, None, None)
-                    .iter()
-                    .chain(
-                        cache
-                            .orders_inflight(None, inst, strategy, None, None)
-                            .iter(),
-                    )
+                let open = cache.orders_open(None, inst, strategy, None, None);
+                let inflight = cache.orders_inflight(None, inst, strategy, None, None);
+                open.iter()
+                    .chain(inflight.iter())
                     .map(|o| o.client_order_id())
                     .collect()
             };
@@ -334,15 +326,9 @@ impl DataActor for CompositeMarketMaker {
             let mut pending_sell_dec = Decimal::ZERO;
             let mut seen = AHashSet::new();
 
-            for order in cache
-                .orders_open(None, instrument_id, strategy, None, None)
-                .iter()
-                .chain(
-                    cache
-                        .orders_inflight(None, instrument_id, strategy, None, None)
-                        .iter(),
-                )
-            {
+            let open = cache.orders_open(None, instrument_id, strategy, None, None);
+            let inflight = cache.orders_inflight(None, instrument_id, strategy, None, None);
+            for order in open.iter().chain(inflight.iter()) {
                 if !seen.insert(order.client_order_id()) {
                     continue;
                 }
@@ -378,7 +364,7 @@ impl DataActor for CompositeMarketMaker {
 
         let (tif, expire_time) = match self.config.expire_time_secs {
             Some(secs) => {
-                let now_ns = self.core.clock().timestamp_ns();
+                let now_ns = self.clock().timestamp_ns();
                 let expire_ns = now_ns + secs * 1_000_000_000;
                 (Some(TimeInForce::Gtd), Some(expire_ns))
             }
@@ -386,7 +372,7 @@ impl DataActor for CompositeMarketMaker {
         };
 
         for (side, price) in quotes {
-            let order = self.core.order_factory().limit(
+            let order = self.order().limit(
                 instrument_id,
                 side,
                 trade_size,

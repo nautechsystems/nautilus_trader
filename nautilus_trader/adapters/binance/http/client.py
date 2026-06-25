@@ -235,4 +235,17 @@ class BinanceHttpClient:
                     headers=response.headers,
                 )
 
+        # demo-fapi intermittently returns 200 with a non-JSON body
+        if response_body:
+            stripped = response_body.lstrip(b" \t\n\r")
+            if stripped and stripped[0] not in b'{["-0123456789tfn':
+                raise BinanceServerError(
+                    status=response.status,
+                    message=(
+                        f"Non-JSON response (HTTP {response.status}): "
+                        + response_body[:500].decode(errors="replace")
+                    ),
+                    headers=response.headers,
+                )
+
         return response.body

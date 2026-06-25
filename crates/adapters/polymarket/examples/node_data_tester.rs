@@ -15,15 +15,18 @@
 
 //! Example demonstrating live data testing with the Polymarket adapter.
 //!
-//! Connects to Polymarket via WebSocket, loads all instruments from the Gamma
-//! API, then subscribes to trade ticks for selected presidential election 2028
-//! markets.
+//! Connects to Polymarket via WebSocket, loads the configured event's
+//! instruments from the Gamma API, then subscribes to trade ticks for the
+//! selected market tokens.
 //!
-//! # Usage
+//! Edit the constants below to change the target event and market tokens.
 //!
-//! ```sh
-//! cargo run --example polymarket-data-tester --package nautilus-polymarket --features examples
-//! ```
+//! Run with: `cargo run --example polymarket-data-tester --package nautilus-polymarket --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `POLYMARKET_API_KEY`.
+//! - `POLYMARKET_API_SECRET`.
+//! - `POLYMARKET_PASSPHRASE`.
 
 use std::sync::Arc;
 
@@ -37,32 +40,33 @@ use nautilus_polymarket::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "POLYMARKET-DATA-TESTER-001";
+const EVENT_SLUG: &str = "gta-vi-released-before-june-2026";
+
+// GTA VI Released Before June 2026 (Yes/No)
+// https://polymarket.com/event/gta-vi-released-before-june-2026
+// These instrument IDs are discovered via the Gamma API; in practice you'd
+// use an InstrumentProvider to resolve slugs into IDs dynamically.
+const INSTRUMENT_ID_YES: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET";
+const INSTRUMENT_ID_NO: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-109289569086508934142323222102974769075074494425163878721602922903101062859033.POLYMARKET";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::from("TESTER-001");
-    let node_name = "POLYMARKET-DATA-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
 
-    // GTA VI Released Before June 2026 (Yes/No)
-    // https://polymarket.com/event/gta-vi-released-before-june-2026
-    // These instrument IDs are discovered via the Gamma API; in practice you'd
-    // use an InstrumentProvider to resolve slugs into IDs dynamically.
     let instrument_ids = vec![
-        // Yes
-        InstrumentId::from(
-            "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET",
-        ),
-        // No
-        InstrumentId::from(
-            "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-109289569086508934142323222102974769075074494425163878721602922903101062859033.POLYMARKET",
-        ),
+        InstrumentId::from(INSTRUMENT_ID_YES),
+        InstrumentId::from(INSTRUMENT_ID_NO),
     ];
 
     // Use EventSlugFilter so bootstrap loads only this event's instruments
     // instead of walking the full Gamma catalog.
-    let event_slugs = vec!["gta-vi-released-before-june-2026".to_string()];
+    let event_slugs = vec![EVENT_SLUG.to_string()];
     let data_filter = EventSlugFilter::from_slugs(event_slugs);
 
     let polymarket_config = PolymarketDataClientConfig {
@@ -90,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .subscribe_trades(true)
         .subscribe_quotes(true)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

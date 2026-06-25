@@ -30,6 +30,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Duration, Utc};
 use cosmrs::Any;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     identifiers::InstrumentId,
@@ -840,9 +841,7 @@ impl OrderMessageBuilder {
             .http_client
             .get_market_params(&instrument_id)
             .ok_or_else(|| {
-                DydxError::Order(format!(
-                    "Market params for instrument '{instrument_id}' not found in cache"
-                ))
+                DydxError::Order(InstrumentLookupError::not_found(instrument_id).to_string())
             })?;
 
         Ok(OrderMarketParams {
@@ -934,6 +933,29 @@ mod tests {
 
     // Use 10 seconds as test value (20 blocks * 0.5s)
     const TEST_MAX_SHORT_TERM_SECS: f64 = 10.0;
+
+    #[rstest]
+    fn test_get_market_params_missing_cache_returns_canonical_error() {
+        let builder = OrderMessageBuilder::new(
+            DydxHttpClient::default(),
+            "dydx1testwalletaddress".to_string(),
+            0,
+            Arc::new(BlockTimeMonitor::new()),
+        );
+        let instrument_id = InstrumentId::from("BTC-USD.DYDX");
+
+        let result = builder.get_market_params(instrument_id);
+
+        match result {
+            Err(DydxError::Order(reason)) => {
+                assert_eq!(
+                    reason,
+                    InstrumentLookupError::not_found(instrument_id).to_string()
+                );
+            }
+            other => panic!("Expected DydxError::Order, was {other:?}"),
+        }
+    }
 
     #[rstest]
     fn test_order_lifetime_routing() {

@@ -45,6 +45,7 @@ use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
 use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderSide, OrderType, TimeInForce},
+    events::OrderDeniedReason,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
@@ -504,11 +505,7 @@ impl BybitExecutionClient {
                 None
             },
             trigger_direction: trigger_dir.map(|d| d as i32),
-            tpsl_mode: if has_tp_sl {
-                Some(BybitTpSlMode::Full)
-            } else {
-                None
-            },
+            tpsl_mode: tp_sl.tpsl_mode.or(has_tp_sl.then_some(BybitTpSlMode::Full)),
             take_profit: tp_sl.take_profit.map(|p| p.to_string()),
             stop_loss: tp_sl.stop_loss.map(|p| p.to_string()),
             tp_trigger_by: tp_sl.tp_trigger_by.or(tp_sl
@@ -1095,53 +1092,60 @@ impl ExecutionClient for BybitExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = {
-            let cache = self.core.cache();
-            let order = cache
-                .order(&cmd.client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
+        if order.is_closed() {
+            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
 
-            if order.is_closed() {
-                log::warn!("Cannot submit closed order {}", order.client_order_id());
-                return Ok(());
-            }
-
-            order.clone()
-        };
         let instrument_id = order.instrument_id();
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
-        if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+        if BybitOrderSide::try_from(order.order_side()).is_err() {
+            let denied = OrderDeniedReason::InvalidOrderSide {
+                order_side: order.order_side(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
-        if let Err(e) = Self::map_order_type(order.order_type()) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+        if Self::map_order_type(order.order_type()).is_err() {
+            let denied = OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
         let tp_sl = match parse_bybit_tp_sl_params(cmd.params.as_ref()) {
             Ok(p) => p,
             Err(e) => {
-                self.emitter.emit_order_denied(&order, &e.to_string());
+                let denied = OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                };
+                self.emitter.emit_order_denied(&order, &denied.to_string());
                 return Ok(());
             }
         };
 
         if let Err(e) = Self::validate_bbo_params(&order, product_type, &tp_sl) {
-            self.emitter.emit_order_denied(&order, &e.to_string());
+            let denied = OrderDeniedReason::ValidationFailed {
+                detail: e.to_string(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
+        // The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the mainnet
+        // WS path can), so deny rather than submit an order missing the user's trigger prices.
         if self.config.environment == BybitEnvironment::Demo
-            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+            && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
-            self.emitter.emit_order_denied(
-                &order,
-                "Native TP/SL and option params are not supported in demo mode",
-            );
+            let denied = OrderDeniedReason::UnsupportedTpSl {
+                detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
+            };
+            self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
 
@@ -1199,10 +1203,12 @@ impl ExecutionClient for BybitExecutionClient {
             let is_quote_quantity = order.is_quote_quantity();
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
-            let bbo_level = tp_sl.bbo_level;
+            let bbo_level = tp_sl.bbo_level.clone();
+            let native_tp_sl = tp_sl.to_native_tp_sl();
             let dispatch_state = Arc::clone(&self.dispatch_state);
 
             self.spawn_task("submit_order_http", async move {
+                let native_tp_sl_ref = (!native_tp_sl.is_empty()).then_some(&native_tp_sl);
                 let result = http_client
                     .submit_order(
                         account_id,
@@ -1222,6 +1228,7 @@ impl ExecutionClient for BybitExecutionClient {
                         position_idx,
                         bbo_side_type,
                         bbo_level,
+                        native_tp_sl_ref,
                     )
                     .await;
 
@@ -1241,7 +1248,7 @@ impl ExecutionClient for BybitExecutionClient {
                         anyhow::bail!("submit order rejected: {reason}");
                     }
 
-                    log::error!(
+                    log::warn!(
                         "Submit failure without confirmed venue rejection for {client_order_id}: \
                          {e}; awaiting reconciliation",
                     );
@@ -1270,7 +1277,7 @@ impl ExecutionClient for BybitExecutionClient {
                     );
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Submit failure without confirmed venue rejection for {client_order_id}: \
                          {e}; awaiting reconciliation",
                     );
@@ -1292,10 +1299,14 @@ impl ExecutionClient for BybitExecutionClient {
             Ok(p) => p,
             Err(e) => {
                 let cache = self.core.cache();
+                let denied = OrderDeniedReason::ValidationFailed {
+                    detail: e.to_string(),
+                }
+                .to_string();
 
                 for cid in &cmd.order_list.client_order_ids {
                     if let Some(order) = cache.order(cid) {
-                        self.emitter.emit_order_denied(&order, &e.to_string());
+                        self.emitter.emit_order_denied(&order, &denied);
                     }
                 }
                 return Ok(());
@@ -1305,17 +1316,20 @@ impl ExecutionClient for BybitExecutionClient {
         let instrument_id = cmd.instrument_id;
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
+        // The demo HTTP create-order entry cannot carry TP/SL trigger prices (only the mainnet
+        // WS path can), so deny rather than submit orders missing the user's trigger prices.
         if self.config.environment == BybitEnvironment::Demo
-            && (tp_sl.has_tp_sl() || tp_sl.order_iv.is_some() || tp_sl.mmp.is_some())
+            && (tp_sl.tp_trigger_price.is_some() || tp_sl.sl_trigger_price.is_some())
         {
             let cache = self.core.cache();
+            let denied = OrderDeniedReason::UnsupportedTpSl {
+                detail: "TP/SL trigger prices are not supported in demo mode".to_string(),
+            }
+            .to_string();
 
             for cid in &cmd.order_list.client_order_ids {
                 if let Some(order) = cache.order(cid) {
-                    self.emitter.emit_order_denied(
-                        &order,
-                        "Native TP/SL and option params are not supported in demo mode",
-                    );
+                    self.emitter.emit_order_denied(&order, &denied);
                 }
             }
             return Ok(());
@@ -1326,42 +1340,80 @@ impl ExecutionClient for BybitExecutionClient {
         let mut valid_orders = Vec::with_capacity(cmd.order_list.client_order_ids.len());
         {
             let cache = self.core.cache();
-            let mut deny_reason: Option<String> = None;
+            let order_list_id = cmd.order_list.id;
+            let list_denied = OrderDeniedReason::OrderListDenied { order_list_id };
+            // (offending leg, reason for the offending leg, reason for the remaining legs). A
+            // single offending leg carries its specific reason and the rest render
+            // `ORDER_LIST_DENIED`; a list-level failure renders the same reason for every leg.
+            let mut denial: Option<(ClientOrderId, OrderDeniedReason, OrderDeniedReason)> = None;
 
             for cid in &cmd.order_list.client_order_ids {
                 let Some(order) = cache.order(cid) else {
-                    deny_reason = Some(format!("Order not found in cache: {cid}"));
+                    let reason = OrderDeniedReason::OrderListIncomplete { order_list_id };
+                    denial = Some((*cid, reason.clone(), reason));
                     break;
                 };
 
                 if order.is_closed() {
-                    deny_reason = Some(format!("Cannot submit closed order {cid}"));
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::ValidationFailed {
+                            detail: format!("cannot submit closed order {cid}"),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
-                if let Err(e) = BybitOrderSide::try_from(order.order_side()) {
-                    deny_reason = Some(e.to_string());
+                if BybitOrderSide::try_from(order.order_side()).is_err() {
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::InvalidOrderSide {
+                            order_side: order.order_side(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
-                if let Err(e) = Self::map_order_type(order.order_type()) {
-                    deny_reason = Some(e.to_string());
+                if Self::map_order_type(order.order_type()).is_err() {
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::UnsupportedOrderType {
+                            order_type: order.order_type(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
                 if let Err(e) = Self::validate_bbo_params(&order, product_type, &tp_sl) {
-                    deny_reason = Some(e.to_string());
+                    denial = Some((
+                        *cid,
+                        OrderDeniedReason::ValidationFailed {
+                            detail: e.to_string(),
+                        },
+                        list_denied,
+                    ));
                     break;
                 }
 
                 valid_orders.push(order.clone());
             }
 
-            // Deny entire list if any order fails validation
-            if let Some(reason) = deny_reason {
+            // Deny the entire list if any leg fails validation
+            if let Some((offender, offender_reason, rest_reason)) = denial {
+                let offender_reason = offender_reason.to_string();
+                let rest_reason = rest_reason.to_string();
+
                 for cid in &cmd.order_list.client_order_ids {
                     if let Some(order) = cache.order(cid) {
-                        self.emitter.emit_order_denied(&order, &reason);
+                        let reason = if *cid == offender {
+                            offender_reason.as_str()
+                        } else {
+                            rest_reason.as_str()
+                        };
+                        self.emitter.emit_order_denied(&order, reason);
                     }
                 }
                 return Ok(());
@@ -1414,6 +1466,7 @@ impl ExecutionClient for BybitExecutionClient {
             let is_leverage = tp_sl.is_leverage;
             let bbo_side_type = tp_sl.bbo_side_type;
             let bbo_level = tp_sl.bbo_level.clone();
+            let native_tp_sl = tp_sl.to_native_tp_sl();
             let dispatch_state = Arc::clone(&self.dispatch_state);
 
             let order_data: Vec<_> = valid_orders
@@ -1444,6 +1497,8 @@ impl ExecutionClient for BybitExecutionClient {
                 .collect();
 
             self.spawn_task("submit_order_list_http", async move {
+                let native_tp_sl_ref = (!native_tp_sl.is_empty()).then_some(&native_tp_sl);
+
                 for (
                     cid,
                     side,
@@ -1477,6 +1532,7 @@ impl ExecutionClient for BybitExecutionClient {
                             position_idx,
                             bbo_side_type,
                             bbo_level.clone(),
+                            native_tp_sl_ref,
                         )
                         .await
                     {
@@ -1495,7 +1551,7 @@ impl ExecutionClient for BybitExecutionClient {
                             continue;
                         }
 
-                        log::error!(
+                        log::warn!(
                             "Submit failure without confirmed venue rejection for {cid}: {e}; \
                              awaiting reconciliation",
                         );
@@ -1546,7 +1602,7 @@ impl ExecutionClient for BybitExecutionClient {
                     }
                 }
                 Err(e) => {
-                    log::error!(
+                    log::warn!(
                         "Submit order list failure without confirmed venue rejection: {e}; \
                          awaiting reconciliation",
                     );
@@ -1620,7 +1676,7 @@ impl ExecutionClient for BybitExecutionClient {
                             );
                         }
                         BybitCommandFailureKind::Ambiguous => {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous HTTP modify failure for {client_order_id}, awaiting reconciliation: {e}"
                             );
                         }
@@ -1734,7 +1790,7 @@ impl ExecutionClient for BybitExecutionClient {
                             );
                         }
                         BybitCommandFailureKind::Ambiguous => {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous HTTP cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                             );
                         }
@@ -1867,7 +1923,7 @@ impl ExecutionClient for BybitExecutionClient {
                                 );
                             }
                             BybitCommandFailureKind::Ambiguous => {
-                                log::error!(
+                                log::warn!(
                                     "Ambiguous HTTP batch cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                                 );
                             }
@@ -1918,7 +1974,7 @@ impl ExecutionClient for BybitExecutionClient {
                             client_order_ids.len()
                         );
                     } else {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                             client_order_ids.len()
                         );
@@ -1991,7 +2047,7 @@ fn log_cancel_ws_failure(client_order_id: ClientOrderId, error: &BybitWsError) {
     if is_bybit_ws_local_command_failure(error) {
         log::warn!("Cancel command failed local validation for {client_order_id}: {error}");
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {error}"
         );
     }
@@ -2001,7 +2057,7 @@ fn log_modify_ws_failure(client_order_id: ClientOrderId, error: &BybitWsError) {
     if is_bybit_ws_local_command_failure(error) {
         log::warn!("Modify command failed local validation for {client_order_id}: {error}");
     } else {
-        log::error!(
+        log::warn!(
             "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {error}"
         );
     }

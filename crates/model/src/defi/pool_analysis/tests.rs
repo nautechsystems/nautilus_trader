@@ -28,8 +28,11 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, Token,
-    data::{DexPoolData, PoolFeeCollect, block::BlockPosition},
+    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, Token,
+    data::{
+        DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
+        block::BlockPosition,
+    },
     pool_analysis::{
         compare::{PoolProfilerComparison, compare_pool_profiler, compare_pool_profiler_detailed},
         profiler::PoolProfiler,
@@ -42,7 +45,7 @@ use crate::defi::{
             encode_sqrt_ratio_x96, expand_to_18_decimals, get_amounts_for_liquidity,
         },
         tick::PoolTick,
-        tick_math::get_tick_at_sqrt_ratio,
+        tick_math::{get_sqrt_ratio_at_tick, get_tick_at_sqrt_ratio},
     },
 };
 
@@ -88,6 +91,7 @@ pub fn pool_definition(
         18,
     );
     let pool_address = address!("0xBBf3209130dF7d19356d72Eb8a193e2D9Ec5c234");
+
     let mut pool = Pool::new(
         Arc::new(Chain::from_chain_id(42161).unwrap().clone()), // Arbitrum,
         dex,
@@ -100,6 +104,7 @@ pub fn pool_definition(
         Some(tick_spacing.unwrap_or(TICK_SPACING) as u32),
         UnixNanos::default(),
     );
+
     let initial_sqrt_price = initial_sqrt_price_x96.unwrap_or(sqrt_price_x98());
     pool.initialize(
         initial_sqrt_price,
@@ -201,6 +206,69 @@ fn create_collect_event(
         amount1,
         ticker_lower,
         ticker_upper,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn create_fee_protocol_update(
+    fee_protocol0_new: u8,
+    fee_protocol1_new: u8,
+) -> PoolFeeProtocolUpdate {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFeeProtocolUpdate::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        fee_protocol0_new,
+        fee_protocol1_new,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+}
+
+fn create_flash_event(paid0: U256, paid1: U256) -> PoolFlash {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFlash::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        user_address(),
+        user_address(),
+        U256::ZERO, // amount0 borrowed (not used by fee-split state update)
+        U256::ZERO, // amount1 borrowed
+        paid0,
+        paid1,
+    )
+}
+
+fn create_fee_protocol_collect(amount0: u128, amount1: u128) -> PoolFeeProtocolCollect {
+    let pool_definition = pool_definition(None, None, None);
+    PoolFeeProtocolCollect::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool_definition.instrument_id,
+        pool_definition.pool_identifier,
+        100_000,
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string(),
+        0,
+        next_log_index(),
+        user_address(),
+        other_address(),
+        amount0,
+        amount1,
         UnixNanos::default(),
         UnixNanos::default(),
     )
@@ -751,13 +819,151 @@ fn test_process_swap_snaps_sqrt_price_to_event() {
         swap_event.amount1
     };
     let simulated_quote = profiler
-        .simulate_swap_through_ticks(amount_specified, zero_for_one, event_sqrt_price)
+        .simulate_swap_through_ticks(amount_specified, zero_for_one, event_sqrt_price, false)
         .unwrap();
     assert_ne!(simulated_quote.sqrt_price_after_x96, event_sqrt_price);
 
     profiler.process(&DexPoolData::Swap(swap_event)).unwrap();
 
     assert_eq!(profiler.state.price_sqrt_ratio_x96, event_sqrt_price);
+}
+
+#[rstest]
+fn test_set_fee_protocol_applies_to_state_and_snapshot(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    assert_eq!(profiler.state.fee_protocol, 0);
+
+    // SetFeeProtocol(6, 6) packs to 6 | (6 << 4) = 102.
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            6, 6,
+        )))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+
+    assert_eq!(profiler.state.fee_protocol, 102);
+    assert_eq!(snapshot.state.fee_protocol, 102);
+}
+
+#[rstest]
+fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
+    // Active liquidity spanning the current tick lets flash fees accrue.
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    // With fee_protocol unset (0), a flash accrues no protocol fees.
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
+    assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
+
+    // SetFeeProtocol(4, 4): packs to 68; per-token denominator becomes 4.
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.fee_protocol, 68);
+
+    // An identical flash now accrues paid/4 to each protocol-fee balance.
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+}
+
+#[rstest]
+fn test_fee_protocol_collect_decrements_accrued_balances(mut profiler: PoolProfiler) {
+    // Seed protocol fees: mint for active liquidity, SetFeeProtocol(4, 4), then a flash that
+    // accrues paid/4 = 25 to each balance (matching test_set_fee_protocol_changes_flash_fee_split).
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(100u32),
+            U256::from(100u32),
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+
+    // A CollectProtocol withdrawal decrements each balance by the withdrawn amount, leaving the
+    // on-chain remainder. Asymmetric amounts catch a token0/token1 swap.
+    profiler
+        .process(&DexPoolData::FeeProtocolCollect(
+            create_fee_protocol_collect(20, 24),
+        ))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(5u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(1u32));
+
+    // A withdrawal larger than the tracked balance saturates to zero rather than underflowing.
+    profiler
+        .process(&DexPoolData::FeeProtocolCollect(
+            create_fee_protocol_collect(1_000, 1_000),
+        ))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
+    assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
+}
+
+#[rstest]
+fn test_compare_pool_profiler_reports_exact_match(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::Match
+    );
+    assert!(PoolProfilerComparison::Match.is_exact_match());
+    assert!(compare_pool_profiler(&profiler, &snapshot));
 }
 
 #[rstest]
@@ -769,7 +975,7 @@ fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfi
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let mut snapshot = profiler.extract_snapshot();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
     snapshot.state.price_sqrt_ratio_x96 += U160::from(1u8);
     assert_eq!(
         get_tick_at_sqrt_ratio(snapshot.state.price_sqrt_ratio_x96),
@@ -785,6 +991,64 @@ fn test_compare_pool_profiler_reports_sqrt_only_mismatch(mut profiler: PoolProfi
 }
 
 #[rstest]
+fn test_compare_pool_profiler_reports_fee_protocol_only_mismatch(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Profiler fee protocol lags on-chain until SetFeeProtocol events are indexed and replayed
+    let mut snapshot = profiler.extract_snapshot().unwrap();
+    snapshot.state.fee_protocol = 68;
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::FeeProtocolMismatch
+    );
+    assert!(PoolProfilerComparison::FeeProtocolMismatch.is_valid_for_snapshot());
+    assert!(!PoolProfilerComparison::FeeProtocolMismatch.is_exact_match());
+    assert!(!compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
+#[case(true, false)]
+#[case(false, true)]
+#[case(true, true)]
+fn test_compare_pool_profiler_reports_protocol_fees_only_mismatch(
+    mut profiler: PoolProfiler,
+    #[case] bump_token0: bool,
+    #[case] bump_token1: bool,
+) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    let mint_event = create_mint_event(lp_address(), min_tick, max_tick, 10000);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint_event))
+        .unwrap();
+
+    // Accrued protocol-fee balances can diverge from the on-chain snapshot through per-step
+    // rounding during replay accrual, while all structural state still matches.
+    let mut snapshot = profiler.extract_snapshot().unwrap();
+    if bump_token0 {
+        snapshot.state.protocol_fees_token0 += U256::from(1u8);
+    }
+
+    if bump_token1 {
+        snapshot.state.protocol_fees_token1 += U256::from(1u8);
+    }
+
+    assert_eq!(
+        compare_pool_profiler_detailed(&profiler, &snapshot),
+        PoolProfilerComparison::ProtocolFeesMismatch
+    );
+    assert!(PoolProfilerComparison::ProtocolFeesMismatch.is_valid_for_snapshot());
+    assert!(!PoolProfilerComparison::ProtocolFeesMismatch.is_exact_match());
+    assert!(!compare_pool_profiler(&profiler, &snapshot));
+}
+
+#[rstest]
 fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProfiler) {
     let min_tick = PoolTick::get_min_tick(TICK_SPACING);
     let max_tick = PoolTick::get_max_tick(TICK_SPACING);
@@ -793,7 +1057,7 @@ fn test_compare_pool_profiler_reports_structural_mismatch(mut profiler: PoolProf
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let mut snapshot = profiler.extract_snapshot();
+    let mut snapshot = profiler.extract_snapshot().unwrap();
     snapshot.state.liquidity += 1;
 
     assert_eq!(
@@ -814,11 +1078,26 @@ fn test_extract_snapshot_uses_last_processed_event_timestamp(mut profiler: PoolP
         .process(&DexPoolData::LiquidityUpdate(mint_event))
         .unwrap();
 
-    let snapshot = profiler.extract_snapshot();
+    let snapshot = profiler.extract_snapshot().unwrap();
 
     assert_eq!(snapshot.ts_event, event_ts);
     assert_eq!(snapshot.ts_init, event_ts);
     assert_ne!(snapshot.ts_event, profiler.pool.ts_init);
+}
+
+#[rstest]
+fn test_extract_snapshot_without_events_returns_error(profiler: PoolProfiler) {
+    // A pool that was initialized but processed no Mint/Burn/Swap events has no watermark, so the
+    // snapshot cannot be anchored. This must surface as a recoverable error, not a panic.
+    let result = profiler.extract_snapshot();
+
+    assert!(result.is_err());
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("no events processed yet")
+    );
 }
 
 // Follow Uniswapv3 official tests
@@ -2661,4 +2940,385 @@ fn test_wrap_liquidity_error_passes_through_unrelated_anyhow() {
 
     assert!(wrapped.downcast_ref::<PoolProfilerError>().is_none());
     assert!(wrapped.to_string().contains("totally unrelated failure"));
+}
+
+// Boundary-swap replay regressions from real swaps on the Arbitrum WBTC/USD₮0 pool
+// 0x5969...97203. The event records only the consumed amount, which is spent before the empty range
+// to the boundary, so replay must keep walking to the recorded price. Pre-state and tick map are
+// reconstructed from the pool's on-chain event history.
+
+// Pre-state for the block 25008018 MIN-boundary swap.
+fn min_boundary_profiler() -> PoolProfiler {
+    let sqrt_pre = U160::from_str("1752296436575853995018143129341").unwrap();
+    let pool_def = pool_definition(Some(500), Some(10), Some(sqrt_pre));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(sqrt_pre).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            61930,
+            61950,
+            102_930_446,
+        )
+        .unwrap();
+    profiler
+}
+
+// Pre-state for the block 105298972 (logIndex 22) MAX-boundary swap.
+fn max_boundary_profiler() -> PoolProfiler {
+    let sqrt_pre = U160::from_str("1336959986410146511145142826940").unwrap();
+    let pool_def = pool_definition(Some(500), Some(10), Some(sqrt_pre));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(sqrt_pre).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            56220,
+            56520,
+            730_321_654,
+        )
+        .unwrap();
+    profiler
+}
+
+#[rstest]
+fn test_simulate_replays_min_boundary_swap_through_empty_range() {
+    // block 25008018: amount0=27, amount1=-12402, sqrt_after=MIN_SQRT_RATIO+1, tick=-887272, liq=0.
+    let profiler = min_boundary_profiler();
+    assert_eq!(profiler.state.current_tick, 61930);
+    assert_eq!(profiler.get_active_liquidity(), 102_930_446);
+
+    let event_sqrt_price = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1
+    let quote = profiler
+        .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, true)
+        .unwrap();
+
+    assert_eq!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert_eq!(quote.tick_after, -887_272);
+    assert_eq!(quote.liquidity_after, 0);
+    assert_eq!(quote.amount0, I256::from_str("27").unwrap());
+    assert_eq!(quote.amount1, I256::from_str("-12402").unwrap());
+}
+
+#[rstest]
+fn test_simulate_replays_max_boundary_swap_through_empty_range() {
+    // block 105298972 li22: amount0=-1596, amount1=454791, sqrt_after=MAX_SQRT_RATIO-1,
+    // tick=887271, liq=0.
+    let profiler = max_boundary_profiler();
+    assert_eq!(profiler.state.current_tick, 56519);
+    assert_eq!(profiler.get_active_liquidity(), 730_321_654);
+
+    let event_sqrt_price =
+        U160::from_str("1461446703485210103287273052203988822378723970341").unwrap();
+    let quote = profiler
+        .simulate_swap_through_ticks(
+            I256::from_str("454791").unwrap(),
+            false,
+            event_sqrt_price,
+            true,
+        )
+        .unwrap();
+
+    assert_eq!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert_eq!(quote.tick_after, 887_271);
+    assert_eq!(quote.liquidity_after, 0);
+    assert_eq!(quote.amount0, I256::from_str("-1596").unwrap());
+    assert_eq!(quote.amount1, I256::from_str("454791").unwrap());
+}
+
+#[rstest]
+fn test_simulate_forward_stops_at_empty_range_boundary() {
+    // Forward simulation stops where the input is spent, not at the boundary price.
+    let profiler = min_boundary_profiler();
+    let event_sqrt_price = U160::from(4_295_128_740u64);
+    let quote = profiler
+        .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, event_sqrt_price, false)
+        .unwrap();
+
+    assert_ne!(quote.sqrt_price_after_x96, event_sqrt_price);
+    assert!(quote.sqrt_price_after_x96 > event_sqrt_price);
+    assert_eq!(quote.tick_after, 61_929);
+    assert_eq!(quote.liquidity_after, 0);
+}
+
+#[rstest]
+fn test_simulate_traverse_is_noop_when_swap_stays_liquid(low_fee_pool_profiler: PoolProfiler) {
+    // When liquidity never reaches zero at exhaustion, traversal is a no-op: replay equals forward.
+    let amount = I256::from_str("1000").unwrap();
+    let far_limit = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1, far below the stop price
+
+    let forward = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, true, far_limit, false)
+        .unwrap();
+    let replay = low_fee_pool_profiler
+        .simulate_swap_through_ticks(amount, true, far_limit, true)
+        .unwrap();
+
+    assert!(replay.sqrt_price_after_x96 > far_limit);
+    assert_eq!(replay.sqrt_price_after_x96, forward.sqrt_price_after_x96);
+    assert_eq!(replay.tick_after, forward.tick_after);
+    assert_eq!(replay.liquidity_after, forward.liquidity_after);
+    assert_eq!(replay.amount0, forward.amount0);
+    assert_eq!(replay.amount1, forward.amount1);
+}
+
+#[rstest]
+fn test_process_swap_replays_min_boundary_to_event_state() {
+    // End-to-end replay of the block 25008018 MIN-boundary swap: process the recorded event and
+    // confirm the applied state matches on-chain. The matching simulate-level test proves the
+    // simulation already reaches these values, so the self-correction branches do not fire here.
+    let mut profiler = min_boundary_profiler();
+    let pool = profiler.pool.clone();
+    let min_plus_1 = U160::from(4_295_128_740u64);
+
+    let swap = PoolSwap::new(
+        arbitrum(),
+        uniswap_v3(),
+        pool.instrument_id,
+        pool.pool_identifier,
+        25_008_018,
+        "0x95df7f94dd10".to_string(),
+        0,
+        7,
+        UnixNanos::default(),
+        UnixNanos::default(),
+        user_address(),
+        user_address(),
+        I256::from_str("27").unwrap(),
+        I256::from_str("-12402").unwrap(),
+        min_plus_1,
+        0,
+        -887_272,
+    );
+
+    profiler.process(&DexPoolData::Swap(swap)).unwrap();
+
+    assert_eq!(profiler.state.current_tick, -887_272);
+    assert_eq!(profiler.state.price_sqrt_ratio_x96, min_plus_1);
+    assert_eq!(profiler.tick_map.liquidity, 0);
+}
+
+#[rstest]
+fn test_simulate_replay_stops_when_empty_walk_re_enters_liquidity() {
+    // The MIN-boundary setup plus a second position below the empty gap. Replaying the consumed
+    // amount (27, which exits the upper position at tick 61930) and walking the empty range must
+    // STOP when it crosses back into liquidity at the lower position's upper tick, not blow through
+    // that liquidity to the price limit without any input left to spend there. This is the safe-stop
+    // guard `traverse_empty_ranges && current_active_liquidity == 0`.
+    let sqrt_pre = U160::from_str("1752296436575853995018143129341").unwrap();
+    let pool_def = pool_definition(Some(500), Some(10), Some(sqrt_pre));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(sqrt_pre).unwrap();
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            61930,
+            61950,
+            102_930_446,
+        )
+        .unwrap();
+    profiler
+        .execute_mint(lp_address(), create_block_position(), 50000, 50060, 500_000)
+        .unwrap();
+    assert_eq!(profiler.get_active_liquidity(), 102_930_446); // lower position inactive at start
+
+    let far_limit = U160::from(4_295_128_740u64); // MIN_SQRT_RATIO + 1, below the lower position
+    let quote = profiler
+        .simulate_swap_through_ticks(I256::from_str("27").unwrap(), true, far_limit, true)
+        .unwrap();
+
+    // The walk halts at the lower position's upper tick, re-activating its liquidity.
+    assert_eq!(quote.tick_after, 50_059);
+    assert_eq!(quote.sqrt_price_after_x96, get_sqrt_ratio_at_tick(50_060));
+    assert_eq!(quote.liquidity_after, 500_000);
+    assert!(quote.sqrt_price_after_x96 > far_limit);
+    // Only the upper-position exit was paid for; nothing was spent in the lower position.
+    assert_eq!(quote.amount0, I256::from_str("27").unwrap());
+}
+
+#[rstest]
+fn test_swap_protocol_fee_split_matches_fee_protocol(mut medium_fee_pool_profiler: PoolProfiler) {
+    // A single-step swap (no tick crossing) lets us pin the protocol-fee split exactly: the total
+    // fee is independent of fee_protocol, which only splits it. token0-in uses the lower nibble.
+    let amount = I256::from_str("1000000000").unwrap();
+
+    let no_protocol = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap();
+    assert_eq!(no_protocol.protocol_fee, U256::ZERO);
+    let total_fee = no_protocol.lp_fee;
+    assert!(total_fee > U256::ZERO);
+    assert!(no_protocol.crossed_ticks.is_empty()); // single step, no crossing
+
+    // SetFeeProtocol(4, 4): token0 denominator becomes 4.
+    medium_fee_pool_profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    let with_protocol = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap();
+
+    assert_eq!(with_protocol.protocol_fee, total_fee / U256::from(4u8));
+    assert_eq!(
+        with_protocol.lp_fee,
+        total_fee - total_fee / U256::from(4u8)
+    );
+    assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
+}
+
+#[rstest]
+fn test_fee_replay_sequence_accrues_then_collects(mut profiler: PoolProfiler) {
+    // Ordered replay: mint, SetFeeProtocol, a swap that accrues protocol fees under the new split,
+    // then CollectProtocol that withdraws all but the on-chain remainder.
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            1_000_000_000,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    assert_eq!(profiler.state.fee_protocol, 68);
+    assert_eq!(profiler.state.protocol_fees_token0, U256::ZERO);
+
+    // A token0-in swap accrues token0 protocol fees at the 1/4 split.
+    let swap = profiler
+        .execute_swap(
+            user_address(),
+            user_address(),
+            create_block_position(),
+            true,
+            I256::from_str("100000000").unwrap(),
+            U160::from(4_295_128_740u64),
+        )
+        .unwrap();
+    let accrued = profiler.state.protocol_fees_token0;
+    assert!(accrued > U256::ZERO);
+    assert!(swap.amount0.is_positive());
+
+    // CollectProtocol withdraws all but one wei (Uniswap V3 leaves a remainder).
+    let withdraw = u128::try_from(accrued - U256::from(1u8)).unwrap();
+    profiler
+        .process(&DexPoolData::FeeProtocolCollect(
+            create_fee_protocol_collect(withdraw, 0),
+        ))
+        .unwrap();
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(1u8));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::ZERO);
+}
+
+#[rstest]
+fn test_profilers_replay_independently_across_threads() {
+    // Four independent pools replayed on separate threads must match a sequential replay:
+    // PoolProfiler holds no shared mutable state, so analyze-pools cross-pool concurrency is safe.
+    // Each pool's liquidity and swap size vary by index so the outputs are genuinely distinct.
+    fn replay(idx: u8) -> (i32, u128, U256) {
+        let start = encode_sqrt_ratio_x96(1, 1);
+        let pool_def = pool_definition(Some(500), Some(10), Some(start));
+        let mut p = PoolProfiler::new(Arc::new(pool_def));
+        p.initialize(start).unwrap();
+        let min_tick = PoolTick::get_min_tick(10);
+        let max_tick = PoolTick::get_max_tick(10);
+        let liquidity = 1_000_000_000u128 * u128::from(idx + 1);
+        p.execute_mint(
+            lp_address(),
+            create_block_position(),
+            min_tick,
+            max_tick,
+            liquidity,
+        )
+        .unwrap();
+        let amount = U256::from(50_000_000u64 * u64::from(idx + 1));
+        let quote = p.swap_exact_in(amount, false, None).unwrap();
+        p.apply_swap_quote(&quote);
+        (
+            p.state.current_tick,
+            p.tick_map.liquidity,
+            U256::from(p.state.price_sqrt_ratio_x96),
+        )
+    }
+
+    let sequential: Vec<_> = (0u8..4).map(replay).collect();
+    // Spawn all threads before joining so they run concurrently.
+    let mut handles = Vec::new();
+
+    for i in 0u8..4 {
+        handles.push(std::thread::spawn(move || replay(i)));
+    }
+
+    let parallel: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    assert_eq!(sequential, parallel);
+    let distinct: std::collections::HashSet<_> = sequential.iter().collect();
+    assert!(distinct.len() > 1, "per-pool replays should differ");
+}
+
+#[rstest]
+fn test_swap_crossing_multiple_ticks_conserves_fees() {
+    // Stacked positions so one upward swap crosses several initialized ticks. The protocol/LP split
+    // is per-step floor division, but it must conserve: sum of (protocol + lp) equals the total fee
+    // taken with no protocol fee, regardless of how many steps the swap takes.
+    let start = encode_sqrt_ratio_x96(1, 1); // tick 0
+    let pool_def = pool_definition(Some(3000), Some(60), Some(start));
+    let mut profiler = PoolProfiler::new(Arc::new(pool_def));
+    profiler.initialize(start).unwrap();
+    let min_tick = PoolTick::get_min_tick(60);
+    let max_tick = PoolTick::get_max_tick(60);
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            min_tick,
+            max_tick,
+            1_000_000_000,
+        )
+        .unwrap();
+
+    for (lower, upper) in [(600, 1200), (1800, 2400)] {
+        profiler
+            .execute_mint(
+                lp_address(),
+                create_block_position(),
+                lower,
+                upper,
+                2_000_000_000,
+            )
+            .unwrap();
+    }
+
+    let amount = I256::from_str("5000000000000000000").unwrap();
+
+    let no_protocol = profiler.quote_swap(amount, false, None).unwrap();
+    assert_eq!(no_protocol.protocol_fee, U256::ZERO);
+    assert!(
+        no_protocol.crossed_ticks.len() >= 2,
+        "swap should cross multiple ticks"
+    );
+    let total_fee = no_protocol.lp_fee;
+
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(create_fee_protocol_update(
+            4, 4,
+        )))
+        .unwrap();
+    let with_protocol = profiler.quote_swap(amount, false, None).unwrap();
+
+    assert_eq!(
+        with_protocol.crossed_ticks.len(),
+        no_protocol.crossed_ticks.len()
+    );
+    assert!(with_protocol.protocol_fee > U256::ZERO);
+    assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
 }

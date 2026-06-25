@@ -35,11 +35,12 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, QuoteTick, TradeTick},
-    enums::OmsType,
+    enums::{OmsType, OrderSide},
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderInitialized, PositionAdjusted,
         PositionChanged, PositionClosed, PositionOpened,
     },
+    identifiers::PositionId,
     orders::OrderAny,
     position::Position,
 };
@@ -47,11 +48,11 @@ use serde::de::DeserializeOwned;
 
 #[cfg(test)]
 use crate::capture::builtins::{
-    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS, PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE,
-    PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE, PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
-    PAYLOAD_TYPE_CANCEL_ORDER, PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE,
-    PAYLOAD_TYPE_EXECUTION_MASS_STATUS, PAYLOAD_TYPE_FILL_REPORT,
-    PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_BATCH_CANCEL_ORDERS, PAYLOAD_TYPE_BATCH_MODIFY_ORDERS,
+    PAYLOAD_TYPE_BOOK_DELTAS_RESPONSE, PAYLOAD_TYPE_BOOK_DEPTH_RESPONSE,
+    PAYLOAD_TYPE_BOOK_RESPONSE, PAYLOAD_TYPE_CANCEL_ALL_ORDERS, PAYLOAD_TYPE_CANCEL_ORDER,
+    PAYLOAD_TYPE_CUSTOM_DATA_RESPONSE, PAYLOAD_TYPE_EXECUTION_MASS_STATUS,
+    PAYLOAD_TYPE_FILL_REPORT, PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE, PAYLOAD_TYPE_MODIFY_ORDER,
     PAYLOAD_TYPE_ORDER_STATUS_REPORT, PAYLOAD_TYPE_ORDER_WITH_FILLS,
     PAYLOAD_TYPE_POSITION_STATUS_REPORT, PAYLOAD_TYPE_QUERY_ACCOUNT, PAYLOAD_TYPE_QUERY_ORDER,
     PAYLOAD_TYPE_REQUEST_COMMAND, PAYLOAD_TYPE_SUBMIT_ORDER, PAYLOAD_TYPE_SUBSCRIBE_COMMAND,
@@ -147,6 +148,7 @@ pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
 pub(crate) const FORENSIC_ONLY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_SUBMIT_ORDER,
     PAYLOAD_TYPE_MODIFY_ORDER,
+    PAYLOAD_TYPE_BATCH_MODIFY_ORDERS,
     PAYLOAD_TYPE_CANCEL_ORDER,
     PAYLOAD_TYPE_CANCEL_ALL_ORDERS,
     PAYLOAD_TYPE_BATCH_CANCEL_ORDERS,
@@ -1104,7 +1106,9 @@ pub fn restore_cache_snapshot_blob(
 /// Applies one event-store entry to cache state when a replay rule exists.
 ///
 /// Returns `Ok(true)` when the entry changed cache state and `Ok(false)` when the
-/// payload is outside the current cache bootstrap replay surface.
+/// payload is outside the current cache bootstrap replay surface, or when a position
+/// event's target position is absent from the cache (logged as a warning so the report's
+/// ignored count surfaces the divergence instead of claiming a full apply).
 ///
 /// # Errors
 ///
@@ -1172,25 +1176,34 @@ pub fn apply_cache_replay_entry(
         }
         PAYLOAD_TYPE_ORDER_FILLED => {
             let fill = decode_payload::<OrderFilled>(entry)?;
+            // The fill side panics deep inside Position/Order application; the hash
+            // proves the bytes match what was written, not that the producer wrote a
+            // semantically valid fill, so guard before the model invariants fire.
+            if matches!(fill.order_side, OrderSide::NoOrderSide) {
+                return Err(apply_error(
+                    entry,
+                    "OrderFilled.order_side must be Buy or Sell, was NoOrderSide",
+                ));
+            }
             let event = OrderEventAny::Filled(fill);
             apply_result(entry, cache.update_order(&event))?;
             apply_fill_to_position(cache, entry, &fill)?;
         }
         PAYLOAD_TYPE_POSITION_OPENED => {
             let opened = decode_payload::<PositionOpened>(entry)?;
-            apply_position_opened(cache, entry, &opened)?;
+            return apply_position_opened(cache, entry, &opened);
         }
         PAYLOAD_TYPE_POSITION_CHANGED => {
             let changed = decode_payload::<PositionChanged>(entry)?;
-            apply_position_changed(cache, entry, &changed)?;
+            return apply_position_changed(cache, entry, &changed);
         }
         PAYLOAD_TYPE_POSITION_CLOSED => {
             let closed = decode_payload::<PositionClosed>(entry)?;
-            apply_position_closed(cache, entry, &closed)?;
+            return apply_position_closed(cache, entry, &closed);
         }
         PAYLOAD_TYPE_POSITION_ADJUSTED => {
             let adjustment = decode_payload::<PositionAdjusted>(entry)?;
-            apply_position_adjustment(cache, entry, adjustment)?;
+            return apply_position_adjustment(cache, entry, adjustment);
         }
         _ => return Ok(false),
     }
@@ -1290,6 +1303,11 @@ fn apply_fill_to_position(
     }
 
     let Some(instrument) = cache.instrument(&fill.instrument_id).cloned() else {
+        log::warn!(
+            "Replay seq {} skipped opening position {position_id}: instrument {} not in cache",
+            entry.seq,
+            fill.instrument_id,
+        );
         return Ok(());
     };
 
@@ -1302,9 +1320,10 @@ fn apply_position_opened(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     opened: &PositionOpened,
-) -> Result<(), CacheReplayError> {
+) -> Result<bool, CacheReplayError> {
     let Some(mut position) = cache.position_owned(&opened.position_id) else {
-        return Ok(());
+        warn_position_skip(entry, opened.position_id);
+        return Ok(false);
     };
 
     position.trader_id = opened.trader_id;
@@ -1329,16 +1348,17 @@ fn apply_position_opened(
     position.realized_return = 0.0;
 
     apply_result(entry, cache.update_position(&position))?;
-    Ok(())
+    Ok(true)
 }
 
 fn apply_position_changed(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     changed: &PositionChanged,
-) -> Result<(), CacheReplayError> {
+) -> Result<bool, CacheReplayError> {
     let Some(mut position) = cache.position_owned(&changed.position_id) else {
-        return Ok(());
+        warn_position_skip(entry, changed.position_id);
+        return Ok(false);
     };
 
     position.trader_id = changed.trader_id;
@@ -1362,16 +1382,17 @@ fn apply_position_changed(
     position.realized_pnl = changed.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
-    Ok(())
+    Ok(true)
 }
 
 fn apply_position_closed(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     closed: &PositionClosed,
-) -> Result<(), CacheReplayError> {
+) -> Result<bool, CacheReplayError> {
     let Some(mut position) = cache.position_owned(&closed.position_id) else {
-        return Ok(());
+        warn_position_skip(entry, closed.position_id);
+        return Ok(false);
     };
 
     position.trader_id = closed.trader_id;
@@ -1397,21 +1418,32 @@ fn apply_position_closed(
     position.realized_pnl = closed.realized_pnl;
 
     apply_result(entry, cache.update_position(&position))?;
-    Ok(())
+    Ok(true)
 }
 
 fn apply_position_adjustment(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     adjustment: PositionAdjusted,
-) -> Result<(), CacheReplayError> {
+) -> Result<bool, CacheReplayError> {
     let Some(mut position) = cache.position_owned(&adjustment.position_id) else {
-        return Ok(());
+        warn_position_skip(entry, adjustment.position_id);
+        return Ok(false);
     };
 
     position.apply_adjustment(adjustment);
     apply_result(entry, cache.update_position(&position))?;
-    Ok(())
+    Ok(true)
+}
+
+// A position event whose position is absent cannot apply; counting it as applied would
+// let a restore report full success while an open position is missing from the cache.
+fn warn_position_skip(entry: &EventStoreEntry, position_id: PositionId) {
+    log::warn!(
+        "Replay seq {} skipped {}: position {position_id} not in cache",
+        entry.seq,
+        entry.payload_type,
+    );
 }
 
 fn decode_payload<T>(entry: &EventStoreEntry) -> Result<T, CacheReplayError>
@@ -1790,6 +1822,11 @@ mod tests {
         ),
         cache_mutation(
             "purge_instrument",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "purge_instrument_skip_order_guard",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],
         ),
@@ -3282,6 +3319,50 @@ mod tests {
         assert_eq!(position.adjustments, vec![adjustment]);
         assert_eq!(position.realized_pnl, Some(Money::from("2 USD")));
         assert_eq!(position.ts_last, adjustment.ts_event);
+    }
+
+    #[rstest]
+    fn position_event_for_unknown_position_is_counted_as_ignored() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let position_id = PositionId::from("P-MISSING");
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .build();
+        let position = Position::new(&instrument, fill);
+        let opened = PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::from(10));
+        let entry = append_position_event(1, &PositionEvent::PositionOpened(opened)).entry;
+        let mut cache = Cache::default();
+
+        let applied = apply_cache_replay_entry(&mut cache, &entry).expect("apply");
+
+        assert!(
+            !applied,
+            "missing position must count as ignored, not applied"
+        );
+    }
+
+    #[rstest]
+    fn order_filled_with_no_order_side_is_an_apply_error_not_a_panic() {
+        // The entry hash proves the stored bytes match what was written, not that the
+        // producer wrote a valid fill; OrderSide::NoOrderSide deserializes cleanly and
+        // without the guard panics deep inside Position/Order application.
+        let mut fill = OrderFilledSpec::builder()
+            .position_id(PositionId::from("P-001"))
+            .build();
+        fill.order_side = OrderSide::NoOrderSide;
+        let entry = append_serde_payload(1, PAYLOAD_TYPE_ORDER_FILLED, &fill).entry;
+        let mut cache = Cache::default();
+
+        let err = apply_cache_replay_entry(&mut cache, &entry).expect_err("must reject");
+
+        match err {
+            CacheReplayError::Apply { seq, message, .. } => {
+                assert_eq!(seq, 1);
+                assert!(message.contains("NoOrderSide"), "message was: {message}");
+            }
+            other => panic!("expected Apply, was {other:?}"),
+        }
     }
 
     #[rstest]

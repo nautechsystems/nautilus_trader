@@ -20,7 +20,8 @@
     reason = "errors documented on underlying Rust methods"
 )]
 
-use pyo3::prelude::*;
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{PyErr, prelude::*};
 
 pub mod account;
 pub mod common;
@@ -38,6 +39,41 @@ pub mod types;
 
 #[cfg(feature = "defi")]
 pub mod defi;
+
+use crate::{
+    identifiers::{InstrumentIdError, OptionSeriesIdError},
+    types::CurrencyLookupError,
+};
+
+/// Converts an instrument ID validation failure to a Python `ValueError`.
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err passes owned errors to conversion functions"
+)]
+pub fn instrument_id_error_to_pyvalue_err(e: InstrumentIdError) -> PyErr {
+    to_pyvalue_err(e)
+}
+
+/// Converts an option series ID validation failure to a Python `ValueError`.
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err passes owned errors to conversion functions"
+)]
+pub fn option_series_id_error_to_pyvalue_err(e: OptionSeriesIdError) -> PyErr {
+    to_pyvalue_err(e)
+}
+
+/// Converts a currency lookup failure to a Python `ValueError`.
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err passes owned errors to conversion functions"
+)]
+pub fn currency_lookup_error_to_pyvalue_err(e: CurrencyLookupError) -> PyErr {
+    to_pyvalue_err(e)
+}
 
 /// Loaded as `nautilus_pyo3.model`.
 ///
@@ -286,6 +322,8 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<crate::defi::data::PoolLiquidityUpdateType>()?;
         m.add_class::<crate::defi::data::PoolLiquidityUpdate>()?;
         m.add_class::<crate::defi::data::PoolFeeCollect>()?;
+        m.add_class::<crate::defi::data::PoolFeeProtocolUpdate>()?;
+        m.add_class::<crate::defi::data::PoolFeeProtocolCollect>()?;
         m.add_class::<crate::defi::data::PoolFlash>()?;
         m.add_class::<crate::defi::data::Transaction>()?;
         m.add_class::<crate::defi::data::Block>()?;
@@ -295,4 +333,78 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<crate::defi::pool_analysis::PoolProfiler>()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use pyo3::{Python, exceptions::PyValueError};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn ensure_python_initialized() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            Python::initialize();
+        });
+    }
+
+    #[rstest]
+    fn test_instrument_id_error_to_pyvalue_err_preserves_display_text() {
+        ensure_python_initialized();
+
+        let error = "BTCUSDT"
+            .parse::<crate::identifiers::InstrumentId>()
+            .unwrap_err();
+
+        Python::attach(|py| {
+            let py_err = instrument_id_error_to_pyvalue_err(error);
+
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                py_err.value(py).to_string(),
+                "invalid `InstrumentId` value 'BTCUSDT': missing '.' separator between symbol and venue components"
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_option_series_id_error_to_pyvalue_err_preserves_display_text() {
+        ensure_python_initialized();
+
+        let error = "DERIBIT:BTC:USD"
+            .parse::<crate::identifiers::OptionSeriesId>()
+            .unwrap_err();
+
+        Python::attach(|py| {
+            let py_err = option_series_id_error_to_pyvalue_err(error);
+
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                py_err.value(py).to_string(),
+                "invalid `OptionSeriesId` value 'DERIBIT:BTC:USD': expected format 'VENUE:UNDERLYING:SETTLEMENT:EXPIRY'"
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_currency_lookup_error_to_pyvalue_err_preserves_display_text() {
+        ensure_python_initialized();
+
+        let error = "UNKNOWN_CURRENCY"
+            .parse::<crate::types::Currency>()
+            .unwrap_err();
+
+        Python::attach(|py| {
+            let py_err = currency_lookup_error_to_pyvalue_err(error);
+
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                py_err.value(py).to_string(),
+                "Unknown currency: UNKNOWN_CURRENCY"
+            );
+        });
+    }
 }

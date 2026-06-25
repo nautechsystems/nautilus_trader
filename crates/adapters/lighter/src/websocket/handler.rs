@@ -16,6 +16,7 @@
 //! Inner WebSocket feed handler running on a dedicated tokio task.
 
 use std::{
+    collections::VecDeque,
     fmt::Debug,
     sync::{
         Arc,
@@ -37,25 +38,28 @@ use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
+    account_state::LighterAccountStateReconciler,
     error::LighterWsError,
     messages::{
-        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterWsCandle,
-        LighterWsChannel, LighterWsChannelKind, LighterWsFrame, LighterWsOrderBook,
-        LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
+        AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
+        LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
+        LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
     },
     parse::{
-        parse_ws_account_state, parse_ws_bar, parse_ws_funding_rate_update,
-        parse_ws_index_price_update, parse_ws_mark_price_update, parse_ws_order_book_deltas,
-        parse_ws_order_book_depth10, parse_ws_position_status_report, parse_ws_quote_tick,
-        parse_ws_spot_index_price_update, parse_ws_trade_tick,
+        parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
+        parse_ws_mark_price_update, parse_ws_order_book_deltas, parse_ws_order_book_depth10,
+        parse_ws_position_status_report, parse_ws_quote_tick, parse_ws_spot_index_price_update,
+        parse_ws_trade_tick,
     },
 };
 use crate::{
     common::{
         consts::{
-            LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
+            LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_ERROR_CODE_TX_RANGE,
+            LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL, SUBSCRIBE_INFLIGHT_MAX,
         },
         enums::LighterCandleResolution,
+        rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
     },
     http::models::{LighterOrder, LighterPriceLevel, LighterTrade},
 };
@@ -90,6 +94,8 @@ pub enum HandlerCommand {
     },
     /// Unsubscribe from a channel.
     Unsubscribe { channel: LighterWsChannel },
+    /// Resubscribe to the venue `order_book` stream after a continuity gap.
+    ResubscribeOrderBook { market_index: i16 },
     /// Replace the handler's instrument cache (used on initial connect).
     InitializeInstruments(Vec<(i16, InstrumentAny)>),
     /// Insert or replace a single instrument by `market_index`.
@@ -141,6 +147,10 @@ impl Debug for HandlerCommand {
                 .debug_struct(stringify!(Unsubscribe))
                 .field("channel", channel)
                 .finish(),
+            Self::ResubscribeOrderBook { market_index } => f
+                .debug_struct(stringify!(ResubscribeOrderBook))
+                .field("market_index", market_index)
+                .finish(),
             Self::InitializeInstruments(instruments) => f
                 .debug_tuple(stringify!(InitializeInstruments))
                 .field(&instruments.len())
@@ -184,16 +194,23 @@ impl Debug for HandlerCommand {
 
 /// Inner feed handler. Owns the [`WebSocketClient`] exclusively and routes
 /// raw frames into the venue-message channel.
+///
+/// Subscribe dispatch is gated by a closed-loop inflight count: the venue caps
+/// unacknowledged client messages per connection, and acknowledgement latency
+/// is multi-second, so queued subscribes are held back until acks free a slot.
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    cmd_tx: Option<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     subscriptions: SubscriptionState,
     retry_manager: RetryManager<LighterWsError>,
-    pending_messages: std::collections::VecDeque<NautilusWsMessage>,
+    pending_messages: VecDeque<NautilusWsMessage>,
+    pending_subs: VecDeque<(LighterWsChannel, Option<String>)>,
+    inflight_subs: AHashSet<Ustr>,
     instruments: AHashMap<i16, InstrumentAny>,
     book_delta_subs: AHashSet<i16>,
     book_depth_10_subs: AHashSet<i16>,
@@ -201,6 +218,7 @@ pub(super) struct FeedHandler {
     book_states: AHashMap<i16, CachedOrderBook>,
     last_candles: AHashMap<(i16, LighterCandleResolution), LighterWsCandle>,
     exec_account: Option<(AccountId, i64)>,
+    account_state_reconciler: LighterAccountStateReconciler,
 }
 
 #[derive(Debug, Clone)]
@@ -222,11 +240,14 @@ impl FeedHandler {
             signal,
             inner: None,
             cmd_rx,
+            cmd_tx: None,
             raw_rx,
             out_tx,
             subscriptions,
             retry_manager: create_websocket_retry_manager(),
-            pending_messages: std::collections::VecDeque::new(),
+            pending_messages: VecDeque::new(),
+            pending_subs: VecDeque::new(),
+            inflight_subs: AHashSet::new(),
             instruments: AHashMap::new(),
             book_delta_subs: AHashSet::new(),
             book_depth_10_subs: AHashSet::new(),
@@ -234,6 +255,7 @@ impl FeedHandler {
             book_states: AHashMap::new(),
             last_candles: AHashMap::new(),
             exec_account: None,
+            account_state_reconciler: LighterAccountStateReconciler::new(),
         }
     }
 
@@ -241,6 +263,13 @@ impl FeedHandler {
         self.out_tx
             .send(msg)
             .map_err(|e| format!("Failed to send message: {e}"))
+    }
+
+    pub(super) fn set_command_sender(
+        &mut self,
+        cmd_tx: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+    ) {
+        self.cmd_tx = Some(cmd_tx);
     }
 
     pub(super) fn is_stopped(&self) -> bool {
@@ -256,7 +285,10 @@ impl FeedHandler {
                         let payload = payload.clone();
                         async move {
                             client
-                                .send_text(payload, None)
+                                .send_text(
+                                    payload,
+                                    Some(LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY.as_slice()),
+                                )
                                 .await
                                 .map_err(LighterWsError::Transport)
                         }
@@ -287,7 +319,8 @@ impl FeedHandler {
         }
     }
 
-    async fn dispatch_subscribe(&self, channel: LighterWsChannel, auth: Option<String>) {
+    // False when the send fails: no ack will arrive, so the caller frees the slot
+    async fn dispatch_subscribe(&self, channel: LighterWsChannel, auth: Option<String>) -> bool {
         let topic = channel.topic_key();
         self.subscriptions.mark_subscribe(&topic);
 
@@ -305,11 +338,15 @@ impl FeedHandler {
                 if let Err(e) = self.send_with_retry(payload).await {
                     log::error!("Error subscribing to {topic}: {e}");
                     self.subscriptions.mark_failure(&topic);
+                    false
+                } else {
+                    true
                 }
             }
             Err(e) => {
                 log::error!("Error serializing subscription for {topic}: {e}");
                 self.subscriptions.mark_failure(&topic);
+                false
             }
         }
     }
@@ -370,6 +407,9 @@ impl FeedHandler {
         }
 
         loop {
+            // Pump each iteration: the select below drains acks that free slots
+            self.pump_pending_subscribes().await;
+
             tokio::select! {
                 Some(cmd) = self.cmd_rx.recv() => {
                     match cmd {
@@ -386,14 +426,22 @@ impl FeedHandler {
                             return None;
                         }
                         HandlerCommand::Subscribe { channel, auth } => {
-                            self.dispatch_subscribe(channel, auth).await;
+                            self.pending_subs.push_back((channel, auth));
                         }
                         HandlerCommand::Unsubscribe { channel } => {
+                            // Drop a queued-but-unsent subscribe for this channel so a freed
+                            // slot cannot resubscribe after the caller unsubscribed.
+                            let topic = channel.topic_key();
+                            self.pending_subs.retain(|(queued, _)| queued.topic_key() != topic);
+
                             if let LighterWsChannel::OrderBook(market_index) = &channel {
                                 self.book_snapshots_seen.remove(market_index);
                                 self.book_states.remove(market_index);
                             }
                             self.dispatch_unsubscribe(channel).await;
+                        }
+                        HandlerCommand::ResubscribeOrderBook { market_index } => {
+                            self.resubscribe_order_book_stream(market_index).await;
                         }
                         HandlerCommand::InitializeInstruments(instruments) => {
                             self.instruments.clear();
@@ -454,6 +502,11 @@ impl FeedHandler {
                                 self.book_states.clear();
                                 // Resubscribe replays a fresh `subscribed/candle`; pre-disconnect cache is stale.
                                 self.last_candles.clear();
+                                // The new socket starts with zero inflight and restore_subscriptions
+                                // re-queues every topic, so drop stale gate state to avoid leaking slots.
+                                self.pending_subs.clear();
+                                self.inflight_subs.clear();
+                                self.account_state_reconciler.reset();
                                 return Some(NautilusWsMessage::Reconnected);
                             }
 
@@ -520,6 +573,27 @@ impl FeedHandler {
         Some(first)
     }
 
+    // Non-blocking count check, not a permit await: this task also drains the
+    // acks that free slots, so awaiting a permit here would deadlock.
+    async fn pump_pending_subscribes(&mut self) {
+        while self.inflight_subs.len() < SUBSCRIBE_INFLIGHT_MAX {
+            let Some((channel, auth)) = self.pending_subs.pop_front() else {
+                break;
+            };
+            let topic = Ustr::from(channel.topic_key().as_str());
+            self.inflight_subs.insert(topic);
+            if !self.dispatch_subscribe(channel, auth).await {
+                self.inflight_subs.remove(&topic);
+            }
+        }
+    }
+
+    // True only on the first ack for a topic; handle_frame calls this per frame,
+    // so later frames for an already-confirmed topic are no-ops.
+    fn release_subscribe_inflight(&mut self, topic: &str) -> bool {
+        self.inflight_subs.remove(&Ustr::from(topic))
+    }
+
     /// Returns `(matched, msg)` where `matched=true` means the frame's
     /// `type` was recognized as a known control type (whether or not a
     /// message is emitted); `matched=false` lets the caller surface the
@@ -576,41 +650,48 @@ impl FeedHandler {
                 if let Some(topic) = value.get("channel").and_then(|v| v.as_str()) {
                     if kind == CTRL_TYPE_SUBSCRIBED {
                         self.subscriptions.confirm_subscribe(topic);
+                        self.release_subscribe_inflight(topic);
                     } else {
+                        let was_pending_unsubscribe = self
+                            .subscriptions
+                            .pending_unsubscribe_topics()
+                            .iter()
+                            .any(|pending| pending == topic);
                         self.subscriptions.confirm_unsubscribe(topic);
-                        // Reset snapshot tracking so a future resubscribe to
-                        // the same order book parses its first frame as a
-                        // fresh snapshot. Only reacts to `order_book:*` acks;
-                        // `trade:N` and `ticker:N` share the same `:i16`
-                        // suffix but must not clear book state for an
-                        // order-book subscription that is still active.
-                        if let Some(market_index) = order_book_market_index_from_topic(topic) {
-                            self.book_snapshots_seen.remove(&market_index);
-                            self.book_states.remove(&market_index);
-                        }
-                        // Reset on resubscribe so the first frame is treated as initialization.
-                        if let Some(key) = candle_market_and_resolution_from_topic(topic) {
-                            self.last_candles.remove(&key);
+
+                        if was_pending_unsubscribe {
+                            // Only matched unsubscribe ACKs should reset stream state
+                            if let Some(market_index) = order_book_market_index_from_topic(topic) {
+                                self.clear_cached_order_book(market_index);
+                            }
+
+                            if let Some(key) = candle_market_and_resolution_from_topic(topic) {
+                                self.last_candles.remove(&key);
+                            }
                         }
                     }
                 }
                 (true, None)
             }
             CTRL_TYPE_ERROR => {
-                if value.get("code").and_then(|v| v.as_u64())
-                    == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED)
-                {
+                let code = value.get("code").and_then(|v| v.as_u64());
+                if code == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED) {
                     log_integrator_not_approved();
                 } else {
-                    log::error!("Lighter WebSocket error frame: {value}");
+                    log::warn!("Lighter WebSocket error frame: {value}");
                 }
-                (
-                    true,
-                    Some(send_tx_rejected_from_value(
-                        &value,
-                        SendTxRejectionSource::BareError,
-                    )),
-                )
+
+                if is_sendtx_error_code(code) {
+                    (
+                        true,
+                        Some(send_tx_rejected_from_value(
+                            &value,
+                            SendTxRejectionSource::BareError,
+                        )),
+                    )
+                } else {
+                    (true, None)
+                }
             }
             _ => {
                 if let Some(error) = value.get("error") {
@@ -618,15 +699,12 @@ impl FeedHandler {
                     if nested_code == Some(LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED) {
                         log_integrator_not_approved();
                     } else {
-                        log::error!("Lighter WebSocket error frame: {value}");
+                        log::warn!("Lighter WebSocket error frame: {value}");
                     }
-                    return (
-                        true,
-                        Some(send_tx_rejected_from_nested_error(
-                            error,
-                            SendTxRejectionSource::BareError,
-                        )),
-                    );
+                    let rejected = is_sendtx_error_code(nested_code).then(|| {
+                        send_tx_rejected_from_nested_error(error, SendTxRejectionSource::BareError)
+                    });
+                    return (true, rejected);
                 }
                 (false, None)
             }
@@ -640,6 +718,9 @@ impl FeedHandler {
     ) -> Vec<NautilusWsMessage> {
         let topic = frame_topic(&frame);
         self.subscriptions.confirm_subscribe(&topic);
+        if !self.inflight_subs.is_empty() {
+            self.release_subscribe_inflight(&topic);
+        }
 
         match frame {
             LighterWsFrame::OrderBookSnapshot {
@@ -741,6 +822,20 @@ impl FeedHandler {
                 ));
                 msgs
             }
+            LighterWsFrame::UserStats {
+                ref stats,
+                timestamp,
+                ..
+            } => {
+                if self.exec_account.is_none() {
+                    return raw_message(&frame);
+                }
+                let mut msgs = self.handle_user_stats(stats, timestamp, ts_init);
+                msgs.push(NautilusWsMessage::AccountStreamFirstFrame(
+                    AccountStream::UserStats,
+                ));
+                msgs
+            }
             LighterWsFrame::MarketStats {
                 ref market_stats,
                 timestamp,
@@ -811,12 +906,102 @@ impl FeedHandler {
                     timestamp,
                 },
             );
-        } else if let Some(state) = self.book_states.get_mut(&market_index) {
-            apply_order_book_update(&mut state.book, book);
-            state.timestamp = timestamp;
+        } else if let Some(cached_nonce) = self
+            .book_states
+            .get(&market_index)
+            .map(|state| state.book.nonce)
+        {
+            if book.begin_nonce != cached_nonce {
+                log::warn!(
+                    "Dropping Lighter order_book update with nonce gap for \
+                     market_index={market_index}: begin_nonce={}, cached_nonce={cached_nonce}",
+                    book.begin_nonce,
+                );
+                self.clear_cached_order_book(market_index);
+                self.queue_order_book_resync(market_index);
+                return Vec::new();
+            }
+
+            if let Some(state) = self.book_states.get_mut(&market_index) {
+                apply_order_book_update(&mut state.book, book);
+                state.timestamp = timestamp;
+            }
+        } else {
+            log::warn!(
+                "Dropping Lighter order_book update without cached state for \
+                 market_index={market_index}",
+            );
+            self.clear_cached_order_book(market_index);
+            self.queue_order_book_resync(market_index);
+            return Vec::new();
         }
 
         self.order_book_messages(market_index, book, timestamp, is_snapshot, ts_init)
+    }
+
+    fn clear_cached_order_book(&mut self, market_index: i16) {
+        self.book_snapshots_seen.remove(&market_index);
+        self.book_states.remove(&market_index);
+    }
+
+    fn queue_order_book_resync(&self, market_index: i16) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resync: subscription cancelled, \
+                 market_index={market_index}",
+            );
+            return;
+        }
+
+        let Some(cmd_tx) = &self.cmd_tx else {
+            log::error!(
+                "Cannot resync Lighter order_book stream without command sender: \
+                 market_index={market_index}",
+            );
+            return;
+        };
+
+        if let Err(e) = cmd_tx.send(HandlerCommand::ResubscribeOrderBook { market_index }) {
+            log::error!("Failed to queue Lighter order_book resync: {e}");
+        }
+    }
+
+    async fn resubscribe_order_book_stream(&self, market_index: i16) {
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resync: subscription cancelled before venue \
+                 unsubscribe, market_index={market_index}",
+            );
+            return;
+        }
+
+        let channel = LighterWsChannel::OrderBook(market_index);
+        self.dispatch_unsubscribe(channel.clone()).await;
+
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Skipping Lighter order_book resubscribe: subscription cancelled after venue \
+                 unsubscribe, market_index={market_index}",
+            );
+            return;
+        }
+
+        self.dispatch_subscribe(channel.clone(), None).await;
+
+        if !self.order_book_stream_is_referenced(market_index) {
+            log::debug!(
+                "Cancelling Lighter order_book resync subscribe after user unsubscribe: \
+                 market_index={market_index}",
+            );
+            self.dispatch_unsubscribe(channel).await;
+        }
+    }
+
+    fn order_book_stream_is_referenced(&self, market_index: i16) -> bool {
+        let channel = LighterWsChannel::OrderBook(market_index);
+        self.subscriptions.get_reference_count(&channel.topic_key()) > 0
+            && (self.book_delta_subs.contains(&market_index)
+                || self.book_depth_10_subs.contains(&market_index))
     }
 
     fn emit_cached_order_book_deltas_snapshot(
@@ -874,10 +1059,10 @@ impl FeedHandler {
             }
         }
 
-        // Depth10 needs the full visible book, which is present only on snapshot
-        // frames; incremental frames carry only changed levels.
-        if is_snapshot && self.book_depth_10_subs.contains(&market_index) {
-            match parse_ws_order_book_depth10(book, instrument, timestamp, ts_init) {
+        if self.book_depth_10_subs.contains(&market_index)
+            && let Some(cached) = self.book_states.get(&market_index)
+        {
+            match parse_ws_order_book_depth10(&cached.book, instrument, cached.timestamp, ts_init) {
                 Ok(depth) => messages.push(NautilusWsMessage::Depth10(Box::new(depth))),
                 Err(e) => log::error!("Error parsing Lighter order_book depth10: {e}"),
             }
@@ -1179,6 +1364,7 @@ impl FeedHandler {
         let ts_event = ts_init;
 
         let mut reports = Vec::new();
+        let mut skipped_market_ids = Vec::new();
 
         for position in positions.values() {
             let Some(instrument) = self.instruments.get(&position.market_id) else {
@@ -1186,6 +1372,7 @@ impl FeedHandler {
                     "No instrument cached for Lighter position market_id={}",
                     position.market_id,
                 );
+                skipped_market_ids.push(position.market_id);
                 continue;
             };
 
@@ -1193,12 +1380,18 @@ impl FeedHandler {
                 position, instrument, account_id, ts_event, ts_init,
             ) {
                 Ok(report) => reports.push(report),
-                Err(e) => log::error!("Error parsing Lighter position status report: {e}"),
+                Err(e) => {
+                    skipped_market_ids.push(position.market_id);
+                    log::error!("Error parsing Lighter position status report: {e}");
+                }
             }
         }
 
         // Emit even when empty: signals the last position closed.
-        vec![NautilusWsMessage::PositionSnapshot(reports)]
+        vec![NautilusWsMessage::PositionSnapshot {
+            reports,
+            skipped_market_ids,
+        }]
     }
 
     fn handle_account_assets(
@@ -1220,13 +1413,53 @@ impl FeedHandler {
             }
         };
 
-        let assets_vec: Vec<&LighterAsset> = assets.values().collect();
-        match parse_ws_account_state(&assets_vec, account_id, ts_event, ts_init) {
-            Ok(state) => vec![NautilusWsMessage::AccountState(Box::new(state))],
+        self.account_state_reconciler.update_assets(assets);
+        self.emit_unified_account_state(account_id, ts_event, ts_init)
+    }
+
+    fn handle_user_stats(
+        &self,
+        stats: &LighterUserStats,
+        timestamp_ms: u64,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        let Some((account_id, _)) = self.exec_account else {
+            log::debug!("Lighter user_stats frame skipped: no execution context set");
+            return Vec::new();
+        };
+
+        let ts_event = match crate::common::parse::parse_millis_to_nanos(timestamp_ms) {
+            Ok(ts) => ts,
             Err(e) => {
-                log::error!("Error parsing Lighter account state: {e}");
+                log::error!("Invalid Lighter user_stats timestamp {timestamp_ms}: {e}");
+                return Vec::new();
+            }
+        };
+
+        self.account_state_reconciler.update_user_stats(stats);
+        self.emit_unified_account_state(account_id, ts_event, ts_init)
+    }
+
+    /// Asks the reconciler for a merged [`AccountState`] and wraps it as a
+    /// `NautilusWsMessage`. Returns an empty vec when the second stream
+    /// hasn't arrived yet; the AccountStreamFirstFrame marker still gets
+    /// pushed by the caller so the startup gate progresses.
+    fn emit_unified_account_state(
+        &self,
+        account_id: AccountId,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Vec<NautilusWsMessage> {
+        match self
+            .account_state_reconciler
+            .build_state(account_id, ts_event, ts_init)
+        {
+            Some(Ok(state)) => vec![NautilusWsMessage::AccountState(Box::new(state))],
+            Some(Err(e)) => {
+                log::error!("Error building unified Lighter account state: {e}");
                 Vec::new()
             }
+            None => Vec::new(),
         }
     }
 }
@@ -1286,6 +1519,12 @@ fn find_book_level(
     })
 }
 
+// Codes outside the transaction range (e.g. 30003 "Already Subscribed")
+// would falsely reject a live order; see `LIGHTER_ERROR_CODE_TX_RANGE`.
+fn is_sendtx_error_code(code: Option<u64>) -> bool {
+    code.is_some_and(|c| LIGHTER_ERROR_CODE_TX_RANGE.contains(&c))
+}
+
 // SendTxRejected from a top-level `{code, message}` frame: non-200 sendTx
 // ACK or `{"type":"error",...}`.
 fn send_tx_rejected_from_value(
@@ -1298,14 +1537,20 @@ fn send_tx_rejected_from_value(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let tx_hash = value
+        .get("tx_hash")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     NautilusWsMessage::SendTxRejected {
         source,
         code,
         message,
+        tx_hash,
     }
 }
 
-// SendTxRejected from a nested `{"error":{"code":N,"message":...}}` frame.
+// SendTxRejected from a nested `{"error":{"code":N,"message":...}}` frame;
+// these frames never carry a `tx_hash`.
 fn send_tx_rejected_from_nested_error(
     error: &serde_json::Value,
     source: SendTxRejectionSource,
@@ -1320,6 +1565,7 @@ fn send_tx_rejected_from_nested_error(
         source,
         code,
         message,
+        tx_hash: None,
     }
 }
 
@@ -1348,6 +1594,7 @@ fn frame_topic(frame: &LighterWsFrame) -> String {
         | LighterWsFrame::AccountAllTrades { channel, .. }
         | LighterWsFrame::AccountAllPositions { channel, .. }
         | LighterWsFrame::AccountAllAssets { channel, .. }
+        | LighterWsFrame::UserStats { channel, .. }
         | LighterWsFrame::Height { channel, .. }
         | LighterWsFrame::CandleSnapshot { channel, .. }
         | LighterWsFrame::Candle { channel, .. } => channel.as_str().to_string(),
@@ -1404,6 +1651,7 @@ mod tests {
     use std::time::Duration;
 
     use nautilus_model::{
+        enums::AccountType,
         identifiers::{InstrumentId, Symbol, Venue},
         instruments::{CryptoPerpetual, CurrencyPair},
         types::{Currency, Money, Price, Quantity},
@@ -1426,6 +1674,11 @@ mod tests {
         include_str!("../../test_data/ws_account_all_positions_update.json");
     const WS_ACCOUNT_ALL_ASSETS_UPDATE: &str =
         include_str!("../../test_data/ws_account_all_assets_update.json");
+    const WS_USER_STATS_UPDATE: &str = include_str!("../../test_data/ws_user_stats_update.json");
+    const WS_ACCOUNT_ALL_ASSETS_WITH_POSITION: &str =
+        include_str!("../../test_data/ws_account_all_assets_with_position.json");
+    const WS_USER_STATS_WITH_POSITION: &str =
+        include_str!("../../test_data/ws_user_stats_with_position.json");
     const WS_MARKET_STATS_UPDATE_SINGLE: &str =
         include_str!("../../test_data/ws_market_stats_update_single.json");
     const WS_MARKET_STATS_UPDATE_ALL: &str =
@@ -1461,6 +1714,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         ))
@@ -1477,6 +1731,7 @@ mod tests {
             4,
             Price::from("0.01"),
             Quantity::from("0.0001"),
+            None,
             None,
             None,
             None,
@@ -1582,7 +1837,11 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
                 assert_eq!(reports[0].quantity, Quantity::from("1.5000"));
             }
@@ -1608,8 +1867,60 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => assert!(reports.is_empty()),
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
+                assert!(reports.is_empty());
+            }
             other => panic!("expected empty position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_marks_account_positions_incomplete_when_position_instrument_uncached() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["market_id"] = json!(999);
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert_eq!(skipped_market_ids, &[999]);
+                assert!(reports.is_empty());
+            }
+            other => panic!("expected incomplete position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_marks_account_positions_incomplete_when_position_parse_fails() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["position"] = json!("-1.5000");
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert_eq!(skipped_market_ids, &[0]);
+                assert!(reports.is_empty());
+            }
+            other => panic!("expected incomplete position snapshot, was {other:?}"),
         }
     }
 
@@ -1652,7 +1963,11 @@ mod tests {
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
-            NautilusWsMessage::PositionSnapshot(reports) => {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
                 assert_eq!(reports.len(), 1);
                 assert_eq!(reports[0].quantity, Quantity::from("100"));
             }
@@ -1688,6 +2003,21 @@ mod tests {
         serde_json::json!({"error": {"code": 21149, "message": "integrator is not approved"}}),
         true,
         true,
+    )]
+    #[case::subscription_error_frame(
+        serde_json::json!({"type": "error", "code": 30003, "message": "Already Subscribed to : ticker:3"}),
+        true,
+        false,
+    )]
+    #[case::wrapped_subscription_error(
+        serde_json::json!({"error": {"code": 30003, "message": "Already Subscribed to : ticker:3"}}),
+        true,
+        false,
+    )]
+    #[case::codeless_error_frame(
+        serde_json::json!({"type": "error", "message": "unclassifiable"}),
+        true,
+        false,
     )]
     #[case::unknown_type(
         serde_json::json!({"type": "something_unexpected", "payload": "x"}),
@@ -1755,10 +2085,33 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::Ack);
                 assert_eq!(code, Some(21727));
                 assert_eq!(message, "invalid client order index");
+                assert_eq!(tx_hash, None);
+            }
+            other => panic!("expected SendTxRejected, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_control_text_sendtx_failure_carries_echoed_tx_hash() {
+        let mut handler = make_handler_with_account();
+        let payload = serde_json::json!({
+            "type": "jsonapi/sendtx",
+            "code": 21727,
+            "message": "invalid client order index",
+            "tx_hash": "0000abcd",
+        })
+        .to_string();
+
+        let (_, msg) = handler.handle_control_text(&payload);
+
+        match msg.expect("SendTxRejected emitted") {
+            NautilusWsMessage::SendTxRejected { tx_hash, .. } => {
+                assert_eq!(tx_hash.as_deref(), Some("0000abcd"));
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }
@@ -1781,10 +2134,12 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21702));
                 assert_eq!(message, "invalid price");
+                assert_eq!(tx_hash, None);
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }
@@ -1806,32 +2161,115 @@ mod tests {
                 source,
                 code,
                 message,
+                tx_hash,
             } => {
                 assert_eq!(source, SendTxRejectionSource::BareError);
                 assert_eq!(code, Some(21149));
                 assert_eq!(message, "integrator is not approved");
+                assert_eq!(tx_hash, None);
             }
             other => panic!("expected SendTxRejected, was {other:?}"),
         }
     }
 
     #[rstest]
-    fn handle_frame_routes_account_assets_to_account_state() {
+    fn handle_frame_emits_no_account_state_until_both_streams_seen() {
+        // Reconciler refuses to emit until both `account_all_assets` and
+        // `user_stats` have delivered. An assets frame alone produces only
+        // the AccountStreamFirstFrame marker, no AccountState payload.
         let mut handler = make_handler_with_account();
-        let frame: super::LighterWsFrame =
+        let assets_only: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
 
-        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+        let messages = strip_account_marker(handler.handle_frame(assets_only, UnixNanos::from(11)));
+
+        assert!(
+            messages.is_empty(),
+            "expected no AccountState before user_stats arrives, received {messages:?}"
+        );
+    }
+
+    #[rstest]
+    fn handle_frame_routes_account_assets_and_user_stats_to_unified_state() {
+        // Fixture is the captured production no-position payload (10 USDC
+        // on spot, 40 USDC pledged as perp collateral, no resting orders).
+        // Lighter runs unified margin: both legs are deployable equity, so
+        // total = balance + margin_balance, locked = locked_balance only,
+        // and MarginBalance.initial = 0 because user_stats.collateral ==
+        // available_balance (no margin in use).
+        let mut handler = make_handler_with_account();
+        let assets_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
+
+        let _ = handler.handle_frame(assets_frame, UnixNanos::from(11));
+        let messages =
+            strip_account_marker(handler.handle_frame(user_stats_frame, UnixNanos::from(12)));
 
         assert_eq!(messages.len(), 1);
         match &messages[0] {
             NautilusWsMessage::AccountState(state) => {
-                assert_eq!(state.balances.len(), 1);
                 let usdc = Currency::get_or_create_crypto("USDC");
+                assert_eq!(state.account_type, AccountType::Margin);
+                assert_eq!(state.base_currency, None);
+                assert_eq!(state.balances.len(), 1);
                 assert_eq!(state.balances[0].currency, usdc);
-                assert_eq!(state.balances[0].total, Money::from("100.000000 USDC"));
-                assert_eq!(state.balances[0].locked, Money::from("1.000000 USDC"));
+                // balance 10 + margin_balance 40 = 50 total; locked = 0
+                // (no resting spot orders); free = 50 (all deployable).
+                assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+                assert_eq!(state.margins.len(), 1);
+                assert_eq!(state.margins[0].currency, usdc);
+                assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
+                assert_eq!(state.margins[0].maintenance, Money::from("0 USDC"));
+                assert!(state.margins[0].instrument_id.is_none());
                 assert!(state.is_reported);
+            }
+            other => panic!("expected account state, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn handle_frame_unified_state_reflects_open_position() {
+        // Fixture pair captured live with one open ETH-LONG position:
+        //   account_all_assets[USDC] = {balance:10, locked:0, margin_balance:39.995369556}
+        //   user_stats              = {collateral:39.995369, available:39.168314, margin_usage:2.07}
+        //
+        // The 5 mUSDC haircut on margin_balance is the entry fee. The
+        // 0.827055 USDC gap between collateral and available_balance is
+        // the initial margin pledged to the open position. AccountBalance
+        // is unchanged in shape; perp-margin-in-use lives on
+        // MarginBalance, not in `locked`. Maintenance is zero because
+        // Lighter doesn't publish a maintenance value on user_stats.
+        let mut handler = make_handler_with_account();
+        let assets_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_WITH_POSITION).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_WITH_POSITION).unwrap();
+
+        let _ = handler.handle_frame(assets_frame, UnixNanos::from(11));
+        let messages =
+            strip_account_marker(handler.handle_frame(user_stats_frame, UnixNanos::from(12)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::AccountState(state) => {
+                assert_eq!(state.account_type, AccountType::Margin);
+                assert_eq!(state.base_currency, None);
+                assert_eq!(state.balances.len(), 1);
+                // total = 10 + 39.995369556 = 49.99536956 (Money truncates
+                // the trailing digit to 8 decimals, matching the
+                // production log).
+                assert_eq!(state.balances[0].total, Money::from("49.99536956 USDC"));
+                assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
+                assert_eq!(state.balances[0].free, Money::from("49.99536956 USDC"));
+                assert_eq!(state.margins.len(), 1);
+                // initial = collateral 39.995369 - available 39.168314 = 0.827055
+                assert_eq!(state.margins[0].initial, Money::from("0.82705500 USDC"));
+                assert_eq!(state.margins[0].maintenance, Money::from("0 USDC"));
+                assert!(state.margins[0].instrument_id.is_none());
             }
             other => panic!("expected account state, was {other:?}"),
         }
@@ -1853,12 +2291,15 @@ mod tests {
             serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
         let assets_frame: super::LighterWsFrame =
             serde_json::from_str(WS_ACCOUNT_ALL_ASSETS_UPDATE).unwrap();
+        let user_stats_frame: super::LighterWsFrame =
+            serde_json::from_str(WS_USER_STATS_UPDATE).unwrap();
 
         let cases = [
             (orders_frame, AccountStream::Orders),
             (trades_frame, AccountStream::Trades),
             (positions_frame, AccountStream::Positions),
             (assets_frame, AccountStream::Assets),
+            (user_stats_frame, AccountStream::UserStats),
         ];
 
         for (frame, expected) in cases {
@@ -2323,6 +2764,35 @@ mod tests {
         assert!(message.contains("no active WebSocket client"));
     }
 
+    #[tokio::test]
+    async fn resubscribe_order_book_command_skips_when_reference_removed() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let subscriptions = SubscriptionState::new(':');
+        let topic = LighterWsChannel::OrderBook(0).topic_key();
+        assert!(subscriptions.add_reference(&topic));
+        assert!(subscriptions.remove_reference(&topic));
+
+        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions.clone());
+        handler.book_delta_subs.insert(0);
+
+        cmd_tx
+            .send(HandlerCommand::ResubscribeOrderBook { market_index: 0 })
+            .expect("queue resync");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain command");
+
+        assert!(next.is_none());
+        assert!(subscriptions.pending_subscribe_topics().is_empty());
+        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
+    }
+
     fn stub_candle(
         t: i64,
         open: i64,
@@ -2482,6 +2952,7 @@ mod tests {
             (0, LighterCandleResolution::FiveMinute),
             stub_candle(2, 0, 0, 0, 0, 0),
         );
+        handler.subscriptions.mark_unsubscribe("candle:0:1m");
 
         let payload = json!({"type": "unsubscribed", "channel": "candle:0:1m"});
         let (matched, _) = handler.handle_control_text(&payload.to_string());
@@ -2543,5 +3014,174 @@ mod tests {
             matches!(err, LighterWsError::Transport(_)),
             "expected Transport variant, was {err:?}",
         );
+    }
+
+    #[tokio::test]
+    async fn subscribe_command_parks_in_pending_subs_when_inflight_at_cap() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Saturate the gate so the pump cannot dispatch the queued subscribe
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channel: LighterWsChannel::Candle {
+                    market_index: 0,
+                    resolution: LighterCandleResolution::OneMinute,
+                },
+                auth: None,
+            })
+            .expect("queue subscribe");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain command");
+
+        assert!(next.is_none());
+        assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
+        assert_eq!(handler.pending_subs.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn unsubscribe_drops_queued_subscribe_while_gate_full() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Saturate the gate so the queued subscribe cannot dispatch before the unsubscribe
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channel: LighterWsChannel::Trade(0),
+                auth: None,
+            })
+            .expect("queue subscribe");
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                channel: LighterWsChannel::Trade(0),
+            })
+            .expect("queue unsubscribe");
+        drop(cmd_tx);
+        drop(raw_tx);
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for handler to drain commands");
+
+        assert!(next.is_none());
+        assert!(handler.pending_subs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reconnect_clears_gate_state() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // Gate saturated with a subscribe still queued, as during a reconnect storm
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+        handler
+            .pending_subs
+            .push_back((LighterWsChannel::Trade(0), None));
+
+        raw_tx
+            .send(Message::Text(RECONNECTED.to_string().into()))
+            .expect("queue reconnect sentinel");
+
+        let next = tokio::time::timeout(Duration::from_secs(2), handler.next())
+            .await
+            .expect("timed out waiting for reconnect");
+
+        assert!(matches!(next, Some(NautilusWsMessage::Reconnected)));
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.pending_subs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pump_releases_inflight_slot_on_send_failure() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let mut handler =
+            FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, SubscriptionState::new(':'));
+
+        // No active client, so every dispatch fails; the gate must not leak slots
+        for market_index in 0..3 {
+            handler
+                .pending_subs
+                .push_back((LighterWsChannel::Trade(market_index), None));
+        }
+
+        handler.pump_pending_subscribes().await;
+
+        assert!(handler.pending_subs.is_empty());
+        assert!(handler.inflight_subs.is_empty());
+    }
+
+    #[rstest]
+    fn subscribed_control_frame_releases_inflight_slot() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+
+        let (matched, msg) =
+            handler.handle_control_text(r#"{"type":"subscribed","channel":"candle:0:1m"}"#);
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+    }
+
+    #[rstest]
+    fn typed_frame_releases_inflight_slot() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+
+        handler.handle_frame(
+            candle_frame(
+                "candle:0:1m",
+                stub_candle(1_000_000, 10_000, 10_000, 10_000, 10_000, 10_000),
+                true,
+            ),
+            UnixNanos::from(1),
+        );
+
+        assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+    }
+
+    #[rstest]
+    fn release_subscribe_inflight_reports_first_ack_only() {
+        let mut handler = make_handler_with_account();
+        handler.inflight_subs.insert(Ustr::from("trade:7"));
+
+        assert!(handler.release_subscribe_inflight("trade:7"));
+        assert!(!handler.release_subscribe_inflight("trade:7"));
+        assert!(!handler.release_subscribe_inflight("never:1"));
     }
 }

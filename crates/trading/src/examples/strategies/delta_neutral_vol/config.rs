@@ -27,13 +27,22 @@ use crate::strategy::StrategyConfig;
 /// Tracks a short OTM call and put (strangle) and delta-hedges with the
 /// underlying perpetual swap. Rehedges when portfolio delta exceeds a
 /// configurable threshold or on a periodic timer.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
+)]
 pub struct DeltaNeutralVolConfig {
     /// Base strategy configuration.
+    #[builder(default = StrategyConfig {
+        strategy_id: Some(StrategyId::from("DELTA_NEUTRAL_VOL-001")),
+        order_id_tag: Some("001".to_string()),
+        ..Default::default()
+    })]
     pub base: StrategyConfig,
     /// Option instrument family (e.g. "BTC-USD").
     pub option_family: String,
@@ -42,276 +51,38 @@ pub struct DeltaNeutralVolConfig {
     /// Data and execution client ID (e.g. "OKX").
     pub client_id: ClientId,
     /// Target call delta used by the startup strike heuristic.
+    #[builder(default = 0.20)]
     pub target_call_delta: f64,
     /// Target put delta used by the startup strike heuristic.
+    #[builder(default = -0.20)]
     pub target_put_delta: f64,
     /// Number of option contracts per leg.
+    #[builder(default = 1)]
     pub contracts: u64,
     /// Portfolio delta threshold that triggers a rehedge.
+    #[builder(default = 0.5)]
     pub rehedge_delta_threshold: f64,
     /// Periodic rehedge check interval in seconds.
+    #[builder(default = 30)]
     pub rehedge_interval_secs: u64,
     /// Optional expiry date filter (e.g. "260327").
     pub expiry_filter: Option<String>,
     /// Place strangle entry orders when Greeks are first initialized.
     /// When false the strategy only hedges externally-entered positions.
+    #[builder(default = true)]
     pub enter_strangle: bool,
     /// Implied volatility offset subtracted from mark IV for entry limit
     /// price. A value of 0.02 sells 2 vol points below mark (more aggressive).
+    #[builder(default = 0.0)]
     pub entry_iv_offset: f64,
     /// Time-in-force for strangle entry orders.
+    #[builder(default = TimeInForce::Gtc)]
     pub entry_time_in_force: TimeInForce,
     /// Tick offset from the option ask used for premium-priced entry orders.
     /// When set, the strategy does not pass IV params to the adapter.
     pub entry_premium_offset_ticks: Option<i32>,
     /// Param key for implied volatility passed to `submit_order`.
     /// Adapter-specific: Bybit uses `"order_iv"`, OKX uses `"px_vol"`.
+    #[builder(default = "px_vol".to_string())]
     pub iv_param_key: String,
-}
-
-impl DeltaNeutralVolConfig {
-    /// Creates a new [`DeltaNeutralVolConfig`] with required fields and defaults.
-    #[must_use]
-    pub fn new(
-        option_family: String,
-        hedge_instrument_id: InstrumentId,
-        client_id: ClientId,
-    ) -> Self {
-        Self {
-            base: StrategyConfig {
-                strategy_id: Some(StrategyId::from("DELTA_NEUTRAL_VOL-001")),
-                order_id_tag: Some("001".to_string()),
-                ..Default::default()
-            },
-            option_family,
-            hedge_instrument_id,
-            client_id,
-            target_call_delta: 0.20,
-            target_put_delta: -0.20,
-            contracts: 1,
-            rehedge_delta_threshold: 0.5,
-            rehedge_interval_secs: 30,
-            expiry_filter: None,
-            enter_strangle: true,
-            entry_iv_offset: 0.0,
-            entry_time_in_force: TimeInForce::Gtc,
-            entry_premium_offset_ticks: None,
-            iv_param_key: "px_vol".to_string(),
-        }
-    }
-
-    #[must_use]
-    pub fn with_target_call_delta(mut self, delta: f64) -> Self {
-        self.target_call_delta = delta;
-        self
-    }
-
-    #[must_use]
-    pub fn with_target_put_delta(mut self, delta: f64) -> Self {
-        self.target_put_delta = delta;
-        self
-    }
-
-    #[must_use]
-    pub fn with_contracts(mut self, contracts: u64) -> Self {
-        self.contracts = contracts;
-        self
-    }
-
-    #[must_use]
-    pub fn with_rehedge_delta_threshold(mut self, threshold: f64) -> Self {
-        self.rehedge_delta_threshold = threshold;
-        self
-    }
-
-    #[must_use]
-    pub fn with_rehedge_interval_secs(mut self, secs: u64) -> Self {
-        self.rehedge_interval_secs = secs;
-        self
-    }
-
-    #[must_use]
-    pub fn with_expiry_filter(mut self, expiry: String) -> Self {
-        self.expiry_filter = Some(expiry);
-        self
-    }
-
-    #[must_use]
-    pub fn with_enter_strangle(mut self, enter: bool) -> Self {
-        self.enter_strangle = enter;
-        self
-    }
-
-    #[must_use]
-    pub fn with_entry_iv_offset(mut self, offset: f64) -> Self {
-        self.entry_iv_offset = offset;
-        self
-    }
-
-    #[must_use]
-    pub fn with_entry_time_in_force(mut self, tif: TimeInForce) -> Self {
-        self.entry_time_in_force = tif;
-        self
-    }
-
-    #[must_use]
-    pub fn with_entry_premium_offset_ticks(mut self, ticks: i32) -> Self {
-        self.entry_premium_offset_ticks = Some(ticks);
-        self
-    }
-
-    #[must_use]
-    pub fn with_strategy_id(mut self, strategy_id: StrategyId) -> Self {
-        self.base.strategy_id = Some(strategy_id);
-        self
-    }
-
-    #[must_use]
-    pub fn with_order_id_tag(mut self, tag: String) -> Self {
-        self.base.order_id_tag = Some(tag);
-        self
-    }
-
-    #[must_use]
-    pub fn with_iv_param_key(mut self, key: String) -> Self {
-        self.iv_param_key = key;
-        self
-    }
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl DeltaNeutralVolConfig {
-    #[new]
-    #[pyo3(signature = (
-        option_family,
-        hedge_instrument_id,
-        client_id,
-        strategy_id=None,
-        order_id_tag=None,
-        target_call_delta=0.20,
-        target_put_delta=-0.20,
-        contracts=1,
-        rehedge_delta_threshold=0.5,
-        rehedge_interval_secs=30,
-        expiry_filter=None,
-        enter_strangle=true,
-        entry_iv_offset=0.0,
-        entry_time_in_force=TimeInForce::Gtc,
-        entry_premium_offset_ticks=None,
-        iv_param_key="px_vol",
-    ))]
-    #[expect(clippy::too_many_arguments)]
-    fn py_new(
-        option_family: String,
-        hedge_instrument_id: InstrumentId,
-        client_id: ClientId,
-        strategy_id: Option<StrategyId>,
-        order_id_tag: Option<String>,
-        target_call_delta: f64,
-        target_put_delta: f64,
-        contracts: u64,
-        rehedge_delta_threshold: f64,
-        rehedge_interval_secs: u64,
-        expiry_filter: Option<String>,
-        enter_strangle: bool,
-        entry_iv_offset: f64,
-        entry_time_in_force: TimeInForce,
-        entry_premium_offset_ticks: Option<i32>,
-        iv_param_key: &str,
-    ) -> Self {
-        let mut config = Self::new(option_family, hedge_instrument_id, client_id)
-            .with_target_call_delta(target_call_delta)
-            .with_target_put_delta(target_put_delta)
-            .with_contracts(contracts)
-            .with_rehedge_delta_threshold(rehedge_delta_threshold)
-            .with_rehedge_interval_secs(rehedge_interval_secs)
-            .with_enter_strangle(enter_strangle)
-            .with_entry_iv_offset(entry_iv_offset)
-            .with_entry_time_in_force(entry_time_in_force)
-            .with_iv_param_key(iv_param_key.to_string());
-
-        if let Some(ticks) = entry_premium_offset_ticks {
-            config.entry_premium_offset_ticks = Some(ticks);
-        }
-
-        if let Some(id) = strategy_id {
-            config.base.strategy_id = Some(id);
-        }
-
-        if let Some(tag) = order_id_tag {
-            config.base.order_id_tag = Some(tag);
-        }
-
-        if let Some(expiry) = expiry_filter {
-            config.expiry_filter = Some(expiry);
-        }
-
-        config
-    }
-
-    #[getter]
-    fn option_family(&self) -> &str {
-        &self.option_family
-    }
-
-    #[getter]
-    fn hedge_instrument_id(&self) -> InstrumentId {
-        self.hedge_instrument_id
-    }
-
-    #[getter]
-    fn client_id(&self) -> ClientId {
-        self.client_id
-    }
-
-    #[getter]
-    fn target_call_delta(&self) -> f64 {
-        self.target_call_delta
-    }
-
-    #[getter]
-    fn target_put_delta(&self) -> f64 {
-        self.target_put_delta
-    }
-
-    #[getter]
-    fn contracts(&self) -> u64 {
-        self.contracts
-    }
-
-    #[getter]
-    fn rehedge_delta_threshold(&self) -> f64 {
-        self.rehedge_delta_threshold
-    }
-
-    #[getter]
-    fn rehedge_interval_secs(&self) -> u64 {
-        self.rehedge_interval_secs
-    }
-
-    #[getter]
-    fn expiry_filter(&self) -> Option<&str> {
-        self.expiry_filter.as_deref()
-    }
-
-    #[getter]
-    fn enter_strangle(&self) -> bool {
-        self.enter_strangle
-    }
-
-    #[getter]
-    fn entry_iv_offset(&self) -> f64 {
-        self.entry_iv_offset
-    }
-
-    #[getter]
-    fn entry_time_in_force(&self) -> TimeInForce {
-        self.entry_time_in_force
-    }
-
-    #[getter]
-    fn entry_premium_offset_ticks(&self) -> Option<i32> {
-        self.entry_premium_offset_ticks
-    }
 }

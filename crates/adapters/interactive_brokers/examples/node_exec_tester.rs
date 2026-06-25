@@ -21,17 +21,11 @@
 //! Run embedded config unit tests with:
 //! `cargo test --example ib-exec-tester --package nautilus-interactive-brokers --features examples`
 //!
-//! Environment variables:
-//! - `NAUTILUS_IB_ACCOUNT_ID` is required, for example `U1234567`.
-//! - `NAUTILUS_IB_HOST` defaults to `127.0.0.1`.
-//! - `NAUTILUS_IB_PORT` defaults to `7497` for paper TWS.
-//! - `NAUTILUS_IB_CLIENT_ID` defaults to `1`.
-//! - `NAUTILUS_IB_INSTRUMENT_ID` defaults to `AAPL=STK.SMART`.
-//! - `NAUTILUS_IB_MARKET_DATA_TYPE` defaults to `realtime`.
-//! - `NAUTILUS_IB_ORDER_QTY` defaults to `1`.
-//! - `NAUTILUS_IB_AUTO_STOP_SECS` defaults to `0` (run until stopped).
-//! - `NAUTILUS_IB_EXEC_SPEC_PROFILE` defaults to `lifecycle`.
-//!   Supported values: `lifecycle`, `cancel-modify`, `rejection`, `options`, `unsupported-flags`.
+//! Edit the constants below to change the TWS/Gateway connection, target
+//! instrument, order size, and exec spec profile.
+//!
+//! Required environment variable:
+//! - `NAUTILUS_IB_ACCOUNT_ID` is your IB account, for example `U1234567`.
 
 use std::{collections::HashSet, env, time::Duration};
 
@@ -52,8 +46,10 @@ use nautilus_model::{
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
-use rust_decimal::Decimal;
 
+// Each variant is exercised by the tests and selected by editing EXEC_SPEC_PROFILE,
+// but only the default is constructed in a non-test build
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IbExecSpecProfile {
     Lifecycle,
@@ -63,34 +59,40 @@ enum IbExecSpecProfile {
     UnsupportedFlags,
 }
 
+const TRADER_ID: &str = "IB-EXEC-TESTER-001";
+const NODE_NAME: &str = "IB-EXEC-TESTER-001";
+const STRATEGY_ID: &str = "IB-EXEC-TESTER-001";
+const HOST: &str = DEFAULT_HOST;
+const PORT: u16 = DEFAULT_TWS_PORT;
+const CLIENT_ID: i32 = DEFAULT_CLIENT_ID;
+const INSTRUMENT_ID: &str = "AAPL=STK.SMART";
+const MARKET_DATA_TYPE: &str = "realtime";
+const ORDER_QTY: &str = "1";
+const AUTO_STOP_SECS: u64 = 0;
+const EXEC_SPEC_PROFILE: IbExecSpecProfile = IbExecSpecProfile::Lifecycle;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let host = env_string("NAUTILUS_IB_HOST", DEFAULT_HOST);
-    let port = env_u16("NAUTILUS_IB_PORT", DEFAULT_TWS_PORT)?;
-    let client_id = env_i32("NAUTILUS_IB_CLIENT_ID", DEFAULT_CLIENT_ID)?;
     let account_id_raw = env::var("NAUTILUS_IB_ACCOUNT_ID")?;
     let account_id = account_id_from_ib_account(&account_id_raw);
-    let trader_id = TraderId::from("IB-EXEC-TESTER-001");
-    let instrument_id =
-        InstrumentId::from(env_string("NAUTILUS_IB_INSTRUMENT_ID", "AAPL=STK.SMART"));
-    let market_data_type = market_data_type_from_env();
-    let order_qty = Quantity::from(env_string("NAUTILUS_IB_ORDER_QTY", "1"));
-    let profile = exec_spec_profile_from_env();
-    let auto_stop_secs = env_u64("NAUTILUS_IB_AUTO_STOP_SECS", 0)?;
+    let trader_id = TraderId::from(TRADER_ID);
+    let instrument_id = InstrumentId::from(INSTRUMENT_ID);
+    let market_data_type = parse_market_data_type(MARKET_DATA_TYPE);
+    let order_qty = Quantity::from(ORDER_QTY);
 
     let data_config = InteractiveBrokersDataClientConfig {
-        host: host.clone(),
-        port,
-        client_id,
+        host: HOST.to_string(),
+        port: PORT,
+        client_id: CLIENT_ID,
         market_data_type,
         instrument_provider: instrument_provider_config(instrument_id),
         ..Default::default()
     };
 
     let exec_config = InteractiveBrokersExecClientConfig {
-        host,
-        port,
-        client_id,
+        host: HOST.to_string(),
+        port: PORT,
+        client_id: CLIENT_ID,
         account_id: Some(account_id_raw),
         instrument_provider: instrument_provider_config(instrument_id),
         ..Default::default()
@@ -102,7 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut node = LiveNode::builder(trader_id, Environment::Live)?
-        .with_name("IB-EXEC-TESTER-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .with_exec_engine_config(exec_engine_config)
         .with_delay_post_stop_secs(5)
         .with_reconciliation(true)
@@ -120,11 +122,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?
         .build()?;
 
-    let tester_config =
-        exec_tester_config_for_profile(profile, instrument_id, ClientId::new(IB), order_qty);
+    let tester_config = exec_tester_config_for_profile(
+        EXEC_SPEC_PROFILE,
+        instrument_id,
+        ClientId::new(IB),
+        order_qty,
+    );
 
     node.add_strategy(ExecTester::new(tester_config))?;
-    schedule_auto_stop(&node, auto_stop_secs);
+    schedule_auto_stop(&node, AUTO_STOP_SECS);
     node.run().await?;
 
     Ok(())
@@ -136,26 +142,6 @@ fn account_id_from_ib_account(account_id: &str) -> AccountId {
     } else {
         AccountId::from(format!("{IB}-{account_id}"))
     }
-}
-
-fn env_string(key: &str, default: &str) -> String {
-    env::var(key).unwrap_or_else(|_| default.to_string())
-}
-
-fn env_i32(key: &str, default: i32) -> Result<i32, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn env_u16(key: &str, default: u16) -> Result<u16, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn env_u64(key: &str, default: u64) -> Result<u64, Box<dyn std::error::Error>> {
-    Ok(env::var(key).map_or(Ok(default), |value| value.parse())?)
-}
-
-fn market_data_type_from_env() -> MarketDataType {
-    parse_market_data_type(&env_string("NAUTILUS_IB_MARKET_DATA_TYPE", "realtime"))
 }
 
 fn parse_market_data_type(value: &str) -> MarketDataType {
@@ -193,17 +179,6 @@ fn schedule_auto_stop(node: &LiveNode, delay_secs: u64) {
     });
 }
 
-fn exec_spec_profile_from_env() -> IbExecSpecProfile {
-    match env_string("NAUTILUS_IB_EXEC_SPEC_PROFILE", "lifecycle").as_str() {
-        "lifecycle" => IbExecSpecProfile::Lifecycle,
-        "cancel-modify" => IbExecSpecProfile::CancelModify,
-        "rejection" => IbExecSpecProfile::Rejection,
-        "options" => IbExecSpecProfile::Options,
-        "unsupported-flags" => IbExecSpecProfile::UnsupportedFlags,
-        value => panic!("invalid NAUTILUS_IB_EXEC_SPEC_PROFILE={value}"),
-    }
-}
-
 fn exec_tester_config_for_profile(
     profile: IbExecSpecProfile,
     instrument_id: InstrumentId,
@@ -212,7 +187,7 @@ fn exec_tester_config_for_profile(
 ) -> ExecTesterConfig {
     let builder = ExecTesterConfig::builder()
         .base(StrategyConfig {
-            strategy_id: Some(StrategyId::from("IB-EXEC-TESTER-001")),
+            strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
             ..Default::default()
         })
@@ -223,31 +198,35 @@ fn exec_tester_config_for_profile(
 
     match profile {
         IbExecSpecProfile::Lifecycle => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::CancelModify => builder
             .enable_limit_buys(true)
             .enable_limit_sells(true)
             .modify_orders_to_maintain_tob_offset(true)
             .modify_stop_orders_to_maintain_offset(true)
             .use_individual_cancels_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::Rejection => builder
             .enable_limit_buys(true)
             .enable_limit_sells(true)
             .test_reject_post_only(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::Options => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(false)
             .enable_limit_sells(false)
             .close_positions_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
         IbExecSpecProfile::UnsupportedFlags => builder
-            .open_position_on_start_qty(Decimal::ONE)
+            .open_position_on_start_qty(order_qty.as_decimal())
             .enable_limit_buys(true)
             .enable_limit_sells(false)
             .limit_time_in_force(TimeInForce::Ioc)
@@ -256,12 +235,15 @@ fn exec_tester_config_for_profile(
             .test_reject_reduce_only(true)
             .use_quote_quantity(true)
             .use_batch_cancel_on_stop(true)
-            .build(),
+            .build()
+            .unwrap(),
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use rust_decimal::Decimal;
+
     use super::*;
 
     fn instrument_id() -> InstrumentId {

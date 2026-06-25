@@ -47,6 +47,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, AtomicTime, UnixNanos, consts::NAUTILUS_USER_AGENT,
     datetime::NANOSECONDS_IN_MILLISECOND, env::get_or_env_var, string::secret::REDACTED,
@@ -75,6 +76,7 @@ use nautilus_network::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -110,7 +112,7 @@ use crate::{
     common::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
-            OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE, should_retry_error_code,
+            OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
         },
         credential::Credential,
         enums::{
@@ -138,6 +140,23 @@ use crate::{
 };
 
 const OKX_SUCCESS_CODE: &str = "0";
+
+#[derive(Debug, Error)]
+#[error("Failed to parse instrument {symbol}: {source}")]
+pub(crate) struct OKXInstrumentDefinitionError {
+    symbol: String,
+    #[source]
+    source: anyhow::Error,
+}
+
+impl OKXInstrumentDefinitionError {
+    fn new(symbol: &str, source: anyhow::Error) -> Self {
+        Self {
+            symbol: symbol.to_string(),
+            source,
+        }
+    }
+}
 
 /// Ranks a spot instrument's quote currency for deterministic tie-breaking
 /// when multiple pairs share the same base. Matches OKX's dominant-quote
@@ -197,9 +216,23 @@ fn deserialize_okx_response<T: DeserializeOwned>(
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Context;
     use rstest::rstest;
 
-    use super::resolve_okx_error_message;
+    use super::{OKXInstrumentDefinitionError, resolve_okx_error_message};
+
+    #[rstest]
+    fn test_instrument_definition_error_survives_anyhow_context_downcast() {
+        let result: anyhow::Result<()> = Err(OKXInstrumentDefinitionError::new(
+            "USDG-SGD",
+            anyhow::anyhow!("`tick_sz` is empty"),
+        )
+        .into());
+
+        let err = result.context("fetch instrument from API").unwrap_err();
+
+        assert!(err.downcast_ref::<OKXInstrumentDefinitionError>().is_some());
+    }
 
     #[rstest]
     fn test_resolve_okx_error_message_prefers_detailed_s_msg_over_generic_top_level() {
@@ -730,7 +763,7 @@ impl OKXRawHttpClient {
                 if resp.status.is_success() {
                     let okx_response: OKXResponse<T> = deserialize_okx_response(&resp.body)
                         .map_err(|e| {
-                            log::error!("Failed to deserialize OKXResponse: {e}");
+                            log::warn!("Failed to deserialize OKXResponse: {e}");
                             OKXHttpError::JsonError(e.to_string())
                         })?;
 
@@ -747,7 +780,7 @@ impl OKXRawHttpClient {
                     if resp.status.as_u16() == StatusCode::NOT_FOUND.as_u16() {
                         log::debug!("HTTP 404 with body: {error_body}");
                     } else {
-                        log::error!(
+                        log::warn!(
                             "HTTP error {} with body: {error_body}",
                             resp.status.as_str()
                         );
@@ -779,16 +812,7 @@ impl OKXRawHttpClient {
         //
         // Note: OKX returns many permanent errors which should NOT be retried
         // (e.g., "Invalid instrument", "Insufficient balance", "Invalid API Key")
-        let should_retry = |error: &OKXHttpError| -> bool {
-            match error {
-                OKXHttpError::HttpClientError(_) => true,
-                OKXHttpError::UnexpectedStatus { status, .. } => {
-                    status.as_u16() >= 500 || status.as_u16() == 429
-                }
-                OKXHttpError::OkxError { error_code, .. } => should_retry_error_code(error_code),
-                _ => false,
-            }
-        };
+        let should_retry = |error: &OKXHttpError| -> bool { error.is_retryable() };
 
         let create_error = |msg: String| -> OKXHttpError {
             if msg == "canceled" {
@@ -798,7 +822,8 @@ impl OKXRawHttpClient {
             }
         };
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry_with_cancel(
                 path,
                 operation,
@@ -806,7 +831,15 @@ impl OKXRawHttpClient {
                 create_error,
                 &self.cancellation_token,
             )
-            .await
+            .await;
+
+        if let Err(ref e) = result
+            && e.is_retryable()
+        {
+            log::error!("Request exhausted retries: path={path}, error={e}");
+        }
+
+        result
     }
 
     /// Sets the position mode for an account.
@@ -1725,6 +1758,15 @@ impl OKXHttpClient {
             .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not in cache"))
     }
 
+    fn instrument_from_cache_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<InstrumentAny> {
+        self.instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id).into())
+    }
+
     /// Cancel all pending HTTP requests.
     pub fn cancel_all_requests(&self) {
         self.inner.cancel_all_requests();
@@ -2147,11 +2189,15 @@ impl OKXHttpClient {
 
         let raw_inst = resp
             .first()
-            .ok_or_else(|| anyhow::anyhow!("Instrument {symbol} not found"))?;
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
         // Skip pre-open instruments which have incomplete/empty field values
         if raw_inst.state == OKXInstrumentStatus::Preopen {
-            anyhow::bail!("Instrument {symbol} is in pre-open state");
+            return Err(OKXInstrumentDefinitionError::new(
+                symbol,
+                anyhow::anyhow!("instrument is in pre-open state"),
+            )
+            .into());
         }
 
         let fee_rate_opt = {
@@ -2202,8 +2248,16 @@ impl OKXHttpClient {
         };
 
         let ts_init = self.generate_ts_init();
-        let instrument = parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)?
-            .ok_or_else(|| anyhow::anyhow!("Unsupported instrument type for {symbol}"))?;
+        let Some(instrument) =
+            parse_instrument_any(raw_inst, None, None, maker_fee, taker_fee, ts_init)
+                .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e))?
+        else {
+            return Err(OKXInstrumentDefinitionError::new(
+                symbol,
+                anyhow::anyhow!("unsupported instrument type"),
+            )
+            .into());
+        };
 
         self.cache_instrument(instrument.clone());
 
@@ -2226,6 +2280,7 @@ impl OKXHttpClient {
         let ts_init = self.generate_ts_init();
 
         parse_spread_instrument(raw_spread, None, None, None, None, ts_init)
+            .map_err(|e| OKXInstrumentDefinitionError::new(symbol, e).into())
     }
 
     /// Requests event contract series metadata from OKX.
@@ -2476,7 +2531,7 @@ impl OKXHttpClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> anyhow::Result<OrderBook> {
-        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self.instrument_from_cache_by_id(instrument_id)?;
         let price_precision = inst.price_precision();
         let size_precision = inst.size_precision();
 
@@ -2534,7 +2589,7 @@ impl OKXHttpClient {
         instrument_id: InstrumentId,
         depth: Option<u32>,
     ) -> anyhow::Result<OrderBookDeltas> {
-        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self.instrument_from_cache_by_id(instrument_id)?;
         let price_precision = inst.price_precision();
         let size_precision = inst.size_precision();
 
@@ -2742,7 +2797,7 @@ impl OKXHttpClient {
         let end_ms = end.map(|e| e.timestamp_millis());
 
         let ts_init = self.generate_ts_init();
-        let inst = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
         // Historical pagination walks backwards using trade IDs, OKX does not honour timestamps for
         // standalone `before` requests (type=2)
@@ -3148,8 +3203,9 @@ impl OKXHttpClient {
         });
         let now_ms = now.timestamp_millis();
 
-        let symbol = bar_type.instrument_id().symbol;
-        let inst = self.instrument_from_cache(symbol.inner())?;
+        let instrument_id = bar_type.instrument_id();
+        let symbol = instrument_id.symbol;
+        let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
         let mut out: Vec<Bar> = Vec::new();
         let mut pages = 0usize;
@@ -5206,11 +5262,17 @@ impl OKXHttpClient {
         instrument_id: InstrumentId,
         algo_id: String,
         new_trigger_price: Option<Price>,
+        new_sl_trigger_price: Option<Price>,
         new_limit_price: Option<Price>,
         new_quantity: Option<Quantity>,
         new_callback_ratio: Option<String>,
         new_callback_spread: Option<String>,
         new_activation_price: Option<Price>,
+        new_tp_trigger_price: Option<Price>,
+        new_tp_order_price: Option<String>,
+        new_tp_trigger_px_type: Option<String>,
+        new_sl_order_price: Option<String>,
+        new_sl_trigger_px_type: Option<String>,
     ) -> Result<OKXAmendAlgoOrderResponse, OKXHttpError> {
         let request = OKXAmendAlgoOrderRequest {
             inst_id: instrument_id.symbol.as_str().to_string(),
@@ -5218,6 +5280,12 @@ impl OKXHttpClient {
             algo_cl_ord_id: None,
             new_sz: new_quantity.map(|q| q.to_string()),
             new_trigger_px: new_trigger_price.map(|p| p.to_string()),
+            new_tp_trigger_px: new_tp_trigger_price.map(|p| p.to_string()),
+            new_tp_ord_px: new_tp_order_price,
+            new_tp_trigger_px_type,
+            new_sl_trigger_px: new_sl_trigger_price.map(|p| p.to_string()),
+            new_sl_ord_px: new_sl_order_price,
+            new_sl_trigger_px_type,
             new_order_px: new_limit_price.map(|p| p.to_string()),
             new_callback_ratio,
             new_callback_spread,
@@ -5811,15 +5879,9 @@ impl OKXHttpClient {
                 return Ok(reports);
             }
 
-            // OKX's `/orders-algo-history` endpoint rejects calls that
-            // carry neither a `state` nor an `algoId` / `algoClOrdId`
-            // narrowing with code 50015. The reconciliation path wants
-            // only currently-live algo orders (those already appear in
-            // the pending response above), so skip the history leg when
-            // the caller supplied no narrowing. Specific-lookup callers
-            // still hit history because `has_specific_lookup` implies
-            // `algoId` or `algoClOrdId`, which the endpoint accepts.
-            if state.is_some() || has_specific_lookup {
+            // `/orders-algo-history` rejects anything but `state`/`algoId`
+            // with 50015; `algoClOrdId` alone is not accepted.
+            if state.is_some() || algo_id.is_some() {
                 let remaining = limit.map(|l| (l as usize).saturating_sub(reports.len()));
                 let history = self.paginate_algo_history(&params, remaining).await?;
                 self.collect_algo_reports(

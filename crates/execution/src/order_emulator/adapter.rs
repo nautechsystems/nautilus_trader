@@ -18,23 +18,9 @@ use std::{
     rc::Rc,
 };
 
-use nautilus_common::{
-    cache::Cache,
-    clock::Clock,
-    msgbus::{
-        MessagingSwitchboard, TypedHandler, TypedIntoHandler, register_trading_command_endpoint,
-    },
-};
-use nautilus_core::{UUID4, WeakCell};
-use nautilus_model::identifiers::TraderId;
-use ustr::Ustr;
+use nautilus_common::{cache::Cache, clock::Clock};
 
-use crate::{
-    order_emulator::{emulator::OrderEmulator, handlers::OrderEmulatorOnEventHandler},
-    order_manager::handlers::{
-        CancelOrderHandlerAny, ModifyOrderHandlerAny, SubmitOrderHandlerAny,
-    },
-};
+use crate::order_emulator::emulator::OrderEmulator;
 
 #[derive(Debug)]
 pub struct OrderEmulatorAdapter {
@@ -43,76 +29,10 @@ pub struct OrderEmulatorAdapter {
 
 impl OrderEmulatorAdapter {
     /// Creates a new [`OrderEmulatorAdapter`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if registration with the actor system fails.
-    pub fn new(
-        trader_id: TraderId,
-        clock: Rc<RefCell<dyn Clock>>,
-        cache: Rc<RefCell<Cache>>,
-    ) -> Self {
-        let emulator = Rc::new(RefCell::new(OrderEmulator::new(
-            clock.clone(),
-            cache.clone(),
-        )));
-
-        emulator
-            .borrow_mut()
-            .register(trader_id, clock, cache)
-            .expect("Failed to register OrderEmulator");
-
-        // Set self-reference for subscription handlers
-        Self::initialize_self_ref(&emulator);
-
-        Self::initialize_execute_handler(&emulator);
-        Self::initialize_on_event_handler(&emulator);
-        Self::initialize_submit_order_handler(&emulator);
-        Self::initialize_cancel_order_handler(&emulator);
-        Self::initialize_modify_order_handler(&emulator);
+    pub fn new(clock: Rc<RefCell<dyn Clock>>, cache: Rc<RefCell<Cache>>) -> Self {
+        let emulator = Rc::new(RefCell::new(OrderEmulator::new(clock, cache)));
 
         Self { emulator }
-    }
-
-    fn initialize_self_ref(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let self_ref = WeakCell::from(Rc::downgrade(emulator));
-        emulator.borrow_mut().set_self_ref(self_ref);
-    }
-
-    fn initialize_submit_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = SubmitOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_submit_order_handler(handler);
-    }
-
-    fn initialize_cancel_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = CancelOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_cancel_order_handler(handler);
-    }
-
-    fn initialize_modify_order_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = ModifyOrderHandlerAny::OrderEmulator(WeakCell::from(Rc::downgrade(emulator)));
-        emulator.borrow_mut().set_modify_order_handler(handler);
-    }
-
-    fn initialize_execute_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let emulator_weak = WeakCell::from(Rc::downgrade(emulator));
-        let handler = TypedIntoHandler::from(move |cmd| {
-            if let Some(emulator_rc) = emulator_weak.upgrade() {
-                emulator_rc.borrow_mut().execute(cmd);
-            }
-        });
-
-        let endpoint = MessagingSwitchboard::order_emulator_execute();
-        register_trading_command_endpoint(endpoint, handler);
-    }
-
-    fn initialize_on_event_handler(emulator: &Rc<RefCell<OrderEmulator>>) {
-        let handler = TypedHandler::new(OrderEmulatorOnEventHandler::new(
-            Ustr::from(UUID4::new().as_str()),
-            WeakCell::from(Rc::downgrade(emulator)),
-        ));
-
-        emulator.borrow_mut().set_on_event_handler(handler);
     }
 
     #[must_use]
@@ -123,5 +43,26 @@ impl OrderEmulatorAdapter {
     #[must_use]
     pub fn get_emulator_mut(&self) -> RefMut<'_, OrderEmulator> {
         self.emulator.borrow_mut()
+    }
+
+    #[must_use]
+    pub fn emulator(&self) -> Rc<RefCell<OrderEmulator>> {
+        self.emulator.clone()
+    }
+
+    pub fn start(&self) {
+        self.emulator.borrow_mut().start();
+    }
+
+    pub fn stop(&self) {
+        self.emulator.borrow().stop();
+    }
+
+    pub fn reset(&self) {
+        self.emulator.borrow_mut().reset();
+    }
+
+    pub fn dispose(&self) {
+        self.emulator.borrow_mut().dispose();
     }
 }

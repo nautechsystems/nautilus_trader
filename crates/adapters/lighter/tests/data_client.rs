@@ -290,8 +290,11 @@ async fn start_server() -> (SocketAddr, Arc<TestServerState>) {
     tokio::spawn(async move {
         axum::serve(listener, router).await.expect("serve");
     });
-    // Give axum a moment to start accepting connections before tests dial in.
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(2),
+    )
+    .await;
     (addr, state)
 }
 
@@ -373,6 +376,17 @@ async fn await_subscribe_count(state: &TestServerState, target: usize) {
     .await;
 }
 
+async fn await_connection_count(state: &TestServerState, target: usize) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.connection_count.lock().await == target }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+}
+
 async fn await_unsubscribe_count(state: &TestServerState, target: usize) {
     wait_until_async(
         || {
@@ -395,26 +409,71 @@ async fn test_connect_disconnect_lifecycle() {
     client.connect().await.expect("connect");
     assert!(client.is_connected());
 
-    wait_until_async(
-        || {
-            let state = Arc::clone(&state);
-            async move { *state.connection_count.lock().await == 1 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    await_connection_count(&state, 1).await;
 
     client.disconnect().await.expect("disconnect");
     assert!(!client.is_connected());
 
-    wait_until_async(
-        || {
-            let state = Arc::clone(&state);
-            async move { *state.connection_count.lock().await == 0 }
-        },
-        Duration::from_secs(2),
-    )
-    .await;
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_stop_disconnects_websocket_client() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.stop().expect("stop");
+
+    assert!(!client.is_connected());
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    assert!(client.is_connected());
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_reset_disconnects_websocket_client_and_allows_reconnect() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.reset().expect("reset");
+
+    assert!(!client.is_connected());
+    await_connection_count(&state, 0).await;
+
+    client.connect().await.expect("reconnect");
+    assert!(client.is_connected());
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_dispose_disconnects_websocket_client() {
+    let (addr, state) = start_server().await;
+    let (mut client, _rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    await_connection_count(&state, 1).await;
+
+    client.dispose().expect("dispose");
+
+    assert!(!client.is_connected());
+    await_connection_count(&state, 0).await;
 }
 
 #[rstest]

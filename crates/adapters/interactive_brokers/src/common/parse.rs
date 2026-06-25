@@ -17,11 +17,18 @@
 
 use std::{collections::HashMap, str::FromStr, sync::LazyLock};
 
-use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
+use ibapi::contracts::{Contract, Currency, Exchange, OptionRight, SecurityType, Symbol};
 use nautilus_core::UnixNanos;
 use nautilus_model::identifiers::{InstrumentId, Symbol as NautilusSymbol, TradeId, Venue};
 
 use crate::common::enums::{IbOptionRight, IbSecurityType};
+
+fn ib_option_right_to_option_right(right: IbOptionRight) -> OptionRight {
+    match right {
+        IbOptionRight::Call => OptionRight::Call,
+        IbOptionRight::Put => OptionRight::Put,
+    }
+}
 
 /// Generate a unique trade ID for Interactive Brokers trades.
 ///
@@ -106,7 +113,7 @@ pub fn ib_contract_to_instrument_id_simplified(
             let symbol_str = if contract.local_symbol.is_empty() {
                 format!(
                     "{} {} {} {}",
-                    contract.right.as_str(),
+                    contract.right.map_or("", |right| right.as_str()),
                     contract.trading_class.as_str(),
                     contract.last_trade_date_or_contract_month.as_str(),
                     format_option_strike(contract.strike),
@@ -158,7 +165,7 @@ pub fn ib_contract_to_instrument_id_simplified(
             if contract.local_symbol.is_empty() {
                 // Fallback construction
                 let expiry = contract.last_trade_date_or_contract_month.as_str();
-                let right = if contract.right == "C" { "C" } else { "P" };
+                let right = contract.right.map_or("P", |right| right.as_str());
                 let strike_str = format!("{}", contract.strike as i64);
                 let symbol_str = format!(
                     "{}{} {}{}",
@@ -605,7 +612,7 @@ pub fn instrument_id_to_ib_contract(
                 local_symbol: opt.local_symbol,
                 last_trade_date_or_contract_month: opt.expiry,
                 strike: opt.strike_value,
-                right: opt.right,
+                right: Some(opt.right),
                 ..Default::default()
             });
         }
@@ -620,7 +627,7 @@ pub fn instrument_id_to_ib_contract(
                 trading_class: opt.trading_class,
                 last_trade_date_or_contract_month: opt.expiry,
                 strike: opt.strike_value,
-                right: opt.right,
+                right: Some(opt.right),
                 ..Default::default()
             });
         }
@@ -848,7 +855,7 @@ fn parse_cfd_cash_symbol(symbol: &str) -> Option<CurrencyPair> {
 struct OptionSymbol {
     symbol: String,
     expiry: String,
-    right: String,
+    right: OptionRight,
     local_symbol: String,
     strike_value: f64,
 }
@@ -890,7 +897,7 @@ fn parse_option_symbol(symbol: &str) -> Option<OptionSymbol> {
     Some(OptionSymbol {
         symbol: symbol_part.to_string(),
         expiry: expiry.to_string(),
-        right: right.to_string(),
+        right: ib_option_right_to_option_right(right),
         local_symbol: symbol.to_string(),
         strike_value,
     })
@@ -900,7 +907,7 @@ fn parse_option_symbol(symbol: &str) -> Option<OptionSymbol> {
 struct NamedOptionSymbol {
     trading_class: String,
     expiry: String,
-    right: String,
+    right: OptionRight,
     strike_value: f64,
 }
 
@@ -945,7 +952,7 @@ fn parse_named_option_symbol(symbol: &str) -> Option<NamedOptionSymbol> {
     Some(NamedOptionSymbol {
         trading_class: parts[1].to_string(),
         expiry: expiry.to_string(),
-        right: right.to_string(),
+        right: ib_option_right_to_option_right(right),
         strike_value: parts[3].parse::<f64>().ok()?,
     })
 }
@@ -1179,7 +1186,7 @@ pub fn parse_spread_instrument_id_to_legs(
 
 #[cfg(test)]
 mod tests {
-    use ibapi::contracts::{Contract, Currency, Exchange, SecurityType, Symbol};
+    use ibapi::contracts::{Contract, Currency, Exchange, OptionRight, SecurityType, Symbol};
     use nautilus_model::identifiers::InstrumentId;
     use rstest::rstest;
 
@@ -1194,7 +1201,7 @@ mod tests {
             currency: Currency::from("USD"),
             local_symbol: "SPXW260313P06630000".to_string(),
             last_trade_date_or_contract_month: "260313".to_string(),
-            right: "P".to_string(),
+            right: Some(OptionRight::Put),
             strike: 6630.0,
             ..Default::default()
         };
@@ -1217,7 +1224,7 @@ mod tests {
             trading_class: "OESX".to_string(),
             local_symbol: String::new(),
             last_trade_date_or_contract_month: "20260213".to_string(),
-            right: "C".to_string(),
+            right: Some(OptionRight::Call),
             strike: 4775.0,
             ..Default::default()
         };
@@ -1260,7 +1267,7 @@ mod tests {
             contract.last_trade_date_or_contract_month.as_str(),
             "20260213"
         );
-        assert_eq!(contract.right.as_str(), "C");
+        assert_eq!(contract.right.map(|right| right.as_str()), Some("C"));
         assert_eq!(contract.strike, 4775.0);
     }
 
@@ -1278,7 +1285,7 @@ mod tests {
             contract.last_trade_date_or_contract_month.as_str(),
             "230217"
         );
-        assert_eq!(contract.right.as_str(), "P");
+        assert_eq!(contract.right.map(|right| right.as_str()), Some("P"));
         assert_eq!(contract.strike, 155.0);
     }
 

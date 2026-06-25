@@ -21,9 +21,12 @@ use std::{sync::atomic::Ordering, time::Duration};
 
 use nautilus_architect_ax::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
-    websocket::{data::AxMdWebSocketClient, orders::AxOrdersWebSocketClient},
+    websocket::{
+        data::AxMdWebSocketClient,
+        orders::{AxOrdersWebSocketClient, AxOrdersWsClientError},
+    },
 };
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, StrategyId, TraderId, VenueOrderId},
@@ -1010,6 +1013,51 @@ async fn test_orders_submit_order() {
     assert_eq!(place.get("tif").and_then(|v| v.as_str()), Some("GTC"));
 
     client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_orders_submit_order_missing_cached_instrument_returns_lookup_error() {
+    let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
+
+    // No connection or instrument cache: the lookup precedes any network send
+    let client = AxOrdersWebSocketClient::new(
+        "ws://127.0.0.1:9/orders/ws".to_string(),
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    let instrument = create_test_instrument("EURUSD-PERP");
+
+    let result = client
+        .submit_order(
+            trader_id,
+            StrategyId::from("TEST-STRATEGY"),
+            instrument.id(),
+            ClientOrderId::from("TEST-001"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("100"),
+            TimeInForce::Gtc,
+            Some(Price::from("50000.00")),
+            None,
+            false,
+        )
+        .await;
+
+    let err = result.unwrap_err();
+    assert!(matches!(err, AxOrdersWsClientError::ClientError(_)));
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "Client error: {}",
+            InstrumentLookupError::not_found(instrument.id())
+        )
+    );
 }
 
 #[rstest]

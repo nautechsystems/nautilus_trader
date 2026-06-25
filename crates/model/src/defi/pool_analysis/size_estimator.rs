@@ -136,10 +136,10 @@ struct BinarySearchState {
 /// The binary search will refine this estimate, so perfect accuracy isn't needed.
 ///
 /// # Arguments
-/// * `profiler` - Reference to the pool profiler
-/// * `impact_bps` - Target impact in basis points
-/// * `zero_for_one` - Swap direction
-/// * `config` - Estimation configuration (only uses `safety_multiplier`)
+/// - `profiler` - Reference to the pool profiler
+/// - `impact_bps` - Target impact in basis points
+/// - `zero_for_one` - Swap direction
+/// - `config` - Estimation configuration (only uses `safety_multiplier`)
 ///
 /// # Returns
 /// Estimated maximum size as U256
@@ -358,10 +358,10 @@ pub fn size_for_impact_bps(
 /// bounds used, and timing information.
 ///
 /// # Arguments
-/// * `profiler` - Reference to the pool profiler
-/// * `impact_bps` - Target slippage in basis points (including fees)
-/// * `zero_for_one` - Swap direction (true = token0 for token1)
-/// * `config` - Estimation configuration
+/// - `profiler` - Reference to the pool profiler
+/// - `impact_bps` - Target slippage in basis points (including fees)
+/// - `zero_for_one` - Swap direction (true = token0 for token1)
+/// - `config` - Estimation configuration
 ///
 /// # Returns
 /// Detailed result containing size, search metrics, and convergence information

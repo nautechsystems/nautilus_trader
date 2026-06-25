@@ -259,7 +259,10 @@ impl KrakenSpotWebSocketClient {
             reconnect_backoff_factor: Some(1.5),
             reconnect_jitter_ms: Some(250),
             reconnect_max_attempts: None,
-            idle_timeout_ms: None,
+            // Treat a silent connection as dead so the reconnect + resubscribe
+            // path runs. `0` disables; see `ws_idle_timeout_ms` docs (issue #4255).
+            idle_timeout_ms: (self.config.ws_idle_timeout_ms != 0)
+                .then_some(self.config.ws_idle_timeout_ms),
             backend: self.transport_backend,
             proxy_url: self.proxy_url.clone(),
         };
@@ -400,13 +403,21 @@ impl KrakenSpotWebSocketClient {
                         }
 
                         if out_tx.send(KrakenSpotWsMessage::Reconnected).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }
                     Some(msg) => {
                         if out_tx.send(msg).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }

@@ -70,6 +70,7 @@ register_serializable_type(
 
 _binance_mod = nautilus_pyo3.binance  # type: ignore[attr-defined]
 BinanceFuturesLiquidation = _binance_mod.BinanceFuturesLiquidation
+BinanceFuturesTicker = _binance_mod.BinanceFuturesTicker
 BinanceFuturesOpenInterest = _binance_mod.BinanceFuturesOpenInterest
 BinanceFuturesOpenInterestHistPoint = _binance_mod.BinanceFuturesOpenInterestHistPoint
 BinanceFuturesOpenInterestHist = _binance_mod.BinanceFuturesOpenInterestHist
@@ -129,6 +130,7 @@ __all__ = [
     "BinanceFuturesOpenInterest",
     "BinanceFuturesOpenInterestHist",
     "BinanceFuturesOpenInterestHistPoint",
+    "BinanceFuturesTicker",
     "BinanceInstrumentProviderConfig",
     "BinanceKeyType",
     "BinanceLiveDataClientFactory",

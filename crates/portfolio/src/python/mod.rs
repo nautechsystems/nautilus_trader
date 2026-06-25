@@ -18,6 +18,8 @@
 use std::{cell::RefCell, rc::Rc};
 
 use indexmap::{IndexMap, IndexSet};
+use nautilus_analysis::snapshot::PortfolioStatistics;
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::python::{to_pynotimplemented_err, to_pyvalue_err};
 use nautilus_model::{
     accounts::AccountAny,
@@ -44,9 +46,9 @@ impl PortfolioConfig {
         min_account_state_logging_interval_ms: Option<u64>,
         debug: Option<bool>,
         snapshot_interval_ms: Option<u64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
+        let config = Self {
             use_mark_prices: use_mark_prices.unwrap_or(default.use_mark_prices),
             use_mark_xrates: use_mark_xrates.unwrap_or(default.use_mark_xrates),
             bar_updates: bar_updates.unwrap_or(default.bar_updates),
@@ -55,7 +57,9 @@ impl PortfolioConfig {
             min_account_state_logging_interval_ms,
             snapshot_interval_ms,
             debug: debug.unwrap_or(default.debug),
-        }
+        };
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -422,6 +426,11 @@ impl PyPortfolio {
     #[pyo3(name = "is_completely_flat", signature = (account_id=None))]
     fn py_is_completely_flat(&self, account_id: Option<AccountId>) -> bool {
         self.is_completely_flat_for_account(account_id.as_ref())
+    }
+
+    #[pyo3(name = "statistics")]
+    fn py_statistics(&self) -> PortfolioStatistics {
+        self.0.borrow().statistics()
     }
 }
 

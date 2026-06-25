@@ -89,9 +89,9 @@ impl AuthState {
 ///
 /// # Arguments
 ///
-/// * `credential` - API credentials for signing the request
-/// * `scope` - Optional scope (e.g., "session:nautilus" for session-based auth)
-/// * `cmd_tx` - Command channel to send the authentication request
+/// - `credential` - API credentials for signing the request
+/// - `scope` - Optional scope (e.g., "session:nautilus" for session-based auth)
+/// - `cmd_tx` - Command channel to send the authentication request
 pub fn send_auth_request(
     credential: &Credential,
     scope: Option<String>,

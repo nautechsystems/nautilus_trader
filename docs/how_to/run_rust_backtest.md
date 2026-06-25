@@ -17,11 +17,11 @@ Add the following to your `Cargo.toml`. The `streaming` and
 
 ```toml
 [dependencies]
-nautilus-backtest = { version = "0.55", features = ["streaming"] }
-nautilus-execution = "0.55"
-nautilus-model = { version = "0.55", features = ["stubs"] }
-nautilus-persistence = "0.55"
-nautilus-trading = { version = "0.55", features = ["examples"] }
+nautilus-backtest = { version = "0.59", features = ["streaming"] }
+nautilus-execution = "0.59"
+nautilus-model = { version = "0.59", features = ["stubs"] }
+nautilus-persistence = "0.59"
+nautilus-trading = { version = "0.59", features = ["examples"] }
 
 ahash = "0.8"
 anyhow = "1"
@@ -48,7 +48,8 @@ let mut engine = BacktestEngine::new(BacktestEngineConfig::default())?;
 ### 2. Add a venue
 
 `SimulatedVenueConfig` uses a `bon::Builder`: only required fields must be set,
-every other setting falls back to a documented default.
+every other setting falls back to a documented default. `build()` validates the
+configuration and returns a `ConfigResult`, so propagate or unwrap it.
 
 ```rust
 use nautilus_backtest::config::SimulatedVenueConfig;
@@ -65,7 +66,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USD")])
-        .build(),
+        .build()?,
 )?;
 ```
 
@@ -141,7 +142,7 @@ let catalog = ParquetDataCatalog::new(
 );
 
 catalog.write_instruments(vec![instrument])?;
-catalog.write_to_parquet(quotes, None, None, None)?;
+catalog.write_to_parquet(&quotes, None, None, None)?;
 ```
 
 ### 2. Configure the run

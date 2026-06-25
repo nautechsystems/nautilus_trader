@@ -18,9 +18,44 @@
 use std::collections::HashMap;
 
 use nautilus_core::python::to_pyvalue_err;
+use nautilus_model::identifiers::ExecAlgorithmId;
 use pyo3::{prelude::*, types::PyDict};
 
-use crate::algorithm::ImportableExecAlgorithmConfig;
+use crate::algorithm::{ExecutionAlgorithmConfig, ImportableExecAlgorithmConfig};
+
+#[pyo3::pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl ExecutionAlgorithmConfig {
+    /// Configuration for an execution algorithm.
+    #[new]
+    #[pyo3(signature = (exec_algorithm_id=None, log_events=true, log_commands=true))]
+    fn py_new(
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        log_events: bool,
+        log_commands: bool,
+    ) -> Self {
+        Self {
+            exec_algorithm_id,
+            log_events,
+            log_commands,
+        }
+    }
+
+    #[getter]
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        self.exec_algorithm_id
+    }
+
+    #[getter]
+    fn log_events(&self) -> bool {
+        self.log_events
+    }
+
+    #[getter]
+    fn log_commands(&self) -> bool {
+        self.log_commands
+    }
+}
 
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]

@@ -1,0 +1,15 @@
+{
+  "assets": {
+    "3": {
+      "symbol": "USDC",
+      "asset_id": 3,
+      "balance": "10.000000",
+      "locked_balance": "0.000000",
+      "margin_mode": "disabled",
+      "margin_balance": "39.995369556"
+    }
+  },
+  "channel": "account_all_assets:1234",
+  "timestamp": 1781161854676,
+  "type": "subscribed/account_all_assets"
+}

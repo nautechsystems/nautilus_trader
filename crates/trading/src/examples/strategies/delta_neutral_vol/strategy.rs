@@ -312,9 +312,7 @@ impl DeltaNeutralVol {
             .context("missing premium entry offset")?;
 
         let cache = self.cache();
-        let instrument = cache
-            .instrument(&instrument_id)
-            .with_context(|| format!("missing instrument {instrument_id} for premium entry"))?;
+        let instrument = cache.try_instrument(&instrument_id)?;
 
         instrument
             .next_ask_price(base_price, offset_ticks)
@@ -332,9 +330,7 @@ impl DeltaNeutralVol {
     ) -> anyhow::Result<f64> {
         let (strike, expiration_ns, is_call) = {
             let cache = self.cache();
-            let instrument = cache
-                .instrument(&instrument_id)
-                .with_context(|| format!("missing instrument {instrument_id} for premium entry"))?;
+            let instrument = cache.try_instrument(&instrument_id)?;
             let strike = instrument
                 .strike_price()
                 .with_context(|| format!("missing strike for {instrument_id}"))?
@@ -350,7 +346,7 @@ impl DeltaNeutralVol {
 
             (strike, expiration_ns, is_call)
         };
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
 
         if expiration_ns <= now_ns {
             anyhow::bail!("Cannot price premium entry for expired instrument {instrument_id}");
@@ -402,7 +398,7 @@ impl DeltaNeutralVol {
         client_id: ClientId,
         params: Option<Params>,
     ) -> anyhow::Result<()> {
-        let order = self.core.order_factory().limit(
+        let order = self.order().limit(
             instrument_id,
             OrderSide::Sell,
             Quantity::new(contracts as f64, 0),
@@ -456,7 +452,7 @@ impl DeltaNeutralVol {
                 .map_or(2, |i| i.size_precision())
         };
 
-        let order = self.core.order_factory().market(
+        let order = self.order().market(
             hedge_id,
             side,
             Quantity::new(hedge_qty, size_precision),
@@ -499,7 +495,7 @@ impl DataActor for DeltaNeutralVol {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let venue = self.config.hedge_instrument_id.venue;
         let underlying = Ustr::from(&self.config.option_family);
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
 
         let mut calls: Vec<(InstrumentId, f64, u64)> = Vec::new();
         let mut puts: Vec<(InstrumentId, f64, u64)> = Vec::new();

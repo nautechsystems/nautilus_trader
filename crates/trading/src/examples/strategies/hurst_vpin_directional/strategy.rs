@@ -26,7 +26,7 @@ use nautilus_model::{
         OrderCanceled, OrderDenied, OrderExpired, OrderFilled, OrderRejected, PositionClosed,
         PositionOpened,
     },
-    identifiers::{ClientOrderId, PositionId, StrategyId},
+    identifiers::{ClientOrderId, PositionId},
     orders::{Order, OrderCore},
     types::Quantity,
 };
@@ -242,10 +242,12 @@ impl HurstVpinDirectional {
     }
 
     fn submit_entry(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.config.instrument_id,
+        let instrument_id = self.config.instrument_id;
+        let trade_size = self.config.trade_size;
+        let order = self.order().market(
+            instrument_id,
             side,
-            self.config.trade_size,
+            trade_size,
             Some(TimeInForce::Ioc),
             None, // reduce_only
             None, // quote_quantity
@@ -260,7 +262,7 @@ impl HurstVpinDirectional {
 
     fn submit_close(&mut self) -> anyhow::Result<()> {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
 
         let positions: Vec<(PositionId, Quantity, PositionSide)> = self
             .cache()
@@ -277,7 +279,7 @@ impl HurstVpinDirectional {
 
         for (position_id, quantity, side) in positions {
             let closing_side = OrderCore::closing_side(side);
-            let close_order = self.core.order_factory().market(
+            let close_order = self.order().market(
                 instrument_id,
                 closing_side,
                 quantity,
@@ -298,18 +300,18 @@ impl HurstVpinDirectional {
 
     fn has_open_position(&self) -> bool {
         let instrument_id = self.config.instrument_id;
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
         !self
             .cache()
             .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
             .is_empty()
     }
 
-    fn clear_latch_for(&mut self, client_order_id: &ClientOrderId) {
-        if self.entry_order_id.as_ref() == Some(client_order_id) {
+    fn clear_latch_for(&mut self, client_order_id: ClientOrderId) {
+        if self.entry_order_id == Some(client_order_id) {
             self.entry_order_id = None;
         }
-        self.exit_order_ids.remove(client_order_id);
+        self.exit_order_ids.remove(&client_order_id);
     }
 }
 
@@ -328,19 +330,19 @@ nautilus_strategy!(HurstVpinDirectional, {
 
     fn on_order_rejected(&mut self, event: OrderRejected) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 
     fn on_order_expired(&mut self, event: OrderExpired) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 
     fn on_order_denied(&mut self, event: OrderDenied) {
         if event.instrument_id == self.config.instrument_id {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
     }
 });
@@ -367,9 +369,7 @@ impl DataActor for HurstVpinDirectional {
         }
         {
             let cache = self.cache();
-            if cache.instrument(&instrument_id).is_none() {
-                anyhow::bail!("Instrument {instrument_id} not found in cache");
-            }
+            cache.try_instrument(&instrument_id)?;
         }
 
         self.subscribe_bars(self.config.bar_type, None, None);
@@ -453,7 +453,7 @@ impl DataActor for HurstVpinDirectional {
             return Ok(());
         }
 
-        let strategy_id = StrategyId::from(self.actor_id.inner().as_str());
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
         let has_working = {
             let cache = self.cache();
             !cache
@@ -493,7 +493,7 @@ impl DataActor for HurstVpinDirectional {
             .order(&event.client_order_id)
             .is_some_and(|o| o.is_closed());
         if closed {
-            self.clear_latch_for(&event.client_order_id);
+            self.clear_latch_for(event.client_order_id);
         }
         Ok(())
     }
@@ -502,7 +502,7 @@ impl DataActor for HurstVpinDirectional {
         if event.instrument_id != self.config.instrument_id {
             return Ok(());
         }
-        self.clear_latch_for(&event.client_order_id);
+        self.clear_latch_for(event.client_order_id);
         Ok(())
     }
 

@@ -27,7 +27,14 @@
 //!    `on_option_greeks` handler so the downstream branch on `greeks.convention`
 //!    is visible.
 //!
+//! Edit the constants below to change the underlying and node name.
+//!
 //! Run with: `cargo run --example okx-greeks-tester --package nautilus-okx --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `OKX_API_KEY`.
+//! - `OKX_API_SECRET`.
+//! - `OKX_API_PASSPHRASE`.
 
 use std::fmt::Debug;
 
@@ -44,7 +51,6 @@ use nautilus_model::{
     enums::{GreeksConvention, OptionKind},
     identifiers::{ClientId, InstrumentId, TraderId},
     instruments::Instrument,
-    stubs::TestDefault,
 };
 use nautilus_okx::{
     common::{
@@ -56,6 +62,12 @@ use nautilus_okx::{
 };
 use serde_json::json;
 use ustr::Ustr;
+
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "OKX-GREEKS-TESTER-001";
+const ACTOR_ID: &str = "GREEKS_TESTER-001";
+const UNDERLYING: &str = "BTC";
+const INSTRUMENT_FAMILY: &str = "BTC-USD";
 
 #[derive(Debug)]
 struct GreeksTester {
@@ -70,7 +82,7 @@ impl GreeksTester {
     fn new(client_id: ClientId) -> Self {
         Self {
             core: DataActorCore::new(DataActorConfig {
-                actor_id: Some("GREEKS_TESTER-001".into()),
+                actor_id: Some(ACTOR_ID.into()),
                 ..Default::default()
             }),
             client_id,
@@ -82,7 +94,7 @@ impl GreeksTester {
 impl DataActor for GreeksTester {
     fn on_start(&mut self) -> anyhow::Result<()> {
         let venue = *OKX_VENUE;
-        let underlying_filter = Ustr::from("BTC");
+        let underlying_filter = Ustr::from(UNDERLYING);
 
         let mut options: Vec<(InstrumentId, f64, u64)> = {
             let cache = self.cache();
@@ -102,11 +114,11 @@ impl DataActor for GreeksTester {
                 .collect()
         };
 
-        let now_ns = self.timestamp_ns().as_u64();
+        let now_ns = self.clock().timestamp_ns().as_u64();
         options.retain(|(_, _, exp)| *exp > now_ns);
 
         if options.is_empty() {
-            log::warn!("No BTC CALL options found in cache (all expired)");
+            log::warn!("No {UNDERLYING} CALL options found in cache (all expired)");
             return Ok(());
         }
 
@@ -116,7 +128,7 @@ impl DataActor for GreeksTester {
         options.sort_by(|(_, a, _), (_, b, _)| a.partial_cmp(b).unwrap());
 
         log::info!(
-            "Found {} BTC CALL options at nearest expiry (ts={})",
+            "Found {} {UNDERLYING} CALL options at nearest expiry (ts={})",
             options.len(),
             nearest_expiry,
         );
@@ -210,7 +222,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
+    let trader_id = TraderId::from(TRADER_ID);
     let client_id = *OKX_CLIENT_ID;
 
     let okx_config = OKXDataClientConfig {
@@ -218,14 +230,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Option],
-        instrument_families: Some(vec!["BTC-USD".to_string()]),
+        instrument_families: Some(vec![INSTRUMENT_FAMILY.to_string()]),
         ..Default::default()
     };
 
     let client_factory = OKXDataClientFactory::new();
 
     let mut node = LiveNode::builder(trader_id, environment)?
-        .with_name("OKX-GREEKS-TESTER-001".to_string())
+        .with_name(NODE_NAME.to_string())
         .add_data_client(None, Box::new(client_factory), Box::new(okx_config))?
         .with_delay_post_stop_secs(5)
         .build()?;

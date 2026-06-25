@@ -1061,6 +1061,104 @@ class TestRiskEngineWithCashAccount:
         assert order.status == OrderStatus.INITIALIZED
         assert self.exec_engine.command_count == 1  # Command reaches engine
 
+    def test_submit_order_when_negative_price_for_commodity_then_allows(self):
+        # Arrange
+        self.exec_engine.start()
+
+        commodity = TestInstrumentProvider.commodity()
+        self.cache.add_instrument(commodity)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=commodity)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            commodity.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("-5.00"),  # Negative price is valid for spot commodities
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.INITIALIZED
+        assert self.exec_engine.command_count == 1  # Command reaches engine
+
+    @pytest.mark.parametrize(
+        ("instrument", "quantity", "expected_status", "expected_commands"),
+        [
+            (TestInstrumentProvider.commodity(), Quantity.from_int(1), OrderStatus.INITIALIZED, 1),
+            (_AUDUSD_SIM, Quantity.from_int(100_000), OrderStatus.DENIED, 0),
+        ],
+    )
+    def test_submit_order_when_zero_price_then_denies_unless_negative_prices_allowed(
+        self,
+        instrument,
+        quantity,
+        expected_status,
+        expected_commands,
+    ):
+        # Arrange
+        self.exec_engine.start()
+
+        self.cache.add_instrument(instrument)
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=instrument)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            instrument.id,
+            OrderSide.BUY,
+            quantity,
+            Price.from_str("0.00"),  # Zero price shares the negative price gate
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == expected_status
+        assert self.exec_engine.command_count == expected_commands
+
     def test_submit_order_when_invalid_trigger_price_then_denies(self):
         # Arrange
         self.exec_engine.start()
@@ -3322,6 +3420,144 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert self.exec_client.calls == ["_start", "submit_order", "modify_order"]
         assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 2
+
+    def test_modify_order_when_negative_price_for_commodity_then_allows(self):
+        # Arrange
+        commodity = TestInstrumentProvider.commodity()
+        exec_client = MockExecutionClient(
+            client_id=ClientId(commodity.id.venue.value),
+            venue=commodity.id.venue,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("NYMEX-001")))
+        self.exec_engine.register_client(exec_client)
+
+        self.cache.add_instrument(commodity)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=commodity)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            commodity.id,
+            OrderSide.BUY,
+            Quantity.from_int(1),
+            Price.from_str("5.00"),
+        )
+
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        modify = ModifyOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("-5.00"),  # Negative price is valid for spot commodities
+            None,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        self.risk_engine.execute(submit)
+
+        # Act
+        self.risk_engine.execute(modify)
+
+        # Assert
+        assert exec_client.calls == ["_start", "submit_order", "modify_order"]
+        assert self.risk_engine.command_count == 2
+        assert self.exec_engine.command_count == 2
+
+    def test_modify_order_when_risk_bypassed_sends_to_execution_engine(self):
+        # Arrange
+        self.msgbus.deregister("RiskEngine.execute", self.risk_engine.execute)
+        self.msgbus.deregister("RiskEngine.process", self.risk_engine.process)
+
+        risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            config=RiskEngineConfig(bypass=True),
+        )
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(instrument=_AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        order = strategy.order_factory.limit(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00010"),
+        )
+
+        submit = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        modify = ModifyOrder(
+            self.trader_id,
+            strategy.id,
+            order.instrument_id,
+            order.client_order_id,
+            VenueOrderId("1"),
+            order.quantity,
+            Price.from_str("-1.00010"),  # <- would be denied without bypass
+            None,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        risk_engine.execute(submit)
+
+        # Act
+        risk_engine.execute(modify)
+
+        # Assert
+        assert self.exec_client.calls == ["_start", "submit_order", "modify_order"]
+        assert risk_engine.command_count == 2
         assert self.exec_engine.command_count == 2
 
     def test_modify_order_for_emulated_order_then_sends_to_emulator(self):

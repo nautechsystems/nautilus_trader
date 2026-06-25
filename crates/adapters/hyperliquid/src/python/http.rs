@@ -46,7 +46,8 @@ impl HyperliquidHttpClient {
     /// with Nautilus domain types. It maintains an instrument cache and handles conversions
     /// between Hyperliquid API responses and Nautilus domain models.
     #[new]
-    #[pyo3(signature = (private_key=None, vault_address=None, account_address=None, environment=HyperliquidEnvironment::Mainnet, timeout_secs=60, proxy_url=None, normalize_prices=true))]
+    #[pyo3(signature = (private_key=None, vault_address=None, account_address=None, environment=HyperliquidEnvironment::Mainnet, timeout_secs=60, proxy_url=None, normalize_prices=true, include_builder_attribution=true))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         private_key: Option<String>,
         vault_address: Option<String>,
@@ -55,6 +56,7 @@ impl HyperliquidHttpClient {
         timeout_secs: u64,
         proxy_url: Option<String>,
         normalize_prices: bool,
+        include_builder_attribution: bool,
     ) -> PyResult<Self> {
         let mut client = Self::with_credentials(
             private_key,
@@ -66,38 +68,43 @@ impl HyperliquidHttpClient {
         )
         .map_err(to_pyvalue_err)?;
         client.set_normalize_prices(normalize_prices);
+        client.set_include_builder_attribution(include_builder_attribution);
         Ok(client)
     }
 
     /// Creates an authenticated client from environment variables for the specified network.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Error.Auth` if required environment variables are not set.
     #[staticmethod]
-    #[pyo3(name = "from_env", signature = (environment=HyperliquidEnvironment::Mainnet))]
-    fn py_from_env(environment: HyperliquidEnvironment) -> PyResult<Self> {
-        Self::from_env(environment).map_err(to_pyvalue_err)
+    #[pyo3(name = "from_env", signature = (environment=HyperliquidEnvironment::Mainnet, include_builder_attribution=true))]
+    fn py_from_env(
+        environment: HyperliquidEnvironment,
+        include_builder_attribution: bool,
+    ) -> PyResult<Self> {
+        let mut client = Self::from_env(environment).map_err(to_pyvalue_err)?;
+        client.set_include_builder_attribution(include_builder_attribution);
+        Ok(client)
     }
 
     /// Creates a new `HyperliquidHttpClient` configured with explicit credentials.
     #[staticmethod]
-    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, environment=HyperliquidEnvironment::Mainnet, timeout_secs=60, proxy_url=None))]
+    #[pyo3(name = "from_credentials", signature = (private_key, vault_address=None, environment=HyperliquidEnvironment::Mainnet, timeout_secs=60, proxy_url=None, include_builder_attribution=true))]
     fn py_from_credentials(
         private_key: &str,
         vault_address: Option<&str>,
         environment: HyperliquidEnvironment,
         timeout_secs: u64,
         proxy_url: Option<String>,
+        include_builder_attribution: bool,
     ) -> PyResult<Self> {
-        Self::from_credentials(
+        let mut client = Self::from_credentials(
             private_key,
             vault_address,
             environment,
             timeout_secs,
             proxy_url,
         )
-        .map_err(to_pyvalue_err)
+        .map_err(to_pyvalue_err)?;
+        client.set_include_builder_attribution(include_builder_attribution);
+        Ok(client)
     }
 
     /// Caches a single instrument.

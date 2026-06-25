@@ -24,8 +24,8 @@ use nautilus_common::{
     clock::Clock,
     factories::OrderEventFactory,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-        SubmitOrder, SubmitOrderList, TradingCommand,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
     },
     msgbus::{self, MessagingSwitchboard},
 };
@@ -71,7 +71,7 @@ impl Debug for BacktestExecutionClient {
         f.debug_struct(stringify!(BacktestExecutionClient))
             .field("client_id", &self.core.client_id)
             .field("routing", &self.routing)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -119,12 +119,8 @@ impl BacktestExecutionClient {
         }
     }
 
-    fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
-        self.cache
-            .borrow()
-            .order(client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+    fn get_order(&self, client_order_id: ClientOrderId) -> anyhow::Result<OrderAny> {
+        Ok(self.cache.borrow().try_order_owned(&client_order_id)?)
     }
 
     /// Drain buffered order events, sending each to the exec engine.
@@ -194,7 +190,7 @@ impl ExecutionClient for BacktestExecutionClient {
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         // Buffer the OrderSubmitted event for deferred processing to avoid
         // RefCell re-entrancy (exec_engine holds a borrow during execute)
-        let order = self.get_order(&cmd.client_order_id)?;
+        let order = self.get_order(cmd.client_order_id)?;
         let ts_init = self.clock.borrow().timestamp_ns();
         let event = self.factory.generate_order_submitted(&order, ts_init);
         self.queued_events.borrow_mut().push(event);
@@ -243,6 +239,17 @@ impl ExecutionClient for BacktestExecutionClient {
         Ok(())
     }
 
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        if let Some(exchange) = self.exchange.upgrade() {
+            exchange
+                .borrow_mut()
+                .send(TradingCommand::ModifyOrders(cmd));
+        } else {
+            log::error!("batch_modify_orders: SimulatedExchange has been dropped");
+        }
+        Ok(())
+    }
+
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         if let Some(exchange) = self.exchange.upgrade() {
             exchange.borrow_mut().send(TradingCommand::CancelOrder(cmd));
@@ -267,7 +274,7 @@ impl ExecutionClient for BacktestExecutionClient {
         if let Some(exchange) = self.exchange.upgrade() {
             exchange
                 .borrow_mut()
-                .send(TradingCommand::BatchCancelOrders(cmd));
+                .send(TradingCommand::CancelOrders(cmd));
         } else {
             log::error!("batch_cancel_orders: SimulatedExchange has been dropped");
         }

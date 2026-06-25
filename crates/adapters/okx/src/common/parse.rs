@@ -1652,6 +1652,7 @@ pub fn parse_spread_instrument(
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             info,
             ts_event,
             ts_init,
@@ -1686,6 +1687,7 @@ pub fn parse_spread_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         info,
         ts_event,
         ts_init,
@@ -2012,6 +2014,7 @@ impl InstrumentParser for SpotInstrumentParser {
             margin_fees.maker_fee,
             margin_fees.taker_fee,
             None,
+            None,
             ts_init,
             ts_init,
         );
@@ -2177,6 +2180,7 @@ pub fn parse_swap_instrument(
         maker_fee,
         taker_fee,
         None,
+        None,
         ts_init, // No ts_event for response
         ts_init,
     );
@@ -2313,6 +2317,7 @@ pub fn parse_futures_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         info,
         ts_init, // No ts_event for response
         ts_init,
@@ -2483,6 +2488,7 @@ pub fn parse_option_instrument(
         maker_fee,
         taker_fee,
         None,
+        None,
         ts_init,
         ts_init,
     );
@@ -2609,6 +2615,7 @@ pub fn parse_event_contract_instrument(
         margin_maint,
         maker_fee,
         taker_fee,
+        None,
         Some(info),
         ts_init,
         ts_init,

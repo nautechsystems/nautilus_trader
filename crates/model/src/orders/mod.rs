@@ -47,10 +47,10 @@ use ustr::Ustr;
 #[cfg(any(test, feature = "stubs"))]
 pub use crate::orders::builder::OrderTestBuilder;
 pub use crate::orders::{
-    any::{LimitOrderAny, OrderAny, PassiveOrderAny, StopOrderAny},
+    any::{LimitOrderAny, OrderAny, OrderReplayError, PassiveOrderAny, StopOrderAny},
     limit::LimitOrder,
     limit_if_touched::LimitIfTouchedOrder,
-    list::OrderList,
+    list::{OrderList, OrderListValidationError},
     market::MarketOrder,
     market_if_touched::MarketIfTouchedOrder,
     market_to_limit::MarketToLimitOrder,
@@ -75,6 +75,7 @@ use crate::{
         StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orderbook::OwnBookOrder,
+    reports::OrderStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -219,6 +220,7 @@ impl OrderStatus {
             (Self::Initialized, OrderEventAny::Updated(_)) => Self::Initialized, // In-place modification
             (Self::Emulated, OrderEventAny::Canceled(_)) => Self::Canceled,  // Emulated orders
             (Self::Emulated, OrderEventAny::Expired(_)) => Self::Expired,  // Emulated orders
+            (Self::Emulated, OrderEventAny::Updated(_)) => Self::Emulated, // In-place modification
             (Self::Emulated, OrderEventAny::Released(_)) => Self::Released,  // Emulated orders
             (Self::Released, OrderEventAny::Submitted(_)) => Self::Submitted,  // Emulated orders
             (Self::Released, OrderEventAny::Denied(_)) => Self::Denied,  // Emulated orders
@@ -514,6 +516,119 @@ pub trait Order: 'static + Send {
             self.ts_submitted().unwrap_or_default(),
             self.ts_init(),
         )
+    }
+
+    /// Builds an [`OrderStatusReport`] snapshot from the order's current state.
+    ///
+    /// Returns `None` if the order has no `venue_order_id` or `account_id`:
+    /// a status report describes a venue-acknowledged order, and both fields
+    /// are set by the time a venue acknowledges the order.
+    fn to_order_status_report(&self, report_id: Option<UUID4>) -> Option<OrderStatusReport> {
+        let account_id = self.account_id()?;
+        let venue_order_id = self.venue_order_id()?;
+
+        let mut report = OrderStatusReport::new(
+            account_id,
+            self.instrument_id(),
+            Some(self.client_order_id()),
+            venue_order_id,
+            self.order_side(),
+            self.order_type(),
+            self.time_in_force(),
+            self.status(),
+            self.quantity(),
+            self.filled_qty(),
+            self.ts_accepted().unwrap_or_else(|| self.ts_last()),
+            self.ts_last(),
+            self.ts_init(),
+            report_id,
+        )
+        .with_post_only(self.is_post_only())
+        .with_reduce_only(self.is_reduce_only());
+
+        if let Some(price) = self.price() {
+            report = report.with_price(price);
+        }
+
+        if let Some(trigger_price) = self.trigger_price() {
+            report = report.with_trigger_price(trigger_price);
+        }
+
+        if let Some(trigger_type) = self.trigger_type() {
+            report = report.with_trigger_type(trigger_type);
+        }
+
+        if let Some(limit_offset) = self.limit_offset() {
+            report = report.with_limit_offset(limit_offset);
+        }
+
+        if let Some(trailing_offset) = self.trailing_offset() {
+            report = report.with_trailing_offset(trailing_offset);
+        }
+
+        if let Some(trailing_offset_type) = self.trailing_offset_type() {
+            report = report.with_trailing_offset_type(trailing_offset_type);
+        }
+
+        if let Some(display_qty) = self.display_qty() {
+            report = report.with_display_qty(display_qty);
+        }
+
+        if let Some(expire_time) = self.expire_time() {
+            report = report.with_expire_time(expire_time);
+        }
+
+        if let Some(contingency_type) = self.contingency_type() {
+            report = report.with_contingency_type(contingency_type);
+        }
+
+        if let Some(order_list_id) = self.order_list_id() {
+            report = report.with_order_list_id(order_list_id);
+        }
+
+        if let Some(linked_order_ids) = self.linked_order_ids() {
+            report = report.with_linked_order_ids(linked_order_ids.iter().copied());
+        }
+
+        if let Some(parent_order_id) = self.parent_order_id() {
+            report = report.with_parent_order_id(parent_order_id);
+        }
+
+        if let Some(position_id) = self.position_id() {
+            report = report.with_venue_position_id(position_id);
+        }
+
+        // The trait exposes no trigger or rejection metadata accessors,
+        // recover the last occurrences from the event history.
+        let mut ts_triggered = None;
+        let mut rejected_reason = None;
+
+        for event in self.events() {
+            match event {
+                OrderEventAny::Triggered(triggered) => ts_triggered = Some(triggered.ts_event),
+                OrderEventAny::Rejected(rejected) => rejected_reason = Some(rejected.reason),
+                _ => {}
+            }
+        }
+
+        if let Some(ts_triggered) = ts_triggered {
+            report = report.with_ts_triggered(ts_triggered);
+        }
+
+        // `cancel_reason` is the report's only reason channel,
+        // reconciliation reads it for rejected orders.
+        if let Some(reason) = rejected_reason {
+            report = report.with_cancel_reason(reason.to_string());
+        }
+
+        // Skip a non-finite avg_px rather than fail the whole snapshot
+        if let Some(avg_px) = self.avg_px()
+            && let Ok(updated) = report.clone().with_avg_px(avg_px)
+        {
+            report = updated;
+        }
+
+        Some(report)
     }
 
     fn is_triggered(&self) -> Option<bool>; // TODO: Temporary on trait
@@ -1009,14 +1124,15 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::{OrderSide, OrderStatus, PositionSide, TriggerType},
+        enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::spec::{
             OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
-            OrderInitializedSpec, OrderPendingUpdateSpec, OrderSubmittedSpec, OrderTriggeredSpec,
-            OrderUpdatedSpec,
+            OrderInitializedSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec,
+            OrderTriggeredSpec, OrderUpdatedSpec,
         },
         identifiers::InstrumentId,
-        orders::{MarketOrder, builder::OrderTestBuilder},
+        instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
+        orders::{MarketOrder, builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{Price, Quantity},
     };
 
@@ -1898,5 +2014,254 @@ mod tests {
         order.apply(OrderEventAny::Triggered(triggered)).unwrap();
 
         assert_eq!(order.status(), OrderStatus::Triggered);
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_for_accepted_limit_order() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+        let accepted = TestOrderStubs::make_accepted_order(&order);
+
+        let report = accepted.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.account_id, AccountId::from("SIM-001"));
+        assert_eq!(report.instrument_id, InstrumentId::from("AUDUSD.SIM"));
+        assert_eq!(report.client_order_id, Some(accepted.client_order_id()));
+        assert_eq!(report.venue_order_id, VenueOrderId::from("V-001"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.order_type, OrderType::Limit);
+        assert_eq!(report.time_in_force, accepted.time_in_force());
+        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.quantity, Quantity::from(100_000));
+        assert_eq!(report.filled_qty, Quantity::from(0));
+        assert_eq!(report.price, Some(Price::from("1.00000")));
+        assert_eq!(report.avg_px, None);
+        assert_eq!(report.ts_accepted, accepted.ts_accepted().unwrap());
+        assert_eq!(report.ts_last, accepted.ts_last());
+        assert_eq!(report.ts_init, accepted.ts_init());
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_for_filled_market_order(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = TestOrderStubs::make_filled_order(&order, &audusd_sim, LiquiditySide::Maker);
+        let report_id = UUID4::new();
+
+        let report = filled.to_order_status_report(Some(report_id)).unwrap();
+
+        assert_eq!(report.report_id, report_id);
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, Quantity::from(100_000));
+        assert_eq!(report.filled_qty, Quantity::from(100_000));
+        assert_eq!(report.price, None);
+        assert_eq!(report.avg_px, Some(dec!(1)));
+        assert_eq!(report.venue_position_id, Some(PositionId::from("1")));
+        assert_eq!(report.ts_accepted, filled.ts_accepted().unwrap());
+        assert_eq!(report.ts_last, filled.ts_last());
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_maps_optional_fields() {
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("0.99500"))
+            .trigger_price(Price::from("1.00000"))
+            .trigger_type(TriggerType::LastPrice)
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(5_000_000_000))
+            .display_qty(Quantity::from(10_000))
+            .post_only(true)
+            .reduce_only(true)
+            .contingency_type(ContingencyType::Oto)
+            .order_list_id(OrderListId::from("OL-001"))
+            .linked_order_ids(vec![ClientOrderId::from("O-CHILD")])
+            .parent_order_id(ClientOrderId::from("O-PARENT"))
+            .build();
+        let accepted = TestOrderStubs::make_accepted_order(&order);
+
+        let report = accepted.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.price, Some(Price::from("0.99500")));
+        assert_eq!(report.trigger_price, Some(Price::from("1.00000")));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(report.expire_time, Some(UnixNanos::from(5_000_000_000)));
+        assert_eq!(report.display_qty, Some(Quantity::from(10_000)));
+        assert!(report.post_only);
+        assert!(report.reduce_only);
+        assert_eq!(report.contingency_type, ContingencyType::Oto);
+        assert_eq!(report.order_list_id, Some(OrderListId::from("OL-001")));
+        assert_eq!(
+            report.linked_order_ids,
+            Some(vec![ClientOrderId::from("O-CHILD")])
+        );
+        assert_eq!(
+            report.parent_order_id,
+            Some(ClientOrderId::from("O-PARENT"))
+        );
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_maps_ts_triggered() {
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("0.99500"))
+            .trigger_price(Price::from("1.00000"))
+            .trigger_type(TriggerType::LastPrice)
+            .build();
+        let mut order = TestOrderStubs::make_accepted_order(&order);
+        let triggered = OrderTriggeredSpec::builder()
+            .ts_event(UnixNanos::from(1_500_000_000))
+            .build();
+        order.apply(OrderEventAny::Triggered(triggered)).unwrap();
+
+        let report = order.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Triggered);
+        assert_eq!(report.ts_triggered, Some(UnixNanos::from(1_500_000_000)));
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_maps_rejection_reason() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+        let mut order = TestOrderStubs::make_accepted_order(&order);
+        let rejected = OrderRejectedSpec::builder()
+            .reason(Ustr::from("INSUFFICIENT_MARGIN"))
+            .build();
+        order.apply(OrderEventAny::Rejected(rejected)).unwrap();
+
+        let report = order.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("INSUFFICIENT_MARGIN".to_string())
+        );
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_maps_distinct_timestamps() {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .ts_init(UnixNanos::from(1_000))
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .ts_event(UnixNanos::from(2_000))
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .ts_event(UnixNanos::from(3_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .last_qty(Quantity::from(50_000))
+            .ts_event(UnixNanos::from(4_000))
+            .build();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+
+        let report = order.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.filled_qty, Quantity::from(50_000));
+        assert_eq!(report.ts_accepted, UnixNanos::from(3_000));
+        assert_eq!(report.ts_last, UnixNanos::from(4_000));
+        assert_eq!(report.ts_init, UnixNanos::from(1_000));
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_ts_accepted_falls_back_to_ts_last() {
+        // Venue ack can arrive through an update before any acceptance event
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+        let submitted = OrderSubmittedSpec::builder()
+            .ts_event(UnixNanos::from(2_000))
+            .build();
+        let updated = OrderUpdatedSpec::builder()
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .ts_event(UnixNanos::from(3_000))
+            .build();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        let report = order.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Submitted);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("V-001"));
+        assert_eq!(report.ts_accepted, UnixNanos::from(3_000));
+        assert_eq!(report.ts_last, UnixNanos::from(3_000));
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_maps_trailing_offsets() {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("0.99500"))
+            .trigger_price(Price::from("1.00000"))
+            .trigger_type(TriggerType::LastPrice)
+            .limit_offset(dec!(0.0001))
+            .trailing_offset(dec!(0.0002))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+        let accepted = TestOrderStubs::make_accepted_order(&order);
+
+        let report = accepted.to_order_status_report(None).unwrap();
+
+        assert_eq!(report.limit_offset, Some(dec!(0.0001)));
+        assert_eq!(report.trailing_offset, Some(dec!(0.0002)));
+        assert_eq!(report.trailing_offset_type, TrailingOffsetType::Price);
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_returns_none_before_venue_ack() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+
+        assert!(order.to_order_status_report(None).is_none());
+    }
+
+    #[rstest]
+    fn test_to_order_status_report_returns_none_for_submitted_order() {
+        // Inflight orders have an account_id but no venue_order_id yet
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUDUSD.SIM"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .price(Price::from("1.00000"))
+            .build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+
+        assert!(order.account_id().is_some());
+        assert!(order.to_order_status_report(None).is_none());
     }
 }

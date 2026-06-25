@@ -15,10 +15,7 @@
 
 //! Python bindings for live tester configuration.
 
-use std::num::NonZeroUsize;
-
-use nautilus_common::actor::DataActorConfig;
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_common::{actor::DataActorConfig, python::config_error_to_pyvalue_err};
 use nautilus_model::{
     data::BarType,
     enums::TimeInForce,
@@ -112,7 +109,7 @@ impl DataTesterConfig {
         log_commands: Option<bool>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
-        Ok(Self {
+        let config = Self {
             base: DataActorConfig {
                 actor_id,
                 log_events: log_events.unwrap_or(defaults.base.log_events),
@@ -151,18 +148,15 @@ impl DataTesterConfig {
             request_book_deltas: request_book_deltas.unwrap_or(defaults.request_book_deltas),
             request_funding_rates: request_funding_rates.unwrap_or(defaults.request_funding_rates),
             book_type: defaults.book_type,
-            book_depth: book_depth
-                .map(|value| parse_non_zero_usize(value, "book_depth"))
-                .transpose()?,
-            book_interval_ms: match book_interval_ms {
-                Some(value) => parse_non_zero_usize(value, "book_interval_ms")?,
-                None => defaults.book_interval_ms,
-            },
+            book_depth,
+            book_interval_ms: book_interval_ms.unwrap_or(defaults.book_interval_ms),
             book_levels_to_print: book_levels_to_print.unwrap_or(defaults.book_levels_to_print),
             manage_book: manage_book.unwrap_or(defaults.manage_book),
             log_data: log_data.unwrap_or(defaults.log_data),
             stats_interval_secs: stats_interval_secs.unwrap_or(defaults.stats_interval_secs),
-        })
+        };
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {
@@ -320,9 +314,4 @@ impl ExecTesterConfig {
     fn __repr__(&self) -> String {
         format!("{self:?}")
     }
-}
-
-fn parse_non_zero_usize(value: usize, field: &str) -> PyResult<NonZeroUsize> {
-    NonZeroUsize::new(value)
-        .ok_or_else(|| to_pyvalue_err(format!("{field} must be greater than 0")))
 }

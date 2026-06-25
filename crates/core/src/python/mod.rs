@@ -59,6 +59,7 @@ use pyo3_stub_gen::derive::gen_stub_pyfunction;
 use crate::{
     UUID4,
     consts::{NAUTILUS_USER_AGENT, NAUTILUS_VERSION},
+    correctness::CorrectnessError,
     datetime::{
         MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
         NANOSECONDS_IN_SECOND,
@@ -135,6 +136,16 @@ pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PySt
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
 pub fn to_pyvalue_err(e: impl Display) -> PyErr {
+    PyValueError::new_err(e.to_string())
+}
+
+/// Converts a correctness check failure to a Python `ValueError`.
+#[must_use]
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "Result::map_err passes owned errors to conversion functions"
+)]
+pub fn correctness_error_to_pyvalue_err(e: CorrectnessError) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
@@ -217,4 +228,40 @@ pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(datetime::py_last_weekday_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_is_within_last_24_hours, m)?)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Once;
+
+    use pyo3::{Python, exceptions::PyValueError};
+    use rstest::rstest;
+
+    use super::*;
+
+    fn ensure_python_initialized() {
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            Python::initialize();
+        });
+    }
+
+    #[rstest]
+    fn test_correctness_error_to_pyvalue_err_preserves_display_text() {
+        ensure_python_initialized();
+
+        let error = CorrectnessError::EmptyString {
+            param: "value".to_string(),
+        };
+
+        Python::attach(|py| {
+            let py_err = correctness_error_to_pyvalue_err(error);
+
+            assert!(py_err.is_instance_of::<PyValueError>(py));
+            assert_eq!(
+                py_err.value(py).to_string(),
+                "invalid string for 'value', was empty"
+            );
+        });
+    }
 }

@@ -32,7 +32,7 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
+        Bar, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -45,14 +45,17 @@ use nautilus_model::{
 use smallvec::SmallVec;
 use ustr::Ustr;
 
+pub use super::external::republish_external_message;
 use super::{
-    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, DELTAS_HANDLERS,
-    DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
+    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
+    DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
     INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
     OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
     POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
-    dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send, get_message_bus,
+    dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send,
+    external::forward_to_external_egress,
+    get_message_bus,
     matching::is_matching_backtracking,
     mstr::{Endpoint, MStr, Pattern, Topic},
     try_get_message_bus,
@@ -841,7 +844,11 @@ pub fn is_subscribed_any<T: AsRef<str>>(pattern: T, handler: ShareableMessageHan
 }
 
 /// Returns the count of Any-based subscriptions for a topic.
-pub fn subscriptions_count_any<S: AsRef<str>>(topic: S) -> usize {
+///
+/// # Errors
+///
+/// Returns an error if the `topic` is not a valid topic string.
+pub fn subscriptions_count_any<S: AsRef<str>>(topic: S) -> anyhow::Result<usize> {
     get_message_bus().borrow().subscriptions_count(topic)
 }
 
@@ -952,6 +959,16 @@ pub fn publish_any(topic: MStr<Topic>, message: &dyn Any) {
 
     handlers.clear(); // Release refs before restore
     ANY_HANDLERS.with_borrow_mut(|buf| *buf = handlers);
+
+    let Some(custom) = message.downcast_ref::<CustomData>() else {
+        return;
+    };
+
+    forward_to_external_egress(
+        topic,
+        BusPayloadType::Custom(Ustr::from(custom.data.type_name())),
+        custom,
+    );
 }
 
 /// Tries to publish a message to the current thread's registered message bus.
@@ -996,6 +1013,8 @@ pub fn publish_instrument(topic: MStr<Topic>, instrument: &InstrumentAny) {
         |bus, h| bus.router_instruments.fill_matching_handlers(topic, h),
         instrument,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::Instrument, instrument);
 }
 
 /// Publishes order book deltas to subscribers on a topic.
@@ -1006,6 +1025,8 @@ pub fn publish_deltas(topic: MStr<Topic>, deltas: &OrderBookDeltas) {
         |bus, h| bus.router_deltas.fill_matching_handlers(topic, h),
         deltas,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDeltas, deltas);
 }
 
 /// Publishes order book depth10 to subscribers on a topic.
@@ -1016,6 +1037,8 @@ pub fn publish_depth10(topic: MStr<Topic>, depth: &OrderBookDepth10) {
         |bus, h| bus.router_depth10.fill_matching_handlers(topic, h),
         depth,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::OrderBookDepth10, depth);
 }
 
 /// Publishes an order book snapshot to subscribers on a topic.
@@ -1036,6 +1059,8 @@ pub fn publish_quote(topic: MStr<Topic>, quote: &QuoteTick) {
         |bus, h| bus.router_quotes.fill_matching_handlers(topic, h),
         quote,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::QuoteTick, quote);
 }
 
 /// Publishes a trade tick to subscribers on a topic.
@@ -1046,6 +1071,8 @@ pub fn publish_trade(topic: MStr<Topic>, trade: &TradeTick) {
         |bus, h| bus.router_trades.fill_matching_handlers(topic, h),
         trade,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::TradeTick, trade);
 }
 
 /// Publishes a bar to subscribers on a topic.
@@ -1056,6 +1083,8 @@ pub fn publish_bar(topic: MStr<Topic>, bar: &Bar) {
         |bus, h| bus.router_bars.fill_matching_handlers(topic, h),
         bar,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::Bar, bar);
 }
 
 /// Publishes a mark price update to subscribers on a topic.
@@ -1066,6 +1095,8 @@ pub fn publish_mark_price(topic: MStr<Topic>, mark_price: &MarkPriceUpdate) {
         |bus, h| bus.router_mark_prices.fill_matching_handlers(topic, h),
         mark_price,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::MarkPriceUpdate, mark_price);
 }
 
 /// Publishes an index price update to subscribers on a topic.
@@ -1076,6 +1107,8 @@ pub fn publish_index_price(topic: MStr<Topic>, index_price: &IndexPriceUpdate) {
         |bus, h| bus.router_index_prices.fill_matching_handlers(topic, h),
         index_price,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::IndexPriceUpdate, index_price);
 }
 
 /// Publishes a funding rate update to subscribers on a topic.
@@ -1086,6 +1119,8 @@ pub fn publish_funding_rate(topic: MStr<Topic>, funding_rate: &FundingRateUpdate
         |bus, h| bus.router_funding_rates.fill_matching_handlers(topic, h),
         funding_rate,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::FundingRateUpdate, funding_rate);
 }
 
 /// Publishes greeks data to subscribers on a topic.
@@ -1106,6 +1141,8 @@ pub fn publish_option_greeks(topic: MStr<Topic>, option_greeks: &OptionGreeks) {
         |bus, h| bus.router_option_greeks.fill_matching_handlers(topic, h),
         option_greeks,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::OptionGreeks, option_greeks);
 }
 
 /// Publishes an option chain slice to subscribers on a topic.
@@ -1126,6 +1163,8 @@ pub fn publish_account_state(topic: MStr<Topic>, state: &AccountState) {
         |bus, h| bus.router_account_state.fill_matching_handlers(topic, h),
         state,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::AccountState, state);
 }
 
 /// Publishes a portfolio snapshot to subscribers on a topic.
@@ -1138,6 +1177,8 @@ pub fn publish_portfolio_snapshot(topic: MStr<Topic>, snapshot: &PortfolioSnapsh
         },
         snapshot,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::PortfolioSnapshot, snapshot);
 }
 
 /// Publishes an order event to subscribers on a topic.
@@ -1148,6 +1189,8 @@ pub fn publish_order_event(topic: MStr<Topic>, event: &OrderEventAny) {
         |bus, h| bus.router_order_events.fill_matching_handlers(topic, h),
         event,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::OrderEvent, event);
 }
 
 /// Publishes a position event to subscribers on a topic.
@@ -1158,6 +1201,8 @@ pub fn publish_position_event(topic: MStr<Topic>, event: &PositionEvent) {
         |bus, h| bus.router_position_events.fill_matching_handlers(topic, h),
         event,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::PositionEvent, event);
 }
 
 /// Publishes a DeFi block to subscribers on a topic.
@@ -1169,6 +1214,8 @@ pub fn publish_defi_block(topic: MStr<Topic>, block: &Block) {
         |bus, h| bus.router_defi_blocks.fill_matching_handlers(topic, h),
         block,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::Block, block);
 }
 
 /// Publishes a DeFi pool to subscribers on a topic.
@@ -1180,6 +1227,8 @@ pub fn publish_defi_pool(topic: MStr<Topic>, pool: &Pool) {
         |bus, h| bus.router_defi_pools.fill_matching_handlers(topic, h),
         pool,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::Pool, pool);
 }
 
 /// Publishes a DeFi pool swap to subscribers on a topic.
@@ -1202,6 +1251,8 @@ pub fn publish_defi_liquidity(topic: MStr<Topic>, update: &PoolLiquidityUpdate) 
         |bus, h| bus.router_defi_liquidity.fill_matching_handlers(topic, h),
         update,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::PoolLiquidityUpdate, update);
 }
 
 /// Publishes a DeFi fee collect to subscribers on a topic.
@@ -1213,6 +1264,8 @@ pub fn publish_defi_collect(topic: MStr<Topic>, collect: &PoolFeeCollect) {
         |bus, h| bus.router_defi_collects.fill_matching_handlers(topic, h),
         collect,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::PoolFeeCollect, collect);
 }
 
 /// Publishes a DeFi flash loan to subscribers on a topic.
@@ -1224,6 +1277,8 @@ pub fn publish_defi_flash(topic: MStr<Topic>, flash: &PoolFlash) {
         |bus, h| bus.router_defi_flash.fill_matching_handlers(topic, h),
         flash,
     );
+
+    forward_to_external_egress(topic, BusPayloadType::PoolFlash, flash);
 }
 
 /// Publishes a message to typed handlers using thread-local buffer reuse.
@@ -1545,19 +1600,48 @@ mod tests {
     //! where `send_*` holds a borrow, calls the handler, and the handler needs to
     //! call `borrow_mut()` for topic getters or other operations.
 
-    use std::{cell::RefCell, rc::Rc, thread};
-
-    use nautilus_core::UUID4;
-    use nautilus_model::{
-        data::{Bar, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick},
-        enums::OrderSide,
-        events::order::spec::OrderDeniedSpec,
-        identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
+    #[cfg(feature = "defi")]
+    use std::sync::Arc;
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+        thread,
     };
+
+    #[cfg(feature = "defi")]
+    use alloy_primitives::{U256, address};
+    use bytes::Bytes;
+    use nautilus_core::{UUID4, UnixNanos};
+    #[cfg(feature = "defi")]
+    use nautilus_model::defi::{
+        AmmType, Chain, Dex, DexType, PoolIdentifier, PoolLiquidityUpdateType, Token,
+    };
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    use nautilus_model::{data::OptionGreekValues, enums::GreeksConvention};
+    use nautilus_model::{
+        data::{
+            Bar, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OptionGreeks,
+            OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+            stubs::{stub_custom_data, stub_deltas, stub_depth10},
+        },
+        enums::{AccountType, OrderSide, PositionSide},
+        events::{OrderEventAny, PositionEvent, PositionOpened, order::spec::OrderDeniedSpec},
+        identifiers::{
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId,
+        },
+        instruments::{InstrumentAny, stubs::audusd_sim},
+        types::{Currency, Price, Quantity},
+    };
+    #[cfg(feature = "sbe")]
+    use nautilus_serialization::sbe::FromSbe;
+    #[cfg(feature = "capnp")]
+    use nautilus_serialization::{capnp::FromCapnp, market_capnp};
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
     use crate::{
+        enums::SerializationEncoding,
         messages::{
             data::{
                 DataCommand, DataResponse, QuotesResponse, RequestCommand, RequestQuotes,
@@ -1566,9 +1650,1194 @@ mod tests {
             execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::{
-            BusTap, clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
+            BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, SuppressExternalGuard,
+            clear_bus_tap, set_bus_tap, set_message_bus, stubs::get_call_check_handler,
         },
     };
+
+    #[derive(Debug)]
+    struct CapturedEgressMessage {
+        topic: String,
+        encoding: SerializationEncoding,
+        payload_type: BusPayloadType,
+        payload: Bytes,
+    }
+
+    struct CapturingExternalEgress {
+        publications: Rc<RefCell<Vec<CapturedEgressMessage>>>,
+        closed: Cell<bool>,
+    }
+
+    impl CapturingExternalEgress {
+        fn new() -> (Self, Rc<RefCell<Vec<CapturedEgressMessage>>>) {
+            let publications = Rc::new(RefCell::new(Vec::new()));
+            (
+                Self {
+                    publications: publications.clone(),
+                    closed: Cell::new(false),
+                },
+                publications,
+            )
+        }
+    }
+
+    impl MessageBusExternalEgress for CapturingExternalEgress {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn publish(&self, message: BusMessage) {
+            self.publications.borrow_mut().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                encoding: message.encoding,
+                payload_type: message.payload_type,
+                payload: message.payload,
+            });
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
+
+    fn install_capturing_external_egress(
+        encoding: SerializationEncoding,
+    ) -> Rc<RefCell<Vec<CapturedEgressMessage>>> {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        let (external_egress, publications) = CapturingExternalEgress::new();
+        msgbus
+            .borrow_mut()
+            .set_external_egress(Box::new(external_egress), encoding);
+        publications
+    }
+
+    fn install_capturing_external_egress_config(
+        config: &MessageBusConfig,
+    ) -> Rc<RefCell<Vec<CapturedEgressMessage>>> {
+        let msgbus = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(msgbus.clone());
+        let (external_egress, publications) = CapturingExternalEgress::new();
+        msgbus
+            .borrow_mut()
+            .set_external_egress_config(Box::new(external_egress), config)
+            .expect("message bus config must be valid");
+        publications
+    }
+
+    fn reset_message_bus() {
+        get_message_bus().borrow_mut().dispose();
+        set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::MsgPack)]
+    #[case(SerializationEncoding::Json)]
+    fn publish_quote_forwards_decodable_payload_to_external_egress(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let publications = install_capturing_external_egress(encoding);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+
+        let decoded: QuoteTick = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&publications[0].payload)
+                .expect("MsgPack payload must decode as QuoteTick"),
+            SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+                unreachable!("schema encodings are tested separately")
+            }
+        };
+        let payload_value: serde_json::Value = match encoding {
+            SerializationEncoding::MsgPack => rmp_serde::from_slice(&publications[0].payload)
+                .expect("MsgPack payload must decode as a value"),
+            SerializationEncoding::Json => serde_json::from_slice(&publications[0].payload)
+                .expect("JSON payload must decode as a value"),
+            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+                unreachable!("schema encodings are tested separately")
+            }
+        };
+        assert_eq!(
+            payload_value.get("type").and_then(|value| value.as_str()),
+            Some("QuoteTick")
+        );
+        assert_eq!(decoded, quote);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    fn assert_quote_round_trips(encoding: SerializationEncoding) {
+        let publications = install_capturing_external_egress(encoding);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let bus_message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].payload_type, BusPayloadType::QuoteTick);
+            assert_eq!(publications[0].encoding, encoding);
+            BusMessage::with_str_topic(
+                publications[0].topic.clone(),
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        publications.borrow_mut().clear();
+
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let received_handler = received.clone();
+        let handler = TypedHandler::from(move |quote: &QuoteTick| {
+            received_handler.borrow_mut().push(*quote);
+        });
+        subscribe_quotes("data.quotes.*".into(), handler, None);
+
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
+        republish_external_message(&bus_message).unwrap();
+
+        assert_eq!(*received.borrow(), vec![quote]);
+        assert!(
+            publications.borrow().is_empty(),
+            "republished message must not be forwarded back out externally"
+        );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_round_trips_quote(#[case] encoding: SerializationEncoding) {
+        assert_quote_round_trips(encoding);
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn republish_external_message_round_trips_quote_sbe() {
+        assert_quote_round_trips(SerializationEncoding::Sbe);
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn republish_external_message_round_trips_quote_capnp() {
+        assert_quote_round_trips(SerializationEncoding::Capnp);
+    }
+
+    fn assert_typed_external_round_trips<T>(
+        encoding: SerializationEncoding,
+        payload_type: BusPayloadType,
+        topic: &str,
+        value: T,
+        publish: fn(MStr<Topic>, &T),
+        subscribe: fn(MStr<Pattern>, TypedHandler<T>, Option<u32>),
+        assert_received: impl Fn(&T, &T),
+    ) where
+        T: Clone + 'static,
+    {
+        let publications = install_capturing_external_egress(encoding);
+
+        publish(topic.into(), &value);
+
+        let bus_message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(publications[0].payload_type, payload_type);
+            assert_eq!(publications[0].encoding, encoding);
+            BusMessage::with_str_topic(
+                publications[0].topic.clone(),
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        publications.borrow_mut().clear();
+
+        let received = Rc::new(RefCell::new(Vec::<T>::new()));
+        let received_handler = received.clone();
+        let handler = TypedHandler::from(move |message: &T| {
+            received_handler.borrow_mut().push(message.clone());
+        });
+        subscribe(topic.into(), handler, None);
+
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+        republish_external_message(&bus_message).unwrap();
+
+        let received = received.borrow();
+        assert_eq!(received.len(), 1);
+        assert_received(&received[0], &value);
+        assert!(
+            publications.borrow().is_empty(),
+            "republished message must not be forwarded back out externally"
+        );
+        reset_message_bus();
+    }
+
+    fn assert_eq_ref<T>(actual: &T, expected: &T)
+    where
+        T: PartialEq + std::fmt::Debug,
+    {
+        assert_eq!(actual, expected);
+    }
+
+    fn assert_json_value_eq<T>(actual: &T, expected: &T)
+    where
+        T: serde::Serialize,
+    {
+        assert_eq!(
+            serde_json::to_value(actual).expect("actual value must serialize"),
+            serde_json::to_value(expected).expect("expected value must serialize"),
+        );
+    }
+
+    fn assert_depth10_market_eq(actual: &OrderBookDepth10, expected: &OrderBookDepth10) {
+        assert_eq!(actual.instrument_id, expected.instrument_id);
+        assert_eq!(actual.bid_counts, expected.bid_counts);
+        assert_eq!(actual.ask_counts, expected.ask_counts);
+        assert_eq!(actual.flags, expected.flags);
+        assert_eq!(actual.sequence, expected.sequence);
+        assert_eq!(actual.ts_event, expected.ts_event);
+        assert_eq!(actual.ts_init, expected.ts_init);
+
+        for (actual, expected) in actual.bids.iter().zip(expected.bids.iter()) {
+            assert_eq!(actual.side, expected.side);
+            assert_eq!(actual.price, expected.price);
+            assert_eq!(actual.size, expected.size);
+        }
+
+        for (actual, expected) in actual.asks.iter().zip(expected.asks.iter()) {
+            assert_eq!(actual.side, expected.side);
+            assert_eq!(actual.price, expected.price);
+            assert_eq!(actual.size, expected.size);
+        }
+    }
+
+    fn mark_price_update() -> MarkPriceUpdate {
+        MarkPriceUpdate::new(
+            InstrumentId::from("AUDUSD.SIM"),
+            Price::from("1.00010"),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        )
+    }
+
+    fn index_price_update() -> IndexPriceUpdate {
+        IndexPriceUpdate::new(
+            InstrumentId::from("AUDUSD.SIM"),
+            Price::from("1.00020"),
+            UnixNanos::from(3),
+            UnixNanos::from(4),
+        )
+    }
+
+    fn funding_rate_update() -> FundingRateUpdate {
+        FundingRateUpdate::new(
+            InstrumentId::from("AUDUSD.SIM"),
+            Decimal::new(1, 4),
+            Some(480),
+            Some(UnixNanos::from(5)),
+            UnixNanos::from(6),
+            UnixNanos::from(7),
+        )
+    }
+
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    fn option_greeks() -> OptionGreeks {
+        OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-30JUN23-40000-C.DERIBIT"),
+            convention: GreeksConvention::PriceAdjusted,
+            greeks: OptionGreekValues {
+                delta: 0.525,
+                gamma: 0.00032,
+                vega: 12.25,
+                theta: -0.72,
+                rho: 0.18,
+            },
+            mark_iv: Some(0.0),
+            bid_iv: None,
+            ask_iv: Some(0.54),
+            underlying_price: Some(41_500.25),
+            open_interest: Some(0.0),
+            ts_event: UnixNanos::from(20),
+            ts_init: UnixNanos::from(21),
+        }
+    }
+
+    fn portfolio_snapshot() -> PortfolioSnapshot {
+        PortfolioSnapshot::new(
+            AccountId::from("SIM-001"),
+            AccountType::Cash,
+            Some(Currency::USD()),
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            UUID4::new(),
+            UnixNanos::from(8),
+            UnixNanos::from(9),
+        )
+    }
+
+    fn position_event() -> PositionEvent {
+        PositionEvent::PositionOpened(PositionOpened {
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("AUDUSD.SIM"),
+            position_id: PositionId::from("P-001"),
+            account_id: AccountId::from("SIM-001"),
+            opening_order_id: ClientOrderId::from("O-19700101-000000-001-001-1"),
+            entry: OrderSide::Buy,
+            side: PositionSide::Long,
+            signed_qty: 100.0,
+            quantity: Quantity::from("100"),
+            last_qty: Quantity::from("100"),
+            last_px: Price::from("1.00000"),
+            currency: Currency::USD(),
+            avg_px_open: 1.0,
+            event_id: UUID4::new(),
+            ts_event: UnixNanos::from(10),
+            ts_init: UnixNanos::from(11),
+        })
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_chain() -> Arc<Chain> {
+        Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain must be registered")
+                .clone(),
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_dex() -> Arc<Dex> {
+        let chain = Chain::from_chain_id(42161)
+            .expect("Arbitrum chain must be registered")
+            .clone();
+        Arc::new(Dex::new(
+            chain,
+            DexType::UniswapV3,
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            0,
+            AmmType::CLAMM,
+            "PoolCreated",
+            "Swap",
+            "Mint",
+            "Burn",
+            "Collect",
+        ))
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_pool() -> Pool {
+        let chain = defi_chain();
+        let dex = defi_dex();
+        let rain = Token::new(
+            chain.clone(),
+            address!("0x25118290e6A5f4139381D072181157035864099d"),
+            "RAIN".to_string(),
+            "RAIN".to_string(),
+            18,
+        );
+        let weth = Token::new(
+            chain.clone(),
+            address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        );
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+
+        Pool::new(
+            chain,
+            dex,
+            pool_address,
+            PoolIdentifier::from_address(pool_address),
+            0,
+            rain,
+            weth,
+            Some(3000),
+            Some(60),
+            UnixNanos::from(12),
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_block() -> Block {
+        Block::new(
+            "0x0000000000000000000000000000000000000000000000000000000000000100".to_string(),
+            "0x0000000000000000000000000000000000000000000000000000000000000099".to_string(),
+            100,
+            Ustr::from("0x0000000000000000000000000000000000000001"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(13),
+            None,
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_transaction_hash() -> String {
+        "0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e19693c04eb56b2404067407b".to_string()
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_liquidity_update() -> PoolLiquidityUpdate {
+        let pool = defi_pool();
+        PoolLiquidityUpdate::new(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            pool.instrument_id,
+            pool.pool_identifier,
+            PoolLiquidityUpdateType::Mint,
+            100_000,
+            defi_transaction_hash(),
+            0,
+            1,
+            None,
+            address!("0x5E325eDA8064b456f4781070C0738d849c824258"),
+            100,
+            U256::from(10),
+            U256::from(20),
+            -120,
+            120,
+            UnixNanos::from(14),
+            UnixNanos::from(15),
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_collect() -> PoolFeeCollect {
+        let pool = defi_pool();
+        PoolFeeCollect::new(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            pool.instrument_id,
+            pool.pool_identifier,
+            100_000,
+            defi_transaction_hash(),
+            0,
+            2,
+            address!("0x5E325eDA8064b456f4781070C0738d849c824258"),
+            10,
+            20,
+            -120,
+            120,
+            UnixNanos::from(16),
+            UnixNanos::from(17),
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    fn defi_flash() -> PoolFlash {
+        let pool = defi_pool();
+        PoolFlash::new(
+            pool.chain.clone(),
+            pool.dex.clone(),
+            pool.instrument_id,
+            pool.pool_identifier,
+            100_000,
+            defi_transaction_hash(),
+            0,
+            3,
+            UnixNanos::from(18),
+            UnixNanos::from(19),
+            address!("0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e"),
+            address!("0x1aa3506e78dd6e7e53986fa310c7ef1b7825042e"),
+            U256::from(100),
+            U256::from(200),
+            U256::from(101),
+            U256::from(202),
+        )
+    }
+
+    fn assert_publishable_json_msgpack_round_trips(encoding: SerializationEncoding) {
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::Instrument,
+            "data.instruments.AUDUSD.SIM",
+            InstrumentAny::CurrencyPair(audusd_sim()),
+            publish_instrument,
+            subscribe_instruments,
+            assert_json_value_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OrderBookDeltas,
+            "data.book.deltas.AAPL.XNAS",
+            stub_deltas(),
+            publish_deltas,
+            subscribe_book_deltas,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OrderBookDepth10,
+            "data.book.depth10.AAPL.XNAS",
+            stub_depth10(),
+            publish_depth10,
+            subscribe_book_depth10,
+            assert_depth10_market_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::TradeTick,
+            "data.trades.AUDUSD.SIM",
+            TradeTick::default(),
+            publish_trade,
+            subscribe_trades,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::Bar,
+            "data.bars.AUDUSD.SIM",
+            Bar::default(),
+            publish_bar,
+            subscribe_bars,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::MarkPriceUpdate,
+            "data.mark_prices.AUDUSD.SIM",
+            mark_price_update(),
+            publish_mark_price,
+            subscribe_mark_prices,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::IndexPriceUpdate,
+            "data.index_prices.AUDUSD.SIM",
+            index_price_update(),
+            publish_index_price,
+            subscribe_index_prices,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::FundingRateUpdate,
+            "data.funding_rates.AUDUSD.SIM",
+            funding_rate_update(),
+            publish_funding_rate,
+            subscribe_funding_rates,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OptionGreeks,
+            "data.option_greeks.AUDUSD.SIM",
+            OptionGreeks::default(),
+            publish_option_greeks,
+            subscribe_option_greeks,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::AccountState,
+            "events.account.SIM-001",
+            nautilus_model::events::account::stubs::cash_account_state(),
+            publish_account_state,
+            subscribe_account_state,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::PortfolioSnapshot,
+            "events.portfolio.SIM-001",
+            portfolio_snapshot(),
+            publish_portfolio_snapshot,
+            subscribe_portfolio_snapshot,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OrderEvent,
+            "events.orders.SIM-001",
+            OrderEventAny::Denied(OrderDeniedSpec::builder().build()),
+            publish_order_event,
+            subscribe_order_events,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::PositionEvent,
+            "events.positions.SIM-001",
+            position_event(),
+            publish_position_event,
+            subscribe_position_events,
+            assert_json_value_eq,
+        );
+    }
+
+    #[cfg(feature = "defi")]
+    fn assert_publishable_defi_json_msgpack_round_trips(encoding: SerializationEncoding) {
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::Block,
+            "data.defi.blocks.ARBITRUM",
+            defi_block(),
+            publish_defi_block,
+            subscribe_defi_blocks,
+            assert_json_value_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::Pool,
+            "data.defi.pools.RAIN-WETH",
+            defi_pool(),
+            publish_defi_pool,
+            subscribe_defi_pools,
+            assert_json_value_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::PoolLiquidityUpdate,
+            "data.defi.liquidity.RAIN-WETH",
+            defi_liquidity_update(),
+            publish_defi_liquidity,
+            subscribe_defi_liquidity,
+            assert_json_value_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::PoolFeeCollect,
+            "data.defi.collects.RAIN-WETH",
+            defi_collect(),
+            publish_defi_collect,
+            subscribe_defi_collects,
+            assert_json_value_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::PoolFlash,
+            "data.defi.flash.RAIN-WETH",
+            defi_flash(),
+            publish_defi_flash,
+            subscribe_defi_flash,
+            assert_json_value_eq,
+        );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_round_trips_publishable_json_msgpack(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        assert_publishable_json_msgpack_round_trips(encoding);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_round_trips_publishable_defi_json_msgpack(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        assert_publishable_defi_json_msgpack_round_trips(encoding);
+    }
+
+    fn assert_custom_data_round_trips(encoding: SerializationEncoding) {
+        let publications = install_capturing_external_egress(encoding);
+        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
+
+        publish_any("data.custom.StubCustomData".into(), &custom);
+
+        let bus_message = {
+            let publications = publications.borrow();
+            assert_eq!(publications.len(), 1);
+            assert_eq!(
+                publications[0].payload_type,
+                BusPayloadType::Custom(Ustr::from("StubCustomData"))
+            );
+            assert_eq!(publications[0].encoding, encoding);
+            BusMessage::with_str_topic(
+                publications[0].topic.clone(),
+                publications[0].payload_type,
+                publications[0].payload.clone(),
+                publications[0].encoding,
+            )
+        };
+        publications.borrow_mut().clear();
+
+        let received = Rc::new(RefCell::new(Vec::<CustomData>::new()));
+        let received_handler = received.clone();
+        subscribe_any(
+            "data.custom.StubCustomData".into(),
+            ShareableMessageHandler::from_typed(move |message: &CustomData| {
+                received_handler.borrow_mut().push(message.clone());
+            }),
+            None,
+        );
+
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::Custom(Ustr::from("StubCustomData")));
+        republish_external_message(&bus_message).unwrap();
+
+        assert_eq!(*received.borrow(), vec![custom]);
+        assert!(
+            publications.borrow().is_empty(),
+            "republished message must not be forwarded back out externally"
+        );
+        reset_message_bus();
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_round_trips_custom_data(#[case] encoding: SerializationEncoding) {
+        assert_custom_data_round_trips(encoding);
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn republish_external_message_skips_unregistered_custom_payload(
+        #[case] encoding: SerializationEncoding,
+    ) {
+        let envelope = serde_json::json!({
+            "type": "UnregisteredCustomData",
+            "data_type": {
+                "type_name": "UnregisteredCustomData",
+                "metadata": {},
+            },
+            "payload": {
+                "value": 1,
+            },
+        });
+        let payload = match encoding {
+            SerializationEncoding::Json => {
+                serde_json::to_vec(&envelope).expect("JSON envelope must serialize")
+            }
+            SerializationEncoding::MsgPack => {
+                rmp_serde::to_vec_named(&envelope).expect("MsgPack envelope must serialize")
+            }
+            SerializationEncoding::Sbe | SerializationEncoding::Capnp => {
+                unreachable!("schema encodings do not support custom payloads")
+            }
+        };
+        let message = BusMessage::with_str_topic(
+            "data.custom.UnregisteredCustomData",
+            BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")),
+            Bytes::from(payload),
+            encoding,
+        );
+
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::Custom(Ustr::from("UnregisteredCustomData")));
+        republish_external_message(&message).unwrap();
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn republish_external_message_skips_untyped_custom_payload() {
+        let message = BusMessage::with_str_topic(
+            "events/control",
+            BusPayloadType::Custom(Ustr::default()),
+            Bytes::new(),
+            SerializationEncoding::Json,
+        );
+
+        republish_external_message(&message).unwrap();
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn republish_external_message_skips_unregistered_streaming_type_before_decode() {
+        let received = Rc::new(RefCell::new(Vec::<QuoteTick>::new()));
+        let received_handler = received.clone();
+        let handler = TypedHandler::from(move |quote: &QuoteTick| {
+            received_handler.borrow_mut().push(*quote);
+        });
+        subscribe_quotes("data.quotes.*".into(), handler, None);
+
+        let message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM",
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"not-json"),
+            SerializationEncoding::Json,
+        );
+
+        republish_external_message(&message).unwrap();
+
+        assert!(received.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[cfg(any(feature = "sbe", feature = "capnp"))]
+    fn assert_market_data_binary_round_trips(encoding: SerializationEncoding) {
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OrderBookDeltas,
+            "data.book.deltas.AAPL.XNAS",
+            stub_deltas(),
+            publish_deltas,
+            subscribe_book_deltas,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OrderBookDepth10,
+            "data.book.depth10.AAPL.XNAS",
+            stub_depth10(),
+            publish_depth10,
+            subscribe_book_depth10,
+            assert_depth10_market_eq,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::QuoteTick,
+            "data.quotes.AUDUSD.SIM",
+            QuoteTick::default(),
+            publish_quote,
+            subscribe_quotes,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::TradeTick,
+            "data.trades.AUDUSD.SIM",
+            TradeTick::default(),
+            publish_trade,
+            subscribe_trades,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::Bar,
+            "data.bars.AUDUSD.SIM",
+            Bar::default(),
+            publish_bar,
+            subscribe_bars,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::MarkPriceUpdate,
+            "data.mark_prices.AUDUSD.SIM",
+            mark_price_update(),
+            publish_mark_price,
+            subscribe_mark_prices,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::IndexPriceUpdate,
+            "data.index_prices.AUDUSD.SIM",
+            index_price_update(),
+            publish_index_price,
+            subscribe_index_prices,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::FundingRateUpdate,
+            "data.funding_rates.AUDUSD.SIM",
+            funding_rate_update(),
+            publish_funding_rate,
+            subscribe_funding_rates,
+            assert_eq_ref,
+        );
+        assert_typed_external_round_trips(
+            encoding,
+            BusPayloadType::OptionGreeks,
+            "data.option_greeks.BTC-30JUN23-40000-C.DERIBIT",
+            option_greeks(),
+            publish_option_greeks,
+            subscribe_option_greeks,
+            assert_eq_ref,
+        );
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn republish_external_message_round_trips_market_data_sbe() {
+        assert_market_data_binary_round_trips(SerializationEncoding::Sbe);
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn republish_external_message_round_trips_market_data_capnp() {
+        assert_market_data_binary_round_trips(SerializationEncoding::Capnp);
+    }
+
+    #[rstest]
+    #[case(BusPayloadType::AccountState)]
+    fn republish_external_message_skips_unsupported_binary_payload(
+        #[case] payload_type: BusPayloadType,
+    ) {
+        let received = Rc::new(RefCell::new(Vec::<serde_json::Value>::new()));
+        let account_received = received.clone();
+        subscribe_account_state(
+            "events.unsupported.*".into(),
+            TypedHandler::from(move |state: &AccountState| {
+                account_received
+                    .borrow_mut()
+                    .push(serde_json::to_value(state).unwrap());
+            }),
+            None,
+        );
+
+        for encoding in [SerializationEncoding::Sbe, SerializationEncoding::Capnp] {
+            let message = BusMessage::with_str_topic(
+                "events.unsupported.payload",
+                payload_type,
+                Bytes::from_static(b"malformed unsupported payload"),
+                encoding,
+            );
+            get_message_bus()
+                .borrow_mut()
+                .add_streaming_type(payload_type);
+            republish_external_message(&message).unwrap();
+        }
+
+        assert!(received.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn republish_external_message_errors_for_malformed_supported_payload() {
+        let message = BusMessage::with_str_topic(
+            "data.quotes.AUDUSD.SIM",
+            BusPayloadType::QuoteTick,
+            Bytes::from_static(b"not-json"),
+            SerializationEncoding::Json,
+        );
+
+        get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(BusPayloadType::QuoteTick);
+        let error = republish_external_message(&message).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to decode JSON QuoteTick"),
+            "{error:?}"
+        );
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn publish_quote_sbe_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            QuoteTick::from_sbe(&publications[0].payload)
+                .expect("SBE payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "sbe")]
+    #[rstest]
+    fn publish_option_greeks_sbe_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
+        let greeks = option_greeks();
+
+        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
+        assert_eq!(
+            OptionGreeks::from_sbe(&publications[0].payload)
+                .expect("SBE payload must decode as OptionGreeks"),
+            greeks
+        );
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(not(feature = "sbe"))]
+    #[rstest]
+    fn publish_quote_sbe_without_feature_drops_payload() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Sbe);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn publish_quote_capnp_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        let reader = capnp::serialize::read_message(
+            &mut &publications[0].payload[..],
+            capnp::message::ReaderOptions::new(),
+        )
+        .expect("Cap'n Proto payload must be readable");
+        let root = reader
+            .get_root::<market_capnp::quote_tick::Reader>()
+            .expect("Cap'n Proto payload must have a QuoteTick root");
+        let decoded =
+            QuoteTick::from_capnp(root).expect("Cap'n Proto payload must decode as QuoteTick");
+        assert_eq!(decoded, quote);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(feature = "capnp")]
+    #[rstest]
+    fn publish_option_greeks_capnp_forwards_decodable_payload_to_external_egress() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
+        let greeks = option_greeks();
+
+        publish_option_greeks("data.option_greeks.TEST".into(), &greeks);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.option_greeks.TEST");
+        let reader = capnp::serialize::read_message(
+            &mut &publications[0].payload[..],
+            capnp::message::ReaderOptions::new(),
+        )
+        .expect("Cap'n Proto payload must be readable");
+        let root = reader
+            .get_root::<market_capnp::option_greeks::Reader>()
+            .expect("Cap'n Proto payload must have an OptionGreeks root");
+        let decoded = OptionGreeks::from_capnp(root)
+            .expect("Cap'n Proto payload must decode as OptionGreeks");
+        assert_eq!(decoded, greeks);
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[cfg(not(feature = "capnp"))]
+    #[rstest]
+    fn publish_quote_capnp_without_feature_drops_payload() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Capnp);
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        assert!(publications.borrow().is_empty());
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn publish_quote_external_egress_respects_filter_and_suppress_guard() {
+        let publications = install_capturing_external_egress(SerializationEncoding::MsgPack);
+        let quote = QuoteTick::default();
+
+        get_message_bus()
+            .borrow_mut()
+            .set_types_filter(vec!["QuoteTick".to_string()]);
+        publish_quote("data.quotes.FILTERED".into(), &quote);
+
+        get_message_bus().borrow_mut().set_types_filter(Vec::new());
+        {
+            let _guard = SuppressExternalGuard::new();
+            publish_quote("data.quotes.SUPPRESSED".into(), &quote);
+        }
+        publish_quote("data.quotes.PUBLISHED".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.PUBLISHED");
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn publish_quote_uses_market_data_encoding_override() {
+        let publications = install_capturing_external_egress_config(&MessageBusConfig {
+            encoding: SerializationEncoding::Json,
+            encoding_market_data: Some(SerializationEncoding::MsgPack),
+            ..Default::default()
+        });
+        let quote = QuoteTick::default();
+
+        publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].encoding, SerializationEncoding::MsgPack);
+        assert_eq!(
+            rmp_serde::from_slice::<QuoteTick>(&publications[0].payload)
+                .expect("MsgPack payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn publish_custom_data_forwards_envelope_to_external_egress_and_respects_filter() {
+        let publications = install_capturing_external_egress(SerializationEncoding::Json);
+        let custom = stub_custom_data(100, 42, None, Some("stub-id".to_string()));
+
+        publish_any("data.custom.StubCustomData".into(), &custom);
+
+        get_message_bus()
+            .borrow_mut()
+            .set_types_filter(vec!["StubCustomData".to_string()]);
+        publish_any("data.custom.FILTERED".into(), &custom);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.custom.StubCustomData");
+
+        let payload_value: serde_json::Value = serde_json::from_slice(&publications[0].payload)
+            .expect("JSON payload must decode as a CustomData envelope");
+        assert_eq!(
+            payload_value.get("type").and_then(|value| value.as_str()),
+            Some("StubCustomData")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/data_type/type_name")
+                .and_then(|value| value.as_str()),
+            Some("StubCustomData")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/data_type/identifier")
+                .and_then(|value| value.as_str()),
+            Some("stub-id")
+        );
+        assert_eq!(
+            payload_value
+                .pointer("/payload/value")
+                .and_then(serde_json::Value::as_i64),
+            Some(42)
+        );
+        drop(publications);
+        reset_message_bus();
+    }
 
     #[rstest]
     fn test_typed_quote_publish_subscribe_integration() {

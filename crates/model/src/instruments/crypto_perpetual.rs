@@ -27,7 +27,7 @@ use super::any::InstrumentAny;
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    instruments::Instrument,
+    instruments::{Instrument, tick_scheme::check_tick_scheme},
     types::{
         currency::Currency,
         money::Money,
@@ -92,6 +92,8 @@ pub struct CryptoPerpetual {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -100,15 +102,17 @@ pub struct CryptoPerpetual {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl CryptoPerpetual {
     /// Creates a new [`CryptoPerpetual`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -133,6 +137,7 @@ impl CryptoPerpetual {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -151,6 +156,15 @@ impl CryptoPerpetual {
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
         check_positive_quantity(size_increment, stringify!(size_increment))?;
+        check_tick_scheme(tick_scheme)?;
+
+        if let Some(multiplier) = multiplier {
+            check_positive_quantity(multiplier, stringify!(multiplier))?;
+        }
+
+        if let Some(lot_size) = lot_size {
+            check_positive_quantity(lot_size, stringify!(lot_size))?;
+        }
 
         Ok(Self {
             id: instrument_id,
@@ -175,6 +189,7 @@ impl CryptoPerpetual {
             min_notional,
             max_price,
             min_price,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -211,6 +226,7 @@ impl CryptoPerpetual {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -238,11 +254,80 @@ impl CryptoPerpetual {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`CryptoPerpetual`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`CryptoPerpetual::new_checked`], which the builder calls so the
+    /// same correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`CryptoPerpetual::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        multiplier: Option<Quantity>,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            base_currency,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            multiplier,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -261,6 +346,9 @@ impl Hash for CryptoPerpetual {
 }
 
 impl Instrument for CryptoPerpetual {
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(self)
     }
@@ -397,6 +485,8 @@ impl Instrument for CryptoPerpetual {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
@@ -498,6 +588,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         );
@@ -530,6 +621,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         );
@@ -537,9 +629,179 @@ mod tests {
     }
 
     #[rstest]
+    #[case::zero_multiplier(Some(Quantity::from("0")), None)]
+    #[case::zero_lot_size(None, Some(Quantity::from("0")))]
+    fn test_new_checked_rejects_non_positive_sizing(
+        #[case] multiplier: Option<Quantity>,
+        #[case] lot_size: Option<Quantity>,
+    ) {
+        let result = CryptoPerpetual::new_checked(
+            InstrumentId::from("TEST.EXCHANGE"),
+            Symbol::from("TEST"),
+            Currency::BTC(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            multiplier,
+            lot_size,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("not positive"), "{error}");
+    }
+
+    #[rstest]
     fn test_serialization_roundtrip(crypto_perpetual_ethusdt: CryptoPerpetual) {
         let json = serde_json::to_string(&crypto_perpetual_ethusdt).unwrap();
         let deserialized: CryptoPerpetual = serde_json::from_str(&json).unwrap();
         assert_eq!(crypto_perpetual_ethusdt, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = CryptoPerpetual::new_checked(
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Symbol::from("ETHUSDT"),
+            Currency::ETH(),
+            Currency::USDT(),
+            Currency::USDT(),
+            false,
+            2,
+            3,
+            Price::from("0.01"),
+            Quantity::from("0.001"),
+            None,
+            None,
+            Some(Quantity::from("10000.0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        )
+        .unwrap();
+
+        let built = CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+            .raw_symbol(Symbol::from("ETHUSDT"))
+            .base_currency(Currency::ETH())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(3)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.001"))
+            .max_quantity(Quantity::from("10000.0"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
+    }
+
+    #[rstest]
+    fn test_builder_applies_defaults_for_omitted_optionals() {
+        let perp = CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+            .raw_symbol(Symbol::from("ETHUSDT"))
+            .base_currency(Currency::ETH())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(3)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.001"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(perp.multiplier, Quantity::from(1));
+        assert_eq!(perp.lot_size, Quantity::from(1));
+        assert_eq!(perp.margin_init, Decimal::default());
+        assert_eq!(perp.margin_maint, Decimal::default());
+        assert_eq!(perp.maker_fee, Decimal::default());
+        assert_eq!(perp.taker_fee, Decimal::default());
+        assert_eq!(perp.max_quantity, None);
+        assert_eq!(perp.min_notional, None);
+        assert_eq!(perp.tick_scheme, None);
+        assert_eq!(perp.info, None);
+    }
+
+    #[rstest]
+    fn test_builder_sets_optional_fields_via_value_and_maybe_setters() {
+        let perp = CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("ETHUSDT-PERP.BINANCE"))
+            .raw_symbol(Symbol::from("ETHUSDT"))
+            .base_currency(Currency::ETH())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(2)
+            .size_precision(3)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("0.001"))
+            .max_quantity(Quantity::from("10000.0"))
+            .maybe_min_notional(Some(Money::new(10.00, Currency::USDT())))
+            .maker_fee(dec!(0.0002))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(perp.max_quantity, Some(Quantity::from("10000.0")));
+        assert_eq!(perp.min_notional, Some(Money::new(10.00, Currency::USDT())));
+        assert_eq!(perp.maker_fee, dec!(0.0002));
+    }
+
+    #[rstest]
+    fn test_builder_propagates_validation_error() {
+        let result = CryptoPerpetual::builder()
+            .instrument_id(InstrumentId::from("TEST.EXCHANGE"))
+            .raw_symbol(Symbol::from("TEST"))
+            .base_currency(Currency::BTC())
+            .quote_currency(Currency::USDT())
+            .settlement_currency(Currency::USDT())
+            .is_inverse(false)
+            .price_precision(3) // Mismatch against price_increment precision of 2
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .ts_event(0.into())
+            .ts_init(0.into())
+            .build();
+
+        assert!(result.is_err());
     }
 }

@@ -221,34 +221,32 @@ impl<'a> PostgresCopyHandler<'a> {
 
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
-            // Log detailed information about the failed batch
-            log::error!("COPY operation failed for pool_swap batch:");
-            log::error!("  Chain ID: {chain_id}");
-            log::error!("  Batch size: {}", swaps.len());
+            // Emit a single error per failed COPY so one failure is one shutdown-on-error trigger
+            let mut detail = format!(
+                "COPY operation failed for pool_swap batch: chain_id={chain_id}, batch_size={}",
+                swaps.len()
+            );
 
             if !swaps.is_empty() {
-                log::error!(
-                    "  Block range: {} to {}",
+                detail.push_str(&format!(
+                    ", block_range={} to {}",
                     swaps.iter().map(|s| s.block).min().unwrap_or(0),
                     swaps.iter().map(|s| s.block).max().unwrap_or(0)
-                );
+                ));
             }
 
-            // Log first few swaps with key details
             for (i, swap) in swaps.iter().take(5).enumerate() {
-                log::error!(
-                    "  Swap[{}]: tx={} log_idx={} block={} pool={}",
-                    i,
-                    swap.transaction_hash,
-                    swap.log_index,
-                    swap.block,
-                    swap.instrument_id
-                );
+                detail.push_str(&format!(
+                    "\n  Swap[{i}]: tx={} log_idx={} block={} pool={}",
+                    swap.transaction_hash, swap.log_index, swap.block, swap.instrument_id
+                ));
             }
 
             if swaps.len() > 5 {
-                log::error!("  ... and {} more swaps", swaps.len() - 5);
+                detail.push_str(&format!("\n  ... and {} more swaps", swaps.len() - 5));
             }
+
+            log::error!("{detail}");
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")
         })?;
@@ -297,35 +295,36 @@ impl<'a> PostgresCopyHandler<'a> {
 
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
-            // Log detailed information about the failed batch
-            log::error!("COPY operation failed for pool_liquidity batch:");
-            log::error!("  Chain ID: {chain_id}");
-            log::error!("  Batch size: {}", updates.len());
+            // Emit a single error per failed COPY so one failure is one shutdown-on-error trigger
+            let mut detail = format!(
+                "COPY operation failed for pool_liquidity batch: chain_id={chain_id}, batch_size={}",
+                updates.len()
+            );
 
             if !updates.is_empty() {
-                log::error!(
-                    "  Block range: {} to {}",
+                detail.push_str(&format!(
+                    ", block_range={} to {}",
                     updates.iter().map(|u| u.block).min().unwrap_or(0),
                     updates.iter().map(|u| u.block).max().unwrap_or(0)
-                );
+                ));
             }
 
-            // Log first few liquidity updates with key details
             for (i, update) in updates.iter().take(5).enumerate() {
-                log::error!(
-                    "  Update[{}]: tx={} log_idx={} block={} pool={} type={}",
-                    i,
+                detail.push_str(&format!(
+                    "\n  Update[{i}]: tx={} log_idx={} block={} pool={} type={}",
                     update.transaction_hash,
                     update.log_index,
                     update.block,
                     update.pool_identifier,
                     update.kind
-                );
+                ));
             }
 
             if updates.len() > 5 {
-                log::error!("  ... and {} more updates", updates.len() - 5);
+                detail.push_str(&format!("\n  ... and {} more updates", updates.len() - 5));
             }
+
+            log::error!("{detail}");
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")
         })?;
@@ -708,35 +707,36 @@ impl<'a> PostgresCopyHandler<'a> {
 
         // Finish the COPY operation
         copy_in.finish().await.map_err(|e| {
-            // Log detailed information about the failed batch
-            log::error!("COPY operation failed for temp_pool_collect batch:");
-            log::error!("  Chain ID: {chain_id}");
-            log::error!("  Batch size: {}", collects.len());
+            // Emit a single error per failed COPY so one failure is one shutdown-on-error trigger
+            let mut detail = format!(
+                "COPY operation failed for temp_pool_collect batch: chain_id={chain_id}, batch_size={}",
+                collects.len()
+            );
 
             if !collects.is_empty() {
-                log::error!(
-                    "  Block range: {} to {}",
+                detail.push_str(&format!(
+                    ", block_range={} to {}",
                     collects.iter().map(|c| c.block).min().unwrap_or(0),
                     collects.iter().map(|c| c.block).max().unwrap_or(0)
-                );
+                ));
             }
 
-            // Log first few collects with key details
             for (i, collect) in collects.iter().take(5).enumerate() {
-                log::error!(
-                    "  Collect[{}]: tx={} log_idx={} block={} pool={} owner={}",
-                    i,
+                detail.push_str(&format!(
+                    "\n  Collect[{i}]: tx={} log_idx={} block={} pool={} owner={}",
                     collect.transaction_hash,
                     collect.log_index,
                     collect.block,
                     collect.pool_identifier,
                     collect.owner
-                );
+                ));
             }
 
             if collects.len() > 5 {
-                log::error!("  ... and {} more collects", collects.len() - 5);
+                detail.push_str(&format!("\n  ... and {} more collects", collects.len() - 5));
             }
+
+            log::error!("{detail}");
 
             anyhow::anyhow!("Failed to finish COPY operation: {e}")
         })?;

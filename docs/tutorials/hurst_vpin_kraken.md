@@ -146,30 +146,25 @@ use nautilus_model::{
 };
 use rust_decimal_macros::dec;
 
-let instrument = CryptoPerpetual::new(
-    InstrumentId::from("PF_XBTUSD.KRAKEN"),
-    Symbol::from("PF_XBTUSD"),
-    Currency::BTC(),      // base
-    Currency::USD(),      // quote
-    Currency::USD(),      // settlement (linear)
-    false,                // is_inverse
-    1,                    // price_precision
-    4,                    // size_precision
-    Price::from("0.5"),
-    Quantity::from("0.0001"),
-    None,                 // multiplier
-    None,                 // lot_size
-    None, None,           // max/min quantity
-    None, None,           // max/min notional
-    None, None,           // max/min price
-    Some(dec!(0.02)),     // margin_init
-    Some(dec!(0.01)),     // margin_maint
-    Some(dec!(0.0002)),   // maker_fee
-    Some(dec!(0.0005)),   // taker_fee
-    None,                 // info
-    0.into(),             // ts_event
-    0.into(),             // ts_init
-);
+let instrument = CryptoPerpetual::builder()
+    .instrument_id(InstrumentId::from("PF_XBTUSD.KRAKEN"))
+    .raw_symbol(Symbol::from("PF_XBTUSD"))
+    .base_currency(Currency::BTC())       // base
+    .quote_currency(Currency::USD())      // quote
+    .settlement_currency(Currency::USD()) // settlement (linear)
+    .is_inverse(false)
+    .price_precision(1)
+    .size_precision(4)
+    .price_increment(Price::from("0.5"))
+    .size_increment(Quantity::from("0.0001"))
+    .margin_init(dec!(0.02))
+    .margin_maint(dec!(0.01))
+    .maker_fee(dec!(0.0002))
+    .taker_fee(dec!(0.0005))
+    .ts_event(0.into())
+    .ts_init(0.into())
+    .build()
+    .unwrap();
 ```
 
 Fees and margin are explicit backtest assumptions. Check the
@@ -360,7 +355,7 @@ engine.add_venue(
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("100_000 USD")])
-        .build(),
+        .build()?,
 )?;
 
 engine.add_instrument(&InstrumentAny::CryptoPerpetual(instrument))?;
@@ -382,12 +377,12 @@ use nautilus_trading::examples::strategies::{
     HurstVpinDirectional, HurstVpinDirectionalConfig,
 };
 
-let config = HurstVpinDirectionalConfig::new(
-    instrument_id,
-    bar_type,
-    Quantity::from("0.0100"),  // match instrument size_precision
-)
-.with_max_holding_secs(1800);
+let config = HurstVpinDirectionalConfig::builder()
+    .instrument_id(instrument_id)
+    .bar_type(bar_type)
+    .trade_size(Quantity::from("0.0100")) // match instrument size_precision
+    .max_holding_secs(1800)
+    .build();
 
 engine.add_strategy(HurstVpinDirectional::new(config))?;
 ```

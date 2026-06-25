@@ -23,7 +23,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, any::InstrumentAny};
+use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
@@ -89,6 +89,8 @@ pub struct Cfd {
     pub max_price: Option<Price>,
     /// The minimum allowable quoted price.
     pub min_price: Option<Price>,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -97,15 +99,17 @@ pub struct Cfd {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl Cfd {
     /// Creates a new [`Cfd`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -128,6 +132,7 @@ impl Cfd {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -146,6 +151,11 @@ impl Cfd {
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
         check_positive_quantity(size_increment, stringify!(size_increment))?;
+        check_tick_scheme(tick_scheme)?;
+
+        if let Some(lot_size) = lot_size {
+            check_positive_quantity(lot_size, stringify!(lot_size))?;
+        }
 
         Ok(Self {
             id: instrument_id,
@@ -168,6 +178,7 @@ impl Cfd {
             margin_maint: margin_maint.unwrap_or_default(),
             maker_fee: maker_fee.unwrap_or_default(),
             taker_fee: taker_fee.unwrap_or_default(),
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -202,6 +213,7 @@ impl Cfd {
         margin_maint: Option<Decimal>,
         maker_fee: Option<Decimal>,
         taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -227,11 +239,76 @@ impl Cfd {
             margin_maint,
             maker_fee,
             taker_fee,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`Cfd`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`Cfd::new_checked`], which the builder calls so the
+    /// same correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`Cfd::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        base_currency: Option<Currency>,
+        quote_currency: Currency,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            asset_class,
+            base_currency,
+            quote_currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -250,6 +327,9 @@ impl Hash for Cfd {
 }
 
 impl Instrument for Cfd {
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::Cfd(self)
     }
@@ -390,12 +470,13 @@ impl Instrument for Cfd {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use crate::{
         enums::{AssetClass, InstrumentClass},
         identifiers::{InstrumentId, Symbol},
         instruments::{Cfd, Instrument, stubs::*},
-        types::{Currency, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -433,6 +514,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             0.into(),
             0.into(),
         );
@@ -440,9 +522,103 @@ mod tests {
     }
 
     #[rstest]
+    fn test_new_checked_rejects_non_positive_lot_size() {
+        let result = Cfd::new_checked(
+            InstrumentId::from("TEST.SIM"),
+            Symbol::from("TEST"),
+            AssetClass::Commodity,
+            None,
+            Currency::USD(),
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            Some(Quantity::from("0")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            0.into(),
+            0.into(),
+        );
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("not positive"), "{error}");
+    }
+
+    #[rstest]
     fn test_serialization_roundtrip(cfd_gold: Cfd) {
         let json = serde_json::to_string(&cfd_gold).unwrap();
         let deserialized: Cfd = serde_json::from_str(&json).unwrap();
         assert_eq!(cfd_gold, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = Cfd::new_checked(
+            InstrumentId::from("EURUSD-CFD.SIM"),
+            Symbol::from("EURUSD-CFD"),
+            AssetClass::FX,
+            Some(Currency::EUR()),
+            Currency::USD(),
+            5,
+            2,
+            Price::from("0.00001"),
+            Quantity::from("0.01"),
+            Some(Quantity::from("100")),
+            Some(Quantity::from("10000.00")),
+            Some(Quantity::from("5.00")),
+            Some(Money::from("1000000 USD")),
+            Some(Money::from("100 USD")),
+            Some(Price::from("2.00000")),
+            Some(Price::from("0.50000")),
+            Some(dec!(0.01)),
+            Some(dec!(0.02)),
+            Some(dec!(0.0002)),
+            Some(dec!(0.0004)),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = Cfd::builder()
+            .instrument_id(InstrumentId::from("EURUSD-CFD.SIM"))
+            .raw_symbol(Symbol::from("EURUSD-CFD"))
+            .asset_class(AssetClass::FX)
+            .base_currency(Currency::EUR())
+            .quote_currency(Currency::USD())
+            .price_precision(5)
+            .size_precision(2)
+            .price_increment(Price::from("0.00001"))
+            .size_increment(Quantity::from("0.01"))
+            .lot_size(Quantity::from("100"))
+            .max_quantity(Quantity::from("10000.00"))
+            .min_quantity(Quantity::from("5.00"))
+            .max_notional(Money::from("1000000 USD"))
+            .min_notional(Money::from("100 USD"))
+            .max_price(Price::from("2.00000"))
+            .min_price(Price::from("0.50000"))
+            .margin_init(dec!(0.01))
+            .margin_maint(dec!(0.02))
+            .maker_fee(dec!(0.0002))
+            .taker_fee(dec!(0.0004))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

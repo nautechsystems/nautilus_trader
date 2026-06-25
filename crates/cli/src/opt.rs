@@ -103,10 +103,10 @@ pub enum BlockchainCommand {
     },
     /// Sync DEX pools.
     SyncDex {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: `UniswapV3`, uniswapv3, `SushiSwapV2`, `PancakeSwapV3`
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// RPC HTTP URL for blockchain calls (optional, falls back to `RPC_HTTP_URL` env var)
@@ -124,10 +124,10 @@ pub enum BlockchainCommand {
     },
     /// Analyze a specific DEX pool.
     AnalyzePool {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// The pool contract address
@@ -140,11 +140,28 @@ pub enum BlockchainCommand {
         #[arg(long)]
         to_block: Option<u64>,
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         rpc_url: Option<String>,
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
+        #[arg(long)]
+        require_existing_snapshot: bool,
+        /// Checkpoint block numbers to snapshot in one pass (comma-separated, each at or below to-block)
+        #[arg(long, value_delimiter = ',')]
+        checkpoint_blocks: Vec<u64>,
+        /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
+        #[arg(long)]
+        skip_validation: bool,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -154,10 +171,10 @@ pub enum BlockchainCommand {
     },
     /// Analyze several DEX pools in one runtime.
     AnalyzePools {
-        /// The blockchain chain name (case-insensitive). Examples: ethereum, arbitrum, base, polygon, bsc
+        /// The blockchain chain name (case-insensitive). Supported chains are listed below.
         #[arg(long)]
         chain: String,
-        /// The DEX name (case-insensitive). Examples: UniswapV3, uniswapv3, SushiSwapV2, PancakeSwapV3
+        /// The DEX name (case-insensitive). Supported DEX names are listed below.
         #[arg(long)]
         dex: String,
         /// Pool contract address. Can be repeated.
@@ -173,11 +190,31 @@ pub enum BlockchainCommand {
         #[arg(long)]
         to_block: Option<u64>,
         /// RPC HTTP URL for blockchain calls (optional, falls back to RPC_HTTP_URL env var)
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
         #[arg(long)]
         rpc_url: Option<String>,
         /// Reset sync progress and start from the beginning, ignoring last synced block
         #[arg(long)]
         reset: bool,
+        /// Return needs_bootstrap for pools without a valid snapshot before the target block
+        #[expect(
+            clippy::doc_markdown,
+            reason = "clap renders doc comments as plain help text"
+        )]
+        #[arg(long)]
+        require_existing_snapshot: bool,
+        /// Checkpoint block numbers to snapshot in one pass (comma-separated, each at or below to-block)
+        #[arg(long, value_delimiter = ',')]
+        checkpoint_blocks: Vec<u64>,
+        /// Skip on-chain validation and persist replay-derived snapshots without the multicall compare
+        #[arg(long)]
+        skip_validation: bool,
+        /// Maximum number of pools to analyze concurrently (optional, defaults to 4)
+        #[arg(long)]
+        concurrency: Option<usize>,
         /// Maximum number of Multicall calls per RPC request (optional, defaults to 200)
         #[arg(long)]
         multicall_calls_per_rpc_request: Option<u32>,
@@ -217,6 +254,7 @@ mod tests {
             "--rpc-url",
             "http://localhost:8545",
             "--reset",
+            "--require-existing-snapshot",
             "--multicall-calls-per-rpc-request",
             "25",
             "--host",
@@ -244,6 +282,10 @@ mod tests {
                         to_block,
                         rpc_url,
                         reset,
+                        require_existing_snapshot,
+                        checkpoint_blocks,
+                        skip_validation,
+                        concurrency,
                         multicall_calls_per_rpc_request,
                         database,
                     },
@@ -262,6 +304,10 @@ mod tests {
                 assert_eq!(to_block, Some(200));
                 assert_eq!(rpc_url.as_deref(), Some("http://localhost:8545"));
                 assert!(reset);
+                assert!(require_existing_snapshot);
+                assert!(checkpoint_blocks.is_empty());
+                assert!(!skip_validation);
+                assert_eq!(concurrency, None);
                 assert_eq!(multicall_calls_per_rpc_request, Some(25));
                 assert_eq!(database.host.as_deref(), Some("localhost"));
                 assert_eq!(database.port, Some(5433));
@@ -272,5 +318,46 @@ mod tests {
             }
             _ => panic!("Expected analyze-pools blockchain command"),
         }
+    }
+
+    #[rstest]
+    #[case("analyze-pool")]
+    #[case("analyze-pools")]
+    fn blockchain_analysis_help_lists_capabilities_as_plain_text(#[case] subcommand: &str) {
+        let mut command = crate::cli_command();
+        let help = command
+            .find_subcommand_mut("blockchain")
+            .and_then(|command| command.find_subcommand_mut(subcommand))
+            .map(|command| command.render_long_help().to_string())
+            .unwrap();
+
+        // Snapshot-capable DEXes are listed; the registered-but-unsupported SushiSwapV2 is not.
+        assert!(help.contains("UniswapV3"));
+        assert!(help.contains("PancakeSwapV3"));
+        assert!(help.contains("AerodromeSlipstream"));
+        assert!(!help.contains("SushiSwapV2"));
+        assert!(help.contains("RPC_HTTP_URL"));
+        assert!(help.contains("needs_bootstrap"));
+        // Help is rendered as plain text, so doc-markdown backticks must not survive.
+        assert!(!help.contains("`UniswapV3`"));
+        assert!(!help.contains("`PancakeSwapV3`"));
+        assert!(!help.contains("`RPC_HTTP_URL`"));
+        assert!(!help.contains("`needs_bootstrap`"));
+    }
+
+    #[rstest]
+    fn blockchain_sync_dex_help_lists_discoverable_dexes() {
+        let mut command = crate::cli_command();
+        let help = command
+            .find_subcommand_mut("blockchain")
+            .and_then(|command| command.find_subcommand_mut("sync-dex"))
+            .map(|command| command.render_long_help().to_string())
+            .unwrap();
+
+        // sync-dex receives the discovery block, not the snapshot block.
+        assert!(help.contains("Discoverable DEXes"));
+        assert!(!help.contains("Snapshot-capable"));
+        // UniswapV2 is discovery-only, so it appears here but never in the snapshot listing.
+        assert!(help.contains("UniswapV2"));
     }
 }

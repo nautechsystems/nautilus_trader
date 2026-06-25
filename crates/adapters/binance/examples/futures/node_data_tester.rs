@@ -15,11 +15,11 @@
 
 //! Example demonstrating live data testing with the Binance Futures USD-M adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and subscriptions.
+//!
 //! Run with: `cargo run --example binance-futures-data-tester --package nautilus-binance --features examples`
 //!
 //! Uses testnet by default for safety.
-
-use std::num::NonZeroUsize;
 
 use nautilus_binance::{
     common::{
@@ -31,27 +31,29 @@ use nautilus_binance::{
 };
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
-use nautilus_model::{
-    identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
-};
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+const BINANCE_ENVIRONMENT: BinanceEnvironment = BinanceEnvironment::Testnet;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "BINANCE-FUTURES-TESTER-001";
+const INSTRUMENT_ID: &str = "BTCUSDT-PERP.BINANCE";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "BINANCE-FUTURES-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
     let instrument_ids = vec![
-        InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+        InstrumentId::from(INSTRUMENT_ID),
         // InstrumentId::from("ETHUSDT-PERP.BINANCE"),
     ];
 
     let binance_config = BinanceDataClientConfig {
         product_type: BinanceProductType::UsdM,
-        environment: BinanceEnvironment::Testnet,
+        environment: BINANCE_ENVIRONMENT,
         api_key: None,
         api_secret: None,
         ..Default::default()
@@ -70,10 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .client_id(client_id)
         .instrument_ids(instrument_ids)
         .subscribe_book_at_interval(true)
-        .book_depth(NonZeroUsize::new(20).unwrap())
-        .book_interval_ms(NonZeroUsize::new(10).unwrap())
+        .book_depth(20)
+        .book_interval_ms(10)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

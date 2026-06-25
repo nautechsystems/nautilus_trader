@@ -15,19 +15,30 @@
 
 //! Real-time and static `Clock` implementations.
 
-use std::{any::Any, collections::BTreeMap, fmt::Debug, ops::Deref, time::Duration};
+#![warn(clippy::clone_on_ref_ptr)]
+
+use std::{
+    any::Any,
+    cell::RefCell,
+    collections::{BTreeMap, BinaryHeap},
+    fmt::Debug,
+    ops::Deref,
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    AtomicTime, UnixNanos,
+    AtomicTime, UUID4, UnixNanos,
     correctness::{check_positive_u64, check_predicate_true, check_valid_string_utf8},
+    datetime::NANOSECONDS_IN_SECOND,
     string::formatting::Separable,
 };
 use ustr::Ustr;
 
 use crate::timer::{
-    TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, Timer, create_valid_interval,
+    ScheduledTimeEvent, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, Timer,
+    create_valid_interval,
 };
 
 /// Represents a type of clock.
@@ -238,6 +249,416 @@ impl dyn Clock {
     }
 }
 
+/// User-facing clock API.
+#[derive(Debug)]
+pub struct ClockApi<'a> {
+    backing: ClockApiBacking<'a>,
+}
+
+enum ClockApiBacking<'a> {
+    Native(&'a RefCell<dyn Clock>),
+    Handlers(ClockApiHandlers<'a>),
+}
+
+struct ClockApiHandlers<'a> {
+    timestamp_ns: Box<dyn Fn() -> UnixNanos + 'a>,
+    set_time_alert_ns: Box<SetTimeAlertNsHandler<'a>>,
+    set_timer_ns: Box<SetTimerNsHandler<'a>>,
+    timer_names: Box<dyn Fn() -> Vec<String> + 'a>,
+    timer_count: Box<dyn Fn() -> usize + 'a>,
+    timer_exists: Box<dyn Fn(&str) -> bool + 'a>,
+    next_time_ns: Box<NextTimeNsHandler<'a>>,
+    cancel_timer: Box<dyn Fn(&str) + 'a>,
+    cancel_timers: Box<dyn Fn() + 'a>,
+}
+
+impl Debug for ClockApiBacking<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Native(_) => f.write_str("Native"),
+            Self::Handlers(_) => f.write_str("Handlers"),
+        }
+    }
+}
+
+type SetTimeAlertNsHandler<'a> =
+    dyn Fn(&str, UnixNanos, Option<TimeEventCallback>, Option<bool>) -> anyhow::Result<()> + 'a;
+type NextTimeNsHandler<'a> = dyn Fn(&str) -> Option<UnixNanos> + 'a;
+type SetTimerNsHandler<'a> = dyn Fn(
+        &str,
+        u64,
+        Option<UnixNanos>,
+        Option<UnixNanos>,
+        Option<TimeEventCallback>,
+        Option<bool>,
+        Option<bool>,
+    ) -> anyhow::Result<()>
+    + 'a;
+
+impl<'a> ClockApi<'a> {
+    pub(crate) fn new(clock: &'a RefCell<dyn Clock>) -> Self {
+        Self {
+            backing: ClockApiBacking::Native(clock),
+        }
+    }
+
+    /// Creates a clock API from backing callbacks.
+    #[doc(hidden)]
+    #[must_use]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "clock API backing mirrors the full ClockApi surface"
+    )]
+    pub fn from_handlers<
+        TimestampNs,
+        SetTimeAlertNs,
+        SetTimerNs,
+        TimerNames,
+        TimerCount,
+        TimerExists,
+        NextTimeNs,
+        CancelTimer,
+        CancelTimers,
+    >(
+        timestamp_ns: TimestampNs,
+        set_time_alert_ns: SetTimeAlertNs,
+        set_timer_ns: SetTimerNs,
+        timer_names: TimerNames,
+        timer_count: TimerCount,
+        timer_exists: TimerExists,
+        next_time_ns: NextTimeNs,
+        cancel_timer: CancelTimer,
+        cancel_timers: CancelTimers,
+    ) -> Self
+    where
+        TimestampNs: Fn() -> UnixNanos + 'a,
+        SetTimeAlertNs:
+            Fn(&str, UnixNanos, Option<TimeEventCallback>, Option<bool>) -> anyhow::Result<()> + 'a,
+        SetTimerNs: Fn(
+                &str,
+                u64,
+                Option<UnixNanos>,
+                Option<UnixNanos>,
+                Option<TimeEventCallback>,
+                Option<bool>,
+                Option<bool>,
+            ) -> anyhow::Result<()>
+            + 'a,
+        TimerNames: Fn() -> Vec<String> + 'a,
+        TimerCount: Fn() -> usize + 'a,
+        TimerExists: Fn(&str) -> bool + 'a,
+        NextTimeNs: Fn(&str) -> Option<UnixNanos> + 'a,
+        CancelTimer: Fn(&str) + 'a,
+        CancelTimers: Fn() + 'a,
+    {
+        Self {
+            backing: ClockApiBacking::Handlers(ClockApiHandlers {
+                timestamp_ns: Box::new(timestamp_ns),
+                set_time_alert_ns: Box::new(set_time_alert_ns),
+                set_timer_ns: Box::new(set_timer_ns),
+                timer_names: Box::new(timer_names),
+                timer_count: Box::new(timer_count),
+                timer_exists: Box::new(timer_exists),
+                next_time_ns: Box::new(next_time_ns),
+                cancel_timer: Box::new(cancel_timer),
+                cancel_timers: Box::new(cancel_timers),
+            }),
+        }
+    }
+
+    /// Returns the current UNIX nanoseconds timestamp.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_ns(&self) -> UnixNanos {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timestamp_ns(),
+            ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)(),
+        }
+    }
+
+    /// Returns the current UNIX timestamp in microseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_us(&self) -> u64 {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timestamp_us(),
+            ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().as_micros(),
+        }
+    }
+
+    /// Returns the current UNIX timestamp in milliseconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp_ms(&self) -> u64 {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timestamp_ms(),
+            ClockApiBacking::Handlers(handlers) => (handlers.timestamp_ns)().as_millis(),
+        }
+    }
+
+    /// Returns the current UNIX timestamp in seconds.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timestamp(&self) -> f64 {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timestamp(),
+            ClockApiBacking::Handlers(handlers) => {
+                (handlers.timestamp_ns)().as_f64() / (NANOSECONDS_IN_SECOND as f64)
+            }
+        }
+    }
+
+    /// Returns the current UTC time.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn utc_now(&self) -> DateTime<Utc> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().utc_now(),
+            ClockApiBacking::Handlers(handlers) => {
+                DateTime::from_timestamp_nanos((handlers.timestamp_ns)().as_i64())
+            }
+        }
+    }
+
+    // panics-doc-ok
+    /// Sets a time alert delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the alert cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn set_time_alert(
+        &self,
+        name: &str,
+        alert_time: DateTime<Utc>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+    ) -> anyhow::Result<()> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock
+                .borrow_mut()
+                .set_time_alert(name, alert_time, callback, allow_past),
+            ClockApiBacking::Handlers(handlers) => {
+                (handlers.set_time_alert_ns)(name, alert_time.into(), callback, allow_past)
+            }
+        }
+    }
+
+    // panics-doc-ok
+    /// Sets a time alert in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the alert cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn set_time_alert_ns(
+        &self,
+        name: &str,
+        alert_time_ns: UnixNanos,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+    ) -> anyhow::Result<()> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => {
+                clock
+                    .borrow_mut()
+                    .set_time_alert_ns(name, alert_time_ns, callback, allow_past)
+            }
+            ClockApiBacking::Handlers(handlers) => {
+                (handlers.set_time_alert_ns)(name, alert_time_ns, callback, allow_past)
+            }
+        }
+    }
+
+    // panics-doc-ok
+    /// Sets a timer delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timer cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
+    pub fn set_timer(
+        &self,
+        name: &str,
+        interval: Duration,
+        start_time: Option<DateTime<Utc>>,
+        stop_time: Option<DateTime<Utc>>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow_mut().set_timer(
+                name,
+                interval,
+                start_time,
+                stop_time,
+                callback,
+                allow_past,
+                fire_immediately,
+            ),
+            ClockApiBacking::Handlers(handlers) => (handlers.set_timer_ns)(
+                name,
+                interval.as_nanos() as u64,
+                start_time.map(UnixNanos::from),
+                stop_time.map(UnixNanos::from),
+                callback,
+                allow_past,
+                fire_immediately,
+            ),
+        }
+    }
+
+    // panics-doc-ok
+    /// Sets a timer in UNIX nanoseconds delivered through the actor's `on_time_event` callback.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timer cannot be scheduled.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    #[expect(clippy::too_many_arguments, reason = "timer scheduling mirrors Clock")]
+    pub fn set_timer_ns(
+        &self,
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: Option<UnixNanos>,
+        stop_time_ns: Option<UnixNanos>,
+        callback: Option<TimeEventCallback>,
+        allow_past: Option<bool>,
+        fire_immediately: Option<bool>,
+    ) -> anyhow::Result<()> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow_mut().set_timer_ns(
+                name,
+                interval_ns,
+                start_time_ns,
+                stop_time_ns,
+                callback,
+                allow_past,
+                fire_immediately,
+            ),
+            ClockApiBacking::Handlers(handlers) => (handlers.set_timer_ns)(
+                name,
+                interval_ns,
+                start_time_ns,
+                stop_time_ns,
+                callback,
+                allow_past,
+                fire_immediately,
+            ),
+        }
+    }
+
+    /// Returns active timer names.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_names(&self) -> Vec<String> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock
+                .borrow()
+                .timer_names()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            ClockApiBacking::Handlers(handlers) => (handlers.timer_names)(),
+        }
+    }
+
+    /// Returns the count of active timers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_count(&self) -> usize {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timer_count(),
+            ClockApiBacking::Handlers(handlers) => (handlers.timer_count)(),
+        }
+    }
+
+    /// Returns whether the timer `name` exists.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn timer_exists(&self, name: &str) -> bool {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().timer_exists(&Ustr::from(name)),
+            ClockApiBacking::Handlers(handlers) => (handlers.timer_exists)(name),
+        }
+    }
+
+    /// Returns the next trigger timestamp for the timer `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already mutably borrowed.
+    #[must_use]
+    pub fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow().next_time_ns(name),
+            ClockApiBacking::Handlers(handlers) => (handlers.next_time_ns)(name),
+        }
+    }
+
+    /// Cancels the timer `name`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn cancel_timer(&self, name: &str) {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timer(name),
+            ClockApiBacking::Handlers(handlers) => (handlers.cancel_timer)(name),
+        }
+    }
+
+    /// Cancels all timers.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the clock is already borrowed.
+    pub fn cancel_timers(&self) {
+        match &self.backing {
+            ClockApiBacking::Native(clock) => clock.borrow_mut().cancel_timers(),
+            ClockApiBacking::Handlers(handlers) => (handlers.cancel_timers)(),
+        }
+    }
+}
+
 /// Registry for timer event callbacks.
 ///
 /// Provides shared callback registration and retrieval logic used by both
@@ -424,8 +845,8 @@ pub fn validate_and_prepare_timer(
 #[derive(Debug)]
 pub struct TestClock {
     time: AtomicTime,
-    // Use btree map to ensure stable ordering when scanning for timers in `advance_time`
     timers: BTreeMap<Ustr, TestTimer>,
+    timer_queue: BinaryHeap<ScheduledTimeEvent>,
     callbacks: CallbackRegistry,
 }
 
@@ -436,6 +857,7 @@ impl TestClock {
         Self {
             time: AtomicTime::new(false, UnixNanos::default()),
             timers: BTreeMap::new(),
+            timer_queue: BinaryHeap::new(),
             callbacks: CallbackRegistry::new(),
         }
     }
@@ -476,15 +898,29 @@ impl TestClock {
             self.time.set_time(to_time_ns);
         }
 
-        // Iterate and advance timers and collect events, only retain alive timers
         let mut events: Vec<TimeEvent> = Vec::new();
-        self.timers.retain(|_, timer| {
-            timer.advance(to_time_ns).for_each(|event| {
-                events.push(event);
-            });
 
-            !timer.is_expired()
-        });
+        while self
+            .timer_queue
+            .peek()
+            .is_some_and(|entry| entry.0.ts_event <= to_time_ns)
+        {
+            let entry = self
+                .timer_queue
+                .pop()
+                .expect("timer queue peeked Some but pop returned None");
+
+            let Some((event, next_event)) = self.advance_timer_from_entry(&entry.0) else {
+                continue;
+            };
+
+            events.push(event);
+            if let Some(next_event) = next_event {
+                self.timer_queue.push(next_event);
+            }
+        }
+
+        self.compact_timer_queue_if_needed();
 
         if events.len() >= WARN_TIME_EVENTS_THRESHOLD {
             log::warn!(
@@ -496,7 +932,11 @@ impl TestClock {
             );
         }
 
-        events.sort_by_key(|a| a.ts_event);
+        events.sort_by(|a, b| {
+            a.ts_event
+                .cmp(&b.ts_event)
+                .then_with(|| a.name.cmp(&b.name))
+        });
         events
     }
 
@@ -519,6 +959,56 @@ impl TestClock {
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
         replace_existing_timer(&mut self.timers, name);
+        self.compact_timer_queue_if_needed();
+    }
+
+    fn insert_timer(&mut self, timer: TestTimer) {
+        self.timer_queue.push(Self::scheduled_event(&timer));
+        self.timers.insert(timer.name, timer);
+        self.compact_timer_queue_if_needed();
+    }
+
+    fn advance_timer_from_entry(
+        &mut self,
+        entry: &TimeEvent,
+    ) -> Option<(TimeEvent, Option<ScheduledTimeEvent>)> {
+        let timer = self.timers.get_mut(&entry.name)?;
+        if timer.next_time_ns() != entry.ts_event {
+            return None;
+        }
+
+        let Some((event, _)) = timer.next() else {
+            self.timers.remove(&entry.name);
+            return None;
+        };
+
+        let next_entry = if timer.is_expired() {
+            self.timers.remove(&entry.name);
+            None
+        } else {
+            Some(Self::scheduled_event(timer))
+        };
+
+        Some((event, next_entry))
+    }
+
+    fn compact_timer_queue_if_needed(&mut self) {
+        if self.timer_queue.len() > self.timers.len().saturating_mul(2) {
+            self.compact_timer_queue();
+        }
+    }
+
+    fn compact_timer_queue(&mut self) {
+        self.timer_queue = self.timers.values().map(Self::scheduled_event).collect();
+    }
+
+    fn scheduled_event(timer: &TestTimer) -> ScheduledTimeEvent {
+        ScheduledTimeEvent::new(TimeEvent::new(
+            timer.name,
+            UUID4::new(),
+            timer.next_time_ns(),
+            timer.next_time_ns(),
+        ))
     }
 }
 
@@ -627,7 +1117,7 @@ impl Clock for TestClock {
             Some(alert_time_ns),
             fire_immediately,
         );
-        self.timers.insert(name, timer);
+        self.insert_timer(timer);
 
         Ok(())
     }
@@ -674,7 +1164,7 @@ impl Clock for TestClock {
             stop_time_ns,
             fire_immediately,
         );
-        self.timers.insert(name, timer);
+        self.insert_timer(timer);
 
         Ok(())
     }
@@ -690,6 +1180,7 @@ impl Clock for TestClock {
         if let Some(mut timer) = timer {
             timer.cancel();
         }
+        self.compact_timer_queue_if_needed();
     }
 
     fn cancel_timers(&mut self) {
@@ -698,11 +1189,13 @@ impl Clock for TestClock {
         }
 
         self.timers.clear();
+        self.timer_queue.clear();
     }
 
     fn reset(&mut self) {
         self.time = AtomicTime::new(false, UnixNanos::default());
         self.timers = BTreeMap::new();
+        self.timer_queue = BinaryHeap::new();
         self.callbacks.clear();
     }
 }
@@ -1410,6 +1903,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cancelled_timer_queue_entry_is_skipped(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock
+            .set_time_alert_ns("cancelled", start_time + 1000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("active", start_time + 2000, None, None)
+            .unwrap();
+
+        test_clock.cancel_timer("cancelled");
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_queue.len(), 2);
+
+        let events = test_clock.advance_time(start_time + 1000, true);
+        assert!(events.is_empty());
+        assert_eq!(test_clock.timer_names(), vec!["active"]);
+
+        let events = test_clock.advance_time(start_time + 2000, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "active");
+    }
+
+    #[rstest]
+    fn test_timer_queue_compacts_stale_entries(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock
+            .set_time_alert_ns("active", start_time + 1000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("cancelled-1", start_time + 2000, None, None)
+            .unwrap();
+        test_clock
+            .set_time_alert_ns("cancelled-2", start_time + 3000, None, None)
+            .unwrap();
+
+        test_clock.cancel_timer("cancelled-1");
+        assert_eq!(test_clock.timer_queue.len(), 3);
+
+        test_clock.cancel_timer("cancelled-2");
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_queue.len(), 1);
+    }
+
+    #[rstest]
     fn test_cancel_all_timers(mut test_clock: TestClock) {
         // Create multiple timers
         test_clock
@@ -1799,5 +2336,124 @@ mod tests {
         let events = test_clock.advance_time(UnixNanos::from(*start + 1000), true);
         assert!(events.is_empty());
         assert_eq!(*test_clock.timestamp_ns(), *start + 1000);
+    }
+
+    #[rstest]
+    fn test_clock_api_handlers_back_full_surface() {
+        let alerts = Arc::new(Mutex::new(Vec::new()));
+        let timers = Arc::new(Mutex::new(Vec::new()));
+        let cancellations = Arc::new(Mutex::new(Vec::new()));
+        let cancel_all = Arc::new(Mutex::new(false));
+
+        let alerts_for_handler = Arc::clone(&alerts);
+        let timers_for_handler = Arc::clone(&timers);
+        let cancellations_for_handler = Arc::clone(&cancellations);
+        let cancel_all_for_handler = Arc::clone(&cancel_all);
+
+        let clock = ClockApi::from_handlers(
+            || UnixNanos::from(1_700_000_000_123_456_789),
+            move |name, alert_time_ns, _callback, allow_past| {
+                alerts_for_handler.lock().expect(MUTEX_POISONED).push((
+                    name.to_string(),
+                    alert_time_ns,
+                    allow_past,
+                ));
+                Ok(())
+            },
+            move |name,
+                  interval_ns,
+                  start_time_ns,
+                  stop_time_ns,
+                  _callback,
+                  allow_past,
+                  fire_immediately| {
+                timers_for_handler.lock().expect(MUTEX_POISONED).push((
+                    name.to_string(),
+                    interval_ns,
+                    start_time_ns,
+                    stop_time_ns,
+                    allow_past,
+                    fire_immediately,
+                ));
+                Ok(())
+            },
+            || vec!["alpha".to_string(), "beta".to_string()],
+            || 2,
+            |name| name == "alpha",
+            |name| (name == "alpha").then(|| UnixNanos::from(1_700_000_000_999_000_000)),
+            move |name| {
+                cancellations_for_handler
+                    .lock()
+                    .expect(MUTEX_POISONED)
+                    .push(name.to_string());
+            },
+            move || {
+                *cancel_all_for_handler.lock().expect(MUTEX_POISONED) = true;
+            },
+        );
+
+        let alert_time = DateTime::from_timestamp_nanos(1_700_000_000_333_000_000);
+        let start_time = DateTime::from_timestamp_nanos(1_700_000_000_444_000_000);
+        let stop_time = DateTime::from_timestamp_nanos(1_700_000_001_444_000_000);
+        clock
+            .set_time_alert("alert", alert_time, None, Some(false))
+            .unwrap();
+        clock
+            .set_timer(
+                "timer",
+                Duration::from_millis(250),
+                Some(start_time),
+                Some(stop_time),
+                None,
+                Some(true),
+                Some(false),
+            )
+            .unwrap();
+        clock.cancel_timer("alpha");
+        clock.cancel_timers();
+
+        assert_eq!(
+            clock.timestamp_ns(),
+            UnixNanos::from(1_700_000_000_123_456_789)
+        );
+        assert_eq!(clock.timestamp_us(), 1_700_000_000_123_456);
+        assert_eq!(clock.timestamp_ms(), 1_700_000_000_123);
+        assert_eq!(clock.timestamp(), 1_700_000_000.123_456_7);
+        assert_eq!(
+            clock.utc_now(),
+            DateTime::from_timestamp_nanos(1_700_000_000_123_456_789)
+        );
+        assert_eq!(clock.timer_names(), vec!["alpha", "beta"]);
+        assert_eq!(clock.timer_count(), 2);
+        assert!(clock.timer_exists("alpha"));
+        assert!(!clock.timer_exists("gamma"));
+        assert_eq!(
+            clock.next_time_ns("alpha"),
+            Some(UnixNanos::from(1_700_000_000_999_000_000))
+        );
+        assert_eq!(
+            alerts.lock().expect(MUTEX_POISONED).as_slice(),
+            &[(
+                "alert".to_string(),
+                UnixNanos::from(1_700_000_000_333_000_000),
+                Some(false)
+            )]
+        );
+        assert_eq!(
+            timers.lock().expect(MUTEX_POISONED).as_slice(),
+            &[(
+                "timer".to_string(),
+                250_000_000,
+                Some(UnixNanos::from(1_700_000_000_444_000_000)),
+                Some(UnixNanos::from(1_700_000_001_444_000_000)),
+                Some(true),
+                Some(false)
+            )]
+        );
+        assert_eq!(
+            cancellations.lock().expect(MUTEX_POISONED).as_slice(),
+            &["alpha".to_string()]
+        );
+        assert!(*cancel_all.lock().expect(MUTEX_POISONED));
     }
 }

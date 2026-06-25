@@ -21,7 +21,7 @@ use indexmap::IndexMap;
 use nautilus_model::{
     data::{
         FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-        QuoteTick, TradeTick,
+        OptionGreekValues, OptionGreeks, QuoteTick, TradeTick,
         bar::{Bar, BarSpecification, BarType},
         delta::OrderBookDelta,
         deltas::OrderBookDeltas,
@@ -30,10 +30,10 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
-        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionAdjustmentType, PositionSide, PriceType, RecordFlag, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        BookType, ContingencyType, CurrencyType, GreeksConvention, InstrumentClass,
+        InstrumentCloseType, LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide,
+        OrderStatus, OrderType, PositionAdjustmentType, PositionSide, PriceType, RecordFlag,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -655,6 +655,22 @@ pub fn option_kind_from_capnp(value: enums_capnp::OptionKind) -> OptionKind {
     match value {
         enums_capnp::OptionKind::Call => OptionKind::Call,
         enums_capnp::OptionKind::Put => OptionKind::Put,
+    }
+}
+
+#[must_use]
+pub fn greeks_convention_to_capnp(value: GreeksConvention) -> enums_capnp::GreeksConvention {
+    match value {
+        GreeksConvention::BlackScholes => enums_capnp::GreeksConvention::BlackScholes,
+        GreeksConvention::PriceAdjusted => enums_capnp::GreeksConvention::PriceAdjusted,
+    }
+}
+
+#[must_use]
+pub fn greeks_convention_from_capnp(value: enums_capnp::GreeksConvention) -> GreeksConvention {
+    match value {
+        enums_capnp::GreeksConvention::BlackScholes => GreeksConvention::BlackScholes,
+        enums_capnp::GreeksConvention::PriceAdjusted => GreeksConvention::PriceAdjusted,
     }
 }
 
@@ -1774,6 +1790,98 @@ impl<'a> FromCapnp<'a> for FundingRateUpdate {
             rate,
             interval,
             next_funding_ns,
+            ts_event: ts_event.into(),
+            ts_init: ts_init.into(),
+        })
+    }
+}
+
+impl<'a> ToCapnp<'a> for OptionGreeks {
+    type Builder = market_capnp::option_greeks::Builder<'a>;
+
+    fn to_capnp(&self, mut builder: Self::Builder) {
+        let instrument_id_builder = builder.reborrow().init_instrument_id();
+        self.instrument_id.to_capnp(instrument_id_builder);
+
+        builder.set_convention(greeks_convention_to_capnp(self.convention));
+        builder.set_delta(self.greeks.delta);
+        builder.set_gamma(self.greeks.gamma);
+        builder.set_vega(self.greeks.vega);
+        builder.set_theta(self.greeks.theta);
+        builder.set_rho(self.greeks.rho);
+
+        if let Some(mark_iv) = self.mark_iv {
+            builder.reborrow().set_mark_iv(mark_iv);
+            builder.reborrow().set_has_mark_iv(true);
+        }
+
+        if let Some(bid_iv) = self.bid_iv {
+            builder.reborrow().set_bid_iv(bid_iv);
+            builder.reborrow().set_has_bid_iv(true);
+        }
+
+        if let Some(ask_iv) = self.ask_iv {
+            builder.reborrow().set_ask_iv(ask_iv);
+            builder.reborrow().set_has_ask_iv(true);
+        }
+
+        if let Some(underlying_price) = self.underlying_price {
+            builder.reborrow().set_underlying_price(underlying_price);
+            builder.reborrow().set_has_underlying_price(true);
+        }
+
+        if let Some(open_interest) = self.open_interest {
+            builder.reborrow().set_open_interest(open_interest);
+            builder.reborrow().set_has_open_interest(true);
+        }
+
+        let mut ts_event_builder = builder.reborrow().init_ts_event();
+        ts_event_builder.set_value(*self.ts_event);
+
+        let mut ts_init_builder = builder.reborrow().init_ts_init();
+        ts_init_builder.set_value(*self.ts_init);
+    }
+}
+
+impl<'a> FromCapnp<'a> for OptionGreeks {
+    type Reader = market_capnp::option_greeks::Reader<'a>;
+
+    fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
+        let instrument_id_reader = reader.get_instrument_id()?;
+        let instrument_id = InstrumentId::from_capnp(instrument_id_reader)?;
+        let convention = greeks_convention_from_capnp(reader.get_convention()?);
+        let greeks = OptionGreekValues {
+            delta: reader.get_delta(),
+            gamma: reader.get_gamma(),
+            vega: reader.get_vega(),
+            theta: reader.get_theta(),
+            rho: reader.get_rho(),
+        };
+        let mark_iv = reader.get_has_mark_iv().then_some(reader.get_mark_iv());
+        let bid_iv = reader.get_has_bid_iv().then_some(reader.get_bid_iv());
+        let ask_iv = reader.get_has_ask_iv().then_some(reader.get_ask_iv());
+        let underlying_price = reader
+            .get_has_underlying_price()
+            .then_some(reader.get_underlying_price());
+        let open_interest = reader
+            .get_has_open_interest()
+            .then_some(reader.get_open_interest());
+
+        let ts_event_reader = reader.get_ts_event()?;
+        let ts_event = ts_event_reader.get_value();
+
+        let ts_init_reader = reader.get_ts_init()?;
+        let ts_init = ts_init_reader.get_value();
+
+        Ok(Self {
+            instrument_id,
+            convention,
+            greeks,
+            mark_iv,
+            bid_iv,
+            ask_iv,
+            underlying_price,
+            open_interest,
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
         })
@@ -4996,6 +5104,20 @@ mod tests {
         FundingRateUpdate
     );
     capnp_simple_roundtrip_test!(
+        option_greeks_capnp_roundtrip,
+        sample_option_greeks(),
+        market_capnp::option_greeks::Builder,
+        market_capnp::option_greeks::Reader,
+        OptionGreeks
+    );
+    capnp_simple_roundtrip_test!(
+        option_greeks_black_scholes_zero_optional_capnp_roundtrip,
+        sample_option_greeks_black_scholes_zero_optional(),
+        market_capnp::option_greeks::Builder,
+        market_capnp::option_greeks::Reader,
+        OptionGreeks
+    );
+    capnp_simple_roundtrip_test!(
         instrument_close_capnp_roundtrip,
         stub_instrument_close(),
         market_capnp::instrument_close::Builder,
@@ -5206,6 +5328,48 @@ mod tests {
             UnixNanos::from(5),
             UnixNanos::from(6),
         )
+    }
+
+    fn sample_option_greeks() -> OptionGreeks {
+        OptionGreeks {
+            instrument_id: InstrumentId::from("BTC-30JUN23-40000-C.DERIBIT"),
+            convention: GreeksConvention::PriceAdjusted,
+            greeks: OptionGreekValues {
+                delta: 0.525,
+                gamma: 0.00032,
+                vega: 12.25,
+                theta: -0.72,
+                rho: 0.18,
+            },
+            mark_iv: Some(0.52),
+            bid_iv: None,
+            ask_iv: Some(0.54),
+            underlying_price: Some(41_500.25),
+            open_interest: None,
+            ts_event: UnixNanos::from(7),
+            ts_init: UnixNanos::from(8),
+        }
+    }
+
+    fn sample_option_greeks_black_scholes_zero_optional() -> OptionGreeks {
+        OptionGreeks {
+            instrument_id: InstrumentId::from("ETH-30JUN23-2000-C.DERIBIT"),
+            convention: GreeksConvention::BlackScholes,
+            greeks: OptionGreekValues {
+                delta: 0.12,
+                gamma: 0.002,
+                vega: 8.0,
+                theta: -0.45,
+                rho: 0.06,
+            },
+            mark_iv: Some(0.0),
+            bid_iv: Some(0.0),
+            ask_iv: Some(0.0),
+            underlying_price: Some(0.0),
+            open_interest: Some(0.0),
+            ts_event: UnixNanos::from(9),
+            ts_init: UnixNanos::from(10),
+        }
     }
 
     fn sample_instrument_status_event() -> InstrumentStatus {

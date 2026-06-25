@@ -82,7 +82,7 @@ fn warm_up(strategy: &mut EmaCross, mid: &str, count: usize) {
 fn test_new_sets_strategy_id() {
     let strategy = create_strategy(3, 10);
     assert_eq!(
-        strategy.core().config.strategy_id,
+        strategy.strategy_id(),
         Some(StrategyId::from("EMA_CROSS-001")),
     );
 }
@@ -277,12 +277,12 @@ fn test_on_quote_does_not_signal_before_slow_initialized() {
 
 #[rstest]
 fn test_config_new_sets_defaults() {
-    let config = EmaCrossConfig::new(
-        InstrumentId::from(INSTRUMENT_ID),
-        Quantity::from("100000"),
-        10,
-        50,
-    );
+    let config = EmaCrossConfig::builder()
+        .instrument_id(InstrumentId::from(INSTRUMENT_ID))
+        .trade_size(Quantity::from("100000"))
+        .fast_period(10)
+        .slow_period(50)
+        .build();
     assert_eq!(
         config.base.strategy_id,
         Some(StrategyId::from("EMA_CROSS-001")),
@@ -296,20 +296,17 @@ fn test_config_new_sets_defaults() {
 
 #[rstest]
 fn test_from_config_with_custom_strategy_id() {
-    let config = EmaCrossConfig::new(
-        InstrumentId::from(INSTRUMENT_ID),
-        Quantity::from("50000"),
-        5,
-        20,
-    )
-    .with_strategy_id(StrategyId::from("MY_EMA-002"))
-    .with_order_id_tag("002".to_string());
+    let mut config = EmaCrossConfig::builder()
+        .instrument_id(InstrumentId::from(INSTRUMENT_ID))
+        .trade_size(Quantity::from("50000"))
+        .fast_period(5)
+        .slow_period(20)
+        .build();
+    config.base.strategy_id = Some(StrategyId::from("MY_EMA-002"));
+    config.base.order_id_tag = Some("002".to_string());
 
     let strategy = EmaCross::from_config(config);
-    assert_eq!(
-        strategy.core().config.strategy_id,
-        Some(StrategyId::from("MY_EMA-002")),
-    );
+    assert_eq!(strategy.strategy_id(), Some(StrategyId::from("MY_EMA-002")),);
     assert_eq!(strategy.instrument_id, InstrumentId::from(INSTRUMENT_ID));
     assert_eq!(strategy.trade_size, Quantity::from("50000"));
     assert_eq!(strategy.ema_fast.period, 5);

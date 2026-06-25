@@ -63,35 +63,28 @@ use nautilus_model::{
 let activation = Utc.with_ymd_and_hms(2024, 1, 8, 0, 0, 0).unwrap();
 let expiration = Utc.with_ymd_and_hms(2024, 3, 29, 0, 0, 0).unwrap();
 
-let btcusdt_future = CryptoFuture::new(
-    InstrumentId::from("BTCUSDT-240329.BINANCE"),
-    Symbol::from("BTCUSDT-240329"),
-    Currency::from("BTC"),
-    Currency::from("USDT"),
-    Currency::from("USDT"),
-    false,
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    2,
-    6,
-    Price::from("0.01"),
-    Quantity::from("0.000001"),
-    None,
-    None,
-    Some(Quantity::from("9000.0")),
-    Some(Quantity::from("0.000001")),
-    None,
-    Some(Money::from("10.00 USDT")),
-    Some(Price::from("1000000.00")),
-    Some(Price::from("0.01")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let btcusdt_future = CryptoFuture::builder()
+    .instrument_id(InstrumentId::from("BTCUSDT-240329.BINANCE"))
+    .raw_symbol(Symbol::from("BTCUSDT-240329"))
+    .underlying(Currency::from("BTC"))
+    .quote_currency(Currency::from("USDT"))
+    .settlement_currency(Currency::from("USDT"))
+    .is_inverse(false)
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .price_precision(2)
+    .size_precision(6)
+    .price_increment(Price::from("0.01"))
+    .size_increment(Quantity::from("0.000001"))
+    .max_quantity(Quantity::from("9000.0"))
+    .min_quantity(Quantity::from("0.000001"))
+    .min_notional(Money::from("10.00 USDT"))
+    .max_price(Price::from("1000000.00"))
+    .min_price(Price::from("0.01"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

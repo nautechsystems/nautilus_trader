@@ -17,13 +17,16 @@
 //! [Binance](https://www.binance.com/) cryptocurrency exchange.
 //!
 //! The `nautilus-binance` crate provides client bindings (HTTP & WebSocket), data
-//! models, and helper utilities that wrap the official **Binance API**, covering:
+//! models, and helper utilities that wrap the official **Binance API**. Live data and
+//! execution clients are available for:
 //!
-//! - Spot trading (api.binance.com)
-//! - Spot margin trading
+//! - Spot markets, including Binance US (api.binance.com)
 //! - USD-M Futures (fapi.binance.com)
 //! - COIN-M Futures (dapi.binance.com)
-//! - European Options (eapi.binance.com)
+//!
+//! The crate also includes shared enums, endpoint constants, URL routing, and
+//! credential plumbing for adjacent Binance surfaces such as Margin and European Options.
+//! Those surfaces do not have live data or execution clients in this crate.
 //!
 //! The official Binance API reference can be found at <https://binance-docs.github.io/apidocs/>.
 //!

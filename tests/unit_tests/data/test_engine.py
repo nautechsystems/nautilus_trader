@@ -131,6 +131,17 @@ BTCUSDT_PERP_BINANCE = TestInstrumentProvider.btcusdt_perp_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
+class _GuardedSubscriptionListClient(BacktestMarketDataClient):
+    def subscribed_order_book_deltas(self) -> list[InstrumentId]:
+        raise AssertionError("DataEngine hot paths must use direct order book membership")
+
+    def subscribed_quote_ticks(self) -> list[InstrumentId]:
+        raise AssertionError("DataEngine hot paths must use direct quote membership")
+
+    def subscribed_trade_ticks(self) -> list[InstrumentId]:
+        raise AssertionError("DataEngine hot paths must use direct trade membership")
+
+
 @pytest.mark.xdist_group(name="databento_catalog")
 class TestDataEngine:
     @pytest.fixture(autouse=True)
@@ -1560,6 +1571,85 @@ class TestDataEngine:
         assert self.data_engine.subscribed_trade_ticks() == []
         assert self.binance_client.subscribed_trade_ticks() == []
 
+    def test_subscribe_unsubscribe_hot_paths_use_direct_membership(self):
+        # Arrange
+        client = _GuardedSubscriptionListClient(
+            client_id=ClientId(BINANCE.value),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        self.data_engine.register_client(client)
+        client.start()
+
+        subscribe_order_book = SubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            book_type=BookType.L2_MBP,
+            depth=10,
+            managed=True,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        subscribe_quotes = SubscribeQuoteTicks(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        subscribe_trades = SubscribeTradeTicks(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        unsubscribe_order_book = UnsubscribeOrderBook(
+            book_data_type=OrderBookDelta,
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        unsubscribe_quotes = UnsubscribeQuoteTicks(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        unsubscribe_trades = UnsubscribeTradeTicks(
+            client_id=None,  # Will route to the Binance venue
+            venue=BINANCE,
+            instrument_id=ETHUSDT_BINANCE.id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe_order_book)
+        self.data_engine.execute(subscribe_quotes)
+        self.data_engine.execute(subscribe_trades)
+
+        # Assert
+        assert client.is_subscribed_order_book_deltas(ETHUSDT_BINANCE.id)
+        assert client.is_subscribed_quote_ticks(ETHUSDT_BINANCE.id)
+        assert client.is_subscribed_trade_ticks(ETHUSDT_BINANCE.id)
+
+        # Act
+        self.data_engine.execute(unsubscribe_order_book)
+        self.data_engine.execute(unsubscribe_quotes)
+        self.data_engine.execute(unsubscribe_trades)
+
+        # Assert
+        assert not client.is_subscribed_order_book_deltas(ETHUSDT_BINANCE.id)
+        assert not client.is_subscribed_quote_ticks(ETHUSDT_BINANCE.id)
+        assert not client.is_subscribed_trade_ticks(ETHUSDT_BINANCE.id)
+
     def test_subscribe_mark_prices_then_subscribes(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
@@ -2020,6 +2110,36 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_synthetic_trades() == [synthetic.id]
+
+    def test_subscribe_synthetic_bars_with_multiple_venue_clients_does_not_raise(self):
+        # Arrange: two real venue clients, no BACKTEST client
+        self.data_engine.register_client(self.binance_client)
+        self.data_engine.register_client(self.bitmex_client)
+        self.binance_client.start()
+        self.bitmex_client.start()
+
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(synthetic.id, bar_spec)
+
+        handler = []
+        self.msgbus.subscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
+
+        subscribe = SubscribeBars(
+            client_id=None,
+            venue=Venue("SYNTH"),
+            bar_type=bar_type,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.data_engine.execute(subscribe)
+
+        # Assert
+        assert self.data_engine.command_count == 1
 
     def test_process_trade_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange

@@ -21,11 +21,17 @@
 //! Reconciliation and report generation combine Lighter's account WebSocket
 //! streams with the HTTP read endpoints.
 //!
-//! Auth-token rotation is owned by
+//! Auth-token rotation is owned by this execution client and refreshes the
+//! private account-stream subscriptions on
 //! [`crate::websocket::client::LighterWebSocketClient`].
 
 use std::{
-    sync::{Arc, Mutex},
+    collections::{BTreeMap, BTreeSet},
+    future::Future,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -66,7 +72,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        consts::{LIGHTER_MAX_BATCH_TX, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
+        consts::{
+            LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+        },
         credential::{Credential, scrub_auth},
         enums::{LighterAccountTier, LighterPositionMarginMode, LighterProductType, LighterTxType},
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
@@ -76,6 +85,7 @@ use crate::{
     config::LighterExecClientConfig,
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
+        error::LighterHttpError,
         models::{LighterSendTxBatchRequest, LighterSendTxRequest},
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
@@ -84,6 +94,7 @@ use crate::{
     },
     signing::{
         auth_token::{build_auth_token_for, fresh_k},
+        nonce::NonceError,
         tx::{
             ApproveIntegratorTxInfo, CancelOrderTxInfo, CreateOrderTxInfo, L2TxAttributes,
             ModifyOrderTxInfo, OrderInfo, TxContext, TxInfoJson, UpdateLeverageTxInfo, sign_tx,
@@ -115,12 +126,36 @@ use crate::{
 /// supply its own GTD expiry: 5 minutes from wall-clock at submission time.
 const DEFAULT_TX_EXPIRY_MS: i64 = 5 * 60 * 1_000;
 
+/// Delay before probing an acked cancel/modify to distinguish venue no-ops
+/// from account stream lag.
+const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
+
 /// Refresh the auth token this far before its issuance deadline. The
 /// [`crate::signing::auth_token::DEFAULT_AUTH_TOKEN_TTL_SECS`] is 7 hours;
-/// rotating at 6 hours leaves an hour of head room for transient refresh
+/// rotating at 6 hours leaves an hour of headroom for transient refresh
 /// failures.
 const AUTH_TOKEN_REFRESH_INTERVAL: std::time::Duration =
     std::time::Duration::from_secs(6 * 60 * 60);
+
+// Refresh interval must stay below the token TTL, or rotation hands out already-expired tokens
+const _: () = assert!(
+    AUTH_TOKEN_REFRESH_INTERVAL.as_secs()
+        < crate::signing::auth_token::DEFAULT_AUTH_TOKEN_TTL_SECS as u64,
+    "AUTH_TOKEN_REFRESH_INTERVAL must stay below DEFAULT_AUTH_TOKEN_TTL_SECS",
+);
+
+// Retry budget after a scheduled rotation failure: 7 h TTL minus the 6 h
+// refresh cadence leaves one hour before the old token expires.
+const AUTH_TOKEN_REFRESH_RETRY_WINDOW: Duration = Duration::from_secs(60 * 60);
+const AUTH_TOKEN_REFRESH_RETRY_INITIAL_DELAY: Duration = Duration::from_secs(30);
+
+// Also used as the cadence after a retry window is exhausted
+const AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY: Duration = Duration::from_secs(5 * 60);
+const AUTH_TOKEN_REFRESH_BACKOFF: AuthTokenRefreshBackoff = AuthTokenRefreshBackoff {
+    initial_delay: AUTH_TOKEN_REFRESH_RETRY_INITIAL_DELAY,
+    max_delay: AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY,
+    window: AUTH_TOKEN_REFRESH_RETRY_WINDOW,
+};
 const WS_CONSUMER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // Bounds the informational tier-detection call so a slow or failing
 // `/account` endpoint cannot stall connect for the HTTP retry budget.
@@ -144,6 +179,7 @@ pub struct LighterExecutionClient {
     http_client: LighterHttpClient,
     ws_client: LighterWebSocketClient,
     tx_rate_limiter: Arc<LighterTxRateLimiter>,
+    tx_send_sequencer: TxSendSequencer,
     registry: Arc<MarketRegistry>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
@@ -152,6 +188,8 @@ pub struct LighterExecutionClient {
     /// and the cached AccountState that backs `query_account`. Lives in
     /// [`crate::websocket::dispatch`].
     dispatch: WsDispatchState,
+    /// Latches a burst of exhausted allocations into one venue nonce fetch.
+    nonce_recovery_inflight: Arc<AtomicBool>,
 }
 
 impl LighterExecutionClient {
@@ -210,11 +248,6 @@ impl LighterExecutionClient {
             AccountType::Margin,
             None,
         );
-        let dispatch = WsDispatchState::new();
-        for market_index in &config.active_markets {
-            dispatch.note_active_market(*market_index);
-        }
-
         Ok(Self {
             core,
             clock,
@@ -224,11 +257,13 @@ impl LighterExecutionClient {
             http_client,
             ws_client,
             tx_rate_limiter,
+            tx_send_sequencer: TxSendSequencer::new(),
             registry,
             pending_tasks: Mutex::new(Vec::new()),
             ws_stream_handle: Mutex::new(None),
             cancellation_token: CancellationToken::new(),
-            dispatch,
+            dispatch: WsDispatchState::new(),
+            nonce_recovery_inflight: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -333,6 +368,9 @@ impl LighterExecutionClient {
             response.nonce,
         );
 
+        // Release the latch in case a disconnect aborted recovery mid-task
+        self.nonce_recovery_inflight.store(false, Ordering::Release);
+
         log::debug!(
             "Refreshed Lighter nonce baseline: account_index={}, api_key_index={}, next_nonce={}",
             credential.account_index(),
@@ -411,22 +449,70 @@ impl LighterExecutionClient {
         }
     }
 
+    /// Returns `Ok(true)` if this credential's `api_key_index` is maker-only.
+    /// Maker-only keys cannot submit `ApproveIntegrator`, so the caller skips
+    /// the integrator auto-approval when `true`.
+    async fn is_maker_only_api_key(&self, credential: &Credential) -> anyhow::Result<bool> {
+        let auth_token = build_auth_token_for(credential)
+            .context("failed to mint Lighter auth token for maker-only check")?;
+        let response = self
+            .http_client
+            .get_maker_only_api_keys(credential.account_index(), auth_token)
+            .await
+            .context("failed to query getMakerOnlyApiKeys")?;
+        let api_key_index = i64::from(credential.api_key_index());
+        Ok(response.api_key_indexes.contains(&api_key_index))
+    }
+
     async fn submit_integrator_auto_approval(&self) -> anyhow::Result<()> {
         let Some(credential) = &self.credential else {
             return Ok(());
         };
 
-        let approval = self.prepare_integrator_auto_approval(credential)?;
+        let mut maker_only_check_failed = false;
+
+        match self.is_maker_only_api_key(credential).await {
+            Ok(true) => {
+                log::warn!(
+                    "Skipping Lighter integrator auto-approval: api_key_index={} is maker-only; \
+                     ensure the account has been approved by a non-maker-only key",
+                    credential.api_key_index(),
+                );
+                return Ok(());
+            }
+            Ok(false) => {}
+            Err(e) => {
+                maker_only_check_failed = true;
+                log::debug!(
+                    "Lighter maker-only api key check failed; attempting integrator approval \
+                     anyway: {e:?}"
+                );
+            }
+        }
+
+        let mut approval = self.prepare_integrator_auto_approval(credential)?;
+
         let request = LighterSendTxRequest::new(
             LighterTxType::ApproveIntegrator as u8,
             approval.tx_info.clone(),
         );
+
+        approval.send_reservation.wait_for_turn().await;
+
         let response = self.http_client.send_tx(&request).await.with_context(|| {
+            let hint = if maker_only_check_failed {
+                " (maker-only pre-flight check failed earlier; venue may reject with 62007 \
+                 if this key is maker-only)"
+            } else {
+                ""
+            };
             format!(
-                "failed to submit Lighter integrator approval nonce={} api_key_index={}",
+                "failed to submit Lighter integrator approval nonce={} api_key_index={}{hint}",
                 approval.nonce, approval.api_key_index,
             )
         })?;
+
+        approval.send_reservation.release();
 
         log::debug!(
             "Submitted Lighter integrator approval: integrator={}, nonce={}, \
@@ -444,9 +530,16 @@ impl LighterExecutionClient {
         &self,
         credential: &Credential,
     ) -> anyhow::Result<PreparedIntegratorApproval> {
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let now_ms = (self.clock.get_time_ns().as_u64() as i64) / 1_000_000;
         let approval_expiry = now_ms.saturating_add(INTEGRATOR_AUTO_APPROVAL_MAX_TTL_MS);
+        let nonce = context.nonce;
+        let api_key_index = context.api_key_index;
+
         let tx = ApproveIntegratorTxInfo {
             context,
             integrator_account_index: LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX as i64,
@@ -468,9 +561,10 @@ impl LighterExecutionClient {
 
         Ok(PreparedIntegratorApproval {
             tx_info,
-            nonce: context.nonce,
-            api_key_index: context.api_key_index,
+            nonce,
+            api_key_index,
             approval_expiry,
+            send_reservation,
         })
     }
 
@@ -503,16 +597,16 @@ impl LighterExecutionClient {
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to set Lighter execution context: {e}"))?;
 
-                // Subscribe to the four account-scoped streams the consumption
-                // loop converts into typed reports. `account_all_orders` carries
-                // OrderStatusReport-shaped events; `account_all_trades` carries
-                // discrete fills; `account_all_positions` carries position
-                // snapshots; `account_all_assets` carries balance snapshots.
+                // Subscribe to the five account-scoped streams the consumption
+                // loop converts into typed reports. The handler merges
+                // `account_all_assets` and `user_stats` into a single
+                // AccountState (see websocket/account_state.rs).
                 let channels = [
                     LighterWsChannel::AccountAllOrders(account_index),
                     LighterWsChannel::AccountAllTrades(account_index),
                     LighterWsChannel::AccountAllPositions(account_index),
                     LighterWsChannel::AccountAllAssets(account_index),
+                    LighterWsChannel::UserStats(account_index),
                 ];
 
                 for channel in channels {
@@ -612,9 +706,12 @@ impl LighterExecutionClient {
                                     "Lighter execution batch: orders={order_count} fills={fill_count}",
                                 );
                             }
-                            Some(NautilusWsMessage::PositionSnapshot(reports)) => {
-                                // Replace even when empty: Lighter sends complete
-                                // `account_all_positions` snapshots.
+                            Some(NautilusWsMessage::PositionSnapshot {
+                                reports,
+                                skipped_market_ids,
+                            }) => {
+                                // Replace even when empty, but keep rows the
+                                // handler could not parse or map.
                                 for r in &reports {
                                     if let Some(idx) =
                                         registry_for_loop.market_index(&r.instrument_id)
@@ -623,9 +720,20 @@ impl LighterExecutionClient {
                                     }
                                 }
                                 let position_count = reports.len();
-                                let removed = dispatch.replace_positions(&reports);
+                                let retained_positions: Vec<InstrumentId> = skipped_market_ids
+                                    .iter()
+                                    .filter_map(|market_id| {
+                                        registry_for_loop.instrument_id(*market_id)
+                                    })
+                                    .collect();
+                                let removed = if retained_positions.is_empty() {
+                                    dispatch.replace_positions(&reports)
+                                } else {
+                                    dispatch.replace_positions_except(&reports, &retained_positions)
+                                };
                                 log::debug!(
-                                    "Lighter position snapshot: positions={position_count}, removed={}",
+                                    "Lighter position snapshot: positions={position_count}, skipped_markets={}, removed={}",
+                                    skipped_market_ids.len(),
                                     removed.len(),
                                 );
 
@@ -696,6 +804,30 @@ impl LighterExecutionClient {
                                 // `generate_position_status_reports` may
                                 // return stale data.
 
+                                // Drained creates have unknown outcomes;
+                                // reconciliation resolves them, so warn
+                                // rather than emit rejections.
+                                let stale = dispatch.drain_pending_sendtx();
+                                if !stale.is_empty() {
+                                    log::warn!(
+                                        "Discarded {} pending sendTx entries on reconnect; \
+                                         order state recovers via reconciliation",
+                                        stale.len(),
+                                    );
+
+                                    for pending in &stale {
+                                        if let PendingSendTxKind::Create { order, .. } =
+                                            &pending.kind
+                                        {
+                                            log::warn!(
+                                                "Lighter sendTx outcome unknown after reconnect \
+                                                 for {}",
+                                                order.client_order_id(),
+                                            );
+                                        }
+                                    }
+                                }
+
                                 if let Some(credential) = &credential_for_loop {
                                     match http_client_for_loop
                                         .get_next_nonce(
@@ -726,17 +858,44 @@ impl LighterExecutionClient {
                                 }
                             }
                             Some(NautilusWsMessage::SendTxAck { tx_hash, code }) => {
-                                handle_send_tx_ack(&dispatch, code, tx_hash.as_deref());
+                                let account_index = credential_for_loop
+                                    .as_ref()
+                                    .map(|c| c.account_index());
+                                let acked = handle_send_tx_ack(
+                                    &dispatch,
+                                    account_index,
+                                    code,
+                                    tx_hash.as_deref(),
+                                );
+
+                                if let (Some(pending), Some(credential)) =
+                                    (acked, credential_for_loop.clone())
+                                {
+                                    spawn_acked_order_probe(
+                                        &pending,
+                                        AckedOrderProbeContext {
+                                            http_client: http_client_for_loop.clone(),
+                                            registry: Arc::clone(&registry_for_loop),
+                                            credential,
+                                            dispatch: dispatch.clone(),
+                                            emitter: emitter.clone(),
+                                            account_id: account_id_for_loop,
+                                            clock: clock_for_loop,
+                                            cancellation_token: cancellation_token.clone(),
+                                        },
+                                    );
+                                }
                             }
                             Some(NautilusWsMessage::SendTxRejected {
                                 source,
                                 code,
                                 message,
+                                tx_hash,
                             }) => {
                                 let account_index = credential_for_loop
                                     .as_ref()
                                     .map(|c| c.account_index());
-                                handle_send_tx_rejection(
+                                let needs_nonce_resync = handle_send_tx_rejection(
                                     &dispatch,
                                     &emitter,
                                     account_index,
@@ -744,7 +903,43 @@ impl LighterExecutionClient {
                                     source,
                                     code,
                                     &message,
+                                    tx_hash.as_deref(),
                                 );
+
+                                // Invalid nonce means the sequential stream is
+                                // wedged on a burned nonce; only a hard refresh
+                                // moves allocation back down.
+                                if needs_nonce_resync
+                                    && let Some(credential) = &credential_for_loop
+                                {
+                                    match http_client_for_loop
+                                        .get_next_nonce(
+                                            credential.account_index(),
+                                            credential.api_key_index(),
+                                        )
+                                        .await
+                                    {
+                                        Ok(response) => {
+                                            dispatch.nonce_manager.refresh(
+                                                credential.account_index(),
+                                                credential.api_key_index(),
+                                                response.nonce,
+                                            );
+                                            log::info!(
+                                                "Hard-refreshed Lighter nonce after invalid-nonce \
+                                                 rejection: account_index={}, next_nonce={}",
+                                                credential.account_index(),
+                                                response.nonce,
+                                            );
+                                        }
+                                        Err(e) => {
+                                            log::error!(
+                                                "Failed to refresh Lighter nonce after \
+                                                 invalid-nonce rejection: {e}",
+                                            );
+                                        }
+                                    }
+                                }
                             }
                             Some(NautilusWsMessage::Raw(value)) => {
                                 log::debug!("Unhandled Lighter raw frame on execution stream: {value}");
@@ -767,6 +962,9 @@ impl LighterExecutionClient {
                                     }
                                     AccountStream::Assets => {
                                         dispatch.account_streams_ready.mark_assets();
+                                    }
+                                    AccountStream::UserStats => {
+                                        dispatch.account_streams_ready.mark_user_stats();
                                     }
                                 }
                             }
@@ -818,12 +1016,7 @@ impl LighterExecutionClient {
         let ws_client = self.ws_client.clone();
         let cancellation_token = self.cancellation_token.clone();
         let account_index = credential.account_index();
-        let channels = [
-            LighterWsChannel::AccountAllOrders(account_index),
-            LighterWsChannel::AccountAllTrades(account_index),
-            LighterWsChannel::AccountAllPositions(account_index),
-            LighterWsChannel::AccountAllAssets(account_index),
-        ];
+        let channels = auth_token_rotation_channels(account_index);
 
         get_runtime().spawn(async move {
             log::debug!(
@@ -831,40 +1024,43 @@ impl LighterExecutionClient {
                 AUTH_TOKEN_REFRESH_INTERVAL.as_secs(),
             );
 
+            let mut next_refresh_delay = AUTH_TOKEN_REFRESH_INTERVAL;
+
             loop {
-                tokio::select! {
-                    () = cancellation_token.cancelled() => {
-                        log::debug!("Lighter auth-token refresh task cancelled");
-                        break;
-                    }
-                    () = tokio::time::sleep(AUTH_TOKEN_REFRESH_INTERVAL) => {
-                        match build_auth_token_for(&credential) {
-                            Ok(token) => {
-                                let mut all_ok = true;
+                if !sleep_or_auth_token_refresh_cancelled(
+                    next_refresh_delay,
+                    &cancellation_token,
+                )
+                .await
+                {
+                    log::debug!("Lighter auth-token refresh task cancelled");
+                    break;
+                }
 
-                                for channel in channels.clone() {
-                                    if let Err(e) = ws_client
-                                        .subscribe_account(channel.clone(), token.clone())
-                                        .await
-                                    {
-                                        all_ok = false;
-                                        log::error!(
-                                            "Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",
-                                        );
-                                    }
-                                }
+                let outcome = refresh_auth_token_until_rotated(
+                    &credential,
+                    &channels,
+                    &cancellation_token,
+                    AUTH_TOKEN_REFRESH_BACKOFF,
+                    |credential| -> anyhow::Result<String> { build_auth_token_for(credential) },
+                    |channel, token| {
+                        let ws_client = ws_client.clone();
+                        async move { ws_client.subscribe_account(channel, token).await }
+                    },
+                )
+                .await;
 
-                                if all_ok {
-                                    log::debug!(
-                                        "Lighter auth-token rotated for account_index={account_index}",
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Lighter auth-token mint failed during rotation: {e}");
-                            }
-                        }
+                if let Some(delay) = auth_token_refresh_next_delay(outcome) {
+                    if outcome == AuthTokenRefreshOutcome::Exhausted {
+                        log::error!(
+                            "Lighter auth-token rotation exhausted retry window; retrying again in {}s: account_index={account_index}",
+                            delay.as_secs(),
+                        );
                     }
+                    next_refresh_delay = delay;
+                } else {
+                    log::debug!("Lighter auth-token refresh task cancelled");
+                    break;
                 }
             }
         });
@@ -877,22 +1073,84 @@ impl LighterExecutionClient {
             .map_or(self.config.market_order_slippage_bps, |v| v as u32)
     }
 
-    fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<TxContext> {
-        let nonce = self
+    fn build_tx_context(&self, credential: &Credential) -> anyhow::Result<ReservedTxContext> {
+        let nonce = match self
             .dispatch
             .nonce_manager
             .next_nonce(credential.account_index(), credential.api_key_index())
-            .map_err(|e| anyhow::anyhow!("failed to allocate Lighter nonce: {e}"))?;
+        {
+            Ok(nonce) => nonce,
+            Err(e @ NonceError::SkipWindowExhausted { .. }) => {
+                // Lost acks leave the baseline stale; resync from the venue so
+                // later commands recover. The fetch is async; this command fails.
+                self.spawn_nonce_window_recovery(credential);
+                anyhow::bail!("failed to allocate Lighter nonce: {e}");
+            }
+            Err(e) => anyhow::bail!("failed to allocate Lighter nonce: {e}"),
+        };
 
         let now_ns = self.clock.get_time_ns().as_u64() as i64;
         let expired_at = (now_ns / 1_000_000).saturating_add(DEFAULT_TX_EXPIRY_MS);
+        let send_reservation = self.tx_send_sequencer.reserve(
+            credential.account_index(),
+            credential.api_key_index(),
+            nonce,
+        );
 
-        Ok(TxContext {
+        let context = TxContext {
             account_index: credential.account_index(),
             api_key_index: credential.api_key_index(),
             nonce,
             expired_at,
+        };
+
+        Ok(ReservedTxContext {
+            context,
+            send_reservation,
         })
+    }
+
+    fn spawn_nonce_window_recovery(&self, credential: &Credential) {
+        if self.nonce_recovery_inflight.swap(true, Ordering::AcqRel) {
+            return;
+        }
+
+        let inflight = Arc::clone(&self.nonce_recovery_inflight);
+        let http_client = self.http_client.clone();
+        let dispatch = self.dispatch.clone();
+        let account_index = credential.account_index();
+        let api_key_index = credential.api_key_index();
+
+        self.spawn_task("nonce_window_recovery", async move {
+            let result = http_client
+                .get_next_nonce(account_index, api_key_index)
+                .await;
+            inflight.store(false, Ordering::Release);
+
+            match result {
+                Ok(response) => {
+                    // Monotonic sync, not `refresh`: a hard reset could
+                    // reissue nonces already signed into in-flight txs.
+                    let _ = dispatch.nonce_manager.sync_from_venue(
+                        account_index,
+                        api_key_index,
+                        response.nonce,
+                    );
+                    log::info!(
+                        "Resynced Lighter nonce baseline after skip-window exhaustion: \
+                         account_index={account_index}, api_key_index={api_key_index}, \
+                         next_nonce={}",
+                        response.nonce,
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to resync Lighter nonce after skip-window exhaustion: {e}",
+                    );
+                }
+            }
+            Ok(())
+        });
     }
 
     fn dispatch_signed_create_order(
@@ -908,6 +1166,8 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash,
+            mut send_reservation,
         } = prepared;
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -918,8 +1178,10 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         self.emitter.emit_order_submitted(&order);
+
         self.spawn_task("submit_order", async move {
             log::debug!("Lighter submit_order: queueing CreateOrder tx for {client_order_id}");
+            send_reservation.wait_for_turn().await;
             // Pace before enqueueing so the pending FIFO order matches the send
             // order and `submitted_at` is fresh for ack/rejection attribution.
             await_tx_quota(&tx_rate_limiter).await;
@@ -931,6 +1193,7 @@ impl LighterExecutionClient {
                 submitted_at: clock.get_time_ns(),
                 nonce,
                 api_key_index,
+                tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -945,10 +1208,12 @@ impl LighterExecutionClient {
                     &credential,
                     Some(client_order_index),
                     &client_order_id,
+                    nonce,
                 );
 
                 emitter.emit_order_rejected(&order, &reason, clock.get_time_ns(), false);
             }
+            send_reservation.release();
             Ok(())
         });
 
@@ -966,12 +1231,7 @@ impl LighterExecutionClient {
             anyhow::anyhow!("no Lighter market_index registered for instrument {instrument_id}")
         })?;
 
-        let instrument = self
-            .core
-            .cache()
-            .instrument(&instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("instrument not cached: {instrument_id}"))?
-            .clone();
+        let instrument = self.core.cache().try_instrument(&instrument_id)?.clone();
 
         let order_kind = nautilus_to_lighter_order_type(order.order_type())?;
 
@@ -1038,6 +1298,7 @@ impl LighterExecutionClient {
                 .transpose()?
                 .unwrap_or(0),
         };
+
         let trigger_price_ticks = order
             .trigger_price()
             .map(|p| price_to_ticks(&p, price_precision))
@@ -1074,7 +1335,10 @@ impl LighterExecutionClient {
             },
         );
 
-        let context = match self.build_tx_context(credential) {
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = match self.build_tx_context(credential) {
             Ok(context) => context,
             Err(e) => {
                 self.dispatch.forget_cloid(client_order_index);
@@ -1082,11 +1346,17 @@ impl LighterExecutionClient {
                 return Err(e);
             }
         };
+
         let nonce = context.nonce;
         let api_key_index = context.api_key_index;
-        let mut rollback_guard =
-            TxDispatchGuard::new(self.dispatch.clone(), credential, Some(client_order_index))
-                .with_order_identity(cloid);
+
+        let mut rollback_guard = TxDispatchGuard::new(
+            self.dispatch.clone(),
+            credential,
+            Some(client_order_index),
+            nonce,
+        )
+        .with_order_identity(cloid);
         let tx = CreateOrderTxInfo {
             context,
             order: OrderInfo {
@@ -1110,6 +1380,7 @@ impl LighterExecutionClient {
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info_str = TxInfoJson::create_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter tx_info JSON")?;
@@ -1121,15 +1392,35 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash: signed.tx_hash_hex(),
+            send_reservation,
         })
     }
 
-    fn dispatch_signed_cancel_order(
-        &self,
-        cmd: &CancelOrder,
-        credential: &Credential,
-    ) -> anyhow::Result<()> {
-        let prepared = self.prepare_signed_cancel_order(cmd, credential)?;
+    fn dispatch_signed_cancel_order(&self, cmd: &CancelOrder, credential: &Credential) {
+        let prepared = match self.prepare_signed_cancel_order(cmd, credential) {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                let reason = format!("Lighter cancel_order failed: {e}");
+                if self.can_emit_order_cancel_rejected(&cmd.client_order_id) {
+                    log::warn!("{reason} for {}", cmd.client_order_id);
+                    self.emitter.emit_order_cancel_rejected_event(
+                        cmd.strategy_id,
+                        cmd.instrument_id,
+                        cmd.client_order_id,
+                        cmd.venue_order_id,
+                        &reason,
+                        self.clock.get_time_ns(),
+                    );
+                } else {
+                    log::warn!(
+                        "{reason} for {}; suppressing OrderCancelRejected because order is not PendingCancel",
+                        cmd.client_order_id,
+                    );
+                }
+                return;
+            }
+        };
         let PreparedCancelOrder {
             client_order_id,
             strategy_id,
@@ -1138,7 +1429,10 @@ impl LighterExecutionClient {
             tx_info,
             nonce,
             api_key_index,
+            tx_hash,
+            mut send_reservation,
         } = prepared;
+        let emit_cancel_rejected = self.can_emit_order_cancel_rejected(&client_order_id);
 
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1147,13 +1441,25 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         let tx_rate_limiter = self.tx_rate_limiter.clone();
+
         self.spawn_task("cancel_order", async move {
+            send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
-                kind: PendingSendTxKind::Other,
+                kind: if emit_cancel_rejected {
+                    PendingSendTxKind::Cancel {
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                    }
+                } else {
+                    PendingSendTxKind::Other
+                },
                 submitted_at: clock.get_time_ns(),
                 nonce,
                 api_key_index,
+                tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1163,21 +1469,34 @@ impl LighterExecutionClient {
                 let reason = format!("Lighter cancel_order dispatch failed: {e}");
                 log::error!("{reason} for {client_order_id}");
                 dispatch.remove_pending_sendtx_by_nonce(nonce);
-                rollback_tx_dispatch(&dispatch, &credential, None);
+                rollback_tx_dispatch(&dispatch, &credential, None, nonce);
 
-                emitter.emit_order_cancel_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &reason,
-                    clock.get_time_ns(),
-                );
+                if emit_cancel_rejected {
+                    emitter.emit_order_cancel_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &reason,
+                        clock.get_time_ns(),
+                    );
+                } else {
+                    log::warn!(
+                        "{reason} for {client_order_id}; suppressing OrderCancelRejected because order is not PendingCancel",
+                    );
+                }
             }
+
+            send_reservation.release();
             Ok(())
         });
+    }
 
-        Ok(())
+    fn can_emit_order_cancel_rejected(&self, client_order_id: &ClientOrderId) -> bool {
+        self.core
+            .cache()
+            .order(client_order_id)
+            .is_none_or(|order| order.is_pending_cancel())
     }
 
     fn prepare_signed_cancel_order(
@@ -1194,6 +1513,8 @@ impl LighterExecutionClient {
                     cmd.instrument_id,
                 )
             })?;
+
+        self.core.cache().try_order(&cmd.client_order_id)?;
 
         // Lighter cancel_order targets a single order by venue order_id.
         // The map is populated on the first OrderStatusReport for the cloid.
@@ -1213,10 +1534,15 @@ impl LighterExecutionClient {
             .parse()
             .with_context(|| format!("Lighter venue_order_id `{voi}` is not an integer index"))?;
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
-        let mut rollback_guard = TxDispatchGuard::new(self.dispatch.clone(), credential, None);
+        let mut rollback_guard =
+            TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
         let tx = CancelOrderTxInfo {
             context,
             market_index,
@@ -1243,14 +1569,91 @@ impl LighterExecutionClient {
             tx_info,
             nonce: captured_nonce,
             api_key_index: captured_api_key_index,
+            tx_hash: signed.tx_hash_hex(),
+            send_reservation,
         })
     }
 
-    fn dispatch_signed_modify_order(
+    fn dispatch_signed_modify_order(&self, cmd: &ModifyOrder, credential: &Credential) {
+        let prepared = match self.prepare_signed_modify_order(cmd, credential) {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                let reason = format!("Lighter modify_order failed: {e}");
+                log::warn!("{reason} for {}", cmd.client_order_id);
+                self.emitter.emit_order_modify_rejected_event(
+                    cmd.strategy_id,
+                    cmd.instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                    &reason,
+                    self.clock.get_time_ns(),
+                );
+                return;
+            }
+        };
+        let PreparedModifyOrder {
+            client_order_id,
+            strategy_id,
+            instrument_id,
+            venue_order_id,
+            tx_info,
+            nonce,
+            api_key_index,
+            tx_hash,
+            mut send_reservation,
+        } = prepared;
+
+        let ws_client = self.ws_client.clone();
+        let dispatch = self.dispatch.clone();
+        let credential = credential.clone();
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        let tx_rate_limiter = self.tx_rate_limiter.clone();
+
+        self.spawn_task("modify_order", async move {
+            send_reservation.wait_for_turn().await;
+            await_tx_quota(&tx_rate_limiter).await;
+            dispatch.enqueue_pending_sendtx(PendingSendTx {
+                kind: PendingSendTxKind::Modify {
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                },
+                submitted_at: clock.get_time_ns(),
+                nonce,
+                api_key_index,
+                tx_hash,
+            });
+
+            if let Err(e) = ws_client
+                .send_tx(LighterTxType::ModifyOrder as u8, tx_info)
+                .await
+            {
+                let reason = format!("Lighter modify_order dispatch failed: {e}");
+                log::error!("{reason} for {client_order_id}");
+                dispatch.remove_pending_sendtx_by_nonce(nonce);
+                rollback_tx_dispatch(&dispatch, &credential, None, nonce);
+                emitter.emit_order_modify_rejected_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                );
+            }
+            send_reservation.release();
+            Ok(())
+        });
+    }
+
+    fn prepare_signed_modify_order(
         &self,
         cmd: &ModifyOrder,
         credential: &Credential,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<PreparedModifyOrder> {
         let market_index = self
             .registry
             .market_index(&cmd.instrument_id)
@@ -1277,17 +1680,11 @@ impl LighterExecutionClient {
             .parse()
             .with_context(|| format!("Lighter venue_order_id `{voi}` is not an integer index"))?;
 
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("order not found in cache: {}", cmd.client_order_id,))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
         let instrument = self
             .core
             .cache()
-            .instrument(&cmd.instrument_id)
-            .ok_or_else(|| anyhow::anyhow!("instrument not cached: {}", cmd.instrument_id))?
+            .try_instrument(&cmd.instrument_id)?
             .clone();
 
         let new_qty = cmd.quantity.unwrap_or(order.quantity());
@@ -1307,10 +1704,15 @@ impl LighterExecutionClient {
             price_to_ticks(&new_trigger, instrument.price_precision())?
         };
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
-        let mut rollback_guard = TxDispatchGuard::new(self.dispatch.clone(), credential, None);
+        let mut rollback_guard =
+            TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
         let tx = ModifyOrderTxInfo {
             context,
             market_index,
@@ -1327,52 +1729,23 @@ impl LighterExecutionClient {
             &credential.private_key()?,
             fresh_k(),
         );
+
         let tx_info_str = TxInfoJson::modify_order(&tx, &signed);
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter modify tx_info JSON")?;
         rollback_guard.disarm();
 
-        let ws_client = self.ws_client.clone();
-        let dispatch = self.dispatch.clone();
-        let credential = credential.clone();
-        let client_order_id = cmd.client_order_id;
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let strategy_id = cmd.strategy_id;
-        let instrument_id = cmd.instrument_id;
-        let venue_order_id = Some(voi);
-
-        let tx_rate_limiter = self.tx_rate_limiter.clone();
-        self.spawn_task("modify_order", async move {
-            await_tx_quota(&tx_rate_limiter).await;
-            dispatch.enqueue_pending_sendtx(PendingSendTx {
-                kind: PendingSendTxKind::Other,
-                submitted_at: clock.get_time_ns(),
-                nonce: captured_nonce,
-                api_key_index: captured_api_key_index,
-            });
-
-            if let Err(e) = ws_client
-                .send_tx(LighterTxType::ModifyOrder as u8, tx_info)
-                .await
-            {
-                let reason = format!("Lighter modify_order dispatch failed: {e}");
-                log::error!("{reason} for {client_order_id}");
-                dispatch.remove_pending_sendtx_by_nonce(captured_nonce);
-                rollback_tx_dispatch(&dispatch, &credential, None);
-                emitter.emit_order_modify_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &reason,
-                    clock.get_time_ns(),
-                );
-            }
-            Ok(())
-        });
-
-        Ok(())
+        Ok(PreparedModifyOrder {
+            client_order_id: cmd.client_order_id,
+            strategy_id: cmd.strategy_id,
+            instrument_id: cmd.instrument_id,
+            venue_order_id: Some(voi),
+            tx_info,
+            nonce: captured_nonce,
+            api_key_index: captured_api_key_index,
+            tx_hash: signed.tx_hash_hex(),
+            send_reservation,
+        })
     }
 
     /// Submit Lighter's native `UpdateLeverage` tx (`tx_type = 20`).
@@ -1412,10 +1785,15 @@ impl LighterExecutionClient {
             "initial_margin_fraction must be in 1..=10_000, was {initial_margin_fraction}",
         );
 
-        let context = self.build_tx_context(credential)?;
+        let ReservedTxContext {
+            context,
+            mut send_reservation,
+        } = self.build_tx_context(credential)?;
+
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
-        let mut rollback_guard = TxDispatchGuard::new(self.dispatch.clone(), credential, None);
+        let mut rollback_guard =
+            TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
         let tx = UpdateLeverageTxInfo {
             context,
             market_index,
@@ -1434,6 +1812,7 @@ impl LighterExecutionClient {
         let tx_info = serde_json::value::RawValue::from_string(tx_info_str)
             .context("failed to wrap signed Lighter update_leverage tx_info JSON")?;
         rollback_guard.disarm();
+        let captured_tx_hash = signed.tx_hash_hex();
 
         let ws_client = self.ws_client.clone();
         let dispatch = self.dispatch.clone();
@@ -1441,13 +1820,16 @@ impl LighterExecutionClient {
         let clock = self.clock;
 
         let tx_rate_limiter = self.tx_rate_limiter.clone();
+
         self.spawn_task("update_leverage", async move {
+            send_reservation.wait_for_turn().await;
             await_tx_quota(&tx_rate_limiter).await;
             dispatch.enqueue_pending_sendtx(PendingSendTx {
                 kind: PendingSendTxKind::Other,
                 submitted_at: clock.get_time_ns(),
                 nonce: captured_nonce,
                 api_key_index: captured_api_key_index,
+                tx_hash: captured_tx_hash,
             });
 
             if let Err(e) = ws_client
@@ -1457,8 +1839,9 @@ impl LighterExecutionClient {
                 let reason = format!("Lighter update_leverage dispatch failed: {e}");
                 log::error!("{reason} for {instrument_id}");
                 dispatch.remove_pending_sendtx_by_nonce(captured_nonce);
-                rollback_tx_dispatch(&dispatch, &credential, None);
+                rollback_tx_dispatch(&dispatch, &credential, None, captured_nonce);
             }
+            send_reservation.release();
             Ok(())
         });
 
@@ -1466,16 +1849,318 @@ impl LighterExecutionClient {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthTokenRefreshOutcome {
+    Rotated,
+    Cancelled,
+    Exhausted,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AuthTokenRefreshBackoff {
+    initial_delay: Duration,
+    max_delay: Duration,
+    window: Duration,
+}
+
+fn auth_token_rotation_channels(account_index: i64) -> [LighterWsChannel; 5] {
+    [
+        LighterWsChannel::AccountAllOrders(account_index),
+        LighterWsChannel::AccountAllTrades(account_index),
+        LighterWsChannel::AccountAllPositions(account_index),
+        LighterWsChannel::AccountAllAssets(account_index),
+        LighterWsChannel::UserStats(account_index),
+    ]
+}
+
+async fn refresh_auth_token_until_rotated<MintToken, Subscribe, SubscribeFuture>(
+    credential: &Credential,
+    channels: &[LighterWsChannel],
+    cancellation_token: &CancellationToken,
+    backoff: AuthTokenRefreshBackoff,
+    mut mint_token: MintToken,
+    mut subscribe: Subscribe,
+) -> AuthTokenRefreshOutcome
+where
+    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
+    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
+{
+    let retry_started = tokio::time::Instant::now();
+    let mut retry_delay = backoff.initial_delay.min(backoff.max_delay);
+    let mut attempt = 1_u32;
+
+    loop {
+        match rotate_auth_token_once(credential, channels, &mut mint_token, &mut subscribe).await {
+            Ok(()) => {
+                log::debug!(
+                    "Lighter auth-token rotated for account_index={}, attempts={attempt}",
+                    credential.account_index(),
+                );
+                return AuthTokenRefreshOutcome::Rotated;
+            }
+            Err(e) => {
+                log::error!("Lighter auth-token rotation attempt {attempt} failed: {e:#}");
+            }
+        }
+
+        let Some(remaining) = backoff.window.checked_sub(retry_started.elapsed()) else {
+            log::error!(
+                "Lighter auth-token rotation retry window exhausted: account_index={}, attempts={attempt}",
+                credential.account_index(),
+            );
+            return AuthTokenRefreshOutcome::Exhausted;
+        };
+
+        if remaining.as_nanos() == 0 {
+            log::error!(
+                "Lighter auth-token rotation retry window exhausted: account_index={}, attempts={attempt}",
+                credential.account_index(),
+            );
+            return AuthTokenRefreshOutcome::Exhausted;
+        }
+
+        let delay = retry_delay.min(remaining);
+        log::warn!(
+            "Retrying Lighter auth-token rotation in {:.3}s: account_index={}, attempts={attempt}",
+            delay.as_secs_f64(),
+            credential.account_index(),
+        );
+
+        if !sleep_or_auth_token_refresh_cancelled(delay, cancellation_token).await {
+            return AuthTokenRefreshOutcome::Cancelled;
+        }
+
+        retry_delay = next_auth_token_refresh_retry_delay(retry_delay, backoff.max_delay);
+        attempt = attempt.saturating_add(1);
+    }
+}
+
+async fn rotate_auth_token_once<MintToken, Subscribe, SubscribeFuture>(
+    credential: &Credential,
+    channels: &[LighterWsChannel],
+    mint_token: &mut MintToken,
+    subscribe: &mut Subscribe,
+) -> anyhow::Result<()>
+where
+    MintToken: FnMut(&Credential) -> anyhow::Result<String>,
+    Subscribe: FnMut(LighterWsChannel, String) -> SubscribeFuture,
+    SubscribeFuture: Future<Output = Result<(), crate::websocket::error::LighterWsError>>,
+{
+    let token =
+        mint_token(credential).context("failed to mint Lighter auth token during rotation")?;
+    let mut first_error = None;
+
+    for channel in channels {
+        if let Err(e) = subscribe(channel.clone(), token.clone()).await {
+            log::error!("Lighter auth-token rotation: re-subscribe failed for {channel:?}: {e}",);
+            first_error.get_or_insert_with(|| format!("{channel:?}: {e}"));
+        }
+    }
+
+    if let Some(error) = first_error {
+        anyhow::bail!("failed to re-subscribe Lighter account channels: {error}");
+    }
+
+    Ok(())
+}
+
+async fn sleep_or_auth_token_refresh_cancelled(
+    duration: Duration,
+    cancellation_token: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        () = cancellation_token.cancelled() => false,
+        () = tokio::time::sleep(duration) => true,
+    }
+}
+
+fn auth_token_refresh_next_delay(outcome: AuthTokenRefreshOutcome) -> Option<Duration> {
+    match outcome {
+        AuthTokenRefreshOutcome::Rotated => Some(AUTH_TOKEN_REFRESH_INTERVAL),
+        AuthTokenRefreshOutcome::Cancelled => None,
+        AuthTokenRefreshOutcome::Exhausted => Some(AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY),
+    }
+}
+
+fn next_auth_token_refresh_retry_delay(current: Duration, max: Duration) -> Duration {
+    current.checked_mul(2).unwrap_or(max).min(max)
+}
+
+#[derive(Debug)]
+struct ReservedTxContext {
+    context: TxContext,
+    send_reservation: TxSendReservation,
+}
+
+#[derive(Debug, Clone)]
+struct TxSendSequencer {
+    state: Arc<Mutex<TxSendSequencerState>>,
+    version: Arc<AtomicU64>,
+    changed: tokio::sync::watch::Sender<u64>,
+}
+
+impl TxSendSequencer {
+    fn new() -> Self {
+        let (changed, _) = tokio::sync::watch::channel(0);
+        Self {
+            state: Arc::new(Mutex::new(TxSendSequencerState::default())),
+            version: Arc::new(AtomicU64::new(0)),
+            changed,
+        }
+    }
+
+    fn reserve(&self, account_index: i64, api_key_index: u8, nonce: i64) -> TxSendReservation {
+        let key = TxSendKey {
+            account_index,
+            api_key_index,
+        };
+        self.state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .pending
+            .entry(key)
+            .or_default()
+            .insert(nonce);
+        self.notify_waiters();
+
+        TxSendReservation {
+            sequencer: self.clone(),
+            key,
+            nonce,
+            released: false,
+        }
+    }
+
+    async fn wait_for_turn(&self, key: TxSendKey, nonce: i64) {
+        let mut changed = self.changed.subscribe();
+
+        loop {
+            if self.ready_to_send(key, nonce) {
+                return;
+            }
+
+            if changed.changed().await.is_err() {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+
+    fn release(&self, key: TxSendKey, nonce: i64) {
+        let mut state = self.state.lock().expect(MUTEX_POISONED);
+        let should_notify = if let Some(pending) = state.pending.get_mut(&key) {
+            let removed = pending.remove(&nonce);
+            if pending.is_empty() {
+                state.pending.remove(&key);
+            }
+            removed
+        } else {
+            false
+        };
+        drop(state);
+
+        if should_notify {
+            self.notify_waiters();
+        }
+    }
+
+    fn ready_to_send(&self, key: TxSendKey, nonce: i64) -> bool {
+        let state = self.state.lock().expect(MUTEX_POISONED);
+        state
+            .pending
+            .get(&key)
+            .and_then(|pending| pending.first())
+            .is_none_or(|first| *first >= nonce)
+    }
+
+    fn notify_waiters(&self) {
+        let version = self.version.fetch_add(1, Ordering::AcqRel) + 1;
+        let _ = self.changed.send(version);
+    }
+}
+
+#[derive(Debug, Default)]
+struct TxSendSequencerState {
+    pending: BTreeMap<TxSendKey, BTreeSet<i64>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct TxSendKey {
+    account_index: i64,
+    api_key_index: u8,
+}
+
+#[derive(Debug)]
+struct TxSendReservation {
+    sequencer: TxSendSequencer,
+    key: TxSendKey,
+    nonce: i64,
+    released: bool,
+}
+
+impl TxSendReservation {
+    async fn wait_for_turn(&self) {
+        self.sequencer.wait_for_turn(self.key, self.nonce).await;
+    }
+
+    fn release(&mut self) {
+        if self.released {
+            return;
+        }
+
+        self.sequencer.release(self.key, self.nonce);
+        self.released = true;
+    }
+}
+
+impl Drop for TxSendReservation {
+    fn drop(&mut self) {
+        self.release();
+    }
+}
+
+async fn wait_for_tx_send_reservations(reservations: &[&TxSendReservation]) {
+    let Some(first) = reservations.first() else {
+        return;
+    };
+
+    debug_assert!(
+        reservations
+            .iter()
+            .all(|reservation| reservation.key == first.key),
+        "batch send reservations must share one nonce stream",
+    );
+
+    let nonce = reservations
+        .iter()
+        .map(|reservation| reservation.nonce)
+        .min()
+        .expect("reservations is non-empty");
+    first.sequencer.wait_for_turn(first.key, nonce).await;
+}
+
+fn release_prepared_create_reservations(prepared_orders: &mut [PreparedCreateOrder]) {
+    for prepared in prepared_orders {
+        prepared.send_reservation.release();
+    }
+}
+
+fn release_prepared_cancel_reservations(prepared_cancels: &mut [PreparedCancelOrder]) {
+    for prepared in prepared_cancels {
+        prepared.send_reservation.release();
+    }
+}
+
 struct PreparedCreateOrder {
     order: OrderAny,
     client_order_index: i64,
     tx_info: Box<serde_json::value::RawValue>,
     nonce: i64,
     api_key_index: u8,
+    tx_hash: String,
+    send_reservation: TxSendReservation,
 }
 
-#[derive(Clone)]
 struct PreparedCancelOrder {
     client_order_id: ClientOrderId,
     strategy_id: StrategyId,
@@ -1484,6 +2169,20 @@ struct PreparedCancelOrder {
     tx_info: Box<serde_json::value::RawValue>,
     nonce: i64,
     api_key_index: u8,
+    tx_hash: String,
+    send_reservation: TxSendReservation,
+}
+
+struct PreparedModifyOrder {
+    client_order_id: ClientOrderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    venue_order_id: Option<VenueOrderId>,
+    tx_info: Box<serde_json::value::RawValue>,
+    nonce: i64,
+    api_key_index: u8,
+    tx_hash: String,
+    send_reservation: TxSendReservation,
 }
 
 struct PreparedIntegratorApproval {
@@ -1491,6 +2190,7 @@ struct PreparedIntegratorApproval {
     nonce: i64,
     api_key_index: u8,
     approval_expiry: i64,
+    send_reservation: TxSendReservation,
 }
 
 // Cross-check between a detected account tier and the configured REST quota:
@@ -1544,6 +2244,7 @@ struct TxDispatchGuard {
     api_key_index: u8,
     client_order_index: Option<i64>,
     client_order_id: Option<ClientOrderId>,
+    nonce: i64,
     armed: bool,
 }
 
@@ -1552,6 +2253,7 @@ impl TxDispatchGuard {
         dispatch: WsDispatchState,
         credential: &Credential,
         client_order_index: Option<i64>,
+        nonce: i64,
     ) -> Self {
         Self {
             dispatch,
@@ -1559,6 +2261,7 @@ impl TxDispatchGuard {
             api_key_index: credential.api_key_index(),
             client_order_index,
             client_order_id: None,
+            nonce,
             armed: true,
         }
     }
@@ -1582,24 +2285,244 @@ impl Drop for TxDispatchGuard {
                 self.api_key_index,
                 self.client_order_index,
                 self.client_order_id.as_ref(),
+                self.nonce,
             );
         }
     }
 }
 
-// SendTxAck: pop the matching pending entry silently; the next account-orders frame
-// drives the actual order lifecycle.
-fn handle_send_tx_ack(dispatch: &WsDispatchState, code: i64, tx_hash: Option<&str>) {
-    let popped = dispatch.pop_pending_sendtx_head();
+// SendTxAck: pop the pending entry and advance the nonce baseline (the venue
+// applied the nonce); the account-orders frame drives the order lifecycle.
+// The advance is a monotonic max, so a misattributed pop is harmless.
+// SendTxAck: remove by echoed tx_hash when present, pop head only for
+// hashless acks. An echoed hash is authoritative: on a miss the entry was
+// already consumed or never enqueued, and a head fallback would attribute
+// the ack to the wrong tx.
+fn handle_send_tx_ack(
+    dispatch: &WsDispatchState,
+    account_index: Option<i64>,
+    code: i64,
+    tx_hash: Option<&str>,
+) -> Option<PendingSendTx> {
+    let popped = match tx_hash {
+        Some(hash) => {
+            let matched = dispatch.remove_pending_sendtx_by_hash(hash);
+            if matched.is_none() {
+                log::warn!("Lighter sendTx ack unmatched: tx_hash={hash} code={code}");
+            }
+            matched
+        }
+        None => dispatch.pop_pending_sendtx_head(),
+    };
+
+    if let (Some(pending), Some(account_index)) = (&popped, account_index) {
+        let _ =
+            dispatch
+                .nonce_manager
+                .ack_success(account_index, pending.api_key_index, pending.nonce);
+    }
+
     log::debug!(
         "Lighter sendTx ack: code={code} tx_hash={tx_hash:?} popped_nonce={:?}",
         popped.as_ref().map(|p| p.nonce),
     );
+
+    popped
 }
 
-// SendTxRejected: pop head for Ack or head-within-window for BareError, then
-// branch on kind: Create emits OrderRejected + rolls back cloid/nonce; Other
-// logs only (cancel/modify/leverage venue rejections recover via reconciliation).
+fn spawn_acked_order_probe(pending: &PendingSendTx, context: AckedOrderProbeContext) {
+    let Some(probe) = AckedOrderProbe::from_pending(pending) else {
+        return;
+    };
+
+    get_runtime().spawn(async move {
+        tokio::select! {
+            () = context.cancellation_token.cancelled() => return,
+            () = tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY) => {}
+        }
+
+        if let Err(e) = probe_acked_order(probe, &context).await {
+            log::warn!("Lighter acked order no-op probe failed: {e:?}");
+        }
+    });
+}
+
+#[derive(Clone)]
+struct AckedOrderProbeContext {
+    http_client: LighterHttpClient,
+    registry: Arc<MarketRegistry>,
+    credential: Credential,
+    dispatch: WsDispatchState,
+    emitter: ExecutionEventEmitter,
+    account_id: AccountId,
+    clock: &'static AtomicTime,
+    cancellation_token: CancellationToken,
+}
+
+async fn probe_acked_order(
+    probe: AckedOrderProbe,
+    context: &AckedOrderProbeContext,
+) -> anyhow::Result<()> {
+    let report = lookup_order_status_report(
+        &context.http_client,
+        &context.registry,
+        &context.credential,
+        context.account_id,
+        Some(probe.instrument_id()),
+        Some(&probe.client_order_id()),
+        probe.venue_order_id().as_ref(),
+        &context.dispatch,
+        context.clock,
+    )
+    .await?;
+
+    if let Some(report) = &report {
+        context.dispatch.seed_accepted_from_report(report);
+    }
+
+    emit_ack_noop_rejection_if_missing(
+        &probe,
+        report.is_some(),
+        &context.emitter,
+        context.clock.get_time_ns(),
+    );
+    Ok(())
+}
+
+fn emit_ack_noop_rejection_if_missing(
+    probe: &AckedOrderProbe,
+    order_found: bool,
+    emitter: &ExecutionEventEmitter,
+    now: UnixNanos,
+) -> bool {
+    if order_found {
+        return false;
+    }
+
+    match probe {
+        AckedOrderProbe::Cancel {
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+        } => {
+            let reason = "Lighter cancel_order no-op: order not found after venue ack";
+            log::warn!("{reason} for {client_order_id}");
+            emitter.emit_order_cancel_rejected_event(
+                *strategy_id,
+                *instrument_id,
+                *client_order_id,
+                *venue_order_id,
+                reason,
+                now,
+            );
+        }
+        AckedOrderProbe::Modify {
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+        } => {
+            let reason = "Lighter modify_order no-op: order not found after venue ack";
+            log::warn!("{reason} for {client_order_id}");
+            emitter.emit_order_modify_rejected_event(
+                *strategy_id,
+                *instrument_id,
+                *client_order_id,
+                *venue_order_id,
+                reason,
+                now,
+            );
+        }
+    }
+
+    true
+}
+
+#[derive(Debug, Clone)]
+enum AckedOrderProbe {
+    Cancel {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+    Modify {
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+    },
+}
+
+impl AckedOrderProbe {
+    fn from_pending(pending: &PendingSendTx) -> Option<Self> {
+        match &pending.kind {
+            PendingSendTxKind::Cancel {
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+            } => Some(Self::Cancel {
+                strategy_id: *strategy_id,
+                instrument_id: *instrument_id,
+                client_order_id: *client_order_id,
+                venue_order_id: *venue_order_id,
+            }),
+            PendingSendTxKind::Modify {
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+            } => Some(Self::Modify {
+                strategy_id: *strategy_id,
+                instrument_id: *instrument_id,
+                client_order_id: *client_order_id,
+                venue_order_id: *venue_order_id,
+            }),
+            PendingSendTxKind::Create { .. } | PendingSendTxKind::Other => None,
+        }
+    }
+
+    fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::Cancel { instrument_id, .. } | Self::Modify { instrument_id, .. } => {
+                *instrument_id
+            }
+        }
+    }
+
+    fn client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Cancel {
+                client_order_id, ..
+            }
+            | Self::Modify {
+                client_order_id, ..
+            } => *client_order_id,
+        }
+    }
+
+    fn venue_order_id(&self) -> Option<VenueOrderId> {
+        match self {
+            Self::Cancel { venue_order_id, .. } | Self::Modify { venue_order_id, .. } => {
+                *venue_order_id
+            }
+        }
+    }
+}
+
+// SendTxRejected: attribute by echoed tx_hash when present (authoritative,
+// no head fallback on a miss); otherwise pop head for Ack or
+// head-within-window for BareError. Create emits OrderRejected, cancel/modify
+// emit their typed rejections, and Other recovers via reconciliation. All
+// attributed rejections roll the nonce back when still the latest issuance.
+// Returns true on an invalid-nonce code: the sequential stream is wedged and
+// needs a hard refresh.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "consumer-loop sink that flattens one SendTxRejected message without a wrapper struct"
+)]
 fn handle_send_tx_rejection(
     dispatch: &WsDispatchState,
     emitter: &ExecutionEventEmitter,
@@ -1608,18 +2531,24 @@ fn handle_send_tx_rejection(
     source: SendTxRejectionSource,
     code: Option<i64>,
     message: &str,
-) {
-    let pending = match source {
-        SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_head(),
-        SendTxRejectionSource::BareError => {
-            dispatch.pop_pending_sendtx_within(now, SENDTX_BARE_ERROR_WINDOW_MS)
-        }
+    tx_hash: Option<&str>,
+) -> bool {
+    let needs_nonce_resync = code == Some(LIGHTER_ERROR_CODE_INVALID_NONCE);
+
+    let pending = match tx_hash {
+        Some(hash) => dispatch.remove_pending_sendtx_by_hash(hash),
+        None => match source {
+            SendTxRejectionSource::Ack => dispatch.pop_pending_sendtx_head(),
+            SendTxRejectionSource::BareError => {
+                dispatch.pop_pending_sendtx_within(now, SENDTX_BARE_ERROR_WINDOW_MS)
+            }
+        },
     };
     let Some(pending) = pending else {
         log::warn!(
             "Lighter sendTx rejection unattributed (source={source:?} code={code:?}): {message}",
         );
-        return;
+        return needs_nonce_resync;
     };
 
     let reason = format!(
@@ -1640,9 +2569,11 @@ fn handle_send_tx_rejection(
             );
 
             if let Some(account_index) = account_index {
-                let _ = dispatch
-                    .nonce_manager
-                    .ack_failure(account_index, pending.api_key_index);
+                let _ = dispatch.nonce_manager.ack_failure_if_latest(
+                    account_index,
+                    pending.api_key_index,
+                    pending.nonce,
+                );
             }
             dispatch.forget_cloid(*client_order_index);
             dispatch.forget_order_identity(&cloid);
@@ -1653,7 +2584,70 @@ fn handle_send_tx_rejection(
                 lighter_reason_indicates_post_only_rejection(message),
             );
         }
+        PendingSendTxKind::Cancel {
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+        } => {
+            log::error!(
+                "{reason} attributed to cancel cloid={client_order_id} nonce={} api_key_index={}",
+                pending.nonce,
+                pending.api_key_index,
+            );
+
+            if let Some(account_index) = account_index {
+                let _ = dispatch.nonce_manager.ack_failure_if_latest(
+                    account_index,
+                    pending.api_key_index,
+                    pending.nonce,
+                );
+            }
+            emitter.emit_order_cancel_rejected_event(
+                *strategy_id,
+                *instrument_id,
+                *client_order_id,
+                *venue_order_id,
+                &reason,
+                now,
+            );
+        }
+        PendingSendTxKind::Modify {
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+        } => {
+            log::error!(
+                "{reason} attributed to modify cloid={client_order_id} nonce={} api_key_index={}",
+                pending.nonce,
+                pending.api_key_index,
+            );
+
+            if let Some(account_index) = account_index {
+                let _ = dispatch.nonce_manager.ack_failure_if_latest(
+                    account_index,
+                    pending.api_key_index,
+                    pending.nonce,
+                );
+            }
+            emitter.emit_order_modify_rejected_event(
+                *strategy_id,
+                *instrument_id,
+                *client_order_id,
+                *venue_order_id,
+                &reason,
+                now,
+            );
+        }
         PendingSendTxKind::Other => {
+            if let Some(account_index) = account_index {
+                let _ = dispatch.nonce_manager.ack_failure_if_latest(
+                    account_index,
+                    pending.api_key_index,
+                    pending.nonce,
+                );
+            }
             log::warn!(
                 "{reason} on non-create sendTx (nonce={} api_key_index={})",
                 pending.nonce,
@@ -1661,6 +2655,8 @@ fn handle_send_tx_rejection(
             );
         }
     }
+
+    needs_nonce_resync
 }
 
 fn lighter_reason_indicates_post_only_rejection(reason: &str) -> bool {
@@ -1678,10 +2674,66 @@ fn lighter_reason_indicates_post_only_rejection(reason: &str) -> bool {
     normalized.contains("postonly") || normalized.contains("postwouldexecute")
 }
 
+// A sendTxBatch success covers every tx (single result code). Batch txs
+// produce no WS acks, so this is the only baseline signal for batch flows.
+fn advance_baseline_for_batch(
+    dispatch: &WsDispatchState,
+    credential: &Credential,
+    nonces: impl Iterator<Item = i64>,
+) {
+    if let Some(max_nonce) = nonces.max() {
+        let _ = dispatch.nonce_manager.ack_success(
+            credential.account_index(),
+            credential.api_key_index(),
+            max_nonce,
+        );
+    }
+}
+
+// Batch rejections surface as `LighterHttpError::Venue`, not WS frames, so
+// the consumer-loop resync never sees them; realign allocation here so a
+// wedged batch flow recovers without a reconnect.
+async fn resync_nonce_after_invalid_nonce(
+    http_client: &LighterHttpClient,
+    dispatch: &WsDispatchState,
+    credential: &Credential,
+    error: &LighterHttpError,
+) {
+    if !matches!(
+        error,
+        LighterHttpError::Venue { code, .. } if *code == LIGHTER_ERROR_CODE_INVALID_NONCE
+    ) {
+        return;
+    }
+
+    match http_client
+        .get_next_nonce(credential.account_index(), credential.api_key_index())
+        .await
+    {
+        Ok(response) => {
+            dispatch.nonce_manager.refresh(
+                credential.account_index(),
+                credential.api_key_index(),
+                response.nonce,
+            );
+            log::info!(
+                "Hard-refreshed Lighter nonce after invalid-nonce batch rejection: \
+                 account_index={}, next_nonce={}",
+                credential.account_index(),
+                response.nonce,
+            );
+        }
+        Err(e) => {
+            log::error!("Failed to refresh Lighter nonce after invalid-nonce batch rejection: {e}");
+        }
+    }
+}
+
 fn rollback_tx_dispatch(
     dispatch: &WsDispatchState,
     credential: &Credential,
     client_order_index: Option<i64>,
+    nonce: i64,
 ) {
     rollback_tx_dispatch_indices(
         dispatch,
@@ -1689,6 +2741,7 @@ fn rollback_tx_dispatch(
         credential.api_key_index(),
         client_order_index,
         None,
+        nonce,
     );
 }
 
@@ -1697,6 +2750,7 @@ fn rollback_tx_dispatch_create(
     credential: &Credential,
     client_order_index: Option<i64>,
     client_order_id: &ClientOrderId,
+    nonce: i64,
 ) {
     rollback_tx_dispatch_indices(
         dispatch,
@@ -1704,19 +2758,24 @@ fn rollback_tx_dispatch_create(
         credential.api_key_index(),
         client_order_index,
         Some(client_order_id),
+        nonce,
     );
 }
 
+// Roll back only while still the latest issuance: decrementing past a newer
+// signed tx would duplicate its nonce on the wire. Skipped rollbacks heal
+// via the baseline advance or venue resync.
 fn rollback_tx_dispatch_indices(
     dispatch: &WsDispatchState,
     account_index: i64,
     api_key_index: u8,
     client_order_index: Option<i64>,
     client_order_id: Option<&ClientOrderId>,
+    nonce: i64,
 ) {
     let _ = dispatch
         .nonce_manager
-        .ack_failure(account_index, api_key_index);
+        .ack_failure_if_latest(account_index, api_key_index, nonce);
 
     if let Some(client_order_index) = client_order_index {
         dispatch.forget_cloid(client_order_index);
@@ -1736,7 +2795,7 @@ fn integrator_attributes() -> L2TxAttributes {
     }
 }
 
-/// Format a `start_ms,end_ms` window for Lighter's `between_timestamps`
+/// Format a `start_secs-end_secs` window for Lighter's `between_timestamps`
 /// query parameter. Returns `None` when neither bound is set; an unset end
 /// defaults to the current time so the venue scopes pagination to the
 /// half-open window.
@@ -1751,9 +2810,9 @@ fn format_between_timestamps(
         (Some(s), None) => (s, ts_now),
         (None, Some(e)) => (UnixNanos::from(0), e),
     };
-    let start_ms = start.as_u64() / 1_000_000;
-    let end_ms = end.as_u64() / 1_000_000;
-    Some(format!("{start_ms},{end_ms}"))
+    let start_secs = start.as_u64() / 1_000_000_000;
+    let end_secs = end.as_u64() / 1_000_000_000;
+    Some(format!("{start_secs}-{end_secs}"))
 }
 
 #[async_trait(?Send)]
@@ -1877,7 +2936,24 @@ impl ExecutionClient for LighterExecutionClient {
         self.detect_account_tier().await;
 
         if let Err(e) = self.submit_integrator_auto_approval().await {
-            log::debug!("Lighter integrator approval failed; continuing startup: {e:?}");
+            // Bail on venue 21149 ("integrator is not approved") so the
+            // operator catches it at startup rather than at first order.
+            // Other failures are tolerated: approval is account-scoped and
+            // may already be in place, or a reconnect can retry.
+            let is_unapproved = e.chain().any(|cause| {
+                matches!(
+                    cause.downcast_ref::<LighterHttpError>(),
+                    Some(LighterHttpError::Venue { code: 21149, .. }),
+                )
+            });
+
+            if is_unapproved {
+                return Err(e.context(
+                    "Lighter account is not integrator-approved (venue 21149); \
+                     orders cannot be placed",
+                ));
+            }
+            log::error!("Lighter integrator approval failed; continuing startup: {e:?}");
         }
 
         if let Err(e) = self.refresh_nonce().await {
@@ -1953,7 +3029,7 @@ impl ExecutionClient for LighterExecutionClient {
         self.cancellation_token.cancel();
 
         if let Err(e) = self.ws_client.disconnect().await {
-            log::error!("Error disconnecting Lighter WebSocket client: {e}");
+            log::warn!("Error disconnecting Lighter WebSocket client: {e}");
         }
 
         let ws_stream_handle = { self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() };
@@ -1986,12 +3062,7 @@ impl ExecutionClient for LighterExecutionClient {
             anyhow::anyhow!("Lighter execution client cannot submit without credentials")
         })?;
 
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("order not found in cache: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
@@ -2110,32 +3181,54 @@ impl ExecutionClient for LighterExecutionClient {
         let clock = self.clock;
 
         self.spawn_task("submit_order_list", async move {
+            let mut prepared_orders = prepared_orders;
             log::debug!(
                 "Lighter submit_order_list: queueing {} CreateOrder txs",
                 prepared_orders.len(),
             );
 
-            if let Err(e) = http_client.send_tx_batch(&request).await {
-                let reason = format!("Lighter submit_order_list dispatch failed: {e}");
-                log::error!("{reason}");
+            let reservations = prepared_orders
+                .iter()
+                .map(|prepared| &prepared.send_reservation)
+                .collect::<Vec<_>>();
+            wait_for_tx_send_reservations(&reservations).await;
 
-                for prepared in &prepared_orders {
-                    let client_order_id = prepared.order.client_order_id();
-                    rollback_tx_dispatch_create(
+            match http_client.send_tx_batch(&request).await {
+                Ok(_) => {
+                    advance_baseline_for_batch(
                         &dispatch,
                         &credential,
-                        Some(prepared.client_order_index),
-                        &client_order_id,
-                    );
-
-                    emitter.emit_order_rejected(
-                        &prepared.order,
-                        &reason,
-                        clock.get_time_ns(),
-                        false,
+                        prepared_orders.iter().map(|prepared| prepared.nonce),
                     );
                 }
+                Err(e) => {
+                    let reason = format!("Lighter submit_order_list dispatch failed: {e}");
+                    log::error!("{reason}");
+
+                    // Reverse order so each rollback is the then-latest nonce
+                    for prepared in prepared_orders.iter().rev() {
+                        let client_order_id = prepared.order.client_order_id();
+                        rollback_tx_dispatch_create(
+                            &dispatch,
+                            &credential,
+                            Some(prepared.client_order_index),
+                            &client_order_id,
+                            prepared.nonce,
+                        );
+
+                        emitter.emit_order_rejected(
+                            &prepared.order,
+                            &reason,
+                            clock.get_time_ns(),
+                            false,
+                        );
+                    }
+
+                    resync_nonce_after_invalid_nonce(&http_client, &dispatch, &credential, &e)
+                        .await;
+                }
             }
+            release_prepared_create_reservations(&mut prepared_orders);
             Ok(())
         });
 
@@ -2146,14 +3239,16 @@ impl ExecutionClient for LighterExecutionClient {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Lighter execution client cannot modify without credentials")
         })?;
-        self.dispatch_signed_modify_order(&cmd, credential)
+        self.dispatch_signed_modify_order(&cmd, credential);
+        Ok(())
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let credential = self.credential.as_ref().ok_or_else(|| {
             anyhow::anyhow!("Lighter execution client cannot cancel without credentials")
         })?;
-        self.dispatch_signed_cancel_order(&cmd, credential)
+        self.dispatch_signed_cancel_order(&cmd, credential);
+        Ok(())
     }
 
     fn cancel_all_orders(&self, cmd: CancelAllOrders) -> anyhow::Result<()> {
@@ -2245,28 +3340,49 @@ impl ExecutionClient for LighterExecutionClient {
         let clock = self.clock;
 
         self.spawn_task("batch_cancel_orders", async move {
+            let mut prepared_cancels = prepared_cancels;
             log::debug!(
                 "Lighter batch_cancel_orders: queueing {} CancelOrder txs",
                 prepared_cancels.len(),
             );
 
-            if let Err(e) = http_client.send_tx_batch(&request).await {
-                let reason = format!("Lighter batch_cancel_orders dispatch failed: {e}");
-                log::error!("{reason}");
+            let reservations = prepared_cancels
+                .iter()
+                .map(|prepared| &prepared.send_reservation)
+                .collect::<Vec<_>>();
+            wait_for_tx_send_reservations(&reservations).await;
 
-                for prepared in &prepared_cancels {
-                    rollback_tx_dispatch(&dispatch, &credential, None);
-
-                    emitter.emit_order_cancel_rejected_event(
-                        prepared.strategy_id,
-                        prepared.instrument_id,
-                        prepared.client_order_id,
-                        prepared.venue_order_id,
-                        &reason,
-                        clock.get_time_ns(),
+            match http_client.send_tx_batch(&request).await {
+                Ok(_) => {
+                    advance_baseline_for_batch(
+                        &dispatch,
+                        &credential,
+                        prepared_cancels.iter().map(|prepared| prepared.nonce),
                     );
                 }
+                Err(e) => {
+                    let reason = format!("Lighter batch_cancel_orders dispatch failed: {e}");
+                    log::error!("{reason}");
+
+                    // Reverse order so each rollback is the then-latest nonce
+                    for prepared in prepared_cancels.iter().rev() {
+                        rollback_tx_dispatch(&dispatch, &credential, None, prepared.nonce);
+
+                        emitter.emit_order_cancel_rejected_event(
+                            prepared.strategy_id,
+                            prepared.instrument_id,
+                            prepared.client_order_id,
+                            prepared.venue_order_id,
+                            &reason,
+                            clock.get_time_ns(),
+                        );
+                    }
+
+                    resync_nonce_after_invalid_nonce(&http_client, &dispatch, &credential, &e)
+                        .await;
+                }
             }
+            release_prepared_cancel_reservations(&mut prepared_cancels);
             Ok(())
         });
 
@@ -3237,6 +4353,8 @@ fn dispatch_lighter_trade(
             }
             Ok(None) => {}
             Err(e) => {
+                // Fill never reached the engine; release the dedup marker so a replay can retry
+                dispatch.unmark_trade_seen(&trade_id);
                 log::error!("Failed to parse Lighter typed fill: error={e}, trade_id={trade_id}",);
             }
         }
@@ -3256,6 +4374,8 @@ fn dispatch_lighter_trade(
             }
             Ok(None) => {}
             Err(e) => {
+                // Fill never reached the engine; release the dedup marker so a replay can retry
+                dispatch.unmark_trade_seen(&trade_id);
                 log::error!("Failed to parse Lighter fill report: error={e}, trade_id={trade_id}",);
             }
         }
@@ -3399,8 +4519,16 @@ fn ensure_accepted_emitted(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, atomic::AtomicUsize},
+    };
 
+    use axum::{
+        Router,
+        routing::{get, post},
+    };
     use nautilus_common::{
         cache::Cache,
         clock::TestClock,
@@ -3411,7 +4539,7 @@ mod tests {
     use nautilus_model::{
         data::QuoteTick,
         enums::{OrderStatus, TimeInForce},
-        events::OrderEventAny,
+        events::{OrderEventAny, OrderPendingCancel},
         identifiers::{
             InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
         },
@@ -3422,7 +4550,11 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::enums::{LighterEnvironment, LighterProductType};
+    use crate::{
+        common::enums::{LighterEnvironment, LighterProductType},
+        http::models::{LighterNextNonce, LighterSendTxBatchResponse},
+        signing::tx::TX_HASH_BYTES,
+    };
 
     const TEST_PRIVATE_KEY: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -3465,7 +4597,6 @@ mod tests {
             environment: LighterEnvironment::Testnet,
             http_timeout_secs: 1,
             ws_timeout_secs: 1,
-            active_markets: Vec::new(),
             market_order_slippage_bps: 50,
             rest_quota_per_min: None,
             sendtx_quota_per_min: None,
@@ -3473,7 +4604,38 @@ mod tests {
         }
     }
 
+    #[rstest]
+    fn format_between_timestamps_uses_lighter_seconds_range() {
+        let start = UnixNanos::from(1_700_000_000_123_456_789);
+        let end = UnixNanos::from(1_700_003_600_987_654_321);
+        let now = UnixNanos::from(1_700_007_200_000_000_000);
+
+        assert_eq!(
+            format_between_timestamps(Some(start), Some(end), now),
+            Some("1700000000-1700003600".to_string()),
+        );
+        assert_eq!(
+            format_between_timestamps(Some(start), None, now),
+            Some("1700000000-1700007200".to_string()),
+        );
+        assert_eq!(
+            format_between_timestamps(None, Some(end), now),
+            Some("0-1700003600".to_string()),
+        );
+        assert_eq!(format_between_timestamps(None, None, now), None);
+    }
+
     fn create_execution_client() -> (
+        LighterExecutionClient,
+        Rc<RefCell<Cache>>,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    ) {
+        create_execution_client_with_config(test_config())
+    }
+
+    fn create_execution_client_with_config(
+        config: LighterExecClientConfig,
+    ) -> (
         LighterExecutionClient,
         Rc<RefCell<Cache>>,
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -3490,7 +4652,7 @@ mod tests {
             cache.clone(),
         );
 
-        let mut client = LighterExecutionClient::new(core, test_config()).unwrap();
+        let mut client = LighterExecutionClient::new(core, config).unwrap();
         client.dispatch.nonce_manager.refresh(
             TEST_ACCOUNT_INDEX_I64,
             TEST_API_KEY_INDEX,
@@ -3528,6 +4690,7 @@ mod tests {
             None,
             None,
             Some(Money::from("10.000000 USDC")),
+            None,
             None,
             None,
             None,
@@ -3607,6 +4770,54 @@ mod tests {
             .borrow_mut()
             .add_order(order, None, Some(client_id()), false)
             .unwrap();
+    }
+
+    fn cache_accepted_order(
+        cache: &Rc<RefCell<Cache>>,
+        order: OrderAny,
+        venue_order_id: VenueOrderId,
+    ) -> (InstrumentId, ClientOrderId) {
+        let instrument_id = order.instrument_id();
+        let client_order_id = order.client_order_id();
+        cache_order(cache, order);
+
+        let accepted = OrderEventAny::Accepted(OrderAccepted::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+        ));
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        (instrument_id, client_order_id)
+    }
+
+    fn cache_pending_cancel_order(
+        cache: &Rc<RefCell<Cache>>,
+        order: OrderAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let (instrument_id, client_order_id) = cache_accepted_order(cache, order, venue_order_id);
+
+        let pending_cancel = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+            trader_id(),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            account_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(venue_order_id),
+        ));
+        cache.borrow_mut().update_order(&pending_cancel).unwrap();
     }
 
     fn submit_order_list_command(orders: &[OrderAny], order_list_id: &str) -> SubmitOrderList {
@@ -3701,6 +4912,386 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn auth_token_rotation_retries_failed_mint() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+        let subscribe_attempts = Arc::new(AtomicUsize::new(0));
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            refresh_auth_token_until_rotated(
+                &credential,
+                &channels,
+                &cancellation_token,
+                AuthTokenRefreshBackoff {
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
+                },
+                {
+                    let mint_attempts = Arc::clone(&mint_attempts);
+                    move |_| {
+                        let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
+                        if attempt == 0 {
+                            Err(anyhow::anyhow!("mint unavailable"))
+                        } else {
+                            Ok(format!("token-{attempt}"))
+                        }
+                    }
+                },
+                {
+                    let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                    move |_channel, _token| {
+                        let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                        async move {
+                            subscribe_attempts.fetch_add(1, Ordering::AcqRel);
+                            Ok::<(), crate::websocket::error::LighterWsError>(())
+                        }
+                    }
+                },
+            ),
+        )
+        .await
+        .expect("rotation retry must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Rotated);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            2,
+            "failed mint must retry before the next refresh interval",
+        );
+        assert_eq!(
+            subscribe_attempts.load(Ordering::Acquire),
+            channels.len(),
+            "subscriptions must wait until token mint succeeds",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_retries_failed_resubscribe() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+        let subscribe_attempts = Arc::new(AtomicUsize::new(0));
+
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(3),
+            refresh_auth_token_until_rotated(
+                &credential,
+                &channels,
+                &cancellation_token,
+                AuthTokenRefreshBackoff {
+                    initial_delay: Duration::from_millis(10),
+                    max_delay: Duration::from_millis(20),
+                    window: Duration::from_secs(1),
+                },
+                {
+                    let mint_attempts = Arc::clone(&mint_attempts);
+                    move |_| {
+                        let attempt = mint_attempts.fetch_add(1, Ordering::AcqRel);
+                        Ok(format!("token-{attempt}"))
+                    }
+                },
+                {
+                    let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                    move |_channel, _token| {
+                        let subscribe_attempts = Arc::clone(&subscribe_attempts);
+                        async move {
+                            let attempt = subscribe_attempts.fetch_add(1, Ordering::AcqRel);
+                            if attempt == 0 {
+                                Err(crate::websocket::error::LighterWsError::Client(
+                                    "handler unavailable".to_string(),
+                                ))
+                            } else {
+                                Ok(())
+                            }
+                        }
+                    }
+                },
+            ),
+        )
+        .await
+        .expect("rotation retry must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Rotated);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            2,
+            "failed resubscribe must trigger a fresh auth-token mint",
+        );
+        assert_eq!(
+            subscribe_attempts.load(Ordering::Acquire),
+            channels.len() * 2,
+            "failed resubscribe must retry the private account-channel set",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_exhausts_retry_window() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_millis(100),
+                max_delay: Duration::from_millis(100),
+                window: Duration::from_secs(1),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+        let observe_retry = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 1 },
+            Duration::from_secs(2),
+        );
+
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(3), async {
+            tokio::join!(refresh, observe_retry)
+        })
+        .await
+        .expect("rotation retry exhaustion must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Exhausted);
+        assert!(
+            mint_attempts.load(Ordering::Acquire) > 1,
+            "persistent mint failure must retry until the window is exhausted",
+        );
+    }
+
+    #[tokio::test]
+    async fn auth_token_rotation_cancels_during_retry_backoff() {
+        let credential = test_credential();
+        let channels = auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64);
+        let cancellation_token = CancellationToken::new();
+        let mint_attempts = Arc::new(AtomicUsize::new(0));
+
+        let cancel = cancellation_token.clone();
+        let cancel_after_first_attempt = wait_until_async(
+            || async { mint_attempts.load(Ordering::Acquire) > 0 },
+            Duration::from_secs(2),
+        );
+
+        let refresh = refresh_auth_token_until_rotated(
+            &credential,
+            &channels,
+            &cancellation_token,
+            AuthTokenRefreshBackoff {
+                initial_delay: Duration::from_secs(2),
+                max_delay: Duration::from_secs(2),
+                window: Duration::from_secs(5),
+            },
+            {
+                let mint_attempts = Arc::clone(&mint_attempts);
+                move |_| {
+                    mint_attempts.fetch_add(1, Ordering::AcqRel);
+                    Err(anyhow::anyhow!("mint unavailable"))
+                }
+            },
+            |_channel, _token| async { Ok::<(), crate::websocket::error::LighterWsError>(()) },
+        );
+
+        let cancel_task = async move {
+            cancel_after_first_attempt.await;
+            cancel.cancel();
+        };
+
+        let (outcome, ()) = tokio::time::timeout(Duration::from_secs(6), async {
+            tokio::join!(refresh, cancel_task)
+        })
+        .await
+        .expect("rotation cancellation must complete within the test window");
+
+        assert_eq!(outcome, AuthTokenRefreshOutcome::Cancelled);
+        assert_eq!(
+            mint_attempts.load(Ordering::Acquire),
+            1,
+            "cancellation during backoff must stop before the next retry",
+        );
+    }
+
+    #[rstest]
+    #[case::rotated(AuthTokenRefreshOutcome::Rotated, Some(AUTH_TOKEN_REFRESH_INTERVAL))]
+    #[case::cancelled(AuthTokenRefreshOutcome::Cancelled, None)]
+    #[case::exhausted(
+        AuthTokenRefreshOutcome::Exhausted,
+        Some(AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY)
+    )]
+    fn auth_token_refresh_next_delay_matches_outcome(
+        #[case] outcome: AuthTokenRefreshOutcome,
+        #[case] expected: Option<Duration>,
+    ) {
+        assert_eq!(auth_token_refresh_next_delay(outcome), expected);
+    }
+
+    #[rstest]
+    fn auth_token_rotation_channels_match_private_account_streams() {
+        assert_eq!(
+            auth_token_rotation_channels(TEST_ACCOUNT_INDEX_I64),
+            [
+                LighterWsChannel::AccountAllOrders(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllTrades(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllPositions(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountAllAssets(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::UserStats(TEST_ACCOUNT_INDEX_I64),
+            ],
+        );
+    }
+
+    #[rstest]
+    #[case::below_max(
+        Duration::from_millis(10),
+        Duration::from_millis(100),
+        Duration::from_millis(20)
+    )]
+    #[case::at_max(
+        Duration::from_millis(100),
+        Duration::from_millis(100),
+        Duration::from_millis(100)
+    )]
+    #[case::overflow_clamps(Duration::MAX, Duration::from_secs(300), Duration::from_secs(300))]
+    fn next_auth_token_refresh_retry_delay_doubles_and_caps(
+        #[case] current: Duration,
+        #[case] max: Duration,
+        #[case] expected: Duration,
+    ) {
+        assert_eq!(next_auth_token_refresh_retry_delay(current, max), expected);
+    }
+
+    #[tokio::test]
+    async fn tx_send_sequencer_blocks_higher_nonce_until_lower_batch_releases() {
+        let sequencer = TxSendSequencer::new();
+        let mut lower_a =
+            sequencer.reserve(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, TEST_NEXT_NONCE);
+        let mut lower_b = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 1,
+        );
+        let mut higher = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 2,
+        );
+        let (sent_tx, mut sent_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let higher_task = tokio::spawn(async move {
+            higher.wait_for_turn().await;
+            sent_tx.send(higher.nonce).unwrap();
+            higher.release();
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), sent_rx.recv())
+                .await
+                .is_err(),
+            "higher nonce must wait while the lower batch is pending",
+        );
+
+        {
+            let lower_reservations = [&lower_a, &lower_b];
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                wait_for_tx_send_reservations(&lower_reservations),
+            )
+            .await
+            .expect("lower batch must already have the send turn");
+        }
+
+        lower_a.release();
+        lower_b.release();
+
+        let sent = tokio::time::timeout(Duration::from_secs(2), sent_rx.recv())
+            .await
+            .expect("higher nonce must proceed after lower batch releases")
+            .expect("send channel must stay open");
+        higher_task.await.unwrap();
+
+        assert_eq!(
+            sent,
+            TEST_NEXT_NONCE + 2,
+            "higher nonce must send after the lower batch releases",
+        );
+    }
+
+    #[tokio::test]
+    async fn tx_send_reservation_drop_releases_lower_nonce() {
+        let sequencer = TxSendSequencer::new();
+        let lower = sequencer.reserve(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, TEST_NEXT_NONCE);
+        let mut higher = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 1,
+        );
+        let (sent_tx, mut sent_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let higher_task = tokio::spawn(async move {
+            higher.wait_for_turn().await;
+            sent_tx.send(higher.nonce).unwrap();
+            higher.release();
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), sent_rx.recv())
+                .await
+                .is_err(),
+            "higher nonce must wait while the lower reservation is pending",
+        );
+
+        drop(lower);
+
+        let sent = tokio::time::timeout(Duration::from_secs(2), sent_rx.recv())
+            .await
+            .expect("higher nonce must proceed after lower reservation drops")
+            .expect("send channel must stay open");
+        higher_task.await.unwrap();
+
+        assert_eq!(
+            sent,
+            TEST_NEXT_NONCE + 1,
+            "higher nonce must send after the lower reservation drops",
+        );
+    }
+
+    #[tokio::test]
+    async fn tx_send_sequencer_keeps_nonce_streams_independent() {
+        let sequencer = TxSendSequencer::new();
+        let _other_account = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64 + 1,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE,
+        );
+        let _other_api_key = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX + 1,
+            TEST_NEXT_NONCE,
+        );
+        let mut current = sequencer.reserve(
+            TEST_ACCOUNT_INDEX_I64,
+            TEST_API_KEY_INDEX,
+            TEST_NEXT_NONCE + 10,
+        );
+
+        tokio::time::timeout(Duration::from_millis(50), current.wait_for_turn())
+            .await
+            .expect("lower nonces for other keys must not block this key");
+        current.release();
+    }
+
     #[rstest]
     fn tx_dispatch_guard_rolls_back_nonce_and_cloid_when_armed() {
         let dispatch = WsDispatchState::new();
@@ -3712,14 +5303,18 @@ mod tests {
         let cloid = ClientOrderId::from("O-GUARD-ARMED");
         let client_order_index = dispatch.derive_client_order_index(&cloid);
         dispatch.register_cloid(client_order_index, cloid);
-        dispatch
+        let nonce = dispatch
             .nonce_manager
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
 
         {
-            let _guard =
-                TxDispatchGuard::new(dispatch.clone(), &credential, Some(client_order_index));
+            let _guard = TxDispatchGuard::new(
+                dispatch.clone(),
+                &credential,
+                Some(client_order_index),
+                nonce,
+            );
         }
 
         assert_nonce_reusable(&dispatch);
@@ -3733,13 +5328,13 @@ mod tests {
         dispatch
             .nonce_manager
             .refresh(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX, TEST_NEXT_NONCE);
-        dispatch
+        let nonce = dispatch
             .nonce_manager
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
 
         {
-            let _guard = TxDispatchGuard::new(dispatch.clone(), &credential, None);
+            let _guard = TxDispatchGuard::new(dispatch.clone(), &credential, None, nonce);
         }
 
         assert_nonce_reusable(&dispatch);
@@ -3757,14 +5352,18 @@ mod tests {
         let cloid = ClientOrderId::from("O-GUARD-DISARMED");
         let client_order_index = dispatch.derive_client_order_index(&cloid);
         dispatch.register_cloid(client_order_index, cloid);
-        dispatch
+        let nonce = dispatch
             .nonce_manager
             .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
             .unwrap();
 
         {
-            let mut guard =
-                TxDispatchGuard::new(dispatch.clone(), &credential, Some(client_order_index));
+            let mut guard = TxDispatchGuard::new(
+                dispatch.clone(),
+                &credential,
+                Some(client_order_index),
+                nonce,
+            );
             guard.disarm();
         }
 
@@ -3997,6 +5596,265 @@ mod tests {
         assert_nonce_reusable(&client.dispatch);
     }
 
+    async fn spawn_send_tx_batch_server() -> String {
+        let body = serde_json::to_string(&LighterSendTxBatchResponse {
+            code: 200,
+            message: None,
+            tx_hash: vec!["0xabc".to_string(), "0xdef".to_string()],
+            predicted_execution_time_ms: 0,
+            volume_quota_remaining: None,
+        })
+        .unwrap();
+        let app = Router::new().route(
+            "/api/v1/sendTxBatch",
+            post(move || {
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn submit_order_list_success_advances_nonce_baseline() {
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_send_tx_batch_server().await);
+        let (client, cache, mut rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order_a = test_limit_order(&mut factory, instrument_id, "O-LIST-OK-A");
+        let order_b = test_limit_order(&mut factory, instrument_id, "O-LIST-OK-B");
+        cache_order(&cache, order_a.clone());
+        cache_order(&cache, order_b.clone());
+
+        let command = submit_order_list_command(&[order_a, order_b], "OL-OK");
+        client.submit_order_list(command).unwrap();
+
+        let submitted_a = recv_order_event(&mut rx).await;
+        let submitted_b = recv_order_event(&mut rx).await;
+        assert!(matches!(submitted_a, OrderEventAny::Submitted(_)));
+        assert!(matches!(submitted_b, OrderEventAny::Submitted(_)));
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(TEST_NEXT_NONCE + 1),
+            "batch success must advance baseline to max batched nonce",
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            TEST_NEXT_NONCE + 2,
+        );
+    }
+
+    async fn spawn_invalid_nonce_batch_server(venue_next_nonce: i64) -> String {
+        let reject_body = serde_json::json!({
+            "code": LIGHTER_ERROR_CODE_INVALID_NONCE,
+            "message": "invalid nonce",
+        })
+        .to_string();
+        let nonce_body = serde_json::to_string(&LighterNextNonce {
+            code: 200,
+            message: None,
+            nonce: venue_next_nonce,
+        })
+        .unwrap();
+        let app = Router::new()
+            .route(
+                "/api/v1/sendTxBatch",
+                post(move || {
+                    let body = reject_body.clone();
+                    async move { body }
+                }),
+            )
+            .route(
+                "/api/v1/nextNonce",
+                get(move || {
+                    let body = nonce_body.clone();
+                    async move { body }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn submit_order_list_invalid_nonce_rejection_hard_refreshes() {
+        let venue_next_nonce = 200;
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_invalid_nonce_batch_server(venue_next_nonce).await);
+        let (client, cache, mut rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order_a = test_limit_order(&mut factory, instrument_id, "O-LIST-WEDGE-A");
+        let order_b = test_limit_order(&mut factory, instrument_id, "O-LIST-WEDGE-B");
+        cache_order(&cache, order_a.clone());
+        cache_order(&cache, order_b.clone());
+
+        let command = submit_order_list_command(&[order_a, order_b], "OL-WEDGE");
+        client.submit_order_list(command).unwrap();
+
+        for _ in 0..2 {
+            let event = recv_order_event(&mut rx).await;
+            assert!(matches!(event, OrderEventAny::Submitted(_)));
+        }
+
+        for _ in 0..2 {
+            let event = recv_order_event(&mut rx).await;
+            assert!(matches!(event, OrderEventAny::Rejected(_)));
+        }
+
+        wait_for_spawned_tasks(&client).await;
+
+        // Realignment must move allocation below the local rollback point
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            venue_next_nonce,
+            "batch invalid-nonce rejection must hard-refresh allocation",
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_cancel_orders_invalid_nonce_rejection_hard_refreshes() {
+        let venue_next_nonce = 300;
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_invalid_nonce_batch_server(venue_next_nonce).await);
+        let (client, cache, _rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let cancels = ["O-WEDGE-CXL-A", "O-WEDGE-CXL-B"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let order = test_limit_order(&mut factory, instrument_id, id);
+                let client_order_id = order.client_order_id();
+                let venue_order_id = VenueOrderId::from(format!("{}", 321 + i).as_str());
+                cache_pending_cancel_order(&cache, order, venue_order_id);
+
+                CancelOrder::new(
+                    trader_id(),
+                    Some(client_id()),
+                    strategy_id(),
+                    instrument_id,
+                    client_order_id,
+                    Some(venue_order_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let command = BatchCancelOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.batch_cancel_orders(command).unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            venue_next_nonce,
+            "batch invalid-nonce rejection must hard-refresh allocation",
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_cancel_orders_success_advances_nonce_baseline() {
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_send_tx_batch_server().await);
+        let (client, cache, _rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let cancels = ["O-BATCH-OK-A", "O-BATCH-OK-B"]
+            .iter()
+            .enumerate()
+            .map(|(i, id)| {
+                let order = test_limit_order(&mut factory, instrument_id, id);
+                let client_order_id = order.client_order_id();
+                cache_order(&cache, order);
+
+                CancelOrder::new(
+                    trader_id(),
+                    Some(client_id()),
+                    strategy_id(),
+                    instrument_id,
+                    client_order_id,
+                    Some(VenueOrderId::from(format!("{}", 123 + i).as_str())),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let command = BatchCancelOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.batch_cancel_orders(command).unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(TEST_NEXT_NONCE + 1),
+            "batch success must advance baseline to max batched nonce",
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            TEST_NEXT_NONCE + 2,
+        );
+    }
+
     #[tokio::test]
     async fn submit_order_list_send_failure_emits_submitted_then_rejected_and_rolls_back() {
         let (client, cache, mut rx) = create_execution_client();
@@ -4190,8 +6048,11 @@ mod tests {
     async fn cancel_order_send_failure_emits_cancel_rejected_and_rolls_back() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
-        let client_order_id = ClientOrderId::from("O-CANCEL-FAIL");
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-CANCEL-FAIL");
+        let client_order_id = order.client_order_id();
         let venue_order_id = VenueOrderId::from("123");
+        cache_pending_cancel_order(&cache, order, venue_order_id);
 
         let command = CancelOrder::new(
             trader_id(),
@@ -4229,7 +6090,204 @@ mod tests {
         assert_eq!(
             client.dispatch.pending_sendtx_len(),
             0,
-            "local-send-failure must remove the pending Other-kind entry",
+            "local-send-failure must remove the pending cancel entry",
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_order_prepare_failure_emits_cancel_rejected_without_dispatch() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-CANCEL-NO-VOI");
+        let client_order_id = order.client_order_id();
+        cache_pending_cancel_order(&cache, order, VenueOrderId::from("123"));
+
+        let command = CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.cancel_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::CancelRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.venue_order_id, None);
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("Lighter cancel_order failed")
+                );
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("venue order_id not yet known")
+                );
+            }
+            event => panic!("expected cancel rejected event, was {event:?}"),
+        }
+
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "prepare failure must emit exactly one cancel rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_order_prepare_failure_emits_cancel_rejected_when_order_uncached() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("O-CANCEL-NO-CACHE");
+        let venue_order_id = VenueOrderId::from("123");
+
+        let command = CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.cancel_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::CancelRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("Lighter cancel_order failed")
+                );
+                assert!(event.reason.as_str().contains("order not found in cache"));
+            }
+            event => panic!("expected cancel rejected event, was {event:?}"),
+        }
+
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "prepare failure must emit exactly one cancel rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_all_orders_prepare_failure_suppresses_cancel_rejected_for_open_order() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-CANCEL-ALL-NO-VOI");
+        cache_accepted_order(&cache, order, VenueOrderId::from("123"));
+
+        let command = CancelAllOrders::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            OrderSide::Buy,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.cancel_all_orders(command).unwrap();
+
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "cancel-all prepare failure must not emit an invalid cancel rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_order_nonce_prepare_failure_emits_cancel_rejected() {
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_next_nonce_server(100).await);
+        let (client, cache, mut rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-CANCEL-NONCE-FAIL");
+        let client_order_id = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("123");
+        cache_pending_cancel_order(&cache, order, venue_order_id);
+
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+        for _ in 0..window {
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+        }
+
+        let command = CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.cancel_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::CancelRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("failed to allocate Lighter nonce"),
+                );
+                assert!(event.reason.as_str().contains("skip-window exhausted"));
+            }
+            event => panic!("expected cancel rejected event, was {event:?}"),
+        }
+
+        wait_for_spawned_tasks(&client).await;
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            100,
         );
     }
 
@@ -4237,17 +6295,23 @@ mod tests {
     async fn batch_cancel_orders_send_failure_emits_rejected_per_cancel_and_rolls_back() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
         let cancels = ["O-BATCH-CANCEL-A", "O-BATCH-CANCEL-B"]
             .iter()
             .enumerate()
             .map(|(i, id)| {
+                let order = test_limit_order(&mut factory, instrument_id, id);
+                let client_order_id = order.client_order_id();
+                let venue_order_id = VenueOrderId::from(format!("{}", 123 + i).as_str());
+                cache_pending_cancel_order(&cache, order, venue_order_id);
+
                 CancelOrder::new(
                     trader_id(),
                     Some(client_id()),
                     strategy_id(),
                     instrument_id,
-                    ClientOrderId::from(*id),
-                    Some(VenueOrderId::from(format!("{}", 123 + i).as_str())),
+                    client_order_id,
+                    Some(venue_order_id),
                     UUID4::new(),
                     UnixNanos::default(),
                     None,
@@ -4430,7 +6494,186 @@ mod tests {
         assert_eq!(
             client.dispatch.pending_sendtx_len(),
             0,
-            "local-send-failure must remove the pending Other-kind entry",
+            "local-send-failure must remove the pending modify entry",
+        );
+    }
+
+    #[tokio::test]
+    async fn modify_order_prepare_failure_emits_modify_rejected_without_dispatch() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("O-MODIFY-NO-CACHE");
+        let venue_order_id = VenueOrderId::from("123");
+
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::ModifyRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("Lighter modify_order failed")
+                );
+                assert!(event.reason.as_str().contains("order not found in cache"));
+            }
+            event => panic!("expected modify rejected event, was {event:?}"),
+        }
+
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "prepare failure must emit exactly one modify rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn modify_order_prepare_failure_emits_modify_rejected_when_instrument_uncached() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id =
+            client
+                .registry
+                .insert(TEST_MARKET_INDEX, "ETH", LighterProductType::Perp);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-MODIFY-NO-INSTRUMENT");
+        let client_order_id = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("123");
+        cache_order(&cache, order);
+
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::ModifyRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.instrument_id, instrument_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("Lighter modify_order failed")
+                );
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("instrument not found in cache")
+                );
+            }
+            event => panic!("expected modify rejected event, was {event:?}"),
+        }
+
+        assert_nonce_reusable(&client.dispatch);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "prepare failure must emit exactly one modify rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn modify_order_nonce_prepare_failure_emits_modify_rejected() {
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_next_nonce_server(101).await);
+        let (client, cache, mut rx) = create_execution_client_with_config(config);
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "O-MODIFY-NONCE-FAIL");
+        let client_order_id = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("123");
+        cache_order(&cache, order);
+
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+        for _ in 0..window {
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+        }
+
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::ModifyRejected(event) => {
+                assert_eq!(event.client_order_id, client_order_id);
+                assert_eq!(event.venue_order_id, Some(venue_order_id));
+                assert!(
+                    event
+                        .reason
+                        .as_str()
+                        .contains("failed to allocate Lighter nonce"),
+                );
+                assert!(event.reason.as_str().contains("skip-window exhausted"));
+            }
+            event => panic!("expected modify rejected event, was {event:?}"),
+        }
+
+        wait_for_spawned_tasks(&client).await;
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            101,
         );
     }
 
@@ -4547,6 +6790,7 @@ mod tests {
         ready.mark_trades();
         ready.mark_positions();
         ready.mark_assets();
+        ready.mark_user_stats();
     }
 
     #[tokio::test]
@@ -4586,6 +6830,7 @@ mod tests {
             ready.mark_trades();
             ready.mark_positions();
             ready.mark_assets();
+            ready.mark_user_stats();
         };
 
         let (result, ()) = tokio::join!(wait, seed);
@@ -4631,6 +6876,10 @@ mod tests {
             "pending list missing positions: {msg}",
         );
         assert!(msg.contains("assets"), "pending list missing assets: {msg}");
+        assert!(
+            msg.contains("user_stats"),
+            "pending list missing user_stats: {msg}",
+        );
     }
 
     fn test_market_order(
@@ -5125,6 +7374,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             UnixNanos::default(),
             UnixNanos::default(),
         ));
@@ -5462,6 +7712,69 @@ mod tests {
             events.len(),
             2,
             "expected dedup after first dispatch, was {events:?}"
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_trade_parse_failure_rolls_back_dedup() {
+        // A parse failure must not consume the dedup slot, else the fill is lost on replay
+        let mut rig = dispatcher_rig("21");
+        register_identity(&rig);
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.timestamp = -1;
+        let trade_id = parse_lighter_trade_id(&trade).expect("trade id parses");
+
+        dispatch_lighter_trade(
+            &trade,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, ExecutionEvent::Order(OrderEventAny::Filled(_)))),
+            "malformed trade must not emit a fill, was {events:?}",
+        );
+        assert!(
+            rig.dispatch.mark_trade_seen(trade_id),
+            "parse-failed trade must be re-markable (dedup rolled back)",
+        );
+    }
+
+    #[rstest]
+    fn dispatch_lighter_trade_untracked_parse_failure_rolls_back_dedup() {
+        // Untracked path (no registered identity -> FillReport): dedup rollback must still hold
+        let mut rig = dispatcher_rig("22");
+        let mut trade = dispatcher_test_trade(&rig, true);
+        trade.timestamp = -1;
+        let trade_id = parse_lighter_trade_id(&trade).expect("trade id parses");
+
+        dispatch_lighter_trade(
+            &trade,
+            &rig.dispatch,
+            &rig.emitter,
+            &rig.registry,
+            account_id(),
+            trader_id(),
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1),
+        );
+
+        let events = drain_events(&mut rig.rx);
+        assert!(
+            events.is_empty(),
+            "untracked malformed trade must emit nothing, was {events:?}",
+        );
+        assert!(
+            rig.dispatch.mark_trade_seen(trade_id),
+            "untracked parse-failed trade must be re-markable (dedup rolled back)",
         );
     }
 
@@ -5872,6 +8185,7 @@ mod tests {
             submitted_at: now,
             nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
         });
         client.dispatch.nonce_manager.refresh(
             TEST_ACCOUNT_INDEX_I64,
@@ -5891,11 +8205,54 @@ mod tests {
             submitted_at: UnixNanos::from(1_000_000_000),
             nonce,
             api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
+        });
+    }
+
+    fn enqueue_cancel(
+        client: &LighterExecutionClient,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        nonce: i64,
+    ) {
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Cancel {
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id,
+                venue_order_id: Some(venue_order_id),
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
+        });
+    }
+
+    fn enqueue_modify(
+        client: &LighterExecutionClient,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        nonce: i64,
+    ) {
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Modify {
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id,
+                venue_order_id: Some(venue_order_id),
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
         });
     }
 
     #[tokio::test]
-    async fn handle_send_tx_ack_pops_head_silently() {
+    async fn handle_send_tx_ack_removes_hash_matched_entry() {
         let (client, cache, mut rx) = create_execution_client();
         let instrument_id = register_test_instrument(&client, &cache);
         let mut factory = test_order_factory();
@@ -5904,13 +8261,23 @@ mod tests {
         enqueue_create(&client, &order_a, 10);
         enqueue_create(&client, &order_b, 11);
 
-        handle_send_tx_ack(&client.dispatch, 200, Some("0xabc"));
+        // Out-of-order ack: B's hash must remove B even though A is at head.
+        let acked = handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some("hash0b"),
+        );
 
-        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "only head pops");
+        assert!(matches!(
+            acked.map(|pending| pending.kind),
+            Some(PendingSendTxKind::Create { .. }),
+        ));
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "only B pops");
         let head = client.dispatch.pop_pending_sendtx_head().unwrap();
         match head.kind {
             PendingSendTxKind::Create { order, .. } => {
-                assert_eq!(order.client_order_id(), order_b.client_order_id());
+                assert_eq!(order.client_order_id(), order_a.client_order_id());
             }
             _ => panic!("expected Create kind"),
         }
@@ -5919,6 +8286,603 @@ mod tests {
                 .await
                 .is_err(),
             "ack must not emit an event",
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_ack_unmatched_hash_pops_nothing() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "ACK-UNMATCHED");
+        enqueue_create(&client, &order, 10);
+
+        let acked = handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some("0xabc"),
+        );
+
+        assert!(acked.is_none());
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            1,
+            "an echoed hash with no matching entry must not pop the head",
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "unmatched ack must not emit an event",
+        );
+    }
+
+    #[tokio::test]
+    async fn prepared_create_tx_hash_round_trips_through_ack() {
+        // The hash prepare threads into the queue must be the lowercase hex
+        // form a venue ack echoes, or every live ack goes unattributed.
+        let (client, cache, _rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "ACK-REAL-HASH");
+
+        let credential = test_credential();
+        let prepared = client
+            .prepare_signed_create_order(&order, &credential, 0)
+            .expect("prepare must sign");
+
+        assert_eq!(prepared.tx_hash.len(), TX_HASH_BYTES * 2);
+        assert!(
+            prepared
+                .tx_hash
+                .chars()
+                .all(|c| matches!(c, '0'..='9' | 'a'..='f')),
+            "tx_hash must be lowercase hex, was `{}`",
+            prepared.tx_hash,
+        );
+
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Create {
+                order: Box::new(order),
+                client_order_index: prepared.client_order_index,
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce: prepared.nonce,
+            api_key_index: prepared.api_key_index,
+            tx_hash: prepared.tx_hash.clone(),
+        });
+
+        let acked = handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some(&prepared.tx_hash),
+        );
+
+        assert!(acked.is_some());
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            0,
+            "venue echo of the signed hash must match the enqueued entry",
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_ack_returns_cancel_for_noop_probe() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("ACK-CANCEL-NOOP");
+        let venue_order_id = VenueOrderId::from("123");
+        enqueue_cancel(&client, instrument_id, client_order_id, venue_order_id, 12);
+
+        let acked = handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some("hash0c"),
+        )
+        .expect("acked cancel pending entry");
+        let probe = AckedOrderProbe::from_pending(&acked).expect("cancel should schedule probe");
+
+        match probe {
+            AckedOrderProbe::Cancel {
+                strategy_id: actual_strategy_id,
+                instrument_id: actual_instrument_id,
+                client_order_id: actual_client_order_id,
+                venue_order_id: actual_venue_order_id,
+            } => {
+                assert_eq!(actual_strategy_id, strategy_id());
+                assert_eq!(actual_instrument_id, instrument_id);
+                assert_eq!(actual_client_order_id, client_order_id);
+                assert_eq!(actual_venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected cancel probe, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "ack itself must not emit before the no-op probe runs",
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_ack_returns_modify_for_noop_probe() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("ACK-MODIFY-NOOP");
+        let venue_order_id = VenueOrderId::from("456");
+        enqueue_modify(&client, instrument_id, client_order_id, venue_order_id, 13);
+
+        let acked = handle_send_tx_ack(
+            &client.dispatch,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            200,
+            Some("hash0d"),
+        )
+        .expect("acked modify pending entry");
+        let probe = AckedOrderProbe::from_pending(&acked).expect("modify should schedule probe");
+
+        match probe {
+            AckedOrderProbe::Modify {
+                strategy_id: actual_strategy_id,
+                instrument_id: actual_instrument_id,
+                client_order_id: actual_client_order_id,
+                venue_order_id: actual_venue_order_id,
+            } => {
+                assert_eq!(actual_strategy_id, strategy_id());
+                assert_eq!(actual_instrument_id, instrument_id);
+                assert_eq!(actual_client_order_id, client_order_id);
+                assert_eq!(actual_venue_order_id, Some(venue_order_id));
+            }
+            other => panic!("expected modify probe, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "ack itself must not emit before the no-op probe runs",
+        );
+    }
+
+    #[tokio::test]
+    async fn ack_noop_probe_missing_cancel_emits_cancel_rejected() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("ACK-CANCEL-MISSING");
+        let venue_order_id = VenueOrderId::from("123");
+        let probe = AckedOrderProbe::Cancel {
+            strategy_id: strategy_id(),
+            instrument_id,
+            client_order_id,
+            venue_order_id: Some(venue_order_id),
+        };
+
+        assert!(emit_ack_noop_rejection_if_missing(
+            &probe,
+            false,
+            &client.emitter,
+            UnixNanos::from(1),
+        ));
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::CancelRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.instrument_id, instrument_id);
+                assert_eq!(e.venue_order_id, Some(venue_order_id));
+                assert!(e.reason.as_str().contains("order not found"));
+            }
+            other => panic!("expected CancelRejected, was {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ack_noop_probe_missing_modify_emits_modify_rejected() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("ACK-MODIFY-MISSING");
+        let venue_order_id = VenueOrderId::from("456");
+        let probe = AckedOrderProbe::Modify {
+            strategy_id: strategy_id(),
+            instrument_id,
+            client_order_id,
+            venue_order_id: Some(venue_order_id),
+        };
+
+        assert!(emit_ack_noop_rejection_if_missing(
+            &probe,
+            false,
+            &client.emitter,
+            UnixNanos::from(1),
+        ));
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::ModifyRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.instrument_id, instrument_id);
+                assert_eq!(e.venue_order_id, Some(venue_order_id));
+                assert!(e.reason.as_str().contains("order not found"));
+            }
+            other => panic!("expected ModifyRejected, was {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn ack_noop_probe_found_order_skips_rejection() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let probe = AckedOrderProbe::Cancel {
+            strategy_id: strategy_id(),
+            instrument_id,
+            client_order_id: ClientOrderId::from("ACK-CANCEL-FOUND"),
+            venue_order_id: Some(VenueOrderId::from("123")),
+        };
+
+        assert!(!emit_ack_noop_rejection_if_missing(
+            &probe,
+            true,
+            &client.emitter,
+            UnixNanos::from(1),
+        ));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "found acked order must not emit a no-op rejection",
+        );
+    }
+
+    #[tokio::test]
+    async fn send_tx_acks_recover_skip_window_past_window_size() {
+        let (client, _cache, _rx) = create_execution_client();
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+
+        for _ in 0..window {
+            let nonce = client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+            enqueue_other(&client, nonce);
+        }
+        assert!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .is_err(),
+            "window must trip after {window} unacked txs",
+        );
+
+        // Each venue ack reopens one slot, carrying issuance past 2x the
+        // window without a refresh.
+        for i in 0..window {
+            let acked =
+                handle_send_tx_ack(&client.dispatch, Some(TEST_ACCOUNT_INDEX_I64), 200, None);
+            assert!(matches!(
+                acked.map(|pending| pending.kind),
+                Some(PendingSendTxKind::Other),
+            ));
+            let nonce = client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+            assert_eq!(nonce, TEST_NEXT_NONCE + window + i);
+            enqueue_other(&client, nonce);
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_rolls_back_latest_nonce() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "REJECT-LATEST");
+
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        let client_order_index = client
+            .dispatch
+            .derive_client_order_index(&order.client_order_id());
+        client
+            .dispatch
+            .register_cloid(client_order_index, order.client_order_id());
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Create {
+                order: Box::new(order.clone()),
+                client_order_index,
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
+        });
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            None,
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        assert!(matches!(event, OrderEventAny::Rejected(_)));
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_with_newer_issuance_skips_rollback() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "REJECT-STALE");
+
+        let rejected_nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        let newer_nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        let client_order_index = client
+            .dispatch
+            .derive_client_order_index(&order.client_order_id());
+        client
+            .dispatch
+            .register_cloid(client_order_index, order.client_order_id());
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Create {
+                order: Box::new(order.clone()),
+                client_order_index,
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce: rejected_nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{rejected_nonce:02x}"),
+        });
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            None,
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        assert!(matches!(event, OrderEventAny::Rejected(_)));
+        // The newer nonce is signed into an in-flight tx: the failed nonce
+        // must not be freed for reissue.
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(newer_nonce),
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            newer_nonce + 1,
+        );
+    }
+
+    async fn spawn_next_nonce_server(nonce: i64) -> String {
+        let body = serde_json::to_string(&LighterNextNonce {
+            code: 200,
+            message: None,
+            nonce,
+        })
+        .unwrap();
+        let app = Router::new().route(
+            "/api/v1/nextNonce",
+            get(move || {
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn skip_window_exhaustion_resyncs_baseline_from_venue() {
+        let venue_next_nonce = 100;
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_next_nonce_server(venue_next_nonce).await);
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let credential = test_credential();
+
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+        for _ in 0..window {
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+        }
+
+        let err = client
+            .build_tx_context(&credential)
+            .expect_err("window must trip");
+        assert!(
+            err.to_string().contains("skip-window exhausted"),
+            "unexpected error, was {err}",
+        );
+
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(venue_next_nonce - 1),
+            "venue resync must advance the baseline",
+        );
+        assert!(
+            !client.nonce_recovery_inflight.load(Ordering::Acquire),
+            "recovery latch must release for the next exhaustion",
+        );
+        let context = client.build_tx_context(&credential).unwrap().context;
+        assert_eq!(
+            context.nonce, venue_next_nonce,
+            "allocation must resume at the venue nonce",
+        );
+    }
+
+    #[tokio::test]
+    async fn skip_window_recovery_fetch_failure_releases_latch() {
+        // 404 fails the fetch fast; unroutable addresses retry past the task wait
+        let app = Router::new();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let mut config = test_config();
+        config.base_url_http = Some(format!("http://{addr}"));
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let credential = test_credential();
+
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+        for _ in 0..window {
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+        }
+        client
+            .build_tx_context(&credential)
+            .expect_err("window must trip");
+
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(TEST_NEXT_NONCE - 1),
+            "failed venue fetch must leave the baseline unchanged",
+        );
+        assert!(
+            !client.nonce_recovery_inflight.load(Ordering::Acquire),
+            "failed venue fetch must release the recovery latch",
+        );
+    }
+
+    #[tokio::test]
+    async fn skip_window_recovery_dedupes_concurrent_fetches() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let server_hits = Arc::clone(&hits);
+        let body = serde_json::to_string(&LighterNextNonce {
+            code: 200,
+            message: None,
+            nonce: 100,
+        })
+        .unwrap();
+        let app = Router::new().route(
+            "/api/v1/nextNonce",
+            get(move || {
+                server_hits.fetch_add(1, Ordering::AcqRel);
+                let body = body.clone();
+                async move { body }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let mut config = test_config();
+        config.base_url_http = Some(format!("http://{addr}"));
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+        let credential = test_credential();
+
+        let window = i64::from(client.dispatch.nonce_manager.skip_window());
+        for _ in 0..window {
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap();
+        }
+
+        // Back-to-back exhaustions land inside one HTTP round trip; the
+        // latch must collapse them into a single fetch.
+        client
+            .build_tx_context(&credential)
+            .expect_err("window must trip");
+        client
+            .build_tx_context(&credential)
+            .expect_err("window must still be exhausted");
+
+        wait_for_spawned_tasks(&client).await;
+
+        assert_eq!(
+            hits.load(Ordering::Acquire),
+            1,
+            "burst exhaustion must trigger a single venue fetch",
+        );
+        assert!(!client.nonce_recovery_inflight.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn refresh_nonce_releases_recovery_latch() {
+        let venue_next_nonce = 77;
+        let mut config = test_config();
+        config.base_url_http = Some(spawn_next_nonce_server(venue_next_nonce).await);
+        let (client, _cache, _rx) = create_execution_client_with_config(config);
+
+        // Simulate a recovery task aborted between latch set and clear
+        client
+            .nonce_recovery_inflight
+            .store(true, Ordering::Release);
+
+        client.refresh_nonce().await.unwrap();
+
+        assert!(
+            !client.nonce_recovery_inflight.load(Ordering::Acquire),
+            "connect-time refresh must release a stuck recovery latch",
+        );
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            venue_next_nonce,
+            "refresh must hard-reset allocation to the venue nonce",
         );
     }
 
@@ -5938,6 +8902,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21702),
             "invalid price",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -5970,6 +8935,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21700),
             "post-only order would execute",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -5981,6 +8947,179 @@ mod tests {
             other => panic!("expected Rejected, was {other:?}"),
         }
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_cancel_emits_cancel_rejected() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("REJECT-CANCEL");
+        let venue_order_id = VenueOrderId::from("123");
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Cancel {
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id,
+                venue_order_id: Some(venue_order_id),
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
+        });
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21727),
+            "order is not cancelable",
+            None,
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::CancelRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.instrument_id, instrument_id);
+                assert_eq!(e.venue_order_id, Some(venue_order_id));
+                assert!(e.reason.as_str().contains("code=21727"));
+                assert!(e.reason.as_str().contains("order is not cancelable"));
+            }
+            other => panic!("expected CancelRejected, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_modify_emits_modify_rejected() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let client_order_id = ClientOrderId::from("REJECT-MODIFY");
+        let venue_order_id = VenueOrderId::from("456");
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+
+        client.dispatch.enqueue_pending_sendtx(PendingSendTx {
+            kind: PendingSendTxKind::Modify {
+                strategy_id: strategy_id(),
+                instrument_id,
+                client_order_id,
+                venue_order_id: Some(venue_order_id),
+            },
+            submitted_at: UnixNanos::from(1_000_000_000),
+            nonce,
+            api_key_index: TEST_API_KEY_INDEX,
+            tx_hash: format!("hash{nonce:02x}"),
+        });
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "modify rejected by venue",
+            None,
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::ModifyRejected(e) => {
+                assert_eq!(e.client_order_id, client_order_id);
+                assert_eq!(e.instrument_id, instrument_id);
+                assert_eq!(e.venue_order_id, Some(venue_order_id));
+                assert!(e.reason.as_str().contains("code=21702"));
+                assert!(e.reason.as_str().contains("modify rejected by venue"));
+            }
+            other => panic!("expected ModifyRejected, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_hash_match_attributes_past_the_head() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order_a = test_limit_order(&mut factory, instrument_id, "REJECT-HASH-A");
+        let order_b = test_limit_order(&mut factory, instrument_id, "REJECT-HASH-B");
+        enqueue_create(&client, &order_a, 10);
+        enqueue_create(&client, &order_b, 11);
+
+        // A desynced or out-of-order rejection for B must not consume A.
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            Some("hash0b"),
+        );
+
+        let event = recv_order_event(&mut rx).await;
+        match event {
+            OrderEventAny::Rejected(e) => {
+                assert_eq!(e.client_order_id, order_b.client_order_id());
+            }
+            other => panic!("expected Rejected, was {other:?}"),
+        }
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1, "A must survive");
+        let head = client.dispatch.pop_pending_sendtx_head().unwrap();
+        match head.kind {
+            PendingSendTxKind::Create { order, .. } => {
+                assert_eq!(order.client_order_id(), order_a.client_order_id());
+            }
+            _ => panic!("expected Create kind"),
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_unmatched_hash_pops_nothing() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = test_limit_order(&mut factory, instrument_id, "REJECT-UNMATCHED");
+        enqueue_create(&client, &order, 10);
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            Some("0xbeef"),
+        );
+
+        assert_eq!(
+            client.dispatch.pending_sendtx_len(),
+            1,
+            "an echoed hash with no matching entry must not pop the head",
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), rx.recv())
+                .await
+                .is_err(),
+            "unmatched rejection must not emit an event",
+        );
     }
 
     #[tokio::test]
@@ -6000,6 +9139,7 @@ mod tests {
             SendTxRejectionSource::BareError,
             Some(21149),
             "integrator is not approved",
+            None,
         );
 
         let event = recv_order_event(&mut rx).await;
@@ -6024,6 +9164,7 @@ mod tests {
             SendTxRejectionSource::BareError,
             Some(99),
             "late error",
+            None,
         );
 
         assert_eq!(
@@ -6040,6 +9181,113 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_send_tx_rejection_other_kind_rolls_back_latest_nonce() {
+        let (client, _cache, _rx) = create_execution_client();
+        let nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        enqueue_other(&client, nonce);
+
+        let needs_resync = handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(23000),
+            "Too Many Requests",
+            None,
+        );
+
+        assert!(!needs_resync, "rate-limit rejection must not force resync");
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_other_kind_skips_rollback_with_newer_issuance() {
+        let (client, _cache, _rx) = create_execution_client();
+        let rejected_nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        let newer_nonce = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        enqueue_other(&client, rejected_nonce);
+
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(23000),
+            "Too Many Requests",
+            None,
+        );
+
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(newer_nonce),
+            "non-latest rejection must leave last_issued alone",
+        );
+    }
+
+    #[tokio::test]
+    async fn handle_send_tx_rejection_invalid_nonce_signals_resync() {
+        let (client, _cache, _rx) = create_execution_client();
+
+        enqueue_other(&client, 70);
+        let attributed = handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(LIGHTER_ERROR_CODE_INVALID_NONCE),
+            "invalid nonce",
+            None,
+        );
+        assert!(attributed, "attributed invalid nonce must signal resync");
+
+        let unattributed = handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(LIGHTER_ERROR_CODE_INVALID_NONCE),
+            "invalid nonce",
+            None,
+        );
+        assert!(
+            unattributed,
+            "unattributed invalid nonce must still signal resync",
+        );
+
+        enqueue_other(&client, 71);
+        let other_code = handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(1_000_000_000),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "invalid price",
+            None,
+        );
+        assert!(!other_code, "other rejection codes must not force resync");
+    }
+
+    #[tokio::test]
     async fn handle_send_tx_rejection_other_kind_logs_and_skips_emit() {
         let (client, _cache, mut rx) = create_execution_client();
         enqueue_other(&client, 70);
@@ -6052,6 +9300,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(21727),
             "invalid client order index",
+            None,
         );
 
         assert_eq!(client.dispatch.pending_sendtx_len(), 0, "Other head pops");
@@ -6075,6 +9324,7 @@ mod tests {
             SendTxRejectionSource::Ack,
             Some(1),
             "no pending",
+            None,
         );
 
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);

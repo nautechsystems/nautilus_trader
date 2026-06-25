@@ -25,6 +25,8 @@ __all__ = [
     "HyperliquidTpSl",
     "HyperliquidTrailingOffsetType",
     "HyperliquidWebSocketClient",
+    "builder_fee_approve",
+    "builder_fee_revoke",
     "get_hyperliquid_http_base_url",
     "get_hyperliquid_ws_url",
     "hyperliquid_cloid_from_client_order_id",
@@ -104,6 +106,7 @@ class HyperliquidExecClientConfig:
         retry_delay_max_ms: int | None = None,
         normalize_prices: bool | None = None,
         market_order_slippage_bps: int | None = None,
+        include_builder_attribution: bool | None = None,
         ws_post_timeout_secs: int | None = None,
     ) -> None: ...
 
@@ -132,9 +135,12 @@ class HyperliquidHttpClient:
         timeout_secs: int = 60,
         proxy_url: str | None = None,
         normalize_prices: bool = True,
+        include_builder_attribution: bool = True,
     ) -> None: ...
     @staticmethod
-    def from_env(environment: HyperliquidEnvironment = ...) -> HyperliquidHttpClient: ...
+    def from_env(
+        environment: HyperliquidEnvironment = ..., include_builder_attribution: bool = True
+    ) -> HyperliquidHttpClient: ...
     @staticmethod
     def from_credentials(
         private_key: str,
@@ -142,6 +148,7 @@ class HyperliquidHttpClient:
         environment: HyperliquidEnvironment = ...,
         timeout_secs: int = 60,
         proxy_url: str | None = None,
+        include_builder_attribution: bool = True,
     ) -> HyperliquidHttpClient: ...
     def cache_instrument(self, instrument: typing.Any) -> None: ...
     def set_account_id(self, account_id: str) -> None: ...
@@ -459,6 +466,8 @@ class HyperliquidTrailingOffsetType(enum.Enum):
     @classmethod
     def from_str(cls, data: typing.Any) -> HyperliquidTrailingOffsetType: ...
 
+def builder_fee_approve() -> bool: ...
+def builder_fee_revoke() -> bool: ...
 def get_hyperliquid_http_base_url(environment: HyperliquidEnvironment) -> str: ...
 def get_hyperliquid_ws_url(environment: HyperliquidEnvironment) -> str: ...
 def hyperliquid_cloid_from_client_order_id(client_order_id: model.ClientOrderId) -> str: ...

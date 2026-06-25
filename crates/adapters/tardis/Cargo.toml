@@ -58,6 +58,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-persistence = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["arrow"] }
 nautilus-system = { workspace = true, optional = true }
 
@@ -95,7 +96,6 @@ pyo3-stub-gen = { workspace = true, optional = true }
 axum = { workspace = true }
 dotenvy = { workspace = true }
 nautilus-live = { workspace = true }
-nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 rstest = { workspace = true }
 tempfile = { workspace = true }

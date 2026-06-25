@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::ExecutionClient,
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
@@ -161,6 +162,9 @@ impl KrakenSpotExecutionClient {
             proxy_url: config.proxy_url.clone(),
             timeout_secs: config.timeout_secs,
             heartbeat_interval_secs: config.heartbeat_interval_secs,
+            // The authenticated order-routing WS keeps its prior behavior (no
+            // idle timeout); issue #4255 concerns the public spot data WS.
+            ws_idle_timeout_ms: 0,
             max_requests_per_second: config.max_requests_per_second,
             transport_backend: config.transport_backend,
         };
@@ -1353,12 +1357,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found in cache: {}", cmd.client_order_id))?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
         let leverage = match resolve_leverage(cmd.params.as_ref(), self.config.default_leverage) {
             Ok(lev) => lev,
             Err(reason) => {
@@ -1637,7 +1636,7 @@ async fn cancel_order_for_spot(
 ) -> Result<(), CancelCommandFailure> {
     http.get_cached_instrument(&instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(format!("Instrument not found in cache: {instrument_id}"))
+            CancelCommandFailure::local(InstrumentLookupError::not_found(instrument_id).to_string())
         })?;
 
     let txid = venue_order_id.as_ref().map(ToString::to_string);
@@ -1728,10 +1727,9 @@ fn batch_cancel_item_for_spot(
 ) -> Result<String, CancelCommandFailure> {
     http.get_cached_instrument(&cancel.instrument_id.symbol.inner())
         .ok_or_else(|| {
-            CancelCommandFailure::local(format!(
-                "Instrument not found in cache: {}",
-                cancel.instrument_id
-            ))
+            CancelCommandFailure::local(
+                InstrumentLookupError::not_found(cancel.instrument_id).to_string(),
+            )
         })?;
 
     if let Some(venue_order_id) = cancel.venue_order_id {
@@ -1812,21 +1810,91 @@ fn resolve_use_ws_trade(params: Option<&Params>, default: bool) -> bool {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_common::{cache::Cache, clock::TestClock, factories::ExecutionClientFactory};
-    use nautilus_core::Params;
+    use nautilus_common::{
+        cache::{Cache, InstrumentLookupError},
+        clock::TestClock,
+        factories::ExecutionClientFactory,
+        messages::execution::CancelOrder,
+    };
+    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_model::identifiers::{
+        AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId,
+    };
     use rstest::rstest;
     use serde_json::json;
 
-    use super::{resolve_leverage, resolve_use_ws_trade};
+    use super::{
+        batch_cancel_item_for_spot, cancel_order_for_spot, resolve_leverage, resolve_use_ws_trade,
+    };
     use crate::{
         common::enums::KrakenProductType, config::KrakenExecClientConfig,
-        factories::KrakenExecutionClientFactory,
+        execution::CancelCommandFailure, factories::KrakenExecutionClientFactory,
+        http::KrakenSpotHttpClient,
     };
+
+    const TEST_INSTRUMENT_ID: &str = "BTC/USDT.KRAKEN";
 
     fn params_with(key: &str, val: serde_json::Value) -> Params {
         let mut map = indexmap::IndexMap::new();
         map.insert(key.to_owned(), val);
         Params::from_index_map(map)
+    }
+
+    #[tokio::test]
+    async fn test_cancel_order_for_spot_missing_cached_instrument_returns_canonical_error() {
+        let http = KrakenSpotHttpClient::default();
+        let instrument_id = InstrumentId::from(TEST_INSTRUMENT_ID);
+        let client_order_id = ClientOrderId::from("C-001");
+        let venue_order_id = VenueOrderId::from("V-001");
+
+        let result = cancel_order_for_spot(
+            &http,
+            AccountId::from("KRAKEN-001"),
+            instrument_id,
+            Some(client_order_id),
+            Some(venue_order_id),
+        )
+        .await;
+
+        match result {
+            Err(CancelCommandFailure::LocalValidation(reason)) => {
+                assert_eq!(
+                    reason,
+                    InstrumentLookupError::not_found(instrument_id).to_string()
+                );
+            }
+            _ => panic!("Expected local validation failure"),
+        }
+    }
+
+    #[rstest]
+    fn test_batch_cancel_item_for_spot_missing_cached_instrument_returns_canonical_error() {
+        let http = KrakenSpotHttpClient::default();
+        let instrument_id = InstrumentId::from(TEST_INSTRUMENT_ID);
+        let cancel = CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("S-001"),
+            instrument_id,
+            ClientOrderId::from("C-001"),
+            Some(VenueOrderId::from("V-001")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        let result = batch_cancel_item_for_spot(&http, &cancel);
+
+        match result {
+            Err(CancelCommandFailure::LocalValidation(reason)) => {
+                assert_eq!(
+                    reason,
+                    InstrumentLookupError::not_found(instrument_id).to_string()
+                );
+            }
+            _ => panic!("Expected local validation failure"),
+        }
     }
 
     #[rstest]

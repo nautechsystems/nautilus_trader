@@ -15,12 +15,13 @@
 
 use std::{error::Error, path::Path};
 
+use ahash::AHashMap;
 use csv::StringRecord;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{
-        DEPTH10_LEN, FundingRateUpdate, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        DEPTH10_LEN, Data, FundingRateUpdate, NULL_ORDER, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick,
     },
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
@@ -30,14 +31,63 @@ use nautilus_model::{
 use crate::{
     common::parse::{parse_instrument_id, parse_timestamp},
     csv::{
-        create_book_order, create_csv_reader, infer_precision, parse_delta_record,
-        parse_derivative_ticker_record, parse_quote_record, parse_trade_record,
+        create_book_order, create_csv_reader, infer_precision, matches_underlying_filter,
+        normalize_underlying_filters, parse_delta_record, parse_derivative_ticker_record,
+        parse_options_chain_record, parse_options_chain_record_as_quote, parse_quote_record,
+        parse_trade_record,
         record::{
-            TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisOrderBookSnapshot5Record,
-            TardisOrderBookSnapshot25Record, TardisQuoteRecord, TardisTradeRecord,
+            TardisBookUpdateRecord, TardisDerivativeTickerRecord, TardisOptionsChainRecord,
+            TardisOrderBookSnapshot5Record, TardisOrderBookSnapshot25Record, TardisQuoteRecord,
+            TardisTradeRecord,
         },
     },
 };
+
+#[derive(Debug, Clone, Copy)]
+pub(in crate::csv) struct OptionsChainPrecision {
+    pub(in crate::csv) price: u8,
+    pub(in crate::csv) size: u8,
+}
+
+impl OptionsChainPrecision {
+    pub(in crate::csv) const fn new(
+        price_precision: Option<u8>,
+        size_precision: Option<u8>,
+    ) -> Self {
+        Self {
+            price: match price_precision {
+                Some(precision) => precision,
+                None => 0,
+            },
+            size: match size_precision {
+                Some(precision) => precision,
+                None => 0,
+            },
+        }
+    }
+
+    pub(in crate::csv) fn update(
+        &mut self,
+        record: &TardisOptionsChainRecord,
+        price_precision: Option<u8>,
+        size_precision: Option<u8>,
+    ) {
+        if price_precision.is_none() {
+            for value in [record.last_price, record.bid_price, record.ask_price]
+                .into_iter()
+                .flatten()
+            {
+                update_precision_if_needed(&mut self.price, value, price_precision);
+            }
+        }
+
+        if size_precision.is_none() {
+            for value in [record.bid_amount, record.ask_amount].into_iter().flatten() {
+                update_precision_if_needed(&mut self.size, value, size_precision);
+            }
+        }
+    }
+}
 
 fn update_precision_if_needed(current: &mut u8, value: f64, explicit: Option<u8>) -> bool {
     if explicit.is_some() {
@@ -745,6 +795,83 @@ pub fn load_funding_rates<P: AsRef<Path>>(
     Ok(funding_rates)
 }
 
+/// Loads option chain rows from a Tardis `options_chain` CSV file.
+///
+/// Returns quote ticks before option greeks for rows with a complete best bid/offer. Rows missing
+/// any best bid/offer field still return option greeks.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV, or if a complete best
+/// bid/offer row contains invalid price or size values.
+pub fn load_options_chain<P: AsRef<Path>>(
+    filepath: P,
+    underlyings: Option<Vec<String>>,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    limit: Option<usize>,
+) -> Result<Vec<Data>, Box<dyn Error>> {
+    let underlyings = normalize_underlying_filters(underlyings);
+    let estimated_capacity = limit.unwrap_or(1_000_000).min(10_000_000);
+    let mut records: Vec<TardisOptionsChainRecord> = Vec::with_capacity(estimated_capacity);
+    let mut precision_by_instrument: AHashMap<InstrumentId, OptionsChainPrecision> =
+        AHashMap::new();
+
+    let mut reader = create_csv_reader(filepath)?;
+    let mut record = StringRecord::new();
+
+    while reader.read_record(&mut record)? {
+        if let Some(underlyings) = underlyings.as_deref() {
+            let Some(symbol) = record.get(1) else {
+                continue;
+            };
+            let symbol = symbol.to_uppercase();
+            if !matches_underlying_filter(&symbol, Some(underlyings)) {
+                continue;
+            }
+        }
+
+        let data: TardisOptionsChainRecord = record.deserialize(None)?;
+        let instrument_id = parse_instrument_id(&data.exchange, data.symbol);
+        precision_by_instrument
+            .entry(instrument_id)
+            .or_insert_with(|| OptionsChainPrecision::new(price_precision, size_precision))
+            .update(&data, price_precision, size_precision);
+        records.push(data);
+
+        if let Some(limit) = limit
+            && records.len() >= limit
+        {
+            break;
+        }
+    }
+
+    let mut output = Vec::with_capacity(records.len() * 2);
+    for record in records {
+        let instrument_id = parse_instrument_id(&record.exchange, record.symbol);
+        let precision = precision_by_instrument
+            .get(&instrument_id)
+            .copied()
+            .unwrap_or_else(|| OptionsChainPrecision::new(price_precision, size_precision));
+
+        if let Some(quote) = parse_options_chain_record_as_quote(
+            &record,
+            precision.price,
+            precision.size,
+            instrument_id,
+        )? {
+            output.push(Data::Quote(quote));
+        }
+
+        output.push(Data::OptionGreeks(parse_options_chain_record(
+            &record,
+            instrument_id,
+        )));
+    }
+
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{fs, fs::File, sync::Arc};
@@ -976,6 +1103,109 @@ binance-futures,BTCUSDT,1640995204000000,1640995204100000,false,ask,50000.1234,0
         assert_eq!(quotes[0].ask_size, Quantity::from("5494"));
         assert_eq!(quotes[0].ts_event, 1588291201099000000);
         assert_eq!(quotes[0].ts_init, 1588291201234268000);
+    }
+
+    #[rstest]
+    fn test_load_options_chain_filters_underlying_and_emits_quote_then_greeks() {
+        let filepath = get_test_data_path("options_chain.csv");
+        let data =
+            load_options_chain(filepath, Some(vec!["btc-".to_string()]), None, None, None).unwrap();
+
+        assert_eq!(data.len(), 9);
+
+        let Data::Quote(quote) = &data[0] else {
+            panic!("Expected first data item to be Quote");
+        };
+        let Data::OptionGreeks(greeks) = &data[1] else {
+            panic!("Expected second data item to be OptionGreeks");
+        };
+
+        assert_eq!(
+            quote.instrument_id,
+            InstrumentId::from("BTC-9JUN20-9875-P.DERIBIT")
+        );
+        assert_eq!(quote.bid_price, Price::from("0.0205"));
+        assert_eq!(quote.ask_price, Price::from("0.0235"));
+        assert_eq!(quote.bid_size, Quantity::from("15.1"));
+        assert_eq!(quote.ask_size, Quantity::from("15.2"));
+        assert_eq!(quote.bid_price.precision, 4);
+        assert_eq!(quote.bid_size.precision, 1);
+
+        assert_eq!(greeks.instrument_id, quote.instrument_id);
+        assert_eq!(greeks.greeks.delta, -0.61752);
+        assert_eq!(greeks.mark_iv, Some(62.89));
+        assert_eq!(greeks.underlying_price, Some(9756.36));
+    }
+
+    #[rstest]
+    fn test_load_options_chain_missing_bbo_emits_greeks_only_with_default_greeks() {
+        let filepath = get_test_data_path("options_chain.csv");
+        let data = load_options_chain(
+            filepath,
+            Some(vec!["BTC-10JUN20".to_string()]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(data.len(), 1);
+
+        let Data::OptionGreeks(greeks) = &data[0] else {
+            panic!("Expected OptionGreeks, was {:?}", data[0]);
+        };
+
+        assert_eq!(
+            greeks.instrument_id,
+            InstrumentId::from("BTC-10JUN20-10000-C.DERIBIT")
+        );
+        assert_eq!(greeks.open_interest, None);
+        assert_eq!(greeks.bid_iv, None);
+        assert_eq!(greeks.ask_iv, None);
+        assert_eq!(greeks.greeks.delta, 0.0);
+        assert_eq!(greeks.greeks.gamma, 0.0);
+        assert_eq!(greeks.greeks.vega, 0.0);
+        assert_eq!(greeks.greeks.theta, 0.0);
+        assert_eq!(greeks.greeks.rho, 0.0);
+    }
+
+    #[rstest]
+    fn test_load_options_chain_rejects_zero_bbo_size() {
+        let temp_file = tempfile::NamedTempFile::new().unwrap();
+        let csv_data = "exchange,symbol,timestamp,local_timestamp,type,strike_price,expiration,open_interest,last_price,bid_price,bid_amount,bid_iv,ask_price,ask_amount,ask_iv,mark_price,mark_iv,underlying_index,underlying_price,delta,gamma,vega,theta,rho
+deribit,BTC-9JUN20-9875-P,1591574399413000,1591574400196008,put,9875,1591689600000000,0.1,0.0295,0.0205,0,55.91,0.0235,15.2,68.94,0.02210436,62.89,SYN.BTC-9JUN20,9756.36,-0.61752,0.00103,2.24964,-53.05655,-0.22796";
+        fs::write(temp_file.path(), csv_data).unwrap();
+
+        let error = load_options_chain(temp_file.path(), None, None, None, None).unwrap_err();
+
+        assert_eq!(error.to_string(), "value was zero");
+    }
+
+    #[rstest]
+    fn test_load_options_chain_infers_precision_per_instrument() {
+        let filepath = get_test_data_path("options_chain.csv");
+        let data =
+            load_options_chain(filepath, Some(vec!["ETH-".to_string()]), None, None, None).unwrap();
+
+        assert_eq!(data.len(), 3);
+
+        let Data::Quote(quote) = &data[0] else {
+            panic!("Expected first data item to be Quote");
+        };
+
+        assert_eq!(
+            quote.instrument_id,
+            InstrumentId::from("ETH-9JUN20-250-P.DERIBIT")
+        );
+        assert_eq!(quote.bid_price, Price::from("0.12345"));
+        assert_eq!(quote.ask_price, Price::from("0.12456"));
+        assert_eq!(quote.bid_size, Quantity::from("0.123456"));
+        assert_eq!(quote.ask_size, Quantity::from("0.223456"));
+        assert_eq!(quote.bid_price.precision, 5);
+        assert_eq!(quote.bid_size.precision, 6);
+
+        assert!(matches!(data[1], Data::OptionGreeks(_)));
+        assert!(matches!(data[2], Data::OptionGreeks(_)));
     }
 
     #[rstest]

@@ -19,7 +19,9 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
+use nautilus_core::python::{
+    correctness_error_to_pyvalue_err, get_pytype_name, to_pytype_err, to_pyvalue_err,
+};
 use pyo3::{IntoPyObjectExt, basic::CompareOp, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
@@ -350,8 +352,8 @@ impl Money {
     /// Creates a new `Money` instance from the given `raw` fixed-point value and the specified `currency`.
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> Self {
-        Self::from_raw(raw, currency)
+    fn py_from_raw(raw: MoneyRaw, currency: Currency) -> PyResult<Self> {
+        Self::from_raw_checked(raw, currency).map_err(correctness_error_to_pyvalue_err)
     }
 
     /// Creates a new `Money` from a `Decimal` value with specified currency.
@@ -432,5 +434,30 @@ impl Money {
             )));
         }
         Ok(self.checked_sub(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::Python;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::types::money::{MONEY_RAW_MAX, MONEY_RAW_MIN};
+
+    #[rstest]
+    fn test_py_from_raw_rejects_out_of_range_raw_value() {
+        Python::initialize();
+        Python::attach(|_| {
+            let raw = MONEY_RAW_MAX.saturating_add(1);
+            let error = Money::py_from_raw(raw, Currency::USD()).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "ValueError: `raw` value {raw} exceeded bounds [{MONEY_RAW_MIN}, {MONEY_RAW_MAX}] for Money"
+                )
+            );
+        });
     }
 }

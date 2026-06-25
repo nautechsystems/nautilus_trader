@@ -19,7 +19,7 @@ use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, FromU8, FromU16,
-        InstrumentCloseType, MarketStatusAction, OrderSide, PriceType,
+        GreeksConvention, InstrumentCloseType, MarketStatusAction, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, Symbol, Venue},
     types::{Price, Quantity, fixed::FIXED_PRECISION, price::PriceRaw, quantity::QuantityRaw},
@@ -116,7 +116,10 @@ pub(super) fn validate_header(
 
 #[inline]
 pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
-    #[allow(clippy::useless_conversion)]
+    #[expect(
+        clippy::useless_conversion,
+        reason = "conversion is required when high precision changes the raw type"
+    )]
     let raw = i128::from(price.raw);
 
     writer.write_i128_le(raw);
@@ -141,7 +144,10 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
 
 #[inline]
 pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
-    #[allow(clippy::useless_conversion)]
+    #[expect(
+        clippy::useless_conversion,
+        reason = "conversion is required when high precision changes the raw type"
+    )]
     let raw = u128::from(quantity.raw);
 
     writer.write_u128_le(raw);
@@ -371,6 +377,16 @@ pub(super) fn decode_instrument_close_type(
     let value = cursor.read_u8()?;
     InstrumentCloseType::from_u8(value).ok_or(SbeDecodeError::InvalidEnumValue {
         type_name: "InstrumentCloseType",
+        value: u16::from(value),
+    })
+}
+
+pub(super) fn decode_greeks_convention(
+    cursor: &mut SbeCursor<'_>,
+) -> Result<GreeksConvention, SbeDecodeError> {
+    let value = cursor.read_u8()?;
+    GreeksConvention::from_repr(value as usize).ok_or(SbeDecodeError::InvalidEnumValue {
+        type_name: "GreeksConvention",
         value: u16::from(value),
     })
 }

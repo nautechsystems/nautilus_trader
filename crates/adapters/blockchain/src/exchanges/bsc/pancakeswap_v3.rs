@@ -20,32 +20,56 @@ use nautilus_model::defi::{
     dex::{AmmType, Dex, DexType},
 };
 
-use crate::exchanges::{extended::DexExtended, parsing::uniswap_v3};
+use crate::exchanges::{
+    extended::DexExtended,
+    parsing::{pancakeswap_v3, uniswap_v3},
+};
 
 /// PancakeSwap V3 DEX on BSC.
 /// Factory: <https://bscscan.com/address/0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865>
 pub static PANCAKESWAP_V3: LazyLock<DexExtended> = LazyLock::new(|| {
-    // PoolCreated matches the V3 layout; pool-event shapes differ (Swap adds
-    // protocolFees fields) so those filters stay empty until parsers are written.
-    let dex = Dex::new(
+    // PancakeSwap V3 is a Uniswap V3 fork; only Swap differs (appended protocolFees, distinct
+    // topic0), so Swap uses the PancakeSwap parser and the rest reuse the Uniswap V3 parsers.
+    let mut dex = Dex::new(
         chains::BSC.clone(),
         DexType::PancakeSwapV3,
         "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
         26956207,
         AmmType::CLAMM,
         "PoolCreated(address,address,uint24,int24,address)",
-        "",
-        "",
-        "",
-        "",
+        "Swap(address,address,int256,int256,uint160,uint128,int24,uint128,uint128)",
+        "Mint(address,address,int24,int24,uint128,uint256,uint256)",
+        "Burn(address,int24,int24,uint128,uint256,uint256)",
+        "Collect(address,address,int24,int24,uint128,uint128)",
     );
+    dex.set_initialize_event("Initialize(uint160,int24)");
+    dex.set_flash_event("Flash(address,address,uint256,uint256,uint256,uint256)");
     let mut dex_extended = DexExtended::new(dex);
 
+    // HyperSync parsers
     dex_extended.set_pool_created_event_hypersync_parsing(
         uniswap_v3::pool_created::parse_pool_created_event_hypersync,
     );
+    dex_extended.set_initialize_event_hypersync_parsing(
+        uniswap_v3::initialize::parse_initialize_event_hypersync,
+    );
+    dex_extended.set_swap_event_hypersync_parsing(pancakeswap_v3::swap::parse_swap_event_hypersync);
+    dex_extended.set_mint_event_hypersync_parsing(uniswap_v3::mint::parse_mint_event_hypersync);
+    dex_extended.set_burn_event_hypersync_parsing(uniswap_v3::burn::parse_burn_event_hypersync);
+    dex_extended
+        .set_collect_event_hypersync_parsing(uniswap_v3::collect::parse_collect_event_hypersync);
+    dex_extended.set_flash_event_hypersync_parsing(uniswap_v3::flash::parse_flash_event_hypersync);
+
+    // RPC parsers
     dex_extended
         .set_pool_created_event_rpc_parsing(uniswap_v3::pool_created::parse_pool_created_event_rpc);
+    dex_extended
+        .set_initialize_event_rpc_parsing(uniswap_v3::initialize::parse_initialize_event_rpc);
+    dex_extended.set_swap_event_rpc_parsing(pancakeswap_v3::swap::parse_swap_event_rpc);
+    dex_extended.set_mint_event_rpc_parsing(uniswap_v3::mint::parse_mint_event_rpc);
+    dex_extended.set_burn_event_rpc_parsing(uniswap_v3::burn::parse_burn_event_rpc);
+    dex_extended.set_collect_event_rpc_parsing(uniswap_v3::collect::parse_collect_event_rpc);
+    dex_extended.set_flash_event_rpc_parsing(uniswap_v3::flash::parse_flash_event_rpc);
 
     dex_extended
 });

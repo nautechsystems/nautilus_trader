@@ -20,7 +20,11 @@ use std::{collections::HashMap, fs, path::Path, str::FromStr, sync::Arc};
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
-use ibapi::contracts::{ComboLegOpenClose, Contract, Exchange, SecurityType, Symbol};
+use ibapi::{
+    contracts::{ComboLegOpenClose, Contract, Exchange, LegAction, SecurityType, Symbol},
+    prelude::StreamExt,
+    subscriptions::SubscriptionItem,
+};
 use nautilus_model::{
     identifiers::{InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -401,7 +405,7 @@ impl InteractiveBrokersInstrumentProvider {
                         combo_leg.contract_id
                     )
                 })?;
-            let ratio = IbAction::from_str(&combo_leg.action)
+            let ratio = IbAction::from_str(combo_leg.action.as_str())
                 .context("Invalid BAG combo leg action")?
                 .signed_multiplier()
                 * combo_leg.ratio;
@@ -1073,9 +1077,9 @@ impl InteractiveBrokersInstrumentProvider {
                 contract_id: details.contract.contract_id,
                 ratio: ratio.abs(),
                 action: if *ratio > 0 {
-                    "BUY".to_string()
+                    LegAction::Buy
                 } else {
-                    "SELL".to_string()
+                    LegAction::Sell
                 },
                 exchange: details.contract.exchange.to_string(),
                 open_close: ComboLegOpenClose::Same,
@@ -1839,52 +1843,64 @@ impl InteractiveBrokersInstrumentProvider {
         let mut all_expirations = Vec::new();
 
         while let Some(result) = option_chain_stream.next().await {
-            if let Ok(chain) = result {
-                tracing::debug!(
-                    "Received option chain metadata exchange={} trading_class={} expirations={} strikes={}",
-                    chain.exchange,
-                    chain.trading_class,
-                    chain.expirations.len(),
-                    chain.strikes.len(),
-                );
+            match result {
+                Ok(SubscriptionItem::Data(chain)) => {
+                    tracing::debug!(
+                        "Received option chain metadata exchange={} trading_class={} expirations={} strikes={}",
+                        chain.exchange,
+                        chain.trading_class,
+                        chain.expirations.len(),
+                        chain.strikes.len(),
+                    );
 
-                for expiration in &chain.expirations {
-                    // Filter by expiry date string if specified
-                    let date_filter_pass = match (expiry_min, expiry_max) {
-                        (Some(min), Some(max)) => {
-                            expiration.as_str() >= min && expiration.as_str() <= max
+                    for expiration in &chain.expirations {
+                        // Filter by expiry date string if specified
+                        let date_filter_pass = match (expiry_min, expiry_max) {
+                            (Some(min), Some(max)) => {
+                                expiration.as_str() >= min && expiration.as_str() <= max
+                            }
+                            (Some(min), None) => expiration.as_str() >= min,
+                            (None, Some(max)) => expiration.as_str() <= max,
+                            (None, None) => true,
+                        };
+
+                        // Filter by expiry days from config if specified
+                        let days_filter_pass = {
+                            let expiry_ns =
+                                crate::providers::parse::expiry_timestring_to_unix_nanos(
+                                    expiration.as_str(),
+                                    None,
+                                )
+                                .unwrap_or(now);
+                            let days_until_expiry =
+                                (expiry_ns.as_u64().saturating_sub(now.as_u64()))
+                                    / (24 * 60 * 60 * 1_000_000_000);
+
+                            let min_days_ok = self
+                                .config
+                                .min_expiry_days
+                                .is_none_or(|min| days_until_expiry >= min as u64);
+                            let max_days_ok = self
+                                .config
+                                .max_expiry_days
+                                .is_none_or(|max| days_until_expiry <= max as u64);
+
+                            min_days_ok && max_days_ok
+                        };
+
+                        if date_filter_pass
+                            && days_filter_pass
+                            && !all_expirations.contains(expiration)
+                        {
+                            all_expirations.push(expiration.clone());
                         }
-                        (Some(min), None) => expiration.as_str() >= min,
-                        (None, Some(max)) => expiration.as_str() <= max,
-                        (None, None) => true,
-                    };
-
-                    // Filter by expiry days from config if specified
-                    let days_filter_pass = {
-                        let expiry_ns = crate::providers::parse::expiry_timestring_to_unix_nanos(
-                            expiration.as_str(),
-                            None,
-                        )
-                        .unwrap_or(now);
-                        let days_until_expiry = (expiry_ns.as_u64().saturating_sub(now.as_u64()))
-                            / (24 * 60 * 60 * 1_000_000_000);
-
-                        let min_days_ok = self
-                            .config
-                            .min_expiry_days
-                            .is_none_or(|min| days_until_expiry >= min as u64);
-                        let max_days_ok = self
-                            .config
-                            .max_expiry_days
-                            .is_none_or(|max| days_until_expiry <= max as u64);
-
-                        min_days_ok && max_days_ok
-                    };
-
-                    if date_filter_pass && days_filter_pass && !all_expirations.contains(expiration)
-                    {
-                        all_expirations.push(expiration.clone());
                     }
+                }
+                Ok(SubscriptionItem::Notice(notice)) => {
+                    tracing::debug!("Received option chain notice: {notice:?}");
+                }
+                Err(e) => {
+                    tracing::warn!("Error receiving option chain metadata: {e}");
                 }
             }
         }
@@ -1917,7 +1933,7 @@ impl InteractiveBrokersInstrumentProvider {
                 },
                 last_trade_date_or_contract_month: expiration.clone(),
                 strike: f64::MAX,
-                right: String::new(),
+                right: None,
                 multiplier: String::new(),
                 exchange: Exchange::from(exchange),
                 currency: underlying.currency.clone(),
@@ -1925,7 +1941,7 @@ impl InteractiveBrokersInstrumentProvider {
                 primary_exchange: Exchange::from(""),
                 trading_class: String::new(),
                 include_expired: false,
-                security_id_type: String::new(),
+                security_id_type: None,
                 security_id: String::new(),
                 combo_legs_description: String::new(),
                 combo_legs: Vec::new(),
@@ -2046,7 +2062,7 @@ impl InteractiveBrokersInstrumentProvider {
             security_type: SecurityType::Future,
             last_trade_date_or_contract_month: String::new(),
             strike: f64::MAX,
-            right: String::new(),
+            right: None,
             multiplier: String::new(),
             exchange: Exchange::from(exchange.to_string()),
             currency: ibapi::contracts::Currency::from(currency.to_string()),
@@ -2054,7 +2070,7 @@ impl InteractiveBrokersInstrumentProvider {
             primary_exchange: Exchange::from(""),
             trading_class: trading_class.unwrap_or_default().to_string(),
             include_expired,
-            security_id_type: String::new(),
+            security_id_type: None,
             security_id: String::new(),
             combo_legs_description: String::new(),
             combo_legs: Vec::new(),
@@ -2199,7 +2215,7 @@ impl InteractiveBrokersInstrumentProvider {
                 security_type: SecurityType::Option, // Default to Option, will be determined from contract details
                 last_trade_date_or_contract_month: String::new(),
                 strike: 0.0,
-                right: String::new(),
+                right: None,
                 multiplier: String::new(),
                 exchange: Exchange::from(combo_leg.exchange.as_str()),
                 currency: bag_contract.currency.clone(), // Use currency from BAG
@@ -2207,7 +2223,7 @@ impl InteractiveBrokersInstrumentProvider {
                 primary_exchange: Exchange::default(),
                 trading_class: String::new(),
                 include_expired: false,
-                security_id_type: String::new(),
+                security_id_type: None,
                 security_id: String::new(),
                 combo_legs_description: String::new(),
                 combo_legs: Vec::new(),
@@ -2282,7 +2298,7 @@ impl InteractiveBrokersInstrumentProvider {
                 };
 
             // Determine ratio (positive for BUY, negative for SELL)
-            let ratio = IbAction::from_str(&combo_leg.action)
+            let ratio = IbAction::from_str(combo_leg.action.as_str())
                 .context("Invalid combo leg action")?
                 .signed_multiplier()
                 * combo_leg.ratio;
@@ -2622,6 +2638,7 @@ mod tests {
             0,
             Price::from("0.0001"),
             Quantity::from(1),
+            None,
             None,
             None,
             None,

@@ -3,6 +3,7 @@
 import decimal
 import typing
 
+from nautilus_trader import analysis
 from nautilus_trader import model
 
 __all__ = [
@@ -123,3 +124,4 @@ class Portfolio:
         self, instrument_id: model.InstrumentId, account_id: model.AccountId | None = None
     ) -> bool: ...
     def is_completely_flat(self, account_id: model.AccountId | None = None) -> bool: ...
+    def statistics(self) -> analysis.PortfolioStatistics: ...

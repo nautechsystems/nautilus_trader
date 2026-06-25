@@ -40,11 +40,11 @@ class _CaptureNode:
     def __init__(self, captured: dict[str, object]) -> None:
         self._captured = captured
 
-    def add_native_actor(self, type_name: str, config: object) -> None:
+    def add_builtin_actor(self, type_name: str, config: object) -> None:
         self._captured["actor_type_name"] = type_name
         self._captured["actor_config"] = config
 
-    def add_native_strategy(self, type_name: str, config: object) -> None:
+    def add_builtin_strategy(self, type_name: str, config: object) -> None:
         self._captured["strategy_type_name"] = type_name
         self._captured["strategy_config"] = config
 

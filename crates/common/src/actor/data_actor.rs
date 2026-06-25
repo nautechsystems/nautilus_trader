@@ -19,7 +19,6 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     num::NonZeroUsize,
-    ops::{Deref, DerefMut},
     rc::Rc,
     sync::Arc,
 };
@@ -48,10 +47,9 @@ use nautilus_model::{
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-#[cfg(feature = "indicators")]
-use super::indicators::Indicators;
 use super::{
     Actor,
+    indicators::{Indicators, SharedActorIndicator},
     registry::{get_actor_unchecked, try_get_actor_unchecked},
 };
 #[cfg(feature = "defi")]
@@ -60,8 +58,8 @@ use crate::defi;
 #[allow(unused_imports)]
 use crate::defi::data_actor as _; // Brings DeFi impl blocks into scope
 use crate::{
-    cache::Cache,
-    clock::Clock,
+    cache::{Cache, CacheApi},
+    clock::{Clock, ClockApi},
     component::Component,
     enums::{ComponentState, ComponentTrigger},
     logging::{CMD, RECV, REQ, SEND},
@@ -92,8 +90,8 @@ use crate::{
             get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
             get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
             get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
-            get_option_chain_topic, get_option_greeks_topic, get_order_cancels_topic,
-            get_order_fills_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_option_chain_topic, get_option_greeks_topic, get_order_canceled_topic,
+            get_order_filled_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -156,9 +154,122 @@ pub struct ImportableActorConfig {
 
 type RequestCallback = Arc<dyn Fn(UUID4) + Send + Sync>;
 
-pub trait DataActor:
-    Component + Deref<Target = DataActorCore> + DerefMut<Target = DataActorCore>
-{
+/// Explicit native-only access for data actor runtime state.
+///
+/// Normal actor and strategy code should use facade methods such as
+/// [`DataActor::clock`] and [`DataActor::cache`]. Import this trait only from
+/// Rust code compiled into the same native binary as the engine, when a
+/// performance-sensitive path or host integration needs access below the facade
+/// API.
+///
+/// Do not import this trait in strategy code intended to run through Python or
+/// the plug-in authoring surface. Native borrows, `Rc<RefCell<_>>`, and core
+/// references do not cross those boundaries.
+pub trait DataActorNative {
+    /// Returns the actor core.
+    fn core(&self) -> &DataActorCore;
+
+    /// Returns the mutable actor core.
+    fn core_mut(&mut self) -> &mut DataActorCore;
+
+    /// Returns the mutable clock borrow for the actor.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not been registered with a trader.
+    fn clock_mut(&mut self) -> RefMut<'_, dyn Clock> {
+        let core = self.core_mut();
+        core.clock
+            .as_ref()
+            .unwrap_or_else(|| {
+                panic!(
+                    "DataActor {} must be registered before calling `clock_mut()` - trader_id: {:?}",
+                    core.actor_id, core.trader_id
+                )
+            })
+            .borrow_mut()
+    }
+
+    /// Returns a clone of the reference-counted clock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered.
+    fn clock_rc(&self) -> Rc<RefCell<dyn Clock>> {
+        self.core()
+            .clock
+            .as_ref()
+            .expect("DataActor must be registered before accessing clock")
+            .clone()
+    }
+
+    /// Returns a read-only cache borrow.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered.
+    fn cache_ref(&self) -> Ref<'_, Cache> {
+        self.core()
+            .cache
+            .as_ref()
+            .expect("DataActor must be registered before accessing cache")
+            .borrow()
+    }
+
+    /// Returns a clone of the reference-counted cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor has not yet been registered.
+    fn cache_rc(&self) -> Rc<RefCell<Cache>> {
+        self.core()
+            .cache
+            .as_ref()
+            .expect("DataActor must be registered before accessing cache")
+            .clone()
+    }
+}
+
+/// Defines lifecycle callbacks, data handlers, and subscription/request
+/// methods for data actors.
+///
+/// Default methods that read or mutate native runtime state carry explicit
+/// [`DataActorNative`] bounds. Data actor implementations that only need
+/// core-free callbacks can implement this trait with their own [`Component`]
+/// implementation, while runtime-registered actors keep using native wiring.
+pub trait DataActor: Component {
+    /// Returns the actor ID.
+    fn actor_id(&self) -> ActorId
+    where
+        Self: DataActorNative,
+    {
+        self.core().actor_id()
+    }
+
+    /// Returns the trader ID this actor is registered to.
+    fn trader_id(&self) -> Option<TraderId>
+    where
+        Self: DataActorNative,
+    {
+        self.core().trader_id()
+    }
+
+    /// Returns whether the actor is registered with a trader.
+    fn is_registered(&self) -> bool
+    where
+        Self: DataActorNative,
+    {
+        self.core().is_registered()
+    }
+
+    /// Returns the actor configuration.
+    fn config(&self) -> &DataActorConfig
+    where
+        Self: DataActorNative,
+    {
+        &self.core().config
+    }
+
     /// Actions to be performed when the actor state is saved.
     ///
     /// # Errors
@@ -603,6 +714,97 @@ pub trait DataActor:
         Ok(())
     }
 
+    /// Returns the user-facing clock API.
+    fn clock(&self) -> ClockApi<'_>
+    where
+        Self: DataActorNative,
+    {
+        self.core().clock_api()
+    }
+
+    /// Returns the user-facing cache API.
+    fn cache(&self) -> CacheApi<'_>
+    where
+        Self: DataActorNative,
+    {
+        self.core().cache_api()
+    }
+
+    /// Sends a shutdown command to the system with an optional reason.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered or has no trader ID.
+    fn shutdown_system(&self, reason: Option<String>)
+    where
+        Self: DataActorNative,
+    {
+        self.core().shutdown_system(reason);
+    }
+
+    /// Publishes `data` on the message bus under the topic derived from `data_type`.
+    ///
+    /// `data_type` is kept as an explicit parameter to allow callers to override the
+    /// routing topic from the payload's intrinsic type.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    fn publish_data(&self, data_type: &DataType, data: &CustomData)
+    where
+        Self: DataActorNative,
+    {
+        self.core().publish_data(data_type, data);
+    }
+
+    /// Publishes a [`Signal`] constructed from `name` and `value`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    fn publish_signal(&self, name: &str, value: String, ts_event: UnixNanos)
+    where
+        Self: DataActorNative,
+    {
+        self.core().publish_signal(name, value, ts_event);
+    }
+
+    // panics-doc-ok
+    /// Adds the `synthetic` instrument to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a synthetic with the same ID already exists, or if the
+    /// backing cache fails to persist it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    fn add_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()>
+    where
+        Self: DataActorNative,
+    {
+        self.core().add_synthetic(synthetic)
+    }
+
+    // panics-doc-ok
+    /// Updates the `synthetic` instrument in the cache, replacing the existing entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no synthetic with the same ID already exists, or if the
+    /// backing cache fails to persist the replacement.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the actor is not registered with a trader.
+    fn update_synthetic(&self, synthetic: SyntheticInstrument) -> anyhow::Result<()>
+    where
+        Self: DataActorNative,
+    {
+        self.core().update_synthetic(synthetic)
+    }
+
     /// Handles a received time event.
     fn handle_time_event(&mut self, event: &TimeEvent) {
         log_received(&event);
@@ -688,8 +890,16 @@ pub trait DataActor:
     }
 
     /// Handles a received quote.
-    fn handle_quote(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick)
+    where
+        Self: DataActorNative,
+    {
         log_received(&quote);
+
+        if let Err(e) = self.core().handle_indicators_for_quote(quote) {
+            log_error(&e);
+            return;
+        }
 
         if self.not_running() {
             log_not_running(&quote);
@@ -702,8 +912,16 @@ pub trait DataActor:
     }
 
     /// Handles a received trade.
-    fn handle_trade(&mut self, trade: &TradeTick) {
+    fn handle_trade(&mut self, trade: &TradeTick)
+    where
+        Self: DataActorNative,
+    {
         log_received(&trade);
+
+        if let Err(e) = self.core().handle_indicators_for_trade(trade) {
+            log_error(&e);
+            return;
+        }
 
         if self.not_running() {
             log_not_running(&trade);
@@ -716,8 +934,16 @@ pub trait DataActor:
     }
 
     /// Handles a receiving bar.
-    fn handle_bar(&mut self, bar: &Bar) {
+    fn handle_bar(&mut self, bar: &Bar)
+    where
+        Self: DataActorNative,
+    {
         log_received(&bar);
+
+        if let Err(e) = self.core().handle_indicators_for_bar(bar) {
+            log_error(&e);
+            return;
+        }
 
         if self.not_running() {
             log_not_running(&bar);
@@ -828,13 +1054,16 @@ pub trait DataActor:
     }
 
     /// Handles a received order filled event.
-    fn handle_order_filled(&mut self, event: &OrderFilled) {
+    fn handle_order_filled(&mut self, event: &OrderFilled)
+    where
+        Self: DataActorNative,
+    {
         log_received(&event);
 
         // Check for double-handling: if the event's strategy_id matches this actor's id,
         // it means a Strategy is receiving its own fill event through both automatic
         // subscription and manual subscribe_order_fills, so skip the manual handler.
-        if event.strategy_id.inner() == self.actor_id().inner() {
+        if event.strategy_id.inner() == self.core().actor_id().inner() {
             return;
         }
 
@@ -849,13 +1078,16 @@ pub trait DataActor:
     }
 
     /// Handles a received order canceled event.
-    fn handle_order_canceled(&mut self, event: &OrderCanceled) {
+    fn handle_order_canceled(&mut self, event: &OrderCanceled)
+    where
+        Self: DataActorNative,
+    {
         log_received(&event);
 
         // Check for double-handling: if the event's strategy_id matches this actor's id,
         // it means a Strategy is receiving its own cancel event through both automatic
         // subscription and manual subscribe_order_cancels, so skip the manual handler.
-        if event.strategy_id.inner() == self.actor_id().inner() {
+        if event.strategy_id.inner() == self.core().actor_id().inner() {
             return;
         }
 
@@ -1028,9 +1260,17 @@ pub trait DataActor:
     }
 
     /// Handles a quotes response.
-    fn handle_quotes_response(&mut self, resp: &QuotesResponse) {
+    fn handle_quotes_response(&mut self, resp: &QuotesResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("QuotesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.core().handle_indicators_for_quotes(&resp.data) {
+            log_error(&e);
+            return;
+        }
 
         if let Err(e) = self.on_historical_quotes(&resp.data) {
             log_error(&e);
@@ -1038,9 +1278,17 @@ pub trait DataActor:
     }
 
     /// Handles a trades response.
-    fn handle_trades_response(&mut self, resp: &TradesResponse) {
+    fn handle_trades_response(&mut self, resp: &TradesResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("TradesResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.core().handle_indicators_for_trades(&resp.data) {
+            log_error(&e);
+            return;
+        }
 
         if let Err(e) = self.on_historical_trades(&resp.data) {
             log_error(&e);
@@ -1048,9 +1296,17 @@ pub trait DataActor:
     }
 
     /// Handles a bars response.
-    fn handle_bars_response(&mut self, resp: &BarsResponse) {
+    fn handle_bars_response(&mut self, resp: &BarsResponse)
+    where
+        Self: DataActorNative,
+    {
         log_received_bulk("BarsResponse", &resp.correlation_id, resp.data.len());
         log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.core().handle_indicators_for_bars(&resp.data) {
+            log_error(&e);
+            return;
+        }
 
         if let Err(e) = self.on_historical_bars(&resp.data) {
             log_error(&e);
@@ -1078,14 +1334,15 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
             get_actor_unchecked::<Self>(&actor_id).handle_data(data);
         });
 
-        DataActorCore::subscribe_data(self, handler, data_type, client_id, params);
+        DataActorCore::subscribe_data(self.core_mut(), handler, data_type, client_id, params);
     }
 
     /// Subscribe to [`Signal`] data by `name`.
@@ -1104,9 +1361,10 @@ pub trait DataActor:
     /// [`unsubscribe_signal`](Self::unsubscribe_signal) first.
     fn subscribe_signal(&mut self, name: &str, priority: Option<u32>)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         // Signals are published as `CustomData` wrapping a `Signal`; downcast
         // the inner value so subscribers receive the typed `Signal` in `on_signal`.
         let handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
@@ -1119,7 +1377,7 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_signal(self, handler, name, priority);
+        DataActorCore::subscribe_signal(self.core_mut(), handler, name, priority);
     }
 
     /// Subscribe to streaming [`QuoteTick`] data for the `instrument_id`.
@@ -1129,9 +1387,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_quotes_topic(instrument_id);
 
         let handler = TypedHandler::from(move |quote: &QuoteTick| {
@@ -1142,7 +1401,14 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_quotes(self, topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_quotes(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `venue`.
@@ -1152,9 +1418,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let pattern = get_instruments_pattern(venue);
 
         let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
@@ -1165,7 +1432,14 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_instruments(self, pattern, handler, venue, client_id, params);
+        DataActorCore::subscribe_instruments(
+            self.core_mut(),
+            pattern,
+            handler,
+            venue,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`InstrumentAny`] data for the `instrument_id`.
@@ -1175,9 +1449,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_instrument_topic(instrument_id);
 
         let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
@@ -1188,7 +1463,14 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_instrument(self, topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_instrument(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`OrderBookDeltas`] data for the `instrument_id`.
@@ -1201,9 +1483,10 @@ pub trait DataActor:
         managed: bool,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let is_parent = is_parent_subscription(params.as_ref());
         let pattern = if is_parent {
             get_book_deltas_pattern(instrument_id)
@@ -1216,7 +1499,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_book_deltas(
-            self,
+            self.core_mut(),
             pattern,
             handler,
             instrument_id,
@@ -1238,9 +1521,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_book_snapshots_topic(instrument_id, interval_ms);
 
         let handler = TypedHandler::from(move |book: &OrderBook| {
@@ -1248,7 +1532,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_book_at_interval(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1267,16 +1551,24 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_trades_topic(instrument_id);
 
         let handler = TypedHandler::from(move |trade: &TradeTick| {
             get_actor_unchecked::<Self>(&actor_id).handle_trade(trade);
         });
 
-        DataActorCore::subscribe_trades(self, topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_trades(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Subscribe to streaming [`Bar`] data for the `bar_type`.
@@ -1286,16 +1578,17 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_bars_topic(bar_type);
 
         let handler = TypedHandler::from(move |bar: &Bar| {
             get_actor_unchecked::<Self>(&actor_id).handle_bar(bar);
         });
 
-        DataActorCore::subscribe_bars(self, topic, handler, bar_type, client_id, params);
+        DataActorCore::subscribe_bars(self.core_mut(), topic, handler, bar_type, client_id, params);
     }
 
     /// Subscribe to streaming [`MarkPriceUpdate`] data for the `instrument_id`.
@@ -1305,9 +1598,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_mark_price_topic(instrument_id);
 
         let handler = TypedHandler::from(move |mark_price: &MarkPriceUpdate| {
@@ -1315,7 +1609,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_mark_prices(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1331,9 +1625,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_index_price_topic(instrument_id);
 
         let handler = TypedHandler::from(move |index_price: &IndexPriceUpdate| {
@@ -1341,7 +1636,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_index_prices(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1357,9 +1652,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_funding_rate_topic(instrument_id);
 
         let handler = TypedHandler::from(move |funding_rate: &FundingRateUpdate| {
@@ -1367,7 +1663,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_funding_rates(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1383,9 +1679,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_option_greeks_topic(instrument_id);
 
         let handler = TypedHandler::from(move |option_greeks: &OptionGreeks| {
@@ -1397,7 +1694,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_option_greeks(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1413,9 +1710,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_instrument_status_topic(instrument_id);
 
         let handler = ShareableMessageHandler::from_typed(move |status: &InstrumentStatus| {
@@ -1423,7 +1721,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_instrument_status(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1439,9 +1737,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_instrument_close_topic(instrument_id);
 
         let handler = ShareableMessageHandler::from_typed(move |close: &InstrumentClose| {
@@ -1449,7 +1748,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_instrument_close(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1470,9 +1769,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = get_option_chain_topic(series_id);
 
         let handler = TypedHandler::from(move |slice: &OptionChainSlice| {
@@ -1484,7 +1784,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_option_chain(
-            self,
+            self.core_mut(),
             topic,
             handler,
             series_id,
@@ -1498,10 +1798,11 @@ pub trait DataActor:
     /// Subscribe to [`OrderFilled`] events for the `instrument_id`.
     fn subscribe_order_fills(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
-        let topic = get_order_fills_topic(instrument_id);
+        let actor_id = self.core().actor_id().inner();
+        let topic = get_order_filled_topic(instrument_id);
 
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let OrderEventAny::Filled(filled) = event {
@@ -1509,16 +1810,17 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_order_fills(self, topic, handler);
+        DataActorCore::subscribe_order_fills(self.core_mut(), topic, handler);
     }
 
     /// Subscribe to [`OrderCanceled`] events for the `instrument_id`.
     fn subscribe_order_cancels(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
-        let topic = get_order_cancels_topic(instrument_id);
+        let actor_id = self.core().actor_id().inner();
+        let topic = get_order_canceled_topic(instrument_id);
 
         let handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let OrderEventAny::Canceled(canceled) = event {
@@ -1526,7 +1828,7 @@ pub trait DataActor:
             }
         });
 
-        DataActorCore::subscribe_order_cancels(self, topic, handler);
+        DataActorCore::subscribe_order_cancels(self.core_mut(), topic, handler);
     }
 
     #[cfg(feature = "defi")]
@@ -1537,16 +1839,17 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_blocks_topic(chain);
 
         let handler = TypedHandler::from(move |block: &Block| {
             get_actor_unchecked::<Self>(&actor_id).handle_block(block);
         });
 
-        DataActorCore::subscribe_blocks(self, topic, handler, chain, client_id, params);
+        DataActorCore::subscribe_blocks(self.core_mut(), topic, handler, chain, client_id, params);
     }
 
     #[cfg(feature = "defi")]
@@ -1557,16 +1860,24 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_pool_topic(instrument_id);
 
         let handler = TypedHandler::from(move |pool: &Pool| {
             get_actor_unchecked::<Self>(&actor_id).handle_pool(pool);
         });
 
-        DataActorCore::subscribe_pool(self, topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_pool(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     #[cfg(feature = "defi")]
@@ -1577,16 +1888,24 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_pool_swaps_topic(instrument_id);
 
         let handler = TypedHandler::from(move |swap: &PoolSwap| {
             get_actor_unchecked::<Self>(&actor_id).handle_pool_swap(swap);
         });
 
-        DataActorCore::subscribe_pool_swaps(self, topic, handler, instrument_id, client_id, params);
+        DataActorCore::subscribe_pool_swaps(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     #[cfg(feature = "defi")]
@@ -1597,9 +1916,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_liquidity_topic(instrument_id);
 
         let handler = TypedHandler::from(move |update: &PoolLiquidityUpdate| {
@@ -1607,7 +1927,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_pool_liquidity_updates(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1624,9 +1944,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_collect_topic(instrument_id);
 
         let handler = TypedHandler::from(move |collect: &PoolFeeCollect| {
@@ -1634,7 +1955,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_pool_fee_collects(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1651,9 +1972,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let topic = defi::switchboard::get_defi_flash_topic(instrument_id);
 
         let handler = TypedHandler::from(move |flash: &PoolFlash| {
@@ -1661,7 +1983,7 @@ pub trait DataActor:
         });
 
         DataActorCore::subscribe_pool_flash_events(
-            self,
+            self.core_mut(),
             topic,
             handler,
             instrument_id,
@@ -1677,17 +1999,19 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_data(self, data_type, client_id, params);
+        DataActorCore::unsubscribe_data(self.core_mut(), data_type, client_id, params);
     }
 
     /// Unsubscribe from [`Signal`] data by `name`.
     fn unsubscribe_signal(&mut self, name: &str)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_signal(self, name);
+        DataActorCore::unsubscribe_signal(self.core_mut(), name);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `venue`.
@@ -1697,9 +2021,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_instruments(self, venue, client_id, params);
+        DataActorCore::unsubscribe_instruments(self.core_mut(), venue, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentAny`] data for the `instrument_id`.
@@ -1709,9 +2034,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_instrument(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`OrderBookDeltas`] data for the `instrument_id`.
@@ -1721,9 +2047,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_book_deltas(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_book_deltas(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from [`OrderBook`] snapshots at a specified interval for the `instrument_id`.
@@ -1734,10 +2061,11 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_book_at_interval(
-            self,
+            self.core_mut(),
             instrument_id,
             interval_ms,
             client_id,
@@ -1752,9 +2080,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_quotes(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_quotes(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`TradeTick`] data for the `instrument_id`.
@@ -1764,9 +2093,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_trades(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_trades(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
@@ -1776,9 +2106,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_bars(self, bar_type, client_id, params);
+        DataActorCore::unsubscribe_bars(self.core_mut(), bar_type, client_id, params);
     }
 
     /// Unsubscribe from streaming [`MarkPriceUpdate`] data for the `instrument_id`.
@@ -1788,9 +2119,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_mark_prices(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_mark_prices(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`IndexPriceUpdate`] data for the `instrument_id`.
@@ -1800,9 +2132,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_index_prices(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_index_prices(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`FundingRateUpdate`] data for the `instrument_id`.
@@ -1812,9 +2145,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_funding_rates(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_funding_rates(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`OptionGreeks`] data for the `instrument_id`.
@@ -1824,9 +2158,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_option_greeks(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_option_greeks(self.core_mut(), instrument_id, client_id, params);
     }
 
     /// Unsubscribe from streaming [`InstrumentStatus`] data for the `instrument_id`.
@@ -1836,9 +2171,15 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_instrument_status(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument_status(
+            self.core_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Unsubscribe from streaming [`InstrumentClose`] data for the `instrument_id`.
@@ -1848,33 +2189,42 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_instrument_close(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_instrument_close(
+            self.core_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Unsubscribe from streaming [`OptionChainSlice`] snapshots for the option `series_id`.
     fn unsubscribe_option_chain(&mut self, series_id: OptionSeriesId, client_id: Option<ClientId>)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_option_chain(self, series_id, client_id);
+        DataActorCore::unsubscribe_option_chain(self.core_mut(), series_id, client_id);
     }
 
     /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
     fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_order_fills(self, instrument_id);
+        DataActorCore::unsubscribe_order_fills(self.core_mut(), instrument_id);
     }
 
     /// Unsubscribe from [`OrderCanceled`] events for the `instrument_id`.
     fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId)
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_order_cancels(self, instrument_id);
+        DataActorCore::unsubscribe_order_cancels(self.core_mut(), instrument_id);
     }
 
     #[cfg(feature = "defi")]
@@ -1885,9 +2235,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_blocks(self, chain, client_id, params);
+        DataActorCore::unsubscribe_blocks(self.core_mut(), chain, client_id, params);
     }
 
     #[cfg(feature = "defi")]
@@ -1898,9 +2249,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_pool(self.core_mut(), instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
@@ -1911,9 +2263,10 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_swaps(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_pool_swaps(self.core_mut(), instrument_id, client_id, params);
     }
 
     #[cfg(feature = "defi")]
@@ -1924,9 +2277,15 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_liquidity_updates(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_pool_liquidity_updates(
+            self.core_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     #[cfg(feature = "defi")]
@@ -1937,9 +2296,15 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_fee_collects(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_pool_fee_collects(
+            self.core_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     #[cfg(feature = "defi")]
@@ -1950,9 +2315,15 @@ pub trait DataActor:
         client_id: Option<ClientId>,
         params: Option<Params>,
     ) where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_pool_flash_events(self, instrument_id, client_id, params);
+        DataActorCore::unsubscribe_pool_flash_events(
+            self.core_mut(),
+            instrument_id,
+            client_id,
+            params,
+        );
     }
 
     /// Request historical custom data of the given `data_type`.
@@ -1970,15 +2341,23 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &CustomDataResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_data_response(resp);
         });
 
         DataActorCore::request_data(
-            self, data_type, client_id, start, end, limit, params, handler,
+            self.core_mut(),
+            data_type,
+            client_id,
+            start,
+            end,
+            limit,
+            params,
+            handler,
         )
     }
 
@@ -1996,15 +2375,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_instrument_response(resp);
         });
 
         DataActorCore::request_instrument(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2028,14 +2408,23 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &InstrumentsResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_instruments_response(resp);
         });
 
-        DataActorCore::request_instruments(self, venue, start, end, client_id, params, handler)
+        DataActorCore::request_instruments(
+            self.core_mut(),
+            venue,
+            start,
+            end,
+            client_id,
+            params,
+            handler,
+        )
     }
 
     /// Request an [`OrderBook`] snapshot for the given `instrument_id`.
@@ -2051,14 +2440,22 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_book_response(resp);
         });
 
-        DataActorCore::request_book_snapshot(self, instrument_id, depth, client_id, params, handler)
+        DataActorCore::request_book_snapshot(
+            self.core_mut(),
+            instrument_id,
+            depth,
+            client_id,
+            params,
+            handler,
+        )
     }
 
     /// Request historical [`OrderBookDelta`] data for the given `instrument_id`.
@@ -2076,15 +2473,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookDeltasResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_book_deltas_response(resp);
         });
 
         DataActorCore::request_book_deltas(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2112,15 +2510,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BookDepthResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_book_depth_response(resp);
         });
 
         DataActorCore::request_book_depth(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2147,15 +2546,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &QuotesResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_quotes_response(resp);
         });
 
         DataActorCore::request_quotes(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2181,15 +2581,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &TradesResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_trades_response(resp);
         });
 
         DataActorCore::request_trades(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2215,15 +2616,23 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &BarsResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_bars_response(resp);
         });
 
         DataActorCore::request_bars(
-            self, bar_type, start, end, limit, client_id, params, handler,
+            self.core_mut(),
+            bar_type,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
         )
     }
 
@@ -2242,15 +2651,16 @@ pub trait DataActor:
         params: Option<Params>,
     ) -> anyhow::Result<UUID4>
     where
+        Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let handler = ShareableMessageHandler::from_typed(move |resp: &FundingRatesResponse| {
             get_actor_unchecked::<Self>(&actor_id).handle_funding_rates_response(resp);
         });
 
         DataActorCore::request_funding_rates(
-            self,
+            self.core_mut(),
             instrument_id,
             start,
             end,
@@ -2265,10 +2675,10 @@ pub trait DataActor:
 // Blanket implementation: any DataActor automatically implements Actor
 impl<T> Actor for T
 where
-    T: DataActor + Debug + 'static,
+    T: DataActor + DataActorNative + Debug + 'static,
 {
     fn id(&self) -> Ustr {
-        self.actor_id.inner()
+        self.core().actor_id.inner()
     }
 
     #[allow(unused_variables)]
@@ -2284,19 +2694,24 @@ where
 // Blanket implementation: any DataActor automatically implements Component
 impl<T> Component for T
 where
-    T: DataActor + Debug + 'static,
+    T: DataActor + DataActorNative + Debug + 'static,
 {
     fn component_id(&self) -> ComponentId {
-        ComponentId::new(self.actor_id.inner().as_str())
+        ComponentId::new(self.core().actor_id.inner().as_str())
     }
 
     fn state(&self) -> ComponentState {
-        self.state
+        self.core().state
     }
 
     fn transition_state(&mut self, trigger: ComponentTrigger) -> anyhow::Result<()> {
-        self.state = self.state.transition(&trigger)?;
-        log::info!(component = self.component_id().as_str(); "{}", self.state.variant_name());
+        let core = self.core_mut();
+        core.state = core.state.transition(&trigger)?;
+        log::info!(
+            component = core.actor_id.inner().as_str();
+            "{}",
+            core.state.variant_name()
+        );
         Ok(())
     }
 
@@ -2306,10 +2721,10 @@ where
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
     ) -> anyhow::Result<()> {
-        DataActorCore::register(self, trader_id, clock.clone(), cache)?;
+        DataActorCore::register(self.core_mut(), trader_id, clock.clone(), cache)?;
 
         // Register default time event handler for this actor
-        let actor_id = self.actor_id().inner();
+        let actor_id = self.core().actor_id().inner();
         let callback = TimeEventCallback::from(move |event: TimeEvent| {
             if let Some(mut actor) = try_get_actor_unchecked::<Self>(&actor_id) {
                 actor.handle_time_event(&event);
@@ -2396,7 +2811,6 @@ pub struct DataActorCore {
     warning_events: AHashSet<String>, // TODO: TBD
     pending_requests: AHashMap<UUID4, Option<RequestCallback>>,
     signal_classes: AHashMap<String, String>,
-    #[cfg(feature = "indicators")]
     indicators: Indicators,
 }
 
@@ -2960,9 +3374,77 @@ impl DataActorCore {
             warning_events: AHashSet::new(),
             pending_requests: AHashMap::new(),
             signal_classes: AHashMap::new(),
-            #[cfg(feature = "indicators")]
             indicators: Indicators::default(),
         }
+    }
+
+    /// Returns the registered indicators.
+    #[must_use]
+    pub fn registered_indicators(&self) -> Vec<SharedActorIndicator> {
+        self.indicators.registered_indicators()
+    }
+
+    /// Returns whether all registered indicators are initialized.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a registered indicator cannot report readiness.
+    pub fn indicators_initialized(&self) -> anyhow::Result<bool> {
+        self.indicators.initialized()
+    }
+
+    /// Registers an indicator to receive quote ticks for an instrument.
+    pub fn register_indicator_for_quote_ticks(
+        &mut self,
+        instrument_id: InstrumentId,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_quote_ticks(instrument_id, indicator);
+    }
+
+    /// Registers an indicator to receive trade ticks for an instrument.
+    pub fn register_indicator_for_trade_ticks(
+        &mut self,
+        instrument_id: InstrumentId,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_trade_ticks(instrument_id, indicator);
+    }
+
+    /// Registers an indicator to receive bars for a bar type.
+    pub fn register_indicator_for_bars(
+        &mut self,
+        bar_type: BarType,
+        indicator: SharedActorIndicator,
+    ) {
+        self.indicators
+            .register_indicator_for_bars(bar_type, indicator);
+    }
+
+    pub(crate) fn handle_indicators_for_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.indicators.handle_quote(quote)
+    }
+
+    pub(crate) fn handle_indicators_for_quotes(&self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
+        self.indicators.handle_quotes(quotes)
+    }
+
+    pub(crate) fn handle_indicators_for_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
+        self.indicators.handle_trade(trade)
+    }
+
+    pub(crate) fn handle_indicators_for_trades(&self, trades: &[TradeTick]) -> anyhow::Result<()> {
+        self.indicators.handle_trades(trades)
+    }
+
+    pub(crate) fn handle_indicators_for_bar(&self, bar: &Bar) -> anyhow::Result<()> {
+        self.indicators.handle_bar(bar)
+    }
+
+    pub(crate) fn handle_indicators_for_bars(&self, bars: &[Bar]) -> anyhow::Result<()> {
+        self.indicators.handle_bars(bars)
     }
 
     /// Returns the memory address of this instance as a hexadecimal string.
@@ -2996,33 +3478,14 @@ impl DataActorCore {
         self.clock_ref().timestamp_ns()
     }
 
-    /// Returns the clock for the actor (if registered).
-    ///
-    /// # Panics
-    ///
-    /// Panics if the actor has not been registered with a trader.
-    pub fn clock(&mut self) -> RefMut<'_, dyn Clock> {
-        self.clock
-            .as_ref()
-            .unwrap_or_else(|| {
-                panic!(
-                    "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
-                    self.actor_id, self.trader_id
-                )
-            })
-            .borrow_mut()
-    }
-
-    /// Returns a clone of the reference-counted clock.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the actor has not yet been registered (clock is `None`).
-    pub fn clock_rc(&self) -> Rc<RefCell<dyn Clock>> {
-        self.clock
-            .as_ref()
-            .expect("DataActor must be registered before accessing clock")
-            .clone()
+    fn clock_api(&self) -> ClockApi<'_> {
+        let clock = self.clock.as_ref().unwrap_or_else(|| {
+            panic!(
+                "DataActor {} must be registered before calling `clock()` - trader_id: {:?}",
+                self.actor_id, self.trader_id
+            )
+        });
+        ClockApi::new(clock.as_ref())
     }
 
     fn clock_ref(&self) -> Ref<'_, dyn Clock> {
@@ -3037,28 +3500,14 @@ impl DataActorCore {
             .borrow()
     }
 
-    /// Returns a read-only reference to the cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the actor has not yet been registered (cache is `None`).
-    pub fn cache(&self) -> Ref<'_, Cache> {
-        self.cache
-            .as_ref()
-            .expect("DataActor must be registered before accessing cache")
-            .borrow()
-    }
-
-    /// Returns a clone of the reference-counted cache.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the actor has not yet been registered (cache is `None`).
-    pub fn cache_rc(&self) -> Rc<RefCell<Cache>> {
-        self.cache
-            .as_ref()
-            .expect("DataActor must be registered before accessing cache")
-            .clone()
+    fn cache_api(&self) -> CacheApi<'_> {
+        let cache = self.cache.as_ref().unwrap_or_else(|| {
+            panic!(
+                "DataActor {} must be registered before calling `cache()` - trader_id: {:?}",
+                self.actor_id, self.trader_id
+            )
+        });
+        CacheApi::new(cache.as_ref())
     }
 
     /// Register the data actor with a trader.
@@ -3683,7 +4132,10 @@ impl DataActorCore {
     }
 
     /// Helper method for subscribing to option chain snapshots from the trait.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "subscription command mirrors the option chain request fields"
+    )]
     pub fn subscribe_option_chain(
         &mut self,
         topic: MStr<Topic>,
@@ -4136,7 +4588,7 @@ impl DataActorCore {
     pub fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
         self.check_registered();
 
-        let topic = get_order_fills_topic(instrument_id);
+        let topic = get_order_filled_topic(instrument_id);
         self.remove_order_event_subscription(topic);
     }
 
@@ -4144,7 +4596,7 @@ impl DataActorCore {
     pub fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
         self.check_registered();
 
-        let topic = get_order_cancels_topic(instrument_id);
+        let topic = get_order_canceled_topic(instrument_id);
         self.remove_order_event_subscription(topic);
     }
 
@@ -4597,6 +5049,16 @@ impl DataActorCore {
     pub fn has_deltas_handler(&self, pattern: &str) -> bool {
         self.deltas_handlers
             .contains_key(&MStr::<Pattern>::from(pattern))
+    }
+}
+
+impl DataActorNative for DataActorCore {
+    fn core(&self) -> &DataActorCore {
+        self
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        self
     }
 }
 

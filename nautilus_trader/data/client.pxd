@@ -125,6 +125,10 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instrument_close(self)
     cpdef list subscribed_option_greeks(self)
 
+    cpdef bint is_subscribed_order_book_deltas(self, InstrumentId instrument_id)
+    cpdef bint is_subscribed_quote_ticks(self, InstrumentId instrument_id)
+    cpdef bint is_subscribed_trade_ticks(self, InstrumentId instrument_id)
+
     cpdef void subscribe_instruments(self, SubscribeInstruments command)
     cpdef void subscribe_instrument(self, SubscribeInstrument command)
     cpdef void subscribe_order_book_deltas(self, SubscribeOrderBook command)

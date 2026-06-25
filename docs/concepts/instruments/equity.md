@@ -51,26 +51,18 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-let aapl = Equity::new(
-    InstrumentId::from("AAPL.XNAS"),
-    Symbol::from("AAPL"),
-    Some(Ustr::from("US0378331005")),
-    Currency::from("USD"),
-    2,
-    Price::from("0.01"),
-    Some(Quantity::from("100")),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let aapl = Equity::builder()
+    .instrument_id(InstrumentId::from("AAPL.XNAS"))
+    .raw_symbol(Symbol::from("AAPL"))
+    .isin(Ustr::from("US0378331005"))
+    .currency(Currency::from("USD"))
+    .price_precision(2)
+    .price_increment(Price::from("0.01"))
+    .lot_size(Quantity::from("100"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

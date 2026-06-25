@@ -20,7 +20,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 #[allow(unused_imports)]
 use arrow::{
     array::{
-        BinaryArray, BinaryBuilder, Float64Array, Float64Builder, Int64Array, Int64Builder,
+        Array, BinaryArray, BinaryBuilder, Float64Array, Float64Builder, Int64Array, Int64Builder,
         StringArray, StringBuilder, UInt8Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
@@ -42,7 +42,8 @@ use ustr::Ustr;
 
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name_or_index,
+    extract_optional_string_column_by_name, optional_ustr_value,
 };
 
 impl ArrowSchemaProvider for BettingInstrument {
@@ -69,6 +70,7 @@ impl ArrowSchemaProvider for BettingInstrument {
             Field::new("selection_handicap", DataType::Float64, false),
             Field::new("price_precision", DataType::UInt8, false),
             Field::new("size_precision", DataType::UInt8, false),
+            Field::new("tick_scheme", DataType::Utf8, true),
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -111,6 +113,7 @@ impl EncodeToRecordBatch for BettingInstrument {
         let mut selection_handicap_builder = Float64Array::builder(data.len());
         let mut price_precision_builder = UInt8Array::builder(data.len());
         let mut size_precision_builder = UInt8Array::builder(data.len());
+        let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = BinaryBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
@@ -139,6 +142,12 @@ impl EncodeToRecordBatch for BettingInstrument {
             selection_handicap_builder.append_value(bi.selection_handicap);
             price_precision_builder.append_value(bi.price_precision);
             size_precision_builder.append_value(bi.size_precision);
+
+            if let Some(tick_scheme) = bi.tick_scheme {
+                tick_scheme_builder.append_value(tick_scheme);
+            } else {
+                tick_scheme_builder.append_null();
+            }
 
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = bi.info {
@@ -187,6 +196,7 @@ impl EncodeToRecordBatch for BettingInstrument {
                 Arc::new(selection_handicap_builder.finish()),
                 Arc::new(price_precision_builder.finish()),
                 Arc::new(size_precision_builder.finish()),
+                Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
@@ -258,11 +268,21 @@ pub fn decode_betting_instrument_batch(
         extract_column::<UInt8Array>(cols, "price_precision", 19, DataType::UInt8)?;
     let size_precision_values =
         extract_column::<UInt8Array>(cols, "size_precision", 20, DataType::UInt8)?;
-    let info_values = cols
-        .get(21)
-        .ok_or_else(|| EncodingError::MissingColumn("info", 21))?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 22, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 23, DataType::UInt64)?;
+    let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
+    let info_values =
+        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 21, DataType::Binary)?;
+    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_event",
+        22,
+        DataType::UInt64,
+    )?;
+    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_init",
+        23,
+        DataType::UInt64,
+    )?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -318,16 +338,20 @@ pub fn decode_betting_instrument_batch(
         let ts_event = nautilus_core::UnixNanos::from(ts_event_values.value(i));
         let ts_init = nautilus_core::UnixNanos::from(ts_init_values.value(i));
 
+        let tick_scheme = optional_ustr_value(tick_scheme_values, i);
+
         // Note: BettingInstrument requires price_increment and size_increment, but they're not in the Python schema
         // We'll need to use defaults or extract from price_precision/size_precision
         // For now, using minimal defaults based on precision
-        let price_increment = Price::new(0.01, price_prec);
-        let size_increment = Quantity::new(1.0, size_prec);
+        let price_increment = Price::new_checked(0.01, price_prec)
+            .map_err(|e| EncodingError::ParseError("price_increment", format!("row {i}: {e}")))?;
+        let size_increment = Quantity::new_checked(1.0, size_prec)
+            .map_err(|e| EncodingError::ParseError("size_increment", format!("row {i}: {e}")))?;
 
         // Extract raw_symbol from id's symbol component
         let raw_symbol = id.symbol;
 
-        let betting_instrument = BettingInstrument::new(
+        let betting_instrument = BettingInstrument::new_checked(
             id,
             raw_symbol,
             event_type_id,
@@ -361,13 +385,103 @@ pub fn decode_betting_instrument_batch(
             None, // margin_maint - not in Python schema, will default to 1
             None, // maker_fee - not in Python schema, will default to 0
             None, // taker_fee - not in Python schema, will default to 0
+            tick_scheme,
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<BettingInstrument>(i, e))?;
 
         result.push(betting_instrument);
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use arrow::{array::UInt8Array, record_batch::RecordBatch};
+    use nautilus_model::instruments::stubs::betting;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::arrow::EncodeToRecordBatch;
+
+    const PRICE_PRECISION_COLUMN: usize = 19;
+    const SIZE_PRECISION_COLUMN: usize = 20;
+
+    fn betting_batch_with_precision(column_index: usize, precision: u8) -> RecordBatch {
+        betting_batch_with_precision_values(column_index, &[precision])
+    }
+
+    fn betting_batch_with_precision_values(column_index: usize, precisions: &[u8]) -> RecordBatch {
+        let instruments = vec![betting(); precisions.len()];
+        let batch = BettingInstrument::encode_batch(&HashMap::new(), &instruments).unwrap();
+        let mut columns = batch.columns().to_vec();
+        columns[column_index] = Arc::new(UInt8Array::from(precisions.to_vec()));
+        RecordBatch::try_new(batch.schema(), columns).unwrap()
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_price_precision_returns_error() {
+        let batch = betting_batch_with_precision(PRICE_PRECISION_COLUMN, u8::MAX);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "price_increment");
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected price_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_second_row_precision_reports_row_index() {
+        let batch = betting_batch_with_precision_values(PRICE_PRECISION_COLUMN, &[2, u8::MAX]);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "price_increment");
+                assert!(message.starts_with("row 1:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected price_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_size_precision_returns_error() {
+        let batch = betting_batch_with_precision(SIZE_PRECISION_COLUMN, u8::MAX);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, "size_increment");
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("precision"));
+            }
+            _ => panic!("Expected size_increment parse error, was: {error}"),
+        }
+    }
+
+    #[rstest]
+    fn decode_betting_instrument_invalid_default_price_increment_returns_error() {
+        let batch = betting_batch_with_precision(PRICE_PRECISION_COLUMN, 1);
+        let error = decode_betting_instrument_batch(&HashMap::new(), &batch).unwrap_err();
+
+        match error {
+            EncodingError::ParseError(field, message) => {
+                assert_eq!(field, super::super::INSTRUMENT_VALIDATION_FIELD);
+                assert!(message.starts_with("row 0:"));
+                assert!(message.contains("BettingInstrument"));
+                assert!(message.contains("price_increment"));
+            }
+            _ => panic!("Expected instrument parse error, was: {error}"),
+        }
+    }
 }

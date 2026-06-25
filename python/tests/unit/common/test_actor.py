@@ -13,14 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import datetime as dt
 import inspect
 from decimal import Decimal
 
 import pytest
 
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.backtest import BacktestEngineConfig
 from nautilus_trader.common import ComponentState
 from nautilus_trader.common import CustomData
 from nautilus_trader.common import DataActor
+from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.common import Signal
 from nautilus_trader.common import TimeEvent
 from nautilus_trader.core import UUID4
@@ -34,6 +38,7 @@ from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
 from nautilus_trader.model import Chain
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import DataType
 from nautilus_trader.model import Dex
 from nautilus_trader.model import FundingRateUpdate
@@ -63,6 +68,7 @@ from nautilus_trader.model import QuoteTick
 from nautilus_trader.model import Token
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
+from nautilus_trader.model import Venue
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import TestActor
 from tests.unit.common.actor import TestActorConfig
@@ -123,6 +129,65 @@ HISTORICAL_CALLBACKS = [
     ("on_historical_index_prices", "historical_index_prices"),
 ]
 
+NO_PARAMETERS = ()
+STATE_PARAMETERS = ("state",)
+
+LIFECYCLE_HOOK_SIGNATURES = [
+    ("on_start", NO_PARAMETERS),
+    ("on_stop", NO_PARAMETERS),
+    ("on_resume", NO_PARAMETERS),
+    ("on_reset", NO_PARAMETERS),
+    ("on_dispose", NO_PARAMETERS),
+    ("on_degrade", NO_PARAMETERS),
+    ("on_fault", NO_PARAMETERS),
+]
+SAVE_LOAD_HOOK_SIGNATURES = [
+    ("on_save", NO_PARAMETERS),
+    ("on_load", STATE_PARAMETERS),
+]
+DATA_CALLBACK_SIGNATURES = [
+    ("on_time_event", ("event",)),
+    ("on_data", ("data",)),
+    ("on_signal", ("signal",)),
+    ("on_instrument", ("instrument",)),
+    ("on_quote", ("quote",)),
+    ("on_trade", ("trade",)),
+    ("on_bar", ("bar",)),
+    ("on_book_deltas", ("deltas",)),
+    ("on_book", ("book",)),
+    ("on_mark_price", ("mark_price",)),
+    ("on_index_price", ("index_price",)),
+    ("on_funding_rate", ("funding_rate",)),
+    ("on_instrument_status", ("status",)),
+    ("on_instrument_close", ("close",)),
+    ("on_option_greeks", ("greeks",)),
+    ("on_option_chain", ("slice",)),
+]
+HISTORICAL_CALLBACK_SIGNATURES = [
+    ("on_historical_data", ("data",)),
+    ("on_historical_quotes", ("quotes",)),
+    ("on_historical_trades", ("trades",)),
+    ("on_historical_funding_rates", ("funding_rates",)),
+    ("on_historical_bars", ("bars",)),
+    ("on_historical_mark_prices", ("mark_prices",)),
+    ("on_historical_index_prices", ("index_prices",)),
+]
+DEFI_CALLBACK_SIGNATURES = [
+    ("on_block", ("block",)),
+    ("on_pool", ("pool",)),
+    ("on_pool_swap", ("swap",)),
+    ("on_pool_liquidity_update", ("update",)),
+    ("on_pool_fee_collect", ("update",)),
+    ("on_pool_flash", ("flash",)),
+]
+CALLBACK_SIGNATURES = (
+    LIFECYCLE_HOOK_SIGNATURES
+    + SAVE_LOAD_HOOK_SIGNATURES
+    + DATA_CALLBACK_SIGNATURES
+    + HISTORICAL_CALLBACK_SIGNATURES
+    + DEFI_CALLBACK_SIGNATURES
+)
+
 DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
 DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
 VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
@@ -157,6 +222,16 @@ OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
 )
 INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
 BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
+BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+BOOK_DEPTH_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "depth",
+    "client_id",
+    "params",
+)
 INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
     "instrument_id",
     "start",
@@ -219,10 +294,17 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
     ("request_instruments", VENUE_REQUEST_PARAMETERS),
     ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
+    ("request_book_deltas", BOOK_DELTAS_REQUEST_PARAMETERS),
+    ("request_book_depth", BOOK_DEPTH_REQUEST_PARAMETERS),
     ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_bars", BAR_REQUEST_PARAMETERS),
+]
+HISTORICAL_REQUEST_DATETIME_CASES = [
+    pytest.param("datetime-utc", id="datetime-utc"),
+    pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
+    pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
 ]
 
 
@@ -246,6 +328,75 @@ def _create_recording_actor_type():
 
 
 RecordingActor = _create_recording_actor_type()
+
+
+class HistoricalRequestProbeActor(TestActor):
+    observed_request_ids = {}
+    request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    def on_start(self):
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        client_id = ClientId("SIM")
+        venue = Venue("SIM")
+        bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+        request_time = type(self).request_time
+
+        type(self).observed_request_ids = {
+            "data": self.request_data(
+                DataType("TestData"),
+                client_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "data"},
+            ),
+            "instrument": self.request_instrument(
+                instrument_id,
+                start=request_time,
+                params={"kind": "instrument"},
+            ),
+            "instruments": self.request_instruments(
+                venue,
+                end=request_time,
+                params={"kind": "instruments"},
+            ),
+            "book_deltas": self.request_book_deltas(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "deltas"},
+            ),
+            "book_depth": self.request_book_depth(
+                instrument_id,
+                end=request_time,
+                limit=2,
+                depth=5,
+                params={"kind": "depth"},
+            ),
+            "quotes": self.request_quotes(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "quotes"},
+            ),
+            "trades": self.request_trades(
+                instrument_id,
+                end=request_time,
+                limit=1,
+                params={"kind": "trades"},
+            ),
+            "funding_rates": self.request_funding_rates(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "funding-rates"},
+            ),
+            "bars": self.request_bars(
+                bar_type,
+                end=request_time,
+                limit=1,
+                params={"kind": "bars"},
+            ),
+        }
 
 
 def test_data_actor_pre_registration_surface(actor):
@@ -313,6 +464,28 @@ def test_data_actor_overridden_typed_callbacks_receive_runtime_objects(
     assert call_args[0] is payload
 
 
+def test_data_actor_overridden_pool_swap_callback_exposes_raw_payload(
+    recording_actor,
+    sample_objects,
+):
+    payload = sample_objects["pool_swap"]
+
+    assert recording_actor.on_pool_swap(payload) is None
+
+    call_name, call_args = recording_actor.calls[-1]
+    assert call_name == "on_pool_swap"
+    assert call_args == (payload,)
+
+    swap = call_args[0]
+    assert swap is payload
+    assert swap.recipient == "0x0000000000000000000000000000000000000005"
+    assert swap.amount0 == "1"
+    assert swap.amount1 == "-2"
+    assert swap.sqrt_price_x96 == "79228162514264337593543950336"
+    assert swap.liquidity == "100"
+    assert swap.tick == 1
+
+
 @pytest.mark.parametrize(("method_name", "sample_name"), HISTORICAL_CALLBACKS)
 def test_data_actor_historical_callbacks_accept_runtime_objects(
     actor,
@@ -348,6 +521,17 @@ def test_data_actor_shutdown_system_signature_exposes_optional_reason(actor):
     assert parameter.default is None
 
 
+@pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
+def test_data_actor_callback_methods_expose_expected_signatures(
+    actor,
+    method_name,
+    parameter_names,
+):
+    signature = inspect.signature(getattr(actor, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
+
+
 @pytest.mark.parametrize(("method_name", "parameter_names"), REGISTRATION_REQUIRED_SIGNATURES)
 def test_data_actor_registration_gated_methods_expose_expected_signatures(
     actor,
@@ -357,6 +541,55 @@ def test_data_actor_registration_gated_methods_expose_expected_signatures(
     signature = inspect.signature(getattr(actor, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
+def test_data_actor_historical_requests_accept_datetimes_when_registered(request_time):
+    HistoricalRequestProbeActor.observed_request_ids = {}
+    HistoricalRequestProbeActor.request_time = _historical_request_time(request_time)
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_actor_from_config(
+        ImportableActorConfig(
+            actor_path="tests.unit.common.test_actor:HistoricalRequestProbeActor",
+            config_path="tests.unit.common.actor:TestActorConfig",
+            config={"actor_id": "HISTORICAL-REQUEST-ACTOR"},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert set(HistoricalRequestProbeActor.observed_request_ids) == {
+            "data",
+            "instrument",
+            "instruments",
+            "book_deltas",
+            "book_depth",
+            "quotes",
+            "trades",
+            "funding_rates",
+            "bars",
+        }
+
+        for request_id in HistoricalRequestProbeActor.observed_request_ids.values():
+            assert UUID4.from_str(request_id)
+    finally:
+        engine.dispose()
+
+
+def _historical_request_time(request_time):
+    if request_time == "datetime-utc":
+        return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    pd = pytest.importorskip("pandas")
+
+    if request_time == "pandas-timestamp-utc":
+        return pd.Timestamp("1970-01-01T00:00:00Z")
+
+    if request_time == "pandas-timestamp-utc-nanos":
+        return pd.Timestamp(0, unit="ns", tz="UTC")
+
+    raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
 @pytest.fixture

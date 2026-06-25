@@ -15,12 +15,16 @@
 
 //! Python bindings for sandbox configuration.
 
+use nautilus_execution::{
+    models::fee::FeeModelAny,
+    python::fee::{fee_model_any_to_pyobject, pyobject_to_fee_model_any},
+};
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, TraderId, Venue},
     types::{Currency, Money},
 };
-use pyo3::prelude::*;
+use pyo3::{Py, PyAny, Python, prelude::*};
 use rust_decimal::Decimal;
 
 use crate::config::SandboxExecutionClientConfig;
@@ -30,7 +34,7 @@ use crate::config::SandboxExecutionClientConfig;
 impl SandboxExecutionClientConfig {
     /// Configuration for `SandboxExecutionClient` instances.
     #[new]
-    #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true))]
+    #[pyo3(signature = (venue, starting_balances, trader_id=None, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         venue: Venue,
@@ -51,14 +55,18 @@ impl SandboxExecutionClientConfig {
         use_position_ids: bool,
         use_random_ids: bool,
         use_reduce_only: bool,
-    ) -> Self {
+        fee_model: Option<Py<PyAny>>,
+    ) -> PyResult<Self> {
         // Generate default IDs from venue if not provided
         let trader_id =
             trader_id.unwrap_or_else(|| TraderId::from(format!("{venue}-001").as_str()));
         let account_id =
             account_id.unwrap_or_else(|| AccountId::from(format!("{venue}-SANDBOX-001").as_str()));
+        let fee_model: Option<FeeModelAny> = fee_model
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
+            .transpose()?;
 
-        Self {
+        Ok(Self {
             trader_id,
             account_id,
             venue,
@@ -69,6 +77,7 @@ impl SandboxExecutionClientConfig {
             default_leverage: default_leverage.unwrap_or(Decimal::ONE),
             leverages: ahash::AHashMap::new(),
             book_type: book_type.unwrap_or(BookType::L1_MBP),
+            fee_model,
             frozen_account,
             bar_execution,
             trade_execution,
@@ -78,7 +87,7 @@ impl SandboxExecutionClientConfig {
             use_position_ids,
             use_random_ids,
             use_reduce_only,
-        }
+        })
     }
 
     #[getter]
@@ -124,6 +133,14 @@ impl SandboxExecutionClientConfig {
     #[getter]
     fn book_type(&self) -> BookType {
         self.book_type
+    }
+
+    #[getter]
+    fn fee_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.fee_model
+            .as_ref()
+            .map(|model| fee_model_any_to_pyobject(py, model))
+            .transpose()
     }
 
     #[getter]

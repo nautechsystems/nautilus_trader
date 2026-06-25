@@ -263,6 +263,19 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
+      # Fork-PR runners keep the workspace on the small root fs; bind the target
+      # dir to the larger /mnt disk (path stays workspace-relative for rust-cache).
+      - name: Back Cargo target with /mnt ephemeral disk (fork PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
+        run: |
+          target="${{ github.workspace }}/target/build-linux-x86"
+          backing="/mnt/cargo-target/build-linux-x86"
+          sudo mkdir -p "$backing"
+          sudo chown "$(id -u):$(id -g)" "$backing"
+          mkdir -p "$target"
+          sudo mount --bind "$backing" "$target"
+          df -h / /mnt
+
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
@@ -304,18 +317,12 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
-      - name: Run plug-in cdylib smoke tests
-        if: >
-          needs.plan.outputs.run-rust-tests == 'true' &&
-          matrix.python-version == '3.13'
-        run: make cargo-test-plugin-cdylib-smoke NEXTEST_PROFILE=ci
-
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: |
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
-          df -h .
+          df -h . "${CARGO_TARGET_DIR}"
 
       # Temporary: fail fast on rare runner worktree corruption while we isolate the root cause
       - name: Verify immutable CI inputs (pre-wheel build)
@@ -653,13 +660,8 @@ jobs:
       PARALLEL_BUILD: false
       RUST_BACKTRACE: 1
     steps:
-      # https://github.com/step-security/harden-runner
-      - uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-        with:
-          egress-policy: ${{ env.EGRESS_POLICY }}
-          allowed-endpoints: >-
-            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
-            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+      # Harden-Runner skips its agent on Depot Windows,
+      # and its post step assumes C:\agent exists. Keep this job out until upstream fixes cleanup.
 
       - name: Checkout repository
         # https://github.com/actions/checkout
@@ -1407,6 +1409,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PYPI_PUBLISHER_WORKFLOW: build.yml
           PYPI_PUBLISHER_ENVIRONMENT: release
+          CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS: ${{ vars.CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS }}
           CARGO_PUBLISH_USER_AGENT: >-
             nautilus-trader-release-verifier
             (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})

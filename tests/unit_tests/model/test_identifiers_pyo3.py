@@ -254,15 +254,15 @@ def test_instrument_id_from_str_with_utf8_symbol() -> None:
     [
         [
             "BTCUSDT",
-            "Error parsing `InstrumentId` from 'BTCUSDT': missing '.' separator between symbol and venue components",
+            "invalid `InstrumentId` value 'BTCUSDT': missing '.' separator between symbol and venue components",
         ],
         [
             ".USDT",
-            "invalid string for 'value', was empty",  # TODO: Improve error message
+            "invalid `InstrumentId` value '.USDT': invalid symbol: invalid string for 'value', was empty",
         ],
         [
             "BTC.",
-            "invalid string for 'value', was empty",  # TODO: Improve error message
+            "invalid `InstrumentId` value 'BTC.': invalid venue: invalid string for 'value', was empty",
         ],
     ],
 )

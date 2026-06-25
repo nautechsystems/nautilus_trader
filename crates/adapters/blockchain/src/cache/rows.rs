@@ -13,19 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{num::ParseIntError, str::FromStr};
 
 use alloy::primitives::{Address, I256, U160, U256};
-use nautilus_core::UnixNanos;
+use nautilus_core::{
+    UnixNanos,
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+};
 use nautilus_model::{
     defi::{
         PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, SharedChain, SharedDex,
-        data::{DexPoolData, PoolFeeCollect, PoolFlash},
+        data::{
+            DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
+        },
         validation::validate_address,
     },
     identifiers::InstrumentId,
 };
 use sqlx::{FromRow, Row, postgres::PgRow};
+
+const MAX_UNIX_SECONDS_TIMESTAMP: u64 = 9_999_999_999;
+const MAX_UNIX_MILLISECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000 + 999;
+const MAX_UNIX_MICROSECONDS_TIMESTAMP: u64 = MAX_UNIX_SECONDS_TIMESTAMP * 1_000_000 + 999_999;
 
 /// A data transfer object that maps database rows to token data.
 ///
@@ -62,6 +71,7 @@ pub struct PoolRow {
     pub pool_identifier: String,
     pub dex_name: String,
     pub creation_block: i64,
+    pub creation_block_timestamp: Option<UnixNanos>,
     pub token0_chain: i32,
     pub token0_address: Address,
     pub token1_chain: i32,
@@ -79,6 +89,18 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
         let pool_identifier = row.try_get::<String, _>("pool_identifier")?;
         let dex_name = row.try_get::<String, _>("dex_name")?;
         let creation_block = row.try_get::<i64, _>("creation_block")?;
+        let creation_block_timestamp =
+            row.try_get::<Option<String>, _>("creation_block_timestamp")?;
+        let creation_block_timestamp = creation_block_timestamp
+            .as_deref()
+            .map(parse_cached_block_timestamp)
+            .transpose()
+            .map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid creation block timestamp '{creation_block_timestamp:?}': {e}")
+                        .into(),
+                )
+            })?;
         let token0_chain = row.try_get::<i32, _>("token0_chain")?;
         let token0_address =
             validate_address(row.try_get::<String, _>("token0_address")?.as_str()).unwrap();
@@ -96,6 +118,7 @@ impl<'r> FromRow<'r, PgRow> for PoolRow {
             pool_identifier,
             dex_name,
             creation_block,
+            creation_block_timestamp,
             token0_chain,
             token0_address,
             token1_chain,
@@ -122,11 +145,28 @@ impl FromRow<'_, PgRow> for BlockTimestampRow {
     fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let number = row.try_get::<i64, _>("number")? as u64;
         let timestamp = row.try_get::<String, _>("timestamp")?;
-        Ok(Self {
-            number,
-            timestamp: UnixNanos::from(timestamp),
-        })
+        let timestamp = parse_cached_block_timestamp(&timestamp).map_err(|e| {
+            sqlx::Error::Decode(format!("Invalid block timestamp '{timestamp}': {e}").into())
+        })?;
+        Ok(Self { number, timestamp })
     }
+}
+
+pub(crate) fn parse_cached_block_timestamp(value: &str) -> Result<UnixNanos, ParseIntError> {
+    let timestamp = value.parse::<u64>()?;
+    if timestamp <= MAX_UNIX_SECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_SECOND));
+    }
+
+    if timestamp <= MAX_UNIX_MILLISECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_MILLISECOND));
+    }
+
+    if timestamp <= MAX_UNIX_MICROSECONDS_TIMESTAMP {
+        return Ok(UnixNanos::from(timestamp * NANOSECONDS_IN_MICROSECOND));
+    }
+
+    Ok(UnixNanos::from(timestamp))
 }
 
 /// Transforms a database row from the pool events UNION query into a DexPoolData enum variant.
@@ -152,7 +192,10 @@ pub fn transform_row_to_dex_pool_data(
     let transaction_hash = row.try_get::<String, _>("transaction_hash")?;
     let transaction_index = row.try_get::<i32, _>("transaction_index")? as u32;
     let log_index = row.try_get::<i32, _>("log_index")? as u32;
-    let timestamp = UnixNanos::from(row.try_get::<String, _>("block_timestamp")?);
+    let block_timestamp = row.try_get::<String, _>("block_timestamp")?;
+    let timestamp = parse_cached_block_timestamp(&block_timestamp).map_err(|e| {
+        sqlx::Error::Decode(format!("Invalid block timestamp '{block_timestamp}': {e}").into())
+    })?;
 
     match event_type.as_str() {
         "swap" => {
@@ -357,6 +400,84 @@ pub fn transform_row_to_dex_pool_data(
 
             Ok(DexPoolData::FeeCollect(pool_fee_collect))
         }
+        "fee_protocol_update" => {
+            let fee_protocol0_new = row.try_get::<i16, _>("fee_protocol0_new")?;
+            let fee_protocol1_new = row.try_get::<i16, _>("fee_protocol1_new")?;
+            let fee_protocol0_new = u8::try_from(fee_protocol0_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol0_new '{fee_protocol0_new}': {e}").into(),
+                )
+            })?;
+            let fee_protocol1_new = u8::try_from(fee_protocol1_new).map_err(|e| {
+                sqlx::Error::Decode(
+                    format!("Invalid fee_protocol1_new '{fee_protocol1_new}': {e}").into(),
+                )
+            })?;
+
+            let pool_fee_protocol_update = PoolFeeProtocolUpdate::new(
+                chain,
+                dex,
+                instrument_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                fee_protocol0_new,
+                fee_protocol1_new,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
+            );
+
+            Ok(DexPoolData::FeeProtocolUpdate(pool_fee_protocol_update))
+        }
+        "fee_protocol_collect" => {
+            let sender_str = row.try_get::<Option<String>, _>("sender")?.ok_or_else(|| {
+                sqlx::Error::Decode("Missing sender for fee_protocol_collect event".into())
+            })?;
+            let sender = validate_address(&sender_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            let recipient_str =
+                row.try_get::<Option<String>, _>("recipient")?
+                    .ok_or_else(|| {
+                        sqlx::Error::Decode(
+                            "Missing recipient for fee_protocol_collect event".into(),
+                        )
+                    })?;
+            let recipient = validate_address(&recipient_str)
+                .map_err(|e| sqlx::Error::Decode(e.to_string().into()))?;
+
+            // UNION queries return NUMERIC type, not domain types, so we need to read as strings
+            let amount0_str = row.try_get::<String, _>("amount0")?;
+            let amount0 = amount0_str.parse::<u128>().map_err(|e| {
+                sqlx::Error::Decode(format!("Invalid amount0 '{amount0_str}': {e}").into())
+            })?;
+
+            let amount1_str = row.try_get::<String, _>("amount1")?;
+            let amount1 = amount1_str.parse::<u128>().map_err(|e| {
+                sqlx::Error::Decode(format!("Invalid amount1 '{amount1_str}': {e}").into())
+            })?;
+
+            let pool_fee_protocol_collect = PoolFeeProtocolCollect::new(
+                chain,
+                dex,
+                instrument_id,
+                pool_identifier,
+                block,
+                transaction_hash,
+                transaction_index,
+                log_index,
+                sender,
+                recipient,
+                amount0,
+                amount1,
+                timestamp, // ts_event
+                timestamp, // ts_init (same block timestamp)
+            );
+
+            Ok(DexPoolData::FeeProtocolCollect(pool_fee_protocol_collect))
+        }
         "flash" => {
             let sender_str = row
                 .try_get::<Option<String>, _>("sender")?
@@ -419,5 +540,36 @@ pub fn transform_row_to_dex_pool_data(
         _ => Err(sqlx::Error::Decode(
             format!("Unknown event type: {event_type}").into(),
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::datetime::{
+        NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND,
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case("1700000000", 1_700_000_000 * NANOSECONDS_IN_SECOND)]
+    #[case("9999999999", 9_999_999_999 * NANOSECONDS_IN_SECOND)]
+    #[case("1700000000123", 1_700_000_000_123 * NANOSECONDS_IN_MILLISECOND)]
+    #[case("9999999999999", 9_999_999_999_999 * NANOSECONDS_IN_MILLISECOND)]
+    #[case("1700000000123456", 1_700_000_000_123_456 * NANOSECONDS_IN_MICROSECOND)]
+    #[case("9999999999999999", 9_999_999_999_999_999 * NANOSECONDS_IN_MICROSECOND)]
+    #[case("1700000000123456789", 1_700_000_000_123_456_789)]
+    fn parse_cached_block_timestamp_returns_unix_nanos(#[case] value: &str, #[case] expected: u64) {
+        let timestamp = parse_cached_block_timestamp(value).unwrap();
+
+        assert_eq!(timestamp, UnixNanos::from(expected));
+    }
+
+    #[rstest]
+    fn parse_cached_block_timestamp_rejects_invalid_text() {
+        let result = parse_cached_block_timestamp("not-a-timestamp");
+
+        assert!(result.is_err());
     }
 }

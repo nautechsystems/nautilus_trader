@@ -57,7 +57,7 @@ use crate::{
         dispatch::{OrderIdentity, OrderShapeSnapshot},
         messages::{
             LighterAsset, LighterMarketStats, LighterPosition, LighterSpotMarketStats,
-            LighterTicker, LighterWsCandle, LighterWsOrderBook,
+            LighterTicker, LighterUserStats, LighterWsCandle, LighterWsOrderBook,
         },
     },
 };
@@ -1011,43 +1011,96 @@ pub fn parse_ws_position_status_report(
     ))
 }
 
-/// Parses a Lighter `account_all_assets` payload into an [`AccountState`].
+/// Builds the per-asset [`AccountBalance`] for one Lighter wallet entry.
 ///
-/// Lighter publishes per-asset balances with `balance` (total) and
-/// `locked_balance` (reserved for open orders or open positions). Margin is
-/// reported separately on the position stream and is not folded into this
-/// state.
+/// Lighter is a unified-margin venue: spot-side `balance` and perp-side
+/// `margin_balance` are both deployable equity. The split shows where the
+/// money currently sits, not whether it's usable. The only true lock on
+/// the trading side is `locked_balance` (resting spot orders); perp
+/// margin currently in use is tracked separately via [`MarginBalance`],
+/// not via `AccountBalance.locked`.
+///
+/// We map:
+/// - `total  = balance + margin_balance`: every unit of that currency
+///   the account owns at the venue
+/// - `locked = locked_balance`: only spot-order reservations
+/// - `free   = total - locked` (derived by `from_total_and_locked`):
+///   all deployable equity, whether currently sitting on spot or perp
+///
+/// Perp-side margin currently allocated to positions is **not** folded
+/// into `locked`. It lives on [`MarginBalance`] and the portfolio's
+/// risk engine consumes it from there. See
+/// [`margin_balance_from_user_stats`].
 ///
 /// # Errors
 ///
-/// Returns an error if any balance value cannot be parsed.
-pub fn parse_ws_account_state(
-    assets: &[&LighterAsset],
+/// Returns an error if `AccountBalance::from_total_and_locked` rejects
+/// the computed values.
+pub fn account_balance_from_lighter_asset(asset: &LighterAsset) -> anyhow::Result<AccountBalance> {
+    let currency = Currency::get_or_create_crypto(asset.symbol.as_str());
+    let total = asset.balance + asset.margin_balance;
+    let locked = asset.locked_balance;
+    AccountBalance::from_total_and_locked(total, locked, currency)
+        .context("failed to construct Lighter account balance")
+}
+
+/// Builds the cross-margin [`MarginBalance`] from a `user_stats` frame.
+///
+/// Lighter is USDC-collateralized end-to-end. `user_stats` is the perp-side
+/// rollup; we derive:
+/// - `initial = max(collateral - available_balance, 0)`: collateral
+///   currently allocated to open positions/orders
+/// - `maintenance = 0`: Lighter does not publish maintenance margin on
+///   `user_stats`. `margin_usage` looks like a maintenance ratio but is
+///   actually the initial-margin-usage percentage
+///   (`(collateral - available) / collateral * 100`), so it carries no
+///   information about maintenance. Computing maintenance per-position
+///   from the positions stream would be more accurate; until that's
+///   wired we report zero rather than fabricate a value.
+///
+/// `instrument_id = None` routes this into `MarginAccount.account_margins`
+/// (cross margin keyed by currency), which is what the portfolio reads for
+/// venues running unified cross-margin mode.
+///
+/// # Errors
+///
+/// Returns an error if either `Money::from_decimal` call rejects the value.
+pub fn margin_balance_from_user_stats(stats: &LighterUserStats) -> anyhow::Result<MarginBalance> {
+    let usdc = Currency::get_or_create_crypto("USDC");
+    let initial_dec = (stats.collateral - stats.available_balance).max(Decimal::ZERO);
+    let initial = Money::from_decimal(initial_dec, usdc)
+        .map_err(|e| anyhow::anyhow!("failed to construct initial margin: {e}"))?;
+    let maintenance = Money::from_decimal(Decimal::ZERO, usdc)
+        .map_err(|e| anyhow::anyhow!("failed to construct maintenance margin: {e}"))?;
+    Ok(MarginBalance::new(initial, maintenance, None))
+}
+
+/// Assembles the unified [`AccountState`] from already-parsed components.
+///
+/// The reconciler in the `websocket::account_state` module owns the latest
+/// snapshot of each input stream and calls this once per emission.
+/// `AccountType::Margin` is invariant for Lighter; `base_currency` is `None`
+/// because the account holds multiple spot currencies.
+#[must_use]
+pub fn build_unified_account_state(
+    balances: Vec<AccountBalance>,
+    margin: Option<MarginBalance>,
     account_id: AccountId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-) -> anyhow::Result<AccountState> {
-    let mut balances = Vec::with_capacity(assets.len());
-
-    for asset in assets {
-        let currency = Currency::get_or_create_crypto(asset.symbol.as_str());
-        balances.push(
-            AccountBalance::from_total_and_locked(asset.balance, asset.locked_balance, currency)
-                .context("failed to construct Lighter account balance")?,
-        );
-    }
-
-    Ok(AccountState::new(
+) -> AccountState {
+    let margins = margin.map(|m| vec![m]).unwrap_or_default();
+    AccountState::new(
         account_id,
         AccountType::Margin,
         balances,
-        Vec::<MarginBalance>::new(),
-        true, // is_reported
+        margins,
+        true,
         UUID4::new(),
         ts_event,
         ts_init,
-        None, // base_currency: Lighter accounts are multi-currency
-    ))
+        None,
+    )
 }
 
 fn parse_optional_event_millis(millis: i64) -> anyhow::Result<UnixNanos> {
@@ -1170,7 +1223,6 @@ fn client_order_id_from(str_field: Option<&str>, numeric_fallback: i64) -> Optio
 mod tests {
     use std::str::FromStr;
 
-    use ahash::AHashMap;
     use nautilus_model::{
         enums::{BarAggregation, ContingencyType, PriceType},
         identifiers::{InstrumentId, StrategyId, Symbol, Venue},
@@ -1201,6 +1253,7 @@ mod tests {
             4,
             Price::from("0.01"),
             Quantity::from("0.0001"),
+            None,
             None,
             None,
             None,
@@ -1710,7 +1763,7 @@ mod tests {
             trigger_price: Decimal::ZERO,
             order_expiry: 1_780_360_584_479,
             status,
-            trigger_status: crate::common::enums::LighterTriggerStatus::Na,
+            trigger_status: LighterTriggerStatus::Na,
             trigger_time: 0,
             parent_order_index: 0,
             parent_order_id: "0".to_string(),
@@ -2211,76 +2264,163 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_account_state_uses_venue_balances() {
+    fn test_account_balance_from_lighter_asset_spot_only() {
+        // Asset with only a spot balance (margin_balance=0): perp leg is
+        // empty so total == spot balance, locked == locked_balance only.
         let asset = LighterAsset {
             symbol: Ustr::from("USDC"),
             asset_id: 0,
             balance: Decimal::from_str("100.000000").unwrap(),
             locked_balance: Decimal::from_str("1.000000").unwrap(),
+            margin_balance: Decimal::ZERO,
+            margin_mode: Ustr::default(),
         };
 
-        let state = parse_ws_account_state(
-            &[&asset],
-            account_id(),
-            UnixNanos::from(1_000),
-            UnixNanos::from(1_001),
-        )
-        .unwrap();
-
-        assert_eq!(state.account_id, account_id());
-        assert_eq!(state.account_type, AccountType::Margin);
-        assert_eq!(state.balances.len(), 1);
+        let balance = account_balance_from_lighter_asset(&asset).unwrap();
         let usdc = Currency::get_or_create_crypto("USDC");
-        assert_eq!(state.balances[0].currency, usdc);
-        assert_eq!(state.balances[0].total, Money::from("100.000000 USDC"));
-        assert_eq!(state.balances[0].locked, Money::from("1.000000 USDC"));
-        assert_eq!(state.balances[0].free, Money::from("99.000000 USDC"));
-        assert!(state.is_reported);
+        assert_eq!(balance.currency, usdc);
+        assert_eq!(balance.total, Money::from("100.000000 USDC"));
+        assert_eq!(balance.locked, Money::from("1.000000 USDC"));
+        assert_eq!(balance.free, Money::from("99.000000 USDC"));
     }
 
     #[rstest]
-    fn test_parse_ws_account_state_handles_multi_asset() {
-        let usdc = LighterAsset {
+    fn test_account_balance_from_lighter_asset_combines_spot_and_perp() {
+        // Worked example: 10 USDC sitting on spot, 40 USDC pledged as
+        // perp collateral, no resting spot orders. Lighter runs unified
+        // margin: both legs are deployable equity, so the merged view
+        // is total=50, locked=0, free=50. Perp margin currently in use
+        // is tracked separately via MarginBalance, not via locked here.
+        let asset = LighterAsset {
             symbol: Ustr::from("USDC"),
-            asset_id: 0,
-            balance: Decimal::from_str("100.000000").unwrap(),
-            locked_balance: Decimal::from_str("1.000000").unwrap(),
-        };
-        let eth = LighterAsset {
-            symbol: Ustr::from("ETH"),
-            asset_id: 1,
-            balance: Decimal::from_str("2.500000").unwrap(),
+            asset_id: 3,
+            balance: Decimal::from_str("10.000000").unwrap(),
             locked_balance: Decimal::ZERO,
+            margin_balance: Decimal::from_str("40.000000").unwrap(),
+            margin_mode: Ustr::from("disabled"),
         };
 
-        let state = parse_ws_account_state(
-            &[&usdc, &eth],
+        let balance = account_balance_from_lighter_asset(&asset).unwrap();
+        assert_eq!(balance.total, Money::from("50.000000 USDC"));
+        assert_eq!(balance.locked, Money::from("0 USDC"));
+        assert_eq!(balance.free, Money::from("50.000000 USDC"));
+    }
+
+    #[rstest]
+    fn test_account_balance_from_lighter_asset_locks_only_spot_order_reservation() {
+        // A resting spot limit order locks 1 USDC. total still reflects
+        // both legs (10 + 40 = 50); locked tracks the spot reservation
+        // only, free = 49.
+        let asset = LighterAsset {
+            symbol: Ustr::from("USDC"),
+            asset_id: 3,
+            balance: Decimal::from_str("10.000000").unwrap(),
+            locked_balance: Decimal::from_str("1.000000").unwrap(),
+            margin_balance: Decimal::from_str("40.000000").unwrap(),
+            margin_mode: Ustr::from("disabled"),
+        };
+
+        let balance = account_balance_from_lighter_asset(&asset).unwrap();
+        assert_eq!(balance.total, Money::from("50.000000 USDC"));
+        assert_eq!(balance.locked, Money::from("1.000000 USDC"));
+        assert_eq!(balance.free, Money::from("49.000000 USDC"));
+    }
+
+    #[rstest]
+    fn test_margin_balance_from_user_stats_no_positions() {
+        // 40 USDC collateral, 40 available, no positions open: both initial
+        // and maintenance must be zero; strategies should see "full
+        // collateral free to deploy".
+        let stats = LighterUserStats {
+            account_trading_mode: 0,
+            available_balance: Decimal::from_str("40.000000").unwrap(),
+            buying_power: Decimal::ZERO,
+            collateral: Decimal::from_str("40.000000").unwrap(),
+            leverage: Decimal::ZERO,
+            margin_usage: Decimal::ZERO,
+            portfolio_value: Decimal::from_str("40.000000").unwrap(),
+            cross_stats: None,
+            total_stats: None,
+        };
+
+        let margin = margin_balance_from_user_stats(&stats).unwrap();
+        let usdc = Currency::get_or_create_crypto("USDC");
+        assert_eq!(margin.currency, usdc);
+        assert_eq!(margin.initial, Money::from("0 USDC"));
+        assert_eq!(margin.maintenance, Money::from("0 USDC"));
+        assert_eq!(margin.instrument_id, None);
+    }
+
+    #[rstest]
+    fn test_margin_balance_from_user_stats_with_position() {
+        // 40 USDC collateral, 35 available -> 5 USDC initial margin in use.
+        // Maintenance is always 0 here: Lighter's `margin_usage` is an
+        // initial-margin-usage percent, not a maintenance ratio, so we
+        // don't derive maintenance from `user_stats` at all (see comment
+        // on `margin_balance_from_user_stats`).
+        let stats = LighterUserStats {
+            account_trading_mode: 0,
+            available_balance: Decimal::from_str("35.000000").unwrap(),
+            buying_power: Decimal::from_str("100.000000").unwrap(),
+            collateral: Decimal::from_str("40.000000").unwrap(),
+            leverage: Decimal::from_str("5.00").unwrap(),
+            margin_usage: Decimal::from_str("12.50").unwrap(),
+            portfolio_value: Decimal::from_str("40.000000").unwrap(),
+            cross_stats: None,
+            total_stats: None,
+        };
+
+        let margin = margin_balance_from_user_stats(&stats).unwrap();
+        assert_eq!(margin.initial, Money::from("5.000000 USDC"));
+        assert_eq!(margin.maintenance, Money::from("0 USDC"));
+    }
+
+    #[rstest]
+    fn test_build_unified_account_state_emits_margin_account() {
+        let asset = LighterAsset {
+            symbol: Ustr::from("USDC"),
+            asset_id: 3,
+            balance: Decimal::from_str("10.000000").unwrap(),
+            locked_balance: Decimal::ZERO,
+            margin_balance: Decimal::from_str("40.000000").unwrap(),
+            margin_mode: Ustr::from("disabled"),
+        };
+        let balances = vec![account_balance_from_lighter_asset(&asset).unwrap()];
+
+        let stats = LighterUserStats {
+            account_trading_mode: 0,
+            available_balance: Decimal::from_str("40.000000").unwrap(),
+            buying_power: Decimal::ZERO,
+            collateral: Decimal::from_str("40.000000").unwrap(),
+            leverage: Decimal::ZERO,
+            margin_usage: Decimal::ZERO,
+            portfolio_value: Decimal::from_str("40.000000").unwrap(),
+            cross_stats: None,
+            total_stats: None,
+        };
+        let margin = margin_balance_from_user_stats(&stats).unwrap();
+
+        let state = build_unified_account_state(
+            balances,
+            Some(margin),
             account_id(),
             UnixNanos::from(1_000),
             UnixNanos::from(1_001),
-        )
-        .unwrap();
+        );
 
-        assert_eq!(state.balances.len(), 2);
-        let usdc_currency = Currency::get_or_create_crypto("USDC");
-        let eth_currency = Currency::get_or_create_crypto("ETH");
-        let by_currency: AHashMap<_, _> = state.balances.iter().map(|b| (b.currency, b)).collect();
-        assert_eq!(
-            by_currency[&usdc_currency].total,
-            Money::from("100.000000 USDC"),
-        );
-        assert_eq!(
-            by_currency[&usdc_currency].locked,
-            Money::from("1.000000 USDC"),
-        );
-        assert_eq!(
-            by_currency[&eth_currency].total,
-            Money::from("2.500000 ETH"),
-        );
-        assert_eq!(
-            by_currency[&eth_currency].locked,
-            Money::from("0.000000 ETH"),
-        );
+        let usdc = Currency::get_or_create_crypto("USDC");
+        assert_eq!(state.account_id, account_id());
+        assert_eq!(state.account_type, AccountType::Margin);
+        assert_eq!(state.base_currency, None);
+        assert!(state.is_reported);
+        assert_eq!(state.balances.len(), 1);
+        assert_eq!(state.balances[0].total, Money::from("50.000000 USDC"));
+        assert_eq!(state.balances[0].locked, Money::from("0 USDC"));
+        assert_eq!(state.balances[0].free, Money::from("50.000000 USDC"));
+        assert_eq!(state.margins.len(), 1);
+        assert_eq!(state.margins[0].currency, usdc);
+        assert_eq!(state.margins[0].initial, Money::from("0 USDC"));
+        assert!(state.margins[0].instrument_id.is_none());
     }
 
     fn stub_candle() -> LighterWsCandle {

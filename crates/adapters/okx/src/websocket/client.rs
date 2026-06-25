@@ -807,7 +807,7 @@ impl OKXWebSocketClient {
 
                             // Forward Reconnected to consumers so they can reset state
                             if handler.send(OKXWsMessage::Reconnected).is_err() {
-                                log::error!("Failed to send Reconnected through channel: receiver dropped");
+                                log_receiver_dropped(&signal, "Reconnected");
                                 break;
                             }
                         }
@@ -818,9 +818,7 @@ impl OKXWebSocketClient {
                         }
                         Some(msg) => {
                             if handler.send(msg).is_err() {
-                                log::error!(
-                                    "Failed to send message through channel: receiver dropped",
-                                );
+                                log_receiver_dropped(&signal, "message");
                                 break;
                             }
                         }
@@ -975,7 +973,7 @@ impl OKXWebSocketClient {
         self.signal.store(true, Ordering::Release);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
-            log::warn!("Failed to send disconnect command to handler: {e}");
+            log::debug!("Handler channel closed before disconnect command was sent: {e}");
         } else {
             log::debug!("Sent disconnect command to handler");
         }
@@ -3315,6 +3313,14 @@ impl OKXWebSocketClient {
             .await
             .send(cmd)
             .map_err(|e| OKXWsError::ClientError(format!("Handler not available: {e}")))
+    }
+}
+
+fn log_receiver_dropped(signal: &AtomicBool, item: &str) {
+    if signal.load(Ordering::Acquire) {
+        log::debug!("Receiver dropped after stop signal while forwarding {item}");
+    } else {
+        log::error!("Failed to send {item} through channel: receiver dropped");
     }
 }
 

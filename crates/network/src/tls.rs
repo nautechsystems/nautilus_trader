@@ -181,7 +181,8 @@ pub(crate) fn create_tls_config_from_certs_dir(
             && let Ok(key) = load_private_key(&path)
         {
             client_key = Some(key);
-            continue;
+            // No early continue: a combined PEM carries the certificate alongside
+            // the key, so this file is still scanned for certificates below.
         }
 
         if let Ok(certs) = load_certs(&path)
@@ -264,6 +265,12 @@ fn load_private_key(path: &Path) -> anyhow::Result<PrivateKeyDer<'static>> {
         return Ok(key.into());
     }
 
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+    if let Some(key) = rustls_pemfile::ec_private_keys(&mut reader).find_map(Result::ok) {
+        return Ok(key.into());
+    }
+
     anyhow::bail!("No valid private key found in {}", path.display());
 }
 
@@ -324,6 +331,49 @@ R/mOrHN4JnUw91q5QdKxbsHGHR+pFl662Yc7pewJ8FloxoFxD6igZG/1TdpdK4ii
 zhxL/14wqaVBwUW6/RNRr9hz6MkFFC8Uced5obScy8kOI0bMbeIC4ftNGG9pUdms
 3BSW8BRUdXasnBkWIg==
 -----END CERTIFICATE-----";
+
+    fn generate_client_key_and_cert() -> (String, String) {
+        let key_pair = rcgen::KeyPair::generate().unwrap();
+        let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+            .unwrap()
+            .self_signed(&key_pair)
+            .unwrap();
+        (key_pair.serialize_pem(), cert.pem())
+    }
+
+    #[rstest]
+    fn test_combined_key_and_cert_pem_enables_client_auth() {
+        // Regression: a combined PEM (key + certificate in one file) used to
+        // have its certificate skipped, silently dropping client auth
+        let (key_pem, cert_pem) = generate_client_key_and_cert();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let combined_path = temp_dir.path().join("client.pem");
+        std::fs::write(&combined_path, format!("{key_pem}{cert_pem}")).unwrap();
+
+        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
+
+        assert!(
+            result.is_ok(),
+            "Combined key+cert PEM should satisfy client auth: {:?}",
+            result.err()
+        );
+    }
+
+    #[rstest]
+    fn test_separate_key_and_cert_files_enable_client_auth() {
+        let (key_pem, cert_pem) = generate_client_key_and_cert();
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("key.pem"), key_pem).unwrap();
+        std::fs::write(temp_dir.path().join("cert.pem"), cert_pem).unwrap();
+
+        let result = create_tls_config_from_certs_dir(temp_dir.path(), true);
+
+        assert!(
+            result.is_ok(),
+            "Separate key and cert files should satisfy client auth: {:?}",
+            result.err()
+        );
+    }
 
     #[rstest]
     fn test_ca_only_directory_succeeds() {

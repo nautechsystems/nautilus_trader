@@ -1869,14 +1869,55 @@ class OKXExecutionClient(LiveExecutionClient):
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
             command.instrument_id.value,
         )
-        new_trigger_price = (
+        trigger_price = (
             nautilus_pyo3.Price.from_str(str(command.trigger_price))
             if command.trigger_price
             else None
         )
-        new_limit_price = (
-            nautilus_pyo3.Price.from_str(str(command.price)) if command.price else None
+        # A conditional stop-loss algo order (incl. closeFraction close-position
+        # stops) is amended via `newSlTriggerPx`, not `newTriggerPx`. Strategies
+        # flag such orders with `params={"sl_trigger": True}`; plain trigger algo
+        # orders keep using `newTriggerPx`.
+        sl_trigger = self._parse_sl_trigger_param(command.params)
+        binding = self._attached_oco_binding(order.client_order_id)
+        is_attached_oco_sl = (
+            binding is not None and binding.sl_client_order_id == order.client_order_id
         )
+        is_attached_oco_tp = (
+            binding is not None and binding.tp_client_order_id == order.client_order_id
+        )
+        is_attached_oco_child = is_attached_oco_sl or is_attached_oco_tp
+        new_trigger_price = None if sl_trigger or is_attached_oco_child else trigger_price
+        new_tp_trigger_price = trigger_price if is_attached_oco_tp else None
+        new_sl_trigger_price = trigger_price if sl_trigger or is_attached_oco_sl else None
+        new_limit_price = (
+            nautilus_pyo3.Price.from_str(str(command.price))
+            if command.price and not is_attached_oco_child
+            else None
+        )
+        new_tp_order_price = None
+        new_tp_trigger_px_type = None
+        new_sl_order_price = None
+        new_sl_trigger_px_type = None
+
+        if is_attached_oco_tp:
+            new_tp_order_price = (
+                str(command.price)
+                if command.price
+                else "-1"
+                if order.order_type == OrderType.MARKET_IF_TOUCHED
+                else None
+            )
+            new_tp_trigger_px_type = self._okx_trigger_type_str(order)
+        elif is_attached_oco_sl:
+            new_sl_order_price = (
+                str(command.price)
+                if command.price
+                else "-1"
+                if order.order_type == OrderType.STOP_MARKET
+                else None
+            )
+            new_sl_trigger_px_type = self._okx_trigger_type_str(order)
         new_quantity = (
             nautilus_pyo3.Quantity.from_str(str(command.quantity)) if command.quantity else None
         )
@@ -1890,8 +1931,14 @@ class OKXExecutionClient(LiveExecutionClient):
                 instrument_id=pyo3_instrument_id,
                 algo_id=algo_id,
                 new_trigger_price=new_trigger_price,
+                new_sl_trigger_price=new_sl_trigger_price,
                 new_limit_price=new_limit_price,
                 new_quantity=new_quantity,
+                new_tp_trigger_price=new_tp_trigger_price,
+                new_tp_order_price=new_tp_order_price,
+                new_tp_trigger_px_type=new_tp_trigger_px_type,
+                new_sl_order_price=new_sl_order_price,
+                new_sl_trigger_px_type=new_sl_trigger_px_type,
             )
 
             s_code = resp.get("s_code", "0")
@@ -2332,6 +2379,21 @@ class OKXExecutionClient(LiveExecutionClient):
     def _is_conditional_order(self, order: Order) -> bool:
         return order.order_type in self._OKX_CONDITIONAL_ORDER_TYPES
 
+    @staticmethod
+    def _parse_sl_trigger_param(params: dict[str, Any] | None) -> bool:
+        if not params or "sl_trigger" not in params:
+            return False
+
+        value = params["sl_trigger"]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes")
+
+        return False
+
     def _submit_order_route(
         self,
         order: Order,
@@ -2586,7 +2648,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
     def _handle_msg(self, msg: Any) -> None:  # noqa: C901 (too complex)
         if isinstance(msg, nautilus_pyo3.OKXWebSocketError):
-            self._log.error(repr(msg))
+            self._log.warning(repr(msg))
             return
 
         try:

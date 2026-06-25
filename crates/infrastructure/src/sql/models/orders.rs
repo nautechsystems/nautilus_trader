@@ -153,6 +153,10 @@ impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full order initialized event constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let client_order_id = row
@@ -571,6 +575,10 @@ impl<'r> FromRow<'r, PgRow> for OrderUpdatedModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for OrderSnapshotModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full order snapshot constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
         let strategy_id = row

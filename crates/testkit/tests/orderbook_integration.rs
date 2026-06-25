@@ -13,7 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Integration tests for OrderBook using real market data.
+//! Integration tests for `OrderBook` using real market data.
+
+#![allow(
+    clippy::float_cmp,
+    reason = "integration tests assert exact order book fixture outputs"
+)]
 
 use indexmap::IndexMap;
 use nautilus_model::{

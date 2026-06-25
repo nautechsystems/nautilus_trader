@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_trailing_stop_rejects_non_price_offset() {
+    fn test_trailing_stop_market_uses_trailing_percent_for_basis_points() {
         let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
             .instrument_id(InstrumentId::new(
                 NautilusSymbol::from("AAPL"),
@@ -672,7 +672,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100))
             .trigger_price(Price::from("149.50"))
-            .trailing_offset(dec!(0.5))
+            .trailing_offset(dec!(25))
             .trailing_offset_type(TrailingOffsetType::BasisPoints)
             .build();
         let contract = Contract {
@@ -687,14 +687,45 @@ mod tests {
             InteractiveBrokersInstrumentProviderConfig::default(),
         );
 
-        let result = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001");
+        let ib_order = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect("order transform should succeed");
 
-        assert!(result.is_err());
-        assert!(
-            result
-                .expect_err("transform should reject unsupported trailing offset type")
-                .to_string()
-                .contains("only PRICE is supported")
+        assert_eq!(ib_order.aux_price, None);
+        assert_eq!(ib_order.trailing_percent, Some(0.25));
+        assert_eq!(ib_order.trail_stop_price, Some(149.5));
+    }
+
+    #[rstest]
+    fn test_trailing_stop_market_rejects_unsupported_trailing_offset_type() {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(InstrumentId::new(
+                NautilusSymbol::from("AAPL"),
+                Venue::from("NASDAQ"),
+            ))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100))
+            .trigger_price(Price::from("149.50"))
+            .trailing_offset(dec!(5))
+            .trailing_offset_type(TrailingOffsetType::Ticks)
+            .build();
+        let contract = Contract {
+            contract_id: 0,
+            symbol: Symbol::from("AAPL"),
+            security_type: SecurityType::Stock,
+            exchange: Exchange::from("NASDAQ"),
+            currency: Currency::from("USD"),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(
+            InteractiveBrokersInstrumentProviderConfig::default(),
+        );
+
+        let err = nautilus_order_to_ib_order(&order, &contract, &provider, 1, "TEST-001")
+            .expect_err("unsupported trailing offset type should fail");
+
+        assert_eq!(
+            err.to_string(),
+            "`TrailingOffsetType` Ticks is not supported"
         );
     }
 

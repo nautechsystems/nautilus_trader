@@ -155,6 +155,7 @@ fn make_spread_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -950,6 +951,35 @@ fn test_dispatch_full_lifecycle_stale_accepted_skipped() {
     let events = drain_events(&mut rx);
     // Only the first Triggered report and the Fill should have been emitted
     assert_eq!(events.len(), 2);
+}
+
+#[rstest]
+fn test_dispatch_status_report_accepted_skipped_when_canceled() {
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::default();
+
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Canceled,
+        ))],
+        &emitter,
+        &state,
+    );
+
+    // Stale Accepted replayed after cancel must be dropped, not forwarded.
+    dispatch_execution_reports(
+        vec![ExecutionReport::Order(make_order_status_report(
+            "O-001",
+            OrderStatus::Accepted,
+        ))],
+        &emitter,
+        &state,
+    );
+
+    let events = drain_events(&mut rx);
+    assert_eq!(events.len(), 1);
+    assert!(state.terminal_orders.contains(&ClientOrderId::new("O-001")));
 }
 
 #[rstest]
@@ -2011,6 +2041,7 @@ fn make_report_spread_instrument() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -2079,6 +2110,10 @@ async fn test_submit_order_denies_when_clord_id_exceeds_32_chars() {
     let denied = collect_order_denied_events(drain_events(&mut rx));
     assert_eq!(denied.len(), 1, "denied: {denied:?}");
     let reason = denied.get(&invalid_cid).expect("missing denied event");
+    assert!(
+        reason.contains("INVALID_CLIENT_ORDER_ID"),
+        "reason was: {reason}"
+    );
     assert!(reason.contains("at most 32"), "reason was: {reason}");
     assert!(reason.contains("was 35"), "reason was: {reason}");
     assert!(
@@ -2151,21 +2186,90 @@ async fn test_submit_order_list_denies_every_leg_when_any_clord_id_invalid() {
 
     let reason_invalid = denied.remove(&cid_invalid).expect("missing invalid leg");
     assert!(
-        reason_invalid.contains("at most 32") && reason_invalid.contains("was 35"),
+        reason_invalid.contains("INVALID_CLIENT_ORDER_ID")
+            && reason_invalid.contains("at most 32")
+            && reason_invalid.contains("was 35"),
         "invalid-leg reason was: {reason_invalid}"
     );
 
+    // Sibling legs are denied as part of the list; the offending leg carries the specific reason.
     let reason_a = denied.remove(&cid_valid_a).expect("missing valid leg A");
     assert!(
-        reason_a.contains("OKX order list denied: sibling")
-            && reason_a.contains(cid_invalid.as_str()),
+        reason_a.contains("ORDER_LIST_DENIED") && reason_a.contains("OL-001"),
         "sibling A reason was: {reason_a}"
     );
 
     let reason_b = denied.remove(&cid_valid_b).expect("missing valid leg B");
     assert!(
-        reason_b.contains("OKX order list denied: sibling")
-            && reason_b.contains(cid_invalid.as_str()),
+        reason_b.contains("ORDER_LIST_DENIED") && reason_b.contains("OL-001"),
         "sibling B reason was: {reason_b}"
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_spread_instrument() {
+    let addr = start_exec_test_server().await;
+    let base_url = format!("http://{addr}");
+    let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
+
+    client.start().unwrap();
+    let _ = drain_events(&mut rx);
+
+    let trader_id = TraderId::from("TESTER-001");
+    let strategy_id = StrategyId::from("STRATEGY-001");
+    // Spread symbols deny the whole list regardless of clOrdId validity, so use valid IDs.
+    let instrument_id = InstrumentId::from("BCH-USDT_BCH-USDT-SWAP.OKX");
+
+    let cid_a = ClientOrderId::from("O20260522145501ABCDEF1");
+    let cid_b = ClientOrderId::from("O20260522145501ABCDEF3");
+
+    let order_a = build_test_limit_order(instrument_id, cid_a);
+    let order_b = build_test_limit_order(instrument_id, cid_b);
+
+    for order in [&order_a, &order_b] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::new("OL-002"),
+        instrument_id,
+        strategy_id,
+        vec![cid_a, cid_b],
+        UnixNanos::default(),
+    );
+    let order_inits = vec![
+        OrderInitialized::from(&order_a),
+        OrderInitialized::from(&order_b),
+    ];
+    let cmd = SubmitOrderList::new(
+        trader_id,
+        Some(*OKX_CLIENT_ID),
+        strategy_id,
+        order_list,
+        order_inits,
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client
+        .submit_order_list(cmd)
+        .expect("submit_order_list should not error");
+
+    let denied = collect_order_denied_events(drain_events(&mut rx));
+    assert_eq!(denied.len(), 2, "denied: {denied:?}");
+    for cid in [&cid_a, &cid_b] {
+        let reason = denied.get(cid).expect("missing denied leg");
+        assert!(
+            reason.contains("UNSUPPORTED_ORDER_LIST"),
+            "reason was: {reason}"
+        );
+    }
 }

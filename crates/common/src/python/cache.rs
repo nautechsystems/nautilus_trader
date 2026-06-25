@@ -48,6 +48,7 @@ use rust_decimal::prelude::ToPrimitive;
 use crate::{
     cache::{Cache, CacheConfig},
     enums::SerializationEncoding,
+    python::config_error_to_pyvalue_err,
 };
 
 /// Wrapper providing shared access to [`Cache`] from Python.
@@ -96,6 +97,42 @@ impl PyCache {
     #[pyo3(name = "dispose")]
     fn py_dispose(&mut self) {
         self.0.borrow_mut().dispose();
+    }
+
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_closed_orders(ts_now.into(), buffer_secs);
+    }
+
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_closed_positions(ts_now.into(), buffer_secs);
+    }
+
+    #[pyo3(name = "purge_order")]
+    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
+        self.0.borrow_mut().purge_order(client_order_id);
+    }
+
+    #[pyo3(name = "purge_position")]
+    fn py_purge_position(&mut self, position_id: PositionId) {
+        self.0.borrow_mut().purge_position(position_id);
+    }
+
+    #[pyo3(name = "purge_instrument")]
+    fn py_purge_instrument(&mut self, instrument_id: InstrumentId) {
+        self.0.borrow_mut().purge_instrument(instrument_id);
+    }
+
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        self.0
+            .borrow_mut()
+            .purge_account_events(ts_now.into(), lookback_secs);
     }
 
     #[pyo3(name = "get")]
@@ -1196,22 +1233,23 @@ impl CacheConfig {
         bar_capacity: Option<usize>,
         save_market_data: Option<bool>,
         persist_account_events: Option<bool>,
-    ) -> Self {
-        Self::new(
-            None, // database is None since we can't expose it to Python yet
-            encoding.unwrap_or(SerializationEncoding::MsgPack),
-            timestamps_as_iso8601.unwrap_or(false),
+    ) -> PyResult<Self> {
+        let config = Self {
+            encoding: encoding.unwrap_or_default(),
+            timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(false),
             buffer_interval_ms,
             bulk_read_batch_size,
-            use_trader_prefix.unwrap_or(true),
-            use_instance_id.unwrap_or(false),
-            flush_on_start.unwrap_or(false),
-            drop_instruments_on_reset.unwrap_or(true),
-            tick_capacity.unwrap_or(10_000),
-            bar_capacity.unwrap_or(10_000),
-            persist_account_events.unwrap_or(true),
-            save_market_data.unwrap_or(false),
-        )
+            use_trader_prefix: use_trader_prefix.unwrap_or(true),
+            use_instance_id: use_instance_id.unwrap_or(false),
+            flush_on_start: flush_on_start.unwrap_or(false),
+            drop_instruments_on_reset: drop_instruments_on_reset.unwrap_or(true),
+            tick_capacity: tick_capacity.unwrap_or(10_000),
+            bar_capacity: bar_capacity.unwrap_or(10_000),
+            persist_account_events: persist_account_events.unwrap_or(true),
+            save_market_data: save_market_data.unwrap_or(false),
+        };
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     fn __str__(&self) -> String {
@@ -1313,6 +1351,56 @@ impl Cache {
         self.dispose();
     }
 
+    /// Purges all closed orders from the cache that are older than `buffer_secs`.
+    ///
+    ///
+    /// Only orders that have been closed for at least this amount of time will be purged.
+    /// A value of 0 means purge all closed orders regardless of when they were closed.
+    #[pyo3(name = "purge_closed_orders", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_orders(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.purge_closed_orders(ts_now.into(), buffer_secs);
+    }
+
+    /// Purges all closed positions from the cache that are older than `buffer_secs`.
+    #[pyo3(name = "purge_closed_positions", signature = (ts_now, buffer_secs=0))]
+    fn py_purge_closed_positions(&mut self, ts_now: u64, buffer_secs: u64) {
+        self.purge_closed_positions(ts_now.into(), buffer_secs);
+    }
+
+    /// Purges the order with the `client_order_id` from the cache (if found).
+    ///
+    /// For safety, an order is prevented from being purged if it's open.
+    #[pyo3(name = "purge_order")]
+    fn py_purge_order(&mut self, client_order_id: ClientOrderId) {
+        self.purge_order(client_order_id);
+    }
+
+    /// Purges the position with the `position_id` from the cache (if found).
+    ///
+    /// For safety, a position is prevented from being purged if it's open.
+    #[pyo3(name = "purge_position")]
+    fn py_purge_position(&mut self, position_id: PositionId) {
+        self.purge_position(position_id);
+    }
+
+    /// Purges the instrument with the `instrument_id` from the cache.
+    ///
+    /// This refuses to purge when associated orders or positions remain in
+    /// non-terminal state.
+    #[pyo3(name = "purge_instrument")]
+    fn py_purge_instrument(&mut self, instrument_id: InstrumentId) {
+        self.purge_instrument(instrument_id);
+    }
+
+    /// Purges all account state events which are outside the lookback window.
+    ///
+    /// Only events which are outside the lookback window will be purged.
+    /// A value of 0 means purge all account state events.
+    #[pyo3(name = "purge_account_events", signature = (ts_now, lookback_secs=0))]
+    fn py_purge_account_events(&mut self, ts_now: u64, lookback_secs: u64) {
+        self.purge_account_events(ts_now.into(), lookback_secs);
+    }
+
     /// Adds the `currency` to the cache.
     ///
     /// # Errors
@@ -1406,10 +1494,7 @@ impl Cache {
 
     /// Gets a borrow of the order with the `client_order_id` (if found).
     ///
-    /// The returned `OrderRef` is tied to the cache borrow's scope and panics at runtime if
-    /// held across a mutation of the same order. Drop the borrow before dispatching events; if
-    /// post-event state is required, perform a fresh lookup. Use `Self.order_owned` when an
-    /// owned snapshot is needed for a boundary handover.
+    /// Prefer `Self.order_ref` in new native code.
     #[pyo3(name = "order")]
     fn py_order(&self, py: Python, client_order_id: ClientOrderId) -> PyResult<Option<Py<PyAny>>> {
         match self.order(&client_order_id) {
@@ -1447,8 +1532,7 @@ impl Cache {
 
     /// Returns borrows of all locally active orders matching the optional filter parameters.
     ///
-    /// Locally active orders are in the `INITIALIZED`, `EMULATED`, or `RELEASED` state
-    /// (a superset of emulated orders).
+    /// Prefer `Self.orders_active_local_refs` in new native code.
     #[pyo3(name = "orders_active_local")]
     fn py_orders_active_local(
         &self,
@@ -1580,6 +1664,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the position with the `position_id` (if found).
+    ///
+    /// Prefer `Self.position_ref` in new native code.
     #[pyo3(name = "position")]
     fn py_position(&self, py: Python, position_id: PositionId) -> PyResult<Option<Py<PyAny>>> {
         match self.position(&position_id) {
@@ -2027,9 +2113,7 @@ impl Cache {
 
     /// Returns borrows of all orders matching the optional filter parameters.
     ///
-    /// Each `Ref` in the returned vector borrows its underlying cell; mutating any of
-    /// those orders while the vector is alive will panic at runtime. Drop the vector
-    /// before issuing writes.
+    /// Prefer `Self.orders_refs` in new native code.
     #[pyo3(name = "orders")]
     fn py_orders(
         &self,
@@ -2053,6 +2137,8 @@ impl Cache {
     }
 
     /// Returns borrows of all open orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_open_refs` in new native code.
     #[pyo3(name = "orders_open")]
     fn py_orders_open(
         &self,
@@ -2076,6 +2162,8 @@ impl Cache {
     }
 
     /// Returns borrows of all closed orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_closed_refs` in new native code.
     #[pyo3(name = "orders_closed")]
     fn py_orders_closed(
         &self,
@@ -2099,6 +2187,8 @@ impl Cache {
     }
 
     /// Returns borrows of all emulated orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_emulated_refs` in new native code.
     #[pyo3(name = "orders_emulated")]
     fn py_orders_emulated(
         &self,
@@ -2122,6 +2212,8 @@ impl Cache {
     }
 
     /// Returns borrows of all in-flight orders matching the optional filter parameters.
+    ///
+    /// Prefer `Self.orders_inflight_refs` in new native code.
     #[pyo3(name = "orders_inflight")]
     fn py_orders_inflight(
         &self,
@@ -2316,6 +2408,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the position for the `client_order_id` (if found).
+    ///
+    /// Prefer `Self.position_for_order_ref` in new native code.
     #[pyo3(name = "position_for_order")]
     fn py_position_for_order(
         &self,
@@ -2336,9 +2430,7 @@ impl Cache {
 
     /// Returns borrows of all positions matching the optional filter parameters.
     ///
-    /// Each `PositionRef` in the returned vector borrows its underlying cell; mutating any of
-    /// those positions while the vector is alive will panic at runtime. Drop the vector before
-    /// issuing writes.
+    /// Prefer `Self.positions_refs` in new native code.
     #[pyo3(name = "positions")]
     fn py_positions(
         &self,
@@ -2362,6 +2454,8 @@ impl Cache {
     }
 
     /// Returns borrows of all open positions matching the optional filter parameters.
+    ///
+    /// Prefer `Self.positions_open_refs` in new native code.
     #[pyo3(name = "positions_open")]
     fn py_positions_open(
         &self,
@@ -2385,6 +2479,8 @@ impl Cache {
     }
 
     /// Returns borrows of all closed positions matching the optional filter parameters.
+    ///
+    /// Prefer `Self.positions_closed_refs` in new native code.
     #[pyo3(name = "positions_closed")]
     fn py_positions_closed(
         &self,
@@ -2447,6 +2543,8 @@ impl Cache {
     }
 
     /// Returns a borrow of the account for the `account_id` (if found).
+    ///
+    /// Prefer `Self.account_ref` in new native code.
     #[pyo3(name = "account")]
     fn py_account(&self, py: Python, account_id: AccountId) -> PyResult<Option<Py<PyAny>>> {
         match self.account(&account_id) {

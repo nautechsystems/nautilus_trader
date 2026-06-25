@@ -524,6 +524,7 @@ fn make_linear_pair(raw_symbol: &str, base: &str, quote: &str) -> CurrencyPair {
         None,     // margin_maint
         None,     // maker_fee
         None,     // taker_fee
+        None,     // tick_scheme
         None,     // info
         0.into(), // ts_event
         0.into(), // ts_init

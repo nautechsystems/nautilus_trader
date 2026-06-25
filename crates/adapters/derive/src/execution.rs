@@ -35,6 +35,7 @@ use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
+    cache::ORDER_NOT_FOUND,
     clients::ExecutionClient,
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
@@ -967,14 +968,7 @@ impl ExecutionClient for DeriveExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
         if order.is_closed() {
             log::warn!("Cannot submit closed order {}", order.client_order_id());
@@ -1603,13 +1597,8 @@ impl ExecutionClient for DeriveExecutionClient {
             return Ok(());
         };
 
-        let Some(order) = self
-            .core
-            .cache()
-            .order(&cmd.client_order_id)
-            .map(|o| o.clone())
-        else {
-            let reason = "order not found in cache";
+        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
+            let reason = ORDER_NOT_FOUND;
             log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
             self.emitter.emit_order_modify_rejected_event(
                 cmd.strategy_id,

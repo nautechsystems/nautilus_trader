@@ -429,7 +429,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         if not await self._ensure_instrument_loaded(command.instrument_id):
             return
 
-        if command.instrument_id not in self.subscribed_order_book_deltas():
+        if not self.is_subscribed_order_book_deltas(command.instrument_id):
             return
 
         if command.instrument_id not in self._local_books:
@@ -447,7 +447,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         if not await self._ensure_instrument_loaded(command.instrument_id):
             return
 
-        if command.instrument_id not in self.subscribed_quote_ticks():
+        if not self.is_subscribed_quote_ticks(command.instrument_id):
             return
 
         if command.instrument_id not in self._local_books:
@@ -465,7 +465,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         if not await self._ensure_instrument_loaded(command.instrument_id):
             return
 
-        if command.instrument_id not in self.subscribed_trade_ticks():
+        if not self.is_subscribed_trade_ticks(command.instrument_id):
             return
 
         token_id = get_polymarket_token_id(command.instrument_id)
@@ -494,10 +494,10 @@ class PolymarketDataClient(LiveMarketDataClient):
     def _discard_local_state_if_unwanted(self, instrument_id: InstrumentId) -> None:
         # Stale local book leaks across resubscribes and corrupts the first
         # `compute_effective_deltas` pass against the new snapshot.
-        if (
-            instrument_id not in self.subscribed_order_book_deltas()
-            and instrument_id not in self.subscribed_quote_ticks()
-        ):
+        has_book_sub = self.is_subscribed_order_book_deltas(instrument_id)
+        has_quote_sub = self.is_subscribed_quote_ticks(instrument_id)
+
+        if not has_book_sub and not has_quote_sub:
             self._pending_snapshot_after_tick_change.discard(instrument_id)
             self._local_books.pop(instrument_id, None)
             self._last_quotes.pop(instrument_id, None)
@@ -613,7 +613,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                 return
             self._handle_instrument_update(instrument=instrument, ws_message=msg)
         else:
-            self._log.error(f"Unknown websocket message topic: {msg}")
+            self._log.warning(f"Unknown websocket message topic: {msg}")
 
     def _handle_book_snapshot(
         self,
@@ -636,7 +636,7 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         self._handle_deltas(instrument, deltas)
 
-        if instrument.id in self.subscribed_quote_ticks():
+        if self.is_subscribed_quote_ticks(instrument.id):
             quote = ws_message.parse_to_quote(
                 instrument=instrument,
                 ts_init=now_ns,
@@ -723,10 +723,10 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Check if local book exists, create if needed
         if instrument.id not in self._local_books:
             # Skip this quote if we're not subscribed to anything for this instrument
-            if (
-                instrument.id not in self.subscribed_quote_ticks()
-                and instrument.id not in self.subscribed_order_book_deltas()
-            ):
+            has_quote_sub = self.is_subscribed_quote_ticks(instrument.id)
+            has_book_sub = self.is_subscribed_order_book_deltas(instrument.id)
+
+            if not has_quote_sub and not has_book_sub:
                 return
             self._create_local_book(instrument.id)
 
@@ -735,7 +735,7 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         self._handle_data(deltas)
 
-        if instrument.id in self.subscribed_quote_ticks():
+        if self.is_subscribed_quote_ticks(instrument.id):
             bid_price = local_book.best_bid_price()
             ask_price = local_book.best_ask_price()
             bid_size = local_book.best_bid_size()
@@ -819,8 +819,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._local_books.pop(instrument.id, None)
         self._last_quotes.pop(instrument.id, None)
 
-        if (
-            instrument.id in self.subscribed_order_book_deltas()
-            or instrument.id in self.subscribed_quote_ticks()
-        ):
+        has_book_sub = self.is_subscribed_order_book_deltas(instrument.id)
+        has_quote_sub = self.is_subscribed_quote_ticks(instrument.id)
+
+        if has_book_sub or has_quote_sub:
             self._pending_snapshot_after_tick_change.add(instrument.id)

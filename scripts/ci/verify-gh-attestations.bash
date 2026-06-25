@@ -2,8 +2,13 @@
 # Verify GitHub artifact or OCI attestations with bounded retry.
 set -euo pipefail
 
-attempts="${GH_ATTESTATION_VERIFY_ATTEMPTS:-5}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/ci/release-verification-retry.bash
+source "${script_dir}/release-verification-retry.bash"
+
+attempts="${GH_ATTESTATION_VERIFY_ATTEMPTS:-7}"
 retry_delay_seconds="${GH_ATTESTATION_VERIFY_RETRY_DELAY_SECONDS:-15}"
+max_retry_delay_seconds="${GH_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS:-120}"
 command_timeout_seconds="${GH_ATTESTATION_VERIFY_COMMAND_TIMEOUT_SECONDS:-0}"
 github_server_url="${GITHUB_SERVER_URL:-https://github.com}"
 attestation_identity="${ATTESTATION_IDENTITY:-}"
@@ -22,6 +27,7 @@ validate_positive_integer() {
 
 validate_positive_integer GH_ATTESTATION_VERIFY_ATTEMPTS "$attempts"
 validate_positive_integer GH_ATTESTATION_VERIFY_RETRY_DELAY_SECONDS "$retry_delay_seconds"
+validate_positive_integer GH_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS "$max_retry_delay_seconds"
 if ! [[ "$command_timeout_seconds" =~ ^[0-9]+$ ]]; then
   echo "::error::GH_ATTESTATION_VERIFY_COMMAND_TIMEOUT_SECONDS must be a non-negative integer."
   exit 1
@@ -79,8 +85,6 @@ run_with_timeout() {
 
 verify_subject() {
   local subject=$1
-  local status=0
-  local delay="$retry_delay_seconds"
   local command=(
     gh attestation verify "$subject"
     --repo "$GITHUB_REPOSITORY"
@@ -92,26 +96,13 @@ verify_subject() {
     command+=(--predicate-type "$predicate_type")
   fi
 
-  for attempt in $(seq 1 "$attempts"); do
-    set +e
+  run_release_verification_with_retry \
+    "gh attestation verify ${subject}" \
+    "$attempts" \
+    "$retry_delay_seconds" \
+    "$max_retry_delay_seconds" \
     run_with_timeout "${command[@]}"
-    status=$?
-    set -e
-
-    if [[ "$status" -eq 0 ]]; then
-      echo "Verified attestation for ${subject}."
-      return 0
-    fi
-
-    if [[ "$attempt" -lt "$attempts" ]]; then
-      echo "gh attestation verify failed for ${subject} (exit=${status}), retry (${attempt}/${attempts}) after ${delay}s"
-      sleep "$delay"
-      delay=$((delay * 2))
-    fi
-  done
-
-  echo "::error::gh attestation verify failed for ${subject} after ${attempts} attempts."
-  return "$status"
+  echo "Verified attestation for ${subject}."
 }
 
 for subject in "${subjects[@]}"; do

@@ -74,6 +74,7 @@ fn create_eurusd_instrument() -> InstrumentAny {
         Some(Decimal::new(2, 4)),
         Some(Decimal::new(5, 4)),
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     );
@@ -167,6 +168,7 @@ fn bench_parse_candle_bar(c: &mut Criterion) {
         Some(Decimal::new(5, 3)),
         Some(Decimal::new(2, 4)),
         Some(Decimal::new(5, 4)),
+        None,
         None,
         UnixNanos::default(),
         UnixNanos::default(),

@@ -97,16 +97,17 @@ The following Databento schemas are supported by NautilusTrader:
 :::note
 Databento also documents reference schemas, including corporate actions,
 adjustment factors, and security master data. This adapter currently maps only
-the schemas listed above to Nautilus data types. The Databento DBN crate also
-exposes `ohlcv-eod`; Nautilus keeps an adapter-level override for daily bars,
-while the public Databento schema docs list `ohlcv-1d` for daily OHLCV.
+the schemas listed above to Nautilus data types. Daily Databento OHLCV uses
+`ohlcv-1d`. Official settlement prices and open interest come from the
+`statistics` schema, not OHLCV bars.
 :::
 
 :::info
 Instrument definitions for unsupported `instrument_class` values (`'I'` Index,
-`'B'` Bond, `'X'` FX spot) are skipped with a warning rather than aborting the
-batch. Index-emitting publishers include CGIF.TITANIUM (110), IEX Options (108),
-and MEMX MX2 (109). Open an issue if you need Nautilus modeling for these.
+`'B'` Bond) are skipped with a warning rather than aborting the batch.
+FX spot definitions with currencies that Nautilus cannot map are also skipped.
+Index-emitting publishers include CGIF.TITANIUM (110), IEX Options (108), and
+MEMX MX2 (109). Open an issue if you need Nautilus modeling for these.
 
 Statistics messages with `stat_type` values outside the modeled range (currently
 1-20) are also skipped with a warning. This includes venue-specific values
@@ -123,7 +124,8 @@ the `u8` Arrow column width used for persistence.
   events. Choose them for a complete top-of-book event tape. For quote and trade
   alignment, prefer TBBO or TCBBO.
 - **MBP-10 (L2)**: Top 10 levels with trades. Use it for depth-aware strategies
-  that do not need full MBO data. Includes orders per level.
+  that do not need full MBO data. Includes orders per level. Databento order
+  book depth subscriptions support only `depth=10`.
 - **MBO (L3)**: Per-order events for queue position modeling and exact book
   reconstruction. Start at node initialization for proper replay context.
 - **BBO_1S/BBO_1M and CBBO_1S/CBBO_1M**: Sampled top-of-book updates at fixed
@@ -133,9 +135,13 @@ the `u8` Arrow column width used for persistence.
 - **TRADES**: Trades only. Pair with MBP-1 (`include_trades=True`) or use TBBO
   or TCBBO for quote context with trades.
 - **OHLCV**: Aggregated bars from trades. Use them for higher-timeframe
-  analytics. Set `bars_timestamp_on_close=True` for close timestamps.
-- **Imbalance, statistics, and status**: Venue operational data. Subscribe via
+  analytics. Set `bars_timestamp_on_close=True` for close timestamps. Daily
+  bars use `ohlcv-1d`; use `statistics` for official settlements and open
+  interest.
+- **Imbalance and statistics**: Venue operational data. Subscribe via
   `subscribe_data` with a `DataType` carrying `instrument_id` metadata.
+- **Status**: Venue trading-state updates. Subscribe via
+  `subscribe_instrument_status`.
 
 :::tip
 Consolidated schemas (CMBP_1, CBBO_1S, CBBO_1M, TCBBO) aggregate data across
@@ -274,17 +280,11 @@ self.subscribe_bars(
 self.subscribe_bars(
     bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL")
 )
-
-# Subscribe to daily bars with the adapter's end-of-day override
-self.subscribe_bars(
-    bar_type=BarType.from_str(f"{instrument_id}-1-DAY-LAST-EXTERNAL"),
-    params={"schema": "ohlcv-eod"},
-)
 ```
 
 ### Custom data type subscriptions
 
-Imbalance, statistics, and status data require the generic `subscribe_data` method:
+Imbalance and statistics data require the generic `subscribe_data` method:
 
 ```python
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
@@ -303,11 +303,14 @@ self.subscribe_data(
     data_type=DataType(DatabentoStatistics, metadata={"instrument_id": instrument_id}),
     client_id=DATABENTO_CLIENT_ID,
 )
+```
 
+Instrument status uses the dedicated status subscription API:
+
+```python
 # Subscribe to instrument status updates
-from nautilus_trader.model.data import InstrumentStatus
-self.subscribe_data(
-    data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
+self.subscribe_instrument_status(
+    instrument_id=instrument_id,
     client_id=DATABENTO_CLIENT_ID,
 )
 ```
@@ -320,16 +323,18 @@ does not provide one. Databento only guarantees this ID is unique within a given
 day. This differs from the Nautilus `InstrumentId`, a string of symbol + venue
 separated by a period: `"{symbol}.{venue}"`.
 
-The decoder maps the Databento `raw_symbol` to the Nautilus `symbol` and uses an
-[ISO 10383 market identifier code](https://www.iso20022.org/market-identifier-codes)
-from the definition message for the Nautilus `venue`.
+The decoder maps the Databento `raw_symbol` to the Nautilus `symbol`. Publisher
+IDs map to the default Nautilus venue through `publishers.json`. Subscription
+`InstrumentId` metadata can also seed the symbol-to-venue map before market data
+arrives.
 
 Databento identifies datasets with a *dataset ID*, separate from venue identifiers.
 See [Databento dataset naming conventions](https://databento.com/docs/api-reference-historical/basics/datasets)
 for details.
 
-For CME Globex MDP 3.0 (`GLBX.MDP3`), these exchanges group under the `GLBX` venue.
-The instrument's `exchange` field determines the mapping:
+For CME Globex MDP 3.0 (`GLBX.MDP3`), publisher defaults map to the `GLBX`
+venue. When `use_exchange_as_venue=True`, definition messages can override
+`GLBX` with the instrument's exchange MIC:
 
 - `CBCM`: XCME-XCBT inter-exchange spread
 - `NYUM`: XNYM-DUMX inter-exchange spread
@@ -358,10 +363,13 @@ Nautilus data requires at least two timestamps (per the `Data` contract):
 - `ts_event`: UNIX timestamp (nanoseconds) when the data event occurred.
 - `ts_init`: UNIX timestamp (nanoseconds) when the data instance was created.
 
-The decoder maps Databento `ts_recv` to Nautilus `ts_event`. This timestamp is
-more reliable and monotonically increases per Databento symbol. The exceptions are
-`DatabentoImbalance` and `DatabentoStatistics`, which carry all timestamp fields
-since they are adapter-specific types.
+Quote and trade-like schemas map Databento `ts_recv` to Nautilus `ts_event`
+because it is more reliable and monotonically increases per Databento symbol.
+Bars use the DBN bar interval timestamp; `bars_timestamp_on_close` controls
+whether Nautilus bars use the interval open or close timestamp. `InstrumentStatus`
+uses the status event timestamp from the decoded status message.
+`DatabentoImbalance` and `DatabentoStatistics` preserve Databento timestamp
+fields because they are adapter-specific types.
 
 :::info
 See these Databento docs for details:
@@ -394,6 +402,7 @@ to the appropriate Nautilus `Instrument` type.
 | Option spread              | `T`  | `OptionSpread`           |
 | Mixed spread               | `M`  | `OptionSpread`           |
 | FX spot                    | `X`  | `CurrencyPair`           |
+| Index                      | `I`  | Not yet available        |
 | Bond                       | `B`  | Not yet available        |
 
 ### Price precision
@@ -475,8 +484,12 @@ matches the venue's inability to distinguish them.
 
 ### OHLCV (bar aggregates)
 
-Databento timestamps bar messages at the **open** of the interval. The decoder
-normalizes `ts_event` to the bar **close** (original `ts_event` + interval).
+Databento timestamps bar messages at the **open** of the interval. By default,
+the decoder normalizes bar `ts_event` to the bar **close**: the original
+`ts_event` plus the interval. `ts_init` uses the live receipt time, or the close
+time for historical and file-based loads when no explicit init timestamp is
+supplied. Set `bars_timestamp_on_close=False` to timestamp bar `ts_event` on
+the interval open.
 
 ### Imbalance and statistics
 
@@ -508,8 +521,10 @@ self.subscribe_data(
 )
 ```
 
-Request the previous day's `statistics` for the `ES.FUT` parent symbol
-(all active E-mini S&P 500 futures):
+Request a bounded range of `statistics` for the `ES.FUT` parent symbol
+(all active E-mini S&P 500 futures). Use Databento's Historical
+[`metadata.get_cost`](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost)
+endpoint before real historical pulls:
 
 ```python
 from nautilus_trader.adapters.databento import DATABENTO_CLIENT_ID
@@ -520,6 +535,7 @@ instrument_id = InstrumentId.from_str("ES.FUT.GLBX")
 metadata = {
     "instrument_id": instrument_id,
     "start": "2024-03-06",
+    "end": "2024-03-07",
 }
 self.request_data(
     data_type=DataType(DatabentoStatistics, metadata=metadata),
@@ -606,6 +622,11 @@ decoding DBN per run.
 :::note
 Performance benchmarks are under development.
 :::
+
+For live data, decoded delivery from the feed handler to Nautilus is
+intentionally unbounded. This prevents slow consumers from stalling the feed
+path; a process under memory pressure should fail rather than block live
+decoding.
 
 ## Loading DBN data
 
@@ -857,19 +878,19 @@ node.build()
 
 ### Configuration parameters
 
-| Option                    | Default | Description                                                                                                          |
-|---------------------------|---------|----------------------------------------------------------------------------------------------------------------------|
-| `api_key`                 | `None`  | Databento API secret. Falls back to the `DATABENTO_API_KEY` environment variable when `None`.                        |
-| `http_gateway`            | `None`  | Historical HTTP gateway override for testing custom endpoints.                                                       |
-| `live_gateway`            | `None`  | Raw TCP real‑time gateway override, typically for testing only.                                                       |
-| `use_exchange_as_venue`   | `True`  | Use the exchange MIC for Nautilus venues (e.g., `XCME`). `False` retains the default GLBX mapping.                   |
-| `timeout_initial_load`    | `15.0`  | Seconds to wait for instrument definitions per dataset before proceeding.                                            |
-| `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots replay in order.                               |
-| `bars_timestamp_on_close` | `True`  | Timestamp bars on the close (`ts_event`/`ts_init`). `False` timestamps on the open.                                 |
-| `reconnect_timeout_mins`  | `10`    | Minutes to attempt reconnection before giving up. `None` retries indefinitely. See [Connection stability](#connection-stability). |
-| `venue_dataset_map`       | `None`  | Optional Nautilus venue to Databento dataset code mapping.                                                            |
-| `parent_symbols`          | `None`  | Optional `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`).   |
-| `instrument_ids`          | `None`  | Nautilus `InstrumentId` values to preload definitions for at startup.                                                |
+| Option                    | Default | Description                                                                                                                  |
+|---------------------------|---------|------------------------------------------------------------------------------------------------------------------------------|
+| `api_key`                 | `None`  | Databento API secret. Falls back to the `DATABENTO_API_KEY` environment variable when `None`.                                |
+| `http_gateway`            | `None`  | Historical HTTP gateway override for testing custom endpoints.                                                               |
+| `live_gateway`            | `None`  | Raw TCP real‑time gateway override, typically for testing only.                                                              |
+| `use_exchange_as_venue`   | `True`  | Override GLBX definition venues with the exchange MIC when definitions include one. `False` keeps the publisher‑map default. |
+| `timeout_initial_load`    | `15.0`  | Seconds to wait for instrument definitions per dataset before proceeding.                                                    |
+| `mbo_subscriptions_delay` | `3.0`   | Seconds to buffer before enabling MBO/L3 streams so initial snapshots replay in order.                                       |
+| `bars_timestamp_on_close` | `True`  | Timestamp bar `ts_event` on close. `False` timestamps bar `ts_event` on open.                                                |
+| `reconnect_timeout_mins`  | `10`    | Minutes to retry before giving up. `None` retries indefinitely. See [Connection stability](#connection-stability).           |
+| `venue_dataset_map`       | `None`  | Override the venue‑to‑dataset mappings from the canonical `publishers.json` (e.g., `{"EQUS": "EQUS.PLUS"}`).                 |
+| `parent_symbols`          | `None`  | Optional `{dataset: {parent symbols}}` to preload definition trees (e.g., `{"GLBX.MDP3": {"ES.FUT", "ES.OPT"}}`).            |
+| `instrument_ids`          | `None`  | Nautilus `InstrumentId` values to preload definitions for at startup.                                                        |
 
 :::tip
 Use environment variables for credentials.
@@ -880,7 +901,7 @@ Use environment variables for credentials.
 The live client reconnects automatically on:
 
 - **Network interruptions**: Temporary connectivity issues.
-- **Gateway restarts**: Databento Sunday maintenance. See the
+- **Gateway restarts**: Databento scheduled live gateway restarts. See the
   [maintenance schedule](https://databento.com/docs/api-reference-live/basics#maintenance-schedule).
 - **Market closures**: Sessions ending during off-hours.
 
@@ -907,6 +928,10 @@ All reconnections include:
 - **Automatic resubscription**: Restores all active subscriptions after reconnecting.
 - **Cycle reset**: Each successful session (>60s) resets the timeout clock.
 
+Individual unsubscribe requests log a warning and are ignored because Databento
+live sessions do not support granular unsubscribe. Stop the session to remove a
+subscription from the live gateway.
+
 #### Timeout configuration
 
 The `reconnect_timeout_mins` parameter controls how long the client attempts reconnection:
@@ -926,13 +951,13 @@ persistent configuration or authentication issues.
 
 #### Scheduled maintenance
 
-Databento restarts live gateways every Sunday (all clients disconnect):
+Databento restarts live gateways on this schedule (all clients disconnect):
 
-| Dataset            | Maintenance time (UTC) |
-|--------------------|------------------------|
-| CME Globex         | 09:30                  |
-| All ICE venues     | 09:45                  |
-| All other datasets | 10:30                  |
+| Dataset            | Restart time      |
+|--------------------|-------------------|
+| CME Globex         | Saturday 02:15 CT |
+| All ICE venues     | Sunday 09:45 UTC  |
+| All other datasets | Sunday 10:30 UTC  |
 
 The default 10-minute timeout covers typical restarts. For unattended systems,
 use `reconnect_timeout_mins=None` or a longer value. See the

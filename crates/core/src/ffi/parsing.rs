@@ -18,8 +18,8 @@
 //!
 //! The conversions are opinionated:
 //!
-//! * JSON is used as the interchange format for complex structures.
-//! * `ustr::Ustr` is preferred over `String` where possible for its performance benefits.
+//! - JSON is used as the interchange format for complex structures.
+//! - `ustr::Ustr` is preferred over `String` where possible for its performance benefits.
 //!
 //! All functions are `#[must_use]` and, unless otherwise noted, **assume** that the input pointer
 //! is non-null and points to a valid, *null-terminated* UTF-8 string.

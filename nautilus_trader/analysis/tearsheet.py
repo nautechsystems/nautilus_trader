@@ -308,7 +308,9 @@ def create_tearsheet(  # noqa: C901
         Configuration for tearsheet customization. If None, uses default configuration.
     benchmark_returns : pd.Series, optional
         Benchmark returns series for comparison. If provided, benchmark will be overlaid
-        on visualizations.
+        on visualizations. Benchmark-relative statistics (e.g., BetaRatio, Alpha,
+        InformationRatio, TrackingError, TreynorRatio) are included in the returns
+        statistics when registered on the analyzer.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark.
 
@@ -339,6 +341,18 @@ def create_tearsheet(  # noqa: C901
         engine=engine,
         currency=currency,
     )
+
+    # Include benchmark-relative statistics (Beta, Alpha, etc.) when a benchmark
+    # is provided, computed from the same resolved `returns` series used for the
+    # equity curve so the metrics and the plotted series stay consistent.
+    if benchmark_returns is not None and not benchmark_returns.empty:
+        stats_returns = {
+            **stats_returns,
+            **analyzer.get_performance_stats_returns_vs_benchmark(
+                benchmark_returns,
+                returns=returns,
+            ),
+        }
 
     # Build title with strategy name(s) and run time
     if title == "NautilusTrader Backtest Results":

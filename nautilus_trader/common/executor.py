@@ -146,7 +146,7 @@ class ActorExecutor:
         except asyncio.CancelledError:
             pass  # Ignore the exception since we intentionally cancelled the task
         except TimeoutError:
-            self._log.error("Executor: TimeoutError shutting down worker")
+            self._log.warning("Executor: TimeoutError shutting down worker")
 
         # Use a dedicated thread to avoid self-join issue when the executor
         # is also the loop's default executor

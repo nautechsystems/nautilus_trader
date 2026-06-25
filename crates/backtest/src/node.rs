@@ -153,7 +153,7 @@ impl BacktestNode {
                     .liquidation_enabled(venue_config.liquidation_enabled())
                     .liquidation_trigger_ratio(venue_config.liquidation_trigger_ratio())
                     .liquidation_cancel_open_orders(venue_config.liquidation_cancel_open_orders())
-                    .build();
+                    .build()?;
                 engine.add_venue(sim_config)?;
             }
 
@@ -190,11 +190,7 @@ impl BacktestNode {
                 for (instrument_id, raw_price) in settlement_prices {
                     let price = {
                         let cache = engine.kernel().cache.borrow();
-                        let instrument = cache.instrument(instrument_id).ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "No instrument found for settlement price configuration: {instrument_id}"
-                            )
-                        })?;
+                        let instrument = cache.try_instrument(instrument_id)?;
                         instrument.make_price(*raw_price)
                     };
                     engine.set_settlement_price(venue, *instrument_id, price)?;
@@ -252,10 +248,7 @@ impl BacktestNode {
 
             match config.chunk_size() {
                 None => run_oneshot(engine, config)?,
-                Some(chunk_size) => {
-                    anyhow::ensure!(chunk_size > 0, "chunk_size must be > 0");
-                    run_streaming(engine, config, chunk_size)?;
-                }
+                Some(chunk_size) => run_streaming(engine, config, chunk_size)?,
             }
 
             results.push(engine.get_result());

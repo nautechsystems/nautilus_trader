@@ -29,14 +29,17 @@ use nautilus_core::UnixNanos;
 use nautilus_model::defi::{
     Block, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolSwap, SharedChain, SharedDex,
     SharedPool, Token,
-    data::{PoolFeeCollect, PoolFlash},
+    data::{PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash},
     pool_analysis::{position::PoolPosition, snapshot::PoolSnapshot},
     tick_map::tick::PoolTick,
 };
 use sqlx::postgres::PgConnectOptions;
 
 use crate::{
-    cache::{consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase},
+    cache::{
+        consistency::CachedBlocksConsistencyStatus, database::BlockchainCacheDatabase,
+        rows::PoolRow,
+    },
     events::initialize::InitializeEvent,
 };
 
@@ -237,77 +240,120 @@ impl BlockchainCache {
             );
 
             for pool_row in pool_rows {
-                let token0 = if let Some(token) = self.tokens.get(&pool_row.token0_address) {
-                    token
-                } else {
-                    log::error!(
-                        "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
-                             This may indicate the token was not properly loaded from the database or the pool references an unknown token",
-                        pool_row.address,
-                        dex_id,
-                        pool_row.token0_address
-                    );
-                    continue;
-                };
-
-                let token1 = if let Some(token) = self.tokens.get(&pool_row.token1_address) {
-                    token
-                } else {
-                    log::error!(
-                        "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
-                             This may indicate the token was not properly loaded from the database or the pool references an unknown token",
-                        pool_row.address,
-                        dex_id,
-                        pool_row.token1_address
-                    );
-                    continue;
-                };
-
-                // Construct pool from row data and cached tokens
-                let Some(pool_identifier) = pool_row.pool_identifier.parse().ok() else {
-                    log::error!(
-                        "Invalid pool identifier '{}' in database for pool {}, skipping",
-                        pool_row.pool_identifier,
-                        pool_row.address
-                    );
-                    continue;
-                };
-                let mut pool = Pool::new(
-                    self.chain.clone(),
-                    dex.clone(),
-                    pool_row.address,
-                    pool_identifier,
-                    pool_row.creation_block as u64,
-                    token0.clone(),
-                    token1.clone(),
-                    pool_row.fee.map(|fee| fee as u32),
-                    pool_row
-                        .tick_spacing
-                        .map(|tick_spacing| tick_spacing as u32),
-                    UnixNanos::default(), // TODO use default for now
-                );
-
-                // Set hooks if available
-                if let Some(ref hook_address_str) = pool_row.hook_address
-                    && let Ok(hooks) = hook_address_str.parse()
-                {
-                    pool.set_hooks(hooks);
+                if let Some(pool) = self.build_pool_from_row(&pool_row, &dex) {
+                    loaded_pools.push(pool.clone());
+                    self.pools.insert(pool.pool_identifier, Arc::new(pool));
                 }
-
-                // Initialize pool with initial values if available
-                if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96
-                    && let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse()
-                    && let Some(initial_tick) = pool_row.initial_tick
-                {
-                    pool.initialize(initial_sqrt_price_x96, initial_tick);
-                }
-
-                // Add pool to cache and loaded pools list
-                loaded_pools.push(pool.clone());
-                self.pools.insert(pool.pool_identifier, Arc::new(pool));
             }
         }
         Ok(loaded_pools)
+    }
+
+    /// Loads a single DEX pool from the database into the in-memory cache.
+    ///
+    /// Returns the loaded pool, or `None` when it is absent from the database. Unlike
+    /// [`load_pools`](Self::load_pools), this loads only the requested pool, so per-pool tools do
+    /// not pay the cost of loading the whole DEX pool set.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DEX has not been registered or if database operations fail.
+    pub async fn load_pool(
+        &mut self,
+        dex_id: &DexType,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<Option<Pool>> {
+        let dex = self
+            .get_dex(dex_id)
+            .ok_or_else(|| anyhow::anyhow!("DEX {dex_id:?} has not been registered"))?;
+
+        let pool_row = {
+            let Some(database) = &self.database else {
+                return Ok(None);
+            };
+            database
+                .load_pool(self.chain.clone(), &dex_id.to_string(), pool_identifier)
+                .await?
+        };
+
+        let Some(pool_row) = pool_row else {
+            return Ok(None);
+        };
+        let Some(pool) = self.build_pool_from_row(&pool_row, &dex) else {
+            return Ok(None);
+        };
+        self.pools
+            .insert(pool.pool_identifier, Arc::new(pool.clone()));
+        Ok(Some(pool))
+    }
+
+    /// Builds a [`Pool`] from a database row using cached tokens.
+    ///
+    /// Returns `None` (after logging the reason) when a referenced token is missing from the cache
+    /// or the stored pool identifier cannot be parsed.
+    fn build_pool_from_row(&self, pool_row: &PoolRow, dex: &SharedDex) -> Option<Pool> {
+        let Some(token0) = self.tokens.get(&pool_row.token0_address) else {
+            log::error!(
+                "Failed to load pool {} for DEX {}: Token0 with address {} not found in cache. \
+                     This may indicate the token was not properly loaded from the database or the pool references an unknown token",
+                pool_row.address,
+                dex.name,
+                pool_row.token0_address
+            );
+            return None;
+        };
+
+        let Some(token1) = self.tokens.get(&pool_row.token1_address) else {
+            log::error!(
+                "Failed to load pool {} for DEX {}: Token1 with address {} not found in cache. \
+                     This may indicate the token was not properly loaded from the database or the pool references an unknown token",
+                pool_row.address,
+                dex.name,
+                pool_row.token1_address
+            );
+            return None;
+        };
+
+        let Some(pool_identifier) = pool_row.pool_identifier.parse().ok() else {
+            log::error!(
+                "Invalid pool identifier '{}' in database for pool {}, skipping",
+                pool_row.pool_identifier,
+                pool_row.address
+            );
+            return None;
+        };
+
+        let ts_init = pool_row.creation_block_timestamp.unwrap_or_default();
+
+        let mut pool = Pool::new(
+            self.chain.clone(),
+            dex.clone(),
+            pool_row.address,
+            pool_identifier,
+            pool_row.creation_block as u64,
+            token0.clone(),
+            token1.clone(),
+            pool_row.fee.map(|fee| fee as u32),
+            pool_row
+                .tick_spacing
+                .map(|tick_spacing| tick_spacing as u32),
+            ts_init,
+        );
+
+        if let Some(ref hook_address_str) = pool_row.hook_address
+            && let Ok(hooks) = hook_address_str.parse()
+        {
+            pool.set_hooks(hooks);
+        }
+
+        if let Some(initial_sqrt_price_x96_str) = &pool_row.initial_sqrt_price_x96
+            && let Ok(initial_sqrt_price_x96) = initial_sqrt_price_x96_str.parse()
+            && let Some(initial_tick) = pool_row.initial_tick
+        {
+            pool.initialize(initial_sqrt_price_x96, initial_tick);
+        }
+
+        Some(pool)
     }
 
     /// Loads block timestamps from the database starting `from_block` number
@@ -658,6 +704,42 @@ impl BlockchainCache {
         Ok(())
     }
 
+    /// Adds a batch of pool fee-protocol update events to the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the fee-protocol update events to the database fails.
+    pub async fn add_pool_fee_protocol_updates_batch(
+        &self,
+        updates: &[PoolFeeProtocolUpdate],
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_fee_protocol_updates_batch(self.chain.chain_id, updates)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Adds a batch of pool protocol-fee withdrawal events to the cache database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if adding the protocol-fee withdrawal events to the database fails.
+    pub async fn add_pool_fee_protocol_collect_batch(
+        &self,
+        collects: &[PoolFeeProtocolCollect],
+    ) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database
+                .add_pool_fee_protocol_collect_batch(self.chain.chain_id, collects)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     /// Adds a pool snapshot to the cache database.
     ///
     /// This method saves the complete snapshot including:
@@ -927,14 +1009,33 @@ impl BlockchainCache {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        sync::Arc,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
+    use alloy::primitives::{U160, address};
+    use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
-    use nautilus_model::defi::{Block, Blockchain, Chain};
+    use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
+    use nautilus_model::defi::{
+        AmmType, Block, Blockchain, Chain, Dex, PoolProfiler, SharedChain, SharedDex, Token,
+        data::{DexPoolData, block::BlockPosition},
+        pool_analysis::snapshot::{PoolAnalytics, PoolState},
+    };
     use rstest::rstest;
+    use sqlx::{
+        AssertSqlSafe, Error as SqlxError, PgPool,
+        postgres::{PgConnectOptions, PgPoolOptions},
+    };
+    use tokio_util::sync::CancellationToken;
     use ustr::Ustr;
 
     use super::*;
+    use crate::{
+        config::BlockchainDataClientConfig,
+        data::core::{BlockchainDataClientCore, SnapshotValidation},
+    };
 
     fn test_cache() -> BlockchainCache {
         BlockchainCache::new(Arc::new(Chain::new(Blockchain::Ethereum, 1)))
@@ -973,5 +1074,1166 @@ mod tests {
             cache.get_block_timestamp(42),
             Some(&UnixNanos::from(1_700_000_000_000_000_000))
         );
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_uses_pool_event_block_timestamp_without_full_block()
+    -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let expected_ts = UnixNanos::from(1_700_000_000_123_456_789);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(12, expected_ts)])
+            .await?;
+        insert_pool_swap_event(
+            &schema.admin_pool,
+            &schema.name,
+            chain.chain_id,
+            &pool_identifier,
+            12,
+        )
+        .await?;
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(12))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        let observed_timestamps = match events.as_slice() {
+            [DexPoolData::Swap(swap)] => Some((swap.ts_event, swap.ts_init)),
+            _ => None,
+        };
+
+        let expected_timestamps = Some((expected_ts, expected_ts));
+        if observed_timestamps != expected_timestamps {
+            anyhow::bail!(
+                "unexpected stream timestamps: expected {expected_timestamps:?}, observed {observed_timestamps:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_round_trips_fee_protocol_update_in_order() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(12, ts), test_block(13, ts)])
+            .await?;
+        // Swap at block 12, SetFeeProtocol at block 13: stream must order swap before update.
+        insert_pool_swap_event(
+            &schema.admin_pool,
+            &schema.name,
+            chain.chain_id,
+            &pool_identifier,
+            12,
+        )
+        .await?;
+        // Asymmetric values (4, 6) catch a token0/token1 column swap.
+        let update = PoolFeeProtocolUpdate::new(
+            chain.clone(),
+            dex.clone(),
+            instrument_id,
+            pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000ab".to_string(),
+            0,
+            0,
+            4,
+            6,
+            ts,
+            ts,
+        );
+        database
+            .add_pool_fee_protocol_updates_batch(chain.chain_id, std::slice::from_ref(&update))
+            .await?;
+
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(13))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        match events.as_slice() {
+            [DexPoolData::Swap(swap), DexPoolData::FeeProtocolUpdate(fp)] => {
+                // Swap (block 12) must order before SetFeeProtocol (block 13); the asymmetric
+                // (4, 6) values catch a token0/token1 column swap, and ts confirms the timestamp.
+                let observed = (
+                    swap.block,
+                    fp.block,
+                    fp.fee_protocol0_new,
+                    fp.fee_protocol1_new,
+                    fp.ts_event,
+                );
+
+                if observed != (12, 13, 4, 6, ts) {
+                    anyhow::bail!("unexpected fee protocol round-trip: {observed:?}");
+                }
+            }
+            other => anyhow::bail!("unexpected stream events: {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_round_trips_fee_protocol_collect_in_order() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(12, ts), test_block(13, ts)])
+            .await?;
+        // Swap at block 12, CollectProtocol at block 13: stream must order swap before withdrawal.
+        insert_pool_swap_event(
+            &schema.admin_pool,
+            &schema.name,
+            chain.chain_id,
+            &pool_identifier,
+            12,
+        )
+        .await?;
+        // Asymmetric amounts (111, 222) catch a token0/token1 column swap.
+        let collect = PoolFeeProtocolCollect::new(
+            chain.clone(),
+            dex.clone(),
+            instrument_id,
+            pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000cd".to_string(),
+            0,
+            0,
+            address!("0xc36442b4a4522e871399cd717abdd847ab11fe88"),
+            address!("0xa61da382c18d9d5beb905ea192bae25e4c15d512"),
+            111,
+            222,
+            ts,
+            ts,
+        );
+        database
+            .add_pool_fee_protocol_collect_batch(chain.chain_id, std::slice::from_ref(&collect))
+            .await?;
+
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(13))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        match events.as_slice() {
+            [DexPoolData::Swap(swap), DexPoolData::FeeProtocolCollect(cp)] => {
+                // Swap (block 12) must order before CollectProtocol (block 13); the asymmetric
+                // (111, 222) amounts catch a token0/token1 column swap, and ts confirms the timestamp.
+                let observed = (swap.block, cp.block, cp.amount0, cp.amount1, cp.ts_event);
+                if observed != (12, 13, 111, 222, ts) {
+                    anyhow::bail!("unexpected fee protocol collect round-trip: {observed:?}");
+                }
+
+                if cp.sender != address!("0xc36442b4a4522e871399cd717abdd847ab11fe88")
+                    || cp.recipient != address!("0xa61da382c18d9d5beb905ea192bae25e4c15d512")
+                {
+                    anyhow::bail!(
+                        "unexpected fee protocol collect addresses: sender={}, recipient={}",
+                        cp.sender,
+                        cp.recipient
+                    );
+                }
+            }
+            other => anyhow::bail!("unexpected stream events: {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_block_timestamps_prefers_full_block_over_pool_event_block() -> anyhow::Result<()>
+    {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let fallback_ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let pool_event_ts = UnixNanos::from(1_700_000_002_000_000_000);
+        let full_block_ts = UnixNanos::from(1_700_000_001_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(
+                chain.chain_id,
+                &[test_block(20, fallback_ts), test_block(21, pool_event_ts)],
+            )
+            .await?;
+        database
+            .add_block(chain.chain_id, &test_block(21, full_block_ts))
+            .await?;
+
+        let rows_result = database.load_block_timestamps(chain, 20).await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let rows = rows_result?;
+        let observed = rows
+            .into_iter()
+            .map(|row| (row.number, row.timestamp))
+            .collect::<Vec<_>>();
+
+        let expected = vec![(20, fallback_ts), (21, full_block_ts)];
+        if observed != expected {
+            anyhow::bail!(
+                "unexpected block timestamps: expected {expected:?}, observed {observed:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_block_timestamps_uses_pool_event_block_when_full_block_timestamp_is_null()
+    -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let fallback_ts = UnixNanos::from(1_700_000_004_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(22, fallback_ts)])
+            .await?;
+        insert_block_without_timestamp(&schema.admin_pool, &schema.name, chain.chain_id, 22)
+            .await?;
+
+        let rows_result = database.load_block_timestamps(chain, 22).await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let rows = rows_result?;
+        let observed = rows
+            .into_iter()
+            .map(|row| (row.number, row.timestamp))
+            .collect::<Vec<_>>();
+
+        let expected = vec![(22, fallback_ts)];
+        if observed != expected {
+            anyhow::bail!(
+                "unexpected block timestamps: expected {expected:?}, observed {observed:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_pools_sets_pool_timestamps_from_pool_event_block() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let creation_block = 30;
+        let creation_ts = UnixNanos::from(1_700_000_003_000_000_000);
+
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            creation_block,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+
+        let mut cache = BlockchainCache::new(chain.clone());
+        cache.database = Some(database);
+
+        cache.add_dex(dex).await?;
+        cache.add_token(token0).await?;
+        cache.add_token(token1).await?;
+        cache.add_pool(pool).await?;
+        let Some(database) = cache.database.as_ref() else {
+            anyhow::bail!("cache database must be set");
+        };
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(creation_block, creation_ts)])
+            .await?;
+
+        let pools_result = cache.load_pools(&DexType::UniswapV3).await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let pools = pools_result?;
+        let observed_timestamps = pools
+            .first()
+            .map(|pool| (pool.ts_event, pool.ts_init, pools.len()));
+
+        let expected_timestamps = Some((creation_ts, creation_ts, 1));
+        if observed_timestamps != expected_timestamps {
+            anyhow::bail!(
+                "unexpected pool timestamps: expected {expected_timestamps:?}, observed {observed_timestamps:?}"
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_latest_pool_snapshot_filters_by_validation_state() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            10, // creation block, distinct from the snapshot blocks below
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument_id = pool.instrument_id;
+        let mut cache = BlockchainCache::new(chain.clone());
+        cache.database = Some(database);
+        cache.add_dex(dex).await?;
+        cache.add_token(token0).await?;
+        cache.add_token(token1).await?;
+        cache.add_pool(pool).await?;
+
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let database = cache.database.as_ref().expect("cache database must be set");
+        database
+            .add_pool_event_blocks_batch(
+                chain.chain_id,
+                &[
+                    test_block(100, ts),
+                    test_block(150, ts),
+                    test_block(200, ts),
+                ],
+            )
+            .await?;
+
+        // replay@100, on_chain@150, invalid@200: one snapshot per block with a distinct verdict.
+        for (block, state) in [
+            (100u64, "replay"),
+            (150u64, "on_chain"),
+            (200u64, "invalid"),
+        ] {
+            let snapshot = PoolSnapshot::new(
+                instrument_id,
+                PoolState::default(),
+                Vec::new(),
+                Vec::new(),
+                PoolAnalytics::default(),
+                BlockPosition::new(block, "0xabc".to_string(), 0, 0),
+                ts,
+                ts,
+            );
+            cache
+                .add_pool_snapshot(&DexType::UniswapV3, &pool_identifier, &snapshot)
+                .await?;
+
+            if state != "replay" {
+                database
+                    .set_pool_snapshot_validation_state(
+                        chain.chain_id,
+                        &pool_identifier,
+                        block,
+                        0,
+                        0,
+                        state,
+                    )
+                    .await?;
+            }
+        }
+
+        let latest_valid = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool_identifier, None, true)
+            .await;
+        let latest_any = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool_identifier, None, false)
+            .await;
+        let stored_invalid = database
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool_identifier, 200, 0, 0)
+            .await;
+        let stored_on_chain = database
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool_identifier, 150, 0, 0)
+            .await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let latest_valid_block = latest_valid?.map(|s| s.block_position.number);
+        let latest_any_block = latest_any?.map(|s| s.block_position.number);
+        let stored_invalid = stored_invalid?;
+        let stored_on_chain = stored_on_chain?;
+
+        // require_valid excludes 'invalid', so the latest usable snapshot is on_chain@150; without
+        // the filter the newest row (invalid@200) wins. The stored verdict stays readable by primary
+        // key and untouched by the load filter.
+        if latest_valid_block != Some(150)
+            || latest_any_block != Some(200)
+            || stored_invalid.as_deref() != Some("invalid")
+            || stored_on_chain.as_deref() != Some("on_chain")
+        {
+            anyhow::bail!(
+                "unexpected load filter result: latest_valid_block={latest_valid_block:?}, latest_any_block={latest_any_block:?}, stored_invalid={stored_invalid:?}, stored_on_chain={stored_on_chain:?}"
+            );
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_pool_loads_only_the_requested_pool() -> anyhow::Result<()> {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let absent_identifier =
+            PoolIdentifier::from_address(address!("0x1111111111111111111111111111111111111111"));
+
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            30,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let mut cache = BlockchainCache::new(chain.clone());
+        cache.database = Some(database);
+        cache.add_dex(dex).await?;
+        cache.add_token(token0).await?;
+        cache.add_token(token1).await?;
+        cache.add_pool(pool).await?;
+
+        // Drop the in-memory pool so load_pool must read it back from the database, then prove it
+        // repopulates the cache for exactly the requested pool and reports None for an absent one.
+        cache.pools.clear();
+        let loaded = cache.load_pool(&DexType::UniswapV3, &pool_identifier).await;
+        let cached_after_load = cache.get_pool(&pool_identifier).is_some();
+        let absent = cache
+            .load_pool(&DexType::UniswapV3, &absent_identifier)
+            .await;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let loaded_id = loaded?.map(|pool| pool.pool_identifier);
+        let absent_is_some = absent?.is_some();
+
+        if loaded_id != Some(pool_identifier) || !cached_after_load || absent_is_some {
+            anyhow::bail!(
+                "unexpected load_pool result: loaded_id={loaded_id:?}, cached_after_load={cached_after_load}, absent_is_some={absent_is_some}"
+            );
+        }
+
+        Ok(())
+    }
+
+    // check_snapshot_validity lives on the data client but exercises the cache DB read path, so its
+    // RPC-unreachable test reuses this module's isolated-schema scaffolding. It runs fully only when
+    // both Postgres and an ENVIO_API_TOKEN are present (the live-smoke setup) and skips otherwise.
+    #[tokio::test]
+    async fn check_snapshot_validity_reports_stored_verdict_when_rpc_unreachable()
+    -> anyhow::Result<()> {
+        // BlockchainDataClientCore::new builds a HyperSyncClient, which requires a UUID token; the
+        // crate denies unsafe_code, so the test cannot inject one. Skip when it is absent (checked
+        // before opening a schema to avoid leaking it).
+        if std::env::var("ENVIO_API_TOKEN").is_err() {
+            return Ok(());
+        }
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = uniswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            10,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument_id = pool.instrument_id;
+
+        // Unreachable RPC so the on-chain compare cannot fetch the block and must fall back to the
+        // stored verdict.
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain.clone())
+            .dex_ids(vec![DexType::UniswapV3])
+            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .use_hypersync_for_live_data(true)
+            .build();
+        let mut core = BlockchainDataClientCore::new(config, None, None, CancellationToken::new());
+        core.cache.database = Some(database);
+        core.cache.add_dex(dex).await?;
+        core.cache.add_token(token0).await?;
+        core.cache.add_token(token1).await?;
+        core.cache.add_pool(pool.clone()).await?;
+
+        // Persist an `invalid` verdict at the watermark the profiler will report.
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let block_position = BlockPosition::new(200, "0xabc".to_string(), 0, 0);
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            PoolState::default(),
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            block_position.clone(),
+            ts,
+            ts,
+        );
+        core.cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool_identifier, &snapshot)
+            .await?;
+        core.cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .set_pool_snapshot_validation_state(
+                chain.chain_id,
+                &pool_identifier,
+                200,
+                0,
+                0,
+                "invalid",
+            )
+            .await?;
+
+        let mut profiler = PoolProfiler::new(Arc::new(pool));
+        profiler
+            .initialize(U160::from_str_radix("3cb0adde486484998be0b", 16).unwrap())
+            .expect("profiler should initialize from a known sqrt price");
+        profiler.last_processed_event = Some(block_position);
+        profiler.last_processed_ts = Some(ts);
+
+        let reported = core.check_snapshot_validity(&profiler, false).await;
+        let stored_after = core
+            .cache
+            .database
+            .as_ref()
+            .expect("cache database must be set")
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool_identifier, 200, 0, 0)
+            .await;
+
+        core.cache.database = None;
+        schema.cleanup().await?;
+
+        // The RPC could not reach the block, so the reported verdict comes from the stored row, and
+        // the stored row is left untouched (a transient RPC failure must not clobber a definitive
+        // verdict).
+        let reported = reported?;
+        let stored_after = stored_after?;
+        if reported != SnapshotValidation::Invalid || stored_after.as_deref() != Some("invalid") {
+            anyhow::bail!(
+                "unexpected validity result: reported={reported:?}, stored_after={stored_after:?}"
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn connect_cache_test_database()
+    -> anyhow::Result<Option<(BlockchainCacheDatabase, TestSchema)>> {
+        let config = get_postgres_connect_options(None, None, None, None, None);
+        let mut connect_options: PgConnectOptions = config.clone().into();
+        let Some(mut admin_pool) =
+            connect_cache_test_pool(connect_options.clone(), &config.username).await
+        else {
+            return Ok(None);
+        };
+        let schema_name = cache_test_schema_name();
+
+        if let Err(e) = create_cache_test_schema(&admin_pool, &schema_name).await {
+            if !is_database_create_permission_denied(&e) || config.username == "postgres" {
+                return Err(e);
+            }
+
+            eprintln!(
+                "Postgres role {} cannot create isolated blockchain cache test schema; retrying with postgres role: {e}",
+                config.username
+            );
+            admin_pool.close().await;
+            connect_options = postgres_test_connect_options(&config);
+            let Some(postgres_pool) =
+                connect_cache_test_pool(connect_options.clone(), "postgres").await
+            else {
+                return Err(e);
+            };
+            admin_pool = postgres_pool;
+            create_cache_test_schema(&admin_pool, &schema_name).await?;
+        }
+
+        let database = BlockchainCacheDatabase::connect(
+            connect_options.options([("search_path", format!("{schema_name},public"))]),
+        )
+        .await?;
+
+        Ok(Some((
+            database,
+            TestSchema {
+                admin_pool,
+                name: schema_name,
+            },
+        )))
+    }
+
+    async fn connect_cache_test_pool(
+        connect_options: PgConnectOptions,
+        username: &str,
+    ) -> Option<PgPool> {
+        match PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(connect_options)
+            .await
+        {
+            Ok(pool) => Some(pool),
+            Err(e) => {
+                eprintln!(
+                    "Postgres connection as {username} failed; skipping blockchain cache DB test: {e}"
+                );
+                None
+            }
+        }
+    }
+
+    fn postgres_test_connect_options(config: &PostgresConnectOptions) -> PgConnectOptions {
+        PostgresConnectOptions::new(
+            config.host.clone(),
+            config.port,
+            String::from("postgres"),
+            config.password.clone(),
+            config.database.clone(),
+        )
+        .into()
+    }
+
+    fn is_database_create_permission_denied(error: &anyhow::Error) -> bool {
+        match error.downcast_ref::<SqlxError>() {
+            Some(SqlxError::Database(database_error)) => {
+                database_error
+                    .code()
+                    .is_some_and(|code| code.as_ref() == "42501")
+                    && database_error
+                        .message()
+                        .contains("permission denied for database")
+            }
+            _ => false,
+        }
+    }
+
+    struct TestSchema {
+        admin_pool: PgPool,
+        name: String,
+    }
+
+    impl TestSchema {
+        async fn cleanup(self) -> anyhow::Result<()> {
+            drop_cache_test_schema(&self.admin_pool, &self.name).await?;
+            self.admin_pool.close().await;
+            Ok(())
+        }
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "test schema declares the narrow table set used by cache SQL"
+    )]
+    async fn create_cache_test_schema(pool: &PgPool, schema: &str) -> anyhow::Result<()> {
+        execute_schema_statement(pool, format!("CREATE SCHEMA {schema}")).await?;
+
+        let statements = [
+            format!("CREATE DOMAIN {schema}.U256 AS NUMERIC(78, 0)"),
+            format!("CREATE DOMAIN {schema}.U160 AS NUMERIC(49, 0)"),
+            format!("CREATE DOMAIN {schema}.U128 AS NUMERIC(39, 0)"),
+            format!(
+                r#"
+                CREATE TABLE {schema}."chain" (
+                    chain_id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."block" (
+                    chain_id INTEGER NOT NULL,
+                    number BIGINT NOT NULL,
+                    hash TEXT,
+                    parent_hash TEXT,
+                    miner TEXT,
+                    gas_limit BIGINT,
+                    gas_used BIGINT,
+                    timestamp TEXT,
+                    base_fee_per_gas TEXT,
+                    blob_gas_used TEXT,
+                    excess_blob_gas TEXT,
+                    l1_gas_price TEXT,
+                    l1_gas_used BIGINT,
+                    l1_fee_scalar BIGINT,
+                    PRIMARY KEY (chain_id, number)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_event_block" (
+                    chain_id INTEGER NOT NULL,
+                    number BIGINT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    PRIMARY KEY (chain_id, number)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."token" (
+                    chain_id INTEGER NOT NULL,
+                    address TEXT NOT NULL,
+                    symbol TEXT,
+                    name TEXT,
+                    decimals INTEGER,
+                    error TEXT,
+                    PRIMARY KEY (chain_id, address)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."dex" (
+                    chain_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    factory_address TEXT NOT NULL,
+                    creation_block BIGINT NOT NULL,
+                    last_full_sync_pools_block_number BIGINT,
+                    PRIMARY KEY (chain_id, name),
+                    UNIQUE (chain_id, factory_address)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool" (
+                    chain_id INTEGER NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    address TEXT NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    creation_block BIGINT NOT NULL,
+                    token0_chain INTEGER NOT NULL,
+                    token0_address TEXT NOT NULL,
+                    token1_chain INTEGER NOT NULL,
+                    token1_address TEXT NOT NULL,
+                    fee INTEGER,
+                    tick_spacing INTEGER,
+                    initial_tick INTEGER,
+                    initial_sqrt_price_x96 TEXT,
+                    hook_address TEXT,
+                    last_full_sync_block_number BIGINT,
+                    PRIMARY KEY (chain_id, dex_name, pool_identifier)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_swap_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    sqrt_price_x96 TEXT NOT NULL,
+                    liquidity TEXT NOT NULL,
+                    tick INTEGER NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
+                    order_side TEXT,
+                    base_quantity NUMERIC,
+                    quote_quantity NUMERIC,
+                    spot_price NUMERIC,
+                    execution_price NUMERIC,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_liquidity_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    sender TEXT,
+                    owner TEXT NOT NULL,
+                    position_liquidity TEXT NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
+                    tick_lower INTEGER NOT NULL,
+                    tick_upper INTEGER NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_collect_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    owner TEXT NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
+                    tick_lower INTEGER NOT NULL,
+                    tick_upper INTEGER NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_flash_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
+                    paid0 TEXT NOT NULL,
+                    paid1 TEXT NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_fee_protocol_update_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    fee_protocol0_new SMALLINT NOT NULL,
+                    fee_protocol1_new SMALLINT NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_fee_protocol_collect_event" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    amount0 TEXT NOT NULL,
+                    amount1 TEXT NOT NULL,
+                    UNIQUE(chain_id, transaction_hash, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_snapshot" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    dex_name TEXT NOT NULL,
+                    block BIGINT NOT NULL,
+                    transaction_index INTEGER NOT NULL,
+                    log_index INTEGER NOT NULL,
+                    transaction_hash TEXT NOT NULL,
+                    current_tick INTEGER NOT NULL,
+                    price_sqrt_ratio_x96 NUMERIC NOT NULL,
+                    liquidity NUMERIC NOT NULL,
+                    protocol_fees_token0 NUMERIC NOT NULL,
+                    protocol_fees_token1 NUMERIC NOT NULL,
+                    fee_protocol SMALLINT NOT NULL,
+                    fee_growth_global_0 NUMERIC NOT NULL,
+                    fee_growth_global_1 NUMERIC NOT NULL,
+                    total_amount0_deposited NUMERIC NOT NULL,
+                    total_amount1_deposited NUMERIC NOT NULL,
+                    total_amount0_collected NUMERIC NOT NULL,
+                    total_amount1_collected NUMERIC NOT NULL,
+                    total_swaps INTEGER NOT NULL,
+                    total_mints INTEGER NOT NULL,
+                    total_burns INTEGER NOT NULL,
+                    total_fee_collects INTEGER NOT NULL,
+                    total_flashes INTEGER NOT NULL,
+                    liquidity_utilization_rate DOUBLE PRECISION,
+                    validation_state TEXT NOT NULL DEFAULT 'replay' CHECK (validation_state IN ('on_chain', 'replay', 'invalid')),
+                    PRIMARY KEY (chain_id, pool_identifier, block, transaction_index, log_index)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_position" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    snapshot_block BIGINT NOT NULL,
+                    snapshot_transaction_index INTEGER NOT NULL,
+                    snapshot_log_index INTEGER NOT NULL,
+                    owner TEXT NOT NULL,
+                    tick_lower INTEGER NOT NULL,
+                    tick_upper INTEGER NOT NULL,
+                    liquidity NUMERIC NOT NULL,
+                    fee_growth_inside_0_last NUMERIC NOT NULL,
+                    fee_growth_inside_1_last NUMERIC NOT NULL,
+                    tokens_owed_0 NUMERIC NOT NULL,
+                    tokens_owed_1 NUMERIC NOT NULL,
+                    total_amount0_deposited NUMERIC,
+                    total_amount1_deposited NUMERIC,
+                    total_amount0_collected NUMERIC,
+                    total_amount1_collected NUMERIC,
+                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper)
+                )
+                "#
+            ),
+            format!(
+                r#"
+                CREATE TABLE {schema}."pool_tick" (
+                    chain_id INTEGER NOT NULL,
+                    pool_identifier TEXT NOT NULL,
+                    snapshot_block BIGINT NOT NULL,
+                    snapshot_transaction_index INTEGER NOT NULL,
+                    snapshot_log_index INTEGER NOT NULL,
+                    tick_value INTEGER NOT NULL,
+                    liquidity_gross NUMERIC NOT NULL,
+                    liquidity_net NUMERIC NOT NULL,
+                    fee_growth_outside_0 NUMERIC NOT NULL,
+                    fee_growth_outside_1 NUMERIC NOT NULL,
+                    initialized BOOLEAN NOT NULL,
+                    last_updated_block BIGINT NOT NULL,
+                    PRIMARY KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value)
+                )
+                "#
+            ),
+        ];
+
+        for statement in statements {
+            execute_schema_statement(pool, statement).await?;
+        }
+
+        Ok(())
+    }
+
+    async fn insert_pool_swap_event(
+        pool: &PgPool,
+        schema: &str,
+        chain_id: u32,
+        pool_identifier: &PoolIdentifier,
+        block: u64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(AssertSqlSafe(format!(
+            r#"
+            INSERT INTO {schema}."pool_swap_event" (
+                chain_id, pool_identifier, dex_name, block, transaction_hash, transaction_index,
+                log_index, sender, recipient, sqrt_price_x96, liquidity, tick, amount0, amount1
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            "#
+        )))
+        .bind(chain_id as i32)
+        .bind(pool_identifier.to_string())
+        .bind(DexType::UniswapV3.to_string())
+        .bind(block as i64)
+        .bind("0x000000000000000000000000000000000000000000000000000000000000000c")
+        .bind(0_i32)
+        .bind(0_i32)
+        .bind("0x1111111111111111111111111111111111111111")
+        .bind("0x2222222222222222222222222222222222222222")
+        .bind("79228162514264337593543950336")
+        .bind("1000000")
+        .bind(0_i32)
+        .bind("-1000000000000000000")
+        .bind("2000000")
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn insert_block_without_timestamp(
+        pool: &PgPool,
+        schema: &str,
+        chain_id: u32,
+        number: u64,
+    ) -> anyhow::Result<()> {
+        sqlx::query(AssertSqlSafe(format!(
+            r#"
+            INSERT INTO {schema}."block" (
+                chain_id, number, hash, parent_hash, miner, gas_limit, gas_used, timestamp
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NULL)
+            "#
+        )))
+        .bind(chain_id as i32)
+        .bind(number as i64)
+        .bind(format!("0x{number:064x}"))
+        .bind("0x0")
+        .bind("0x0000000000000000000000000000000000000000")
+        .bind(30_000_000_i64)
+        .bind(21_000_i64)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn drop_cache_test_schema(pool: &PgPool, schema: &str) -> anyhow::Result<()> {
+        execute_schema_statement(pool, format!("DROP SCHEMA IF EXISTS {schema} CASCADE")).await
+    }
+
+    async fn execute_schema_statement(pool: &PgPool, statement: String) -> anyhow::Result<()> {
+        sqlx::query(AssertSqlSafe(statement)).execute(pool).await?;
+        Ok(())
+    }
+
+    fn cache_test_schema_name() -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock must be after UNIX epoch")
+            .as_nanos();
+
+        format!("nt_blockchain_cache_test_{}_{}", std::process::id(), nanos)
+    }
+
+    fn arbitrum() -> SharedChain {
+        let Some(chain) = Chain::from_chain_id(42161) else {
+            panic!("Arbitrum chain must exist in model definitions");
+        };
+
+        Arc::new(chain.clone())
+    }
+
+    fn uniswap_v3(chain: &SharedChain) -> SharedDex {
+        Arc::new(Dex::new(
+            (**chain).clone(),
+            DexType::UniswapV3,
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            0,
+            AmmType::CLAMM,
+            "PoolCreated",
+            "Swap",
+            "Mint",
+            "Burn",
+            "Collect",
+        ))
+    }
+
+    fn weth(chain: &SharedChain) -> Token {
+        Token::new(
+            chain.clone(),
+            address!("0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"),
+            "Wrapped Ether".to_string(),
+            "WETH".to_string(),
+            18,
+        )
+    }
+
+    fn usdc(chain: &SharedChain) -> Token {
+        Token::new(
+            chain.clone(),
+            address!("0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8"),
+            "USD Coin".to_string(),
+            "USDC".to_string(),
+            6,
+        )
+    }
+
+    fn test_block(number: u64, timestamp: UnixNanos) -> Block {
+        Block::new(
+            format!("0x{number:064x}"),
+            String::from("0x0"),
+            number,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            30_000_000,
+            21_000,
+            timestamp,
+            Some(Blockchain::Arbitrum),
+        )
     }
 }

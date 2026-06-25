@@ -1273,7 +1273,7 @@ fn handle_md_message(
         }
         AxMdMessage::SubscriptionResponse(_) => {}
         AxMdMessage::Error(error) => {
-            log::error!("WebSocket error: {}", error.message);
+            log::warn!("WebSocket error: {}", error.message);
         }
     }
 }
@@ -1354,6 +1354,7 @@ mod tests {
             Some(Decimal::new(5, 3)),
             Some(Decimal::new(2, 4)),
             Some(Decimal::new(5, 4)),
+            None,
             None,
             UnixNanos::default(),
             UnixNanos::default(),

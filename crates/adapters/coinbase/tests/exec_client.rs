@@ -422,19 +422,11 @@ async fn start_mock_server(state: TestState) -> SocketAddr {
         axum::serve(listener, router).await.unwrap();
     });
 
-    let start = std::time::Instant::now();
-
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-
-        assert!(
-            start.elapsed() <= Duration::from_secs(5),
-            "Mock server did not start within timeout"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     addr
 }
@@ -2247,18 +2239,11 @@ async fn start_failure_server(router: Router) -> SocketAddr {
         axum::serve(listener, router).await.unwrap();
     });
 
-    let start = std::time::Instant::now();
-
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            start.elapsed() <= std::time::Duration::from_secs(5),
-            "failure server did not start within timeout"
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-    }
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(5),
+    )
+    .await;
     addr
 }
 

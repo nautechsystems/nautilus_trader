@@ -18,7 +18,7 @@
 #[cfg(test)]
 mod tests {
     use ibapi::contracts::{
-        ComboLeg, ComboLegOpenClose, Contract, Currency, Exchange, SecurityType, Symbol,
+        ComboLeg, ComboLegOpenClose, Contract, Currency, Exchange, LegAction, SecurityType, Symbol,
     };
     use nautilus_core::UnixNanos;
     use nautilus_model::{
@@ -59,6 +59,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from(1),
             Quantity::from(1),
+            None,
             None,
             None,
             None,
@@ -155,7 +156,7 @@ mod tests {
                 ComboLeg {
                     contract_id: 1001,
                     ratio: 1,
-                    action: String::from("BUY"),
+                    action: LegAction::Buy,
                     exchange: String::from("SMART"),
                     open_close: ComboLegOpenClose::Same,
                     short_sale_slot: 0,
@@ -165,7 +166,7 @@ mod tests {
                 ComboLeg {
                     contract_id: 1002,
                     ratio: 1,
-                    action: String::from("SELL"),
+                    action: LegAction::Sell,
                     exchange: String::from("SMART"),
                     open_close: ComboLegOpenClose::Same,
                     short_sale_slot: 0,

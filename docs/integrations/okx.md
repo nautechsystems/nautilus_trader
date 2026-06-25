@@ -17,15 +17,15 @@ Live example scripts are available in
 
 ### Product support
 
-| Product         | Instrument source            | Data | Exec | Notes                                      |
-|-----------------|------------------------------|------|------|--------------------------------------------|
-| Spot            | `public/instruments`         | Yes  | Yes  | Spot trading pairs.                        |
-| Margin          | `public/instruments`         | Yes  | Yes  | Spot instruments with margin or leverage.  |
-| Perpetual swaps | `public/instruments`         | Yes  | Yes  | Linear and inverse contracts.              |
-| Futures         | `public/instruments`         | Yes  | Yes  | Dated futures contracts.                   |
-| Options         | `public/instruments`         | Yes  | Yes  | Limit‑style order execution.               |
-| Spreads         | `sprd/spreads`               | Yes  | Yes  | Snapshots, quotes, trades on business WS.   |
-| Event contracts | `event-contract/*` endpoints | Yes  | Yes  | Parsed as Nautilus `BinaryOption`.         |
+| Product         | Instrument source            | Data | Exec | Notes                                     |
+|-----------------|------------------------------|------|------|-------------------------------------------|
+| Spot            | `public/instruments`         | Yes  | Yes  | Spot trading pairs.                       |
+| Margin          | `public/instruments`         | Yes  | Yes  | Spot instruments with margin or leverage. |
+| Perpetual swaps | `public/instruments`         | Yes  | Yes  | Linear and inverse contracts.             |
+| Futures         | `public/instruments`         | Yes  | Yes  | Dated futures contracts.                  |
+| Options         | `public/instruments`         | Yes  | Yes  | Limit‑style order execution.              |
+| Spreads         | `sprd/spreads`               | Yes  | Yes  | Snapshots, quotes, trades on business WS. |
+| Event contracts | `event-contract/*` endpoints | Yes  | Yes  | Parsed as Nautilus `BinaryOption`.        |
 
 Relevant OKX docs:
 
@@ -1058,6 +1058,34 @@ clients. Spread instruments use OKX spread IDs instead of `instrument_types`; lo
 with `load_spreads=True` on the data client and, for Python v1 execution-only nodes, on
 the execution client before trading them.
 
+### EEA endpoint overrides
+
+OKX accounts registered through the EEA portal use EEA API infrastructure. The adapter
+defaults to global OKX endpoints, so EEA accounts should set explicit REST and WebSocket
+endpoint overrides.
+
+| Config field           | Live base                  | Demo base                     | WebSocket path    |
+|------------------------|----------------------------|-------------------------------|-------------------|
+| `base_url_http`        | `https://eea.okx.com`      | `https://eea.okx.com`         |                   |
+| `base_url_ws_public`   | `wss://wseea.okx.com:8443` | `wss://wseeapap.okx.com:8443` | `/ws/v5/public`   |
+| `base_url_ws_private`  | `wss://wseea.okx.com:8443` | `wss://wseeapap.okx.com:8443` | `/ws/v5/private`  |
+| `base_url_ws_business` | `wss://wseea.okx.com:8443` | `wss://wseeapap.okx.com:8443` | `/ws/v5/business` |
+
+For WebSocket fields, join the base and path in the same row.
+
+Use `base_url_ws_public` with data client configs and `base_url_ws_private` with
+execution client configs. EEA accounts must also set `base_url_ws_business` on both v2
+configs because v2 does not derive the business WebSocket URL from the public or private
+override.
+
+Python v1 live configs expose `base_url_ws` instead of the split WebSocket fields. For
+those configs, set `base_url_ws` to the public EEA WebSocket URL on `OKXDataClientConfig`
+and to the private EEA WebSocket URL on `OKXExecClientConfig`; each client derives its
+business WebSocket URL from that value.
+
+See the [OKX EEA API documentation](https://my.okx.com/docs-v5/en/) for the current
+official endpoint list.
+
 Below is an example configuration for a live trading node using OKX data and execution clients:
 
 ```python
@@ -1079,6 +1107,7 @@ config = TradingNodeConfig(
             api_secret=None,        # Will use OKX_API_SECRET env var
             api_passphrase=None,    # Will use OKX_API_PASSPHRASE env var
             base_url_http=None,
+            base_url_ws=None,
             environment=OKXEnvironment.LIVE,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_types=(OKXInstrumentType.SWAP,),

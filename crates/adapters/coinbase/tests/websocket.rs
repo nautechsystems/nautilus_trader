@@ -192,18 +192,11 @@ async fn start_mock_ws_server(state: WsServerState) -> SocketAddr {
         axum::serve(listener, router).await.unwrap();
     });
 
-    let start = std::time::Instant::now();
-
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-        assert!(
-            start.elapsed() <= Duration::from_secs(5),
-            "Mock server did not start within timeout"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     addr
 }

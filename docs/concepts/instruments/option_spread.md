@@ -63,32 +63,24 @@ use ustr::Ustr;
 let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
 let expiration = Utc.with_ymd_and_hms(2024, 2, 23, 22, 59, 0).unwrap();
 
-let sr3_spread = OptionSpread::new(
-    InstrumentId::from("UD:U$: GN 2534559.GLBX"),
-    Symbol::from("UD:U$: GN 2534559"),
-    AssetClass::FX,
-    Some(Ustr::from("XCME")),
-    Ustr::from("SR3"),
-    Ustr::from("GN"),
-    UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-    UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
-    Currency::from("USD"),
-    2,
-    Price::from("0.01"),
-    Quantity::from("1"),
-    Quantity::from("1"),
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    UnixNanos::default(),
-    UnixNanos::default(),
-);
+let sr3_spread = OptionSpread::builder()
+    .instrument_id(InstrumentId::from("UD:U$: GN 2534559.GLBX"))
+    .raw_symbol(Symbol::from("UD:U$: GN 2534559"))
+    .asset_class(AssetClass::FX)
+    .exchange(Ustr::from("XCME"))
+    .underlying(Ustr::from("SR3"))
+    .strategy_type(Ustr::from("GN"))
+    .activation_ns(UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64))
+    .expiration_ns(UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64))
+    .currency(Currency::from("USD"))
+    .price_precision(2)
+    .price_increment(Price::from("0.01"))
+    .multiplier(Quantity::from("1"))
+    .lot_size(Quantity::from("1"))
+    .ts_event(UnixNanos::default())
+    .ts_init(UnixNanos::default())
+    .build()
+    .unwrap();
 ```
 
 ```python tab="Python"

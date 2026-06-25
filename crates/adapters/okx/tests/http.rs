@@ -34,9 +34,10 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{Duration as ChronoDuration, TimeZone, Utc};
-use nautilus_common::testing::wait_until_async;
+use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
+    data::BarType,
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
@@ -96,6 +97,14 @@ struct TestServerState {
     last_cancel_spread_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_all_spread_orders_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    BookSnapshot,
+    OrderbookSnapshot,
+    Trades,
+    Bars,
 }
 
 /// Wait for the test server to be ready by polling a health endpoint.
@@ -1063,6 +1072,83 @@ async fn start_test_server(state: Arc<TestServerState>) -> SocketAddr {
 
     wait_for_server(addr, "/api/v5/public/instruments").await;
     addr
+}
+
+#[rstest]
+#[case::book_snapshot(RequiredInstrumentCachePath::BookSnapshot)]
+#[case::orderbook_snapshot(RequiredInstrumentCachePath::OrderbookSnapshot)]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = OKXHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        1,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+    let result = match path {
+        RequiredInstrumentCachePath::BookSnapshot => client
+            .request_book_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::OrderbookSnapshot => client
+            .request_orderbook_snapshot(instrument_id, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Trades => client
+            .request_trades(instrument_id, None, None, None)
+            .await
+            .map(|_| ()),
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTC-USDT-SWAP.OKX-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instrument_missing_instrument_returns_lookup_error() {
+    let addr = start_test_server(Arc::new(TestServerState::default())).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        1,
+        0,
+        1,
+        1,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTC-ABOVE-DAILY-260224-1600-99999.OKX");
+
+    let message = client
+        .request_instrument(instrument_id)
+        .await
+        .unwrap_err()
+        .to_string();
+
+    assert!(
+        message.contains(&InstrumentLookupError::not_found(instrument_id).to_string()),
+        "expected canonical lookup error, was {message}"
+    );
 }
 
 #[rstest]
@@ -3683,6 +3769,13 @@ async fn test_http_request_algo_order_status_report_queries_attached_oco_with_or
             .iter()
             .any(|query| query.get("ordType").map(String::as_str) == Some("oco")),
         "expected at least one pending algo query with ordType=oco, found {pending_queries:?}",
+    );
+
+    // algoClOrdId-only lookup must skip history: OKX rejects it with 50015.
+    let history_queries = state.algo_history_queries.lock().await.clone();
+    assert!(
+        history_queries.is_empty(),
+        "expected no algo history queries for an algoClOrdId-only lookup, found {history_queries:?}",
     );
 }
 

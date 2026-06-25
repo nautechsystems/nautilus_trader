@@ -48,6 +48,7 @@
 pub mod common;
 pub mod config;
 pub mod data;
+pub mod data_types;
 pub mod execution;
 pub mod factories;
 pub mod filters;
@@ -57,6 +58,7 @@ pub mod signing;
 pub mod websocket;
 
 mod resolve;
+mod rtds;
 
 #[cfg(feature = "python")]
 pub mod python;

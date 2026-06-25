@@ -286,6 +286,7 @@ pub fn parse_perp_instrument(
         Some(margin_maint),
         Some(maker_fee),
         Some(taker_fee),
+        None,
         Some(info),
         ts_event,
         ts_init,
@@ -331,7 +332,7 @@ pub fn parse_account_state(
 
     if balances.is_empty() {
         let zero_currency = Currency::USD();
-        let zero_money = Money::new(0.0, zero_currency);
+        let zero_money = Money::zero(zero_currency);
         balances.push(AccountBalance::new(zero_money, zero_money, zero_money));
     }
 
@@ -520,7 +521,7 @@ pub fn parse_position_status_report(
     } else {
         (
             PositionSideSpecified::Flat,
-            Quantity::new(0.0, instrument.size_precision()),
+            Quantity::zero(instrument.size_precision()),
         )
     };
 

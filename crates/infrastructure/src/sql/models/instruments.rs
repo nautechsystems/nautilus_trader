@@ -35,7 +35,7 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
-use crate::sql::models::enums::AssetClassModel;
+use crate::sql::models::{enums::AssetClassModel, read_u8, read_u64};
 
 #[derive(Debug)]
 pub struct InstrumentAnyModel(pub InstrumentAny);
@@ -177,18 +177,22 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
 
 // TODO: New/updated schema required to support betting instrument loading
 impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full betting instrument constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
-        let event_type_id = row.try_get::<i64, _>("event_type_id")? as u64;
+        let event_type_id = read_u64(row, "event_type_id")?;
         let event_type_name = row
             .try_get::<String, _>("event_type_name")
             .map(|res| Ustr::from(res.as_str()))?;
-        let competition_id = row.try_get::<i64, _>("competition_id")? as u64;
+        let competition_id = read_u64(row, "competition_id")?;
         let competition_name = row
             .try_get::<String, _>("competition_name")
             .map(|res| Ustr::from(res.as_str()))?;
-        let event_id = row.try_get::<i64, _>("event_id")? as u64;
+        let event_id = read_u64(row, "event_id")?;
         let event_name = row
             .try_get::<String, _>("event_name")
             .map(|res| Ustr::from(res.as_str()))?;
@@ -213,7 +217,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
         let market_start_time = row
             .try_get::<String, _>("market_start_time")
             .map(UnixNanos::from)?;
-        let selection_id = row.try_get::<i64, _>("selection_id")? as u64;
+        let selection_id = read_u64(row, "selection_id")?;
         let selection_name = row
             .try_get::<String, _>("selection_name")
             .map(|res| Ustr::from(res.as_str()))?;
@@ -221,8 +225,8 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
         let currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
-        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(Price::from)?;
@@ -303,6 +307,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -326,8 +331,8 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
-        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -405,6 +410,7 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -430,8 +436,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -492,8 +498,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             is_inverse,
             activation_ns,
             expiration_ns,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -509,6 +515,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -517,6 +524,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full crypto option constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -540,8 +551,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -604,8 +615,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
             strike_price,
             activation_ns,
             expiration_ns,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -620,6 +631,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -642,8 +654,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             .try_get::<String, _>("settlement_currency")
             .map(Currency::from)?;
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -703,8 +715,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             quote_currency,
             settlement_currency,
             is_inverse,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -719,6 +731,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -737,8 +750,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from(res.as_str()))?;
@@ -797,8 +810,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             raw_symbol,
             base_currency,
             quote_currency,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             multiplier,
@@ -813,6 +826,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -831,7 +845,7 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
         let currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -874,7 +888,7 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             raw_symbol,
             isin,
             currency,
-            price_precision as u8,
+            price_precision,
             price_increment,
             lot_size,
             max_quantity,
@@ -885,6 +899,7 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -915,7 +930,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from(res.as_str()))?;
@@ -965,7 +980,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             activation_ns,
             expiration_ns,
             currency,
-            price_precision as u8,
+            price_precision,
             price_increment,
             multiplier,
             lot_size,
@@ -977,6 +992,7 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -1019,7 +1035,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
         let currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision").unwrap();
+        let price_precision = read_u8(row, "price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1072,7 +1088,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
             currency,
             activation_ns,
             expiration_ns,
-            price_precision as u8,
+            price_precision,
             price_increment,
             multiplier,
             lot_size,
@@ -1084,6 +1100,7 @@ impl<'r> FromRow<'r, PgRow> for OptionContractModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -1102,8 +1119,8 @@ impl<'r> FromRow<'r, PgRow> for CommodityModel {
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
-        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1174,6 +1191,7 @@ impl<'r> FromRow<'r, PgRow> for CommodityModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -1188,8 +1206,8 @@ impl<'r> FromRow<'r, PgRow> for IndexInstrumentModel {
         let currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
-        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1207,6 +1225,7 @@ impl<'r> FromRow<'r, PgRow> for IndexInstrumentModel {
             size_precision,
             price_increment,
             size_increment,
+            None,
             None,
             ts_event,
             ts_init,
@@ -1229,8 +1248,8 @@ impl<'r> FromRow<'r, PgRow> for CfdModel {
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
             .map(Currency::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
-        let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1302,6 +1321,7 @@ impl<'r> FromRow<'r, PgRow> for CfdModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -1310,6 +1330,10 @@ impl<'r> FromRow<'r, PgRow> for CfdModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full perpetual contract constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -1330,8 +1354,8 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
             .try_get::<String, _>("settlement_currency")
             .map(Currency::from)?;
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1392,8 +1416,8 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
             quote_currency,
             settlement_currency,
             is_inverse,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -1409,6 +1433,7 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -1423,6 +1448,10 @@ impl<'r> FromRow<'r, PgRow> for OptionSpreadModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full crypto futures spread constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -1443,8 +1472,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1506,8 +1535,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
             strategy_type,
             activation_ns,
             expiration_ns,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -1523,6 +1552,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
             maker_fee,
             taker_fee,
             None,
+            None,
             ts_event,
             ts_init,
         );
@@ -1531,6 +1561,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadModel {
 }
 
 impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full crypto option spread constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -1551,8 +1585,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
             .map(UnixNanos::from)?;
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
@@ -1614,8 +1648,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
             strategy_type,
             activation_ns,
             expiration_ns,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             Some(multiplier),
@@ -1630,6 +1664,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,
@@ -1659,8 +1694,8 @@ impl<'r> FromRow<'r, PgRow> for TokenizedAssetModel {
             .try_get::<Option<String>, _>("isin")
             .ok()
             .and_then(|res| res.map(|s| Ustr::from(s.as_str())));
-        let price_precision = row.try_get::<i32, _>("price_precision")?;
-        let size_precision = row.try_get::<i32, _>("size_precision")?;
+        let price_precision = read_u8(row, "price_precision")?;
+        let size_precision = read_u8(row, "size_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
             .map(|res| Price::from(res.as_str()))?;
@@ -1721,8 +1756,8 @@ impl<'r> FromRow<'r, PgRow> for TokenizedAssetModel {
             base_currency,
             quote_currency,
             isin,
-            price_precision as u8,
-            size_precision as u8,
+            price_precision,
+            size_precision,
             price_increment,
             size_increment,
             multiplier,
@@ -1737,6 +1772,7 @@ impl<'r> FromRow<'r, PgRow> for TokenizedAssetModel {
             margin_maint,
             maker_fee,
             taker_fee,
+            None,
             None,
             ts_event,
             ts_init,

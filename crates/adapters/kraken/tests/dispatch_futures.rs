@@ -79,6 +79,7 @@ fn make_futures_perpetual() -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))

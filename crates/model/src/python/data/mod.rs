@@ -16,7 +16,7 @@
 //! Data types for the trading domain model.
 
 #[cfg(feature = "ffi")]
-use std::ffi::{CStr, CString};
+use std::ffi::CStr;
 
 pub mod bar;
 pub mod bet;
@@ -64,14 +64,6 @@ pub const DATA_FFI_CVEC_CAPSULE_NAME: &CStr = c"nautilus.DataFFI.CVec";
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct DataFfiCVec(CVec);
-
-#[cfg(feature = "ffi")]
-impl DataFfiCVec {
-    #[must_use]
-    pub fn capsule_name() -> CString {
-        DATA_FFI_CVEC_CAPSULE_NAME.to_owned()
-    }
-}
 
 #[cfg(feature = "ffi")]
 impl From<Vec<DataFFI>> for DataFfiCVec {
@@ -180,6 +172,10 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     {
         // For Cython compatibility, we convert to DataFFI if possible.
         if let Ok(ffi_data) = DataFFI::try_from(data.clone()) {
+            #[allow(
+                deprecated,
+                reason = "unnamed capsules are required for legacy Cython capsule_to_data"
+            )]
             let capsule = PyCapsule::new_with_destructor(py, ffi_data, None, |_, _| {})
                 .expect("Error creating `PyCapsule` for `DataFFI` ");
             return capsule.into_any().unbind();
@@ -187,6 +183,10 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> Py<PyAny> {
     }
 
     // Default case for PyO3 or when conversion fails (e.g. Custom data)
+    #[allow(
+        deprecated,
+        reason = "unnamed capsules are required for legacy Cython capsule_to_data"
+    )]
     let capsule = PyCapsule::new_with_destructor(py, data, None, |_, _| {})
         .expect("Error creating `PyCapsule` for `Data` ");
     capsule.into_any().unbind()
@@ -634,7 +634,7 @@ fn py_decode_record_batch_to_custom_data(
 ///
 /// # Arguments
 ///
-/// * `data_class` - The custom data class (e.g. `MarketTickPython` or `module.MarketTickData`)
+/// - `data_class` - The custom data class (e.g. `MarketTickPython` or `module.MarketTickData`)
 ///
 /// # Errors
 ///
@@ -772,24 +772,20 @@ pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<F
 
 #[cfg(all(test, feature = "python", feature = "ffi"))]
 mod tests {
-    use std::{ffi::CString, ptr::NonNull};
+    use std::{ffi::CStr, ptr::NonNull};
 
     use nautilus_core::ffi::cvec::CVec;
     use pyo3::{prelude::*, types::PyCapsule};
     use rstest::rstest;
 
-    use super::{DataFfiCVec, drop_cvec_pycapsule};
+    use super::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec, drop_cvec_pycapsule};
     use crate::data::{DataFFI, stubs::stub_bar};
 
     #[rstest]
     fn test_drop_cvec_pycapsule_rejects_wrong_capsule_name() {
         Python::initialize();
         Python::attach(|py| {
-            let capsule = data_ffi_capsule(
-                py,
-                DataFfiCVec(CVec::empty()),
-                Some(CString::new("wrong.DataFFI.CVec").unwrap()),
-            );
+            let capsule = data_ffi_capsule(py, DataFfiCVec(CVec::empty()), c"wrong.DataFFI.CVec");
 
             let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
 
@@ -806,8 +802,7 @@ mod tests {
                 len: 2,
                 cap: 1,
             };
-            let capsule =
-                data_ffi_capsule(py, DataFfiCVec(cvec), Some(DataFfiCVec::capsule_name()));
+            let capsule = data_ffi_capsule(py, DataFfiCVec(cvec), DATA_FFI_CVEC_CAPSULE_NAME);
 
             let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
 
@@ -827,8 +822,7 @@ mod tests {
                 len: 1,
                 cap: 1,
             };
-            let capsule =
-                data_ffi_capsule(py, DataFfiCVec(cvec), Some(DataFfiCVec::capsule_name()));
+            let capsule = data_ffi_capsule(py, DataFfiCVec(cvec), DATA_FFI_CVEC_CAPSULE_NAME);
 
             let err = drop_cvec_pycapsule(capsule.as_any()).unwrap_err();
 
@@ -843,11 +837,8 @@ mod tests {
     fn test_drop_cvec_pycapsule_accepts_empty_cvec() {
         Python::initialize();
         Python::attach(|py| {
-            let capsule = data_ffi_capsule(
-                py,
-                DataFfiCVec(CVec::empty()),
-                Some(DataFfiCVec::capsule_name()),
-            );
+            let capsule =
+                data_ffi_capsule(py, DataFfiCVec(CVec::empty()), DATA_FFI_CVEC_CAPSULE_NAME);
 
             drop_cvec_pycapsule(capsule.as_any()).unwrap();
         });
@@ -858,18 +849,19 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             let cvec: DataFfiCVec = vec![DataFFI::Bar(stub_bar())].into();
-            let capsule = data_ffi_capsule(py, cvec, Some(DataFfiCVec::capsule_name()));
+            let capsule = data_ffi_capsule(py, cvec, DATA_FFI_CVEC_CAPSULE_NAME);
 
             drop_cvec_pycapsule(capsule.as_any()).unwrap();
             drop_cvec_pycapsule(capsule.as_any()).unwrap();
         });
     }
 
-    fn data_ffi_capsule(
-        py: Python<'_>,
+    fn data_ffi_capsule<'py>(
+        py: Python<'py>,
         cvec: DataFfiCVec,
-        name: Option<CString>,
-    ) -> Bound<'_, PyCapsule> {
-        PyCapsule::new_with_destructor::<DataFfiCVec, _>(py, cvec, name, |_, _| {}).unwrap()
+        name: &'static CStr,
+    ) -> Bound<'py, PyCapsule> {
+        PyCapsule::new_with_value_and_destructor::<DataFfiCVec, _>(py, cvec, name, |_, _| {})
+            .unwrap()
     }
 }

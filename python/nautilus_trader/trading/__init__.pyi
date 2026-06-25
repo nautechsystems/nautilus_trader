@@ -9,7 +9,14 @@ from nautilus_trader import model
 from nautilus_trader import portfolio
 
 __all__ = [
+    "BookImbalanceActorConfig",
+    "CompositeMarketMakerConfig",
+    "DeltaNeutralVolConfig",
+    "EmaCrossConfig",
+    "ExecutionAlgorithmConfig",
     "ForexSession",
+    "GridMarketMakerConfig",
+    "HurstVpinDirectionalConfig",
     "ImportableExecAlgorithmConfig",
     "ImportableStrategyConfig",
     "Strategy",
@@ -20,6 +27,218 @@ __all__ = [
     "fx_prev_end",
     "fx_prev_start",
 ]
+
+@typing.final
+class BookImbalanceActorConfig:
+    def __init__(
+        self,
+        instrument_ids: typing.Sequence[model.InstrumentId],
+        log_interval: int = 100,
+        actor_id: model.ActorId | None = None,
+    ) -> None: ...
+    @property
+    def instrument_ids(self) -> list[model.InstrumentId]: ...
+    @property
+    def log_interval(self) -> int: ...
+    @property
+    def actor_id(self) -> model.ActorId | None: ...
+
+@typing.final
+class CompositeMarketMakerConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        signal_instrument_id: model.InstrumentId,
+        max_position: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        trade_size: model.Quantity | None = None,
+        half_spread_bps: int = 5,
+        inventory_skew_factor: float = 0.0,
+        signal_skew_factor: float = 0.0,
+        signal_baseline: float | None = None,
+        requote_threshold_bps: int = 5,
+        expire_time_secs: int | None = None,
+        on_cancel_resubmit: bool = False,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def signal_instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def max_position(self) -> model.Quantity: ...
+    @property
+    def trade_size(self) -> model.Quantity | None: ...
+    @property
+    def half_spread_bps(self) -> int: ...
+    @property
+    def inventory_skew_factor(self) -> float: ...
+    @property
+    def signal_skew_factor(self) -> float: ...
+    @property
+    def signal_baseline(self) -> float | None: ...
+    @property
+    def requote_threshold_bps(self) -> int: ...
+    @property
+    def expire_time_secs(self) -> int | None: ...
+    @property
+    def on_cancel_resubmit(self) -> bool: ...
+
+@typing.final
+class DeltaNeutralVolConfig:
+    def __init__(
+        self,
+        option_family: str,
+        hedge_instrument_id: model.InstrumentId,
+        client_id: model.ClientId,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        target_call_delta: float = 0.20,
+        target_put_delta: float = -0.20,
+        contracts: int = 1,
+        rehedge_delta_threshold: float = 0.5,
+        rehedge_interval_secs: int = 30,
+        expiry_filter: str | None = None,
+        enter_strangle: bool = True,
+        entry_iv_offset: float = 0.0,
+        entry_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
+        entry_premium_offset_ticks: int | None = None,
+        iv_param_key: str = "px_vol",
+    ) -> None: ...
+    @property
+    def option_family(self) -> str: ...
+    @property
+    def hedge_instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def client_id(self) -> model.ClientId: ...
+    @property
+    def target_call_delta(self) -> float: ...
+    @property
+    def target_put_delta(self) -> float: ...
+    @property
+    def contracts(self) -> int: ...
+    @property
+    def rehedge_delta_threshold(self) -> float: ...
+    @property
+    def rehedge_interval_secs(self) -> int: ...
+    @property
+    def expiry_filter(self) -> str | None: ...
+    @property
+    def enter_strangle(self) -> bool: ...
+    @property
+    def entry_iv_offset(self) -> float: ...
+    @property
+    def entry_time_in_force(self) -> model.TimeInForce: ...
+    @property
+    def entry_premium_offset_ticks(self) -> int | None: ...
+
+@typing.final
+class EmaCrossConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        trade_size: model.Quantity,
+        fast_period: int = 10,
+        slow_period: int = 50,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def trade_size(self) -> model.Quantity: ...
+    @property
+    def fast_period(self) -> int: ...
+    @property
+    def slow_period(self) -> int: ...
+
+@typing.final
+class ExecutionAlgorithmConfig:
+    def __init__(
+        self,
+        exec_algorithm_id: model.ExecAlgorithmId | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
+    ) -> None: ...
+    @property
+    def exec_algorithm_id(self) -> model.ExecAlgorithmId | None: ...
+    @property
+    def log_events(self) -> bool: ...
+    @property
+    def log_commands(self) -> bool: ...
+
+@typing.final
+class GridMarketMakerConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        max_position: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        trade_size: model.Quantity | None = None,
+        num_levels: int = 3,
+        grid_step_bps: int = 10,
+        skew_factor: float = 0.0,
+        requote_threshold_bps: int = 5,
+        expire_time_secs: int | None = None,
+        on_cancel_resubmit: bool = False,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def max_position(self) -> model.Quantity: ...
+    @property
+    def trade_size(self) -> model.Quantity | None: ...
+    @property
+    def num_levels(self) -> int: ...
+    @property
+    def grid_step_bps(self) -> int: ...
+    @property
+    def skew_factor(self) -> float: ...
+    @property
+    def requote_threshold_bps(self) -> int: ...
+    @property
+    def expire_time_secs(self) -> int | None: ...
+    @property
+    def on_cancel_resubmit(self) -> bool: ...
+
+@typing.final
+class HurstVpinDirectionalConfig:
+    def __init__(
+        self,
+        instrument_id: model.InstrumentId,
+        bar_type: model.BarType,
+        trade_size: model.Quantity,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        hurst_window: int = 128,
+        hurst_lags: typing.Sequence[int] | None = None,
+        hurst_enter: float = 0.55,
+        hurst_exit: float = 0.50,
+        vpin_window: int = 50,
+        vpin_threshold: float = 0.30,
+        max_holding_secs: int = 3600,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> model.InstrumentId: ...
+    @property
+    def bar_type(self) -> model.BarType: ...
+    @property
+    def trade_size(self) -> model.Quantity: ...
+    @property
+    def hurst_window(self) -> int: ...
+    @property
+    def hurst_lags(self) -> list[int]: ...
+    @property
+    def hurst_enter(self) -> float: ...
+    @property
+    def hurst_exit(self) -> float: ...
+    @property
+    def vpin_window(self) -> int: ...
+    @property
+    def vpin_threshold(self) -> float: ...
+    @property
+    def max_holding_secs(self) -> int: ...
 
 @typing.final
 class ImportableExecAlgorithmConfig:
@@ -55,6 +274,8 @@ class Strategy:
     @property
     def portfolio(self) -> portfolio.Portfolio: ...
     @property
+    def order_factory(self) -> common.OrderFactory: ...
+    @property
     def log(self) -> common.Logger: ...
     def state(self) -> common.ComponentState: ...
     def is_ready(self) -> bool: ...
@@ -65,14 +286,37 @@ class Strategy:
     def is_faulted(self) -> bool: ...
     def start(self) -> None: ...
     def stop(self) -> None: ...
+    def market_exit(self) -> None: ...
+    def is_exiting(self) -> bool: ...
+    def save(self) -> dict: ...
+    def load(self, state: dict) -> None: ...
     def resume(self) -> None: ...
     def reset(self) -> None: ...
     def dispose(self) -> None: ...
     def degrade(self) -> None: ...
     def fault(self) -> None: ...
+    @property
+    def registered_indicators(self) -> list: ...
+    def indicators_initialized(self) -> bool: ...
+    def register_indicator_for_quote_ticks(
+        self, instrument_id: model.InstrumentId, indicator: typing.Any
+    ) -> None: ...
+    def register_indicator_for_trade_ticks(
+        self, instrument_id: model.InstrumentId, indicator: typing.Any
+    ) -> None: ...
+    def register_indicator_for_bars(
+        self, bar_type: model.BarType, indicator: typing.Any
+    ) -> None: ...
     def submit_order(
         self,
         order: typing.Any,
+        position_id: model.PositionId | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def submit_order_list(
+        self,
+        order_list: typing.Any,
         position_id: model.PositionId | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -86,12 +330,23 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def modify_orders(
+        self,
+        updates: typing.Sequence[
+            tuple[
+                model.ClientOrderId, model.Quantity | None, model.Price | None, model.Price | None
+            ]
+        ] = ...,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
     def cancel_order(
         self,
         client_order_id: model.ClientOrderId,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> None: ...
+    def cancel_gtd_expiry(self, order: typing.Any) -> None: ...
     def cancel_orders(
         self,
         client_order_ids: typing.Sequence[model.ClientOrderId],
@@ -140,6 +395,8 @@ class Strategy:
     def on_dispose(self) -> None: ...
     def on_degrade(self) -> None: ...
     def on_fault(self) -> None: ...
+    def on_save(self) -> dict: ...
+    def on_load(self, state: dict) -> None: ...
     def on_time_event(self, event: common.TimeEvent) -> None: ...
     def on_data(self, data: typing.Any) -> None: ...
     def on_signal(self, signal: common.Signal) -> None: ...
@@ -156,7 +413,10 @@ class Strategy:
     def on_instrument_close(self, close: model.InstrumentClose) -> None: ...
     def on_option_greeks(self, greeks: model.OptionGreeks) -> None: ...
     def on_option_chain(self, slice: model.OptionChainSlice) -> None: ...
+    def on_market_exit(self) -> None: ...
+    def post_market_exit(self) -> None: ...
     def on_order_initialized(self, event: model.OrderInitialized) -> None: ...
+    def on_order_event(self, event: typing.Any) -> None: ...
     def on_order_denied(self, event: model.OrderDenied) -> None: ...
     def on_order_emulated(self, event: model.OrderEmulated) -> None: ...
     def on_order_released(self, event: model.OrderReleased) -> None: ...
@@ -173,6 +433,7 @@ class Strategy:
     def on_order_canceled(self, event: model.OrderCanceled) -> None: ...
     def on_order_filled(self, event: model.OrderFilled) -> None: ...
     def on_position_opened(self, event: model.PositionOpened) -> None: ...
+    def on_position_event(self, event: typing.Any) -> None: ...
     def on_position_changed(self, event: model.PositionChanged) -> None: ...
     def on_position_closed(self, event: model.PositionClosed) -> None: ...
     def on_historical_data(self, data: typing.Any) -> None: ...
@@ -382,24 +643,24 @@ class Strategy:
         self,
         data_type: model.DataType,
         client_id: model.ClientId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_instrument(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
     def request_instruments(
         self,
         venue: model.Venue | None = None,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
@@ -410,11 +671,30 @@ class Strategy:
         client_id: model.ClientId | None = None,
         params: dict | None = None,
     ) -> str: ...
+    def request_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_book_depth(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
     def request_quotes(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -422,8 +702,8 @@ class Strategy:
     def request_trades(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -431,8 +711,8 @@ class Strategy:
     def request_funding_rates(
         self,
         instrument_id: model.InstrumentId,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
@@ -440,8 +720,8 @@ class Strategy:
     def request_bars(
         self,
         bar_type: model.BarType,
-        start: int | None = None,
-        end: int | None = None,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,

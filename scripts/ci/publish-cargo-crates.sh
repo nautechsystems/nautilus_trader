@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Publish workspace crates to crates.io one at a time in dependency order.
+# Validate workspace crates or publish them to crates.io one at a time in dependency order.
 #
 # Usage:
-#   publish-cargo-crates.sh [--check]
+#   publish-cargo-crates.sh [--check|--dry-run]
 #
 # Required env for publishing:
 #   CARGO_REGISTRY_TOKEN - crates.io token, preferably from trusted publishing
@@ -19,14 +19,26 @@
 #   CARGO_PUBLISH_USER_AGENT           - crates.io API User-Agent header
 set -euo pipefail
 
-check_only=false
-if [[ "${1:-}" == "--check" ]]; then
-  check_only=true
-  shift
-fi
+publish_mode=publish
+case "${1:-}" in
+  "")
+    ;;
+  --check)
+    publish_mode=check
+    shift
+    ;;
+  --dry-run)
+    publish_mode=dry_run
+    shift
+    ;;
+  *)
+    echo "Usage: $0 [--check|--dry-run]" >&2
+    exit 1
+    ;;
+esac
 
 if [[ "$#" -ne 0 ]]; then
-  echo "Usage: $0 [--check]" >&2
+  echo "Usage: $0 [--check|--dry-run]" >&2
   exit 1
 fi
 
@@ -48,7 +60,7 @@ github_run_id="${GITHUB_RUN_ID:-local}"
 default_user_agent="nautilus-trader-ci (${github_url}/${github_repository}/actions/runs/${github_run_id})"
 cargo_publish_user_agent="${CARGO_PUBLISH_USER_AGENT:-$default_user_agent}"
 
-if [[ "$check_only" == false && -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+if [[ "$publish_mode" == publish && -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
   echo "::error::CARGO_REGISTRY_TOKEN not set."
   exit 1
 fi
@@ -102,6 +114,7 @@ trap 'rm -rf "$work_dir"' EXIT
 metadata_file="${work_dir}/metadata.json"
 publish_plan_file="${work_dir}/publish-plan.tsv"
 blocked_dependencies_file="${work_dir}/blocked-dependencies.tsv"
+blocked_dependency_sources_file="${work_dir}/blocked-dependency-sources.tsv"
 response_file="${work_dir}/response.json"
 index_response_file="${work_dir}/sparse-index.json"
 
@@ -117,7 +130,7 @@ jq -r '
         name,
         version,
         deps: ([.dependencies[]
-          | select(.path != null and (.kind != "dev"))
+          | select(.path != null)
           | .name
         ] | unique)
       }
@@ -157,8 +170,8 @@ jq -r '
         version,
         publish,
         deps: [.dependencies[]
-          | select(.path != null and (.kind != "dev"))
-          | {name, optional}
+          | select(.path != null)
+          | {name, kind: (.kind // "normal"), optional}
         ]
       }
   ] as $packages
@@ -174,10 +187,30 @@ jq -r '
       $package.version,
       $dependency.name,
       $dependency_package.version,
+      $dependency.kind,
       ($dependency.optional | tostring)
     ]
   | @tsv
 ' "$metadata_file" > "$blocked_dependencies_file"
+
+jq -r '
+  def crates_io_publishable:
+    .publish == null or (.publish | index("crates-io"));
+
+  .packages[]
+  | select(.source == null and crates_io_publishable) as $package
+  | $package.dependencies[]?
+  | select(.source != null and (.source | startswith("registry+https://github.com/rust-lang/crates.io-index") | not))
+  | [
+      $package.name,
+      $package.version,
+      .name,
+      (.kind // "normal"),
+      .req,
+      .source
+    ]
+  | @tsv
+' "$metadata_file" > "$blocked_dependency_sources_file"
 
 curl_crate_version() {
   local crate_name=$1
@@ -196,8 +229,11 @@ curl_crate_version() {
 }
 
 sparse_index_path() {
-  local crate_name=${1,,}
-  local crate_name_length=${#crate_name}
+  local crate_name
+  local crate_name_length
+
+  crate_name="$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')"
+  crate_name_length=${#crate_name}
 
   case "$crate_name_length" in
     1)
@@ -278,6 +314,31 @@ index_version_exists() {
   esac
 }
 
+check_dependency_sources() {
+  local failed=false
+  local package_name
+  local package_version
+  local dependency_name
+  local dependency_kind
+  local dependency_req
+  local dependency_source
+
+  while IFS=$'\t' read -r package_name package_version dependency_name dependency_kind dependency_req dependency_source; do
+    if [[ -z "$package_name" ]]; then
+      continue
+    fi
+
+    echo "::error::Cannot publish ${package_name} ${package_version}: dependency"
+    echo "::error::${dependency_name} ${dependency_req} uses ${dependency_source}."
+    echo "::error::kind=${dependency_kind}. Publishable crates must resolve dependencies from crates.io."
+    failed=true
+  done < "$blocked_dependency_sources_file"
+
+  if [[ "$failed" == true ]]; then
+    exit 1
+  fi
+}
+
 check_blocked_dependencies() {
   local failed=false
   local exists_status=0
@@ -285,9 +346,10 @@ check_blocked_dependencies() {
   local package_version
   local dependency_name
   local dependency_version
+  local dependency_kind
   local optional
 
-  while IFS=$'\t' read -r package_name package_version dependency_name dependency_version optional; do
+  while IFS=$'\t' read -r package_name package_version dependency_name dependency_version dependency_kind optional; do
     if [[ -z "$package_name" ]]; then
       continue
     fi
@@ -306,7 +368,7 @@ check_blocked_dependencies() {
 
     echo "::error::Cannot publish ${package_name} ${package_version}: local dependency"
     echo "::error::${dependency_name} ${dependency_version} is marked publish=false and is absent from crates.io."
-    echo "::error::optional=${optional}. Publish the dependency first or mark ${package_name} publish=false."
+    echo "::error::kind=${dependency_kind}, optional=${optional}. Publish the dependency first or mark ${package_name} publish=false."
     failed=true
   done < "$blocked_dependencies_file"
 
@@ -412,9 +474,9 @@ publish_crate() {
     echo "Publishing ${crate_name} ${crate_version} (attempt ${attempt}/${cargo_publish_attempts})"
 
     set +e
-    # --no-verify: the verify build resolves [dev-dependencies] from crates.io,
-    # which fails for crates whose dev-deps appear later in the publish plan.
-    # CI already verifies the workspace builds before this script runs.
+    # CI already verifies the workspace builds before this script runs. The
+    # publish plan still orders normal, dev, and build path dependencies because
+    # Cargo resolves them during package preparation.
     cargo publish --locked --no-verify --package "$crate_name"
     status=$?
     set -e
@@ -455,18 +517,25 @@ if [[ ! -s "$publish_plan_file" ]]; then
   exit 1
 fi
 
+check_dependency_sources
 check_blocked_dependencies
 
 echo "Publishing crates in dependency order:"
 nl -w1 -s'. ' "$publish_plan_file"
 
-if [[ "$check_only" == true ]]; then
-  echo "Cargo crate publish plan is valid."
-  exit 0
-fi
+case "$publish_mode" in
+  check)
+    echo "Cargo crate publish plan is valid."
+    ;;
+  dry_run)
+    cargo publish --dry-run --workspace --locked --no-verify
+    echo "Finished dry-running Cargo crates."
+    ;;
+  publish)
+    while IFS=$'\t' read -r crate_name crate_version; do
+      publish_crate "$crate_name" "$crate_version"
+    done < "$publish_plan_file"
 
-while IFS=$'\t' read -r crate_name crate_version; do
-  publish_crate "$crate_name" "$crate_version"
-done < "$publish_plan_file"
-
-echo "Finished publishing Cargo crates."
+    echo "Finished publishing Cargo crates."
+    ;;
+esac

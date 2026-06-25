@@ -19,29 +19,31 @@
 //! It handles transaction signing, broadcasting, and querying account state.
 
 use cosmrs::Tx;
-use prost::Message as ProstMessage;
 use tonic::transport::Channel;
 
 use crate::{
     error::DydxError,
     proto::{
         AccountAuthenticator, AccountPlusClient, GetAuthenticatorsRequest,
-        cosmos_sdk_proto::cosmos::{
-            auth::v1beta1::{
-                BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
-            },
-            bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
-            base::{
-                tendermint::v1beta1::{
-                    Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
-                    service_client::ServiceClient as BaseClient,
+        cosmos_sdk_proto::{
+            cosmos::{
+                auth::v1beta1::{
+                    BaseAccount, QueryAccountRequest, query_client::QueryClient as AuthClient,
                 },
-                v1beta1::Coin,
+                bank::v1beta1::{QueryAllBalancesRequest, query_client::QueryClient as BankClient},
+                base::{
+                    tendermint::v1beta1::{
+                        Block, GetLatestBlockRequest, GetNodeInfoRequest, GetNodeInfoResponse,
+                        service_client::ServiceClient as BaseClient,
+                    },
+                    v1beta1::Coin,
+                },
+                tx::v1beta1::{
+                    BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
+                    service_client::ServiceClient as TxClient,
+                },
             },
-            tx::v1beta1::{
-                BroadcastMode, BroadcastTxRequest, GetTxRequest, SimulateRequest,
-                service_client::ServiceClient as TxClient,
-            },
+            traits::Message as ProstMessage,
         },
         dydxprotocol::{
             clob::{ClobPair, QueryAllClobPairRequest, query_client::QueryClient as ClobClient},
@@ -453,9 +455,11 @@ impl DydxGrpcClient {
     /// # Errors
     ///
     /// Returns an error if simulation fails.
-    #[allow(deprecated)]
     pub async fn simulate_tx(&mut self, tx_bytes: Vec<u8>) -> Result<u64, anyhow::Error> {
-        let req = SimulateRequest { tx_bytes, tx: None };
+        let req = SimulateRequest {
+            tx_bytes,
+            ..Default::default()
+        };
         let gas_used = self
             .tx
             .simulate(req)

@@ -1251,6 +1251,10 @@ class StrikeRange:
     def atm_relative(strikes_above: int, strikes_below: int) -> StrikeRange: ...
     @staticmethod
     def atm_percent(pct: float) -> StrikeRange: ...
+    @staticmethod
+    def delta(target: float, tolerance: float) -> StrikeRange: ...
+    @property
+    def kind(self) -> str: ...
 
 class InstrumentClose:
     def __init__(
@@ -2460,6 +2464,7 @@ class BettingInstrument:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> BettingInstrument: ...
@@ -2524,6 +2529,8 @@ class BettingInstrument:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -2558,6 +2565,7 @@ class BinaryOption:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -2604,6 +2612,8 @@ class BinaryOption:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -2636,6 +2646,7 @@ class Cfd:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -2679,6 +2690,8 @@ class Cfd:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -2712,6 +2725,7 @@ class Commodity:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -2753,6 +2767,8 @@ class Commodity:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -2791,6 +2807,7 @@ class CryptoFuture:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -2840,6 +2857,8 @@ class CryptoFuture:
     def maker_fee(self) -> Decimal: ...
     @property
     def taker_fee(self) -> Decimal: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def info(self) -> dict[str, Any]: ...
     @property
@@ -2881,6 +2900,7 @@ class CryptoOption:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -2935,6 +2955,8 @@ class CryptoOption:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def info(self) -> dict[str, Any]: ...
     @property
     def ts_event(self) -> int: ...
@@ -2971,6 +2993,7 @@ class CryptoPerpetual:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -3017,6 +3040,8 @@ class CryptoPerpetual:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def info(self) -> dict[str, Any]: ...
     @property
     def ts_event(self) -> int: ...
@@ -3049,6 +3074,7 @@ class CurrencyPair:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -3089,6 +3115,8 @@ class CurrencyPair:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3118,6 +3146,7 @@ class Equity:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
     ) -> None: ...
     @property
     def id(self) -> InstrumentId: ...
@@ -3154,6 +3183,8 @@ class Equity:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3187,6 +3218,7 @@ class FuturesContract:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         exchange: str | None = None,
         # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
@@ -3235,6 +3267,8 @@ class FuturesContract:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3269,6 +3303,7 @@ class FuturesSpread:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         exchange: str | None = None,
         # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
@@ -3318,6 +3353,8 @@ class FuturesSpread:
     def maker_fee(self) -> Decimal: ...
     @property
     def taker_fee(self) -> Decimal: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def ts_event(self) -> int: ...
     @property
@@ -3358,6 +3395,7 @@ class CryptoFuturesSpread:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -3410,6 +3448,8 @@ class CryptoFuturesSpread:
     def maker_fee(self) -> Decimal: ...
     @property
     def taker_fee(self) -> Decimal: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def ts_event(self) -> int: ...
     @property
@@ -3450,6 +3490,7 @@ class CryptoOptionSpread:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -3503,6 +3544,8 @@ class CryptoOptionSpread:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3524,6 +3567,7 @@ class IndexInstrument:
         size_increment: Quantity,
         ts_event: int,
         ts_init: int,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -3540,6 +3584,8 @@ class IndexInstrument:
     def price_increment(self) -> Price: ...
     @property
     def size_increment(self) -> Quantity: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def ts_event(self) -> int: ...
     @property
@@ -3576,6 +3622,7 @@ class OptionContract:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         exchange: str | None = None,
         # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
@@ -3628,6 +3675,8 @@ class OptionContract:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3662,6 +3711,7 @@ class OptionSpread:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         exchange: str | None = None,
         # info: dict[str, Any] | None = None,  # Add for pyo3
     ) -> None: ...
@@ -3712,6 +3762,8 @@ class OptionSpread:
     @property
     def taker_fee(self) -> Decimal: ...
     @property
+    def tick_scheme(self) -> str | None: ...
+    @property
     def ts_event(self) -> int: ...
     @property
     def ts_init(self) -> int: ...
@@ -3750,6 +3802,7 @@ class PerpetualContract:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -3800,6 +3853,8 @@ class PerpetualContract:
     def maker_fee(self) -> Decimal: ...
     @property
     def taker_fee(self) -> Decimal: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def info(self) -> dict[str, Any]: ...
     @property
@@ -3866,6 +3921,7 @@ class TokenizedAsset:
         margin_maint: Decimal | None = None,
         maker_fee: Decimal | None = None,
         taker_fee: Decimal | None = None,
+        tick_scheme: str | None = None,
         info: dict[str, Any] | None = None,
     ) -> None: ...
     @property
@@ -3914,6 +3970,8 @@ class TokenizedAsset:
     def maker_fee(self) -> Decimal: ...
     @property
     def taker_fee(self) -> Decimal: ...
+    @property
+    def tick_scheme(self) -> str | None: ...
     @property
     def info(self) -> dict[str, Any]: ...
     @property
@@ -7251,6 +7309,20 @@ class BybitRawHttpClient:
         cursor: str | None = None,
     ) -> BybitOrderCursorList: ...
 
+class BybitNativeTpSlParams:
+    take_profit: str | None
+    stop_loss: str | None
+    tp_trigger_by: str | None
+    sl_trigger_by: str | None
+    tp_order_type: str | None
+    sl_order_type: str | None
+    tp_limit_price: str | None
+    sl_limit_price: str | None
+    tpsl_mode: str | None
+    close_on_trigger: bool | None
+    order_iv: str | None
+    mmp: bool | None
+
 class BybitHttpClient:
     def __init__(
         self,
@@ -7410,6 +7482,7 @@ class BybitHttpClient:
         position_idx: BybitPositionIdx | None = None,
         bbo_side_type: str | None = None,
         bbo_level: str | None = None,
+        native_tp_sl: BybitNativeTpSlParams | None = None,
     ) -> OrderStatusReport: ...
     async def cancel_order(
         self,
@@ -8745,6 +8818,12 @@ class OKXHttpClient:
         new_callback_ratio: str | None = None,
         new_callback_spread: str | None = None,
         new_activation_price: Price | None = None,
+        new_sl_trigger_price: Price | None = None,
+        new_tp_trigger_price: Price | None = None,
+        new_tp_order_price: str | None = None,
+        new_tp_trigger_px_type: str | None = None,
+        new_sl_order_price: str | None = None,
+        new_sl_trigger_px_type: str | None = None,
     ) -> Any: ...
     async def cancel_advance_algo_order(
         self,
@@ -9058,6 +9137,18 @@ class BitmexHttpClient:
         limit: int | None = None,
         partial: bool = False,
     ) -> list[Bar]: ...
+    async def request_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        depth: int | None = None,
+    ) -> OrderBook: ...
+    async def request_funding_rates(
+        self,
+        instrument_id: InstrumentId,
+        start: dt.datetime | None = None,
+        end: dt.datetime | None = None,
+        limit: int | None = None,
+    ) -> list[FundingRateUpdate]: ...
     async def request_account_state(
         self,
         account_id: AccountId,
@@ -9355,9 +9446,13 @@ class HyperliquidHttpClient:
         timeout_secs: int = 60,
         proxy_url: str | None = None,
         normalize_prices: bool = True,
+        include_builder_attribution: bool = True,
     ) -> None: ...
     @staticmethod
-    def from_env(environment: HyperliquidEnvironment = ...) -> HyperliquidHttpClient: ...
+    def from_env(
+        environment: HyperliquidEnvironment = ...,
+        include_builder_attribution: bool = True,
+    ) -> HyperliquidHttpClient: ...
     @staticmethod
     def from_credentials(
         private_key: str,
@@ -9365,6 +9460,7 @@ class HyperliquidHttpClient:
         environment: HyperliquidEnvironment = ...,
         timeout_secs: int = 60,
         proxy_url: str | None = None,
+        include_builder_attribution: bool = True,
     ) -> HyperliquidHttpClient: ...
     def cache_instrument(self, instrument: Instrument) -> None: ...
     def set_account_id(self, account_id: str) -> None: ...
@@ -9507,12 +9603,12 @@ class HyperliquidWebSocketClient:
         trigger_price: Price | None = None,
         post_only: bool = False,
         reduce_only: bool = False,
-    ) -> None: ...
+    ) -> OrderStatusReport | None: ...
     async def submit_orders(
         self,
         signer: HyperliquidHttpClient,
         orders: list[Any],
-    ) -> None: ...
+    ) -> list[OrderStatusReport]: ...
     async def cancel_order(
         self,
         signer: HyperliquidHttpClient,
@@ -10553,6 +10649,10 @@ class PortfolioAnalyzer:
     def get_performance_stats_returns(self) -> dict[str, float]: ...
     def get_performance_stats_position_returns(self) -> dict[str, float]: ...
     def get_performance_stats_portfolio_returns(self) -> dict[str, float]: ...
+    def get_performance_stats_returns_vs_benchmark(
+        self,
+        benchmark: dict[int, float],
+    ) -> dict[str, float]: ...
     def get_performance_stats_pnls(
         self,
         currency: Currency | None = None,
@@ -10635,6 +10735,64 @@ class MaxDrawdown:
     @property
     def name(self) -> str: ...
     def calculate_from_returns(self, returns: dict[int, float]) -> float | None: ...
+
+class Alpha:
+    def __init__(
+        self,
+        period: int | None = None,
+        risk_free_rate: float | None = None,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
+class BetaRatio:
+    def __init__(self) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
+class InformationRatio:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
+class TrackingError:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
+
+class TreynorRatio:
+    def __init__(
+        self,
+        period: int | None = None,
+        risk_free_rate: float | None = None,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns_with_benchmark(
+        self,
+        returns: dict[int, float],
+        benchmark: dict[int, float],
+    ) -> float | None: ...
 
 class WinRate:
     def __init__(self) -> None: ...

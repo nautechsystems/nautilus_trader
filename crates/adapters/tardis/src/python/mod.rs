@@ -127,9 +127,15 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     )?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_quotes, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_trades, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_load_tardis_options_chain, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        csv::py_convert_tardis_options_chain_csv,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(csv::py_stream_tardis_deltas, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_stream_tardis_batched_deltas, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_stream_tardis_quotes, m)?)?;
+    m.add_function(wrap_pyfunction!(csv::py_stream_tardis_options_chain, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_stream_tardis_trades, m)?)?;
     m.add_function(wrap_pyfunction!(
         csv::py_stream_tardis_depth10_from_snapshot5,

@@ -124,19 +124,22 @@ let rehedge_delta_threshold = if hedge_enabled {
 };
 
 let hedge_instrument_id = InstrumentId::from(hedge_instrument.as_str());
-let mut strategy_config =
-    DeltaNeutralVolConfig::new(option_family, hedge_instrument_id, client_id)
-        .with_target_call_delta(env_f64("DERIVE_DELTA_NEUTRAL_TARGET_CALL_DELTA", 0.20)?)
-        .with_target_put_delta(env_f64("DERIVE_DELTA_NEUTRAL_TARGET_PUT_DELTA", -0.20)?)
-        .with_contracts(env_u64("DERIVE_DELTA_NEUTRAL_CONTRACTS", 1)?)
-        .with_rehedge_delta_threshold(rehedge_delta_threshold)
-        .with_rehedge_interval_secs(env_u64("DERIVE_DELTA_NEUTRAL_REHEDGE_INTERVAL_SECS", 30)?)
-        .with_enter_strangle(enter_strangle)
-        .with_entry_iv_offset(env_f64("DERIVE_DELTA_NEUTRAL_ENTRY_IV_OFFSET", 0.0)?)
-        .with_entry_premium_offset_ticks(env_i32("DERIVE_DELTA_NEUTRAL_ENTRY_PREMIUM_OFFSET_TICKS", 1)?);
+let mut strategy_config = DeltaNeutralVolConfig::builder()
+    .option_family(option_family)
+    .hedge_instrument_id(hedge_instrument_id)
+    .client_id(client_id)
+    .target_call_delta(env_f64("DERIVE_DELTA_NEUTRAL_TARGET_CALL_DELTA", 0.20)?)
+    .target_put_delta(env_f64("DERIVE_DELTA_NEUTRAL_TARGET_PUT_DELTA", -0.20)?)
+    .contracts(env_u64("DERIVE_DELTA_NEUTRAL_CONTRACTS", 1)?)
+    .rehedge_delta_threshold(rehedge_delta_threshold)
+    .rehedge_interval_secs(env_u64("DERIVE_DELTA_NEUTRAL_REHEDGE_INTERVAL_SECS", 30)?)
+    .enter_strangle(enter_strangle)
+    .entry_iv_offset(env_f64("DERIVE_DELTA_NEUTRAL_ENTRY_IV_OFFSET", 0.0)?)
+    .entry_premium_offset_ticks(env_i32("DERIVE_DELTA_NEUTRAL_ENTRY_PREMIUM_OFFSET_TICKS", 1)?)
+    .build();
 
 if let Some(expiry) = env_optional_string("DERIVE_DELTA_NEUTRAL_EXPIRY")? {
-    strategy_config = strategy_config.with_expiry_filter(expiry);
+    strategy_config.expiry_filter = Some(expiry);
 }
 
 let strategy = DeltaNeutralVol::new(strategy_config);

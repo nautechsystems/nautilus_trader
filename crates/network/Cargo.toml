@@ -89,6 +89,7 @@ nautilus-common = { workspace = true, features = ["live"] }
 axum = { workspace = true }
 criterion = { workspace = true }
 proptest = { workspace = true }
+rcgen = { workspace = true }
 rstest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

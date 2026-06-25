@@ -61,7 +61,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -70,10 +70,18 @@ use nautilus_core::{Params, UnixNanos};
 use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{
+        AccountType, ContingencyType, OmsType, OrderSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     events::{AccountState, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, Order, OrderAny, TrailingStopMarketOrder},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{
+        LimitOrder, MarketIfTouchedOrder, Order, OrderAny, OrderList, StopMarketOrder,
+        TrailingStopMarketOrder,
+    },
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -249,7 +257,7 @@ async fn handle_ws_trading_connection(
         let request_id = parsed.get("id").and_then(|v| v.as_str()).unwrap_or("");
         let method = parsed.get("method").and_then(|v| v.as_str());
 
-        if method == Some("order.cancel")
+        if matches!(method, Some("order.place" | "order.cancel"))
             && let Some(captured) = &captured_ws_trading_messages
         {
             captured.lock().unwrap().push(parsed.clone());
@@ -379,7 +387,10 @@ fn create_exec_test_router_with_command_responses(state: CommandResponseState) -
                 .put(handle_order_modify)
                 .get(handle_order_query),
         )
-        .route("/fapi/v1/batchOrders", delete(handle_batch_cancel))
+        .route(
+            "/fapi/v1/batchOrders",
+            post(handle_batch_submit).delete(handle_batch_cancel),
+        )
         .route(
             "/fapi/v1/allOpenOrders",
             delete(|headers: HeaderMap| async move {
@@ -548,6 +559,28 @@ async fn handle_batch_cancel(
     command_response(state.responses.batch_cancel, &json!([]))
 }
 
+async fn handle_batch_submit(
+    State(state): State<CommandResponseState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response();
+    }
+    let count = batch_order_item_count(&query).max(1);
+    record_query(&state, "batchOrders", query);
+    state.request_count.fetch_add(1, Ordering::Relaxed);
+
+    let responses = (0..count)
+        .map(|index| {
+            let mut response = load_fixture("order_response.json");
+            response["orderId"] = json!(22542179 + index as i64);
+            response
+        })
+        .collect::<Vec<_>>();
+    command_response(state.responses.submit, &json!(responses))
+}
+
 fn batch_cancel_item_count(query: &HashMap<String, String>) -> usize {
     ["orderIdList", "origClientOrderIdList"]
         .into_iter()
@@ -555,6 +588,13 @@ fn batch_cancel_item_count(query: &HashMap<String, String>) -> usize {
         .filter_map(|value| serde_json::from_str::<Vec<serde_json::Value>>(value).ok())
         .map(|values| values.len())
         .sum()
+}
+
+fn batch_order_item_count(query: &HashMap<String, String>) -> usize {
+    query
+        .get("batchOrders")
+        .and_then(|value| serde_json::from_str::<Vec<serde_json::Value>>(value).ok())
+        .map_or(0, |values| values.len())
 }
 
 fn command_response(response: CommandResponse, success: &serde_json::Value) -> Response {
@@ -630,6 +670,47 @@ fn create_exec_test_router_with_algo_capture_and_hedge_mode(
 
 async fn start_exec_test_server() -> SocketAddr {
     let router = create_exec_test_router();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/fapi/v1/ping");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    addr
+}
+
+async fn start_exec_test_server_with_leverage_reject() -> SocketAddr {
+    // Only the leverage route rejects; the rest mirror the base server.
+    let router = create_exec_test_router().route(
+        "/fapi/v1/leverage",
+        post(|headers: HeaderMap| async move {
+            if !has_auth_headers(&headers) {
+                return unauthorized_response();
+            }
+            (
+                StatusCode::BAD_REQUEST,
+                [("content-type", "application/json")],
+                json!({"code": -4028, "msg": "Leverage 75 is not valid"}).to_string(),
+            )
+                .into_response()
+        }),
+    );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -740,6 +821,12 @@ async fn start_exec_test_server_with_query_capture_and_responses(
 
 async fn start_exec_test_server_with_ws_trading_capture() -> (SocketAddr, CapturedWsTradingMessages)
 {
+    start_exec_test_server_with_ws_trading_capture_and_hedge_mode(false).await
+}
+
+async fn start_exec_test_server_with_ws_trading_capture_and_hedge_mode(
+    hedge_mode: bool,
+) -> (SocketAddr, CapturedWsTradingMessages) {
     let captured_ws_trading_messages = Arc::new(std::sync::Mutex::new(Vec::new()));
     let router = create_exec_test_router_with_command_responses(CommandResponseState {
         responses: CommandResponses::default(),
@@ -747,7 +834,7 @@ async fn start_exec_test_server_with_ws_trading_capture() -> (SocketAddr, Captur
         captured_queries: None,
         captured_ws_trading_messages: Some(captured_ws_trading_messages.clone()),
         report_fixture_mode: ReportFixtureMode::Empty,
-        hedge_mode: false,
+        hedge_mode,
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -817,6 +904,7 @@ async fn start_exec_test_server_with_algo_capture_and_hedge_mode(
 
 fn create_exec_test_router_with_order_capture(
     captured_query: &Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+    hedge_mode: bool,
 ) -> Router {
     let captured = captured_query.clone();
 
@@ -863,11 +951,11 @@ fn create_exec_test_router_with_order_capture(
         )
         .route(
             "/fapi/v1/positionSide/dual",
-            get(|headers: HeaderMap| async move {
+            get(move |headers: HeaderMap| async move {
                 if !has_auth_headers(&headers) {
                     return unauthorized_response();
                 }
-                json_response(&json!({"dualSidePosition": false}))
+                json_response(&json!({"dualSidePosition": hedge_mode}))
             }),
         )
         .route(
@@ -934,8 +1022,17 @@ async fn start_exec_test_server_with_order_capture() -> (
     SocketAddr,
     Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
 ) {
+    start_exec_test_server_with_order_capture_and_hedge_mode(false).await
+}
+
+async fn start_exec_test_server_with_order_capture_and_hedge_mode(
+    hedge_mode: bool,
+) -> (
+    SocketAddr,
+    Arc<std::sync::Mutex<Option<HashMap<String, String>>>>,
+) {
     let captured_query = Arc::new(std::sync::Mutex::new(None));
-    let router = create_exec_test_router_with_order_capture(&captured_query);
+    let router = create_exec_test_router_with_order_capture(&captured_query, hedge_mode);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -969,6 +1066,18 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_with_leverages(base_url_http, base_url_ws, None)
+}
+
+fn create_test_execution_client_with_leverages(
+    base_url_http: String,
+    base_url_ws: String,
+    futures_leverages: Option<HashMap<String, u32>>,
+) -> (
+    BinanceFuturesExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("BINANCE-001");
     let client_id = *BINANCE_CLIENT_ID;
@@ -995,6 +1104,7 @@ fn create_test_execution_client(
         use_ws_trading: false,
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
+        futures_leverages,
         ..Default::default()
     };
 
@@ -1119,6 +1229,23 @@ async fn test_disconnect_sets_state() {
 
 #[rstest]
 #[tokio::test]
+async fn test_connect_succeeds_when_set_leverage_rejected() {
+    let addr = start_exec_test_server_with_leverage_reject().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let leverages = HashMap::from([("BTCUSDT".to_string(), 75)]);
+    let (mut client, _rx, cache) =
+        create_test_execution_client_with_leverages(base_url_http, base_url_ws, Some(leverages));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.connect().await.unwrap();
+
+    assert!(client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_submit_order_generates_submitted_event() {
     let addr = start_exec_test_server().await;
     let base_url_http = format!("http://{addr}");
@@ -1199,6 +1326,90 @@ async fn test_submit_order_generates_submitted_event() {
         Duration::from_secs(5),
     )
     .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let first_order = add_limit_order_to_cache(&cache, ClientOrderId::new("list-limit-001"));
+    let second_order = add_limit_order_to_cache(&cache, ClientOrderId::new("list-limit-002"));
+    let orders = vec![first_order, second_order];
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    let captured = wait_for_query(&captured_queries, "batchOrders").await;
+    let batch_orders = captured
+        .query
+        .get("batchOrders")
+        .expect("batchOrders query param");
+    let batch: Vec<serde_json::Value> =
+        serde_json::from_str(batch_orders).expect("batchOrders JSON");
+
+    assert_eq!(batch.len(), 2);
+    assert_eq!(batch[0]["symbol"], "BTCUSDT");
+    assert_eq!(batch[0]["side"], "BUY");
+    assert_eq!(batch[0]["type"], "LIMIT");
+    assert_eq!(batch[0]["timeInForce"], "GTX");
+    assert!(
+        batch[0]["newClientOrderId"]
+            .as_str()
+            .is_some_and(|value| value.contains("list-limit-001"))
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_linked_conditional_orders_without_batch_submit() {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, mut rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let orders = add_linked_conditional_orders_to_cache(&cache);
+
+    client
+        .submit_order_list(submit_order_list_command(&orders))
+        .unwrap();
+
+    let mut denied_count = 0;
+    wait_until_async(
+        || {
+            while let Ok(event) = rx.try_recv() {
+                if matches!(event, ExecutionEvent::Order(OrderEventAny::Denied(_))) {
+                    denied_count += 1;
+                }
+            }
+            let done = denied_count == 2;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert!(
+        captured_queries
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|query| query.path != "batchOrders")
+    );
 }
 
 #[rstest]
@@ -1378,6 +1589,54 @@ async fn test_submit_algo_order_in_hedge_mode_omits_reduce_only() {
     let query = captured_query.lock().unwrap().clone().unwrap();
     assert_eq!(query.get("positionSide"), Some(&"LONG".to_string()));
     assert!(!query.contains_key("reduceOnly"));
+}
+
+#[rstest]
+#[case::one_way(false, None, Some("true"))]
+#[case::hedge(true, Some("LONG"), None)]
+#[tokio::test]
+async fn test_submit_reduce_only_limit_order_respects_position_mode(
+    #[case] hedge_mode: bool,
+    #[case] expected_position_side: Option<&'static str>,
+    #[case] expected_reduce_only: Option<&'static str>,
+) {
+    let (addr, captured_query) =
+        start_exec_test_server_with_order_capture_and_hedge_mode(hedge_mode).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("reduce-only-limit-test-001");
+    let order_any = add_reduce_only_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let captured_query = captured_query.clone();
+
+            async move { captured_query.lock().unwrap().is_some() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let query = captured_query.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        query.get("positionSide").map(String::as_str),
+        expected_position_side
+    );
+    assert_eq!(
+        query.get("reduceOnly").map(String::as_str),
+        expected_reduce_only
+    );
 }
 
 #[rstest]
@@ -2287,6 +2546,117 @@ fn add_limit_order_to_cache(
     order_any
 }
 
+fn add_reduce_only_limit_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
+    let order = LimitOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        client_order_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("50000.00"),
+        TimeInForce::Gtc,
+        None,
+        false,
+        true,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    );
+
+    let order_any = OrderAny::Limit(order);
+    cache
+        .borrow_mut()
+        .add_order(order_any.clone(), None, None, false)
+        .unwrap();
+    order_any
+}
+
+fn add_linked_conditional_orders_to_cache(cache: &Rc<RefCell<Cache>>) -> Vec<OrderAny> {
+    let order_list_id = OrderListId::from("OL-FUTURES-OCO");
+    let stop_loss_id = ClientOrderId::new("futures-oco-sl");
+    let take_profit_id = ClientOrderId::new("futures-oco-tp");
+
+    let stop_loss = OrderAny::StopMarket(StopMarketOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        stop_loss_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("49000.00"),
+        TriggerType::MarkPrice,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![take_profit_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let take_profit = OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        take_profit_id,
+        OrderSide::Sell,
+        Quantity::from("0.001"),
+        Price::from("55000.00"),
+        TriggerType::MarkPrice,
+        TimeInForce::Gtc,
+        None,
+        true,
+        false,
+        None,
+        None,
+        Some(ContingencyType::Oco),
+        Some(order_list_id),
+        Some(vec![stop_loss_id]),
+        None,
+        None,
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+    ));
+
+    let orders = vec![stop_loss, take_profit];
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    orders
+}
+
 fn submit_order_command(order: &OrderAny) -> SubmitOrder {
     SubmitOrder::new(
         test_trader_id(),
@@ -2295,6 +2665,34 @@ fn submit_order_command(order: &OrderAny) -> SubmitOrder {
         test_instrument_id(),
         order.client_order_id(),
         order.init_event().clone(),
+        None,
+        None,
+        None,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
+fn submit_order_list_command(orders: &[OrderAny]) -> SubmitOrderList {
+    let order_list = OrderList::new(
+        OrderListId::from("OL-FUTURES-TEST"),
+        test_instrument_id(),
+        test_strategy_id(),
+        orders.iter().map(|order| order.client_order_id()).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+
+    SubmitOrderList::new(
+        test_trader_id(),
+        Some(*BINANCE_CLIENT_ID),
+        test_strategy_id(),
+        order_list,
+        order_inits,
         None,
         None,
         None,
@@ -2554,6 +2952,53 @@ async fn test_cancel_order_ws_uses_binance_symbol_for_futures_symbol() {
             .as_str()
             .is_some_and(|text| text.contains("BTCUSDT-PERP"))
     }));
+}
+
+#[rstest]
+#[case::one_way(false, None, Some(true))]
+#[case::hedge(true, Some("LONG"), None)]
+#[tokio::test]
+async fn test_submit_order_ws_reduce_only_respects_position_mode(
+    #[case] hedge_mode: bool,
+    #[case] expected_position_side: Option<&'static str>,
+    #[case] expected_reduce_only: Option<bool>,
+) {
+    let (addr, captured_ws_trading_messages) =
+        start_exec_test_server_with_ws_trading_capture_and_hedge_mode(hedge_mode).await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let base_url_ws_trading = format!("ws://{addr}/ws-fapi/v1");
+
+    let (mut client, _rx, cache) = create_test_execution_client_with_ws_trading(
+        base_url_http,
+        base_url_ws,
+        base_url_ws_trading,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::new("submit-ws-hedge-reduce-test-001");
+    let order_any = add_reduce_only_limit_order_to_cache(&cache, client_order_id);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    let message = wait_for_ws_trading_method(&captured_ws_trading_messages, "order.place").await;
+    let params = message
+        .get("params")
+        .and_then(|value| value.as_object())
+        .unwrap();
+    assert_eq!(
+        params.get("positionSide").and_then(|value| value.as_str()),
+        expected_position_side
+    );
+    assert_eq!(
+        params.get("reduceOnly").and_then(|value| value.as_bool()),
+        expected_reduce_only
+    );
 }
 
 #[rstest]

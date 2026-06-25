@@ -43,6 +43,16 @@ The main capabilities of a strategy include:
 - Portfolio access.
 - Creating and managing orders and positions.
 
+:::info Rust implementation
+Rust strategy authors implement the `DataActor` callbacks they need and use
+`nautilus_strategy!` to generate the `Strategy` implementation, then call facade
+methods such as `clock()`, `cache()`, `order()`, and `portfolio()` on `self`.
+`DataActorNative` is native-only access to runtime wiring and actor-core state;
+`StrategyNative` exposes borrowed strategy state such as order factory, order
+manager, and portfolio access. Import them only for same-binary performance
+paths or host integration internals.
+:::
+
 ## Strategy implementation
 
 A trading strategy inherits from `Strategy`, so you must define a constructor.

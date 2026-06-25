@@ -13,20 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Rate-limit keys, quotas, and the shared transaction limiter for the Lighter adapter.
+//! Rate-limit keys, quotas, and limiters for the Lighter adapter.
 //!
 //! Lighter meters requests against both the caller IP and the account L1 address.
-//! REST reads draw on a per-client read quota; transactions (`sendTx` /
+//!
+//! REST reads draw on a per-client read quota. Transactions (`sendTx` /
 //! `sendTxBatch`) are metered in one venue bucket per account regardless of
-//! transport. Single orders are submitted over the WebSocket and batches over
-//! HTTP, so both paths share one [`LighterTxRateLimiter`] to keep their combined
-//! rate under the single venue transaction limit.
+//! transport; single orders go over the WebSocket and batches over HTTP, so both
+//! share one [`LighterTxRateLimiter`] to keep their combined rate under the single
+//! venue transaction limit.
+//!
+//! # WebSocket client messages
+//!
+//! Non-transaction WS frames (subscribe, unsubscribe, resubscribe) face two
+//! independent per-IP caps: 200 messages per minute and 50 unacknowledged
+//! (inflight) messages. The adapter honours each with a separate mechanism:
+//!
+//! - Rate: one [`ws_message_rate_limiter`] per venue URL, shared by the data and
+//!   execution clients so their combined send rate counts against a single
+//!   bucket. It paces at the documented 200/min with a matching 50-message burst.
+//! - Inflight: a rate limiter cannot bound inflight, because the unacknowledged
+//!   count tracks venue acknowledgement latency (multi-second and fat-tailed),
+//!   not emission rate. The feed handler instead gates subscribe dispatch on a
+//!   closed-loop count of unacknowledged subscribes
+//!   ([`crate::common::consts::SUBSCRIBE_INFLIGHT_MAX`]), releasing a slot on each
+//!   ack. Without it, a subscribe storm at startup or reconnect drives inflight
+//!   past 50 and the venue returns `30009` / `30010`.
+//!
+//! `sendTx` is metered in the transaction bucket, not the WS message bucket.
 
 use std::{
     num::NonZeroU32,
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, Mutex},
 };
 
+use ahash::AHashMap;
 use nautilus_network::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 use ustr::Ustr;
 
@@ -48,9 +69,70 @@ pub const LIGHTER_REST_BUCKET: &str = "lighter:rest";
 /// single venue limit.
 pub const LIGHTER_TX_BUCKET: &str = "lighter:tx";
 
+/// Rate-limit bucket key for non-transaction WebSocket client messages.
+pub const LIGHTER_WS_MESSAGE_BUCKET: &str = "lighter:ws:messages";
+
+/// Lighter's documented WebSocket message rate: 200 per IP per minute.
+pub const LIGHTER_WS_MESSAGE_RATE_PER_MIN: u32 = 200;
+
+/// Rate-limiter burst, at Lighter's documented 50-message inflight cap. The
+/// closed-loop subscribe gate ([`crate::common::consts::SUBSCRIBE_INFLIGHT_MAX`])
+/// is the real inflight bound; this burst only shapes send rate.
+pub const LIGHTER_WS_MESSAGE_BURST: u32 = 50;
+
+/// Lighter WebSocket client-message quota, excluding `sendTx` / `sendTxBatch`.
+///
+/// Paces at the documented 200/min with a 50-message burst; the inflight cap is
+/// enforced separately by the subscribe gate (see the module docs).
+pub static LIGHTER_WS_MESSAGE_QUOTA: LazyLock<Quota> = LazyLock::new(|| {
+    Quota::per_minute(NonZeroU32::new(LIGHTER_WS_MESSAGE_RATE_PER_MIN).expect("non-zero"))
+        .allow_burst(NonZeroU32::new(LIGHTER_WS_MESSAGE_BURST).expect("non-zero"))
+});
+
+/// Pre-interned rate-limit key for non-transaction WebSocket client messages.
+pub static LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY: LazyLock<[Ustr; 1]> =
+    LazyLock::new(|| [Ustr::from(LIGHTER_WS_MESSAGE_BUCKET)]);
+
 /// Per-account transaction rate limiter, shared across the HTTP and WebSocket
 /// `sendTx` paths so their combined rate honours the single venue bucket.
 pub type LighterTxRateLimiter = RateLimiter<Ustr, MonotonicClock>;
+
+/// Shared WebSocket message limiter, keyed by venue WS URL. Both data and
+/// execution clients (and the backend balance poller) draw from one bucket
+/// per URL so their combined send rate honours the venue's per-IP cap.
+pub type LighterWsMessageRateLimiter = Arc<RateLimiter<Ustr, MonotonicClock>>;
+
+// Process-global registry of Lighter WS message limiters, keyed by resolved
+// WS URL. Clients on the same URL (a network's data, execution, and backend
+// poller) share one bucket honouring the venue per-IP cap; distinct URLs
+// (testnet, or a custom endpoint in tests) stay isolated so unrelated traffic
+// never contends for the same tokens.
+static LIGHTER_WS_MESSAGE_LIMITERS: LazyLock<Mutex<AHashMap<String, LighterWsMessageRateLimiter>>> =
+    LazyLock::new(|| Mutex::new(AHashMap::new()));
+
+/// Returns the shared WS message limiter for `url`, creating it on first
+/// access. Subsequent calls with the same `url` return the same `Arc`.
+///
+/// # Panics
+///
+/// Panics if the registry mutex is poisoned by a prior panic while holding the lock.
+#[must_use]
+pub fn ws_message_rate_limiter(url: &str) -> LighterWsMessageRateLimiter {
+    LIGHTER_WS_MESSAGE_LIMITERS
+        .lock()
+        .expect("Lighter WS message rate limiter registry mutex poisoned")
+        .entry(url.to_string())
+        .or_insert_with(|| {
+            Arc::new(RateLimiter::new_with_quota(
+                None,
+                vec![(
+                    Ustr::from(LIGHTER_WS_MESSAGE_BUCKET),
+                    *LIGHTER_WS_MESSAGE_QUOTA,
+                )],
+            ))
+        })
+        .clone()
+}
 
 /// Resolves a per-minute override to a quota, falling back to the conservative
 /// standard-account quota when unset or zero.
@@ -110,5 +192,52 @@ mod tests {
             let limiter = build_tx_rate_limiter(sendtx);
             assert!(limiter.check_key(&key).is_ok());
         }
+    }
+
+    #[rstest]
+    fn test_ws_message_quota_matches_venue_caps() {
+        // Documented caps, not under-paced: the subscribe gate owns the inflight cap
+        assert_eq!(LIGHTER_WS_MESSAGE_RATE_PER_MIN, 200);
+        assert_eq!(LIGHTER_WS_MESSAGE_BURST, 50);
+        let expected = Quota::per_minute(NonZeroU32::new(LIGHTER_WS_MESSAGE_RATE_PER_MIN).unwrap())
+            .allow_burst(NonZeroU32::new(LIGHTER_WS_MESSAGE_BURST).unwrap());
+        assert_eq!(*LIGHTER_WS_MESSAGE_QUOTA, expected);
+    }
+
+    #[rstest]
+    fn test_ws_message_rate_limit_key_matches_bucket() {
+        assert_eq!(
+            LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY.as_slice(),
+            [Ustr::from(LIGHTER_WS_MESSAGE_BUCKET)].as_slice(),
+        );
+    }
+
+    #[rstest]
+    fn test_ws_message_rate_limiter_shared_per_url() {
+        let shared_a = ws_message_rate_limiter("wss://example.invalid/share");
+        let shared_b = ws_message_rate_limiter("wss://example.invalid/share");
+        let isolated = ws_message_rate_limiter("wss://example.invalid/isolated");
+
+        // Same URL: data, execution, and backend poller share one bucket.
+        assert!(Arc::ptr_eq(&shared_a, &shared_b));
+        // Distinct URL: testnet and custom endpoints stay isolated.
+        assert!(!Arc::ptr_eq(&shared_a, &isolated));
+    }
+
+    #[rstest]
+    fn test_ws_message_rate_limiter_enforces_inflight_burst() {
+        let limiter = RateLimiter::new_with_quota(
+            None,
+            vec![(
+                Ustr::from(LIGHTER_WS_MESSAGE_BUCKET),
+                *LIGHTER_WS_MESSAGE_QUOTA,
+            )],
+        );
+        let key = LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY[0];
+
+        for _ in 0..LIGHTER_WS_MESSAGE_BURST {
+            assert!(limiter.check_key(&key).is_ok());
+        }
+        assert!(limiter.check_key(&key).is_err());
     }
 }

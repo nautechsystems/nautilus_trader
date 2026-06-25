@@ -1273,7 +1273,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
         while size_remaining > 0.0 {
             let value_remaining = price_f64 * size_remaining;
 
-            #[allow(clippy::float_cmp, reason = "exact-zero check on accumulator")]
+            #[expect(clippy::float_cmp, reason = "exact-zero check on accumulator")]
             if self.imbalance_value == 0.0 || self.imbalance_value.signum() == side_sign {
                 let needed = self.step_value - self.imbalance_value.abs();
                 if value_remaining <= needed {

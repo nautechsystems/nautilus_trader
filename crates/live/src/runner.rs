@@ -109,15 +109,6 @@ impl AsyncTimeEventSender {
     pub const fn new(time_tx: tokio::sync::mpsc::UnboundedSender<TimeEventHandler>) -> Self {
         Self { time_tx }
     }
-
-    /// Gets a clone of the underlying channel sender for async use.
-    ///
-    /// This allows async contexts to get a direct channel sender that
-    /// can be moved into async tasks without `RefCell` borrowing issues.
-    #[must_use]
-    pub fn get_channel_sender(&self) -> tokio::sync::mpsc::UnboundedSender<TimeEventHandler> {
-        self.time_tx.clone()
-    }
 }
 
 impl TimeEventSender for AsyncTimeEventSender {
@@ -177,7 +168,7 @@ pub struct AsyncRunner {
     data_evt_tx: tokio::sync::mpsc::UnboundedSender<DataEvent>,
 }
 
-/// Handle for stopping the AsyncRunner from another context.
+/// Handle for stopping the `AsyncRunner` from another context.
 #[derive(Clone, Debug)]
 pub struct AsyncRunnerHandle {
     signal_tx: tokio::sync::mpsc::UnboundedSender<()>,
@@ -367,13 +358,13 @@ impl AsyncRunner {
         handler.run();
     }
 
-    /// Handles a data command by sending to the DataEngine.
+    /// Handles a data command by sending to the `DataEngine`.
     #[inline]
     pub fn handle_data_command(cmd: DataCommand) {
         msgbus::send_data_command(MessagingSwitchboard::data_engine_execute(), cmd);
     }
 
-    /// Handles a data event by sending to the appropriate DataEngine endpoint.
+    /// Handles a data event by sending to the appropriate `DataEngine` endpoint.
     #[inline]
     pub fn handle_data_event(event: DataEvent) {
         match event {
@@ -402,7 +393,7 @@ impl AsyncRunner {
         }
     }
 
-    /// Handles an execution command by sending to the ExecEngine.
+    /// Handles an execution command by sending to the `ExecEngine`.
     #[inline]
     pub fn handle_exec_command(cmd: TradingCommand) {
         msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), cmd);
@@ -560,25 +551,6 @@ mod tests {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let sender = AsyncTimeEventSender::new(tx);
         assert!(format!("{sender:?}").contains("AsyncTimeEventSender"));
-    }
-
-    #[rstest]
-    fn test_async_time_event_sender_get_channel() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-        let sender = AsyncTimeEventSender::new(tx);
-        let channel = sender.get_channel_sender();
-
-        // Verify the channel is functional
-        let event = TimeEvent::new(
-            Ustr::from("test"),
-            UUID4::new(),
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
-        let callback = TimeEventCallback::from(|_: TimeEvent| {});
-        let handler = TimeEventHandler::new(event, callback);
-
-        assert!(channel.send(handler).is_ok());
     }
 
     #[tokio::test]

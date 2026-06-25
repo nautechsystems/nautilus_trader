@@ -26,7 +26,10 @@ use log::LevelFilter;
 use nautilus_core::consts::NAUTILUS_PREFIX;
 use serde::{Deserialize, Serialize};
 
-use crate::logging::logger::LogLine;
+use crate::{
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
+    logging::logger::LogLine,
+};
 
 pub trait LogWriter {
     /// Writes a log line.
@@ -225,6 +228,38 @@ impl FileWriterConfig {
             file_format,
             file_rotate,
         }
+    }
+
+    /// Validates the file writer configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        for (field, value) in [
+            ("file_config.directory", &self.directory),
+            ("file_config.file_name", &self.file_name),
+        ] {
+            if let Some(value) = value {
+                errors.check(!value.trim().is_empty(), ConfigError::empty_field(field));
+            }
+        }
+
+        if let Some(rotate) = &self.file_rotate {
+            let max_file_size = rotate.max_file_size;
+            errors.check(
+                max_file_size > 0,
+                ConfigError::range(
+                    "file_config.file_rotate.max_file_size",
+                    format!("must be a positive number of bytes, was {max_file_size}"),
+                ),
+            );
+        }
+
+        errors.into_result()
     }
 }
 
@@ -629,6 +664,35 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[rstest]
+    fn test_validate_accepts_default() {
+        assert!(FileWriterConfig::default().validate().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_rejects_empty_directory() {
+        let config = FileWriterConfig::new(Some(String::new()), None, None, None);
+        assert!(
+            matches!(config.validate(), Err(ConfigError::EmptyField { field }) if field == "file_config.directory")
+        );
+    }
+
+    #[rstest]
+    fn test_validate_rejects_empty_file_name() {
+        let config = FileWriterConfig::new(None, Some(String::new()), None, None);
+        assert!(
+            matches!(config.validate(), Err(ConfigError::EmptyField { field }) if field == "file_config.file_name")
+        );
+    }
+
+    #[rstest]
+    fn test_validate_rejects_zero_rotation_size() {
+        let config = FileWriterConfig::new(None, None, None, Some((0, 5)));
+        assert!(
+            matches!(config.validate(), Err(ConfigError::Range { field, .. }) if field == "file_config.file_rotate.max_file_size")
+        );
+    }
 
     #[rstest]
     fn test_file_writer_with_rotation_creates_new_timestamped_file() {

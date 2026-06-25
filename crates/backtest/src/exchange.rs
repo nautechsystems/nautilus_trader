@@ -38,7 +38,7 @@ use nautilus_core::{
 use nautilus_execution::{
     matching_core::RestingOrder,
     matching_engine::{config::OrderMatchingEngineConfig, engine::OrderMatchingEngine},
-    models::{fee::FeeModelAny, fill::FillModelAny, latency::LatencyModel},
+    models::{fee::FeeModelHandle, fill::FillModelAny, latency::LatencyModel},
 };
 use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelAny},
@@ -114,6 +114,10 @@ impl PartialOrd for InflightCommand {
 /// - Account balance and position management
 /// - Market data processing and order book maintenance
 /// - Simulation modules for custom venue behaviors
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "exchange state mirrors the existing venue configuration flags"
+)]
 pub struct SimulatedExchange {
     /// The venue identifier.
     pub id: Venue,
@@ -127,7 +131,7 @@ pub struct SimulatedExchange {
     book_type: BookType,
     default_leverage: Decimal,
     exec_client: Option<Rc<dyn ExecutionClient>>,
-    fee_model: FeeModelAny,
+    fee_model: FeeModelHandle,
     fill_model: FillModelAny,
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
@@ -170,7 +174,7 @@ impl Debug for SimulatedExchange {
         f.debug_struct(stringify!(SimulatedExchange))
             .field("id", &self.id)
             .field("account_type", &self.account_type)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -212,7 +216,7 @@ impl SimulatedExchange {
             book_type: config.book_type,
             default_leverage,
             exec_client: None,
-            fee_model: config.fee_model,
+            fee_model: config.fee_model.into(),
             fill_model: config.fill_model,
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
@@ -272,7 +276,7 @@ impl SimulatedExchange {
     /// Sets the fill model for the exchange.
     pub fn set_fill_model(&mut self, fill_model: FillModelAny) {
         for matching_engine in self.matching_engines.values_mut() {
-            matching_engine.set_fill_model(fill_model.clone());
+            matching_engine.set_fill_model(fill_model.clone().into());
             log::info!(
                 "Setting fill model for {} to {}",
                 matching_engine.venue,
@@ -301,6 +305,23 @@ impl SimulatedExchange {
     /// Returns an iterator over the instrument IDs registered with this exchange.
     pub fn instrument_ids(&self) -> impl Iterator<Item = &InstrumentId> {
         self.instruments.keys()
+    }
+
+    /// Returns the expiration timestamp for the given instrument, if present.
+    #[must_use]
+    pub fn instrument_expiration(&self, instrument_id: InstrumentId) -> Option<UnixNanos> {
+        self.matching_engines
+            .get(&instrument_id)
+            .and_then(|matching_engine| matching_engine.instrument.expiration_ns())
+    }
+
+    /// Returns whether an unprocessed instrument remains for the given expiration.
+    #[must_use]
+    pub fn has_unprocessed_instrument_expiration(&self, expiration_ns: UnixNanos) -> bool {
+        self.matching_engines.values().any(|matching_engine| {
+            !matching_engine.is_expiration_processed()
+                && matching_engine.instrument.expiration_ns() == Some(expiration_ns)
+        })
     }
 
     pub fn initialize_account(&mut self) {
@@ -395,10 +416,12 @@ impl SimulatedExchange {
             .maybe_price_protection_points(price_protection)
             .build();
         let instrument_id = instrument.id();
+        let raw_id = u32::try_from(self.instruments.len())
+            .map_err(|e| anyhow::anyhow!("number of instruments exceeds u32::MAX: {e}"))?;
         let matching_engine = OrderMatchingEngine::new(
             instrument,
-            self.instruments.len() as u32,
-            self.fill_model.clone(),
+            raw_id,
+            self.fill_model.clone().into(),
             self.fee_model.clone(),
             self.book_type,
             self.oms_type,
@@ -485,12 +508,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_bid_orders())
+                    .map(OrderMatchingEngine::get_open_bid_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_bid_orders())
+                    .flat_map(OrderMatchingEngine::get_open_bid_orders)
                     .collect()
             })
     }
@@ -502,12 +525,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_ask_orders())
+                    .map(OrderMatchingEngine::get_open_ask_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_ask_orders())
+                    .flat_map(OrderMatchingEngine::get_open_ask_orders)
                     .collect()
             })
     }
@@ -543,32 +566,27 @@ impl SimulatedExchange {
             let account_state = {
                 let cache = self.cache.borrow();
                 if let Some(account) = cache.account_for_venue(&venue) {
-                    match account.balance(Some(adjustment.currency)) {
-                        Some(balance) => {
-                            let mut current_balance = *balance;
-                            current_balance.total = current_balance.total + adjustment;
-                            current_balance.free = current_balance.free + adjustment;
+                    if let Some(balance) = account.balance(Some(adjustment.currency)) {
+                        let mut current_balance = *balance;
+                        current_balance.total = current_balance.total + adjustment;
+                        current_balance.free = current_balance.free + adjustment;
 
-                            let margins = match &*account {
-                                AccountAny::Margin(margin_account) => {
-                                    margin_account.margins.clone()
-                                }
-                                _ => IndexMap::new(),
-                            };
+                        let margins = match &*account {
+                            AccountAny::Margin(margin_account) => margin_account.margins.clone(),
+                            _ => IndexMap::new(),
+                        };
 
-                            Some((
-                                vec![current_balance],
-                                margins.values().copied().collect(),
-                                self.clock.borrow().timestamp_ns(),
-                            ))
-                        }
-                        None => {
-                            log::error!(
-                                "Cannot adjust account: no balance for currency {}",
-                                adjustment.currency
-                            );
-                            None
-                        }
+                        Some((
+                            vec![current_balance],
+                            margins.values().copied().collect(),
+                            self.clock.borrow().timestamp_ns(),
+                        ))
+                    } else {
+                        log::error!(
+                            "Cannot adjust account: no balance for currency {}",
+                            adjustment.currency
+                        );
+                        None
                     }
                 } else {
                     log::error!("Cannot adjust account: no account for venue {venue}");
@@ -678,12 +696,12 @@ impl SimulatedExchange {
                 TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
                     command.ts_init() + latency_model.get_insert_latency()
                 }
-                TradingCommand::ModifyOrder(_) => {
+                TradingCommand::ModifyOrder(_) | TradingCommand::ModifyOrders(_) => {
                     command.ts_init() + latency_model.get_update_latency()
                 }
                 TradingCommand::CancelOrder(_)
-                | TradingCommand::CancelAllOrders(_)
-                | TradingCommand::BatchCancelOrders(_) => {
+                | TradingCommand::CancelOrders(_)
+                | TradingCommand::CancelAllOrders(_) => {
                     command.ts_init() + latency_model.get_delete_latency()
                 }
                 _ => panic!("Cannot handle command: {command:?}"),
@@ -1182,7 +1200,7 @@ impl SimulatedExchange {
             let PositionEvent::PositionAdjusted(adjustment) = &event else {
                 continue;
             };
-            let topic = switchboard::get_event_positions_topic(adjustment.strategy_id);
+            let topic = switchboard::get_event_position_topic(adjustment.strategy_id);
             msgbus::publish_position_event(topic, &event);
         }
     }
@@ -1351,12 +1369,11 @@ impl SimulatedExchange {
 
                 for &i in indices {
                     let p = &open_positions[i];
-                    match cache.calculate_unrealized_pnl(p) {
-                        Some(pnl) => upnl += pnl.as_f64(),
-                        None => {
-                            all_priced = false;
-                            break;
-                        }
+                    if let Some(pnl) = cache.calculate_unrealized_pnl(p) {
+                        upnl += pnl.as_f64();
+                    } else {
+                        all_priced = false;
+                        break;
                     }
                 }
                 (upnl, all_priced)
@@ -1408,11 +1425,24 @@ impl SimulatedExchange {
             "Matching engine not found for instrument {instrument_id}",
         );
 
-        if let TradingCommand::ModifyOrder(ref command) = command
-            && self.process_modify_submitted_order(command)
-        {
-            return;
-        }
+        let command = match command {
+            TradingCommand::ModifyOrder(ref command)
+                if self.process_modify_submitted_order(command) =>
+            {
+                return;
+            }
+            TradingCommand::ModifyOrders(mut command) => {
+                command
+                    .modifies
+                    .retain(|modify| !self.process_modify_submitted_order(modify));
+
+                if command.modifies.is_empty() {
+                    return;
+                }
+                TradingCommand::ModifyOrders(command)
+            }
+            command => command,
+        };
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&instrument_id) {
             let account_id = if let Some(exec_client) = &self.exec_client {
@@ -1434,14 +1464,17 @@ impl SimulatedExchange {
                 TradingCommand::ModifyOrder(ref command) => {
                     matching_engine.process_modify(command, account_id);
                 }
+                TradingCommand::ModifyOrders(ref command) => {
+                    matching_engine.process_batch_modify(command, account_id);
+                }
                 TradingCommand::CancelOrder(ref command) => {
                     matching_engine.process_cancel(command, account_id);
                 }
+                TradingCommand::CancelOrders(ref command) => {
+                    matching_engine.process_batch_cancel(command, account_id);
+                }
                 TradingCommand::CancelAllOrders(ref command) => {
                     matching_engine.process_cancel_all(command, account_id);
-                }
-                TradingCommand::BatchCancelOrders(ref command) => {
-                    matching_engine.process_batch_cancel(command, account_id);
                 }
                 TradingCommand::SubmitOrderList(ref command) => {
                     let mut orders: Vec<OrderAny> = self

@@ -12,13 +12,12 @@ and oracle fixtures Lighter requires for L2 transaction signing.
     the author's reference Rust code as a reading reference. Any
     constants and test vectors copied from upstream are pinned to a specific
     upstream revision and reproduced under `test_data/` for equivalence
-    verification. The reference crate itself is also consumed
-    as a `#[cfg(test)]` dev-dependency (zero transitive deps; commit-pinned
-    via the `rev` field in `Cargo.toml`) by the differential proptest at
-    `src/signing/pornin_diff.rs` and the fuzz targets at
-    `fuzz/fuzz_targets/fuzz_pornin_diff_*.rs`, which assert byte-equality
-    of every public algebra operation against the reference on each
-    random sample. The dev-dep is never linked into the production binary.
+    verification. The reference crate itself is consumed only by the
+    publish=false fuzz crate under `fuzz/` (zero transitive deps; commit-pinned
+    via the `rev` field in `fuzz/Cargo.toml`) and is not part of the
+    crates.io-publishable package graph. The
+    `fuzz/fuzz_targets/fuzz_pornin_diff_*.rs` targets assert byte-equality of
+    every public algebra operation against the reference.
   - Attribution: Copyright (c) 2022 Thomas Pornin.
   - License: MIT License.
   - Source: <https://github.com/pornin/ecgfp5>

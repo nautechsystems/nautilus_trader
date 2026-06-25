@@ -519,7 +519,7 @@ pub fn check_positive_i64(value: i64, param: &str) -> Result<()> {
     Ok(())
 }
 
-/// Checks the `i64` value is positive (> 0).
+/// Checks the `i128` value is positive (> 0).
 ///
 /// # Errors
 ///

@@ -16,7 +16,10 @@
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::common::{enums::TardisExchange, parse::deserialize_uppercase};
+use crate::common::{
+    enums::{TardisExchange, TardisOptionType},
+    parse::deserialize_uppercase,
+};
 
 /// Represents a Tardis format order book update record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -401,4 +404,59 @@ pub(super) struct TardisDerivativeTickerRecord {
     pub index_price: Option<f64>,
     /// The mark price.
     pub mark_price: Option<f64>,
+}
+
+/// Represents a Tardis format options chain record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct TardisOptionsChainRecord {
+    /// The exchange ID.
+    pub exchange: TardisExchange,
+    /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
+    pub symbol: Ustr,
+    /// UNIX microseconds timestamp provided by the exchange.
+    pub timestamp: u64,
+    /// UNIX microseconds timestamp of message received.
+    pub local_timestamp: u64,
+    /// The option kind.
+    #[serde(rename = "type")]
+    pub option_type: TardisOptionType,
+    /// The option strike price.
+    pub strike_price: f64,
+    /// UNIX microseconds expiration timestamp.
+    pub expiration: u64,
+    /// The open interest if provided by the exchange.
+    pub open_interest: Option<f64>,
+    /// The last trade price if provided by the exchange.
+    pub last_price: Option<f64>,
+    /// The best bid price if provided by the exchange.
+    pub bid_price: Option<f64>,
+    /// The best bid amount if provided by the exchange.
+    pub bid_amount: Option<f64>,
+    /// The best bid implied volatility if provided by the exchange.
+    pub bid_iv: Option<f64>,
+    /// The best ask price if provided by the exchange.
+    pub ask_price: Option<f64>,
+    /// The best ask amount if provided by the exchange.
+    pub ask_amount: Option<f64>,
+    /// The best ask implied volatility if provided by the exchange.
+    pub ask_iv: Option<f64>,
+    /// The mark price if provided by the exchange.
+    pub mark_price: Option<f64>,
+    /// The mark implied volatility if provided by the exchange.
+    pub mark_iv: Option<f64>,
+    /// The underlying index name.
+    pub underlying_index: String,
+    /// The underlying price if provided by the exchange.
+    pub underlying_price: Option<f64>,
+    /// The option delta if provided by the exchange.
+    pub delta: Option<f64>,
+    /// The option gamma if provided by the exchange.
+    pub gamma: Option<f64>,
+    /// The option vega if provided by the exchange.
+    pub vega: Option<f64>,
+    /// The option theta if provided by the exchange.
+    pub theta: Option<f64>,
+    /// The option rho if provided by the exchange.
+    pub rho: Option<f64>,
 }

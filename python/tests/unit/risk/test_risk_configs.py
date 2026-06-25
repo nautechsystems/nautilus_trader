@@ -89,10 +89,10 @@ def test_risk_engine_config_rejects_malformed_modify_rate():
 
 
 def test_risk_engine_config_rejects_zero_rate_limit_values():
-    with pytest.raises(ValueError, match="limit must be greater than zero"):
+    with pytest.raises(ValueError, match="Invalid limit"):
         RiskEngineConfig(max_order_submit_rate="0/00:00:01")
 
-    with pytest.raises(ValueError, match="interval must be greater than zero"):
+    with pytest.raises(ValueError, match="Invalid interval_ns"):
         RiskEngineConfig(max_order_modify_rate="100/00:00:00")
 
 
@@ -104,6 +104,12 @@ def test_risk_engine_config_rejects_invalid_instrument_id():
 def test_risk_engine_config_rejects_invalid_notional():
     with pytest.raises(ValueError, match="max_notional_per_order"):
         RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": "not-a-number"})
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_risk_engine_config_rejects_non_positive_notional(value):
+    with pytest.raises(ValueError, match="max_notional_per_order"):
+        RiskEngineConfig(max_notional_per_order={"ETHUSDT.BINANCE": value})
 
 
 def test_risk_engine_config_rejects_unsupported_args():

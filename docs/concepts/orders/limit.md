@@ -25,7 +25,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 
-let order = self.core.order_factory().limit(
+let order = self.order().limit(
     InstrumentId::from("ETHUSDT-PERP.BINANCE"),
     OrderSide::Sell,
     Quantity::from(20),

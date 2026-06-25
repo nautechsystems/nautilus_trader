@@ -91,7 +91,7 @@ impl LiveTimer {
             start_time_ns.as_u64() + interval_ns.get()
         };
 
-        log::debug!("Creating timer '{name}'");
+        log::trace!("Creating timer '{name}'");
 
         Self {
             name,
@@ -259,7 +259,7 @@ impl LiveTimer {
     ///
     /// The timer will not generate a final event.
     pub fn cancel(&mut self) {
-        log::debug!("Cancel timer '{}'", self.name);
+        log::trace!("Cancel timer '{}'", self.name);
 
         if let Some(ref handle) = self.task_handle {
             handle.abort();

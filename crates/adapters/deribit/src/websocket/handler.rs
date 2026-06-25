@@ -70,7 +70,7 @@ use crate::{
     common::{
         consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
         enums::DeribitInstrumentState,
-        parse::parse_portfolio_to_account_state,
+        parse::{parse_portfolio_to_account_state, use_cost_for_bar_volume},
     },
     data_types::DeribitVolatilityIndex,
 };
@@ -1935,12 +1935,15 @@ impl DeribitWsFeedHandler {
                                             Ok(bar_type) => {
                                                 let price_precision = instrument.price_precision();
                                                 let size_precision = instrument.size_precision();
+                                                let use_cost_for_volume =
+                                                    use_cost_for_bar_volume(instrument);
 
                                                 match parse_chart_msg(
                                                     &chart_msg,
                                                     bar_type,
                                                     price_precision,
                                                     size_precision,
+                                                    use_cost_for_volume,
                                                     self.bars_timestamp_on_close,
                                                     ts_init,
                                                 ) {

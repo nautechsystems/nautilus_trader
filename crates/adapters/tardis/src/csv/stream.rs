@@ -15,17 +15,18 @@
 
 use std::{io::Read, path::Path};
 
+use ahash::AHashMap;
 use csv::{Reader, StringRecord};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{DEPTH10_LEN, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
+    data::{DEPTH10_LEN, Data, NULL_ORDER, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick},
     enums::{OrderSide, RecordFlag},
     identifiers::InstrumentId,
     types::Quantity,
 };
 #[cfg(feature = "python")]
 use nautilus_model::{
-    data::{Data, OrderBookDeltas, OrderBookDeltas_API},
+    data::{OrderBookDeltas, OrderBookDeltas_API},
     python::data::data_to_pycapsule,
 };
 #[cfg(feature = "python")]
@@ -34,10 +35,13 @@ use pyo3::{Py, PyAny, Python};
 use crate::{
     common::parse::{parse_instrument_id, parse_timestamp},
     csv::{
-        create_book_order, create_csv_reader, infer_precision, parse_delta_record,
-        parse_derivative_ticker_record, parse_quote_record, parse_trade_record,
+        create_book_order, create_csv_reader, infer_precision,
+        load::OptionsChainPrecision,
+        matches_underlying_filter, normalize_underlying_filters, parse_delta_record,
+        parse_derivative_ticker_record, parse_options_chain_record,
+        parse_options_chain_record_as_quote, parse_quote_record, parse_trade_record,
         record::{
-            TardisBookUpdateRecord, TardisOrderBookSnapshot5Record,
+            TardisBookUpdateRecord, TardisOptionsChainRecord, TardisOrderBookSnapshot5Record,
             TardisOrderBookSnapshot25Record, TardisQuoteRecord, TardisTradeRecord,
         },
     },
@@ -757,6 +761,218 @@ pub fn stream_quotes<P: AsRef<Path>>(
         price_precision,
         size_precision,
         instrument_id,
+        limit,
+    )
+}
+
+struct OptionsChainStreamIterator {
+    reader: Reader<Box<dyn Read>>,
+    record: StringRecord,
+    buffer: Vec<Data>,
+    chunk_size: usize,
+    underlyings: Option<Vec<String>>,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    precision_by_instrument: AHashMap<InstrumentId, OptionsChainPrecision>,
+    limit: Option<usize>,
+    records_processed: usize,
+}
+
+impl OptionsChainStreamIterator {
+    pub(crate) fn new<P: AsRef<Path>>(
+        filepath: P,
+        chunk_size: usize,
+        underlyings: Option<Vec<String>>,
+        price_precision: Option<u8>,
+        size_precision: Option<u8>,
+        limit: Option<usize>,
+    ) -> anyhow::Result<Self> {
+        let underlyings = normalize_underlying_filters(underlyings);
+        let mut precision_by_instrument = AHashMap::new();
+
+        if price_precision.is_none() || size_precision.is_none() {
+            let mut reader = create_csv_reader(&filepath)?;
+            let mut record = StringRecord::new();
+            Self::detect_precision_from_sample(
+                &mut reader,
+                &mut record,
+                underlyings.as_deref(),
+                price_precision,
+                size_precision,
+                &mut precision_by_instrument,
+                10_000,
+            );
+        }
+
+        let reader = create_csv_reader(filepath)?;
+
+        Ok(Self {
+            reader,
+            record: StringRecord::new(),
+            buffer: Vec::with_capacity(chunk_size * 2),
+            chunk_size,
+            underlyings,
+            price_precision,
+            size_precision,
+            precision_by_instrument,
+            limit,
+            records_processed: 0,
+        })
+    }
+
+    fn detect_precision_from_sample(
+        reader: &mut Reader<Box<dyn Read>>,
+        record: &mut StringRecord,
+        underlyings: Option<&[String]>,
+        price_precision: Option<u8>,
+        size_precision: Option<u8>,
+        precision_by_instrument: &mut AHashMap<InstrumentId, OptionsChainPrecision>,
+        sample_size: usize,
+    ) {
+        let mut records_scanned = 0;
+
+        while records_scanned < sample_size {
+            match reader.read_record(record) {
+                Ok(true) => {
+                    if let Some(underlyings) = underlyings {
+                        let Some(symbol) = record.get(1) else {
+                            records_scanned += 1;
+                            continue;
+                        };
+                        let symbol = symbol.to_uppercase();
+                        if !matches_underlying_filter(&symbol, Some(underlyings)) {
+                            records_scanned += 1;
+                            continue;
+                        }
+                    }
+
+                    if let Ok(data) = record.deserialize::<TardisOptionsChainRecord>(None) {
+                        let instrument_id = parse_instrument_id(&data.exchange, data.symbol);
+                        precision_by_instrument
+                            .entry(instrument_id)
+                            .or_insert_with(|| {
+                                OptionsChainPrecision::new(price_precision, size_precision)
+                            })
+                            .update(&data, price_precision, size_precision);
+                    }
+                    records_scanned += 1;
+                }
+                Ok(false) => break,
+                Err(_) => records_scanned += 1,
+            }
+        }
+    }
+}
+
+impl Iterator for OptionsChainStreamIterator {
+    type Item = anyhow::Result<Vec<Data>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(limit) = self.limit
+            && self.records_processed >= limit
+        {
+            return None;
+        }
+
+        self.buffer.clear();
+        let mut records_read = 0;
+
+        while records_read < self.chunk_size {
+            match self.reader.read_record(&mut self.record) {
+                Ok(true) => {
+                    if let Some(underlyings) = self.underlyings.as_deref() {
+                        let Some(symbol) = self.record.get(1) else {
+                            continue;
+                        };
+                        let symbol = symbol.to_uppercase();
+                        if !matches_underlying_filter(&symbol, Some(underlyings)) {
+                            continue;
+                        }
+                    }
+
+                    let data = match self.record.deserialize::<TardisOptionsChainRecord>(None) {
+                        Ok(data) => data,
+                        Err(e) => {
+                            return Some(Err(anyhow::anyhow!("Failed to deserialize record: {e}")));
+                        }
+                    };
+                    let instrument_id = parse_instrument_id(&data.exchange, data.symbol);
+                    let precision = self
+                        .precision_by_instrument
+                        .entry(instrument_id)
+                        .or_insert_with(|| {
+                            OptionsChainPrecision::new(self.price_precision, self.size_precision)
+                        });
+                    precision.update(&data, self.price_precision, self.size_precision);
+
+                    match parse_options_chain_record_as_quote(
+                        &data,
+                        precision.price,
+                        precision.size,
+                        instrument_id,
+                    ) {
+                        Ok(Some(quote)) => self.buffer.push(Data::Quote(quote)),
+                        Ok(None) => {}
+                        Err(e) => return Some(Err(e)),
+                    }
+                    self.buffer
+                        .push(Data::OptionGreeks(parse_options_chain_record(
+                            &data,
+                            instrument_id,
+                        )));
+
+                    records_read += 1;
+                    self.records_processed += 1;
+
+                    if let Some(limit) = self.limit
+                        && self.records_processed >= limit
+                    {
+                        break;
+                    }
+                }
+                Ok(false) => {
+                    if self.buffer.is_empty() {
+                        return None;
+                    }
+                    return Some(Ok(self.buffer.clone()));
+                }
+                Err(e) => return Some(Err(anyhow::anyhow!("Failed to read record: {e}"))),
+            }
+        }
+
+        if self.buffer.is_empty() {
+            None
+        } else {
+            Some(Ok(self.buffer.clone()))
+        }
+    }
+}
+
+/// Streams Tardis `options_chain` CSV rows as quote and option greeks data.
+///
+/// # Precision Inference Warning
+///
+/// When using streaming with precision inference, later rows can raise the inferred precision for
+/// their instrument after earlier chunks have already been emitted. Provide explicit precision
+/// parameters for deterministic precision behavior.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened, read, or parsed as CSV.
+pub fn stream_options_chain<P: AsRef<Path>>(
+    filepath: P,
+    chunk_size: usize,
+    underlyings: Option<Vec<String>>,
+    price_precision: Option<u8>,
+    size_precision: Option<u8>,
+    limit: Option<usize>,
+) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Vec<Data>>>> {
+    OptionsChainStreamIterator::new(
+        filepath,
+        chunk_size,
+        underlyings,
+        price_precision,
+        size_precision,
         limit,
     )
 }
@@ -1503,7 +1719,7 @@ pub fn stream_funding_rates<P: AsRef<Path>>(
 mod tests {
     use nautilus_model::{
         enums::{AggressorSide, BookAction},
-        identifiers::TradeId,
+        identifiers::{InstrumentId, TradeId},
         types::Price,
     };
     use rstest::*;
@@ -1835,6 +2051,46 @@ binance,BTCUSDT,1640995204000000,1640995204100000,0.5,50000.1234,49999.1234,0.8"
         assert_eq!(total_quotes, 5);
 
         std::fs::remove_file(&temp_file).ok();
+    }
+
+    #[rstest]
+    pub fn test_stream_options_chain_filters_and_chunks() {
+        let filepath = get_test_data_path("options_chain.csv");
+        let stream = stream_options_chain(
+            filepath,
+            1,
+            Some(vec!["ETH-".to_string()]),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let chunks: Vec<_> = stream.collect();
+
+        assert_eq!(chunks.len(), 2);
+
+        let first_chunk = chunks[0].as_ref().unwrap();
+        assert_eq!(first_chunk.len(), 2);
+        let Data::Quote(quote) = &first_chunk[0] else {
+            panic!("Expected first data item to be Quote");
+        };
+        let Data::OptionGreeks(greeks) = &first_chunk[1] else {
+            panic!("Expected second data item to be OptionGreeks");
+        };
+
+        assert_eq!(
+            quote.instrument_id,
+            InstrumentId::from("ETH-9JUN20-250-P.DERIBIT")
+        );
+        assert_eq!(quote.bid_price, Price::from("0.12345"));
+        assert_eq!(quote.bid_size, Quantity::from("0.123456"));
+        assert_eq!(quote.bid_price.precision, 5);
+        assert_eq!(quote.bid_size.precision, 6);
+        assert_eq!(greeks.instrument_id, quote.instrument_id);
+
+        let second_chunk = chunks[1].as_ref().unwrap();
+        assert_eq!(second_chunk.len(), 1);
+        assert!(matches!(second_chunk[0], Data::OptionGreeks(_)));
     }
 
     #[rstest]

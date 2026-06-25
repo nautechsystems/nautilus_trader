@@ -190,13 +190,23 @@ def test_venue_config_repr():
 
 
 def test_data_config_minimal():
+    instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
         data_type="QuoteTick",
         catalog_path="/data/catalog",
+        instrument_id=instrument_id,
     )
     assert config.data_type == "QuoteTick"
     assert config.catalog_path == "/data/catalog"
-    assert config.instrument_id is None
+    assert config.instrument_id == instrument_id
+
+
+def test_data_config_requires_identifier():
+    with pytest.raises(ValueError, match="instrument_id"):
+        BacktestDataConfig(
+            data_type="QuoteTick",
+            catalog_path="/data/catalog",
+        )
 
 
 def test_data_config_with_instrument_id():
@@ -221,6 +231,7 @@ def test_data_config_repr():
     config = BacktestDataConfig(
         data_type="TradeTick",
         catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     assert "BacktestDataConfig" in repr(config)
 
@@ -292,3 +303,20 @@ def test_run_config_repr():
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
     assert "BacktestRunConfig" in repr(config)
+
+
+def test_run_config_chunk_size_zero_rejected():
+    venue = BacktestVenueConfig(
+        name="SIM",
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        book_type=BookType.L1_MBP,
+        starting_balances=["1_000_000 USD"],
+    )
+    data = BacktestDataConfig(
+        data_type="QuoteTick",
+        catalog_path="/data/catalog",
+        instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+    )
+    with pytest.raises(ValueError, match="chunk_size"):
+        BacktestRunConfig(venues=[venue], data=[data], chunk_size=0)

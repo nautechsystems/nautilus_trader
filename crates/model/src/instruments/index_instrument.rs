@@ -22,7 +22,7 @@ use nautilus_core::{
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use super::{Instrument, any::InstrumentAny};
+use super::{Instrument, any::InstrumentAny, tick_scheme::check_tick_scheme};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
@@ -62,6 +62,8 @@ pub struct IndexInstrument {
     pub price_increment: Price,
     /// The minimum size increment.
     pub size_increment: Quantity,
+    /// The registered variable tick scheme name.
+    pub tick_scheme: Option<Ustr>,
     /// Additional instrument metadata as a JSON-serializable dictionary.
     pub info: Option<Params>,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
@@ -70,15 +72,17 @@ pub struct IndexInstrument {
     pub ts_init: UnixNanos,
 }
 
+#[bon::bon]
 impl IndexInstrument {
     /// Creates a new [`IndexInstrument`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails.
     ///
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    /// # Errors
-    ///
-    /// Returns an error if any input validation fails.
     #[expect(clippy::too_many_arguments)]
     pub fn new_checked(
         instrument_id: InstrumentId,
@@ -88,6 +92,7 @@ impl IndexInstrument {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -106,6 +111,7 @@ impl IndexInstrument {
         )?;
         check_positive_price(price_increment, stringify!(price_increment))?;
         check_positive_quantity(size_increment, stringify!(size_increment))?;
+        check_tick_scheme(tick_scheme)?;
 
         Ok(Self {
             id: instrument_id,
@@ -115,6 +121,7 @@ impl IndexInstrument {
             size_precision,
             price_increment,
             size_increment,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
@@ -136,6 +143,7 @@ impl IndexInstrument {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        tick_scheme: Option<Ustr>,
         info: Option<Params>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
@@ -148,11 +156,50 @@ impl IndexInstrument {
             size_precision,
             price_increment,
             size_increment,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
         )
         .expect_display(FAILED)
+    }
+
+    /// Returns a fluent builder for a [`IndexInstrument`] instance.
+    ///
+    /// Required fields are enforced at compile time; optional fields can be omitted and default
+    /// the same way they do in [`IndexInstrument::new_checked`], which the builder calls so the same
+    /// correctness checks run on `build`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any input validation fails (see [`IndexInstrument::new_checked`]).
+    #[builder(start_fn = builder, finish_fn = build)]
+    pub fn build_checked(
+        instrument_id: InstrumentId,
+        raw_symbol: Symbol,
+        currency: Currency,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        tick_scheme: Option<Ustr>,
+        info: Option<Params>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> CorrectnessResult<Self> {
+        Self::new_checked(
+            instrument_id,
+            raw_symbol,
+            currency,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            tick_scheme,
+            info,
+            ts_event,
+            ts_init,
+        )
     }
 }
 
@@ -171,6 +218,9 @@ impl Hash for IndexInstrument {
 }
 
 impl Instrument for IndexInstrument {
+    fn tick_scheme(&self) -> Option<Ustr> {
+        self.tick_scheme
+    }
     fn into_any(self) -> InstrumentAny {
         InstrumentAny::IndexInstrument(self)
     }
@@ -328,6 +378,7 @@ mod tests {
             Price::from("0.01"),
             Quantity::from("1"),
             None,
+            None,
             0.into(),
             0.into(),
         );
@@ -339,5 +390,41 @@ mod tests {
         let json = serde_json::to_string(&index_instrument_spx).unwrap();
         let deserialized: IndexInstrument = serde_json::from_str(&json).unwrap();
         assert_eq!(index_instrument_spx, deserialized);
+    }
+
+    #[rstest]
+    fn test_builder_matches_new_checked() {
+        let positional = IndexInstrument::new_checked(
+            InstrumentId::from("SPX.INDEX"),
+            Symbol::from("SPX"),
+            Currency::USD(),
+            2,
+            0,
+            Price::from("0.01"),
+            Quantity::from("1"),
+            None,
+            None,
+            1.into(),
+            2.into(),
+        )
+        .unwrap();
+
+        let built = IndexInstrument::builder()
+            .instrument_id(InstrumentId::from("SPX.INDEX"))
+            .raw_symbol(Symbol::from("SPX"))
+            .currency(Currency::USD())
+            .price_precision(2)
+            .size_precision(0)
+            .price_increment(Price::from("0.01"))
+            .size_increment(Quantity::from("1"))
+            .ts_event(1.into())
+            .ts_init(2.into())
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            serde_json::to_value(&positional).unwrap(),
+            serde_json::to_value(&built).unwrap(),
+        );
     }
 }

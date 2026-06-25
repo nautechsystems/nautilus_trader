@@ -33,41 +33,6 @@ use crate::hex::ENCODE_PAIR;
 /// The maximum length of ASCII characters for a `UUID4` string value (includes null terminator).
 pub(crate) const UUID4_LEN: usize = 37;
 
-fn format_uuid4_bytes(bytes: [u8; 16]) -> [u8; UUID4_LEN] {
-    let mut value = [0u8; UUID4_LEN];
-    let mut pos = 0;
-
-    for (idx, byte) in bytes.into_iter().enumerate() {
-        if matches!(idx, 4 | 6 | 8 | 10) {
-            value[pos] = b'-';
-            pos += 1;
-        }
-
-        value[pos..pos + 2].copy_from_slice(&ENCODE_PAIR[byte as usize]);
-        pos += 2;
-    }
-
-    value[36] = 0; // Add the null terminator
-
-    debug_assert_eq!(pos, 36, "Invariant: UUID text must be 36 bytes");
-    debug_assert!(
-        value[14] == b'4',
-        "Invariant: UUID version digit must be '4' (was {})",
-        value[14] as char
-    );
-    debug_assert!(
-        matches!(value[19], b'8' | b'9' | b'a' | b'b'),
-        "Invariant: UUID variant byte must be RFC 4122 (was {})",
-        value[19] as char
-    );
-    debug_assert!(
-        value[36] == 0,
-        "Invariant: UUID null terminator must be at index 36"
-    );
-
-    value
-}
-
 /// Represents a Universally Unique Identifier (UUID)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
 #[repr(C)]
@@ -159,8 +124,8 @@ impl UUID4 {
 
     /// Returns the raw UUID bytes (16 bytes).
     ///
-    /// This method is optimized for serialization where the UUID bytes
-    /// are needed directly without string conversion overhead.
+    /// Parses the stored string representation on each call; cache the result
+    /// when the bytes are needed repeatedly in hot paths.
     ///
     /// # Panics
     ///
@@ -168,8 +133,6 @@ impl UUID4 {
     /// UTF-8 UUID v4 string produced by [`UUID4::new`] or deserialization paths.
     #[must_use]
     pub fn as_bytes(&self) -> [u8; 16] {
-        // Parse the string representation to extract the raw bytes
-        // This is done once at read time to avoid repeated parsing
         let uuid_str = self.to_cstr().to_str().expect("Valid UTF-8");
         let uuid = Uuid::parse_str(uuid_str).expect("Valid UUID4");
         *uuid.as_bytes()
@@ -297,6 +260,41 @@ impl<'de> Deserialize<'de> for UUID4 {
         let uuid4_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
         uuid4_str.as_ref().parse().map_err(serde::de::Error::custom)
     }
+}
+
+fn format_uuid4_bytes(bytes: [u8; 16]) -> [u8; UUID4_LEN] {
+    let mut value = [0u8; UUID4_LEN];
+    let mut pos = 0;
+
+    for (idx, byte) in bytes.into_iter().enumerate() {
+        if matches!(idx, 4 | 6 | 8 | 10) {
+            value[pos] = b'-';
+            pos += 1;
+        }
+
+        value[pos..pos + 2].copy_from_slice(&ENCODE_PAIR[byte as usize]);
+        pos += 2;
+    }
+
+    value[36] = 0; // Add the null terminator
+
+    debug_assert_eq!(pos, 36, "Invariant: UUID text must be 36 bytes");
+    debug_assert!(
+        value[14] == b'4',
+        "Invariant: UUID version digit must be '4' (was {})",
+        value[14] as char
+    );
+    debug_assert!(
+        matches!(value[19], b'8' | b'9' | b'a' | b'b'),
+        "Invariant: UUID variant byte must be RFC 4122 (was {})",
+        value[19] as char
+    );
+    debug_assert!(
+        value[36] == 0,
+        "Invariant: UUID null terminator must be at index 36"
+    );
+
+    value
 }
 
 #[cfg(test)]

@@ -29,6 +29,8 @@ pub mod cache;
 pub mod data_actor;
 pub mod switchboard;
 
+pub(crate) mod msgbus;
+
 // Re-exports
 // Re-exports
 pub use switchboard::{

@@ -23,7 +23,7 @@ mod ticks;
 
 use nautilus_model::data::{
     Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
 };
 
 use self::common::{HEADER_LENGTH, decode_header, encode_header, validate_header};
@@ -42,8 +42,9 @@ pub(super) mod data_any_variant {
     pub(crate) const MARK_PRICE: u16 = 6;
     pub(crate) const INDEX_PRICE: u16 = 7;
     pub(crate) const FUNDING_RATE: u16 = 8;
-    pub(crate) const INSTRUMENT_STATUS: u16 = 9;
-    pub(crate) const INSTRUMENT_CLOSE: u16 = 10;
+    pub(crate) const OPTION_GREEKS: u16 = 9;
+    pub(crate) const INSTRUMENT_STATUS: u16 = 10;
+    pub(crate) const INSTRUMENT_CLOSE: u16 = 11;
 }
 
 pub(super) mod template_id {
@@ -58,9 +59,10 @@ pub(super) mod template_id {
     pub(crate) const MARK_PRICE_UPDATE: u16 = 30_009;
     pub(crate) const INDEX_PRICE_UPDATE: u16 = 30_010;
     pub(crate) const FUNDING_RATE_UPDATE: u16 = 30_011;
-    pub(crate) const INSTRUMENT_STATUS: u16 = 30_012;
-    pub(crate) const INSTRUMENT_CLOSE: u16 = 30_013;
-    pub(crate) const DATA_ANY: u16 = 30_014;
+    pub(crate) const OPTION_GREEKS: u16 = 30_012;
+    pub(crate) const INSTRUMENT_STATUS: u16 = 30_013;
+    pub(crate) const INSTRUMENT_CLOSE: u16 = 30_014;
+    pub(crate) const DATA_ANY: u16 = 30_015;
 }
 
 #[expect(clippy::large_enum_variant)]
@@ -75,6 +77,7 @@ pub enum DataAny {
     MarkPrice(MarkPriceUpdate),
     IndexPrice(IndexPriceUpdate),
     FundingRate(FundingRateUpdate),
+    OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
 }

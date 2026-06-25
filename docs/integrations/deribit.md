@@ -1,8 +1,8 @@
 # Deribit
 
-Founded in 2016, Deribit is a cryptocurrency derivatives exchange specializing in Bitcoin and
-Ethereum options and futures. It is one of the largest crypto options exchanges by volume,
-and a leading platform for crypto derivatives trading.
+Founded in 2016, Deribit is a cryptocurrency derivatives exchange for options, futures,
+perpetuals, spot, and combo instruments. It is one of the largest crypto options exchanges
+by volume, and a leading platform for crypto derivatives trading.
 
 This integration supports live market data ingest and order execution with Deribit.
 
@@ -22,8 +22,8 @@ on your use case:
 - `DeribitInstrumentProvider`: Instrument parsing and loading functionality.
 - `DeribitDataClient`: Market data feed manager.
 - `DeribitExecutionClient`: Account management and trade execution gateway.
-- `DeribitLiveDataClientFactory`: Factory for Deribit data clients (used by the trading node builder).
-- `DeribitLiveExecClientFactory`: Factory for Deribit execution clients (used by the trading node builder).
+- `DeribitDataClientFactory`: Factory for Deribit data clients (used by the live node builder).
+- `DeribitExecutionClientFactory`: Factory for Deribit execution clients (used by the live node builder).
 
 :::note
 Most users will define a configuration for a live trading node (as shown below),
@@ -32,14 +32,14 @@ and won't need to work directly with these lower-level components.
 
 ### Product support
 
-| Product Type      | Data Feed | Trading | Notes                            |
-|-------------------|-----------|---------|----------------------------------|
-| Perpetual Futures | ✓         | ✓       | BTC-PERPETUAL, ETH-PERPETUAL.    |
-| Dated Futures     | ✓         | ✓       | Futures with fixed expiry dates. |
-| Options           | ✓         | ✓       | BTC and ETH options.             |
-| Spot              | ✓         | ✓       | BTC_USDC, ETH_USDC pairs.        |
-| Future Combos     | ✓         | ✓       | Calendar spreads for futures.    |
-| Option Combos     | ✓         | ✓       | Option spread strategies.        |
+| Product type      | Data feed | Trading | Notes                                          |
+|-------------------|-----------|---------|------------------------------------------------|
+| Perpetual futures | ✓         | ✓       | Loaded with `DeribitProductType.FUTURE`.       |
+| Dated futures     | ✓         | ✓       | Loaded with `DeribitProductType.FUTURE`.       |
+| Options           | ✓         | ✓       | Loaded with `DeribitProductType.OPTION`.       |
+| Spot              | ✓         | ✓       | Loaded with `DeribitProductType.SPOT`.         |
+| Future combos     | ✓         | ✓       | Loaded with `DeribitProductType.FUTURE_COMBO`. |
+| Option combos     | ✓         | ✓       | Loaded with `DeribitProductType.OPTION_COMBO`. |
 
 ## Symbology
 
@@ -47,14 +47,21 @@ Deribit uses specific symbol conventions for different instrument types.
 All instrument IDs should include the `.DERIBIT` suffix when referencing them
 (e.g., `BTC-PERPETUAL.DERIBIT` for BTC perpetual).
 
-### Perpetual Futures
+### Quantity units
+
+Nautilus quantities map to Deribit's `amount` field, not the optional `contracts` field. Deribit
+reports perpetual and inverse futures amounts in USD units, and reports options and linear futures
+amounts in the underlying base currency. The Deribit `contract_size` field converts between
+`amount` and contract count; the adapter does not apply it again as the Nautilus multiplier.
+
+### Perpetual futures
 
 Format: `{Currency}-PERPETUAL`
 
 Examples:
 
-- `BTC-PERPETUAL` - Bitcoin perpetual swap
-- `ETH-PERPETUAL` - Ethereum perpetual swap
+- `BTC-PERPETUAL` - Bitcoin perpetual swap.
+- `ETH-PERPETUAL` - Ethereum perpetual swap.
 
 To subscribe to BTC perpetual in your strategy:
 
@@ -62,17 +69,17 @@ To subscribe to BTC perpetual in your strategy:
 InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 ```
 
-### Dated Futures
+### Dated futures
 
 Format: `{Currency}-{DDMMMYY}`
 
 Examples:
 
-- `BTC-28MAR25` - Bitcoin futures expiring March 28, 2025
-- `ETH-27JUN25` - Ethereum futures expiring June 27, 2025
+- `BTC-25DEC26` - Bitcoin future expiring December 25, 2026.
+- `ETH-26MAR27` - Ethereum future expiring March 26, 2027.
 
 ```python
-InstrumentId.from_str("BTC-28MAR25.DERIBIT")
+InstrumentId.from_str("BTC-25DEC26.DERIBIT")
 ```
 
 ### Options
@@ -81,17 +88,17 @@ Format: `{Currency}-{DDMMMYY}-{Strike}-{Type}`
 
 Examples:
 
-- `BTC-28MAR25-100000-C` - Bitcoin call option, $100,000 strike, expiring March 28, 2025
-- `BTC-28MAR25-80000-P` - Bitcoin put option, $80,000 strike, expiring March 28, 2025
-- `ETH-28MAR25-4000-C` - Ethereum call option, $4,000 strike
+- `BTC-25DEC26-100000-C` - Bitcoin call option, $100,000 strike, expiring December 25, 2026.
+- `BTC-25DEC26-80000-P` - Bitcoin put option, $80,000 strike, expiring December 25, 2026.
+- `ETH-26MAR27-4000-C` - Ethereum call option, $4,000 strike, expiring March 26, 2027.
 
 Where:
 
-- `C` = Call option
-- `P` = Put option
+- `C` = Call option.
+- `P` = Put option.
 
 ```python
-InstrumentId.from_str("BTC-28MAR25-100000-C.DERIBIT")
+InstrumentId.from_str("BTC-25DEC26-100000-C.DERIBIT")
 ```
 
 ### Spot
@@ -100,8 +107,8 @@ Format: `{BaseCurrency}_{QuoteCurrency}`
 
 Examples:
 
-- `BTC_USDC` - Bitcoin against USDC
-- `ETH_USDC` - Ethereum against USDC
+- `BTC_USDC` - Bitcoin against USDC.
+- `ETH_USDC` - Ethereum against USDC.
 
 ```python
 InstrumentId.from_str("BTC_USDC.DERIBIT")
@@ -116,8 +123,8 @@ standalone instrument is `BTC-PERPETUAL`). The combo expires with its earliest l
 
 Examples:
 
-- `BTC-FS-25DEC26_PERP` - calendar spread between the Dec 2026 future and the perpetual.
-- `BTC-FS-22MAY26_19MAY26` - inter-month spread between two dated futures.
+- `BTC-FS-25DEC26_PERP` - calendar spread between the December 2026 future and the perpetual.
+- `BTC-FS-26MAR27_25DEC26` - inter-month spread between two dated futures.
 
 ```python
 InstrumentId.from_str("BTC-FS-25DEC26_PERP.DERIBIT")
@@ -136,13 +143,13 @@ BOX (box), and RR (risk reversal). The strikes segment separates multiple strike
 
 Examples:
 
-- `BTC-CS-19MAY26-70000_75000` - 70k / 75k call spread expiring 19 May 2026.
-- `BTC-STRG-29MAY26-72000_80000` - 72k / 80k strangle.
-- `BTC-STRD-29MAY26-77000` - 77k straddle.
-- `BTC-BOX-25DEC26-58000_60000` - 58k / 60k box.
+- `BTC-CS-25DEC26-70000_75000` - 70k / 75k call spread expiring December 25, 2026.
+- `BTC-STRG-26MAR27-72000_80000` - 72k / 80k strangle expiring March 26, 2027.
+- `BTC-STRD-26MAR27-77000` - 77k straddle expiring March 26, 2027.
+- `BTC-BOX-26MAR27-58000_60000` - 58k / 60k box expiring March 26, 2027.
 
 ```python
-InstrumentId.from_str("BTC-STRG-29MAY26-72000_80000.DERIBIT")
+InstrumentId.from_str("BTC-STRG-26MAR27-72000_80000.DERIBIT")
 ```
 
 The adapter models option combos as `CryptoOptionSpread`, priced in the base currency under
@@ -178,11 +185,12 @@ currency-keyed result for concrete currencies such as `BTC`, and a direct kind-k
 
 ## Combo instruments
 
-The instrument provider loads combos when `product_types` includes
-`DeribitProductType.OptionCombo` or `DeribitProductType.FutureCombo`. Deribit exposes the leg
-makeup of every active combo on `/public/get_combos`, and the combo's trading metadata
-(tick size, contract size, expiration, min trade amount) on the standard
-`/public/get_instruments?kind=option_combo|future_combo` response.
+The instrument provider loads combos when `product_types` includes the future-combo or
+option-combo enum variant. In Python, use `DeribitProductType.FUTURE_COMBO` or
+`DeribitProductType.OPTION_COMBO`. Deribit exposes the leg makeup of every active combo on
+`/public/get_combos`, and the combo's trading metadata (tick size, contract size, expiration,
+min trade amount) on the standard `/public/get_instruments?kind=option_combo|future_combo`
+response.
 
 ### Trade publishing
 
@@ -241,12 +249,12 @@ distinguish these from plain trades can pattern-match the prefix on `TradeTick.t
 The raw Deribit `trade_id` is preserved after the prefix, so reconciliation against
 Deribit's own IDs is a prefix strip.
 
-| Prefix       | Source field    | Meaning                                                        |
-|--------------|-----------------|----------------------------------------------------------------|
-| `RFQ-`       | `block_rfq_id`  | Trade originated from a Block RFQ.                             |
-| `BLK-`       | `block_trade_id`| Trade is a (non‑RFQ) block trade.                              |
-| `COMBO-`     | `combo_id`      | Per‑leg trade whose parent originated from a combo instrument. |
-| *unprefixed* | (none of above) | Standard trade.                                                |
+| Prefix       | Source field     | Meaning                                                        |
+|--------------|------------------|----------------------------------------------------------------|
+| `RFQ-`       | `block_rfq_id`   | Trade originated from a Block RFQ.                             |
+| `BLK-`       | `block_trade_id` | Trade is a non‑RFQ block trade.                                |
+| `COMBO-`     | `combo_id`       | Per‑leg trade whose parent originated from a combo instrument. |
+| *unprefixed* | (none of above)  | Standard trade.                                                |
 
 Precedence when multiple tags are present: `RFQ-` > `BLK-` > `COMBO-`. Block RFQs are
 themselves block trades on Deribit, so the RFQ tag wins; combos executed as block trades
@@ -283,29 +291,42 @@ This groups multiple order book changes into single messages.
 - Available without authentication.
 - Recommended for most use cases.
 - Lower message volume, easier to process.
-- Default interval: 100ms.
+- Default unauthenticated interval: 100ms.
 
 ### Subscription parameters
 
 The Nautilus adapter supports both feed types via subscription parameters:
 
-| Parameter  | Values                 | Notes                                                                         |
-|------------|------------------------|-------------------------------------------------------------------------------|
-| `interval` | `raw`, `100ms`, `agg2` | Default: `100ms`. `agg2` batches at ~1 second intervals. `raw` requires auth. |
-| `depth`    | `1`, `10`, `20`        | Default: `10`. Number of price levels per side.                               |
+| Parameter  | Values                 | Notes                                                                     |
+|------------|------------------------|---------------------------------------------------------------------------|
+| `interval` | `raw`, `100ms`, `agg2` | `agg2` batches at about 1 second intervals. `raw` requires auth.          |
+| `group`    | `none`, price group    | Default: `none`. Applies only to grouped non‑raw book channels.           |
+| `depth`    | `1`, `10`, `20`        | Default: `10`. Number of price levels per side for grouped book channels. |
+
+The data client chooses the order book interval as follows:
+
+1. Uses `params["interval"]` when supplied.
+2. Uses `raw` when the WebSocket connection is authenticated and no interval is supplied.
+3. Uses Deribit's public `100ms` grouped feed when the connection is not authenticated.
 
 ```python
 from nautilus_trader.model.identifiers import InstrumentId
 
 instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
 
-# Default: 100ms aggregated feed (no authentication required)
+# Public 100ms aggregated feed when no API credentials are configured.
 strategy.subscribe_order_book_deltas(instrument_id)
 
-# Raw feed (requires API credentials)
+# Raw feed. This is also the authenticated default when no interval is supplied.
 strategy.subscribe_order_book_deltas(
     instrument_id,
     params={"interval": "raw"},
+)
+
+# Force an aggregated feed on an authenticated connection.
+strategy.subscribe_order_book_deltas(
+    instrument_id,
+    params={"interval": "100ms", "depth": 10},
 )
 ```
 
@@ -315,8 +336,9 @@ configured before subscribing to raw feeds.
 :::
 
 :::tip
-For most strategies, the default 100ms aggregated feed provides sufficient granularity with
-significantly lower message overhead. Only use raw feeds when tick-by-tick precision is essential.
+For most strategies, the 100ms aggregated feed provides sufficient granularity with lower message
+overhead. Set `params={"interval": "100ms"}` when you provide credentials but do not need raw
+tick-by-tick book updates.
 :::
 
 ### Sequence gap recovery
@@ -337,28 +359,37 @@ Below are the order types, execution instructions, and time-in-force options sup
 
 ### Order types
 
-| Order Type    | Supported | Notes                                   |
-|---------------|-----------|-----------------------------------------|
-| `MARKET`      | ✓         | Immediate execution at market price.    |
-| `LIMIT`       | ✓         | Execution at specified price or better. |
-| `STOP_MARKET` | ✓         | Conditional market order on trigger.    |
-| `STOP_LIMIT`  | ✓         | Conditional limit order on trigger.     |
+| Nautilus order type    | Deribit order type | Supported | Notes                                   |
+|------------------------|--------------------|-----------|-----------------------------------------|
+| `MARKET`               | `market`           | ✓         | Immediate execution at market price.    |
+| `LIMIT`                | `limit`            | ✓         | Execution at specified price or better. |
+| `STOP_MARKET`          | `stop_market`      | ✓         | Conditional market order on trigger.    |
+| `STOP_LIMIT`           | `stop_limit`       | ✓         | Conditional limit order on trigger.     |
+| `MARKET_IF_TOUCHED`    | `take_market`      | ✓         | Take‑profit style market order.         |
+| `LIMIT_IF_TOUCHED`     | `take_limit`       | ✓         | Take‑profit style limit order.          |
+| `TRAILING_STOP_MARKET` | `trailing_stop`    | -         | *Not currently implemented*.            |
+| `TRAILING_STOP_LIMIT`  | N/A                | -         | *Not supported by Deribit*.             |
+| `MARKET_TO_LIMIT`      | `market_limit`     | -         | *Not currently implemented*.            |
 
 ### Execution instructions
 
-| Instruction    | Supported | Notes                                           |
-|----------------|-----------|-------------------------------------------------|
-| `post_only`    | ✓         | Order will be rejected if it would take liquidity. Uses `reject_post_only=true`. |
-| `reduce_only`  | ✓         | Order can only reduce an existing position.     |
+| Instruction   | Supported | Notes                                                                            |
+|---------------|-----------|----------------------------------------------------------------------------------|
+| `post_only`   | ✓         | Order will be rejected if it would take liquidity. Uses `reject_post_only=true`. |
+| `reduce_only` | ✓         | Order can only reduce an existing position.                                      |
 
 ### Time in force
 
-| Time in force | Supported | Notes                                                 |
-|---------------|-----------|-------------------------------------------------------|
-| `GTC`         | ✓         | Good Till Canceled (`good_til_cancelled`).            |
-| `GTD`         | ✓         | Good Till Day - expires at 8:00 UTC (`good_til_day`). |
-| `IOC`         | ✓         | Immediate or Cancel (`immediate_or_cancel`).          |
-| `FOK`         | ✓         | Fill or Kill (`fill_or_kill`).                        |
+| Time in force | Supported | Notes                                                |
+|---------------|-----------|------------------------------------------------------|
+| `GTC`         | ✓         | Good till canceled (`good_til_cancelled`).           |
+| `GTD`         | ✓         | Good till day. Expires at 8:00 UTC (`good_til_day`). |
+| `IOC`         | ✓         | Immediate or cancel (`immediate_or_cancel`).         |
+| `FOK`         | ✓         | Fill or kill (`fill_or_kill`).                       |
+
+Deribit applies time in force to limit-style orders. The adapter omits `time_in_force`
+for `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` orders because Deribit rejects that
+parameter on market-style order types.
 
 :::note
 **GTD on Deribit**: Unlike other exchanges where GTD accepts an arbitrary expiry time,
@@ -370,7 +401,7 @@ will be logged as warnings and the order will use the exchange's fixed expiry be
 
 Conditional orders (stop orders) support different trigger price sources:
 
-| Trigger Type  | Supported | Notes                                 |
+| Trigger type  | Supported | Notes                                 |
 |---------------|-----------|---------------------------------------|
 | `last_price`  | ✓         | Uses the last traded price (default). |
 | `mark_price`  | ✓         | Uses the mark price.                  |
@@ -390,11 +421,13 @@ strategy.submit_order(stop_order)
 
 ### Batch operations
 
-| Operation     | Supported | Notes                                      |
-|---------------|-----------|--------------------------------------------|
-| Batch Submit  | -         | *Not yet implemented*.                     |
-| Batch Modify  | -         | *Not yet implemented*.                     |
-| Batch Cancel  | -         | *Not yet implemented*.                     |
+| Operation                | Supported | Notes                                                                    |
+|--------------------------|-----------|--------------------------------------------------------------------------|
+| Submit order list        | ✓         | Sends each order as an individual Deribit order. No atomic venue batch.  |
+| Batch cancel by order ID | ✓         | Sends individual `private/cancel` requests for each venue order ID.      |
+| Cancel all by instrument | ✓         | Uses `private/cancel_all_by_instrument` when no side filter is supplied. |
+| Side‑filtered cancel all | ✓         | Filters cached open orders locally, then cancels each matching order.    |
+| Batch modify             | -         | *Not currently implemented*: single order modify is supported.           |
 
 ### Post-only behavior
 
@@ -432,12 +465,12 @@ This provides several advantages:
 
 ### Position management
 
-| Feature           | Supported | Notes                                     |
-|-------------------|-----------|-------------------------------------------|
-| Query positions   | ✓         | Real‑time position updates.               |
-| Position mode     | -         | Deribit uses net position mode only.      |
-| Leverage control  | -         | Leverage set at account level via UI.     |
-| Margin mode       | -         | Portfolio margin via Deribit UI settings. |
+| Feature          | Supported | Notes                                                             |
+|------------------|-----------|-------------------------------------------------------------------|
+| Query positions  | ✓         | Real‑time position updates.                                       |
+| Position mode    | -         | *Not supported by Deribit*: net position mode only.               |
+| Leverage control | -         | *Not supported by Deribit*: no direct leverage setting.           |
+| Margin mode      | -         | *Not currently implemented*: Deribit exposes account margin modes. |
 
 ### Order querying
 
@@ -450,12 +483,14 @@ This provides several advantages:
 
 ### Contingent orders
 
-| Feature             | Supported | Notes                              |
-|---------------------|-----------|------------------------------------|
-| Order lists         | -         | *Not supported*.                   |
-| OCO orders          | -         | *Not supported*.                   |
-| Bracket orders      | -         | *Not supported*.                   |
-| Conditional orders  | ✓         | Stop market and stop limit orders. |
+| Feature                        | Supported | Notes                                                              |
+|--------------------------------|-----------|--------------------------------------------------------------------|
+| Order lists                    | ✓*        | Submitted sequentially. The adapter does not provide atomic lists. |
+| Native linked orders           | -         | *Not currently implemented*: Deribit supports linked orders.       |
+| OCO orders                     | -         | *Not currently implemented*: Deribit supports OCO links.           |
+| Bracket orders                 | -         | *Not currently implemented*: Deribit supports OTOCO links.         |
+| Conditional stop orders        | ✓         | Stop market and stop limit orders.                                 |
+| Conditional take‑profit orders | ✓         | Market‑if‑touched and limit‑if‑touched orders.                     |
 
 ### Liquidation handling
 
@@ -463,12 +498,12 @@ Deribit tags any trade that was triggered by a liquidation. On the
 `user.trades` stream and `private/get_user_trades_*` endpoints, the optional
 `liquidation` field indicates which side was being liquidated:
 
-| Value  | Meaning                                   |
-|--------|-------------------------------------------|
-| `"M"`  | Maker side was liquidated.                |
-| `"T"`  | Taker side was liquidated.                |
-| `"MT"` | Both sides were liquidated.               |
-| absent | Normal (non‑liquidation) trade.           |
+| Value  | Meaning                       |
+|--------|-------------------------------|
+| `"M"`  | Maker side was liquidated.    |
+| `"T"`  | Taker side was liquidated.    |
+| `"MT"` | Both sides were liquidated.   |
+| absent | Normal non‑liquidation trade. |
 
 The adapter logs a warning for each liquidation-tagged fill with the
 instrument, trade ID, order ID, and liquidation side, and then emits the
@@ -504,45 +539,47 @@ Subscribe from an actor or strategy with `DataType(DeribitVolatilityIndex)`.
 The `index_name` metadata key is required:
 
 ```python
-from nautilus_trader.adapters.deribit.constants import DERIBIT_CLIENT_ID
-from nautilus_trader.adapters.deribit.data import DeribitVolatilityIndex
+from nautilus_trader.adapters.deribit import DeribitVolatilityIndex
+from nautilus_trader.model import ClientId
 from nautilus_trader.model.data import DataType
 
 self.subscribe_data(
     data_type=DataType(DeribitVolatilityIndex, metadata={"index_name": "btc_usd"}),
-    client_id=DERIBIT_CLIENT_ID,
+    client_id=ClientId.from_str("DERIBIT"),
 )
 ```
 
 ## Rate limiting
 
-Deribit uses a credit-based rate limiting system. Each API request consumes credits, which are replenished
-over time. The adapter enforces these quotas to prevent rate limit violations.
+Deribit uses credit-based and endpoint-specific rate limits. The official Deribit limits are
+authoritative, and they can vary by endpoint, account tier, and current venue policy. The adapter
+adds local token buckets to reduce avoidable throttling, but it does not replace Deribit's own
+server-side checks.
 
-### REST limits
+### HTTP limits
 
-| Bucket / Key        | Limit            | Notes                                       |
-|---------------------|------------------|---------------------------------------------|
-| `deribit:global`    | 20 req/sec (100 burst) | Default bucket for all REST requests. |
-| `deribit:orders`    | 5 req/sec (20 burst)   | Matching engine operations (buy, sell, edit, cancel). |
-| `deribit:account`   | 5 req/sec              | Account information endpoints.        |
+| Bucket / key       | Adapter bucket          | Notes                                              |
+|--------------------|-------------------------|----------------------------------------------------|
+| `deribit:global`   | 20 req/sec, 100 burst   | Default bucket for non‑matching HTTP requests.     |
+| `deribit:orders`   | 5 req/sec, 20 burst     | Matching‑engine HTTP bucket for low‑level clients. |
+| `deribit:account`  | 5 req/sec, no burst     | Account information endpoints.                     |
 
 ### WebSocket limits
 
-| Operation           | Limit            | Notes                                       |
-|---------------------|------------------|---------------------------------------------|
-| Subscribe/unsubscribe | 3 req/sec (10 burst) | Subscription operations.              |
-| Order operations    | 5 req/sec (20 burst)  | Buy, sell, edit, cancel via WebSocket. |
+| Operation             | Adapter bucket        | Notes                                      |
+|-----------------------|-----------------------|--------------------------------------------|
+| Subscribe/unsubscribe | 3 req/sec, 10 burst   | Subscription operations.                   |
+| Order operations      | 5 req/sec, 20 burst   | Buy, sell, edit, and cancel via WebSocket. |
 
 :::note
-The Nautilus adapter uses WebSocket for order submission (not REST) for lower latency.
+The Nautilus adapter uses WebSocket for order submission (not HTTP) for lower latency.
 Order operations are rate-limited by `DERIBIT_WS_ORDER_QUOTA` (5 req/sec, 20 burst).
 :::
 
 ### Credit-based system details
 
-Deribit uses a sophisticated credit-based rate limiting system where credits are replenished
-continuously at a fixed rate. Each second, credits "drip" back into your sub-account's credit pool.
+Deribit replenishes non-matching-engine credits continuously. Current public documentation lists
+the default non-matching-engine pool as follows:
 
 **Non-matching engine requests:**
 
@@ -559,17 +596,24 @@ continuously at a fixed rate. Each second, credits "drip" back into your sub-acc
 | Sustained rate | 5 requests/sec | Continuous rate limit.           |
 | Burst capacity | 20 requests    | Maximum burst before throttling. |
 
-Higher matching engine limits are available for market makers and high-volume traders based on
+Higher matching-engine limits are available for market makers and high-volume traders based on
 7-day trading volume tiers.
 
-The Nautilus adapter implements this using token bucket rate limiters configured as:
+Some Deribit endpoints have stricter method-specific limits. For example, current venue docs list
+`public/get_instruments` at 1 request per second with a 50 request burst, and subscription methods
+at about 3.3 requests per second with a 10 request burst. Keep `product_types` scoped to the
+families you need and avoid repeated full instrument reloads in live systems.
 
-- `DERIBIT_HTTP_REST_QUOTA`: 20 req/sec with 100 burst (non-matching REST)
-- `DERIBIT_HTTP_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine REST)
-- `DERIBIT_WS_ORDER_QUOTA`: 5 req/sec with 20 burst (matching engine WebSocket)
-- `DERIBIT_WS_SUBSCRIPTION_QUOTA`: 3 req/sec with 10 burst (subscribe/unsubscribe)
+The Nautilus adapter implements broad token bucket rate limiters configured as:
 
-For more details, see the [Rate Limits article](https://support.deribit.com/hc/en-us/articles/25944617523357-Rate-Limits).
+- `DERIBIT_HTTP_REST_QUOTA`: 20 req/sec with 100 burst (non-matching HTTP)
+- `DERIBIT_HTTP_ORDER_QUOTA`: 5 req/sec with 20 burst (matching-engine HTTP)
+- `DERIBIT_HTTP_ACCOUNT_QUOTA`: 5 req/sec with no burst (account HTTP)
+- `DERIBIT_WS_ORDER_QUOTA`: 5 req/sec with 20 burst (matching-engine WebSocket)
+- `DERIBIT_WS_SUBSCRIPTION_QUOTA`: 3 req/sec with 10 burst (subscribe and unsubscribe)
+
+For more details, see the
+[Rate Limits article](https://support.deribit.com/hc/en-us/articles/25944617523357-Rate-Limits).
 
 :::warning
 Deribit returns error code `10028` (too_many_requests) when you exceed the allowed quota.
@@ -580,11 +624,10 @@ Repeated violations may result in temporary throttling.
 
 ### Platform limits
 
-| Limit                             | Value |
-|-----------------------------------|-------|
-| Maximum connections per IP        | 32    |
-| Maximum sessions per API key      | 16    |
-| Maximum API keys per (sub)account | 8     |
+| Limit                                   | Current Deribit guidance |
+|-----------------------------------------|--------------------------|
+| Active sessions per API key or login    | 16                       |
+| Web app connections per browser session | 2                        |
 
 ### Session-based authentication
 
@@ -600,7 +643,7 @@ authentication scope:
 
 1. WebSocket connects to Deribit.
 2. Client authenticates using `client_signature` grant type with session scope.
-3. Tokens are automatically refreshed at 80% of expiry time (continuous refresh cycle).
+3. Tokens are refreshed before expiry.
 4. On reconnection, re-authentication is retried with exponential backoff (up to 3 attempts).
    If all attempts fail, only public channel subscriptions are restored.
 
@@ -619,7 +662,7 @@ The adapter follows Deribit's
    lower latency, and reduced rate limit consumption.
 2. **Authenticates all connections** when credentials are provided. Authenticated users benefit
    from higher rate limits and are less likely to be IP rate-limited.
-3. **Implements heartbeats** (30 second interval) to maintain connection health and detect
+3. **Implements heartbeats** (30 second interval by default) to maintain connection health and detect
    disconnections early.
 4. **Handles reconnection** automatically with re-authentication and subscription recovery.
 
@@ -630,8 +673,8 @@ high-load periods.
 :::
 
 :::note
-The adapter uses a 30 second heartbeat interval, which is the lower bound of Deribit's recommended
-30-60 second range. More frequent heartbeats may trigger stricter rate limits.
+The adapter uses a 30 second heartbeat interval by default. Deribit requires WebSocket heartbeat
+intervals to be at least 10 seconds.
 :::
 
 ## Authentication
@@ -640,7 +683,8 @@ Deribit uses API key authentication with HMAC-SHA256 signatures for private endp
 
 To create API credentials:
 
-1. Log into your Deribit account at [deribit.com](https://www.deribit.com) (or [test.deribit.com](https://test.deribit.com) for testnet).
+1. Log into your Deribit account at [deribit.com](https://www.deribit.com)
+   (or [test.deribit.com](https://test.deribit.com) for testnet).
 2. Navigate to **Account** -> **API**.
 3. Click **Add new key** and configure permissions:
    - Enable **read** for market data access
@@ -678,21 +722,27 @@ Deribit provides a testnet environment for testing strategies without real funds
 To use the testnet, set `environment=DeribitEnvironment.TESTNET` in your client configuration:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
+from nautilus_trader.adapters.deribit import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit import DeribitEnvironment
+from nautilus_trader.adapters.deribit import DeribitExecClientConfig
+from nautilus_trader.adapters.deribit import DeribitProductType
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
 
-config = TradingNodeConfig(
-    data_clients={
-        DERIBIT: DeribitDataClientConfig(
-            environment=DeribitEnvironment.TESTNET,
-            # ... other config
-        ),
-    },
-    exec_clients={
-        DERIBIT: DeribitExecClientConfig(
-            environment=DeribitEnvironment.TESTNET,
-            # ... other config
-        ),
-    },
+product_types = [DeribitProductType.FUTURE]
+trader_id = TraderId.from_str("TRADER-001")
+account_id = AccountId.from_str("DERIBIT-001")
+
+data_config = DeribitDataClientConfig(
+    product_types=product_types,
+    environment=DeribitEnvironment.TESTNET,
+)
+
+exec_config = DeribitExecClientConfig(
+    trader_id=trader_id,
+    account_id=account_id,
+    product_types=product_types,
+    environment=DeribitEnvironment.TESTNET,
 )
 ```
 
@@ -711,22 +761,22 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 
 ### Data client configuration options
 
-| Option                             | Default    | Description |
-|------------------------------------|------------|-------------|
-| `api_key`                          | `None`     | Deribit API key; loads from environment variables when omitted. |
-| `api_secret`                       | `None`     | Deribit API secret; loads from environment variables when omitted. |
-| `product_types`                    | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
-| `environment`                      | `None`     | Environment enum (`MAINNET` or `TESTNET`). |
-| `base_url_http`                    | `None`     | Override for the HTTP REST base URL. |
-| `base_url_ws`                      | `None`     | Override for the WebSocket base URL. |
-| `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
-| `http_timeout_secs`                | `60`       | Request timeout (seconds) for REST calls. |
-| `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors. |
-| `retry_delay_initial_ms`           | `1,000`    | Initial delay (milliseconds) before retrying. |
-| `retry_delay_max_ms`               | `10,000`   | Maximum delay (milliseconds) between retries. |
-| `update_instruments_interval_mins` | `60`       | Interval (minutes) between instrument refreshes. |
-| `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe; see [Lazy‑load on subscribe](#lazy-load-on-subscribe). |
-| `transport_backend`                | `Sockudo`  | WebSocket transport backend. |
+| Option                             | Default    | Description                                                        |
+|------------------------------------|------------|--------------------------------------------------------------------|
+| `api_key`                          | `None`     | Deribit API key. Loads from environment variables when omitted.    |
+| `api_secret`                       | `None`     | Deribit API secret. Loads from environment variables when omitted. |
+| `product_types`                    | `[FUTURE]` | Product types to load.                                             |
+| `environment`                      | `MAINNET`  | Environment enum (`MAINNET` or `TESTNET`).                         |
+| `base_url_http`                    | `None`     | Override for the HTTP JSON-RPC base URL.                           |
+| `base_url_ws`                      | `None`     | Override for the WebSocket base URL.                               |
+| `proxy_url`                        | `None`     | Optional proxy URL for HTTP and WebSocket transports.              |
+| `http_timeout_secs`                | `60`       | Request timeout in seconds for HTTP calls.                         |
+| `max_retries`                      | `3`        | Maximum retry attempts for recoverable errors.                     |
+| `retry_delay_initial_ms`           | `1,000`    | Initial delay in milliseconds before retrying.                     |
+| `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
+| `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
+| `update_instruments_interval_mins` | `60`       | Interval in minutes between instrument refreshes.                  |
+| `auto_load_missing_instruments`    | `False`    | Lazy‑load uncached instruments on subscribe.                       |
 
 #### Lazy-load on subscribe
 
@@ -742,63 +792,72 @@ HTTP failures are logged and the WebSocket subscribe is skipped.
 
 ### Execution client configuration options
 
-| Option                   | Default    | Description |
-|--------------------------|------------|-------------|
-| `api_key`                | `None`     | Deribit API key; loads from environment variables when omitted. |
-| `api_secret`             | `None`     | Deribit API secret; loads from environment variables when omitted. |
-| `product_types`          | `None`     | Product types to load (Future, Option, Spot, etc.). If `None`, defaults to Future. |
-| `environment`            | `None`     | Environment enum (`MAINNET` or `TESTNET`). |
-| `base_url_http`          | `None`     | Override for the HTTP REST base URL. |
-| `base_url_ws`            | `None`     | Override for the WebSocket base URL. |
-| `proxy_url`              | `None`     | Optional proxy URL for HTTP and WebSocket transports. |
-| `http_timeout_secs`      | `60`       | Request timeout (seconds) for REST calls. |
-| `max_retries`            | `3`        | Maximum retry attempts for recoverable errors. |
-| `retry_delay_initial_ms` | `1,000`    | Initial delay (milliseconds) before retrying. |
-| `retry_delay_max_ms`     | `10,000`   | Maximum delay (milliseconds) between retries. |
-| `transport_backend`      | `Sockudo`  | WebSocket transport backend. |
+| Option                   | Default    | Description                                                        |
+|--------------------------|------------|--------------------------------------------------------------------|
+| `trader_id`              | Required   | Nautilus trader ID for generated reports and events.               |
+| `account_id`             | Required   | Nautilus account ID for generated reports and events.              |
+| `api_key`                | `None`     | Deribit API key. Loads from environment variables when omitted.    |
+| `api_secret`             | `None`     | Deribit API secret. Loads from environment variables when omitted. |
+| `product_types`          | `[FUTURE]` | Product types to load.                                             |
+| `environment`            | `MAINNET`  | Environment enum (`MAINNET` or `TESTNET`).                         |
+| `base_url_http`          | `None`     | Override for the HTTP JSON-RPC base URL.                           |
+| `base_url_ws`            | `None`     | Override for the WebSocket base URL.                               |
+| `proxy_url`              | `None`     | Optional proxy URL for HTTP and WebSocket transports.              |
+| `http_timeout_secs`      | `60`       | Request timeout in seconds for HTTP calls.                         |
+| `max_retries`            | `3`        | Maximum retry attempts for recoverable errors.                     |
+| `retry_delay_initial_ms` | `1,000`    | Initial delay in milliseconds before retrying.                     |
+| `retry_delay_max_ms`     | `10,000`   | Maximum delay in milliseconds between retries.                     |
+
+Rust configs also expose `transport_backend`. The default is `Sockudo` when the
+`transport-sockudo` Cargo feature is enabled, and `Tungstenite` otherwise. The Python bindings use
+the compiled default.
 
 ### Production configuration
 
-Below is an example configuration for a live trading node using Deribit data and execution clients:
+Below is an example live node using Deribit data and execution clients:
 
 ```python
-from nautilus_trader.adapters.deribit import DERIBIT
 from nautilus_trader.adapters.deribit import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit import DeribitDataClientFactory
+from nautilus_trader.adapters.deribit import DeribitEnvironment
 from nautilus_trader.adapters.deribit import DeribitExecClientConfig
-from nautilus_trader.adapters.deribit import DeribitLiveDataClientFactory
-from nautilus_trader.adapters.deribit import DeribitLiveExecClientFactory
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.nautilus_pyo3 import DeribitEnvironment
-from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
-from nautilus_trader.live.node import TradingNode
+from nautilus_trader.adapters.deribit import DeribitExecutionClientFactory
+from nautilus_trader.adapters.deribit import DeribitProductType
+from nautilus_trader.common import Environment
+from nautilus_trader.live import LiveNode
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import TraderId
 
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        DERIBIT: DeribitDataClientConfig(
-            api_key=None,           # Uses DERIBIT_API_KEY env var
-            api_secret=None,        # Uses DERIBIT_API_SECRET env var
-            product_types=(DeribitProductType.Future,),
+product_types = [DeribitProductType.FUTURE]
+trader_id = TraderId.from_str("TRADER-001")
+account_id = AccountId.from_str("DERIBIT-001")
+
+node = (
+    LiveNode.builder("DERIBIT-001", trader_id, Environment.LIVE)
+    .add_data_client(
+        None,
+        DeribitDataClientFactory(),
+        DeribitDataClientConfig(
+            product_types=product_types,
             environment=DeribitEnvironment.MAINNET,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
-        ),
-    },
-    exec_clients={
-        DERIBIT: DeribitExecClientConfig(
             api_key=None,
             api_secret=None,
-            product_types=(DeribitProductType.Future,),
-            environment=DeribitEnvironment.MAINNET,
-            instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
-    },
+    )
+    .add_exec_client(
+        None,
+        DeribitExecutionClientFactory(),
+        DeribitExecClientConfig(
+            trader_id=trader_id,
+            account_id=account_id,
+            product_types=product_types,
+            environment=DeribitEnvironment.MAINNET,
+            api_key=None,
+            api_secret=None,
+        ),
+    )
+    .build()
 )
-
-node = TradingNode(config=config)
-node.add_data_client_factory(DERIBIT, DeribitLiveDataClientFactory)
-node.add_exec_client_factory(DERIBIT, DeribitLiveExecClientFactory)
-node.build()
 ```
 
 ### API credentials
@@ -826,22 +885,23 @@ We recommend using environment variables to manage your credentials.
 The `product_types` configuration option controls which Deribit product families are loaded.
 Available options via the `DeribitProductType` enum:
 
-- `DeribitProductType.Future` - Perpetual and dated futures.
-- `DeribitProductType.Option` - Call and put options.
-- `DeribitProductType.Spot` - Spot trading pairs.
-- `DeribitProductType.FutureCombo` - Future spread instruments.
-- `DeribitProductType.OptionCombo` - Option spread instruments.
+- `DeribitProductType.FUTURE` - Perpetual and dated futures.
+- `DeribitProductType.OPTION` - Call and put options.
+- `DeribitProductType.SPOT` - Spot trading pairs.
+- `DeribitProductType.FUTURE_COMBO` - Future spread instruments.
+- `DeribitProductType.OPTION_COMBO` - Option spread instruments.
 
 Example loading multiple product types:
 
 ```python
-from nautilus_trader.core.nautilus_pyo3 import DeribitProductType
+from nautilus_trader.adapters.deribit import DeribitDataClientConfig
+from nautilus_trader.adapters.deribit import DeribitProductType
 
 config = DeribitDataClientConfig(
-    product_types=(
-        DeribitProductType.Future,
-        DeribitProductType.Option,
-    ),
+    product_types=[
+        DeribitProductType.FUTURE,
+        DeribitProductType.OPTION,
+    ],
     # ... other config
 )
 ```

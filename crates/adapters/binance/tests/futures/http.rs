@@ -38,12 +38,21 @@ use nautilus_binance::{
         BinanceTimeInForce,
     },
     futures::http::{
-        client::BinanceRawFuturesHttpClient,
+        client::{BinanceFuturesHttpClient, BinanceRawFuturesHttpClient},
         query::{BinanceNewOrderParamsBuilder, BinanceOpenInterestHistParams},
     },
 };
+use nautilus_common::cache::InstrumentLookupError;
+use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_model::{data::BarType, identifiers::InstrumentId};
 use rstest::rstest;
 use serde_json::json;
+
+#[derive(Debug, Clone, Copy)]
+enum RequiredInstrumentCachePath {
+    Trades,
+    Bars,
+}
 
 #[derive(Clone)]
 struct TestServerState {
@@ -395,6 +404,47 @@ fn create_raw_client(
         None,
     )
     .unwrap()
+}
+
+#[rstest]
+#[case::trades(RequiredInstrumentCachePath::Trades)]
+#[case::bars(RequiredInstrumentCachePath::Bars)]
+#[tokio::test]
+async fn test_public_market_data_request_missing_cached_instrument_returns_lookup_error(
+    #[case] path: RequiredInstrumentCachePath,
+) {
+    let client = BinanceFuturesHttpClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Live,
+        get_atomic_clock_realtime(),
+        None,
+        None,
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        Some(1),
+        None,
+        false,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let result = match path {
+        RequiredInstrumentCachePath::Trades => {
+            client.request_trades(instrument_id, None).await.map(|_| ())
+        }
+        RequiredInstrumentCachePath::Bars => {
+            let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+            client
+                .request_bars(bar_type, None, None, None)
+                .await
+                .map(|_| ())
+        }
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        InstrumentLookupError::not_found(instrument_id).to_string()
+    );
 }
 
 #[rstest]

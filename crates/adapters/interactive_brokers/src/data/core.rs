@@ -31,7 +31,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use ibapi::{
     contracts::{Contract, Currency as IBCurrency, Exchange as IBExchange, SecurityType, Symbol},
-    market_data::historical::ToDuration,
+    market_data::{IgnoreSize, historical::ToDuration},
 };
 use nautilus_common::{
     clients::DataClient,
@@ -424,7 +424,7 @@ impl InteractiveBrokersDataClient {
             security_type: SecurityType::Stock,
             last_trade_date_or_contract_month: String::new(),
             strike: f64::MAX,
-            right: String::new(),
+            right: None,
             multiplier: String::new(),
             exchange: IBExchange::from(exchange.unwrap_or("SMART")),
             currency: IBCurrency::from(currency.unwrap_or("USD")),
@@ -432,7 +432,7 @@ impl InteractiveBrokersDataClient {
             primary_exchange: IBExchange::from(""),
             trading_class: String::new(),
             include_expired: false,
-            security_id_type: String::new(),
+            security_id_type: None,
             security_id: String::new(),
             combo_legs_description: String::new(),
             combo_legs: Vec::new(),
@@ -1834,17 +1834,19 @@ impl DataClient for InteractiveBrokersDataClient {
                 let current_end_ib = current_end_date.as_ref().map(chrono_to_ib_datetime);
 
                 // Make request for this batch
-                match client_clone
-                    .historical_ticks_bid_ask(
-                        &contract,
-                        current_start_date.as_ref().map(chrono_to_ib_datetime),
-                        current_end_ib,
-                        number_of_ticks,
-                        trading_hours,
-                        false, // ignore_size
-                    )
-                    .await
-                {
+                let mut builder = client_clone
+                    .historical_ticks(&contract, number_of_ticks)
+                    .trading_hours(trading_hours);
+
+                if let Some(start) = current_start_date.as_ref().map(chrono_to_ib_datetime) {
+                    builder = builder.starting(start);
+                }
+
+                if let Some(end) = current_end_ib {
+                    builder = builder.ending(end);
+                }
+
+                match builder.bid_ask(IgnoreSize::No).await {
                     Ok(mut subscription) => {
                         let mut batch_quotes = Vec::new();
 
@@ -2013,16 +2015,19 @@ impl DataClient for InteractiveBrokersDataClient {
                 let current_end_ib = current_end_date.as_ref().map(chrono_to_ib_datetime);
 
                 // Make request for this batch
-                match client_clone
-                    .historical_ticks_trade(
-                        &contract,
-                        current_start_date.as_ref().map(chrono_to_ib_datetime),
-                        current_end_ib,
-                        number_of_ticks,
-                        trading_hours,
-                    )
-                    .await
-                {
+                let mut builder = client_clone
+                    .historical_ticks(&contract, number_of_ticks)
+                    .trading_hours(trading_hours);
+
+                if let Some(start) = current_start_date.as_ref().map(chrono_to_ib_datetime) {
+                    builder = builder.starting(start);
+                }
+
+                if let Some(end) = current_end_ib {
+                    builder = builder.ending(end);
+                }
+
+                match builder.trade().await {
                     Ok(mut subscription) => {
                         let mut batch_trades = Vec::new();
 
@@ -2184,14 +2189,12 @@ impl DataClient for InteractiveBrokersDataClient {
                 let end_ib = chrono_to_ib_datetime(&seg_end);
 
                 match client_clone
-                    .historical_data(
-                        &contract,
-                        Some(end_ib),
-                        seg_duration,
-                        ib_bar_size,
-                        Some(ib_what_to_show),
-                        trading_hours,
-                    )
+                    .historical_data(&contract, ib_bar_size)
+                    .ending(end_ib)
+                    .duration(seg_duration)
+                    .what_to_show(ib_what_to_show)
+                    .trading_hours(trading_hours)
+                    .fetch()
                     .await
                 {
                     Ok(historical_data) => {

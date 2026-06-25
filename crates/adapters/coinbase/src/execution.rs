@@ -941,19 +941,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        let order = {
-            let cache = self.core.cache();
-            let order = cache
-                .order(&cmd.client_order_id)
-                .ok_or_else(|| anyhow::anyhow!("Order not found: {}", cmd.client_order_id))?;
-
-            if order.is_closed() {
-                log::warn!("Cannot submit closed order {}", order.client_order_id());
-                return Ok(());
-            }
-
-            order.clone()
-        };
+        let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
+        if order.is_closed() {
+            log::warn!("Cannot submit closed order {}", order.client_order_id());
+            return Ok(());
+        }
 
         // The connect-time bootstrap caches only the product family this
         // client was configured for (Cash -> spot, Margin -> futures). An
@@ -1137,7 +1129,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             false,
                         );
                     } else if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous submit failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1260,7 +1252,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 }
                 Err(e) => {
                     if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1313,7 +1305,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                 }
                 Err(e) => {
                     if is_coinbase_ambiguous_command_failure(&e) {
-                        log::error!(
+                        log::warn!(
                             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
                     } else {
@@ -1411,7 +1403,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     }
                     Err(e) => {
                         if is_coinbase_ambiguous_command_failure(&e) {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous cancel-all failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
                                 chunk.len()
                             );
@@ -1500,7 +1492,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     }
                     Err(e) => {
                         if is_coinbase_ambiguous_command_failure(&e) {
-                            log::error!(
+                            log::warn!(
                                 "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
                                 chunk.len()
                             );
@@ -2257,6 +2249,7 @@ mod tests {
             None,
             None,
             Some(Quantity::from("0.00000001")),
+            None,
             None,
             None,
             None,

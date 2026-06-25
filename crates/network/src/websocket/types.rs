@@ -99,6 +99,7 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message as TgMessage;
 
     use super::*;
+    use crate::RECONNECTED;
 
     #[rstest]
     fn channel_handler_drops_invalid_utf8_text_without_panic() {
@@ -122,6 +123,18 @@ mod tests {
         let received = rx.try_recv().expect("text should arrive");
         match received {
             TgMessage::Text(t) => assert_eq!(t.as_str(), "hello"),
+            other => panic!("expected text, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn channel_handler_forwards_reconnected_text_to_rust_consumers() {
+        let (handler, mut rx) = channel_message_handler();
+        handler(Message::text(RECONNECTED));
+
+        let received = rx.try_recv().expect("reconnect text should arrive");
+        match received {
+            TgMessage::Text(t) => assert_eq!(t.as_str(), RECONNECTED),
             other => panic!("expected text, was {other:?}"),
         }
     }

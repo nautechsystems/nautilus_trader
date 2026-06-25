@@ -51,6 +51,7 @@ pub struct DataMarkerCapture {
     hifi: AHashSet<String>,
     last_flush: UnixNanos,
     safety_flush_interval: Duration,
+    lane_failed: bool,
 }
 
 impl DataMarkerCapture {
@@ -71,6 +72,7 @@ impl DataMarkerCapture {
             hifi: config.high_fidelity.iter().cloned().collect(),
             last_flush: UnixNanos::default(),
             safety_flush_interval: config.safety_flush_interval,
+            lane_failed: false,
         }
     }
 
@@ -140,8 +142,10 @@ impl DataMarkerCapture {
         }
     }
 
-    fn submit_dict(&self, entry: StreamDictEntry) {
-        let _ = self.writer.put_dict(entry);
+    fn submit_dict(&mut self, entry: StreamDictEntry) {
+        if self.writer.put_dict(entry).is_err() {
+            self.note_lane_failure();
+        }
     }
 
     fn flush_snapshot(&mut self, now: UnixNanos) {
@@ -158,8 +162,21 @@ impl DataMarkerCapture {
     }
 
     fn submit_marker(&mut self, msg: MarkerMsg, marker_seq: u64) {
-        let _ = self.writer.submit(msg, marker_seq);
+        if self.writer.submit(msg, marker_seq).is_err() {
+            self.note_lane_failure();
+        }
         self.marker_seq = marker_seq;
+    }
+
+    // The marker lane is best-effort by contract, but its death must be visible:
+    // without this latch the run's marker_seq just ends with no diagnostic.
+    fn note_lane_failure(&mut self) {
+        if !self.lane_failed {
+            self.lane_failed = true;
+            log::error!(
+                "Marker writer lane failed; data marker capture is disabled for the rest of the run"
+            );
+        }
     }
 }
 

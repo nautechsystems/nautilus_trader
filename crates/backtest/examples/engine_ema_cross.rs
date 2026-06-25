@@ -18,6 +18,9 @@
 //! Demonstrates a dual-EMA crossover strategy running on synthetic quote data
 //! for the AUD/USD FX pair on a simulated venue.
 //!
+//! Edit the constants below to change the venue, starting balance, trade size,
+//! and EMA periods.
+//!
 //! Run with: `cargo run -p nautilus-backtest --features examples --example engine-ema-cross`
 
 use nautilus_backtest::{
@@ -32,6 +35,12 @@ use nautilus_model::{
     types::{Money, Price, Quantity},
 };
 use nautilus_trading::examples::strategies::EmaCross;
+
+const VENUE: &str = "SIM";
+const STARTING_BALANCE: &str = "1_000_000 USD";
+const TRADE_SIZE: &str = "100000";
+const EMA_FAST_PERIOD: usize = 10;
+const EMA_SLOW_PERIOD: usize = 20;
 
 fn quote(instrument_id: InstrumentId, bid: &str, ask: &str, ts: u64) -> Data {
     Data::Quote(QuoteTick::new(
@@ -89,12 +98,12 @@ fn main() -> anyhow::Result<()> {
 
     engine.add_venue(
         SimulatedVenueConfig::builder()
-            .venue(Venue::from("SIM"))
+            .venue(Venue::from(VENUE))
             .oms_type(OmsType::Hedging)
             .account_type(AccountType::Margin)
             .book_type(BookType::L1_MBP)
-            .starting_balances(vec![Money::from("1_000_000 USD")])
-            .build(),
+            .starting_balances(vec![Money::from(STARTING_BALANCE)])
+            .build()?,
     )?;
 
     let instrument = InstrumentAny::CurrencyPair(audusd_sim());
@@ -103,9 +112,9 @@ fn main() -> anyhow::Result<()> {
 
     engine.add_strategy(EmaCross::new(
         instrument_id,
-        Quantity::from("100000"),
-        10,
-        20,
+        Quantity::from(TRADE_SIZE),
+        EMA_FAST_PERIOD,
+        EMA_SLOW_PERIOD,
     ))?;
 
     let quotes = generate_quotes(instrument_id);

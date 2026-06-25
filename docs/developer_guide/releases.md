@@ -113,7 +113,11 @@ an absent crate would leave that feature unusable.
 
 Post-publish verification treats an existing crate version as `previously_published` only when
 crates.io shows it was trusted-published by this repository. It still fails for user-published
-crate versions, wrong trusted-publishing repositories, and checksum or sparse-index mismatches.
+crate versions unless `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` names each recovered `crate@version`
+entry for emergency token-publish recovery. Accepted manual entries are recorded in
+`crates-manifest.json` with `release_status: "manual_token_publish"`, and malformed or unused
+exception entries fail the job. Wrong trusted-publishing repositories and checksum or sparse-index
+mismatches also fail.
 
 ## Release checklist
 

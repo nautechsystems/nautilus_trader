@@ -15,17 +15,12 @@
 
 //! Core component for execution algorithms.
 
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-    rc::Rc,
-};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::IndexMap;
 use nautilus_common::{
-    actor::{DataActorConfig, DataActorCore},
+    actor::{DataActorConfig, DataActorCore, DataActorNative},
     cache::Cache,
     clock::Clock,
     msgbus::TypedHandler,
@@ -58,8 +53,10 @@ pub struct StrategyEventHandlers {
 /// spawn ID tracking and strategy subscriptions. It wraps a [`DataActorCore`]
 /// to provide data actor capabilities.
 ///
-/// User algorithms should hold this as a member and implement `Deref`/`DerefMut`
-/// to satisfy the trait bounds of [`ExecutionAlgorithm`](super::ExecutionAlgorithm).
+/// User algorithms should hold this as a member and use the
+/// `nautilus_execution_algorithm!` macro to provide native runtime wiring.
+/// Direct access to this core is native runtime wiring and belongs behind
+/// [`ExecutionAlgorithmNative`].
 pub struct ExecutionAlgorithmCore {
     /// The underlying data actor core.
     pub actor: DataActorCore,
@@ -75,6 +72,24 @@ pub struct ExecutionAlgorithmCore {
     pending_spawn_reductions: AHashMap<ClientOrderId, Quantity>,
     /// Maps strategies to their event handlers for cleanup on reset.
     strategy_event_handlers: IndexMap<StrategyId, StrategyEventHandlers>,
+}
+
+/// Native-only access to internal execution algorithm runtime state.
+///
+/// Use this trait from engine, runtime, testkit, or opt-in native algorithm
+/// code when direct access to host runtime objects matters for an explicit
+/// latency-sensitive path, or when host integration code needs access below
+/// the facade API.
+///
+/// Do not import this trait in code intended to run through Python or the
+/// plug-in authoring surface. Native borrows, `Rc<RefCell<_>>`, and core
+/// references do not cross those boundaries.
+pub trait ExecutionAlgorithmNative: DataActorNative {
+    /// Returns the execution algorithm core.
+    fn exec_algorithm_core(&self) -> &ExecutionAlgorithmCore;
+
+    /// Returns the mutable execution algorithm core.
+    fn exec_algorithm_core_mut(&mut self) -> &mut ExecutionAlgorithmCore;
 }
 
 impl Debug for ExecutionAlgorithmCore {
@@ -233,10 +248,7 @@ impl ExecutionAlgorithmCore {
     ///
     /// Returns an error if the order is not found in the cache.
     pub fn get_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
-        self.cache()
-            .order(client_order_id)
-            .map(|o| o.clone())
-            .ok_or_else(|| anyhow::anyhow!("Order not found in cache for {client_order_id}"))
+        Ok(self.cache_ref().try_order_owned(client_order_id)?)
     }
 
     /// Returns all orders for the given order list from the cache.
@@ -253,16 +265,23 @@ impl ExecutionAlgorithmCore {
     }
 }
 
-impl Deref for ExecutionAlgorithmCore {
-    type Target = DataActorCore;
-    fn deref(&self) -> &Self::Target {
+impl DataActorNative for ExecutionAlgorithmCore {
+    fn core(&self) -> &DataActorCore {
         &self.actor
+    }
+
+    fn core_mut(&mut self) -> &mut DataActorCore {
+        &mut self.actor
     }
 }
 
-impl DerefMut for ExecutionAlgorithmCore {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.actor
+impl ExecutionAlgorithmNative for ExecutionAlgorithmCore {
+    fn exec_algorithm_core(&self) -> &ExecutionAlgorithmCore {
+        self
+    }
+
+    fn exec_algorithm_core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
+        self
     }
 }
 
@@ -385,11 +404,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_deref_to_data_actor_core() {
+    fn test_data_actor_core_available_through_native_trait() {
         let config = create_test_config();
         let core = ExecutionAlgorithmCore::new(config);
 
-        // Should be able to access DataActorCore methods via Deref
-        assert!(core.trader_id().is_none());
+        assert!(DataActorNative::core(&core).trader_id().is_none());
     }
 }

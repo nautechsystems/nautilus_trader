@@ -386,7 +386,7 @@ class BinanceUserDataWebSocketClient:
             try:
                 await self._stream_client.disconnect()
             except WebSocketClientError as e:
-                self._log.error(f"Error disconnecting stream: {e}")
+                self._log.warning(f"Error disconnecting stream: {e}")
             self._stream_client = None
 
     async def disconnect(self) -> None:

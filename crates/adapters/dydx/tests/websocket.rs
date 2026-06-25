@@ -3258,3 +3258,180 @@ async fn test_orderbook_produces_update() {
 
     client.disconnect().await.unwrap();
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_pool_shards_trades_across_connections_when_channel_full() {
+    use std::sync::Arc;
+
+    use nautilus_dydx::common::instrument_cache::InstrumentCache;
+    use nautilus_network::websocket::TransportBackend;
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public_with_cache_and_pool(
+        ws_url,
+        Arc::new(InstrumentCache::new()),
+        Some(30),
+        TransportBackend::default(),
+        None,
+        4,
+        3,
+    );
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+    assert_eq!(client.pool_size(), 1);
+
+    let tickers = ["BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD"];
+    for t in tickers {
+        client
+            .subscribe_trades(InstrumentId::from(format!("{t}.DYDX").as_str()))
+            .await
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(*state.connection_count.lock().await, 2);
+    assert_eq!(client.pool_size(), 2);
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .filter(|s| s.contains("v4_trades"))
+                .count()
+                == tickers.len()
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let trade_sub_count = state
+        .subscriptions
+        .lock()
+        .await
+        .iter()
+        .filter(|s| s.contains("v4_trades"))
+        .count();
+    assert_eq!(trade_sub_count, tickers.len());
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_pool_returns_error_when_cap_reached() {
+    use std::sync::Arc;
+
+    use nautilus_dydx::common::instrument_cache::InstrumentCache;
+    use nautilus_network::websocket::TransportBackend;
+
+    let (addr, _state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public_with_cache_and_pool(
+        ws_url,
+        Arc::new(InstrumentCache::new()),
+        Some(30),
+        TransportBackend::default(),
+        None,
+        1,
+        2,
+    );
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD.DYDX"))
+        .await
+        .unwrap();
+    client
+        .subscribe_trades(InstrumentId::from("ETH-USD.DYDX"))
+        .await
+        .unwrap();
+
+    let err = client
+        .subscribe_trades(InstrumentId::from("SOL-USD.DYDX"))
+        .await
+        .expect_err("pool should be exhausted");
+    let msg = err.to_string();
+    assert!(
+        msg.to_lowercase().contains("exhaust") || msg.to_lowercase().contains("subscription"),
+        "expected exhaustion error, was: {msg}"
+    );
+
+    assert_eq!(client.pool_size(), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_pool_unsubscribe_does_not_shrink_pool() {
+    use std::sync::Arc;
+
+    use nautilus_dydx::common::instrument_cache::InstrumentCache;
+    use nautilus_network::websocket::TransportBackend;
+
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/v4/ws");
+
+    let mut client = DydxWebSocketClient::new_public_with_cache_and_pool(
+        ws_url,
+        Arc::new(InstrumentCache::new()),
+        Some(30),
+        TransportBackend::default(),
+        None,
+        4,
+        2,
+    );
+    client.connect().await.unwrap();
+    wait_until_async(|| async { client.is_connected() }, Duration::from_secs(5)).await;
+
+    for t in ["BTC-USD", "ETH-USD", "SOL-USD"] {
+        client
+            .subscribe_trades(InstrumentId::from(format!("{t}.DYDX").as_str()))
+            .await
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await >= 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(client.pool_size(), 2);
+
+    client
+        .unsubscribe_trades(InstrumentId::from("SOL-USD.DYDX"))
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async {
+            state
+                .subscriptions
+                .lock()
+                .await
+                .iter()
+                .filter(|s| s.contains("v4_trades"))
+                .count()
+                == 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(client.pool_size(), 2, "empty slots should not be reaped");
+
+    client.disconnect().await.unwrap();
+}

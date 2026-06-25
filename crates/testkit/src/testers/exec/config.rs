@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::num::NonZeroUsize;
-
+use nautilus_common::config::{ConfigError, ConfigErrorCollector, ConfigResult};
 use nautilus_core::Params;
 use nautilus_model::{
     enums::{BookType, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
@@ -27,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for the execution tester strategy.
 #[derive(Debug, Clone, Deserialize, Serialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -35,6 +35,14 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(
     feature = "python",
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.testkit")
+)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "tester configuration exposes independent execution scenario toggles"
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "config type deserializes plain field values; unsafe PyO3 methods are unrelated"
 )]
 pub struct ExecTesterConfig {
     /// Base strategy configuration.
@@ -67,10 +75,10 @@ pub struct ExecTesterConfig {
     #[builder(default = BookType::L2_MBP)]
     pub book_type: BookType,
     /// Order book depth for subscriptions.
-    pub book_depth: Option<NonZeroUsize>,
+    pub book_depth: Option<usize>,
     /// Order book interval in milliseconds.
-    #[builder(default = NonZeroUsize::new(1000).unwrap())]
-    pub book_interval_ms: NonZeroUsize,
+    #[builder(default = 1000)]
+    pub book_interval_ms: usize,
     /// Number of order book levels to print when logging.
     #[builder(default = 10)]
     pub book_levels_to_print: usize,
@@ -99,7 +107,7 @@ pub struct ExecTesterConfig {
     pub tob_offset_ticks: u64,
     /// Override time in force for limit orders (None uses GTC/GTD logic).
     pub limit_time_in_force: Option<TimeInForce>,
-    /// Type of stop order (STOP_MARKET, STOP_LIMIT, MARKET_IF_TOUCHED, LIMIT_IF_TOUCHED).
+    /// Type of stop order (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`).
     #[builder(default = OrderType::StopMarket)]
     pub stop_order_type: OrderType,
     /// Offset from market in price ticks for stop trigger.
@@ -112,9 +120,9 @@ pub struct ExecTesterConfig {
     pub stop_trigger_type: TriggerType,
     /// Override time in force for stop orders (None uses GTC/GTD logic).
     pub stop_time_in_force: Option<TimeInForce>,
-    /// Trailing offset for TRAILING_STOP_MARKET orders.
+    /// Trailing offset for `TRAILING_STOP_MARKET` orders.
     pub trailing_offset: Option<Decimal>,
-    /// Trailing offset type (BasisPoints or Price).
+    /// Trailing offset type (`BasisPoints` or `Price`).
     #[builder(default = TrailingOffsetType::BasisPoints)]
     pub trailing_offset_type: TrailingOffsetType,
     /// Enable bracket orders (entry with TP/SL).
@@ -163,10 +171,10 @@ pub struct ExecTesterConfig {
     pub close_positions_on_stop: bool,
     /// Time in force for closing positions (None defaults to GTC).
     pub close_positions_time_in_force: Option<TimeInForce>,
-    /// Use reduce_only when closing positions.
+    /// Use `reduce_only` when closing positions.
     #[builder(default = true)]
     pub reduce_only_on_stop: bool,
-    /// Use individual cancel commands instead of cancel_all.
+    /// Use individual cancel commands instead of `cancel_all`.
     #[builder(default = false)]
     pub use_individual_cancels_on_stop: bool,
     /// Use batch cancel command when stopping.
@@ -181,7 +189,7 @@ pub struct ExecTesterConfig {
     /// Test post-only rejection by placing orders on wrong side of spread.
     #[builder(default = false)]
     pub test_reject_post_only: bool,
-    /// Test reduce-only rejection by setting reduce_only on open position order.
+    /// Test reduce-only rejection by setting `reduce_only` on open position order.
     #[builder(default = false)]
     pub test_reject_reduce_only: bool,
     /// Programmatically attempt one strategy-wide modify against the next
@@ -200,12 +208,46 @@ pub struct ExecTesterConfig {
     pub clamp_to_instrument_price_range: bool,
 }
 
+impl<S: exec_tester_config_builder::IsComplete> ExecTesterConfigBuilder<S> {
+    /// Validates and builds the [`ExecTesterConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`ExecTesterConfig::validate`]).
+    pub fn build(self) -> ConfigResult<ExecTesterConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl ExecTesterConfig {
+    /// Validates the execution tester configuration, collecting every field violation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] (a [`ConfigError::Multiple`] when more than one field is
+    /// invalid) if any field fails validation.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        errors.check(
+            self.book_interval_ms > 0,
+            ConfigError::range("book_interval_ms", "must be positive, was 0"),
+        );
+
+        if let Some(book_depth) = self.book_depth {
+            errors.check(
+                book_depth > 0,
+                ConfigError::range("book_depth", "must be positive, was 0"),
+            );
+        }
+
+        errors.into_result()
+    }
+
     /// Creates a new [`ExecTesterConfig`] with minimal settings.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `NonZeroUsize::new(1000)` fails (which should never happen).
     #[must_use]
     pub fn new(
         strategy_id: StrategyId,
@@ -230,7 +272,7 @@ impl ExecTesterConfig {
             subscribe_book: false,
             book_type: BookType::L2_MBP,
             book_depth: None,
-            book_interval_ms: NonZeroUsize::new(1000).unwrap(),
+            book_interval_ms: 1000,
             book_levels_to_print: 10,
             open_position_on_start_qty: None,
             open_position_on_first_quote: false,
@@ -279,6 +321,34 @@ impl ExecTesterConfig {
 
 impl Default for ExecTesterConfig {
     fn default() -> Self {
-        Self::builder().build()
+        Self::builder()
+            .build()
+            .expect("default ExecTesterConfig should be valid")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_default_config_is_valid() {
+        assert!(ExecTesterConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_zero_book_interval_ms_rejected() {
+        let result = ExecTesterConfig::builder().book_interval_ms(0).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "book_interval_ms")
+        );
+    }
+
+    #[rstest]
+    fn test_zero_book_depth_rejected() {
+        let result = ExecTesterConfig::builder().book_depth(0).build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "book_depth"));
     }
 }

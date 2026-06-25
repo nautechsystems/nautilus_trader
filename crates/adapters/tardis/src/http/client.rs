@@ -22,7 +22,7 @@ use nautilus_core::{
     string::{parsing::precision_from_str, secret::REDACTED, urlencoding},
 };
 use nautilus_model::instruments::InstrumentAny;
-use nautilus_network::http::HttpClient;
+use nautilus_network::http::{HttpClient, USER_AGENT};
 use ustr::Ustr;
 
 use super::{
@@ -99,7 +99,7 @@ impl TardisHttpClient {
             base_url.map_or_else(|| TARDIS_HTTP_BASE_URL.to_string(), ToString::to_string);
 
         let mut headers = HashMap::new();
-        headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
+        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
         if let Some(ref cred) = credential {
             headers.insert(

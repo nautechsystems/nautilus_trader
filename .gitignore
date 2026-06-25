@@ -114,6 +114,7 @@ env/
 !scripts/ci/retry-on-corruption.sh
 !scripts/ci/security-audit-gate.sh
 !scripts/ci/set-cargo-build-jobs.sh
+!scripts/ci/smoke-test-v2-wheel.sh
 !scripts/ci/update-pyproject-version.sh
 !scripts/ci/validate-wheel-count.sh
 !scripts/ci/verify-ci-inputs.sh

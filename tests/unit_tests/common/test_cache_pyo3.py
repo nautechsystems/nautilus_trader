@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.core.nautilus_pyo3 import Venue
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 @pytest.fixture
@@ -45,6 +46,26 @@ class TestCachePyo3General:
         cache.add("test_key", b"data")
         cache.reset()
         assert cache.get("test_key") is None
+
+    def test_purge_closed_orders_empty_is_noop(self, cache):
+        cache.purge_closed_orders(ts_now=0)
+        assert cache.client_order_ids_closed() == []
+
+    def test_purge_closed_positions_empty_is_noop(self, cache):
+        cache.purge_closed_positions(ts_now=0)
+        assert cache.position_closed_ids() == []
+
+    def test_purge_order_empty_is_noop(self, cache):
+        cache.purge_order(ClientOrderId("O-001"))
+        assert cache.order(ClientOrderId("O-001")) is None
+
+    def test_purge_position_empty_is_noop(self, cache):
+        cache.purge_position(PositionId("P-001"))
+        assert cache.position(PositionId("P-001")) is None
+
+    def test_purge_account_events_empty_is_noop(self, cache):
+        cache.purge_account_events(ts_now=0)
+        assert cache.account_id(Venue("SIM")) is None
 
 
 class TestCachePyo3DataQueries:
@@ -143,6 +164,14 @@ class TestCachePyo3DataQueries:
 
 
 class TestCachePyo3InstrumentQueries:
+    def test_purge_instrument_empty_is_noop(self, cache):
+        instrument = TestInstrumentProviderPyo3.audusd_sim()
+
+        cache.purge_instrument(instrument.id)
+
+        assert cache.instrument(instrument.id) is None
+        assert instrument.id not in cache.instrument_ids()
+
     def test_instrument_empty_returns_none(self, cache):
         instrument_id = InstrumentId.from_str("UNKNOWN.VENUE")
         assert cache.instrument(instrument_id) is None

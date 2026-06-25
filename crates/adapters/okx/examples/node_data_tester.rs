@@ -15,14 +15,18 @@
 
 //! Example demonstrating live data testing with the OKX adapter.
 //!
+//! Edit the constants below to change the environment and target instrument.
+//!
 //! Run with: `cargo run --example okx-data-tester --package nautilus-okx --features examples`
+//!
+//! Credentials are read from the environment when set:
+//! - `OKX_API_KEY`.
+//! - `OKX_API_SECRET`.
+//! - `OKX_API_PASSPHRASE`.
 
 use nautilus_common::enums::Environment;
 use nautilus_live::node::LiveNode;
-use nautilus_model::{
-    identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
-};
+use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_okx::{
     common::{
         consts::OKX_CLIENT_ID,
@@ -33,24 +37,26 @@ use nautilus_okx::{
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+const OKX_ENVIRONMENT: OKXEnvironment = OKXEnvironment::Live;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "OKX-TESTER-001";
+const INSTRUMENT_ID: &str = "BTC-USDT-SWAP.OKX";
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "OKX-TESTER-001".to_string();
-    let instrument_ids = vec![
-        InstrumentId::from("BTC-USDT-SWAP.OKX"),
-        // InstrumentId::from("ETH-USDT-SWAP.OKX"),
-    ];
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
+    let instrument_ids = vec![InstrumentId::from(INSTRUMENT_ID)];
 
     let okx_config = OKXDataClientConfig {
         api_key: None,        // Will use 'OKX_API_KEY' env var
         api_secret: None,     // Will use 'OKX_API_SECRET' env var
         api_passphrase: None, // Will use 'OKX_API_PASSPHRASE' env var
         instrument_types: vec![OKXInstrumentType::Swap],
-        environment: OKXEnvironment::Live,
+        environment: OKX_ENVIRONMENT,
         ..Default::default()
     };
 
@@ -75,7 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_book_snapshot(true)
         .request_funding_rates(true)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

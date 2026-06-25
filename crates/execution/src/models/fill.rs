@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 #[cfg(all(feature = "simulation", madsim))]
 use madsim::rand::RngCore;
@@ -70,6 +74,73 @@ pub trait FillModel {
         best_bid: Price,
         best_ask: Price,
     ) -> Option<OrderBook>;
+}
+
+/// Shared runtime handle for a fill model.
+#[derive(Clone)]
+pub struct FillModelHandle(Rc<RefCell<dyn FillModel>>);
+
+impl FillModelHandle {
+    /// Creates a new [`FillModelHandle`] from a fill model.
+    #[must_use]
+    pub fn new<T>(model: T) -> Self
+    where
+        T: FillModel + 'static,
+    {
+        Self(Rc::new(RefCell::new(model)))
+    }
+
+    /// Creates a new [`FillModelHandle`] from an existing reference-counted model.
+    #[must_use]
+    pub fn from_rc(model: Rc<RefCell<dyn FillModel>>) -> Self {
+        Self(model)
+    }
+}
+
+impl Debug for FillModelHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(stringify!(FillModelHandle))
+            .field(&"<dyn FillModel>")
+            .finish()
+    }
+}
+
+impl FillModel for FillModelHandle {
+    fn is_limit_filled(&mut self) -> bool {
+        self.0.borrow_mut().is_limit_filled()
+    }
+
+    fn is_slipped(&mut self) -> bool {
+        self.0.borrow_mut().is_slipped()
+    }
+
+    fn fill_limit_inside_spread(&self) -> bool {
+        self.0.borrow().fill_limit_inside_spread()
+    }
+
+    fn get_orderbook_for_fill_simulation(
+        &mut self,
+        instrument: &InstrumentAny,
+        order: &OrderAny,
+        best_bid: Price,
+        best_ask: Price,
+    ) -> Option<OrderBook> {
+        self.0
+            .borrow_mut()
+            .get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask)
+    }
+}
+
+impl Default for FillModelHandle {
+    fn default() -> Self {
+        FillModelAny::default().into()
+    }
+}
+
+impl From<FillModelAny> for FillModelHandle {
+    fn from(model: FillModelAny) -> Self {
+        Self::new(model)
+    }
 }
 
 #[derive(Debug)]
@@ -1541,6 +1612,23 @@ mod tests {
         let mut model = FillModelAny::Default(DefaultFillModel::new(0.5, 0.1, Some(42)).unwrap());
         let result = model.is_limit_filled();
         assert!(!result);
+    }
+
+    #[rstest]
+    fn test_fill_model_handle_from_any_owns_state_per_conversion() {
+        let model = FillModelAny::Default(DefaultFillModel::new(0.5, 0.0, Some(42)).unwrap());
+        let mut expected_model = model.clone();
+        let mut first: FillModelHandle = model.clone().into();
+        let mut second: FillModelHandle = model.into();
+
+        let expected: Vec<_> = (0..16).map(|_| expected_model.is_limit_filled()).collect();
+        let first_results: Vec<_> = (0..16).map(|_| first.is_limit_filled()).collect();
+        let second_results: Vec<_> = (0..16).map(|_| second.is_limit_filled()).collect();
+        let has_variation = expected.windows(2).any(|window| window[0] != window[1]);
+
+        assert!(has_variation);
+        assert_eq!(first_results, expected);
+        assert_eq!(second_results, expected);
     }
 
     #[rstest]

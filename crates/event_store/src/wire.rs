@@ -29,7 +29,10 @@ pub(crate) mod nanos_as_u64 {
     /// # Errors
     ///
     /// Propagates any error from the underlying serializer.
-    #[allow(clippy::trivially_copy_pass_by_ref)] // serde contract requires &T
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde with contract requires a borrowed value"
+    )]
     pub(crate) fn serialize<S: Serializer>(
         value: &UnixNanos,
         serializer: S,
@@ -60,7 +63,10 @@ pub(crate) mod opt_nanos_as_u64 {
     /// # Errors
     ///
     /// Propagates any error from the underlying serializer.
-    #[allow(clippy::ref_option)] // serde contract requires &Option<T>
+    #[expect(
+        clippy::ref_option,
+        reason = "serde with contract requires a borrowed option"
+    )]
     pub(crate) fn serialize<S: Serializer>(
         value: &Option<UnixNanos>,
         serializer: S,

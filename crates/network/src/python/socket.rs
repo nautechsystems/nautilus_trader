@@ -15,7 +15,7 @@
 
 use std::{sync::atomic::Ordering, time::Duration};
 
-use nautilus_core::python::{clone_py_object, to_pyruntime_err};
+use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pyvalue_err};
 use pyo3::{Py, prelude::*};
 use tokio_tungstenite::tungstenite::stream::Mode;
 
@@ -46,7 +46,7 @@ impl SocketConfig {
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
         certs_dir: Option<String>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let mode = if ssl { Mode::Tls } else { Mode::Plain };
 
         // Create function pointer that calls Python handler
@@ -59,7 +59,7 @@ impl SocketConfig {
             });
         });
 
-        Self {
+        let config = Self {
             url,
             mode,
             suffix,
@@ -74,7 +74,9 @@ impl SocketConfig {
             reconnect_max_attempts,
             idle_timeout_ms,
             certs_dir,
-        }
+        };
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 }
 
@@ -205,7 +207,11 @@ impl SocketClient {
                     log::warn!("Cannot reconnect - socket closed");
                 }
                 ConnectionMode::Active => {
-                    connection_mode.store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+                    // CAS so a concurrent close cannot be overwritten back to Reconnect
+                    if !ConnectionMode::request_reconnect(&connection_mode) {
+                        log::warn!("Cannot reconnect - socket no longer active");
+                        return Ok(());
+                    }
                     state_notify.notify_one();
 
                     let fallback_interval = Duration::from_millis(100);
@@ -264,7 +270,8 @@ impl SocketClient {
                     log::debug!("Socket already disconnecting");
                 }
                 _ => {
-                    connection_mode.store(ConnectionMode::Disconnect.as_u8(), Ordering::SeqCst);
+                    // Preserve a CLOSED terminal state reached concurrently
+                    ConnectionMode::request_disconnect(&connection_mode);
                     state_notify.notify_one();
 
                     let timeout = tokio::time::timeout(Duration::from_secs(5), async {
@@ -275,7 +282,7 @@ impl SocketClient {
                     .await;
 
                     if timeout.is_err() {
-                        log::error!("Timeout waiting for socket to close, forcing closed state");
+                        log::warn!("Timeout waiting for socket to close, forcing closed state");
                         connection_mode.store(ConnectionMode::Closed.as_u8(), Ordering::SeqCst);
                     }
                 }

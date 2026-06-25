@@ -18,7 +18,9 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{BinaryArray, BinaryBuilder, StringArray, StringBuilder, UInt8Array, UInt64Array},
+    array::{
+        Array, BinaryArray, BinaryBuilder, StringArray, StringBuilder, UInt8Array, UInt64Array,
+    },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -36,7 +38,8 @@ use serde_json::Value;
 
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, extract_column,
+    KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
+    extract_optional_string_column_by_name, optional_ustr_value,
 };
 
 impl ArrowSchemaProvider for IndexInstrument {
@@ -49,6 +52,7 @@ impl ArrowSchemaProvider for IndexInstrument {
             Field::new("price_increment", DataType::Utf8, false),
             Field::new("size_precision", DataType::UInt8, false),
             Field::new("size_increment", DataType::Utf8, false),
+            Field::new("tick_scheme", DataType::Utf8, true),
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -77,6 +81,7 @@ impl EncodeToRecordBatch for IndexInstrument {
         let mut size_precision_builder = UInt8Array::builder(data.len());
         let mut price_increment_builder = StringBuilder::new();
         let mut size_increment_builder = StringBuilder::new();
+        let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = BinaryBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
@@ -89,6 +94,12 @@ impl EncodeToRecordBatch for IndexInstrument {
             price_increment_builder.append_value(index.price_increment.to_string());
             size_precision_builder.append_value(index.size_precision);
             size_increment_builder.append_value(index.size_increment.to_string());
+
+            if let Some(tick_scheme) = index.tick_scheme {
+                tick_scheme_builder.append_value(tick_scheme);
+            } else {
+                tick_scheme_builder.append_null();
+            }
 
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = index.info {
@@ -123,6 +134,7 @@ impl EncodeToRecordBatch for IndexInstrument {
                 Arc::new(price_increment_builder.finish()),
                 Arc::new(size_precision_builder.finish()),
                 Arc::new(size_increment_builder.finish()),
+                Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
@@ -165,11 +177,21 @@ pub fn decode_index_instrument_batch(
         extract_column::<UInt8Array>(cols, "size_precision", 5, DataType::UInt8)?;
     let size_increment_values =
         extract_column::<StringArray>(cols, "size_increment", 6, DataType::Utf8)?;
-    let info_values = cols
-        .get(7)
-        .ok_or_else(|| EncodingError::MissingColumn("info", 7))?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 8, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 9, DataType::UInt64)?;
+    let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
+    let info_values =
+        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 7, DataType::Binary)?;
+    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_event",
+        8,
+        DataType::UInt64,
+    )?;
+    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_init",
+        9,
+        DataType::UInt64,
+    )?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -215,7 +237,9 @@ pub fn decode_index_instrument_batch(
         let ts_event = UnixNanos::from(ts_event_values.value(i));
         let ts_init = UnixNanos::from(ts_init_values.value(i));
 
-        let index_instrument = IndexInstrument::new(
+        let tick_scheme = optional_ustr_value(tick_scheme_values, i);
+
+        let index_instrument = IndexInstrument::new_checked(
             id,
             raw_symbol,
             currency,
@@ -223,10 +247,12 @@ pub fn decode_index_instrument_batch(
             size_prec,
             price_increment,
             size_increment,
+            tick_scheme,
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<IndexInstrument>(i, e))?;
 
         result.push(index_instrument);
     }

@@ -15,14 +15,17 @@
 
 //! Example demonstrating live data testing with the Coinbase adapter.
 //!
+//! Edit the constants below to change the environment, target instrument, and bar specification.
+//!
 //! Run with: `cargo run --example coinbase-data-tester --package nautilus-coinbase --features examples`
 //!
-//! Environment variables (optional for public market data):
-//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`)
-//! - `COINBASE_API_SECRET`: PEM-encoded EC private key
+//! Credentials are read from the environment when set (optional for public market data):
+//! - `COINBASE_API_KEY`: CDP API key name (`organizations/{org_id}/apiKeys/{key_id}`).
+//! - `COINBASE_API_SECRET`: PEM-encoded EC private key.
 
 use nautilus_coinbase::{
-    common::consts::COINBASE_CLIENT_ID, config::CoinbaseDataClientConfig,
+    common::{consts::COINBASE_CLIENT_ID, enums::CoinbaseEnvironment},
+    config::CoinbaseDataClientConfig,
     factories::CoinbaseDataClientFactory,
 };
 use nautilus_common::enums::Environment;
@@ -30,9 +33,14 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::bar::BarType,
     identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+const COINBASE_ENVIRONMENT: CoinbaseEnvironment = CoinbaseEnvironment::Live;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "COINBASE-TESTER-001";
+const INSTRUMENT_ID: &str = "BTC-USD.COINBASE";
+const BAR_SPEC: &str = "1-MINUTE-LAST-EXTERNAL";
 
 // *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 // *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
@@ -42,21 +50,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "COINBASE-TESTER-001".to_string();
+    let coinbase_environment = COINBASE_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
     let client_id = *COINBASE_CLIENT_ID;
 
-    let instrument_ids = vec![
-        InstrumentId::from("BTC-USD.COINBASE"),
-        // InstrumentId::from("ETH-USD.COINBASE"),
-    ];
+    let instrument_ids = vec![InstrumentId::from(INSTRUMENT_ID)];
 
     let bar_types: Vec<BarType> = instrument_ids
         .iter()
-        .map(|id| BarType::from(format!("{id}-1-MINUTE-LAST-EXTERNAL").as_str()))
+        .map(|id| BarType::from(format!("{id}-{BAR_SPEC}").as_str()))
         .collect();
 
     let coinbase_config = CoinbaseDataClientConfig {
+        environment: coinbase_environment,
         api_key: None,    // Will use 'COINBASE_API_KEY' env var if available
         api_secret: None, // Will use 'COINBASE_API_SECRET' env var if available
         ..Default::default()
@@ -83,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_bars(true)
         .request_book_snapshot(true)
         .manage_book(true)
-        .build();
+        .build()?;
 
     let tester = DataTester::new(tester_config);
 

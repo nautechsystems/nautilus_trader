@@ -52,10 +52,10 @@ use crate::{
         },
         models::{
             LighterAccountDetail, LighterAccountsResponse, LighterCandle, LighterCandles,
-            LighterFundings, LighterNextNonce, LighterOrderBookDetails, LighterOrderBookOrders,
-            LighterOrderBooks, LighterOrders, LighterResultCode, LighterSendTxBatchRequest,
-            LighterSendTxBatchResponse, LighterSendTxRequest, LighterSendTxResponse, LighterTrade,
-            LighterTrades,
+            LighterFundings, LighterMakerOnlyApiKeys, LighterNextNonce, LighterOrderBookDetails,
+            LighterOrderBookOrders, LighterOrderBooks, LighterOrders, LighterResultCode,
+            LighterSendTxBatchRequest, LighterSendTxBatchResponse, LighterSendTxRequest,
+            LighterSendTxResponse, LighterTrade, LighterTrades,
         },
         parse::{
             parse_candle_bar, parse_funding_rate_update,
@@ -66,8 +66,9 @@ use crate::{
         query::{
             LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery,
             LighterAccountLookup, LighterAccountQuery, LighterCandlesQuery, LighterFundingsQuery,
-            LighterNextNonceQuery, LighterOrderBookDetailsQuery, LighterOrderBookOrdersQuery,
-            LighterOrderBooksQuery, LighterRecentTradesQuery, LighterTradesQuery,
+            LighterMakerOnlyApiKeysQuery, LighterNextNonceQuery, LighterOrderBookDetailsQuery,
+            LighterOrderBookOrdersQuery, LighterOrderBooksQuery, LighterRecentTradesQuery,
+            LighterTradesQuery,
         },
     },
 };
@@ -78,6 +79,7 @@ const ENDPOINT_ACCOUNT_ACTIVE_ORDERS: &str = "/api/v1/accountActiveOrders";
 const ENDPOINT_ACCOUNT_INACTIVE_ORDERS: &str = "/api/v1/accountInactiveOrders";
 const ENDPOINT_CANDLES: &str = "/api/v1/candles";
 const ENDPOINT_FUNDINGS: &str = "/api/v1/fundings";
+const ENDPOINT_MAKER_ONLY_API_KEYS: &str = "/api/v1/getMakerOnlyApiKeys";
 const ENDPOINT_NEXT_NONCE: &str = "/api/v1/nextNonce";
 const ENDPOINT_ORDER_BOOK_DETAILS: &str = "/api/v1/orderBookDetails";
 const ENDPOINT_ORDER_BOOK_ORDERS: &str = "/api/v1/orderBookOrders";
@@ -86,6 +88,7 @@ const ENDPOINT_RECENT_TRADES: &str = "/api/v1/recentTrades";
 const ENDPOINT_SEND_TX: &str = "/api/v1/sendTx";
 const ENDPOINT_SEND_TX_BATCH: &str = "/api/v1/sendTxBatch";
 const ENDPOINT_TRADES: &str = "/api/v1/trades";
+const HEADER_AUTHORIZATION: &str = "authorization";
 const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 
 /// Maximum page size accepted by Lighter REST list endpoints (`/api/v1/trades`,
@@ -95,9 +98,13 @@ const MULTIPART_BOUNDARY: &str = "nautilus-lighter-form-boundary";
 pub const LIGHTER_REST_PAGE_SIZE: u16 = 100;
 pub const LIGHTER_CANDLES_MAX_LIMIT: u16 = 500;
 
+/// Maximum rows returned per `/api/v1/fundings` call (the venue per-call cap).
+pub const LIGHTER_FUNDINGS_MAX_LIMIT: u16 = 100;
+
 const DEFAULT_BARS_LIMIT: usize = LIGHTER_CANDLES_MAX_LIMIT as usize;
 const DEFAULT_FUNDING_RATES_LIMIT: usize = 100;
 const MAX_BAR_REQUEST_PAGES: usize = 500;
+const MAX_FUNDING_REQUEST_PAGES: usize = 500;
 
 trait LighterResponseCheck {
     fn response_code(&self) -> i32;
@@ -124,6 +131,7 @@ impl_lighter_response_check!(
     LighterAccountsResponse,
     LighterCandles,
     LighterFundings,
+    LighterMakerOnlyApiKeys,
     LighterNextNonce,
     LighterOrderBookDetails,
     LighterOrderBookOrders,
@@ -378,6 +386,27 @@ impl LighterRawHttpClient {
             .await
     }
 
+    /// Calls `GET /api/v1/getMakerOnlyApiKeys`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_maker_only_api_keys(
+        &self,
+        query: &LighterMakerOnlyApiKeysQuery,
+    ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
+        let params = LighterMakerOnlyApiKeysParams {
+            account_index: query.account_index,
+        };
+        let headers = query
+            .authorization
+            .as_ref()
+            .or(query.auth.as_ref())
+            .map(|auth| HashMap::from([(HEADER_AUTHORIZATION.to_string(), auth.clone())]));
+        self.send_get_request_with_headers(ENDPOINT_MAKER_ONLY_API_KEYS, Some(&params), headers)
+            .await
+    }
+
     /// Calls `POST /api/v1/sendTx`.
     ///
     /// # Errors
@@ -413,6 +442,20 @@ impl LighterRawHttpClient {
         T: DeserializeOwned + LighterResponseCheck,
         P: Serialize,
     {
+        self.send_get_request_with_headers(endpoint, params, None)
+            .await
+    }
+
+    async fn send_get_request_with_headers<T, P>(
+        &self,
+        endpoint: &str,
+        params: Option<&P>,
+        headers: Option<HashMap<String, String>>,
+    ) -> LighterHttpResult<T>
+    where
+        T: DeserializeOwned + LighterResponseCheck,
+        P: Serialize,
+    {
         let url = self.url(endpoint);
         let rate_limit_keys = Self::rate_limit_keys(endpoint);
         self.retry_manager
@@ -421,6 +464,8 @@ impl LighterRawHttpClient {
                 || {
                     let url = url.clone();
                     let rate_limit_keys = rate_limit_keys.clone();
+                    let headers = headers.clone();
+
                     async move {
                         let response = self
                             .client
@@ -428,7 +473,7 @@ impl LighterRawHttpClient {
                                 Method::GET,
                                 url,
                                 params,
-                                None,
+                                headers,
                                 None,
                                 None,
                                 Some(rate_limit_keys),
@@ -496,7 +541,8 @@ impl LighterRawHttpClient {
                 return Err(LighterHttpError::Http { status, body });
             }
 
-            if status == 429 {
+            // HTTP 405 is a Lighter rate-limit status like 429 per the docs, not a method error
+            if status == 429 || status == 405 {
                 return Err(LighterHttpError::RateLimit(body));
             }
 
@@ -555,6 +601,11 @@ impl LighterRawHttpClient {
     fn default_headers() -> HashMap<String, String> {
         HashMap::from([(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())])
     }
+}
+
+#[derive(Serialize)]
+struct LighterMakerOnlyApiKeysParams {
+    account_index: i64,
 }
 
 fn multipart_headers() -> HashMap<String, String> {
@@ -818,6 +869,27 @@ impl LighterHttpClient {
         self.inner.get_next_nonce(&query).await
     }
 
+    /// Calls `GET /api/v1/getMakerOnlyApiKeys` for `account_index`.
+    ///
+    /// `auth_token` is the canonical Lighter auth string minted from the
+    /// caller's credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response is invalid.
+    pub async fn get_maker_only_api_keys(
+        &self,
+        account_index: i64,
+        auth_token: impl Into<String>,
+    ) -> LighterHttpResult<LighterMakerOnlyApiKeys> {
+        let query = LighterMakerOnlyApiKeysQuery {
+            authorization: Some(auth_token.into()),
+            auth: None,
+            account_index,
+        };
+        self.inner.get_maker_only_api_keys(&query).await
+    }
+
     /// Calls `POST /api/v1/sendTx`.
     ///
     /// # Errors
@@ -1078,38 +1150,78 @@ impl LighterHttpClient {
             return Ok(Vec::new());
         }
 
-        let query = LighterFundingsQuery {
-            market_id,
-            resolution,
-            start_timestamp: start_ms,
-            end_timestamp: end_ms,
-            count_back: i64::try_from(target_limit).unwrap_or(i64::MAX),
-        };
-        let response = self.get_fundings(&query).await?;
         let ts_init = self.generate_ts_init();
         let interval = Some(resolution.interval_minutes());
-        let mut funding_rates = Vec::with_capacity(response.fundings.len());
+        let mut funding_rates = Vec::new();
+        let mut cursor_ms = start_ms;
+        let mut pages = 0_usize;
+        // `cap - 1`, not `cap`: the endpoint excludes `end_timestamp`, so a
+        // full-cap span with `count_back = cap` would drop the row at the cursor.
+        let page_span_ms =
+            interval_ms.saturating_mul(i64::from(LIGHTER_FUNDINGS_MAX_LIMIT.saturating_sub(1)));
 
-        for funding in &response.fundings {
-            let update = parse_funding_rate_update(funding, instrument.id(), interval, ts_init)
-                .map_err(LighterHttpError::from)?;
-            let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
-                .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
-
-            if timestamp_ms < start_ms || timestamp_ms > end_ms {
-                continue;
+        while cursor_ms < end_ms && pages < MAX_FUNDING_REQUEST_PAGES {
+            if !start_was_unspecified
+                && let Some(limit) = requested_limit
+                && funding_rates.len() >= limit
+            {
+                break;
             }
-            funding_rates.push(update);
+
+            let window_end_ms = cursor_ms.saturating_add(page_span_ms).min(end_ms);
+            if window_end_ms <= cursor_ms {
+                break;
+            }
+
+            let query = LighterFundingsQuery {
+                market_id,
+                resolution,
+                start_timestamp: cursor_ms,
+                end_timestamp: window_end_ms,
+                count_back: i64::from(LIGHTER_FUNDINGS_MAX_LIMIT),
+            };
+            let response = self.get_fundings(&query).await?;
+
+            let mut page = Vec::with_capacity(response.fundings.len());
+            for funding in &response.fundings {
+                let update = parse_funding_rate_update(funding, instrument.id(), interval, ts_init)
+                    .map_err(LighterHttpError::from)?;
+                let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
+                    .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+                if timestamp_ms < cursor_ms || timestamp_ms > end_ms {
+                    continue;
+                }
+                page.push(update);
+            }
+
+            page.sort_by_key(|rate| rate.ts_event);
+            for update in page {
+                if funding_rates
+                    .last()
+                    .is_some_and(|last: &FundingRateUpdate| last.ts_event == update.ts_event)
+                {
+                    continue;
+                }
+                funding_rates.push(update);
+
+                if !start_was_unspecified
+                    && let Some(limit) = requested_limit
+                    && funding_rates.len() >= limit
+                {
+                    break;
+                }
+            }
+
+            cursor_ms = window_end_ms;
+            pages += 1;
         }
 
-        funding_rates.sort_by_key(|rate| rate.ts_event);
+        if pages >= MAX_FUNDING_REQUEST_PAGES {
+            log::warn!("Stopped Lighter funding request after {MAX_FUNDING_REQUEST_PAGES} pages");
+        }
 
         if start_was_unspecified && funding_rates.len() > target_limit {
             funding_rates = funding_rates.split_off(funding_rates.len() - target_limit);
-        } else if let Some(limit) = requested_limit
-            && funding_rates.len() > limit
-        {
-            funding_rates.truncate(limit);
         }
 
         Ok(funding_rates)

@@ -1,4 +1,7 @@
-#![allow(clippy::redundant_clone)]
+#![expect(
+    clippy::redundant_clone,
+    reason = "test cases clone commands to assert ownership and recorder state"
+)]
 
 // -------------------------------------------------------------------------------------------------
 //  Copyright (C) 2015-2026 Nautech Systems Pty Ltd. All rights reserved.
@@ -66,11 +69,12 @@ use nautilus_common::{
             UnsubscribeTrades,
         },
     },
+    msgbus::{self, ShareableMessageHandler, switchboard::get_custom_topic},
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_data::client::DataClientAdapter;
 use nautilus_model::{
-    data::{BarType, DataType},
+    data::{BarType, CustomData, DataType},
     enums::BookType,
     identifiers::{ClientId, Venue},
     instruments::stubs::audusd_sim,
@@ -727,6 +731,67 @@ fn test_custom_data_unsubscribe_idempotent(
     adapter.execute_unsubscribe(&unsub);
     // Expect adapter state cleared and no panic on second unsubscribe
     assert!(!adapter.subscriptions_custom.contains(&data_type));
+}
+
+#[rstest]
+fn test_custom_data_unsubscribe_keeps_client_subscription_when_subscribers_remain(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    msgbus::get_message_bus().borrow_mut().dispose();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let data_type = DataType::new("SharedType", None, None);
+    let sub = SubscribeCommand::Data(SubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    adapter.execute_subscribe(sub);
+    recorder.borrow_mut().clear();
+
+    let topic = get_custom_topic(&data_type);
+    let handler = ShareableMessageHandler::from_typed(|_data: &CustomData| {});
+    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+    let unsub = UnsubscribeCommand::Data(UnsubscribeCustomData::new(
+        Some(client_id),
+        Some(venue),
+        data_type.clone(),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    adapter.execute_unsubscribe(&unsub);
+
+    assert!(adapter.subscriptions_custom.contains(&data_type));
+    assert!(recorder.borrow().is_empty());
+
+    msgbus::unsubscribe_any(topic.into(), &handler);
+    adapter.execute_unsubscribe(&unsub);
+    let recorded = recorder.borrow();
+
+    assert!(!adapter.subscriptions_custom.contains(&data_type));
+    assert_eq!(recorded.len(), 1);
+    assert!(
+        matches!(&recorded[0], DataCommand::Unsubscribe(UnsubscribeCommand::Data(cmd)) if cmd.data_type == data_type)
+    );
+
+    drop(recorded);
+    msgbus::get_message_bus().borrow_mut().dispose();
 }
 
 #[rstest]

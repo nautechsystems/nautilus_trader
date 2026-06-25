@@ -390,6 +390,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         """
         try:
             positions = await self._client.get_positions(self.account_id.get_id())
+            if positions is None:
+                self._log.warning(
+                    "Skipping initial position tracking because get_positions() did not complete",
+                )
+                return
 
             if positions:
                 for position in positions:
@@ -412,6 +417,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         report = None
         ib_orders = await self._client.get_open_orders(self.account_id.get_id())
+
+        if ib_orders is None:
+            raise ConnectionError(
+                "get_open_orders() disconnected during reqOpenOrders — "
+                "skipping order status reconciliation to avoid false discrepancy",
+            )
 
         for ib_order in ib_orders:
             if (command.client_order_id and command.client_order_id.value == ib_order.orderRef) or (
@@ -445,7 +456,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # since IB's openOrder callback doesn't include accurate filledQuantity.
         # Use venue_order_id as key since orderRef may be empty for external orders.
         venue_order_id = get_venue_order_id(ib_order.orderId, ib_order.permId)
-        cached_filled = self._order_filled_qty.get(venue_order_id)
+        client_order_id = ClientOrderId(ib_order.orderRef) if ib_order.orderRef else None
+        cached_filled = self._cached_order_filled_qty(venue_order_id, client_order_id)
         if cached_filled is not None:
             filled_qty = Quantity.from_str(str(cached_filled))
         elif ib_order.filledQuantity == UNSET_DECIMAL:
@@ -525,9 +537,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Get open orders first - needed for both startup and periodic reconciliation,
         # and to calculate open order fills for synthetic order adjustment
-        ib_orders: list[IBOrder] = await self._client.get_open_orders(
+        ib_orders: list[IBOrder] | None = await self._client.get_open_orders(
             self.account_id.get_id(),
         )
+
+        if ib_orders is None:
+            raise ConnectionError(
+                "get_open_orders() disconnected during reqOpenOrders — "
+                "skipping order status reconciliation to avoid false discrepancy",
+            )
 
         # Build a map of instrument_id -> net signed filled quantity from open orders
         # This is used to adjust synthetic position orders to avoid double-counting
@@ -561,9 +579,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # periodic checks causes filled_qty mismatches because the position may have
         # changed due to partial fills on exit orders.
         if not command.open_only:
-            positions: list[IBPosition] = await self._client.get_positions(
+            positions = await self._client.get_positions(
                 self.account_id.get_id(),
             )
+
+            if positions is None:
+                raise ConnectionError(
+                    "get_positions() disconnected during reqPositions — "
+                    "skipping order status reconciliation to avoid false discrepancy",
+                )
 
             ts_init = self._clock.timestamp_ns()
 
@@ -680,6 +704,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 execution_filter=execution_filter,
             )
 
+            if execution_details is None:
+                raise ConnectionError(
+                    "get_executions() disconnected during reqExecutions — "
+                    "skipping fill report reconciliation to avoid missing fills",
+                )
+
             ts_init = self._clock.timestamp_ns()
 
             for exec_detail in execution_details:
@@ -765,11 +795,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         last_qty = Quantity(execution.shares, precision=instrument.size_precision)
         last_px = Price(converted_execution_price, precision=instrument.price_precision)
 
-        # Create commission
-        commission = Money(
-            commission_report.commissionAndFees,
-            Currency.from_str(commission_report.currency),
-        )
+        # Create commission — guard None/-1 (IB sends -1 or None for pending commissions)
+        commission_fees = commission_report.commissionAndFees
+        if commission_fees is None or commission_fees == -1.0:
+            commission_fees = 0.0
+        commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
         # Determine liquidity side (IB doesn't provide this directly, so we use NO_LIQUIDITY_SIDE)
         liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
@@ -802,9 +832,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         command: GeneratePositionStatusReports,
     ) -> list[PositionStatusReport]:
         report = []
-        positions: list[IBPosition] = await self._client.get_positions(
+        positions: list[IBPosition] | None = await self._client.get_positions(
             self.account_id.get_id(),
         )
+
+        if positions is None:
+            raise ConnectionError(
+                "get_positions() disconnected during reqPositions — "
+                "skipping position status reconciliation to avoid false discrepancy",
+            )
 
         # Handle case when specific instrument requested but no positions found
         if command.instrument_id and not positions:
@@ -1059,7 +1095,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=client_id_to_orders[order_ref],
             )
 
-    async def _modify_order(self, command: ModifyOrder) -> None:
+    async def _modify_order(self, command: ModifyOrder) -> None:  # noqa: C901
         PyCondition.not_none(command, "command")
         if not (command.quantity or command.price or command.trigger_price):
             return
@@ -1093,13 +1129,41 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
 
-        ib_order.orderId = int(command.venue_order_id.value)
+        ib_order_id = self._resolve_ib_order_id(
+            venue_order_id=command.venue_order_id,
+            client_order_id=command.client_order_id,
+        )
+
+        if ib_order_id is None:
+            self.generate_order_modify_rejected(
+                strategy_id=command.strategy_id,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+                reason=f"Cannot resolve IB orderId for venue_order_id={command.venue_order_id}",
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
+        ib_order.orderId = ib_order_id
 
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
 
             if parent_nautilus_order and parent_nautilus_order.venue_order_id is not None:
-                ib_order.parentId = int(parent_nautilus_order.venue_order_id.value)
+                parent_ib_order_id = self._resolve_ib_order_id(
+                    venue_order_id=parent_nautilus_order.venue_order_id,
+                    client_order_id=parent_nautilus_order.client_order_id,
+                )
+
+                if parent_ib_order_id is not None:
+                    ib_order.parentId = parent_ib_order_id
+                else:
+                    self._log.warning(
+                        f"Parent order {ib_order.parentId!r} has no resolved IB order ID; "
+                        "modifying child order without parentId",
+                    )
+                    ib_order.parentId = 0
             else:
                 self._log.warning(
                     f"Parent order {ib_order.parentId!r} has no venue order ID yet; "
@@ -1116,16 +1180,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             converted_price = nautilus_price_to_ib_price(command.price.as_double(), price_magnifier)
             ib_order.lmtPrice = converted_price
 
-        if command.trigger_price and command.trigger_price.as_double() != getattr(
-            ib_order,
-            "auxPrice",
-            None,
-        ):
+        if command.trigger_price:
             converted_trigger_price = nautilus_price_to_ib_price(
                 command.trigger_price.as_double(),
                 price_magnifier,
             )
-            ib_order.auxPrice = converted_trigger_price
+
+            if isinstance(nautilus_order, TrailingStopLimitOrder | TrailingStopMarketOrder):
+                if converted_trigger_price != getattr(ib_order, "trailStopPrice", None):
+                    ib_order.trailStopPrice = converted_trigger_price
+            elif converted_trigger_price != getattr(ib_order, "auxPrice", None):
+                ib_order.auxPrice = converted_trigger_price
 
         self._log.info(f"Placing {ib_order!r}")
         self._client.place_order(ib_order)
@@ -1167,12 +1232,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ib_order.totalQuantity = 0
 
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
-            if order.trailing_offset_type != TrailingOffsetType.PRICE:
+            if order.trailing_offset_type == TrailingOffsetType.PRICE:
+                ib_order.auxPrice = float(order.trailing_offset)
+            elif order.trailing_offset_type == TrailingOffsetType.BASIS_POINTS:
+                ib_order.trailingPercent = float(order.trailing_offset) / 100.0
+            else:
                 raise ValueError(
                     f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
                 )
-
-            ib_order.auxPrice = float(order.trailing_offset)
 
             if order.trigger_price:
                 converted_trigger_price = nautilus_price_to_ib_price(
@@ -1462,7 +1529,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id = command.venue_order_id
 
         if venue_order_id:
-            self._client.cancel_order(int(venue_order_id.value))
+            ib_order_id = self._resolve_ib_order_id(
+                venue_order_id=venue_order_id,
+                client_order_id=command.client_order_id,
+            )
+
+            if ib_order_id is not None:
+                self._client.cancel_order(ib_order_id)
+            else:
+                self._log.error(
+                    f"Cannot resolve IB orderId for {command.client_order_id} "
+                    f"with venue_order_id={venue_order_id}",
+                )
         else:
             self._log.error(f"VenueOrderId not found for {command.client_order_id}")
 
@@ -1495,9 +1573,77 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             venue_order_id = order.venue_order_id
 
             if venue_order_id:
-                self._client.cancel_order(int(venue_order_id.value))
+                ib_order_id = self._resolve_ib_order_id(
+                    venue_order_id=venue_order_id,
+                    client_order_id=order.client_order_id,
+                )
+
+                if ib_order_id is not None:
+                    self._client.cancel_order(ib_order_id)
+                else:
+                    self._log.error(
+                        f"Cannot resolve IB orderId for {order.client_order_id} "
+                        f"with venue_order_id={venue_order_id}",
+                    )
             else:
                 self._log.error(f"VenueOrderId not found for {order.client_order_id}")
+
+    def _resolve_ib_order_id(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId | None = None,
+    ) -> int | None:
+        try:
+            return int(venue_order_id.value)
+        except ValueError:
+            pass
+
+        if client_order_id is None:
+            return None
+
+        return self._raw_ib_order_id_for_client_order_id(client_order_id)
+
+    def _raw_ib_order_id_for_client_order_id(
+        self,
+        client_order_id: ClientOrderId,
+    ) -> int | None:
+        for raw_venue_order_id, order_ref in self._client._order_id_to_order_ref.items():
+            if order_ref.order_id != client_order_id.value:
+                continue
+
+            try:
+                return int(raw_venue_order_id.value)
+            except ValueError:
+                continue
+
+        return None
+
+    def _cached_order_filled_qty(
+        self,
+        venue_order_id: VenueOrderId,
+        client_order_id: ClientOrderId | None,
+    ) -> Decimal | None:
+        cached_filled = self._order_filled_qty.get(venue_order_id)
+
+        if cached_filled is not None or client_order_id is None:
+            return cached_filled
+
+        raw_ib_order_id = self._raw_ib_order_id_for_client_order_id(client_order_id)
+
+        if raw_ib_order_id is None:
+            return None
+
+        raw_venue_order_id = VenueOrderId(str(raw_ib_order_id))
+
+        if raw_venue_order_id == venue_order_id:
+            return None
+
+        cached_filled = self._order_filled_qty.pop(raw_venue_order_id, None)
+
+        if cached_filled is not None:
+            self._order_filled_qty[venue_order_id] = cached_filled
+
+        return cached_filled
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         for order in command.cancels:
@@ -1772,6 +1918,19 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Convert to Decimal defensively in case IB API sends it as a string (IB API bug/edge case)
         filled_decimal = Decimal(filled) if not isinstance(filled, Decimal) else filled
         if filled_decimal > 0 and venue_order_id is not None:
+            if order_ref:
+                raw_ib_order_id = self._raw_ib_order_id_for_client_order_id(
+                    ClientOrderId(order_ref),
+                )
+
+                if raw_ib_order_id is not None:
+                    raw_venue_order_id = VenueOrderId(str(raw_ib_order_id))
+
+                    if raw_venue_order_id != venue_order_id:
+                        raw_filled = self._order_filled_qty.pop(raw_venue_order_id, None)
+
+                        if raw_filled is not None and raw_filled > filled_decimal:
+                            filled_decimal = raw_filled
             self._order_filled_qty[venue_order_id] = filled_decimal
 
         ignore_order_event = False
@@ -1936,6 +2095,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if nautilus_order.client_order_id in self._order_avg_prices:
             info["avg_px"] = self._order_avg_prices[nautilus_order.client_order_id]
 
+        # Guard None/-1 commission (IB sends -1 or None for pending commissions)
+        commission_fees = commission_report.commissionAndFees
+        if commission_fees is None or commission_fees == -1.0:
+            commission_fees = 0.0
+
         self.generate_order_filled(
             strategy_id=nautilus_order.strategy_id,
             instrument_id=nautilus_order.instrument_id,
@@ -1948,10 +2112,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             last_qty=Quantity(execution.shares, precision=instrument.size_precision),
             last_px=Price(converted_execution_price, precision=instrument.price_precision),
             quote_currency=instrument.quote_currency,
-            commission=Money(
-                commission_report.commissionAndFees,
-                Currency.from_str(commission_report.currency),
-            ),
+            commission=Money(commission_fees, Currency.from_str(commission_report.currency)),
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             ts_event=timestring_to_timestamp(execution.time).value,
             info=info or None,
@@ -2186,8 +2347,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
 
             # Combo commission scaled to the number of legs of the combo
+            # Guard None/-1 (IB sends -1 or None for pending commissions)
+            commission_fees = commission_report.commissionAndFees
+            if commission_fees is None or commission_fees == -1.0:
+                commission_fees = 0.0
             combo_commission = (
-                commission_report.commissionAndFees
+                commission_fees
                 * generic_spread_id_n_legs(nautilus_order.instrument_id)
                 / abs(ratio)
             )
@@ -2297,10 +2462,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
             order_side = OrderSide[ORDER_SIDE_TO_ORDER_ACTION[execution.side]]
 
-            commission = Money(
-                commission_report.commissionAndFees,
-                Currency.from_str(commission_report.currency),
-            )
+            # Guard None/-1 (IB sends -1 or None for pending commissions)
+            commission_fees = commission_report.commissionAndFees
+            if commission_fees is None or commission_fees == -1.0:
+                commission_fees = 0.0
+            commission = Money(commission_fees, Currency.from_str(commission_report.currency))
 
             # Include avg_px in info if we have it stored for the parent order
             info = {}

@@ -23,7 +23,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
 use nautilus_common::{
-    actor::{DataActor, registry::try_get_actor_unchecked},
+    actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
     clock::{Clock, TestClock},
     component::{
@@ -35,7 +35,7 @@ use nautilus_common::{
     msgbus,
     msgbus::{
         ShareableMessageHandler, TypedHandler, get_message_bus,
-        switchboard::{get_event_orders_topic, get_event_positions_topic},
+        switchboard::{get_event_order_topic, get_event_position_topic},
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -47,7 +47,10 @@ use nautilus_model::{
     },
 };
 use nautilus_portfolio::portfolio::Portfolio;
-use nautilus_trading::{ExecutionAlgorithm, strategy::Strategy};
+use nautilus_trading::{
+    ExecutionAlgorithm, ExecutionAlgorithmNative,
+    strategy::{Strategy, StrategyNative},
+};
 use ustr::Ustr;
 
 use crate::registration::{
@@ -210,6 +213,7 @@ impl Trader {
     }
 
     /// Returns references to all component clocks for backtest time advancement.
+    #[must_use]
     pub fn get_component_clocks(&self) -> Vec<Rc<RefCell<dyn Clock>>> {
         self.clocks.values().cloned().collect()
     }
@@ -273,7 +277,7 @@ impl Trader {
     /// - An actor with the same ID is already registered.
     pub fn add_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         self.validate_actor_or_strategy_registration()?;
 
@@ -307,7 +311,7 @@ impl Trader {
     pub fn add_actor_from_factory<F, T>(&mut self, factory: F) -> anyhow::Result<()>
     where
         F: FnOnce() -> anyhow::Result<T>,
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor = factory()?;
 
@@ -321,7 +325,7 @@ impl Trader {
     /// Returns an error if the actor cannot be registered in the component registry.
     pub fn add_registered_actor<T>(&mut self, actor: T) -> anyhow::Result<()>
     where
-        T: DataActor + Component + Debug + 'static,
+        T: DataActor + DataActorNative + Component + Debug + 'static,
     {
         let actor_id = actor.actor_id();
 
@@ -404,7 +408,7 @@ impl Trader {
         strategy_id: StrategyId,
     ) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         if self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Strategy '{strategy_id}' is already tracked by trader");
@@ -417,7 +421,7 @@ impl Trader {
         let actor_id = Ustr::from(strategy_id.inner().as_str());
 
         // Subscribe to order events for this strategy
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         let order_actor_id = actor_id;
         let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
@@ -430,7 +434,7 @@ impl Trader {
         msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
 
         // Subscribe to position events for this strategy
-        let position_topic = get_event_positions_topic(strategy_id);
+        let position_topic = get_event_position_topic(strategy_id);
         let position_handler = TypedHandler::from(move |event: &PositionEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
                 strategy.handle_position_event(event.clone());
@@ -496,17 +500,18 @@ impl Trader {
         strategy: &mut T,
     ) -> anyhow::Result<StrategyId>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         let existing_order_id_tags: Vec<&str> =
             self.strategy_ids.iter().map(StrategyId::get_tag).collect();
 
-        let configured_strategy_id = strategy.core().strategy_id();
-        let runtime_order_id_tag = normalize_order_id_tag(strategy.core().order_id_tag());
+        let configured_strategy_id = StrategyNative::strategy_core(strategy).strategy_id();
+        let runtime_order_id_tag =
+            normalize_order_id_tag(StrategyNative::strategy_core(strategy).order_id_tag());
 
         let strategy_id = if let Some(strategy_id) = configured_strategy_id {
             ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
-            strategy.core_mut().change_id(strategy_id);
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
             strategy_id
         } else {
             let order_id_tag = runtime_order_id_tag.map_or_else(
@@ -518,7 +523,7 @@ impl Trader {
             let base_id = strategy_registration_id::<T>(strategy);
             let strategy_id =
                 StrategyId::from(format!("{}-{order_id_tag}", base_strategy_id(&base_id)));
-            strategy.core_mut().change_id(strategy_id);
+            StrategyNative::strategy_core_mut(strategy).change_id(strategy_id);
             strategy_id
         };
 
@@ -542,7 +547,7 @@ impl Trader {
     /// - A strategy with the same ID is already registered.
     pub fn add_strategy<T>(&mut self, mut strategy: T) -> anyhow::Result<()>
     where
-        T: Strategy + Component + Debug + 'static,
+        T: Strategy + StrategyNative + DataActorNative + Component + Debug + 'static,
     {
         self.validate_actor_or_strategy_registration()?;
 
@@ -552,7 +557,7 @@ impl Trader {
         let clock = self.create_component_clock(component_id);
 
         // Register strategy core with portfolio for order management
-        strategy.core_mut().register(
+        StrategyNative::strategy_core_mut(&mut strategy).register(
             self.trader_id,
             clock.clone(),
             self.cache.clone(),
@@ -576,7 +581,7 @@ impl Trader {
         // Register in both component and actor registries
         register_component_actor(strategy);
 
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         let order_actor_id = actor_id;
         let order_handler = TypedHandler::from(move |event: &OrderEventAny| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&order_actor_id) {
@@ -588,7 +593,7 @@ impl Trader {
         let order_handler_id = order_handler.id();
         msgbus::subscribe_order_events(order_topic.into(), order_handler, None);
 
-        let position_topic = get_event_positions_topic(strategy_id);
+        let position_topic = get_event_position_topic(strategy_id);
         let position_handler = TypedHandler::from(move |event: &PositionEvent| {
             if let Some(mut strategy) = try_get_actor_unchecked::<T>(&actor_id) {
                 strategy.handle_position_event(event.clone());
@@ -655,7 +660,7 @@ impl Trader {
     /// - An execution algorithm with the same ID is already registered.
     pub fn add_exec_algorithm<T>(&mut self, mut exec_algorithm: T) -> anyhow::Result<()>
     where
-        T: ExecutionAlgorithm + Component + Debug + 'static,
+        T: ExecutionAlgorithm + ExecutionAlgorithmNative + Component + Debug + 'static,
     {
         self.validate_exec_algorithm_registration()?;
 
@@ -865,8 +870,8 @@ impl Trader {
 
             // Remove only this strategy's own msgbus handlers
             if let Some((order_hid, position_hid)) = self.strategy_handler_ids.get(strategy_id) {
-                let order_topic = get_event_orders_topic(*strategy_id);
-                let position_topic = get_event_positions_topic(*strategy_id);
+                let order_topic = get_event_order_topic(*strategy_id);
+                let position_topic = get_event_position_topic(*strategy_id);
                 msgbus::remove_order_event_handler(order_topic.into(), *order_hid);
                 msgbus::remove_position_event_handler(position_topic.into(), *position_hid);
             }
@@ -1027,20 +1032,20 @@ impl Trader {
         trader: &Rc<RefCell<Self>>,
         strategy_id: &StrategyId,
     ) -> anyhow::Result<()> {
-        let handler = trader.borrow().strategy_command_handler(strategy_id)?;
+        let handler = trader.borrow().strategy_command_handler(*strategy_id)?;
         handler.handle(&StrategyCommand::ExitMarket);
         Ok(())
     }
 
     fn strategy_command_handler(
         &self,
-        strategy_id: &StrategyId,
+        strategy_id: StrategyId,
     ) -> anyhow::Result<TypedHandler<StrategyCommand>> {
-        if !self.strategy_ids.contains(strategy_id) {
+        if !self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Cannot market exit strategy, {strategy_id} not found");
         }
 
-        let endpoint = strategy_control_endpoint(*strategy_id);
+        let endpoint = strategy_control_endpoint(strategy_id);
         let handler = {
             let msgbus = get_message_bus();
             msgbus
@@ -1081,8 +1086,8 @@ impl Trader {
 
         // Clean up event subscriptions
         if let Some((order_hid, position_hid)) = self.strategy_handler_ids.remove(strategy_id) {
-            let order_topic = get_event_orders_topic(*strategy_id);
-            let position_topic = get_event_positions_topic(*strategy_id);
+            let order_topic = get_event_order_topic(*strategy_id);
+            let position_topic = get_event_position_topic(*strategy_id);
             msgbus::remove_order_event_handler(order_topic.into(), order_hid);
             msgbus::remove_position_event_handler(position_topic.into(), position_hid);
         }
@@ -1212,7 +1217,7 @@ mod tests {
         clock::TestClock,
         enums::{ComponentState, Environment},
         msgbus,
-        msgbus::{MessageBus, TypedHandler, switchboard::get_event_orders_topic},
+        msgbus::{MessageBus, TypedHandler, switchboard::get_event_order_topic},
         nautilus_actor,
     };
     use nautilus_core::UUID4;
@@ -1227,8 +1232,8 @@ mod tests {
     use nautilus_portfolio::portfolio::Portfolio;
     use nautilus_risk::engine::{RiskEngine, config::RiskEngineConfig};
     use nautilus_trading::{
-        ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-        ExecutionAlgorithmCore, nautilus_strategy,
+        ExecutionAlgorithmConfig, ExecutionAlgorithmCore, StrategyNative,
+        nautilus_execution_algorithm, nautilus_strategy,
         strategy::{config::StrategyConfig, core::StrategyCore},
     };
     use rstest::rstest;
@@ -1269,17 +1274,11 @@ mod tests {
 
     impl DataActor for TestExecAlgorithm {}
 
-    nautilus_actor!(TestExecAlgorithm);
-
-    impl ExecutionAlgorithmTrait for TestExecAlgorithm {
-        fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-            &mut self.core
-        }
-
+    nautilus_execution_algorithm!(TestExecAlgorithm, {
         fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
             Ok(())
         }
-    }
+    });
 
     // Simple Strategy wrapper for testing
     #[derive(Debug)]
@@ -1541,13 +1540,16 @@ mod tests {
         trader.add_strategy(strategy).unwrap();
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&strategy_id.inner());
-        let order_factory = registered.core.order_factory();
-        let client_order_id = order_factory.generate_client_order_id();
-        let order_list_id = order_factory.generate_order_list_id();
+        let (client_order_id, order_list_id) = {
+            let mut order_factory = registered.order_factory();
+            (
+                order_factory.generate_client_order_id(),
+                order_factory.generate_order_list_id(),
+            )
+        };
 
         assert_eq!(trader.strategy_ids(), vec![strategy_id]);
-        assert_eq!(registered.core().strategy_id(), Some(strategy_id));
-        assert_eq!(registered.core().order_id_tag(), Some("XNAS"));
+        assert_eq!(registered.strategy_id(), Some(strategy_id));
         assert!(client_order_id.as_str().ends_with("-001-XNAS-1"));
         assert!(order_list_id.as_str().ends_with("-001-XNAS-1"));
     }
@@ -1582,13 +1584,16 @@ mod tests {
         assert!(try_get_actor_unchecked::<TestStrategy>(&strategy_id.inner()).is_none());
 
         let mut registered = get_actor_unchecked::<TestStrategy>(&runtime_strategy_id.inner());
-        let order_factory = registered.core.order_factory();
-        let client_order_id = order_factory.generate_client_order_id();
-        let order_list_id = order_factory.generate_order_list_id();
+        let (client_order_id, order_list_id) = {
+            let mut order_factory = registered.order_factory();
+            (
+                order_factory.generate_client_order_id(),
+                order_factory.generate_order_list_id(),
+            )
+        };
 
         assert_eq!(trader.strategy_ids(), vec![runtime_strategy_id]);
-        assert_eq!(registered.core().strategy_id(), Some(runtime_strategy_id));
-        assert_eq!(registered.core().order_id_tag(), Some("T01"));
+        assert_eq!(registered.strategy_id(), Some(runtime_strategy_id));
         assert!(client_order_id.as_str().ends_with("-001-T01-1"));
         assert!(order_list_id.as_str().ends_with("-001-T01-1"));
     }
@@ -1645,10 +1650,11 @@ mod tests {
             .prepare_strategy_for_registration(&mut strategy)
             .unwrap();
         assert_eq!(prepared_id, StrategyId::from("TestStrategy-000"));
-        assert_eq!(strategy.core().config.strategy_id, None);
-        assert_eq!(strategy.core().config.order_id_tag, None);
-        assert_eq!(strategy.core().strategy_id(), Some(prepared_id));
-        assert_eq!(strategy.core().order_id_tag(), Some("000"));
+        let core = StrategyNative::strategy_core(&strategy);
+        assert_eq!(core.config.strategy_id, None);
+        assert_eq!(core.config.order_id_tag, None);
+        assert_eq!(core.strategy_id(), Some(prepared_id));
+        assert_eq!(core.order_id_tag(), Some("000"));
 
         assert!(trader.add_strategy(strategy).is_ok());
         assert_eq!(trader.strategy_ids(), vec![prepared_id]);
@@ -1780,7 +1786,7 @@ mod tests {
             ..Default::default()
         };
         let exec_algorithm = TestExecAlgorithm::new(config);
-        let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.actor_id().inner().as_str());
+        let exec_algorithm_id = exec_algorithm.id();
 
         let result = trader.add_exec_algorithm(exec_algorithm);
         assert!(result.is_ok());
@@ -2129,7 +2135,7 @@ mod tests {
             TypedHandler::from_with_id("exec-algo-handler", move |_: &OrderEventAny| {
                 *ext_clone.borrow_mut() += 1;
             });
-        let order_topic = get_event_orders_topic(strategy_id);
+        let order_topic = get_event_order_topic(strategy_id);
         msgbus::subscribe_order_events(order_topic.into(), ext_handler, None);
 
         trader.clear_strategies().unwrap();

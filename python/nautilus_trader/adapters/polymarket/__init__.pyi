@@ -11,6 +11,8 @@ __all__ = [
     "PolymarketExecClientConfig",
     "PolymarketExecutionClientFactory",
     "PolymarketInstrumentProviderConfig",
+    "PolymarketRtdsCryptoPrice",
+    "PolymarketRtdsEquityPrice",
     "PolymarketUpDownEventSlugConfig",
     "SignatureType",
 ]
@@ -39,6 +41,7 @@ class PolymarketDataClientConfig:
         resolve_poll_interval_secs: int | None = None,
         resolve_poll_grace_secs: int | None = None,
         resolve_poll_max_wait_secs: int | None = None,
+        base_url_rtds: str | None = None,
     ) -> None: ...
 
 @typing.final
@@ -86,6 +89,69 @@ class PolymarketInstrumentProviderConfig:
         log_warnings: bool | None = None,
         use_gamma_markets: bool | None = None,
     ) -> None: ...
+
+@typing.final
+class PolymarketRtdsCryptoPrice:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def price_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        value: typing.Any,
+        price_timestamp_ms: int,
+        message_timestamp_ms: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketRtdsCryptoPrice: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+
+@typing.final
+class PolymarketRtdsEquityPrice:
+    @property
+    def symbol(self) -> str: ...
+    @property
+    def value(self) -> typing.Any: ...
+    @property
+    def full_accuracy_value(self) -> typing.Any: ...
+    @property
+    def price_timestamp_ms(self) -> int: ...
+    @property
+    def message_timestamp_ms(self) -> int: ...
+    @property
+    def received_at_ms(self) -> typing.Any: ...
+    @property
+    def is_carried_forward(self) -> bool: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls,
+        symbol: str,
+        value: typing.Any,
+        full_accuracy_value: typing.Any,
+        price_timestamp_ms: int,
+        message_timestamp_ms: int,
+        received_at_ms: typing.Any,
+        is_carried_forward: bool,
+        ts_event: int,
+        ts_init: int,
+    ) -> PolymarketRtdsEquityPrice: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
 
 @typing.final
 class PolymarketUpDownEventSlugConfig:

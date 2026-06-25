@@ -57,6 +57,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -67,9 +68,11 @@ from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model.position import Position
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -771,6 +774,219 @@ class TestOrderMatchingEngine:
         # Assert - No fill event should be emitted due to early return
         filled_events = [m for m in messages if isinstance(m, OrderFilled)]
         assert len(filled_events) == 0  # No fill should have been generated
+
+    def test_reduce_only_stop_market_caps_cumulative_multi_level_fill(self) -> None:
+        # Arrange
+        position_qty = self.instrument.make_qty(2382.0)
+        entry_order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=position_qty,
+        )
+        entry_fill = TestEventStubs.order_filled(
+            entry_order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+            position_id=PositionId("P-REDUCE-ONLY"),
+            last_qty=position_qty,
+            last_px=self.instrument.make_price(1000.0),
+        )
+        position = Position(instrument=self.instrument, fill=entry_fill)
+
+        order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(7142.0),
+            trigger_price=self.instrument.make_price(900.0),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+            reduce_only=True,
+        )
+        TestExecStubs.make_accepted_order(
+            order=order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+        )
+        self.cache.add_order(order, position_id=position.id)
+
+        messages: list[Any] = []
+
+        def _handle(event):
+            messages.append(event)
+            with contextlib.suppress(Exception):
+                order.apply(event)
+
+        self.msgbus.register("ExecEngine.process", _handle)
+
+        fills = [
+            (self.instrument.make_price(900.0), self.instrument.make_qty(1000.0)),
+            (self.instrument.make_price(899.9), self.instrument.make_qty(1000.0)),
+            (self.instrument.make_price(899.8), self.instrument.make_qty(1000.0)),
+        ]
+
+        # Act
+        self.matching_engine.apply_fills(
+            order=order,
+            fills=fills,
+            liquidity_side=LiquiditySide.TAKER,
+            position=position,
+        )
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        updated_events = [m for m in messages if isinstance(m, OrderUpdated)]
+
+        assert [event.last_qty for event in filled_events] == [
+            self.instrument.make_qty(1000.0),
+            self.instrument.make_qty(1000.0),
+            self.instrument.make_qty(382.0),
+        ]
+        assert sum((event.last_qty.as_decimal() for event in filled_events), Decimal(0)) == (
+            position_qty.as_decimal()
+        )
+        assert updated_events[-1].quantity == position_qty
+        assert order.quantity == position_qty
+        assert order.filled_qty == position_qty
+
+    def test_reduce_only_market_slip_caps_remaining_position(self) -> None:
+        # Arrange
+        position_qty = self.instrument.make_qty(2.0)
+        entry_order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=position_qty,
+        )
+        entry_fill = TestEventStubs.order_filled(
+            entry_order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+            position_id=PositionId("P-REDUCE-ONLY"),
+            last_qty=position_qty,
+            last_px=self.instrument.make_price(1000.0),
+        )
+        position = Position(instrument=self.instrument, fill=entry_fill)
+
+        order = StopMarketOrder(
+            trader_id=self.trader_id,
+            strategy_id=TestIdStubs.strategy_id(),
+            instrument_id=self.instrument.id,
+            client_order_id=TestIdStubs.client_order_id(),
+            order_side=OrderSide.SELL,
+            quantity=self.instrument.make_qty(5.0),
+            trigger_price=self.instrument.make_price(900.0),
+            trigger_type=TriggerType.DEFAULT,
+            init_id=UUID4(),
+            ts_init=0,
+            reduce_only=True,
+        )
+        TestExecStubs.make_accepted_order(
+            order=order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+        )
+        self.cache.add_order(order, position_id=position.id)
+
+        messages: list[Any] = []
+
+        def _handle(event):
+            messages.append(event)
+            with contextlib.suppress(Exception):
+                order.apply(event)
+
+        self.msgbus.register("ExecEngine.process", _handle)
+
+        # Act
+        self.matching_engine.apply_fills(
+            order=order,
+            fills=[(self.instrument.make_price(900.0), self.instrument.make_qty(1.0))],
+            liquidity_side=LiquiditySide.TAKER,
+            position=position,
+        )
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        updated_events = [m for m in messages if isinstance(m, OrderUpdated)]
+
+        assert [event.last_qty for event in filled_events] == [
+            self.instrument.make_qty(1.0),
+            self.instrument.make_qty(1.0),
+        ]
+        assert updated_events[-1].quantity == position_qty
+        assert order.quantity == position_qty
+        assert order.filled_qty == position_qty
+
+    @pytest.mark.parametrize(
+        "liquidity_side",
+        [LiquiditySide.MAKER, LiquiditySide.TAKER],
+        ids=["maker", "taker"],
+    )
+    def test_reduce_only_limit_slip_caps_remaining_position(
+        self,
+        liquidity_side: LiquiditySide,
+    ) -> None:
+        # Arrange
+        position_qty = self.instrument.make_qty(2.0)
+        entry_order = TestExecStubs.market_order(
+            instrument=self.instrument,
+            order_side=OrderSide.BUY,
+            quantity=position_qty,
+        )
+        entry_fill = TestEventStubs.order_filled(
+            entry_order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+            position_id=PositionId("P-REDUCE-ONLY"),
+            last_qty=position_qty,
+            last_px=self.instrument.make_price(1000.0),
+        )
+        position = Position(instrument=self.instrument, fill=entry_fill)
+
+        order = TestExecStubs.limit_order(
+            instrument=self.instrument,
+            order_side=OrderSide.SELL,
+            price=self.instrument.make_price(900.0),
+            quantity=self.instrument.make_qty(5.0),
+            reduce_only=True,
+        )
+        TestExecStubs.make_accepted_order(
+            order=order,
+            instrument=self.instrument,
+            account_id=self.account_id,
+        )
+        self.cache.add_order(order, position_id=position.id)
+
+        messages: list[Any] = []
+
+        def _handle(event):
+            messages.append(event)
+            with contextlib.suppress(Exception):
+                order.apply(event)
+
+        self.msgbus.register("ExecEngine.process", _handle)
+
+        # Act
+        self.matching_engine.apply_fills(
+            order=order,
+            fills=[(self.instrument.make_price(900.0), self.instrument.make_qty(1.0))],
+            liquidity_side=liquidity_side,
+            position=position,
+        )
+
+        # Assert
+        filled_events = [m for m in messages if isinstance(m, OrderFilled)]
+        updated_events = [m for m in messages if isinstance(m, OrderUpdated)]
+
+        assert [event.last_qty for event in filled_events] == [
+            self.instrument.make_qty(1.0),
+            self.instrument.make_qty(1.0),
+        ]
+        assert updated_events[-1].quantity == position_qty
+        assert order.quantity == position_qty
+        assert order.filled_qty == position_qty
 
     def test_buy_limit_fills_on_seller_trade_at_limit_price(self) -> None:
         # Regression test for GitHub issue where BUY LIMIT orders were not filling

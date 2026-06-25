@@ -15,6 +15,8 @@
 
 //! HTTP client error types.
 
+use std::error::Error;
+
 /// Errors returned by the HTTP client.
 ///
 /// Includes generic transport errors, timeouts, and proxy configuration errors.
@@ -35,10 +37,20 @@ pub enum HttpClientError {
 
 impl From<reqwest::Error> for HttpClientError {
     fn from(source: reqwest::Error) -> Self {
+        // reqwest's Display omits the actionable cause (DNS, refused, TLS),
+        // which lives in the source chain, so walk and append it.
+        let mut message = source.to_string();
+        let mut cause: Option<&(dyn std::error::Error + 'static)> = source.source();
+        while let Some(err) = cause {
+            message.push_str(": ");
+            message.push_str(&err.to_string());
+            cause = err.source();
+        }
+
         if source.is_timeout() {
-            Self::TimeoutError(source.to_string())
+            Self::TimeoutError(message)
         } else {
-            Self::Error(source.to_string())
+            Self::Error(message)
         }
     }
 }

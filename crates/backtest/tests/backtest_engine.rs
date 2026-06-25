@@ -47,14 +47,17 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, InstrumentCloseType, OmsType, OptionKind, OrderSide, PositionAdjustmentType,
-        PriceType,
+        BookType, ContingencyType, InstrumentCloseType, OmsType, OptionKind, OrderSide,
+        OrderStatus, PositionAdjustmentType, PriceType, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::{OrderEventAny, OrderFilled},
-    identifiers::{ActorId, ExecAlgorithmId, InstrumentId, StrategyId, Symbol, TradeId, Venue},
+    identifiers::{
+        ActorId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, Venue,
+    },
     instruments::{
         CryptoPerpetual, Equity, Instrument, InstrumentAny, OptionContract,
-        stubs::crypto_perpetual_ethusdt,
+        stubs::{crypto_perpetual_ethusdt, default_fx_ccy},
     },
     orders::{Order, OrderAny},
     position::Position,
@@ -62,10 +65,11 @@ use nautilus_model::{
 };
 use nautilus_system::trader::Trader;
 use nautilus_trading::{
-    ExecutionAlgorithm as ExecutionAlgorithmTrait, ExecutionAlgorithmConfig,
-    ExecutionAlgorithmCore, Strategy, StrategyConfig, StrategyCore, nautilus_strategy,
+    ExecutionAlgorithm, ExecutionAlgorithmConfig, ExecutionAlgorithmCore, Strategy, StrategyConfig,
+    StrategyCore, nautilus_execution_algorithm, nautilus_strategy,
 };
 use rstest::*;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 struct EmptyStrategy {
     core: StrategyCore,
@@ -136,8 +140,6 @@ impl EmptyExecAlgorithm {
     }
 }
 
-nautilus_actor!(EmptyExecAlgorithm);
-
 impl Debug for EmptyExecAlgorithm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(EmptyExecAlgorithm)).finish()
@@ -146,15 +148,11 @@ impl Debug for EmptyExecAlgorithm {
 
 impl DataActor for EmptyExecAlgorithm {}
 
-impl ExecutionAlgorithmTrait for EmptyExecAlgorithm {
-    fn core_mut(&mut self) -> &mut ExecutionAlgorithmCore {
-        &mut self.core
-    }
-
+nautilus_execution_algorithm!(EmptyExecAlgorithm, {
     fn on_order(&mut self, _order: OrderAny) -> anyhow::Result<()> {
         Ok(())
     }
-}
+});
 
 struct EmaCross {
     core: StrategyCore,
@@ -188,10 +186,12 @@ impl EmaCross {
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -266,10 +266,12 @@ impl SnapshotNettingFlip {
     }
 
     fn submit_market(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -358,10 +360,12 @@ impl DataActor for OpenOptionOnQuote {
             return Ok(());
         }
         self.opened = true;
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -739,7 +743,7 @@ mod defi {
 fn test_add_exec_algorithm_registers_exec_algorithm_with_trader_and_endpoint() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let exec_algorithm = EmptyExecAlgorithm::new();
-    let exec_algorithm_id = ExecAlgorithmId::from(exec_algorithm.actor_id().inner().as_str());
+    let exec_algorithm_id = exec_algorithm.id();
     let endpoint = format!("{exec_algorithm_id}.execute");
 
     engine.add_exec_algorithm(exec_algorithm).unwrap();
@@ -861,7 +865,27 @@ fn create_engine() -> BacktestEngine {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
+    engine.add_venue(venue_config).unwrap();
+    engine
+}
+
+fn create_eur_base_margin_engine() -> BacktestEngine {
+    let config = BacktestEngineConfig {
+        bypass_logging: true,
+        ..Default::default()
+    };
+    let mut engine = BacktestEngine::new(config).unwrap();
+    let venue_config = SimulatedVenueConfig::builder()
+        .venue(Venue::from("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1_000_000 EUR")])
+        .base_currency(Currency::EUR())
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine
 }
@@ -908,6 +932,7 @@ fn option_underlying_equity(venue: Venue) -> InstrumentAny {
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -929,6 +954,7 @@ fn option_contract(venue: Venue, expiration_ns: UnixNanos) -> InstrumentAny {
         Price::from("0.01"),
         Quantity::from(100),
         Quantity::from(1),
+        None,
         None,
         None,
         None,
@@ -1059,7 +1085,8 @@ fn test_run_rejects_depth_book_without_book_data(crypto_perpetual_ethusdt: Crypt
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1108,7 +1135,8 @@ fn test_run_with_depth_venue_and_book_data_succeeds(crypto_perpetual_ethusdt: Cr
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1138,7 +1166,8 @@ fn test_run_depth_check_fires_on_validate_false_path(crypto_perpetual_ethusdt: C
         .account_type(AccountType::Margin)
         .book_type(BookType::L2_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -1240,7 +1269,8 @@ fn test_add_strategies_stops_at_first_error() {
         .account_type(AccountType::Margin)
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let s1 = EmptyStrategy::new();
@@ -1436,7 +1466,8 @@ fn test_simulated_venue_config_settlement_prices_used_on_instrument_close(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .settlement_prices([(instrument_id, settlement_price)].into_iter().collect())
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
     engine.add_instrument(&instrument).unwrap();
     engine
@@ -1521,38 +1552,38 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
 
     let cache_rc = engine.kernel().cache();
     let (
-        expected_total,
+        expected_currency,
+        mut expected_pnls,
         cached_positions_count,
-        cache_realized_count,
         snapshots_realized,
-        snapshots_realized_count,
         snapshot_positions_count,
     ) = {
         let cache = cache_rc.borrow();
         let positions = cache.positions(None, None, None, None, None);
 
-        let cache_realized: f64 = positions
+        let mut expected_pnls: Vec<(PositionId, Currency, f64)> = positions
             .iter()
-            .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
-            .sum();
-        let cache_realized_count = positions
-            .iter()
-            .filter(|p| p.realized_pnl.is_some())
-            .count() as f64;
+            .filter_map(|p| {
+                p.realized_pnl
+                    .as_ref()
+                    .map(|m| (p.id, m.currency, m.as_f64()))
+            })
+            .collect();
 
         let snapshot_positions: Vec<Position> = positions
             .iter()
             .flat_map(|p| cache.position_snapshots(Some(&p.id), None))
             .collect();
         let snapshot_positions_count = snapshot_positions.len();
+        expected_pnls.extend(snapshot_positions.iter().filter_map(|p| {
+            p.realized_pnl
+                .as_ref()
+                .map(|m| (p.id, m.currency, m.as_f64()))
+        }));
         let snapshots_realized: f64 = snapshot_positions
             .iter()
             .filter_map(|p| p.realized_pnl.as_ref().map(|m| m.as_f64()))
             .sum();
-        let snapshots_realized_count = snapshot_positions
-            .iter()
-            .filter(|p| p.realized_pnl.is_some())
-            .count() as f64;
 
         assert!(
             snapshot_positions_count > 0,
@@ -1563,17 +1594,43 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
             "expected non-zero snapshot realized history"
         );
 
+        let expected_currency = expected_pnls
+            .first()
+            .map(|(_, currency, _)| *currency)
+            .expect("expected realized PnL history");
+        let expected_pnls = expected_pnls
+            .into_iter()
+            .filter_map(|(position_id, currency, pnl)| {
+                (currency == expected_currency).then_some((position_id, pnl))
+            })
+            .collect::<Vec<_>>();
+
         (
-            cache_realized + snapshots_realized,
+            expected_currency,
+            expected_pnls,
             positions.len(),
-            cache_realized_count,
             snapshots_realized,
-            snapshots_realized_count,
             snapshot_positions_count,
         )
     };
 
-    let expected_expectancy = expected_total / (cache_realized_count + snapshots_realized_count);
+    if let Some(recorded_pnls) = engine
+        .kernel()
+        .portfolio
+        .borrow()
+        .recorded_realized_pnls()
+        .get(&expected_currency)
+    {
+        expected_pnls.retain(|(position_id, _)| {
+            !recorded_pnls
+                .iter()
+                .any(|(recorded_position_id, _, _)| recorded_position_id == position_id)
+        });
+        expected_pnls.extend(recorded_pnls.iter().map(|(id, _, pnl)| (*id, *pnl)));
+    }
+
+    let expected_expectancy =
+        expected_pnls.iter().map(|(_, pnl)| pnl).sum::<f64>() / expected_pnls.len() as f64;
 
     let bt_result = engine.get_result();
     assert_eq!(
@@ -1602,6 +1659,73 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
     assert!(
         (expectancy - expected_expectancy).abs() < 1e-9,
         "expected Expectancy={expected_expectancy} to include snapshot history {snapshots_realized}, found {expectancy}"
+    );
+}
+
+#[rstest]
+fn test_get_result_uses_recorded_account_currency_pnls(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_eur_base_margin_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let xrate_instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("USDT/EUR"),
+        Some(Venue::from("BINANCE")),
+    ));
+    let xrate_instrument_id = xrate_instrument.id();
+
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_instrument(&xrate_instrument).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote_with_size(xrate_instrument_id, "0.90000", "0.90000", "1", 500_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1000.00", "1001.00", 2_000_000_000),
+        quote(instrument_id, "1010.00", "1011.00", 3_000_000_000),
+        quote(instrument_id, "1010.00", "1011.00", 4_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let expected_eur_pnl = {
+        let cache = engine.kernel().cache.borrow();
+        let positions = cache.positions(None, Some(&instrument_id), None, None, None);
+        let [position] = positions.as_slice() else {
+            panic!("expected one cached position");
+        };
+        let realized_pnl = position
+            .realized_pnl
+            .as_ref()
+            .expect("closed position should have realized PnL");
+
+        assert!(position.is_closed());
+        assert_eq!(realized_pnl.currency, Currency::USDT());
+
+        (realized_pnl.as_decimal() * Decimal::new(9, 1))
+            .round_dp(u32::from(Currency::EUR().precision))
+    };
+
+    let bt_result = engine.get_result();
+    let eur_stats = bt_result
+        .stats_pnls
+        .get("EUR")
+        .expect("EUR PnL stats must exist");
+    let expectancy = eur_stats
+        .get("Expectancy")
+        .copied()
+        .expect("Expectancy must use recorded EUR realized PnL");
+    let expected = expected_eur_pnl
+        .to_f64()
+        .expect("expected EUR PnL should fit f64");
+
+    assert!(
+        (expectancy - expected).abs() < 1e-9,
+        "expected EUR Expectancy={expected} from recorded account-currency PnL, found {expectancy}"
     );
 }
 
@@ -2297,7 +2421,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -2309,7 +2434,8 @@ fn test_multi_venue_data_routing(crypto_perpetual_ethusdt: CryptoPerpetual) {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -2567,10 +2693,12 @@ impl DataActor for CascadingStopStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.entry_submitted.get() {
             self.entry_submitted.set(true);
-            let order = self.core.order_factory().market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order().market(
+                instrument_id,
                 OrderSide::Buy,
-                self.trade_size,
+                trade_size,
                 None,
                 None,
                 None,
@@ -2588,10 +2716,12 @@ impl DataActor for CascadingStopStrategy {
         // Submit stop-loss in response to fill (cascading command)
         if !self.stop_submitted.get() {
             self.stop_submitted.set(true);
-            let order = self.core.order_factory().stop_market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order().stop_market(
+                instrument_id,
                 OrderSide::Sell,
-                self.trade_size,
+                trade_size,
                 Price::from("900.00"),
                 None,
                 None,
@@ -2638,6 +2768,453 @@ fn test_cascading_stop_loss_on_fill_settled_same_tick(crypto_perpetual_ethusdt: 
         "Expected 2 orders (entry + cascading stop-loss), was {}",
         bt_result.total_orders
     );
+}
+
+struct EmulatedStopEntryOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    trigger_price: Price,
+    position_id: Option<PositionId>,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedStopEntryOnQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity, trigger_price: Price) -> Self {
+        Self::with_position(instrument_id, trade_size, trigger_price, None)
+    }
+
+    fn with_position(
+        instrument_id: InstrumentId,
+        trade_size: Quantity,
+        trigger_price: Price,
+        position_id: Option<PositionId>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-STOP-ENTRY-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            trigger_price,
+            position_id,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedStopEntryOnQuote);
+
+impl Debug for EmulatedStopEntryOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedStopEntryOnQuote))
+            .finish()
+    }
+}
+
+impl DataActor for EmulatedStopEntryOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.submitted.set(false);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let trigger_price = self.trigger_price;
+        let order = self.order().stop_market(
+            instrument_id,
+            OrderSide::Buy,
+            trade_size,
+            trigger_price,
+            Some(TriggerType::BidAsk),
+            Some(TimeInForce::Gtc),
+            None,
+            None,
+            None,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, self.position_id, None, None)
+    }
+}
+
+#[rstest]
+fn test_emulated_stop_entry_releases_to_execution(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedStopEntryOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("1005.00"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1005.00", "1006.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let [order] = orders.as_slice() else {
+        panic!("expected one emulated stop entry order");
+    };
+
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Emulated(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Released(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(
+        cache
+            .positions_open(None, Some(&instrument_id), None, None, None)
+            .len(),
+        1,
+    );
+}
+
+struct EmulatedTrailingStopOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    trade_count: std::rc::Rc<Cell<u32>>,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedTrailingStopOnQuote {
+    fn new(
+        instrument_id: InstrumentId,
+        trade_size: Quantity,
+        trade_count: std::rc::Rc<Cell<u32>>,
+    ) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-TRAILING-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            trade_count,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedTrailingStopOnQuote);
+
+impl Debug for EmulatedTrailingStopOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedTrailingStopOnQuote))
+            .finish()
+    }
+}
+
+impl DataActor for EmulatedTrailingStopOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        self.subscribe_trades(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().trailing_stop_market(
+            instrument_id,
+            OrderSide::Buy,
+            trade_size,
+            Decimal::from(5),
+            Some(TrailingOffsetType::Price),
+            None,
+            Some(Price::from("1010.00")),
+            Some(TriggerType::BidAsk),
+            Some(TimeInForce::Gtc),
+            None,
+            None,
+            None,
+            None,
+            Some(TriggerType::BidAsk),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+
+    fn on_trade(&mut self, _tick: &TradeTick) -> anyhow::Result<()> {
+        self.trade_count.set(self.trade_count.get() + 1);
+        Ok(())
+    }
+}
+
+#[rstest]
+fn test_emulated_trailing_stop_updates_trigger_and_releases(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    let trade_count = std::rc::Rc::new(Cell::new(0));
+    engine
+        .add_strategy(EmulatedTrailingStopOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+            trade_count.clone(),
+        ))
+        .unwrap();
+
+    let data = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        trade(instrument_id, "999.50", "1.000", 1_500_000_000),
+        quote(instrument_id, "995.00", "996.00", 2_000_000_000),
+        quote(instrument_id, "1001.00", "1001.50", 3_000_000_000),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let [order] = orders.as_slice() else {
+        panic!("expected one emulated trailing stop order");
+    };
+
+    assert_eq!(trade_count.get(), 1);
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Updated(_)))
+    );
+    assert!(
+        order
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Released(_)))
+    );
+}
+
+struct EmulatedBracketOnQuote {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    submitted: Cell<bool>,
+}
+
+impl EmulatedBracketOnQuote {
+    fn new(instrument_id: InstrumentId, trade_size: Quantity) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("EMULATED-BRACKET-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size,
+            submitted: Cell::new(false),
+        }
+    }
+}
+
+nautilus_strategy!(EmulatedBracketOnQuote);
+
+impl Debug for EmulatedBracketOnQuote {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(EmulatedBracketOnQuote)).finish()
+    }
+}
+
+impl DataActor for EmulatedBracketOnQuote {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted.get() {
+            return Ok(());
+        }
+        self.submitted.set(true);
+
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let orders = self
+            .order()
+            .bracket()
+            .instrument_id(instrument_id)
+            .order_side(OrderSide::Buy)
+            .quantity(trade_size)
+            .emulation_trigger(TriggerType::BidAsk)
+            .contingency_type(ContingencyType::Oco)
+            .tp_price(Price::from("1010.00"))
+            .tp_post_only(false)
+            .sl_trigger_price(Price::from("990.00"))
+            .call();
+        self.submit_order_list(orders, None, None, None)
+    }
+}
+
+#[rstest]
+fn test_emulated_oco_cancels_sibling_without_reentrant_borrow(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedBracketOnQuote::new(
+            instrument_id,
+            Quantity::from("1.000"),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1010.00", "1011.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+
+    let cache_rc = engine.kernel().cache();
+    let cache = cache_rc.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let stop_loss_tag = Ustr::from("STOP_LOSS");
+    let take_profit_tag = Ustr::from("TAKE_PROFIT");
+    let stop_loss = orders
+        .iter()
+        .find(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.contains(&stop_loss_tag))
+        })
+        .expect("expected stop-loss child order");
+    let take_profit = orders
+        .iter()
+        .find(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.contains(&take_profit_tag))
+        })
+        .expect("expected take-profit child order");
+
+    assert_eq!(orders.len(), 3);
+    assert_eq!(take_profit.status(), OrderStatus::Filled);
+    assert_eq!(stop_loss.status(), OrderStatus::Canceled);
+    assert!(
+        stop_loss
+            .events()
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Canceled(_)))
+    );
+}
+
+#[rstest]
+fn test_reset_between_emulated_runs_clears_order_emulator_state(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+
+    engine
+        .add_strategy(EmulatedStopEntryOnQuote::with_position(
+            instrument_id,
+            Quantity::from("1.000"),
+            Price::from("1010.00"),
+            Some(PositionId::from("P-EMULATED-RESET-001")),
+        ))
+        .unwrap();
+
+    let quotes = vec![
+        quote(instrument_id, "1000.00", "1001.00", 1_000_000_000),
+        quote(instrument_id, "1002.00", "1003.00", 2_000_000_000),
+    ];
+    engine.add_data(quotes, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+    {
+        let emulator = engine.kernel().order_emulator.get_emulator();
+        assert!(emulator.get_matching_core(&instrument_id).is_some());
+        assert_eq!(emulator.subscribed_quotes(), vec![instrument_id]);
+        assert_eq!(emulator.subscribed_strategy_count(), 1);
+        assert_eq!(emulator.monitored_position_count(), 1);
+        assert_eq!(emulator.get_submit_order_commands().len(), 1);
+    }
+
+    engine.reset();
+    {
+        let emulator = engine.kernel().order_emulator.get_emulator();
+        assert!(emulator.get_matching_core(&instrument_id).is_none());
+        assert!(emulator.subscribed_quotes().is_empty());
+        assert!(emulator.subscribed_trades().is_empty());
+        assert_eq!(emulator.subscribed_strategy_count(), 0);
+        assert_eq!(emulator.monitored_position_count(), 0);
+        assert!(emulator.get_submit_order_commands().is_empty());
+    }
+
+    engine.run(None, None, None, false).unwrap();
+    let emulator = engine.kernel().order_emulator.get_emulator();
+    assert!(emulator.get_matching_core(&instrument_id).is_some());
+    assert_eq!(emulator.subscribed_quotes(), vec![instrument_id]);
+    assert_eq!(emulator.subscribed_strategy_count(), 1);
+    assert_eq!(emulator.monitored_position_count(), 1);
+    assert_eq!(emulator.get_submit_order_commands().len(), 1);
 }
 
 // Strategy that sets two timers at the same timestamp, each submitting
@@ -2693,10 +3270,12 @@ impl DataActor for DualTimerStrategy {
         } else {
             OrderSide::Sell
         };
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -3024,7 +3603,8 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3036,7 +3616,8 @@ fn test_list_venues_multiple() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3080,7 +3661,8 @@ fn test_option_expiry_timer_closes_position_without_data_at_expiration() {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3181,6 +3763,94 @@ fn test_option_expiry_timer_runs_when_end_equals_expiration() {
     );
 }
 
+#[rstest]
+fn test_instruments_with_same_expiration_share_expiry_timer() {
+    let venue = Venue::from("OPRA");
+    let expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let option = option_contract(venue, expiration_ns);
+    let mut other_option = option_contract(venue, expiration_ns);
+    if let InstrumentAny::OptionContract(option) = &mut other_option {
+        option.id = InstrumentId::from(format!("AAPL240315C00155000.{venue}").as_str());
+        option.raw_symbol = Symbol::from("AAPL240315C00155000");
+        option.strike_price = Price::from("155.00");
+    }
+
+    engine.add_instrument(&option).unwrap();
+    engine.add_instrument(&other_option).unwrap();
+
+    let expiry_timer_names: Vec<String> = engine
+        .kernel()
+        .clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("INSTRUMENT-EXPIRATION:"))
+        .map(ToString::to_string)
+        .collect();
+
+    assert_eq!(
+        expiry_timer_names,
+        vec![format!("INSTRUMENT-EXPIRATION:{venue}:{expiration_ns}")],
+    );
+}
+
+#[rstest]
+fn test_instrument_update_cancels_previous_expiry_timer() {
+    let venue = Venue::from("OPRA");
+    let original_expiration_ns = UnixNanos::from(2_000_000_000u64);
+    let updated_expiration_ns = UnixNanos::from(3_000_000_000u64);
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("1_000_000 USD")])
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+
+    let option = option_contract(venue, original_expiration_ns);
+    let updated_option = option_contract(venue, updated_expiration_ns);
+
+    engine.add_instrument(&option).unwrap();
+    engine.add_instrument(&updated_option).unwrap();
+
+    let expiry_timer_names: Vec<String> = engine
+        .kernel()
+        .clock
+        .borrow()
+        .timer_names()
+        .into_iter()
+        .filter(|name| name.starts_with("INSTRUMENT-EXPIRATION:"))
+        .map(ToString::to_string)
+        .collect();
+
+    assert_eq!(
+        expiry_timer_names,
+        vec![format!(
+            "INSTRUMENT-EXPIRATION:{venue}:{updated_expiration_ns}"
+        )],
+    );
+}
+
 fn run_call_option_expiry_timer(
     underlying_price: &str,
     end_ns: UnixNanos,
@@ -3196,7 +3866,8 @@ fn run_call_option_expiry_timer(
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -3252,7 +3923,8 @@ fn test_add_venue_with_queue_position(crypto_perpetual_ethusdt: CryptoPerpetual)
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .queue_position(true)
-            .build(),
+            .build()
+            .unwrap(),
     );
     assert!(result.is_ok());
 
@@ -3312,10 +3984,12 @@ impl DataActor for CloseOnStop {
             return Ok(());
         }
         self.opened = true;
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -3433,7 +4107,8 @@ fn test_end_does_not_double_run_modules_at_same_timestamp(
         .book_type(BookType::L1_MBP)
         .starting_balances(vec![Money::from("1_000_000 USDT")])
         .modules(vec![Box::new(module)])
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -3512,11 +4187,14 @@ impl DataActor for CancelOnStop {
             return Ok(());
         }
         self.placed = true;
-        let order = self.core.order_factory().limit(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let limit_price = self.limit_price;
+        let order = self.order().limit(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
-            self.limit_price,
+            trade_size,
+            limit_price,
             None,
             None,
             None,
@@ -3661,7 +4339,8 @@ fn test_close_all_positions_in_on_stop_is_processed_with_latency(
             UnixNanos::default(),
             UnixNanos::default(),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -3747,10 +4426,12 @@ impl DataActor for OpenOnEveryQuote {
     }
 
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -3782,7 +4463,8 @@ fn test_trailing_final_tick_order_settles_with_latency(crypto_perpetual_ethusdt:
             UnixNanos::default(),
             UnixNanos::default(),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -3853,7 +4535,8 @@ fn test_cancel_all_orders_in_on_stop_is_processed_with_latency(
             UnixNanos::default(),
             UnixNanos::from(1_500_000_000),
         )))
-        .build();
+        .build()
+        .unwrap();
     engine.add_venue(venue_config).unwrap();
 
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
@@ -3965,10 +4648,11 @@ impl DataActor for MultiInstrumentCloseOnStop {
             return Ok(());
         }
         self.opened[idx] = true;
-        let order = self.core.order_factory().market(
+        let trade_size = self.trade_size;
+        let order = self.order().market(
             quote.instrument_id,
             OrderSide::Buy,
-            self.trade_size,
+            trade_size,
             None,
             None,
             None,
@@ -4014,7 +4698,8 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     UnixNanos::default(),
                     UnixNanos::default(),
                 )))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine
@@ -4031,7 +4716,8 @@ fn test_close_all_positions_on_stop_multi_venue_latency_aggregates(
                     UnixNanos::default(),
                     UnixNanos::default(),
                 )))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
 
@@ -4100,7 +4786,8 @@ fn test_add_venue_with_oto_full_trigger(crypto_perpetual_ethusdt: CryptoPerpetua
             .book_type(BookType::L1_MBP)
             .starting_balances(vec![Money::from("1_000_000 USDT")])
             .oto_full_trigger(true)
-            .build(),
+            .build()
+            .unwrap(),
     );
     assert!(result.is_ok());
 

@@ -70,26 +70,30 @@ impl EmaCross {
         fast_period: usize,
         slow_period: usize,
     ) -> Self {
-        Self::from_config(EmaCrossConfig::new(
-            instrument_id,
-            trade_size,
-            fast_period,
-            slow_period,
-        ))
+        Self::from_config(
+            EmaCrossConfig::builder()
+                .instrument_id(instrument_id)
+                .trade_size(trade_size)
+                .fast_period(fast_period)
+                .slow_period(slow_period)
+                .build(),
+        )
     }
 
     fn enter(&mut self, side: OrderSide) -> anyhow::Result<()> {
-        let order = self.core.order_factory().market(
-            self.instrument_id,
+        let instrument_id = self.instrument_id;
+        let trade_size = self.trade_size;
+        let order = self.order().market(
+            instrument_id,
             side,
-            self.trade_size,
+            trade_size,
             None, // time_in_force
             None, // reduce_only
             None, // quote_quantity
-            None, // display_qty
-            None, // expire_time
-            None, // emulation_trigger
+            None, // exec_algorithm_id
+            None, // exec_algorithm_params
             None, // tags
+            None, // client_order_id
         );
         self.submit_order(order, None, None, None)
     }

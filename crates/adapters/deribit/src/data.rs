@@ -252,7 +252,7 @@ impl DeribitDataClient {
                 }
             }
             NautilusWsMessage::Error(e) => {
-                log::error!("WebSocket error: {e:?}");
+                log::warn!("WebSocket error: {e:?}");
             }
             NautilusWsMessage::Raw(value) => {
                 log::debug!("Unhandled raw message: {value}");
@@ -1732,29 +1732,7 @@ impl DataClient for DeribitDataClient {
             );
         }
 
-        // First, check if instrument exists in cache
-        if let Some(instrument) = self.instruments.get_cloned(&request.instrument_id) {
-            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                request.request_id,
-                request.client_id.unwrap_or(self.client_id),
-                instrument.id(),
-                instrument,
-                datetime_to_unix_nanos(request.start),
-                datetime_to_unix_nanos(request.end),
-                self.clock.get_time_ns(),
-                request.params,
-            )));
-
-            if let Err(e) = self.data_sender.send(DataEvent::Response(response)) {
-                log::error!("Failed to send instrument response: {e}");
-            }
-            return Ok(());
-        }
-
-        log::debug!(
-            "Instrument {} not in cache, fetching from API",
-            request.instrument_id
-        );
+        log::debug!("Fetching instrument {} from API", request.instrument_id);
 
         let http_client = self.http_client.clone();
         let ws_client = self.ws_client.clone();

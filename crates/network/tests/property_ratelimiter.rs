@@ -83,6 +83,18 @@ fn rate_limit_op_strategy() -> impl Strategy<Value = RateLimitOp> {
 }
 
 proptest! {
+    // Pin regression files to the crate directory: the default source-parallel
+    // resolution has no `src` component for integration tests and lands at the
+    // workspace root instead
+    #![proptest_config(ProptestConfig {
+        failure_persistence: Some(Box::new(
+            proptest::test_runner::FileFailurePersistence::Direct(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/proptest-regressions/ratelimiter.txt")
+            )
+        )),
+        ..ProptestConfig::default()
+    })]
+
     /// Property: exact GCRA decisions match a reference model under deterministic time.
     #[rstest]
     fn rate_limiter_matches_reference_trace(
@@ -118,6 +130,64 @@ proptest! {
                     rate_limiter.advance_clock(Duration::from_millis(millis));
                     reference.advance(millis);
                 }
+            }
+        }
+    }
+
+    /// Property: admissions are bounded in every time window, under deterministic
+    /// time and the production quota shape (`with_period` + `allow_burst`).
+    ///
+    /// Implementation-independent: in any window of length m*t (t = replenish
+    /// interval) GCRA admits at most burst + m + 1 cells. Unlike the reference-
+    /// trace property this cannot be fooled by a misconception shared between
+    /// the implementation and a mirrored model.
+    #[rstest]
+    fn rate_limiter_never_exceeds_window_budget(
+        period_ms in 1u64..=1_000,
+        burst in 1u32..=10,
+        ops in proptest::collection::vec(rate_limit_op_strategy(), 1..200)
+    ) {
+        let quota = Quota::with_period(Duration::from_millis(period_ms))
+            .unwrap()
+            .allow_burst(NonZeroU32::new(burst).unwrap());
+        let clock = FakeRelativeClock::default();
+        let rate_limiter = RateLimiter::new_with_clock(Some(quota), vec![], clock);
+
+        let key = "window".to_string();
+        let mut now_ns: u128 = 0;
+        let mut admitted_ns: Vec<u128> = Vec::new();
+
+        for op in &ops {
+            match *op {
+                RateLimitOp::Check(_) => {
+                    if rate_limiter.check_key(&key).is_ok() {
+                        admitted_ns.push(now_ns);
+                    }
+                }
+                RateLimitOp::Advance(millis) => {
+                    rate_limiter.advance_clock(Duration::from_millis(millis));
+                    now_ns += Duration::from_millis(millis).as_nanos();
+                }
+            }
+        }
+
+        let t_ns = u128::from(period_ms) * 1_000_000;
+        for window_cells in [1u128, u128::from(burst)] {
+            let window_ns = window_cells * t_ns;
+            let budget = usize::try_from(u128::from(burst) + window_cells + 1).unwrap();
+
+            for (i, start) in admitted_ns.iter().enumerate() {
+                let end = start + window_ns;
+                let in_window = admitted_ns[i..].iter().take_while(|&&ts| ts < end).count();
+                prop_assert!(
+                    in_window <= budget,
+                    "{} admissions within a {}-cell window (budget {}), period_ms={}, burst={}",
+                    in_window,
+                    window_cells,
+                    budget,
+                    period_ms,
+                    burst
+                );
             }
         }
     }

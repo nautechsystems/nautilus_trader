@@ -20,11 +20,12 @@ use std::{collections::HashMap, num::NonZeroU32, sync::Arc, time::Duration};
 use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     consts::NAUTILUS_USER_AGENT, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime,
 };
 use nautilus_model::{
-    data::{Bar, BarType, TradeTick},
+    data::{Bar, BarType, FundingRateUpdate, TradeTick},
     enums::{
         AggregationSource, AggressorSide, BarAggregation, MarketStatusAction, OrderSide, OrderType,
         TimeInForce,
@@ -36,9 +37,10 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use nautilus_network::{
-    http::{HttpClient, HttpResponse, Method},
+    http::{HttpClient, HttpResponse, Method, USER_AGENT},
     ratelimiter::quota::Quota,
 };
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use ustr::Ustr;
 
@@ -66,25 +68,28 @@ use super::{
         BinanceTradesParams, BinanceUserTradesParams, ListenKeyParams,
     },
 };
-use crate::common::{
-    consts::{
-        BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
-        BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+use crate::{
+    common::{
+        consts::{
+            BINANCE_API_KEY_HEADER, BINANCE_DAPI_PATH, BINANCE_DAPI_RATE_LIMITS, BINANCE_FAPI_PATH,
+            BINANCE_FAPI_RATE_LIMITS, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BinanceRateLimitQuota,
+        },
+        credential::SigningCredential,
+        encoder::encode_broker_id,
+        enums::{
+            BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
+            BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
+            BinanceSide, BinanceTimeInForce, BinanceWorkingType,
+        },
+        models::BinanceErrorResponse,
+        parse::{
+            parse_coinm_instrument, parse_required_price_at_precision,
+            parse_required_quantity_at_precision, parse_usdm_instrument,
+        },
+        symbol::{format_binance_symbol, format_instrument_id},
+        urls::get_http_base_url,
     },
-    credential::SigningCredential,
-    encoder::encode_broker_id,
-    enums::{
-        BinanceAlgoType, BinanceEnvironment, BinanceFuturesOrderType, BinancePositionSide,
-        BinancePriceMatch, BinanceProductType, BinanceRateLimitInterval, BinanceRateLimitType,
-        BinanceSide, BinanceTimeInForce, BinanceWorkingType,
-    },
-    models::BinanceErrorResponse,
-    parse::{
-        parse_coinm_instrument, parse_required_price_at_precision,
-        parse_required_quantity_at_precision, parse_usdm_instrument,
-    },
-    symbol::{format_binance_symbol, format_instrument_id},
-    urls::get_http_base_url,
+    futures::conversions::reduce_only_param,
 };
 
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
@@ -493,7 +498,7 @@ impl BinanceRawFuturesHttpClient {
 
     fn default_headers(credential: &Option<SigningCredential>) -> HashMap<String, String> {
         let mut headers = HashMap::new();
-        headers.insert("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string());
+        headers.insert(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string());
 
         if let Some(cred) = credential {
             headers.insert(
@@ -1185,7 +1190,7 @@ impl BinanceFuturesInstrument {
             Self::UsdM(s) => &s.quote_asset,
             Self::CoinM(s) => &s.quote_asset,
         };
-        Currency::from(quote_asset.as_str())
+        Currency::get_or_create_crypto_with_context(quote_asset.as_str(), Some("futures quote"))
     }
 }
 
@@ -1748,7 +1753,7 @@ impl BinanceFuturesHttpClient {
             price: price_str,
             new_client_order_id: Some(client_id_str),
             stop_price: stop_price_str,
-            reduce_only: if reduce_only { Some(true) } else { None },
+            reduce_only: reduce_only_param(reduce_only, position_side),
             position_side,
             close_position: None,
             activation_price: None,
@@ -1833,11 +1838,7 @@ impl BinanceFuturesHttpClient {
         } else {
             trigger_price.map(|p| p.to_string())
         };
-        let reduce_only = if reduce_only && position_side.is_none() {
-            Some(true)
-        } else {
-            None
-        };
+        let reduce_only = reduce_only_param(reduce_only, position_side);
         let client_id_str = encode_broker_id(&client_order_id, BINANCE_NAUTILUS_FUTURES_BROKER_ID);
 
         // closePosition is mutually exclusive with quantity and reduceOnly
@@ -2330,6 +2331,7 @@ impl BinanceFuturesHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or parsing fails.
+    #[expect(clippy::too_many_arguments)]
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
@@ -2338,6 +2340,7 @@ impl BinanceFuturesHttpClient {
         start: Option<i64>,
         end: Option<i64>,
         limit: Option<u32>,
+        bnfcr_currency: Currency,
     ) -> anyhow::Result<Vec<FillReport>> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
@@ -2369,6 +2372,7 @@ impl BinanceFuturesHttpClient {
                 instrument_id,
                 price_precision,
                 size_precision,
+                bnfcr_currency,
                 ts_init,
             ) {
                 Ok(report) => reports.push(report),
@@ -2391,9 +2395,8 @@ impl BinanceFuturesHttpClient {
         instrument_id: InstrumentId,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let symbol = format_binance_symbol(&instrument_id);
-        let size_precision = self.get_size_precision(&symbol)?;
-        let price_precision = self.get_price_precision(&symbol)?;
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let params = BinanceTradesParams { symbol, limit };
 
@@ -2447,9 +2450,9 @@ impl BinanceFuturesHttpClient {
             a => anyhow::bail!("Binance Futures does not support {a:?} aggregation"),
         };
 
-        let symbol = format_binance_symbol(&bar_type.instrument_id());
-        let price_precision = self.get_price_precision(&symbol)?;
-        let size_precision = self.get_size_precision(&symbol)?;
+        let instrument_id = bar_type.instrument_id();
+        let (symbol, price_precision, size_precision) =
+            self.cached_precisions_by_id(instrument_id)?;
 
         let params = BinanceKlinesParams {
             symbol,
@@ -2472,6 +2475,58 @@ impl BinanceFuturesHttpClient {
                 ts_init,
             )?;
             result.push(bar);
+        }
+
+        Ok(result)
+    }
+
+    fn cached_precisions_by_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<(String, u8, u8)> {
+        let symbol = format_binance_symbol(&instrument_id);
+        let instrument = self
+            .instruments
+            .get(&Ustr::from(symbol.as_str()))
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+
+        let (price_precision, size_precision) = match instrument.value() {
+            BinanceFuturesInstrument::UsdM(s) => (s.price_precision, s.quantity_precision),
+            BinanceFuturesInstrument::CoinM(s) => (s.price_precision, s.quantity_precision),
+        };
+
+        Ok((symbol, price_precision as u8, size_precision as u8))
+    }
+
+    /// Requests historical funding rates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    pub async fn request_funding_rates(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        let params = BinanceFundingRateParams {
+            symbol: Some(format_binance_symbol(&instrument_id)),
+            start_time: start.map(|dt| dt.timestamp_millis()),
+            end_time: end.map(|dt| dt.timestamp_millis()),
+            limit,
+        };
+
+        let rates = self.inner.funding_rate(&params).await?;
+        let ts_init = UnixNanos::default();
+
+        let mut result = Vec::with_capacity(rates.len());
+        for rate in rates {
+            result.push(parse_futures_funding_rate_update(
+                &rate,
+                instrument_id,
+                ts_init,
+            )?);
         }
 
         Ok(result)
@@ -2530,6 +2585,26 @@ fn parse_futures_kline_bar(
 
     Ok(Bar::new(
         bar_type, open, high, low, close, volume, ts_event, ts_init,
+    ))
+}
+
+fn parse_futures_funding_rate_update(
+    rate: &BinanceFundingRate,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FundingRateUpdate> {
+    let funding_rate = rate.funding_rate.parse::<Decimal>().map_err(|e| {
+        anyhow::anyhow!("invalid Futures funding rate at {}: {e}", rate.funding_time)
+    })?;
+    let ts_event = UnixNanos::from_millis(rate.funding_time as u64);
+
+    Ok(FundingRateUpdate::new(
+        instrument_id,
+        funding_rate,
+        None, // Funding interval is not provided by the history endpoint
+        None, // Next funding time is not provided by the history endpoint
+        ts_event,
+        ts_init,
     ))
 }
 
@@ -2733,6 +2808,23 @@ mod tests {
             time_in_force: Vec::new(),
             filters: Vec::new(),
         }
+    }
+
+    #[rstest]
+    fn test_cached_precisions_by_id_returns_symbol_and_precisions() {
+        let client = create_test_client();
+        client.instruments_cache().insert(
+            Ustr::from("BTCUSDT"),
+            BinanceFuturesInstrument::UsdM(test_usdm_symbol()),
+        );
+
+        let (symbol, price_precision, size_precision) = client
+            .cached_precisions_by_id(InstrumentId::from("BTCUSDT-PERP.BINANCE"))
+            .unwrap();
+
+        assert_eq!(symbol, "BTCUSDT");
+        assert_eq!(price_precision, 2);
+        assert_eq!(size_precision, 3);
     }
 
     #[rstest]

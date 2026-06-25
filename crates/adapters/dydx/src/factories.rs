@@ -127,12 +127,14 @@ impl DataClientFactory for DydxDataClientFactory {
             retry_config,
         )?;
 
-        let ws_client = DydxWebSocketClient::new_public_with_cache(
+        let ws_client = DydxWebSocketClient::new_public_with_cache_and_pool(
             ws_url,
             Arc::new(InstrumentCache::new()),
             Some(20),
             dydx_config.transport_backend,
             dydx_config.proxy_url.clone(),
+            dydx_config.max_ws_connections,
+            dydx_config.per_channel_subscription_limit,
         );
 
         let client = DydxDataClient::new(client_id, dydx_config, http_client, ws_client)?;

@@ -331,7 +331,7 @@ cdef class SimulatedExchange:
     cdef void _update_next_instrument_expiration(self, OrderMatchingEngine matching_engine)
     cdef void _set_instrument_expiration_timer(self, OrderMatchingEngine matching_engine)
     cdef void _set_instrument_expiration_timers(self)
-    cdef str _instrument_expiration_timer_name(self, InstrumentId instrument_id)
+    cdef str _instrument_expiration_timer_name(self, Venue venue, uint64_t expiration_ns)
 
     cdef void _process_trading_command(self, TradingCommand command)
     cdef void _process_modify_submitted_order(self, ModifyOrder command)

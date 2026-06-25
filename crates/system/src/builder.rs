@@ -20,6 +20,10 @@ use nautilus_common::{
     clock::Clock,
     enums::Environment,
     logging::logger::LoggerConfig,
+    msgbus::{
+        MessageBusBackingFactory, MessageBusConfig, MessageBusExternalEgress,
+        external_egress_from_backing,
+    },
 };
 use nautilus_core::UUID4;
 use nautilus_data::engine::config::DataEngineConfig;
@@ -59,7 +63,10 @@ pub struct NautilusKernelBuilder {
     risk_engine: Option<RiskEngineConfig>,
     exec_engine: Option<ExecutionEngineConfig>,
     portfolio: Option<PortfolioConfig>,
+    msgbus: Option<MessageBusConfig>,
     event_store_factory: Option<EventStoreFactory>,
+    external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
+    external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
 }
 
 impl Debug for NautilusKernelBuilder {
@@ -85,7 +92,16 @@ impl Debug for NautilusKernelBuilder {
             .field("risk_engine", &self.risk_engine)
             .field("exec_engine", &self.exec_engine)
             .field("portfolio", &self.portfolio)
+            .field("msgbus", &self.msgbus)
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field(
+                "external_msgbus_factory",
+                &self.external_msgbus_factory.is_some(),
+            )
+            .field(
+                "external_msgbus_egress",
+                &self.external_msgbus_egress.is_some(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -103,7 +119,7 @@ impl NautilusKernelBuilder {
             save_state: true,
             shutdown_on_error: false,
             logging: None,
-            timeout_connection: Duration::from_secs(60),
+            timeout_connection: Duration::from_mins(1),
             timeout_reconciliation: Duration::from_secs(30),
             timeout_portfolio: Duration::from_secs(10),
             timeout_disconnection: Duration::from_secs(10),
@@ -115,7 +131,10 @@ impl NautilusKernelBuilder {
             risk_engine: None,
             exec_engine: None,
             portfolio: None,
+            msgbus: None,
             event_store_factory: None,
+            external_msgbus_factory: None,
+            external_msgbus_egress: None,
         }
     }
 
@@ -246,6 +265,13 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Set the message bus configuration.
+    #[must_use]
+    pub fn with_msgbus_config(mut self, config: MessageBusConfig) -> Self {
+        self.msgbus = Some(config);
+        self
+    }
+
     /// Inject an event-store implementation to drive run-lifecycle capture.
     ///
     /// The factory is invoked with the kernel's instance id and clock during
@@ -263,12 +289,49 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Inject external message bus egress for serialized message bus publications.
+    #[must_use]
+    pub fn with_external_msgbus_egress(
+        mut self,
+        external_egress: Box<dyn MessageBusExternalEgress>,
+    ) -> Self {
+        self.external_msgbus_egress = Some(external_egress);
+        self
+    }
+
+    /// Build and inject external message bus egress from a factory.
+    #[must_use]
+    pub fn with_external_msgbus_factory(
+        mut self,
+        factory: Box<dyn MessageBusBackingFactory>,
+    ) -> Self {
+        self.external_msgbus_factory = Some(factory);
+        self
+    }
+
     /// Build the [`NautilusKernel`] with the configured settings.
     ///
     /// # Errors
     ///
     /// Returns an error if kernel initialization fails.
     pub fn build(self) -> anyhow::Result<NautilusKernel> {
+        if self.external_msgbus_factory.is_some() && self.external_msgbus_egress.is_some() {
+            anyhow::bail!("external message bus factory cannot be combined with injected egress");
+        }
+
+        if self.external_msgbus_factory.is_some()
+            && self
+                .msgbus
+                .as_ref()
+                .and_then(|config| config.external_streams.as_ref())
+                .is_some_and(|streams| !streams.is_empty())
+        {
+            anyhow::bail!(
+                "NautilusKernelBuilder cannot consume external message bus streams; \
+                 use LiveNodeBuilder::with_external_msgbus_factory for ingress"
+            );
+        }
+
         let config = KernelConfig {
             environment: self.environment,
             trader_id: self.trader_id,
@@ -284,7 +347,7 @@ impl NautilusKernelBuilder {
             delay_post_stop: self.delay_post_stop,
             timeout_shutdown: self.timeout_shutdown,
             cache: self.cache,
-            msgbus: None, // msgbus config - not exposed in builder yet
+            msgbus: self.msgbus,
             data_engine: self.data_engine,
             risk_engine: self.risk_engine,
             exec_engine: self.exec_engine,
@@ -292,12 +355,33 @@ impl NautilusKernelBuilder {
             streaming: None,
         };
 
-        NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with(
             self.name,
             config,
             self.cache_database,
             self.event_store_factory,
-        )
+        )?;
+
+        let config = kernel.config.msgbus().unwrap_or_default();
+        let external_egress = if let Some(factory) = self.external_msgbus_factory {
+            config.validate()?;
+            let backing = factory.create(
+                kernel.config.trader_id(),
+                kernel.instance_id,
+                config.clone(),
+            )?;
+            Some(external_egress_from_backing(backing))
+        } else {
+            self.external_msgbus_egress
+        };
+
+        if let Some(external_egress) = external_egress {
+            nautilus_common::msgbus::get_message_bus()
+                .borrow_mut()
+                .set_external_egress_config(external_egress, &config)?;
+        }
+
+        Ok(kernel)
     }
 }
 
@@ -314,6 +398,14 @@ impl Default for NautilusKernelBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        cell::Cell,
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
+    };
+
     use ahash::AHashMap;
     use bytes::Bytes;
     use nautilus_common::{
@@ -322,6 +414,7 @@ mod tests {
             database::{CacheDatabaseAdapter, CacheMap},
         },
         clock::Clock,
+        msgbus::{BusMessage, MessageBusBacking, MessageBusBackingFactory},
         signal::Signal,
     };
     use nautilus_core::UnixNanos;
@@ -341,7 +434,7 @@ mod tests {
         orderbook::OrderBook,
         orders::OrderAny,
         position::Position,
-        types::Currency,
+        types::{Currency, Money},
     };
     use rstest::*;
     use ustr::Ustr;
@@ -408,6 +501,112 @@ mod tests {
         let builder = NautilusKernelBuilder::default().with_cache_database(Box::new(NoopAdapter));
 
         assert!(builder.cache_database.is_some());
+    }
+
+    #[rstest]
+    fn test_builder_with_external_msgbus_egress_forwards_published_quote() {
+        let (external_egress, publications, closed) = CapturingExternalEgress::new();
+        let kernel = NautilusKernelBuilder::default()
+            .with_external_msgbus_egress(Box::new(external_egress))
+            .build()
+            .expect("kernel builds with external message bus egress");
+        let quote = QuoteTick::default();
+
+        nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.borrow();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            serde_json::from_slice::<QuoteTick>(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+
+        nautilus_common::msgbus::get_message_bus()
+            .borrow_mut()
+            .dispose();
+        assert!(closed.get());
+        drop(kernel);
+    }
+
+    #[rstest]
+    fn test_builder_with_external_msgbus_factory_forwards_published_quote() {
+        let publications = Arc::new(Mutex::new(Vec::new()));
+        let closed = Arc::new(AtomicBool::new(false));
+        let factory = CapturingBackingFactory {
+            publications: publications.clone(),
+            closed: closed.clone(),
+        };
+        let kernel = NautilusKernelBuilder::default()
+            .with_external_msgbus_factory(Box::new(factory))
+            .build()
+            .expect("kernel builds with external message bus factory");
+        let quote = QuoteTick::default();
+
+        nautilus_common::msgbus::publish_quote("data.quotes.TEST".into(), &quote);
+
+        let publications = publications.lock().unwrap();
+        assert_eq!(publications.len(), 1);
+        assert_eq!(publications[0].topic, "data.quotes.TEST");
+        assert_eq!(
+            serde_json::from_slice::<QuoteTick>(&publications[0].payload)
+                .expect("JSON payload must decode as QuoteTick"),
+            quote
+        );
+        drop(publications);
+
+        nautilus_common::msgbus::get_message_bus()
+            .borrow_mut()
+            .dispose();
+        assert!(closed.load(Ordering::Relaxed));
+        drop(kernel);
+    }
+
+    #[rstest]
+    fn test_builder_with_external_msgbus_factory_rejects_external_streams() {
+        let factory = CapturingBackingFactory {
+            publications: Arc::new(Mutex::new(Vec::new())),
+            closed: Arc::new(AtomicBool::new(false)),
+        };
+        let config = MessageBusConfig {
+            external_streams: Some(vec!["stream".to_string()]),
+            ..Default::default()
+        };
+
+        let error = NautilusKernelBuilder::default()
+            .with_msgbus_config(config)
+            .with_external_msgbus_factory(Box::new(factory))
+            .build()
+            .expect_err("system builder should reject external ingress streams");
+
+        assert!(
+            error
+                .to_string()
+                .contains("cannot consume external message bus streams")
+        );
+    }
+
+    #[rstest]
+    fn test_builder_with_external_msgbus_factory_rejects_injected_egress() {
+        let factory = CapturingBackingFactory {
+            publications: Arc::new(Mutex::new(Vec::new())),
+            closed: Arc::new(AtomicBool::new(false)),
+        };
+        let (external_egress, _publications, _closed) = CapturingExternalEgress::new();
+
+        let error = NautilusKernelBuilder::default()
+            .with_external_msgbus_factory(Box::new(factory))
+            .with_external_msgbus_egress(Box::new(external_egress))
+            .build()
+            .expect_err("system builder should reject factory plus injected egress");
+
+        assert!(
+            error
+                .to_string()
+                .contains("cannot be combined with injected egress")
+        );
     }
 
     #[rstest]
@@ -492,19 +691,110 @@ mod tests {
         assert_eq!(builder.timeout_portfolio, Duration::from_secs(30));
         assert_eq!(builder.timeout_disconnection, Duration::from_secs(40));
         assert_eq!(builder.delay_post_stop, Duration::from_secs(50));
-        assert_eq!(builder.timeout_shutdown, Duration::from_secs(60));
+        assert_eq!(builder.timeout_shutdown, Duration::from_mins(1));
     }
 
     #[rstest]
     fn test_builder_default_timeouts() {
         let builder = NautilusKernelBuilder::default();
 
-        assert_eq!(builder.timeout_connection, Duration::from_secs(60));
+        assert_eq!(builder.timeout_connection, Duration::from_mins(1));
         assert_eq!(builder.timeout_reconciliation, Duration::from_secs(30));
         assert_eq!(builder.timeout_portfolio, Duration::from_secs(10));
         assert_eq!(builder.timeout_disconnection, Duration::from_secs(10));
         assert_eq!(builder.delay_post_stop, Duration::from_secs(10));
         assert_eq!(builder.timeout_shutdown, Duration::from_secs(5));
+    }
+
+    #[derive(Debug)]
+    struct CapturedEgressMessage {
+        topic: String,
+        payload: Bytes,
+    }
+
+    type CapturedEgressMessages = Rc<RefCell<Vec<CapturedEgressMessage>>>;
+    type SharedClosed = Rc<Cell<bool>>;
+
+    struct CapturingExternalEgress {
+        publications: CapturedEgressMessages,
+        closed: SharedClosed,
+    }
+
+    impl CapturingExternalEgress {
+        fn new() -> (Self, CapturedEgressMessages, SharedClosed) {
+            let publications = Rc::new(RefCell::new(Vec::new()));
+            let closed = Rc::new(Cell::new(false));
+            (
+                Self {
+                    publications: publications.clone(),
+                    closed: closed.clone(),
+                },
+                publications,
+                closed,
+            )
+        }
+    }
+
+    impl MessageBusExternalEgress for CapturingExternalEgress {
+        fn is_closed(&self) -> bool {
+            self.closed.get()
+        }
+
+        fn publish(&self, message: BusMessage) {
+            self.publications.borrow_mut().push(CapturedEgressMessage {
+                topic: message.topic.to_string(),
+                payload: message.payload,
+            });
+        }
+
+        fn close(&mut self) {
+            self.closed.set(true);
+        }
+    }
+
+    #[derive(Debug)]
+    struct CapturingBackingFactory {
+        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
+        closed: Arc<AtomicBool>,
+    }
+
+    impl MessageBusBackingFactory for CapturingBackingFactory {
+        fn create(
+            &self,
+            _trader_id: TraderId,
+            _instance_id: UUID4,
+            _config: MessageBusConfig,
+        ) -> anyhow::Result<Box<dyn MessageBusBacking>> {
+            Ok(Box::new(CapturingBacking {
+                publications: self.publications.clone(),
+                closed: self.closed.clone(),
+            }))
+        }
+    }
+
+    struct CapturingBacking {
+        publications: Arc<Mutex<Vec<CapturedEgressMessage>>>,
+        closed: Arc<AtomicBool>,
+    }
+
+    impl MessageBusBacking for CapturingBacking {
+        fn is_closed(&self) -> bool {
+            self.closed.load(Ordering::Relaxed)
+        }
+
+        fn publish(&self, message: BusMessage) {
+            self.publications
+                .lock()
+                .unwrap()
+                .push(CapturedEgressMessage {
+                    topic: message.topic.to_string(),
+                    payload: message.payload,
+                });
+        }
+
+        fn close(&mut self) {
+            self.closed.store(true, Ordering::Relaxed);
+        }
     }
 
     struct NoopAdapter;
@@ -553,7 +843,7 @@ mod tests {
             Ok(AHashMap::new())
         }
 
-        fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, Position>> {
+        fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
             Ok(AHashMap::new())
         }
 
@@ -767,11 +1057,19 @@ mod tests {
             Ok(())
         }
 
-        fn update_actor(&self) -> anyhow::Result<()> {
+        fn update_actor(
+            &self,
+            _component_id: &ComponentId,
+            _state: &AHashMap<String, Bytes>,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
 
-        fn update_strategy(&self) -> anyhow::Result<()> {
+        fn update_strategy(
+            &self,
+            _strategy_id: &StrategyId,
+            _state: &AHashMap<String, Bytes>,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
 
@@ -791,7 +1089,12 @@ mod tests {
             Ok(())
         }
 
-        fn snapshot_position_state(&self, _position: &Position) -> anyhow::Result<()> {
+        fn snapshot_position_state(
+            &self,
+            _position: &Position,
+            _ts_snapshot: UnixNanos,
+            _unrealized_pnl: Option<Money>,
+        ) -> anyhow::Result<()> {
             Ok(())
         }
 

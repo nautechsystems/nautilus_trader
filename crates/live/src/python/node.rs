@@ -15,11 +15,15 @@
 
 //! Python bindings for live node.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
 use nautilus_common::{
-    actor::data_actor::ImportableActorConfig, cache::CacheConfig, enums::Environment,
-    live::get_runtime, logging::logger::LoggerConfig, python::actor::PyDataActor,
+    actor::data_actor::ImportableActorConfig,
+    cache::CacheConfig,
+    enums::Environment,
+    live::get_runtime,
+    logging::logger::LoggerConfig,
+    python::actor::{PyDataActor, register_python_exec_algorithm_endpoint},
 };
 #[cfg(feature = "examples")]
 use nautilus_core::python::to_pytype_err;
@@ -27,7 +31,9 @@ use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
-use nautilus_model::identifiers::{ActorId, ComponentId, ExecAlgorithmId, StrategyId, TraderId};
+use nautilus_model::identifiers::{
+    ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
 #[cfg(feature = "examples")]
@@ -47,7 +53,7 @@ use nautilus_trading::{
 };
 use pyo3::{
     prelude::*,
-    types::{PyDict, PyTuple},
+    types::{PyCFunction, PyDict, PyTuple},
 };
 use serde_json;
 
@@ -142,10 +148,8 @@ impl LiveNode {
 
         // Set up a custom signal handler that uses our handle
         let handle_for_signal = handle;
-        let signal_callback = pyo3::types::PyCFunction::new_closure(
+        let signal_callback = new_sync_py_callback(
             py,
-            None,
-            None,
             move |_args: &pyo3::Bound<'_, PyTuple>,
                   _kwargs: Option<&pyo3::Bound<'_, PyDict>>|
                   -> PyResult<()> {
@@ -409,6 +413,10 @@ impl LiveNode {
                     if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
                         py_strategy_ref.set_log_commands(val);
                     }
+
+                    if let Some(claims) = extract_external_order_claims_config_attr(config_obj)? {
+                        py_strategy_ref.set_external_order_claims(Some(claims));
+                    }
                 }
 
                 py_strategy_ref.set_python_instance(python_strategy.clone().unbind());
@@ -477,22 +485,25 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
-        // TODO: Register external order claims with the execution manager
-        // once PyStrategy exposes external_order_claims publicly.
-        // Currently external_order_claims are only handled for Rust-native
-        // strategies via LiveNode::add_strategy<T>().
-        Python::attach(|py| {
+        let external_order_claims = Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
             let py_strategy = python_strategy.bind(py);
-            if let Ok(claims) = py_strategy.getattr("external_order_claims")
-                && !claims.is_none()
-                && claims.len().unwrap_or(0) > 0
-            {
-                log::warn!(
-                    "Strategy '{strategy_id}' has external_order_claims configured, \
-                     but these are not yet supported for Python strategies on the Rust backend"
-                );
+            let py_strategy_ref = py_strategy
+                .extract::<PyRef<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            Ok(py_strategy_ref.external_order_claims())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
+            for instrument_id in &claims {
+                self.exec_manager_mut()
+                    .claim_external_orders(*instrument_id, strategy_id)
+                    .map_err(to_pyruntime_err)?;
             }
-        });
+            log::info!("Registered external order claims for {strategy_id}: {claims:?}");
+        }
 
         self.kernel_mut()
             .trader
@@ -502,57 +513,6 @@ impl LiveNode {
 
         log::info!("Registered Python strategy {strategy_id}");
         Ok(())
-    }
-
-    /// Adds a Rust-native plug-in component from a cdylib.
-    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
-    fn py_add_plugin(
-        &mut self,
-        path: String,
-        type_name: String,
-        config: Option<HashMap<String, Py<PyAny>>>,
-        sha256: Option<String>,
-    ) -> PyResult<()> {
-        let config = PluginConfig {
-            path,
-            type_name,
-            config: match config {
-                Some(config) => coerce_json_config(config)?,
-                None => HashMap::new(),
-            },
-            sha256,
-        };
-
-        self.add_plugin(config).map_err(to_pyruntime_err)
-    }
-
-    /// Adds a compiled-in native Rust strategy from its type name and config.
-    ///
-    /// The type name determines which built-in strategy is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_strategy")]
-    fn py_add_native_strategy(
-        &mut self,
-        type_name: &str,
-        config: &Bound<'_, PyAny>,
-    ) -> PyResult<()> {
-        let register = native_strategy_register(type_name).ok_or_else(|| {
-            to_pytype_err(format!("Unsupported native strategy type: {type_name}"))
-        })?;
-        register(self, config)
-    }
-
-    /// Adds a compiled-in native Rust actor from its type name and config.
-    ///
-    /// The type name determines which built-in actor is constructed.
-    /// All execution happens in Rust; Python is the configuration layer.
-    #[cfg(feature = "examples")]
-    #[pyo3(name = "add_native_actor")]
-    fn py_add_native_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
-        let register = native_actor_register(type_name)
-            .ok_or_else(|| to_pytype_err(format!("Unsupported native actor type: {type_name}")))?;
-        register(self, config)
     }
 
     #[allow(
@@ -707,6 +667,8 @@ impl LiveNode {
         })
         .map_err(to_pyruntime_err)?;
 
+        register_python_exec_algorithm_endpoint(exec_algorithm_id);
+
         self.kernel_mut()
             .trader
             .borrow_mut()
@@ -717,6 +679,60 @@ impl LiveNode {
         Ok(())
     }
 
+    /// Adds a Rust-native plug-in component from a cdylib.
+    #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
+    fn py_add_plugin(
+        &mut self,
+        path: String,
+        type_name: String,
+        config: Option<HashMap<String, Py<PyAny>>>,
+        sha256: Option<String>,
+    ) -> PyResult<()> {
+        let config = PluginConfig {
+            path,
+            type_name,
+            config: match config {
+                Some(config) => coerce_json_config(config)?,
+                None => HashMap::new(),
+            },
+            sha256,
+        };
+
+        self.add_plugin(config).map_err(to_pyruntime_err)
+    }
+
+    /// Adds a built-in example actor from its type name and config.
+    ///
+    /// This method exists only to single-source bundled example actor code across
+    /// Rust and Python tests/examples. It is not a first-class extension path for
+    /// adding native actors.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_builtin_actor")]
+    fn py_add_builtin_actor(&mut self, type_name: &str, config: &Bound<'_, PyAny>) -> PyResult<()> {
+        let register = builtin_actor_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported built-in actor type: {type_name}"))
+        })?;
+        register(self, config)
+    }
+
+    /// Adds a built-in example strategy from its type name and config.
+    ///
+    /// This method exists only to single-source bundled example strategy code across
+    /// Rust and Python tests/examples. It is not a first-class extension path for
+    /// adding native strategies.
+    #[cfg(feature = "examples")]
+    #[pyo3(name = "add_builtin_strategy")]
+    fn py_add_builtin_strategy(
+        &mut self,
+        type_name: &str,
+        config: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let register = builtin_strategy_register(type_name).ok_or_else(|| {
+            to_pytype_err(format!("Unsupported built-in strategy type: {type_name}"))
+        })?;
+        register(self, config)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "LiveNode(trader_id={}, environment={:?}, running={})",
@@ -725,6 +741,13 @@ impl LiveNode {
             self.is_running()
         )
     }
+}
+
+fn new_sync_py_callback<F>(py: Python<'_>, closure: F) -> PyResult<Bound<'_, PyCFunction>>
+where
+    F: Fn(&Bound<'_, PyTuple>, Option<&Bound<'_, PyDict>>) -> PyResult<()> + Send + Sync + 'static,
+{
+    PyCFunction::new_closure(py, None, None, closure)
 }
 
 #[allow(unsafe_code)]
@@ -744,13 +767,22 @@ fn run_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> {
 }
 
 #[cfg(feature = "examples")]
-type NativeStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+type BuiltinActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-type NativeActorRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
+type BuiltinStrategyRegister = for<'py> fn(&mut LiveNode, &Bound<'py, PyAny>) -> PyResult<()>;
 
 #[cfg(feature = "examples")]
-fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
+fn builtin_actor_register(type_name: &str) -> Option<BuiltinActorRegister> {
+    match type_name {
+        "BookImbalanceActor" => Some(register_book_imbalance_actor),
+        "DataTester" => Some(register_data_tester),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "examples")]
+fn builtin_strategy_register(type_name: &str) -> Option<BuiltinStrategyRegister> {
     match type_name {
         "CompositeMarketMaker" => Some(register_composite_market_maker),
         "DeltaNeutralVol" => Some(register_delta_neutral_vol),
@@ -758,15 +790,6 @@ fn native_strategy_register(type_name: &str) -> Option<NativeStrategyRegister> {
         "ExecTester" => Some(register_exec_tester),
         "GridMarketMaker" => Some(register_grid_market_maker),
         "HurstVpinDirectional" => Some(register_hurst_vpin_directional),
-        _ => None,
-    }
-}
-
-#[cfg(feature = "examples")]
-fn native_actor_register(type_name: &str) -> Option<NativeActorRegister> {
-    match type_name {
-        "BookImbalanceActor" => Some(register_book_imbalance_actor),
-        "DataTester" => Some(register_data_tester),
         _ => None,
     }
 }
@@ -1237,9 +1260,7 @@ fn create_config_instance<'py>(
     let py_dict = PyDict::new(py);
 
     for (key, value) in config {
-        let json_str = serde_json::to_string(value)
-            .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
-        let py_value = PyModule::import(py, "json")?.call_method("loads", (json_str,), None)?;
+        let py_value = config_value_to_py(py, key, value)?;
         py_dict.set_item(key, py_value)?;
     }
 
@@ -1258,14 +1279,7 @@ fn create_config_instance<'py>(
                 Ok(instance) => {
                     log::debug!("Created default config instance, setting attributes");
                     for (key, value) in config {
-                        let json_str = serde_json::to_string(value).map_err(|e| {
-                            anyhow::anyhow!("Failed to serialize config value: {e}")
-                        })?;
-                        let py_value = PyModule::import(py, "json")?.call_method(
-                            "loads",
-                            (json_str,),
-                            None,
-                        )?;
+                        let py_value = config_value_to_py(py, key, value)?;
 
                         if let Err(setattr_err) = instance.setattr(key, py_value) {
                             log::warn!("Failed to set attribute {key}: {setattr_err}");
@@ -1295,6 +1309,26 @@ fn create_config_instance<'py>(
     Ok(Some(config_instance))
 }
 
+fn config_value_to_py<'py>(
+    py: Python<'py>,
+    key: &str,
+    value: &serde_json::Value,
+) -> anyhow::Result<Bound<'py, PyAny>> {
+    if key == "actor_id"
+        && let Some(actor_id) = value.as_str()
+    {
+        return Ok(ActorId::new_checked(actor_id)?
+            .into_pyobject(py)?
+            .into_any());
+    }
+
+    let json_str = serde_json::to_string(value)
+        .map_err(|e| anyhow::anyhow!("Failed to serialize config value: {e}"))?;
+    Ok(PyModule::import(py, "json")?
+        .call_method("loads", (json_str,), None)?
+        .into_any())
+}
+
 /// Extracts an optional boolean attribute from a Python config object.
 ///
 /// Returns `None` if the attribute doesn't exist or isn't a bool,
@@ -1304,6 +1338,36 @@ fn extract_bool_config_attr(config_obj: &Bound<'_, PyAny>, attr: &str) -> Option
         .getattr(attr)
         .ok()
         .and_then(|val| val.extract::<bool>().ok())
+}
+
+fn extract_external_order_claims_config_attr(
+    config_obj: &Bound<'_, PyAny>,
+) -> anyhow::Result<Option<Vec<InstrumentId>>> {
+    let Ok(claims) = config_obj.getattr("external_order_claims") else {
+        return Ok(None);
+    };
+
+    if claims.is_none() {
+        return Ok(None);
+    }
+
+    if let Ok(claims) = claims.extract::<Vec<InstrumentId>>() {
+        return Ok(Some(claims));
+    }
+
+    let claim_strings = claims
+        .extract::<Vec<String>>()
+        .map_err(|e| anyhow::anyhow!("Invalid `external_order_claims` type: {e}"))?;
+    let claims = claim_strings
+        .into_iter()
+        .map(|claim| {
+            InstrumentId::from_str(&claim).map_err(|e| {
+                anyhow::anyhow!("Invalid `external_order_claims` instrument ID {claim}: {e}")
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    Ok(Some(claims))
 }
 
 #[cfg(all(test, feature = "python"))]
@@ -1341,7 +1405,7 @@ mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
         data::{Bar, BarType},
-        identifiers::{ClientId, TraderId, Venue},
+        identifiers::{ClientId, InstrumentId, StrategyId, TraderId, Venue},
         types::{Price, Quantity},
     };
     use nautilus_trading::{ImportableStrategyConfig, python::strategy::PyStrategy};
@@ -1362,6 +1426,10 @@ mod tests {
     }
 
     #[derive(Debug)]
+    #[expect(
+        clippy::struct_field_names,
+        reason = "test counters intentionally share the count postfix"
+    )]
     struct TestHistoricalBarsDataClientFactory {
         request_count: Arc<AtomicUsize>,
         response_sent_count: Arc<AtomicUsize>,
@@ -1676,6 +1744,39 @@ class LiveTimerStrategy(Strategy):
             .expect("test strategy module should register");
     }
 
+    fn install_claim_strategy_module(py: Python<'_>, module_name: &str) {
+        let module = PyModule::new(py, module_name).expect("test module should create");
+        module
+            .setattr("Strategy", py.get_type::<PyStrategy>())
+            .expect("Strategy type should bind");
+
+        let code = CString::new(
+            "
+class ClaimsConfig:
+    def __init__(self, strategy_id=None, external_order_claims=None):
+        self.strategy_id = strategy_id
+        self.external_order_claims = external_order_claims
+
+class ClaimsStrategy(Strategy):
+    def __init__(self, config):
+        super().__init__(config)
+",
+        )
+        .expect("python test code should be valid CString");
+
+        py.run(code.as_c_str(), Some(&module.dict()), None)
+            .expect("test strategy code should execute");
+
+        let sys_modules = py
+            .import("sys")
+            .expect("sys should import")
+            .getattr("modules")
+            .expect("sys.modules should exist");
+        sys_modules
+            .set_item(module_name, module)
+            .expect("test strategy module should register");
+    }
+
     #[derive(Debug)]
     struct TimerStrategyResults {
         on_start: usize,
@@ -1743,28 +1844,28 @@ class LiveTimerStrategy(Strategy):
     #[case("ExecTester")]
     #[case("GridMarketMaker")]
     #[case("HurstVpinDirectional")]
-    fn test_native_strategy_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::native_strategy_register(type_name).is_some());
+    fn test_builtin_strategy_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::builtin_strategy_register(type_name).is_some());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
     #[case("BookImbalanceActor")]
     #[case("DataTester")]
-    fn test_native_actor_register_accepts_supported_names(#[case] type_name: &str) {
-        assert!(super::native_actor_register(type_name).is_some());
+    fn test_builtin_actor_register_accepts_supported_names(#[case] type_name: &str) {
+        assert!(super::builtin_actor_register(type_name).is_some());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_register_rejects_unknown_names() {
-        assert!(super::native_strategy_register("UnknownStrategy").is_none());
-        assert!(super::native_actor_register("UnknownActor").is_none());
+    fn test_builtin_register_rejects_unknown_names() {
+        assert!(super::builtin_strategy_register("UnknownStrategy").is_none());
+        assert!(super::builtin_actor_register("UnknownActor").is_none());
     }
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_strategy_register_rejects_mismatched_config() {
+    fn test_builtin_strategy_register_rejects_mismatched_config() {
         Python::initialize();
 
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -1774,7 +1875,7 @@ class LiveTimerStrategy(Strategy):
             .unwrap();
 
         Python::attach(|py| {
-            let register = super::native_strategy_register("EmaCross").unwrap();
+            let register = super::builtin_strategy_register("EmaCross").unwrap();
             let config = PyDict::new(py);
             let error = register(&mut node, config.as_any()).unwrap_err();
 
@@ -1784,7 +1885,7 @@ class LiveTimerStrategy(Strategy):
 
     #[cfg(feature = "examples")]
     #[rstest]
-    fn test_native_actor_register_rejects_mismatched_config() {
+    fn test_builtin_actor_register_rejects_mismatched_config() {
         Python::initialize();
 
         let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
@@ -1794,7 +1895,7 @@ class LiveTimerStrategy(Strategy):
             .unwrap();
 
         Python::attach(|py| {
-            let register = super::native_actor_register("DataTester").unwrap();
+            let register = super::builtin_actor_register("DataTester").unwrap();
             let config = PyDict::new(py);
             let error = register(&mut node, config.as_any()).unwrap_err();
 
@@ -1918,6 +2019,56 @@ class LiveTimerStrategy(Strategy):
         assert_eq!(results.default_event_type, "TimeEvent");
         assert_eq!(results.callback_event_name, "explicit_timer");
         assert_eq!(results.default_event_name, "default_timer");
+    }
+
+    #[rstest]
+    fn test_add_strategy_from_config_registers_external_order_claims() {
+        Python::initialize();
+
+        let module_name = "test_live_node_claim_strategy";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-001");
+        let mut config = HashMap::new();
+        config.insert(
+            "strategy_id".to_string(),
+            serde_json::json!(strategy_id.to_string()),
+        );
+        config.insert(
+            "external_order_claims".to_string(),
+            serde_json::json!([instrument_id.to_string()]),
+        );
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:ClaimsStrategy"),
+            config_path: format!("{module_name}:ClaimsConfig"),
+            config,
+        };
+
+        Python::attach(|py| {
+            node.py_add_strategy_from_config(py, importable)
+                .expect("strategy should register");
+        });
+
+        let result = node
+            .exec_manager_mut()
+            .claim_external_orders(instrument_id, StrategyId::from("OTHER-001"));
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("already exists for CLAIMS-001")
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

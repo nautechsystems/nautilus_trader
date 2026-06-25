@@ -43,7 +43,12 @@ python = [
   "pyo3",
   "pyo3-stub-gen",
 ]
-defi = ["nautilus-common/defi", "nautilus-model/defi", "alloy-primitives"]
+defi = [
+  "nautilus-common/defi",
+  "nautilus-model/defi",
+  "nautilus-persistence?/defi",
+  "alloy-primitives",
+]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -28,7 +28,7 @@
 //!   protection. Each transaction requires a unique, incrementing sequence number.
 //! - **Short-term orders**: Use Good-Til-Block (GTB) for replay protection. The chain's
 //!   `ClobDecorator` ante handler skips sequence checking, so sequences are not consumed.
-//!   Use [`TransactionManager::get_cached_sequence`] for these — it returns the current value
+//!   Use [`TransactionManager::get_cached_sequence`] for these: it returns the current value
 //!   without incrementing.
 //!
 //! For stateful orders, this module provides:

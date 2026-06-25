@@ -27,11 +27,17 @@ use rust_decimal::Decimal;
 use crate::engine::config::RiskEngineConfig;
 
 fn format_rate_limit(rate: &RateLimit) -> String {
-    let total_secs = rate.interval_ns / NANOSECONDS_IN_SECOND;
+    let total_secs = rate.interval_ns.get() / NANOSECONDS_IN_SECOND;
     let hours = total_secs / 3_600;
     let minutes = (total_secs % 3_600) / 60;
     let seconds = total_secs % 60;
-    format!("{}/{:02}:{:02}:{:02}", rate.limit, hours, minutes, seconds)
+    format!(
+        "{}/{:02}:{:02}:{:02}",
+        rate.limit.get(),
+        hours,
+        minutes,
+        seconds
+    )
 }
 
 fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
@@ -42,12 +48,6 @@ fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
     let limit = limit
         .parse::<usize>()
         .map_err(|e| to_pyvalue_err(format!("invalid `{name}` limit: {e}")))?;
-
-    if limit == 0 {
-        return Err(to_pyvalue_err(format!(
-            "invalid `{name}`: limit must be greater than zero"
-        )));
-    }
 
     let mut total_secs: u64 = 0;
     let mut parts = interval.split(':');
@@ -71,16 +71,8 @@ fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {
         )));
     }
 
-    if total_secs == 0 {
-        return Err(to_pyvalue_err(format!(
-            "invalid `{name}`: interval must be greater than zero"
-        )));
-    }
-
-    Ok(RateLimit::new(
-        limit,
-        total_secs.saturating_mul(NANOSECONDS_IN_SECOND),
-    ))
+    RateLimit::new_checked(limit, total_secs.saturating_mul(NANOSECONDS_IN_SECOND))
+        .map_err(|e| to_pyvalue_err(format!("invalid `{name}`: {e}")))
 }
 
 fn coerce_max_notional_per_order(
@@ -140,13 +132,14 @@ impl RiskEngineConfig {
             None => default.max_notional_per_order,
         };
 
-        Ok(Self {
-            bypass: bypass.unwrap_or(default.bypass),
-            max_order_submit,
-            max_order_modify,
-            max_notional_per_order,
-            debug: debug.unwrap_or(default.debug),
-        })
+        Self::builder()
+            .bypass(bypass.unwrap_or(default.bypass))
+            .max_order_submit(max_order_submit)
+            .max_order_modify(max_order_modify)
+            .max_notional_per_order(max_notional_per_order)
+            .debug(debug.unwrap_or(default.debug))
+            .build()
+            .map_err(to_pyvalue_err)
     }
 
     #[getter]

@@ -32,7 +32,7 @@ VERBOSE ?= true
 # Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
 UV_SYNC_FLAGS ?= --inexact
 
-PIP_AUDIT_IGNORE_FLAGS := --ignore-vuln GHSA-jg22-mg44-37j8 --ignore-vuln GHSA-hg6j-4rv6-33pg
+PIP_AUDIT_IGNORE_FLAGS :=
 
 # TARGET_DIR controls where cargo places build artifacts.
 # Can be overridden to use a separate directory: make build-debug TARGET_DIR=target-python
@@ -70,8 +70,62 @@ FAIL_FAST ?= false
 # CI should set NEXTEST_PROFILE=ci to limit parallelism on resource-constrained runners.
 NEXTEST_PROFILE ?= default
 
+# Local Rust concurrency defaults are capped by host CPU count so lower-spec
+# machines do not inherit settings meant for high-core workstations.
+# Override with CARGO_BUILD_JOBS or NEXTEST_TEST_THREADS when needed
+HOST_CPU_COUNT := $(shell \
+	n=`getconf _NPROCESSORS_ONLN 2>/dev/null` || n=; \
+	if [ -z "$$n" ]; then n=`sysctl -n hw.ncpu 2>/dev/null` || n=; fi; \
+	if [ -z "$$n" ]; then n="$${NUMBER_OF_PROCESSORS:-1}"; fi; \
+	n=`printf '%s' "$$n" | tr -cd '0-9'`; \
+	if [ -z "$$n" ]; then n=1; fi; \
+	printf '%s' "$$n")
+
+ifeq ($(CI),true)
+LOCAL_CARGO_BUILD_JOBS_DEFAULT :=
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT :=
+else
+LOCAL_CARGO_BUILD_JOBS_DEFAULT := $(shell \
+	n='$(HOST_CPU_COUNT)'; \
+	[ "$$n" -gt 32 ] && n=32; \
+	printf '%s' "$$n")
+ifeq ($(NEXTEST_PROFILE),ci)
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT :=
+else
+LOCAL_NEXTEST_TEST_THREADS_DEFAULT := $(shell \
+	n='$(HOST_CPU_COUNT)'; \
+	[ "$$n" -gt 64 ] && n=64; \
+	printf '%s' "$$n")
+endif
+endif
+
+ifeq ($(origin CARGO_BUILD_JOBS),undefined)
+CARGO_BUILD_JOBS_FOR_RUST := $(LOCAL_CARGO_BUILD_JOBS_DEFAULT)
+else
+CARGO_BUILD_JOBS_FOR_RUST := $(CARGO_BUILD_JOBS)
+endif
+
+ifeq ($(origin NEXTEST_TEST_THREADS),undefined)
+NEXTEST_TEST_THREADS_FOR_RUST := $(LOCAL_NEXTEST_TEST_THREADS_DEFAULT)
+else
+NEXTEST_TEST_THREADS_FOR_RUST := $(NEXTEST_TEST_THREADS)
+endif
+
 # CARGO_CI_PROFILE selects the Cargo compile profile used by nextest.
 CARGO_CI_PROFILE ?= nextest
+
+PYTHON_CPU_COUNT_LIMIT ?= 32
+LOCAL_PYTHON_CPU_COUNT_LIMIT := $(shell \
+	n='$(HOST_CPU_COUNT)'; limit='$(PYTHON_CPU_COUNT_LIMIT)'; \
+	if [ "$$n" -gt "$$limit" ]; then printf '%s' "$$limit"; fi)
+
+ifneq ($(origin PYTHON_CPU_COUNT),undefined)
+export PYTHON_CPU_COUNT
+else
+ifneq ($(strip $(LOCAL_PYTHON_CPU_COUNT_LIMIT)),)
+export PYTHON_CPU_COUNT := $(LOCAL_PYTHON_CPU_COUNT_LIMIT)
+endif
+endif
 
 # Select the appropriate flag for `cargo nextest` depending on FAIL_FAST.
 ifeq ($(FAIL_FAST),true)
@@ -106,6 +160,35 @@ ifneq ($(strip $(EXTRA_FEATURES)),)
 CARGO_FEATURES := $(BASE_FEATURES),$(EXTRA_FEATURES)
 else
 CARGO_FEATURES := $(BASE_FEATURES)
+endif
+
+CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
+	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
+	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
+	docs docs-rust docsrs-check cargo-build cargo-check check-features cargo-test \
+	cargo-test-extras cargo-test-core-local cargo-test-core cargo-test-adapters \
+	cargo-test-sim cargo-test-core-debug \
+	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
+	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
+	cargo-test-coverage-crate-% cargo-test-coverage-html \
+	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
+	cargo-miri-plugin cargo-miri cargo-ci-benches build-debug-v2 py-stubs-v2 \
+	install-cli
+
+NEXTEST_ENV_TARGETS := cargo-test cargo-test-extras cargo-test-core-local \
+	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
+	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
+	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
+	cargo-test-coverage-crate-% cargo-test-coverage-html \
+	cargo-test-coverage-crate-html-% cargo-miri-core cargo-miri-model \
+	cargo-miri-plugin cargo-miri
+
+ifneq ($(strip $(CARGO_BUILD_JOBS_FOR_RUST)),)
+$(CARGO_BUILD_JOB_TARGETS): export CARGO_BUILD_JOBS=$(CARGO_BUILD_JOBS_FOR_RUST)
+endif
+
+ifneq ($(strip $(NEXTEST_TEST_THREADS_FOR_RUST)),)
+$(NEXTEST_ENV_TARGETS): export NEXTEST_TEST_THREADS=$(NEXTEST_TEST_THREADS_FOR_RUST)
 endif
 
 # Core crates (excludes adapters/*, nautilus-pyo3, nautilus-cli)
@@ -243,10 +326,10 @@ clean-build-artifacts:  #-- Clean compiled artifacts (.so, .dll, .pyc, .c files)
 	find target target-v2 -name "*.rmeta" -delete 2>/dev/null || true
 	rm -rf target/*/build target/*/deps target-v2/*/build target-v2/*/deps 2>/dev/null || true
 	# Clean Python build artifacts
-	find . -type d -name "__pycache__" -not -path "./.venv*" -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.c" -not -path "./.venv*" -not -path "./target/*" -not -path "./target-v2/*" -exec rm -f {} + 2>/dev/null || true
-	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
-	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "./.venv*" -exec rm -f {} + 2>/dev/null || true
+	find . -type d -name "__pycache__" -not -path "*/.venv*" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.c" -not -path "*/.venv*" -not -path "./target/*" -not -path "./target-v2/*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.pyc" -o -name "*.pyo" \) -not -path "*/.venv*" -exec rm -f {} + 2>/dev/null || true
+	find . -type f -a \( -name "*.so" -o -name "*.dll" -o -name "*.dylib" \) -not -path "*/.venv*" -exec rm -f {} + 2>/dev/null || true
 	rm -rf build/ cython_debug/ 2>/dev/null || true
 	# Clean test artifacts
 	rm -rf .coverage .benchmarks 2>/dev/null || true
@@ -272,7 +355,7 @@ distclean: clean  #-- Nuclear clean - remove all untracked files (requires FORCE
 .PHONY: format
 format:  #-- Format Rust (with nightly) and Python code
 	cargo +nightly fmt
-	uv run --active --no-sync ruff format .
+	uv run --active --no-sync ruff format . --force-exclude
 
 .PHONY: pre-commit
 pre-commit:  #-- Run all pre-commit hooks on all files
@@ -284,7 +367,7 @@ pre-commit:  #-- Run all pre-commit hooks on all files
 check-code:  #-- Run clippy on lib/test targets and ruff --fix (use HYPERSYNC=true to include hypersync feature)
 	$(info $(M) Running code quality checks...)
 	@cargo clippy --workspace --lib --tests --features "$(CARGO_FEATURES)" --profile nextest -- -D warnings
-	@uv run --active --no-sync ruff check . --fix
+	@uv run --active --no-sync ruff check . --fix --force-exclude
 	@printf "$(GREEN)Checks passed$(RESET)\n"
 
 .PHONY: check-all-targets
@@ -329,7 +412,7 @@ pre-flight:  #-- Run pre-flight checks (format, check-code, cargo-test, build-de
 
 .PHONY: ruff
 ruff:  #-- Run ruff linter with automatic fixes
-	uv run --active --no-sync ruff check . --fix
+	uv run --active --no-sync ruff check . --fix --force-exclude
 
 .PHONY: clippy
 clippy:  #-- Run clippy linter (check only, workspace lints)
@@ -421,9 +504,7 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	@$(call audit_step,cargo vet,cargo vet --locked)
 	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --store-path .supply-chain)
 	@$(call audit_step,cargo vet derive fuzz,cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml --store-path .supply-chain)
-	@# aiohttp 3.14.0 fixes these advisories, but remains inside uv's 3-day
-	@# exclude-newer window while aiohttp source builds are disabled.
-	@$(call audit_step,pip-audit,uv export --no-hashes --frozen | uv run --no-project --with pip-audit -- pip-audit --disable-pip --no-deps -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
+	@$(call audit_step,pip-audit,uv export --frozen | sed '/^-e /d' | uv run --no-project --with pip-audit -- pip-audit --disable-pip --require-hashes -r /dev/stdin $(PIP_AUDIT_IGNORE_FLAGS))
 	@$(call audit_step,osv-scanner,osv-scanner --config=osv-scanner.toml --lockfile=Cargo.lock --lockfile=crates/adapters/lighter/fuzz/Cargo.lock --lockfile=crates/adapters/derive/fuzz/Cargo.lock --lockfile=uv.lock --lockfile=python/uv.lock)
 
 .PHONY: cargo-deny
@@ -683,48 +764,6 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	$(info $(M) Running nautilus-core DST seam pinning tests under simulation...)
 	cargo nextest run -p nautilus-core --features simulation -E 'test(~virtual_time)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 
-PLUGIN_CDYLIB_SMOKE_LIVE_FILTER := \
-    test(=loader_loads_example_cdylib) \
-    | test(=custom_data_registration_round_trips_via_registry) \
-    | test(=live_node_loads_configured_plugin_actor_strategy_and_custom_data) \
-    | test(=live_node_start_invokes_configured_plugin_actor) \
-    | (test(~cdylib_actor_) & test(~normalizes_identifiers_for_plugin)) \
-    | (test(~cdylib_strategy_) & test(~normalizes_identifiers))
-
-.PHONY: cargo-test-plugin-cdylib-smoke
-cargo-test-plugin-cdylib-smoke: export RUST_BACKTRACE=1
-cargo-test-plugin-cdylib-smoke: check-nextest-installed
-cargo-test-plugin-cdylib-smoke:  #-- Run Linux plug-in cdylib smoke tests
-	@if [ "$$(uname -s)" != "Linux" ]; then \
-		echo "cargo-test-plugin-cdylib-smoke requires Linux"; \
-		exit 1; \
-	fi
-	$(info $(M) Running nautilus-plugin loader cdylib smoke test...)
-	cargo nextest run \
-		-p nautilus-plugin \
-		--features host \
-		--test load_example_cdylib \
-		--run-ignored only \
-		-E 'test(=loads_example_cdylib_and_walks_manifest) | test(=rejects_second_plugin_with_duplicate_custom_data_type) | test(~rejects_malformed_cdylib_fixture)' \
-		$(FAIL_FAST_FLAG) \
-		--profile $(NEXTEST_PROFILE) \
-		--cargo-profile $(CARGO_CI_PROFILE) \
-		--test-threads 1 \
-		--status-level fail \
-		--final-status-level flaky
-	$(info $(M) Running nautilus-live plug-in cdylib smoke tests...)
-	cargo nextest run \
-		-p nautilus-live \
-		--features plugin \
-		--test plugin \
-		-E '$(PLUGIN_CDYLIB_SMOKE_LIVE_FILTER)' \
-		$(FAIL_FAST_FLAG) \
-		--profile $(NEXTEST_PROFILE) \
-		--cargo-profile $(CARGO_CI_PROFILE) \
-		--test-threads 1 \
-		--status-level fail \
-		--final-status-level flaky
-
 .PHONY: cargo-test-core-debug
 cargo-test-core-debug: export RUST_BACKTRACE=1
 cargo-test-core-debug: check-nextest-installed
@@ -822,9 +861,6 @@ cargo-test-coverage-crate-html-%:  #-- Run coverage for specific crate with HTML
 #   make cargo-miri-core MIRI_CORE_ARC_SWAP_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_FILTER=...
 #   make cargo-miri-plugin MIRI_PLUGIN_MANIFEST_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_CUSTOM_DATA_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_PANIC_FILTER=...
-#   make cargo-miri-plugin MIRI_PLUGIN_HOOK_FILTER=...
 MIRI_TOOLCHAIN ?= nightly
 MIRI_FLAGS ?= -Zmiri-disable-isolation -Zmiri-strict-provenance
 MIRI_CORE_ARC_SWAP_FLAGS ?= -Zmiri-disable-isolation -Zmiri-permissive-provenance
@@ -845,20 +881,11 @@ MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
 # them here while keeping the rest of `orderbook::` in scope.
 MIRI_MODEL_FILTER ?= -E 'test(/^(types::|identifiers::|orderbook::)/) and not test(=orderbook::aggregation::tests::test_price_to_order_id_comprehensive_collision_check) and not test(=orderbook::aggregation::tests::test_price_to_order_id_realistic_orderbook_prices)'
-# Keep the plug-in Miri lane focused on the ABI boundary, raw handle ownership,
-# panic guards, and command handles. Manifest fixtures model static cdylib
-# storage with `Box::leak`, so that slice runs with leak detection disabled
-# while the ownership-focused tests stay strict. Integration slices avoid the
-# host feature and dynamic loading: `custom_data_dispatch` covers clone, drop,
-# equality, and decoded handle arrays; `panic_propagation` covers fallible thunk
-# panic/error mapping; `hook_dispatch` covers no-host actor/strategy lifecycle
-# and custom-data dispatch. Broader hook/event slices stay available by
-# overriding `MIRI_PLUGIN_HOOK_FILTER`.
-MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|host|panic|surfaces::commands)::/)'
+# Keep the plug-in Miri lane focused on the ABI boundary and panic guards.
+# Manifest fixtures model static cdylib storage with `Box::leak`, so that slice
+# runs with leak detection disabled while the boundary tests stay strict.
+MIRI_PLUGIN_FILTER ?= -E 'test(/^(boundary|panic)::/)'
 MIRI_PLUGIN_MANIFEST_FILTER ?= -E 'test(/^manifest::/)'
-MIRI_PLUGIN_CUSTOM_DATA_FILTER ?= -E 'all()'
-MIRI_PLUGIN_PANIC_FILTER ?= -E 'test(~custom_data_) | (test(~_thunk_propagates_failure::) & (test(~on_start_panic) | test(~on_start_err)))'
-MIRI_PLUGIN_HOOK_FILTER ?= -E 'test(~_lifecycle_thunk_dispatches_to_its_method) | test(~_data_thunk_dispatches_to_its_method)'
 
 .PHONY: check-miri-installed
 check-miri-installed:
@@ -891,7 +918,7 @@ cargo-miri-model:  #-- Run nautilus-model library tests under Miri to detect UB
 cargo-miri-plugin: export RUST_BACKTRACE=1
 cargo-miri-plugin: export PROPTEST_CASES=$(MIRI_PROPTEST_CASES)
 cargo-miri-plugin: check-miri-installed check-nextest-installed
-cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Miri
+cargo-miri-plugin:  #-- Run nautilus-plugin boundary and manifest tests under Miri
 	$(info $(M) Running nautilus-plugin library tests under Miri (filter: $(MIRI_PLUGIN_FILTER))...)
 	MIRIFLAGS="$(MIRI_FLAGS)" \
 		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
@@ -906,27 +933,6 @@ cargo-miri-plugin:  #-- Run nautilus-plugin boundary and dispatch tests under Mi
 		--no-default-features \
 		--lib \
 		$(MIRI_PLUGIN_MANIFEST_FILTER)
-	$(info $(M) Running nautilus-plugin custom data dispatch tests under Miri (filter: $(MIRI_PLUGIN_CUSTOM_DATA_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test custom_data_dispatch \
-		$(MIRI_PLUGIN_CUSTOM_DATA_FILTER)
-	$(info $(M) Running nautilus-plugin panic propagation tests under Miri (filter: $(MIRI_PLUGIN_PANIC_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test panic_propagation \
-		$(MIRI_PLUGIN_PANIC_FILTER)
-	$(info $(M) Running nautilus-plugin hook dispatch tests under Miri (filter: $(MIRI_PLUGIN_HOOK_FILTER))...)
-	MIRIFLAGS="$(MIRI_FLAGS)" \
-		cargo +$(MIRI_TOOLCHAIN) miri nextest run \
-		-p nautilus-plugin \
-		--no-default-features \
-		--test hook_dispatch \
-		$(MIRI_PLUGIN_HOOK_FILTER)
 
 .PHONY: cargo-miri
 cargo-miri:  #-- Run Miri across the in-scope foundational and plug-in crates
@@ -973,7 +979,7 @@ docker-push:  #-- Push Docker image to registry
 
 .PHONY: docker-build-jupyter
 docker-build-jupyter:  #-- Build JupyterLab Docker image
-	docker build --build-arg GIT_TAG=$(GIT_TAG) -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
+	docker build -f .docker/jupyterlab.dockerfile --platform linux/x86_64 -t $(IMAGE):jupyter .
 
 .PHONY: docker-push-jupyter
 docker-push-jupyter:  #-- Push JupyterLab Docker image to registry
@@ -1009,7 +1015,7 @@ init-db:  #-- Initialize PostgreSQL database schema
 
 #== Python Testing
 
-PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min(64, os.cpu_count() or 64))")
+PYTEST_WORKERS ?= $(shell python3 -c "import os; print(min($(PYTHON_CPU_COUNT_LIMIT), os.cpu_count() or $(PYTHON_CPU_COUNT_LIMIT)))")
 
 .PHONY: pytest
 pytest:  #-- Run Python tests with pytest in parallel with immediate failure reporting

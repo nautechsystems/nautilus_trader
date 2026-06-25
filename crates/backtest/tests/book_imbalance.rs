@@ -40,7 +40,8 @@ fn create_engine() -> BacktestEngine {
                 .account_type(AccountType::Margin)
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USDT")])
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine
@@ -65,7 +66,10 @@ fn test_from_config_registers_and_runs(crypto_perpetual_ethusdt: CryptoPerpetual
     let instrument_id = instrument.id();
     engine.add_instrument(&instrument).unwrap();
 
-    let config = BookImbalanceActorConfig::new(vec![instrument_id]).with_log_interval(0);
+    let config = BookImbalanceActorConfig::builder()
+        .instrument_ids(vec![instrument_id])
+        .log_interval(0)
+        .build();
     engine
         .add_actor(BookImbalanceActor::from_config(config))
         .unwrap();
@@ -83,5 +87,8 @@ fn test_from_config_registers_and_runs(crypto_perpetual_ethusdt: CryptoPerpetual
     engine.add_data(quotes, None, true, true).unwrap();
 
     engine.run(None, None, None, false).unwrap();
-    assert_eq!(engine.get_result().iterations, 10);
+    let result = engine.get_result();
+    assert_eq!(result.iterations, 10);
+    // statistics sourced from the portfolio via the rewired path
+    assert!(!result.stats_general.is_empty() || !result.stats_pnls.is_empty());
 }

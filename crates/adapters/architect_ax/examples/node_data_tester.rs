@@ -15,12 +15,13 @@
 
 //! Example demonstrating live data testing with the AX Exchange adapter.
 //!
+//! Edit the constants below to change the environment, target symbol, and subscriptions.
+//!
 //! Run with: `cargo run --example ax-data-tester --package nautilus-architect-ax --features examples`
 //!
-//! Environment variables:
-//! - `AX_API_KEY`: Your API key
-//! - `AX_API_SECRET`: Your API secret
-//! - `AX_IS_SANDBOX`: Set to "true" for sandbox (default), "false" for production
+//! Credentials are read from the environment when set:
+//! - `AX_API_KEY`.
+//! - `AX_API_SECRET`.
 
 use nautilus_architect_ax::{
     common::{consts::AX_CLIENT_ID, enums::AxEnvironment},
@@ -32,39 +33,32 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::BarType,
     identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
+
+const AX_ENVIRONMENT: AxEnvironment = AxEnvironment::Sandbox;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "AX-TESTER-001";
+const SYMBOL: &str = "JPYUSD";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let trader_id = TraderId::test_default();
-    let node_name = "AX-TESTER-001".to_string();
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
 
-    let symbol = "JPYUSD";
     let instrument_ids = vec![
-        InstrumentId::from(format!("{symbol}-PERP.AX")),
+        InstrumentId::from(format!("{SYMBOL}-PERP.AX")),
         // InstrumentId::from("EURUSD-PERP.AX"),
         // InstrumentId::from("BTCUSD-PERP.AX"),
     ];
 
-    let ax_environment = if std::env::var("AX_IS_SANDBOX")
-        .ok()
-        .and_then(|v| v.parse::<bool>().ok())
-        .unwrap_or(true)
-    {
-        AxEnvironment::Sandbox
-    } else {
-        AxEnvironment::Production
-    };
-
     let ax_config = AxDataClientConfig {
         api_key: std::env::var("AX_API_KEY").ok(),
         api_secret: std::env::var("AX_API_SECRET").ok(),
-        environment: ax_environment,
+        environment: AX_ENVIRONMENT,
         ..Default::default()
     };
 
@@ -78,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build()?;
 
     let bar_types = vec![BarType::from(format!(
-        "{symbol}-PERP.AX-1-MINUTE-LAST-EXTERNAL"
+        "{SYMBOL}-PERP.AX-1-MINUTE-LAST-EXTERNAL"
     ))];
 
     let tester_config = DataTesterConfig::builder()
@@ -96,7 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .request_bars(true)
         .request_funding_rates(true)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;

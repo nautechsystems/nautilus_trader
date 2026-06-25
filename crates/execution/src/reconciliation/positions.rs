@@ -506,7 +506,7 @@ pub(super) fn create_synthetic_fill_report(
         fill.side,
         qty,
         px,
-        Money::new(0.0, instrument.quote_currency()),
+        Money::zero(instrument.quote_currency()),
         LiquiditySide::NoLiquiditySide,
         None, // client_order_id
         None, // venue_position_id

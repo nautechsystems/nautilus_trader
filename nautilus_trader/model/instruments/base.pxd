@@ -106,6 +106,7 @@ cdef class Instrument(Data):
     cdef dict base_to_dict_c(Instrument obj)
 
     cpdef bint is_spread(self)
+    cpdef bint allows_negative_price(self)
     cpdef list legs(self)
     cpdef Currency get_base_currency(self)
     cpdef Currency get_settlement_currency(self)

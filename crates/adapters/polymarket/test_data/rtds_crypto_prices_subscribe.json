@@ -1,0 +1,22 @@
+{
+  "topic": "crypto_prices",
+  "type": "subscribe",
+  "timestamp": 1780726213178,
+  "payload": {
+    "symbol": "btcusdt",
+    "data": [
+      {
+        "timestamp": 1780726209000,
+        "value": 61164.12
+      },
+      {
+        "timestamp": 1780726210000,
+        "value": 61161.07
+      },
+      {
+        "timestamp": 1780726211000,
+        "value": 61150.89
+      }
+    ]
+  }
+}

@@ -24,6 +24,8 @@ use nautilus_network::http::{HttpClientError, StatusCode};
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::common::consts::should_retry_error_code;
+
 /// Represents a build error for query parameter validation.
 #[derive(Debug, Error)]
 pub enum BuildError {
@@ -102,5 +104,43 @@ impl From<String> for OKXHttpError {
 impl From<serde_json::Error> for OKXHttpError {
     fn from(error: serde_json::Error) -> Self {
         Self::JsonError(error.to_string())
+    }
+}
+
+impl OKXHttpError {
+    /// Returns whether this error is retryable.
+    #[must_use]
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            Self::HttpClientError(_) => true,
+            Self::UnexpectedStatus { status, .. } => {
+                status.as_u16() >= 500 || status.as_u16() == 429
+            }
+            Self::OkxError { error_code, .. } => should_retry_error_code(error_code),
+            _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(OKXHttpError::HttpClientError(HttpClientError::Error("timeout".to_string())), true)]
+    #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::INTERNAL_SERVER_ERROR, body: String::new() }, true)]
+    #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::TOO_MANY_REQUESTS, body: String::new() }, true)]
+    #[case(OKXHttpError::UnexpectedStatus { status: StatusCode::FORBIDDEN, body: String::new() }, false)]
+    #[case(OKXHttpError::OkxError { error_code: "50001".to_string(), message: String::new() }, true)]
+    #[case(OKXHttpError::OkxError { error_code: "50011".to_string(), message: String::new() }, true)]
+    #[case(OKXHttpError::OkxError { error_code: "51000".to_string(), message: String::new() }, false)]
+    #[case(OKXHttpError::JsonError("bad".to_string()), false)]
+    #[case(OKXHttpError::ValidationError("bad".to_string()), false)]
+    #[case(OKXHttpError::MissingCredentials, false)]
+    #[case(OKXHttpError::Canceled("shutdown".to_string()), false)]
+    fn test_is_retryable(#[case] error: OKXHttpError, #[case] expected: bool) {
+        assert_eq!(error.is_retryable(), expected);
     }
 }

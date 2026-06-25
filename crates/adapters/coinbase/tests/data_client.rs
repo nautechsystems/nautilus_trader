@@ -42,7 +42,7 @@ use nautilus_coinbase::{
 };
 use nautilus_common::{
     clients::DataClient,
-    live::runner::set_data_event_sender,
+    live::runner::replace_data_event_sender,
     messages::{
         DataEvent, DataResponse,
         data::{
@@ -332,20 +332,11 @@ async fn start_mock_server(state: TestServerState) -> SocketAddr {
         axum::serve(listener, router).await.unwrap();
     });
 
-    // Wait for server to accept connections
-    let start = std::time::Instant::now();
-
-    loop {
-        if tokio::net::TcpStream::connect(addr).await.is_ok() {
-            break;
-        }
-
-        assert!(
-            start.elapsed() <= Duration::from_secs(5),
-            "Mock server did not start within timeout"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    wait_until_async(
+        || async { tokio::net::TcpStream::connect(addr).await.is_ok() },
+        Duration::from_secs(5),
+    )
+    .await;
 
     addr
 }
@@ -364,7 +355,7 @@ async fn test_data_client_connect_disconnect() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -383,7 +374,7 @@ async fn test_data_client_connect_is_idempotent() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -403,7 +394,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -431,7 +422,7 @@ async fn test_data_client_reset_clears_state() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -452,7 +443,7 @@ async fn test_data_client_subscribe_trades() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -496,7 +487,7 @@ async fn test_data_client_subscribe_quotes() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -535,7 +526,7 @@ async fn test_data_client_subscribe_book_deltas() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -577,7 +568,7 @@ async fn test_data_client_request_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -617,7 +608,7 @@ async fn test_data_client_request_instrument() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -658,7 +649,7 @@ async fn test_data_client_request_book_snapshot() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -703,7 +694,7 @@ async fn test_data_client_request_book_snapshot_with_depth() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -751,7 +742,7 @@ async fn test_data_client_request_bars() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -803,7 +794,7 @@ async fn test_data_client_request_trades() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -855,7 +846,7 @@ async fn test_data_client_unsubscribe_instrument_is_noop() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -891,7 +882,7 @@ async fn test_data_client_subscribe_bars() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -940,7 +931,7 @@ async fn test_data_client_request_book_snapshot_does_not_retry_on_failure() {
 
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -1040,7 +1031,7 @@ async fn test_data_client_subscribe_index_and_funding_emits_both_kinds() {
     let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -1132,14 +1123,16 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     use nautilus_model::data::Data;
 
     let state = TestServerState::default();
-    let product_stall_enabled = state.product_stall_enabled.clone();
-    let product_release = state.product_release.clone();
     let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
-    let config = create_deriv_data_client_config(addr);
+    let mut config = create_deriv_data_client_config(addr);
+
+    // The poll task fires once immediately. A long interval prevents a
+    // second pre-disconnect poll from racing the reconnect assertion.
+    config.derivatives_poll_interval_secs = 60;
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 
@@ -1172,25 +1165,7 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
     while rx.try_recv().is_ok() {}
 
     let reconnect_baseline_hits = product_hits.load(Ordering::SeqCst);
-    product_stall_enabled.store(true, Ordering::SeqCst);
-
     client.connect().await.unwrap();
-
-    wait_until_async(
-        || {
-            let done = product_hits.load(Ordering::SeqCst) > reconnect_baseline_hits;
-            async move { done }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
-
-    // The resumed REST request is parked in the mock handler, so no resumed
-    // index update can be queued before this drain.
-    while rx.try_recv().is_ok() {}
-
-    product_release.add_permits(1);
-    product_stall_enabled.store(false, Ordering::SeqCst);
 
     let mut resumed = false;
     wait_until_async(
@@ -1200,7 +1175,8 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
                     resumed = true;
                 }
             }
-            async move { resumed }
+            let done = resumed && product_hits.load(Ordering::SeqCst) > reconnect_baseline_hits;
+            async move { done }
         },
         Duration::from_secs(5),
     )
@@ -1222,7 +1198,7 @@ async fn test_data_client_stop_halts_derivatives_poll() {
     let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -1233,8 +1209,15 @@ async fn test_data_client_stop_halts_derivatives_poll() {
         .subscribe_index_prices(subscribe_index_cmd(instrument_id))
         .unwrap();
 
-    // Let at least one poll tick hit the mock server.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    wait_until_async(
+        || {
+            let done = product_hits.load(Ordering::SeqCst) > 0;
+            async move { done }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
     let hits_before_stop = product_hits.load(Ordering::SeqCst);
     assert!(
         hits_before_stop > 0,
@@ -1268,7 +1251,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
     let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -1377,7 +1360,7 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
     let product_hits = state.product_hits.clone();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_deriv_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
@@ -1460,7 +1443,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-    set_data_event_sender(tx);
+    replace_data_event_sender(tx);
 
     let config = create_data_client_config(addr);
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();

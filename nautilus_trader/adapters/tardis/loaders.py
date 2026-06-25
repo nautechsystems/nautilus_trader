@@ -325,6 +325,94 @@ class TardisCSVDataLoader:
 
         return pyo3_funding_rates
 
+    def load_options_chain(
+        self,
+        filepath: PathLike[str] | str,
+        underlyings: list[str] | None = None,
+        limit: int | None = None,
+    ) -> list[object]:
+        """
+        Load quote and option greeks data from a Tardis options_chain CSV file.
+
+        CSV file must be Tardis options_chain format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file.
+        underlyings : list[str], optional
+            Underlying symbol prefixes to keep, such as ``["BTC-"]``.
+        limit : int, optional
+            The limit for the number of selected CSV rows to read.
+
+        Returns
+        -------
+        list[object]
+            Mixed PyO3 ``QuoteTick`` and ``OptionGreeks`` objects.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files/data-types#options_chain
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        return nautilus_pyo3.tardis.load_tardis_options_chain(  # type: ignore[attr-defined]
+            filepath=str(filepath),
+            underlyings=underlyings,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            limit=limit,
+        )
+
+    def convert_options_chain_csv(
+        self,
+        filepaths: list[PathLike[str] | str],
+        catalog_path: PathLike[str] | str,
+        underlyings: list[str] | None = None,
+        snapshot_interval_ms: int | None = None,
+        extract_bbo_as_quotes: bool = True,
+        write_instruments: bool = True,
+    ) -> None:
+        """
+        Convert Tardis options_chain CSV files into a Nautilus Parquet catalog.
+
+        Parameters
+        ----------
+        filepaths : list[PathLike[str] | str]
+            Tardis daily options_chain CSV file paths, processed in order.
+        catalog_path : PathLike[str] | str
+            Nautilus catalog path.
+        underlyings : list[str], optional
+            Underlying symbol prefixes to keep, such as ``["BTC-"]``.
+        snapshot_interval_ms : int, optional
+            If set, keeps the last row per instrument per interval bucket.
+        extract_bbo_as_quotes : bool, default True
+            If complete best bid/offer rows should emit ``QuoteTick`` data.
+        write_instruments : bool, default True
+            If derived ``CryptoOption`` instruments should be written to the catalog.
+
+        """
+        resolved_filepaths = [
+            str(Path(filepath).resolve()) if isinstance(filepath, Path) else str(filepath)
+            for filepath in filepaths
+        ]
+
+        if isinstance(catalog_path, Path):
+            catalog_path = str(catalog_path.resolve())
+
+        nautilus_pyo3.tardis.convert_tardis_options_chain_csv(  # type: ignore[attr-defined]
+            filepaths=resolved_filepaths,
+            catalog_path=str(catalog_path),
+            underlyings=underlyings,
+            snapshot_interval_ms=snapshot_interval_ms,
+            extract_bbo_as_quotes=extract_bbo_as_quotes,
+            write_instruments=write_instruments,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+        )
+
     def stream_deltas(
         self,
         filepath: PathLike[str] | str,
@@ -479,6 +567,53 @@ class TardisCSVDataLoader:
                 yield QuoteTick.from_pyo3_list(chunk)
             else:
                 yield chunk
+
+    def stream_options_chain(
+        self,
+        filepath: PathLike[str] | str,
+        chunk_size: int = 100_000,
+        underlyings: list[str] | None = None,
+        limit: int | None = None,
+    ) -> Generator[list[object], None, None]:
+        """
+        Stream quote and option greeks data from a Tardis options_chain CSV file.
+
+        CSV file must be Tardis options_chain format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file.
+        chunk_size : int, default 100_000
+            The number of selected CSV rows to read per chunk.
+        underlyings : list[str], optional
+            Underlying symbol prefixes to keep, such as ``["BTC-"]``.
+        limit : int | None, default None
+            The maximum number of selected CSV rows to process.
+
+        Yields
+        ------
+        Generator[list[object], None, None]
+            Yields mixed PyO3 ``QuoteTick`` and ``OptionGreeks`` objects.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files/data-types#options_chain
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        stream_iter = nautilus_pyo3.tardis.stream_tardis_options_chain(  # type: ignore[attr-defined]
+            filepath=str(filepath),
+            chunk_size=chunk_size,
+            underlyings=underlyings,
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            limit=limit,
+        )
+
+        yield from stream_iter
 
     def stream_trades(
         self,

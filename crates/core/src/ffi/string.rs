@@ -18,9 +18,9 @@
 //! Interoperability between Rust and C/C++/Python often requires raw pointers to *null terminated*
 //! strings.  This module provides convenience helpers that:
 //!
-//! * Convert raw `*const c_char` pointers to Rust [`String`], [`&str`], byte slices, or
+//! - Convert raw `*const c_char` pointers to Rust [`String`], [`&str`], byte slices, or
 //!   `ustr::Ustr` values.
-//! * Perform the inverse conversion when Rust needs to hand ownership of a string to foreign
+//! - Perform the inverse conversion when Rust needs to hand ownership of a string to foreign
 //!   code.
 //!
 //! The majority of these functions are marked `unsafe` because they accept raw pointers and rely

@@ -23,7 +23,7 @@
 //!
 //! Only a very small API surface is exposed to C:
 //!
-//! * `cvec_new` – create an empty `CVec` sentinel that can be returned to foreign code.
+//! - `cvec_new` – create an empty `CVec` sentinel that can be returned to foreign code.
 //!
 //! De-allocation is intentionally **not** provided via a generic helper. Instead each FFI module
 //! must expose its own *type-specific* `vec_*_drop` function which reconstructs the original

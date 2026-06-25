@@ -20,6 +20,7 @@ use std::{
 };
 
 use nautilus_core::python::{
+    correctness_error_to_pyvalue_err,
     parsing::{get_optional_parsed, get_required_string},
     to_pyvalue_err,
 };
@@ -85,9 +86,9 @@ impl AccountBalance {
         })?;
         let currency = Currency::from_str(currency_str.as_str()).map_err(to_pyvalue_err)?;
         Self::new_checked(
-            Money::new(total, currency),
-            Money::new(locked, currency),
-            Money::new(free, currency),
+            Money::new_checked(total, currency).map_err(correctness_error_to_pyvalue_err)?,
+            Money::new_checked(locked, currency).map_err(correctness_error_to_pyvalue_err)?,
+            Money::new_checked(free, currency).map_err(correctness_error_to_pyvalue_err)?,
         )
         .map_err(to_pyvalue_err)
     }
@@ -202,8 +203,8 @@ impl MarginBalance {
         })?;
         let currency = Currency::from_str(currency_str.as_str()).map_err(to_pyvalue_err)?;
         Self::new_checked(
-            Money::new(initial, currency),
-            Money::new(maintenance, currency),
+            Money::new_checked(initial, currency).map_err(correctness_error_to_pyvalue_err)?,
+            Money::new_checked(maintenance, currency).map_err(correctness_error_to_pyvalue_err)?,
             instrument_id,
         )
         .map_err(to_pyvalue_err)
@@ -250,6 +251,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::types::money::{MONEY_MAX, MONEY_MIN};
 
     #[rstest]
     #[case(
@@ -284,6 +286,28 @@ mod tests {
     }
 
     #[rstest]
+    fn test_account_balance_from_dict_rejects_out_of_range_money_value() {
+        Python::initialize();
+        Python::attach(|py| {
+            let value = MONEY_MAX + 1.0;
+            let values = PyDict::new(py);
+            values.set_item("currency", "USD").unwrap();
+            values.set_item("total", value.to_string()).unwrap();
+            values.set_item("free", "1.00").unwrap();
+            values.set_item("locked", "0.00").unwrap();
+
+            let error = AccountBalance::py_from_dict(&values).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "ValueError: invalid f64 for 'amount' not in range [{MONEY_MIN}, {MONEY_MAX}], was {value}"
+                )
+            );
+        });
+    }
+
+    #[rstest]
     #[case(
         "initial",
         "ValueError: invalid MarginBalance initial 'not-a-number': invalid float literal"
@@ -308,6 +332,28 @@ mod tests {
             let error = MarginBalance::py_from_dict(&values).unwrap_err();
 
             assert_eq!(error.to_string(), expected);
+        });
+    }
+
+    #[rstest]
+    fn test_margin_balance_from_dict_rejects_out_of_range_money_value() {
+        Python::initialize();
+        Python::attach(|py| {
+            let value = MONEY_MIN - 1.0;
+            let values = PyDict::new(py);
+            values.set_item("currency", "USD").unwrap();
+            values.set_item("initial", value.to_string()).unwrap();
+            values.set_item("maintenance", "0.50").unwrap();
+            values.set_item("instrument_id", py.None()).unwrap();
+
+            let error = MarginBalance::py_from_dict(&values).unwrap_err();
+
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "ValueError: invalid f64 for 'amount' not in range [{MONEY_MIN}, {MONEY_MAX}], was {value}"
+                )
+            );
         });
     }
 }

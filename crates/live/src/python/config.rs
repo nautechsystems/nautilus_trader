@@ -13,118 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, time::Duration};
 
 use nautilus_common::{
     cache::CacheConfig, enums::Environment, logging::logger::LoggerConfig,
-    msgbus::database::MessageBusConfig,
+    msgbus::MessageBusConfig, python::config_error_to_pyvalue_err,
 };
 use nautilus_core::{UUID4, python::to_pyvalue_err};
 use nautilus_model::{
     enums::BarIntervalType,
-    identifiers::{ClientId, ClientOrderId, InstrumentId, TraderId},
+    identifiers::{ClientId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use pyo3::{
     IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
     types::{PyAnyMethods, PyDict, PyDictMethods},
 };
-use rust_decimal::Decimal;
 
 use crate::config::{
     InstrumentProviderConfig, LiveDataClientConfig, LiveDataEngineConfig, LiveExecClientConfig,
     LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig, PluginConfig, RoutingConfig,
+    duration_from_secs_f64, parse_rate_limit, validate_client_order_id_strings,
+    validate_instrument_id_strings, validate_max_notional_per_order,
+    validate_non_negative_finite_f64,
 };
-
-fn validate_rate_limit(value: &str, name: &str) -> PyResult<()> {
-    let (limit, interval) = value
-        .split_once('/')
-        .ok_or_else(|| to_pyvalue_err(format!("invalid `{name}`: expected 'limit/HH:MM:SS'")))?;
-
-    let limit = limit
-        .parse::<usize>()
-        .map_err(|e| to_pyvalue_err(format!("invalid `{name}` limit: {e}")))?;
-
-    if limit == 0 {
-        return Err(to_pyvalue_err(format!(
-            "invalid `{name}`: limit must be greater than zero"
-        )));
-    }
-
-    let mut total_secs: u64 = 0;
-    let mut parts = interval.split(':');
-    for label in ["hours", "minutes", "seconds"] {
-        let value = parts
-            .next()
-            .ok_or_else(|| {
-                to_pyvalue_err(format!(
-                    "invalid `{name}`: expected 'limit/HH:MM:SS' interval"
-                ))
-            })?
-            .parse::<u64>()
-            .map_err(|e| to_pyvalue_err(format!("invalid `{name}` {label}: {e}")))?;
-
-        let multiplier: u64 = match label {
-            "hours" => 3_600,
-            "minutes" => 60,
-            "seconds" => 1,
-            _ => unreachable!(),
-        };
-        total_secs = total_secs.saturating_add(value.saturating_mul(multiplier));
-    }
-
-    if parts.next().is_some() {
-        return Err(to_pyvalue_err(format!(
-            "invalid `{name}`: expected 'limit/HH:MM:SS'"
-        )));
-    }
-
-    if total_secs == 0 {
-        return Err(to_pyvalue_err(format!(
-            "invalid `{name}`: interval must be greater than zero"
-        )));
-    }
-
-    Ok(())
-}
-
-fn validate_max_notional_per_order(
-    max_notional_per_order: &HashMap<String, String>,
-) -> PyResult<()> {
-    for (instrument_id, notional) in max_notional_per_order {
-        InstrumentId::from_str(instrument_id).map_err(|e| {
-            to_pyvalue_err(format!(
-                "invalid `max_notional_per_order` instrument ID {instrument_id:?}: {e}"
-            ))
-        })?;
-
-        Decimal::from_str(notional).map_err(|e| {
-            to_pyvalue_err(format!(
-                "invalid `max_notional_per_order` notional {notional:?}: {e}"
-            ))
-        })?;
-    }
-
-    Ok(())
-}
-
-fn validate_instrument_id_strings(values: &[String], name: &str) -> PyResult<()> {
-    for value in values {
-        InstrumentId::from_str(value).map_err(|e| {
-            to_pyvalue_err(format!("invalid `{name}` instrument ID {value:?}: {e}"))
-        })?;
-    }
-    Ok(())
-}
-
-fn validate_client_order_id_strings(values: &[String], name: &str) -> PyResult<()> {
-    for value in values {
-        ClientOrderId::new_checked(value).map_err(|e| {
-            to_pyvalue_err(format!("invalid `{name}` client order ID {value:?}: {e}"))
-        })?;
-    }
-    Ok(())
-}
 
 // Coerces a PyO3 input into `BarIntervalType`, accepting both the enum (modern Rust
 // surface) and the legacy Python v1 string form (`"left-open"` / `"right-open"`).
@@ -149,9 +61,6 @@ fn coerce_bar_interval_type(value: &Py<PyAny>) -> PyResult<BarIntervalType> {
     })
 }
 
-// Normalizes a Python `max_notional_per_order` dict (values can be `int`, `float`,
-// `str`, or `Decimal`, matching the legacy Python v1 config contract) into the
-// string-keyed map stored on `LiveRiskEngineConfig`.
 /// Converts a Python value into a [`serde_json::Value`].
 fn py_to_json_value(bound: &pyo3::Bound<'_, PyAny>) -> PyResult<serde_json::Value> {
     // Check bool before int since Python `bool` is a subclass of `int`
@@ -231,6 +140,9 @@ pub(crate) fn coerce_json_config(
     })
 }
 
+// Normalizes a Python `max_notional_per_order` dict (values can be `int`, `float`,
+// `str`, or `Decimal`, matching the legacy Python v1 config contract) into the
+// string-keyed map stored on `LiveRiskEngineConfig`.
 fn coerce_max_notional_per_order(
     raw: HashMap<String, Py<PyAny>>,
 ) -> PyResult<HashMap<String, String>> {
@@ -328,9 +240,21 @@ impl LiveRiskEngineConfig {
             None => HashMap::new(),
         };
 
-        validate_rate_limit(&max_order_submit_rate, "max_order_submit_rate")?;
-        validate_rate_limit(&max_order_modify_rate, "max_order_modify_rate")?;
-        validate_max_notional_per_order(&max_notional_per_order)?;
+        parse_rate_limit(
+            "LiveRiskEngineConfig.max_order_submit_rate",
+            &max_order_submit_rate,
+        )
+        .map_err(config_error_to_pyvalue_err)?;
+        parse_rate_limit(
+            "LiveRiskEngineConfig.max_order_modify_rate",
+            &max_order_modify_rate,
+        )
+        .map_err(config_error_to_pyvalue_err)?;
+        validate_max_notional_per_order(
+            "LiveRiskEngineConfig.max_notional_per_order",
+            &max_notional_per_order,
+        )
+        .map_err(config_error_to_pyvalue_err)?;
 
         Ok(Self {
             bypass: bypass.unwrap_or(default.bypass),
@@ -397,20 +321,25 @@ impl LiveExecEngineConfig {
     ) -> PyResult<Self> {
         let default = Self::default();
 
-        if let Some(delay) = reconciliation_startup_delay_secs
-            && (!delay.is_finite() || delay < 0.0)
-        {
-            return Err(to_pyvalue_err(format!(
-                "invalid `reconciliation_startup_delay_secs`: {delay} (must be a non-negative finite number)"
-            )));
+        if let Some(delay) = reconciliation_startup_delay_secs {
+            validate_non_negative_finite_f64(
+                "LiveExecEngineConfig.reconciliation_startup_delay_secs",
+                delay,
+            )
+            .map_err(config_error_to_pyvalue_err)?;
         }
 
         if let Some(ids) = reconciliation_instrument_ids.as_ref() {
-            validate_instrument_id_strings(ids, "reconciliation_instrument_ids")?;
+            validate_instrument_id_strings(
+                "LiveExecEngineConfig.reconciliation_instrument_ids",
+                ids,
+            )
+            .map_err(config_error_to_pyvalue_err)?;
         }
 
         if let Some(ids) = filtered_client_order_ids.as_ref() {
-            validate_client_order_id_strings(ids, "filtered_client_order_ids")?;
+            validate_client_order_id_strings("LiveExecEngineConfig.filtered_client_order_ids", ids)
+                .map_err(config_error_to_pyvalue_err)?;
         }
 
         Ok(Self {
@@ -742,12 +671,7 @@ impl LiveNodeConfig {
         let default = Self::default();
 
         let to_duration = |value: f64, name: &str| -> PyResult<Duration> {
-            if !value.is_finite() || !(0.0..=86_400.0).contains(&value) {
-                return Err(to_pyvalue_err(format!(
-                    "invalid {name}: {value} (must be finite, non-negative, and <= 86400)"
-                )));
-            }
-            Ok(Duration::from_secs_f64(value))
+            duration_from_secs_f64(name, value).map_err(config_error_to_pyvalue_err)
         };
 
         Ok(Self {

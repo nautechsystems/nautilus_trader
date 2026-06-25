@@ -155,6 +155,10 @@ pub struct Dex {
     pub collect_created_event: Cow<'static, str>,
     // Optional Flash event signature emitted when flash loan occurs.
     pub flash_created_event: Option<Cow<'static, str>>,
+    // Optional SetFeeProtocol event signature emitted when the protocol-fee config changes.
+    pub fee_protocol_update_event: Option<Cow<'static, str>>,
+    // Optional CollectProtocol event signature emitted when protocol fees are withdrawn.
+    pub fee_protocol_collect_event: Option<Cow<'static, str>>,
     /// The type of automated market maker (AMM) algorithm used by this DEX.
     pub amm_type: AmmType,
     /// Collection of liquidity pools managed by this DEX.
@@ -209,6 +213,8 @@ impl Dex {
             burn_created_event: encoded_burn_event.into(),
             collect_created_event: encoded_collect_event.into(),
             flash_created_event: None,
+            fee_protocol_update_event: None,
+            fee_protocol_collect_event: None,
             amm_type,
             pairs: vec![],
         }
@@ -228,6 +234,18 @@ impl Dex {
     /// Sets the flash loan event signature by hashing and encoding the provided event string.
     pub fn set_flash_event(&mut self, event: &str) {
         self.flash_created_event = Some(hex::encode_prefixed(keccak256(event.as_bytes())).into());
+    }
+
+    /// Sets the protocol-fee change event signature by hashing and encoding the provided event string.
+    pub fn set_fee_protocol_update_event(&mut self, event: &str) {
+        self.fee_protocol_update_event =
+            Some(hex::encode_prefixed(keccak256(event.as_bytes())).into());
+    }
+
+    /// Sets the protocol-fee withdrawal event signature by hashing and encoding the provided event string.
+    pub fn set_fee_protocol_collect_event(&mut self, event: &str) {
+        self.fee_protocol_collect_event =
+            Some(hex::encode_prefixed(keccak256(event.as_bytes())).into());
     }
 }
 
@@ -257,19 +275,20 @@ impl From<Pool> for CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
+            None, // multiplier
+            None, // lot_size
+            None, // max_quantity
+            None, // min_quantity
+            None, // max_notional
+            None, // min_notional
+            None, // max_price
+            None, // min_price
+            None, // margin_init
+            None, // margin_maint
+            None, // maker_fee
+            None, // taker_fee
+            None, // tick_scheme
+            None, // info
             0.into(),
             0.into(),
         )

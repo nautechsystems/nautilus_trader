@@ -16,7 +16,10 @@
 use nautilus_core::correctness::{CorrectnessResultExt, FAILED, check_positive_usize};
 use serde::{Deserialize, Deserializer, Serialize, de::Error};
 
-use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
+use crate::{
+    config::{ConfigError, ConfigErrorCollector, ConfigResult},
+    enums::SerializationEncoding,
+};
 
 /// Configuration for `Cache` instances.
 #[cfg_attr(
@@ -28,12 +31,11 @@ use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.common")
 )]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, bon::Builder)]
+#[builder(finish_fn(name = build_inner, vis = ""))]
 #[serde(default, deny_unknown_fields)]
 pub struct CacheConfig {
-    /// The configuration for the cache backing database.
-    pub database: Option<DatabaseConfig>,
     /// The encoding for database operations, controls the type of serializer used.
-    #[builder(default = SerializationEncoding::MsgPack)]
+    #[builder(default = SerializationEncoding::Json)]
     pub encoding: SerializationEncoding,
     /// If timestamps should be persisted as ISO 8601 strings.
     #[builder(default)]
@@ -56,11 +58,11 @@ pub struct CacheConfig {
     #[builder(default = true)]
     pub drop_instruments_on_reset: bool,
     /// The maximum length for internal tick deques.
-    #[builder(default = 10_000, with = |value: usize| positive_tick_capacity(value))]
+    #[builder(default = 10_000)]
     #[serde(deserialize_with = "deserialize_positive_usize")]
     pub tick_capacity: usize,
     /// The maximum length for internal bar deques.
-    #[builder(default = 10_000, with = |value: usize| positive_bar_capacity(value))]
+    #[builder(default = 10_000)]
     #[serde(deserialize_with = "deserialize_positive_usize")]
     pub bar_capacity: usize,
     /// If account events should be persisted to a backing database.
@@ -71,9 +73,25 @@ pub struct CacheConfig {
     pub save_market_data: bool,
 }
 
+impl<S: cache_config_builder::IsComplete> CacheConfigBuilder<S> {
+    /// Validates and builds the [`CacheConfig`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ConfigError`] if any field fails validation
+    /// (see [`CacheConfig::validate`]).
+    pub fn build(self) -> ConfigResult<CacheConfig> {
+        let config = self.build_inner();
+        config.validate()?;
+        Ok(config)
+    }
+}
+
 impl Default for CacheConfig {
     fn default() -> Self {
-        Self::builder().build()
+        Self::builder()
+            .build()
+            .expect("default `CacheConfig` should be valid")
     }
 }
 
@@ -86,7 +104,6 @@ impl CacheConfig {
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
-        database: Option<DatabaseConfig>,
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
         buffer_interval_ms: Option<usize>,
@@ -104,7 +121,6 @@ impl CacheConfig {
         check_positive_usize(bar_capacity, stringify!(bar_capacity)).expect_display(FAILED);
 
         Self {
-            database,
             encoding,
             timestamps_as_iso8601,
             buffer_interval_ms,
@@ -124,22 +140,22 @@ impl CacheConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if a capacity setting is not positive.
-    pub fn validate(&self) -> anyhow::Result<()> {
-        check_positive_usize(self.tick_capacity, stringify!(tick_capacity))?;
-        check_positive_usize(self.bar_capacity, stringify!(bar_capacity))?;
-        Ok(())
+    /// Returns a [`ConfigError`] if a capacity setting is not positive.
+    pub fn validate(&self) -> ConfigResult<()> {
+        let mut errors = ConfigErrorCollector::new();
+
+        for (field, value) in [
+            ("tick_capacity", self.tick_capacity),
+            ("bar_capacity", self.bar_capacity),
+        ] {
+            errors.check(
+                value > 0,
+                ConfigError::range(field, format!("must be positive, was {value}")),
+            );
+        }
+
+        errors.into_result()
     }
-}
-
-fn positive_tick_capacity(value: usize) -> usize {
-    check_positive_usize(value, stringify!(tick_capacity)).expect_display(FAILED);
-    value
-}
-
-fn positive_bar_capacity(value: usize) -> usize {
-    check_positive_usize(value, stringify!(bar_capacity)).expect_display(FAILED);
-    value
 }
 
 fn deserialize_positive_usize<'de, D>(deserializer: D) -> Result<usize, D::Error>
@@ -158,12 +174,18 @@ mod tests {
     use super::*;
 
     #[rstest]
+    fn test_default_uses_json_encoding() {
+        let config = CacheConfig::default();
+
+        assert_eq!(config.encoding, SerializationEncoding::Json);
+    }
+
+    #[rstest]
     #[case(0, 1)]
     #[case(1, 0)]
     #[should_panic]
     fn test_new_rejects_zero_capacities(#[case] tick_capacity: usize, #[case] bar_capacity: usize) {
         let _ = CacheConfig::new(
-            None,
             SerializationEncoding::MsgPack,
             false,
             None,
@@ -180,24 +202,26 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "invalid usize for 'tick_capacity' not positive")]
     fn test_builder_rejects_zero_tick_capacity() {
-        let _ = CacheConfig::builder().tick_capacity(0).build();
+        let result = CacheConfig::builder().tick_capacity(0).build();
+        assert!(
+            matches!(result, Err(ConfigError::Range { field, .. }) if field == "tick_capacity")
+        );
     }
 
     #[rstest]
-    #[should_panic(expected = "invalid usize for 'bar_capacity' not positive")]
     fn test_builder_rejects_zero_bar_capacity() {
-        let _ = CacheConfig::builder().bar_capacity(0).build();
+        let result = CacheConfig::builder().bar_capacity(0).build();
+        assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "bar_capacity"));
     }
 
     #[rstest]
-    #[case(0, 1, "invalid usize for 'tick_capacity' not positive, was 0")]
-    #[case(1, 0, "invalid usize for 'bar_capacity' not positive, was 0")]
+    #[case(0, 1, "tick_capacity")]
+    #[case(1, 0, "bar_capacity")]
     fn test_validate_rejects_zero_capacities(
         #[case] tick_capacity: usize,
         #[case] bar_capacity: usize,
-        #[case] expected: &str,
+        #[case] expected_field: &str,
     ) {
         let config = CacheConfig {
             tick_capacity,
@@ -207,7 +231,7 @@ mod tests {
 
         let err = config.validate().expect_err("zero capacity is invalid");
 
-        assert_eq!(err.to_string(), expected);
+        assert!(matches!(err, ConfigError::Range { field, .. } if field == expected_field));
     }
 
     #[rstest]

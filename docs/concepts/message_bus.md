@@ -284,21 +284,54 @@ Here's a quick reference to help you decide which messaging style to use:
 | Structured trading data                     | `Actor` + Pub/Sub Data + optional `@customdataclass` if serialization is needed | New class definition inheriting from `Data` (handler `on_data` is predefined) |
 | Simple alerts/notifications                 | `Actor` + Pub/Sub Signal                                                        | Signal name only |
 
-## External publishing
+## External egress and ingress
 
-The `MessageBus` can be *backed* with any database or message broker technology which has an
-integration written for it, this then enables external publishing of messages.
+The `MessageBus` can write serialized messages to external streams. This section describes the
+external egress and ingress sides of the external bus. Rust-native live nodes use injected
+`MessageBusExternalEgress` and `MessageBusExternalIngress` surfaces, so the core node does not
+depend on Redis, a broker, shared-memory implementation, or socket protocol.
 
 :::info
-Redis is currently supported for all serializable messages which are published externally.
-The minimum supported Redis version is 6.2 (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
+Redis is currently supported as one external backing for serializable messages. The minimum
+supported Redis version is 6.2, required for
+[streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality.
 :::
 
-Under the hood, when a backing database (or any other compatible technology) is configured,
-all outgoing messages are first serialized, then transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a separate thread (implemented in Rust).
-In this separate thread, the message is written to its final destination, which is presently Redis streams.
+When external egress is configured, outgoing publish messages are first dispatched to in-process
+subscribers, then serialized into the existing `BusMessage` wire record:
+
+- `topic`: the exact message bus topic used by the internal publish call, for example
+  `data.quotes.BINANCE.BTCUSDT` or `events.order.S-001`.
+- `type`: the canonical payload type name, for example `QuoteTick` or `OrderEventAny`.
+- `encoding`: the payload encoding selected from the message bus encoding policy.
+- `payload`: serialized bytes encoded with the selected encoding.
+
+External egress receives that record as `publish(BusMessage)`. This outbound call must not block the
+node's bus thread. Bounded egress implementations drop on a full queue instead of applying
+back-pressure to the trading loop. Closing the message bus closes the configured egress.
+
+Inbound external streams are exposed through the separate Rust `MessageBusExternalIngress` trait.
+Ingress yields the same `BusMessage { topic, type, encoding, payload }` shape.
+`republish_external_message` decodes supported inbound messages and republishes them internally
+without forwarding the message back out. The inbound payload type must first be registered for
+streaming on the receiving message bus; unregistered types are skipped without decoding.
+
+For Redis, messages are transmitted via a Multiple-Producer Single-Consumer (MPSC) channel to a
+separate Rust task. That task writes the message to Redis streams.
 
 Offloading I/O to a separate thread keeps the main thread unblocked.
+
+With MessagePack or JSON, Rust-native external egress forwards serializable typed publications. This
+includes instruments, quotes, trades, bars, book deltas, depth-10 snapshots, mark/index/funding
+updates, option greeks, account state, portfolio snapshots, order events, position events, and
+custom data. With the `defi` feature this also includes DeFi blocks, pools, liquidity updates, fee
+collects, and flash events. Full order book snapshots, greeks data, option chain slices, and DeFi
+pool swaps are not forwarded because those types do not implement Serde serialization.
+
+With SBE or Cap'n Proto, Rust-native external egress forwards the built-in market data payloads with
+schema codecs: quotes, trades, bars, book deltas, depth-10 snapshots, mark price updates, index
+price updates, funding rate updates, and option greeks. Other payload types are dropped with a
+debug log when those schema encodings are selected.
 
 ### Serialization
 
@@ -324,49 +357,87 @@ def register_serializable_type(
 
 ## Configuration
 
-The message bus external backing technology can be configured by importing the `MessageBusConfig` object and passing this to
-your `TradingNodeConfig`. Each of these config options will be described below.
+The message bus external backing technology uses a behavior config plus a technology-owned backing
+config. `MessageBusConfig` controls message bus behavior. `RedisMessageBusConfig` owns Redis
+connection settings and implements `MessageBusBackingFactory`.
 
-```python
-...  # Other config omitted
-message_bus=MessageBusConfig(
-    database=DatabaseConfig(),
-    encoding="json",
-    timestamps_as_iso8601=True,
-    buffer_interval_ms=100,
-    autotrim_mins=30,
-    use_trader_prefix=True,
-    use_trader_id=True,
-    use_instance_id=False,
-    streams_prefix="streams",
-    types_filter=[QuoteTick, TradeTick],
-)
-...
+```rust
+use nautilus_common::{
+    enums::SerializationEncoding,
+    msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
+};
+use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
+
+let config = MessageBusConfig {
+    encoding: SerializationEncoding::Json,
+    encoding_market_data: Some(SerializationEncoding::Sbe),
+    timestamps_as_iso8601: true,
+    buffer_interval_ms: Some(100),
+    autotrim_mins: Some(30),
+    use_trader_prefix: true,
+    use_trader_id: true,
+    use_instance_id: false,
+    streams_prefix: "streams".to_string(),
+    types_filter: Some(vec!["QuoteTick".to_string(), "TradeTick".to_string()]),
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig::default();
+let message_bus_backing = backing.create(trader_id, instance_id, config.clone())?;
 ```
 
-### Database config
+### Backing config
 
-A `DatabaseConfig` must be provided, for a default Redis setup on the local
-loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
+A `RedisMessageBusConfig` is required when using the built-in Redis backing. For a default Redis
+setup on the local loopback you can pass `RedisMessageBusConfig::default()`.
+
+Redis selection is explicit in the Rust type. The config does not use a user-facing selector such
+as `type = "redis"` or `backing_type = "redis"`.
+
+Rust-native callers that inject `MessageBusExternalEgress` pass concrete connection details when
+they construct that egress surface. The core message bus does not require a `RedisMessageBusConfig`
+for injected egress.
+
+The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and consumes inbound
+`BusMessage`s when callers inject a `MessageBusExternalIngress` with
+`LiveNodeBuilder::with_external_ingress`. The config names the external stream keys; the injected
+ingress is the concrete runtime source. Rust-native factory wiring from config to a backing remains
+the caller's responsibility.
 
 ### Encoding
 
-Two encodings are currently supported by the built-in `Serializer` used by the `MessageBus`:
+Rust-native external message bus egress supports these encoding names:
 
 - JSON (`json`)
 - MessagePack (`msgpack`)
+- Cap'n Proto (`capnp`, with the Rust `capnp` feature)
+- SBE (`sbe`, with the Rust `sbe` feature)
 
 Use the `encoding` config option to control the message writing encoding.
+Use `encoding_market_data` to override the encoding for market data payloads backed by the external
+bus binary codecs. Use `encoding_builtin` to override account state, portfolio snapshot, order
+event, and position event payloads. Custom and unmapped payload types always use `encoding`.
+
+`MessageBusConfig::validate` requires the default `encoding` to support custom payloads, so it must
+be JSON or MessagePack. Category overrides must be supported by every published payload type in
+that category. SBE and Cap'n Proto can currently be used only for `encoding_market_data`, and only
+when the matching Rust feature is enabled. `encoding_builtin = "sbe"` and
+`encoding_builtin = "capnp"` fail validation until those schema codecs cover the built-in event
+category.
+
+The legacy Python/Cython Redis serializer and the Redis cache payload path support MessagePack and
+JSON. SBE and Cap'n Proto are schema payload encodings for Rust-native external message bus egress,
+not Redis cache encodings.
 
 :::tip
-The `msgpack` encoding is used by default as it offers the most optimal serialization and memory performance.
-We recommend using `json` encoding for human readability when performance is not a primary concern.
+The `json` encoding is used by default for human readability and interoperability.
+Use `msgpack` when payload size and serialization performance are a primary concern.
 :::
 
 ### Timestamp formatting
 
 By default timestamps are formatted as UNIX epoch nanosecond integers. Alternatively you can
-configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `True`.
+configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `true`.
 
 ### Message stream keys
 
@@ -376,6 +447,11 @@ They can be tailored to meet your specific requirements and use cases. In the co
 ```
 trader:{trader_id}:{instance_id}:{streams_prefix}
 ```
+
+These options control Redis stream keys. They do not rewrite the `topic` passed to an injected
+`MessageBusExternalEgress`; that topic remains the internal message bus publish topic. When
+`stream_per_topic` is `True`, Redis egress appends the topic to the stream key. When it is
+`False`, Redis stores all messages on the base stream key and keeps the topic as a message field.
 
 The following options are available for configuring message stream keys:
 
@@ -442,7 +518,7 @@ Rather than a maximum lookback window based on the current wall clock time.
 ## External streams
 
 The message bus within a `TradingNode` (node) is referred to as the "internal message bus".
-A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
+A producer node is one which publishes messages onto an external stream (see [external egress and ingress](#external-egress-and-ingress)).
 The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
 
 ```mermaid
@@ -460,6 +536,7 @@ flowchart TB
 :::tip
 Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
 The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for any subscriptions to these clients.
+When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming payload type for inbound republishing on the message bus.
 :::
 
 ### Example configuration
@@ -470,43 +547,51 @@ and a downstream consumer node publishes these data messages onto its internal m
 #### Producer node
 
 We configure the `MessageBus` of the producer node to publish to a `"binance"` stream.
-The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `False`
+The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `false`
 to ensure a simple and predictable stream key that the consumer nodes can register for.
 
-```python
-message_bus=MessageBusConfig(
-    database=DatabaseConfig(
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    use_trader_id=False,
-    use_trader_prefix=False,
-    use_instance_id=False,
-    streams_prefix="binance",  # <---
-    stream_per_topic=False,
-    autotrim_mins=30,
-),
+```rust
+let message_bus = MessageBusConfig {
+    use_trader_id: false,
+    use_trader_prefix: false,
+    use_instance_id: false,
+    streams_prefix: "binance".to_string(), // <---
+    stream_per_topic: false,
+    autotrim_mins: Some(30),
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig {
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
 ```
 
 #### Consumer node
 
-We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"` stream.
-The node will listen to the external stream keys to publish these messages onto its internal message bus.
-Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. This ensures that the
-`DataEngine` does not attempt to send data commands to this client ID, as we expect these messages to be
-published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
+We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"`
+stream. The node listens to the external stream keys when a `MessageBusExternalIngress` is injected
+into the `LiveNodeBuilder`, then publishes these messages onto its internal message bus. We declare
+the client ID `"BINANCE_EXT"` as an external client so the `DataEngine` does not attempt to send
+data commands to this client ID.
 
-```python
-data_engine=LiveDataEngineConfig(
-    external_clients=[ClientId("BINANCE_EXT")],
-),
-message_bus=MessageBusConfig(
-    database=DatabaseConfig(
-        connection_timeout=2,
-        response_timeout=2,
-    ),
-    external_streams=["binance"],  # <---
-),
+```rust
+let data_engine = LiveDataEngineConfig {
+    external_clients: Some(vec![ClientId::from("BINANCE_EXT")]),
+    ..Default::default()
+};
+
+let message_bus = MessageBusConfig {
+    external_streams: Some(vec!["binance".to_string()]), // <---
+    ..Default::default()
+};
+
+let backing = RedisMessageBusConfig {
+    connection_timeout: 2,
+    response_timeout: 2,
+    ..Default::default()
+};
 ```
 
 ## Related guides

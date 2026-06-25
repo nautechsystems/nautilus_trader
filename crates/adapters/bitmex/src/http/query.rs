@@ -133,6 +133,57 @@ pub struct GetTradeBucketedParams {
     pub end_time: Option<DateTime<Utc>>,
 }
 
+/// Parameters for the GET /orderBook/L2 endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetOrderBookL2Params {
+    /// Instrument symbol.
+    pub symbol: String,
+    /// Book depth.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub depth: Option<u32>,
+}
+
+/// Parameters for the GET /funding endpoint.
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[builder(default)]
+#[builder(setter(into, strip_option))]
+#[serde(rename_all = "camelCase")]
+pub struct GetFundingParams {
+    /// Instrument symbol.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    /// Generic table filter. Send JSON key/value pairs, such as `{"key": "value"}`.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
+    pub filter: Option<Value>,
+    /// Array of column names to fetch. If omitted, all columns are returned.
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "serialize_json_as_string"
+    )]
+    pub columns: Option<Value>,
+    /// Number of results to fetch.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub count: Option<i32>,
+    /// Starting point for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<i32>,
+    /// If true, sorts results newest first.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reverse: Option<bool>,
+    /// Starting date filter for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<DateTime<Utc>>,
+    /// Ending date filter for results.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<DateTime<Utc>>,
+}
+
 /// Parameters for the GET /order endpoint.
 #[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
 #[builder(default)]

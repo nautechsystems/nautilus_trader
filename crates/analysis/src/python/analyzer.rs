@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    sync::Arc,
+};
 
 use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
@@ -24,13 +27,16 @@ use nautilus_model::{
 use pyo3::prelude::*;
 
 use crate::{
+    Returns,
     analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
-        expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
-        loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
-        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
-        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
+        alpha::Alpha, beta_ratio::BetaRatio, expectancy::Expectancy,
+        information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
+        loser_max::MaxLoser, loser_min::MinLoser, profit_factor::ProfitFactor,
+        returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
+        returns_avg_win::ReturnsAverageWin, returns_volatility::ReturnsVolatility,
+        risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
+        tracking_error::TrackingError, treynor_ratio::TreynorRatio, win_rate::WinRate,
         winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
@@ -77,6 +83,26 @@ impl PortfolioAnalyzer {
     #[pyo3(name = "get_performance_stats_portfolio_returns")]
     fn py_get_performance_stats_portfolio_returns(&self) -> HashMap<String, f64> {
         self.get_performance_stats_portfolio_returns()
+            .into_iter()
+            .collect()
+    }
+
+    /// Gets all benchmark-relative return statistics for the primary returns.
+    ///
+    /// This is stateless: the `benchmark` series is supplied by the caller rather
+    /// than stored on the analyzer. Only statistics that override
+    /// `PortfolioStatistic.calculate_from_returns_with_benchmark` (the benchmark-relative
+    /// statistics) contribute values; all others return `None` and are skipped.
+    #[pyo3(name = "get_performance_stats_returns_vs_benchmark")]
+    fn py_get_performance_stats_returns_vs_benchmark(
+        &self,
+        benchmark: BTreeMap<u64, f64>,
+    ) -> HashMap<String, f64> {
+        let benchmark: Returns = benchmark
+            .into_iter()
+            .map(|(k, v)| (UnixNanos::from(k), v))
+            .collect();
+        self.get_performance_stats_returns_vs_benchmark(&benchmark)
             .into_iter()
             .collect()
     }
@@ -196,6 +222,26 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "Alpha" => {
+                let stat = statistic.extract::<Alpha>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "InformationRatio" => {
+                let stat = statistic.extract::<InformationRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "TrackingError" => {
+                let stat = statistic.extract::<TrackingError>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "TreynorRatio" => {
+                let stat = statistic.extract::<TreynorRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -284,6 +330,26 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<LongRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
+            "Alpha" => {
+                let stat = statistic.extract::<Alpha>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "BetaRatio" => {
+                let stat = statistic.extract::<BetaRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "InformationRatio" => {
+                let stat = statistic.extract::<InformationRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "TrackingError" => {
+                let stat = statistic.extract::<TrackingError>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "TreynorRatio" => {
+                let stat = statistic.extract::<TreynorRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -320,14 +386,24 @@ impl PortfolioAnalyzer {
         Ok(())
     }
 
-    /// Records a trade's PnL.
+    /// Records a trade's PnL realized at `ts_event`.
     #[pyo3(name = "add_trade")]
     #[allow(
         clippy::trivially_copy_pass_by_ref,
         reason = "matches underlying add_trade signature"
     )]
-    fn py_add_trade(&mut self, position_id: &PositionId, realized_pnl: &Money) {
-        self.add_trade(position_id, realized_pnl);
+    fn py_add_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+        self.add_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
+    }
+
+    /// Records a trade's PnL realized at `ts_event`, observed during portfolio processing.
+    #[pyo3(name = "record_trade")]
+    #[allow(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "matches underlying record_trade signature"
+    )]
+    fn py_record_trade(&mut self, position_id: &PositionId, ts_event: u64, realized_pnl: &Money) {
+        self.record_trade(position_id, UnixNanos::from(ts_event), realized_pnl);
     }
 
     // Note: calculate_statistics is not exposed to Python because it requires
@@ -375,18 +451,17 @@ impl PortfolioAnalyzer {
 
     /// Retrieves realized PnLs for a specific currency.
     ///
-    /// Returns `None` if no PnLs exist, or if multiple currencies exist
-    /// without an explicit currency specified.
+    /// Each record is `(position_id, ts_event, realized_pnl)`. Returns `None` if no PnLs
+    /// exist, or if multiple currencies exist without an explicit currency specified.
     #[pyo3(name = "realized_pnls")]
     fn py_realized_pnls(&self, py: Python, currency: Option<&Currency>) -> PyResult<Py<PyAny>> {
         match self.realized_pnls(currency) {
             Some(pnls) => {
-                // Convert Vec<(PositionId, f64)> to Python list of tuples or dict
-                let dict = pyo3::types::PyDict::new(py);
-                for (position_id, pnl) in pnls {
-                    dict.set_item(position_id.to_string(), pnl)?;
+                let list = pyo3::types::PyList::empty(py);
+                for (position_id, ts_event, pnl) in pnls {
+                    list.append((position_id.to_string(), ts_event.as_u64(), pnl))?;
                 }
-                Ok(dict.into())
+                Ok(list.into())
             }
             None => Ok(py.None()),
         }

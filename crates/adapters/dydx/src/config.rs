@@ -165,6 +165,14 @@ fn default_data_retry_delay_max_ms() -> u64 {
     5000
 }
 
+fn default_max_ws_connections() -> usize {
+    8
+}
+
+fn default_per_channel_subscription_limit() -> usize {
+    32
+}
+
 impl DydxAdapterConfig {
     /// Creates a config with URLs and chain ID resolved for the given network.
     ///
@@ -278,6 +286,22 @@ pub struct DydxDataClientConfig {
     #[serde(default)]
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Maximum number of WebSocket connections in the Indexer pool.
+    ///
+    /// New connections are spun up lazily once the per-channel subscription
+    /// limit (32 by default on hosted Indexer) is reached on every existing
+    /// connection. Default `8` supports up to 256 markets per 32-limit channel.
+    #[serde(default = "default_max_ws_connections")]
+    #[builder(default = default_max_ws_connections())]
+    pub max_ws_connections: usize,
+    /// Per-connection subscription limit for each rate-limited Indexer channel
+    /// (`v4_trades`, `v4_candles`, `v4_orderbook`, `v4_markets`).
+    ///
+    /// Defaults to `32`, matching the hosted Indexer. Self-hosted Indexer
+    /// deployments may raise this.
+    #[serde(default = "default_per_channel_subscription_limit")]
+    #[builder(default = default_per_channel_subscription_limit())]
+    pub per_channel_subscription_limit: usize,
 }
 
 impl DydxDataClientConfig {

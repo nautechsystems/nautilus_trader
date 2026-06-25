@@ -547,7 +547,7 @@ fn handle_ws_message(
             log::info!("WebSocket reconnected, cleared caches");
         }
         BybitWsMessage::Error(e) => {
-            log::error!(
+            log::warn!(
                 "Bybit WebSocket error: code={} message={}",
                 e.code,
                 e.message

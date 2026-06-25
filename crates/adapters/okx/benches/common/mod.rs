@@ -110,6 +110,7 @@ fn spot_instrument(
         None,
         None,
         None,
+        None,
         UnixNanos::default(),
         UnixNanos::default(),
     ))
@@ -137,6 +138,7 @@ fn perp_instrument(
         size_precision,
         price_increment,
         size_increment,
+        None,
         None,
         None,
         None,

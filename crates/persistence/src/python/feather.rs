@@ -48,7 +48,7 @@ use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
     backend::feather::{FeatherWriter, RotationConfig},
-    parquet::create_object_store_from_path,
+    parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
 
 /// Python binding for the Rust `FeatherWriter`.
@@ -74,15 +74,15 @@ impl PyStreamingFeatherWriter {
     /// # Parameters
     ///
     /// - `path`: The path to persist the stream to. Must be a directory.
-    /// - `cache`: The cache for query info (PyCache).
-    /// - `clock`: The clock to use for time-related operations (PyClock).
+    /// - `cache`: The cache for query info (`PyCache`).
+    /// - `clock`: The clock to use for time-related operations (`PyClock`).
     /// - `fs_protocol`: Optional filesystem protocol (default: "file").
     /// - `fs_storage_options`: Optional storage options for cloud backends.
-    /// - `include_types`: Optional list of type names to include (e.g., ["quotes", "trades"]).
-    /// - `rotation_mode`: Rotation mode (0=SIZE, 1=INTERVAL, 2=SCHEDULED_DATES, 3=NO_ROTATION).
+    /// - `include_types`: Optional list of type names to include (e.g., `["quotes", "trades"]`).
+    /// - `rotation_mode`: Rotation mode (0=SIZE, 1=INTERVAL, `2=SCHEDULED_DATES`, `3=NO_ROTATION`).
     /// - `max_file_size`: Maximum file size in bytes before rotation (for SIZE mode).
-    /// - `rotation_interval_ns`: Rotation interval in nanoseconds (for INTERVAL/SCHEDULED_DATES modes).
-    /// - `rotation_time_ns`: Scheduled rotation time in nanoseconds (for SCHEDULED_DATES mode).
+    /// - `rotation_interval_ns`: Rotation interval in nanoseconds (for `INTERVAL/SCHEDULED_DATES` modes).
+    /// - `rotation_time_ns`: Scheduled rotation time in nanoseconds (for `SCHEDULED_DATES` mode).
     /// - `flush_interval_ms`: Flush interval in milliseconds (default: 1000). Set to 0 to disable auto-flush.
     /// - `replace`: If existing files at the given path should be replaced (default: False).
     #[new]
@@ -119,32 +119,39 @@ impl PyStreamingFeatherWriter {
     ) -> PyResult<Self> {
         // Create object store from path
         // Use fs_protocol to construct the full path if it's a cloud protocol
-        let full_path = if let Some(protocol) = fs_protocol {
-            if protocol != "file" && !path.contains("://") {
+        let full_path = match fs_protocol {
+            Some(protocol) if protocol != "file" && !path.contains("://") => {
                 format!("{protocol}://{path}")
-            } else {
-                path.clone()
             }
-        } else {
-            path.clone()
+            _ => path,
         };
 
         let storage_options = fs_storage_options
             .map(|map| map.into_iter().collect::<ahash::AHashMap<String, String>>());
 
-        let (object_store, _base_path, _original_uri) =
-            create_object_store_from_path(&full_path, storage_options)
-                .map_err(|e| PyIOError::new_err(format!("Failed to create object store: {e}")))?;
+        let location = create_object_store_location_from_path(&full_path, storage_options)
+            .map_err(|e| PyIOError::new_err(format!("Failed to create object store: {e}")))?;
+        let is_local_store = matches!(&location.kind, ObjectStoreLocationKind::Local);
+        let object_store = location.object_store;
+        let base_path = location.base_path;
 
         // Handle replace parameter - delete existing files if requested
         if replace {
             let runtime = get_runtime();
             let store_ref = object_store.clone();
+            let prefix = if base_path.is_empty() {
+                if !is_local_store {
+                    return Err(PyIOError::new_err(
+                        "replace=True for remote streaming paths requires a non-empty prefix",
+                    ));
+                }
+                None
+            } else {
+                Some(object_store::path::Path::from(base_path.clone()))
+            };
             runtime
                 .block_on(async {
-                    let prefix =
-                        object_store::path::Path::from(path.trim_start_matches('/').to_string());
-                    let mut stream = store_ref.list(Some(&prefix));
+                    let mut stream = store_ref.list(prefix.as_ref());
                     let mut to_delete = Vec::new();
 
                     while let Some(result) = futures::StreamExt::next(&mut stream).await {
@@ -187,17 +194,17 @@ impl PyStreamingFeatherWriter {
                     rotation_timezone: tz,
                 }
             }
-            3 => RotationConfig::NoRotation,
             _ => RotationConfig::NoRotation, // Default to no rotation for invalid values
         };
 
         // Convert include_types to HashSet
-        let included_types =
-            include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
+        let type_filter = include_types.map(|types| types.into_iter().collect::<HashSet<String>>());
 
-        // Set up per-instrument types (matching Python's _per_instrument_writers)
         let mut per_instrument_types = HashSet::new();
         per_instrument_types.insert("bars".to_string());
+        per_instrument_types.insert("funding_rate_update".to_string());
+        per_instrument_types.insert("index_prices".to_string());
+        per_instrument_types.insert("mark_prices".to_string());
         per_instrument_types.insert("order_book_deltas".to_string());
         per_instrument_types.insert("order_book_depths".to_string());
         per_instrument_types.insert("option_greeks".to_string());
@@ -213,11 +220,11 @@ impl PyStreamingFeatherWriter {
 
         // Create FeatherWriter
         let writer = FeatherWriter::new(
-            path,
+            base_path,
             object_store,
             clock_rc,
             rotation_config,
-            included_types,
+            type_filter,
             Some(per_instrument_types),
             flush_interval_ms, // Auto-flush interval in milliseconds
         );
@@ -230,7 +237,7 @@ impl PyStreamingFeatherWriter {
 
     /// Subscribes to all messages on the message bus (pattern "*").
     ///
-    /// This matches the behavior of Python's StreamingFeatherWriter when subscribed
+    /// This matches the behavior of Python's `StreamingFeatherWriter` when subscribed
     /// via `trader.subscribe("*", writer.write)`.
     pub fn subscribe(&mut self) -> PyResult<()> {
         if self.handler.is_some() {
@@ -259,7 +266,11 @@ impl PyStreamingFeatherWriter {
     ///
     /// - `data`: The data object to write (must be a Nautilus data type from pyo3).
     ///
-    #[expect(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::needless_pass_by_value,
+        clippy::too_many_lines,
+        reason = "PyO3 writer binding must downcast supported data variants inline"
+    )]
     pub fn write(&self, py: Python, data: Py<PyAny>) -> PyResult<()> {
         macro_rules! try_write {
             ($type:ty, $name:literal) => {
@@ -419,6 +430,7 @@ impl PyStreamingFeatherWriter {
 
     /// Returns whether the writer has been closed (no active writers).
     #[getter]
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         self.writer.borrow().is_closed()
     }
@@ -426,12 +438,14 @@ impl PyStreamingFeatherWriter {
     /// Returns information about the current files being written.
     ///
     /// Returns a dictionary mapping writer keys to (size, path) tuples.
+    #[must_use]
     pub fn get_current_file_info(&self) -> HashMap<String, (u64, String)> {
         self.writer.borrow().get_current_file_info()
     }
 
     /// Returns the next rotation time for a writer, or None if not set.
     #[pyo3(signature = (type_str, instrument_id=None))]
+    #[must_use]
     pub fn get_next_rotation_time(
         &self,
         type_str: &str,

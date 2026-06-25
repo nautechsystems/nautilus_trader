@@ -18,75 +18,21 @@
 use nautilus_model::identifiers::{ActorId, InstrumentId};
 
 /// Configuration for the order book imbalance actor.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, bon::Builder)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
 )]
 pub struct BookImbalanceActorConfig {
     /// Instruments to subscribe to.
     pub instrument_ids: Vec<InstrumentId>,
     /// How often (in update count) to log a progress line. Set to 0 to disable.
+    #[builder(default = 100)]
     pub log_interval: u64,
     /// Actor identifier. Defaults to `BOOK_IMBALANCE-001`.
     pub actor_id: Option<ActorId>,
-}
-
-impl BookImbalanceActorConfig {
-    /// Creates a new [`BookImbalanceActorConfig`].
-    #[must_use]
-    pub fn new(instrument_ids: Vec<InstrumentId>) -> Self {
-        Self {
-            instrument_ids,
-            log_interval: 100,
-            actor_id: None,
-        }
-    }
-
-    #[must_use]
-    pub fn with_log_interval(mut self, interval: u64) -> Self {
-        self.log_interval = interval;
-        self
-    }
-
-    #[must_use]
-    pub fn with_actor_id(mut self, actor_id: ActorId) -> Self {
-        self.actor_id = Some(actor_id);
-        self
-    }
-}
-
-#[cfg(feature = "python")]
-#[pyo3::pymethods]
-impl BookImbalanceActorConfig {
-    #[new]
-    #[pyo3(signature = (instrument_ids, log_interval=100, actor_id=None))]
-    fn py_new(
-        instrument_ids: Vec<InstrumentId>,
-        log_interval: u64,
-        actor_id: Option<ActorId>,
-    ) -> Self {
-        let mut config = Self::new(instrument_ids).with_log_interval(log_interval);
-
-        if let Some(id) = actor_id {
-            config.actor_id = Some(id);
-        }
-
-        config
-    }
-
-    #[getter]
-    fn instrument_ids(&self) -> Vec<InstrumentId> {
-        self.instrument_ids.clone()
-    }
-
-    #[getter]
-    fn log_interval(&self) -> u64 {
-        self.log_interval
-    }
-
-    #[getter]
-    fn actor_id(&self) -> Option<ActorId> {
-        self.actor_id
-    }
 }

@@ -49,7 +49,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
@@ -69,12 +69,13 @@ use crate::{
     config::AxExecClientConfig,
     http::{
         client::AxHttpClient,
+        error::AxHttpError,
         models::{AxOrderRejectReason, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest},
     },
     websocket::{
         AxOrdersWsMessage, AxWsOrderEvent,
         messages::{AxWsOrder, AxWsTradeExecution, OrderMetadata},
-        orders::{AxOrdersWebSocketClient, OrdersCaches},
+        orders::{AxOrdersWebSocketClient, AxOrdersWsClientError, OrdersCaches},
     },
 };
 
@@ -192,9 +193,7 @@ impl AxExecutionClient {
             limit_price,
         ) = {
             let cache = self.core.cache();
-            let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+            let order = cache.try_order(&cmd.client_order_id)?;
             (
                 order.client_order_id(),
                 order.strategy_id(),
@@ -210,8 +209,6 @@ impl AxExecutionClient {
         };
 
         let ws_orders = self.ws_orders.clone();
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
         let trader_id = self.core.trader_id;
 
         let http_client = if order_type == OrderType::Market {
@@ -289,17 +286,12 @@ impl AxExecutionClient {
             }
             .await;
 
+            // The submit never demonstrably reached AX: leave the order in
+            // flight for reconciliation to resolve.
             if let Err(e) = result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    &format!("submit-order-error: {e}"),
-                    ts_event,
-                    false,
+                log::warn!(
+                    "Ambiguous AX submit failure for {client_order_id}, awaiting reconciliation: {e:?}"
                 );
-                anyhow::bail!("{e}");
             }
 
             Ok(())
@@ -310,31 +302,25 @@ impl AxExecutionClient {
 
     fn cancel_order_internal(&self, cmd: &CancelOrder) {
         let ws_orders = self.ws_orders.clone();
-
-        let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let instrument_id = cmd.instrument_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
-        let strategy_id = cmd.strategy_id;
 
+        // `OrderCancelRejected` comes only from the WS CancelRejected event;
+        // local send failures leave the outcome to reconciliation.
         self.spawn_task("cancel_order", async move {
-            let result = ws_orders
-                .cancel_order(client_order_id, venue_order_id)
-                .await
-                .map_err(|e| anyhow::anyhow!("Cancel order failed: {e}"));
-
-            if let Err(e) = &result {
-                let ts_event = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected_event(
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    venue_order_id,
-                    &format!("cancel-order-error: {e}"),
-                    ts_event,
-                );
-                anyhow::bail!("{e}");
+            if let Err(e) = ws_orders.cancel_order(client_order_id, venue_order_id).await {
+                match classify_ax_ws_failure(&e) {
+                    AxCommandFailure::LocalValidation(reason) => {
+                        log::warn!(
+                            "Cancel command failed local validation for {client_order_id}: {reason}"
+                        );
+                    }
+                    AxCommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "Ambiguous AX cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
+                        );
+                    }
+                }
             }
 
             Ok(())
@@ -614,36 +600,15 @@ impl ExecutionClient for AxExecutionClient {
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         {
             let cache = self.core.cache();
-            let order = cache.order(&cmd.client_order_id).ok_or_else(|| {
-                anyhow::anyhow!("Order not found in cache for {}", cmd.client_order_id)
-            })?;
+            let order = cache.try_order(&cmd.client_order_id)?;
 
             if order.is_closed() {
                 log::warn!("Cannot submit closed order {}", order.client_order_id());
                 return Ok(());
             }
 
-            if !matches!(
-                order.order_type(),
-                OrderType::Market | OrderType::Limit | OrderType::StopLimit
-            ) {
-                self.emitter.emit_order_denied(
-                    &order,
-                    &format!(
-                        "Unsupported order type: {:?}, \
-                         AX supports MARKET, LIMIT and STOP_LIMIT",
-                        order.order_type(),
-                    ),
-                );
-                return Ok(());
-            }
-
-            if order.time_in_force() == TimeInForce::Gtd {
-                self.emitter.emit_order_denied(
-                    &order,
-                    "Unsupported time in force: GTD, \
-                     AX supports GTC, IOC, FOK, and DAY",
-                );
+            if let Err(e) = validate_order_for_ax_submit(&order) {
+                self.emitter.emit_order_denied(&order, &e.to_string());
                 return Ok(());
             }
 
@@ -684,28 +649,17 @@ impl ExecutionClient for AxExecutionClient {
         let venue_order_id = match cmd.venue_order_id {
             Some(ref voi) => *voi,
             None => {
-                let reason = "Cannot modify order without venue_order_id";
-                log::error!("{reason}");
-                let ts_event = self.clock.get_time_ns();
-                self.emitter.emit_order_modify_rejected_event(
-                    cmd.strategy_id,
-                    cmd.instrument_id,
-                    cmd.client_order_id,
-                    cmd.venue_order_id,
-                    reason,
-                    ts_event,
+                log::warn!(
+                    "Modify command failed local validation for {}: missing venue_order_id",
+                    cmd.client_order_id
                 );
                 return Ok(());
             }
         };
 
         let http_client = self.http_client.clone();
-        let emitter = self.emitter.clone();
         let caches = self.ws_orders.caches().clone();
-        let clock = self.clock;
         let client_order_id = cmd.client_order_id;
-        let strategy_id = cmd.strategy_id;
-        let instrument_id = cmd.instrument_id;
         let quantity = cmd.quantity;
         let price = cmd.price;
         let trigger_price = cmd.trigger_price;
@@ -738,19 +692,20 @@ impl ExecutionClient for AxExecutionClient {
                     }
                     log::info!("Order replaced: old={} new={}", request.oid, resp.oid);
                 }
-                Err(e) => {
-                    let reason = format!("modify-order-error: {e}");
-                    let ts_event = clock.get_time_ns();
-                    emitter.emit_order_modify_rejected_event(
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        Some(VenueOrderId::new(&request.oid)),
-                        &reason,
-                        ts_event,
-                    );
-                    anyhow::bail!("{reason}");
-                }
+                // No replace failure is an unambiguous rejection (see
+                // `classify_ax_http_failure`); leave the order pending.
+                Err(e) => match classify_ax_http_failure(&e) {
+                    AxCommandFailure::LocalValidation(reason) => {
+                        log::warn!(
+                            "Modify command failed local validation for {client_order_id}: {reason}"
+                        );
+                    }
+                    AxCommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "Ambiguous AX modify failure for {client_order_id}, awaiting reconciliation: {reason}"
+                        );
+                    }
+                },
             }
 
             Ok(())
@@ -815,21 +770,18 @@ impl ExecutionClient for AxExecutionClient {
                         caches.orders_metadata.remove(client_order_id);
                     }
                 }
-                Err(e) => {
-                    log::error!("Failed to cancel all orders for {instrument_id}: {e}");
-                    let ts_event = clock.get_time_ns();
-
-                    for (client_order_id, venue_order_id, strategy_id) in &open_orders {
-                        emitter.emit_order_cancel_rejected_event(
-                            *strategy_id,
-                            instrument_id,
-                            *client_order_id,
-                            *venue_order_id,
-                            &format!("cancel-all-orders-error: {e}"),
-                            ts_event,
+                // A whole-request failure has no per-order venue results and
+                // must not fan out per-order rejections.
+                Err(e) => match classify_ax_http_failure(&e) {
+                    AxCommandFailure::LocalValidation(reason) => {
+                        log::warn!("Cancel-all for {instrument_id} failed local validation: {reason}");
+                    }
+                    AxCommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "Ambiguous AX cancel-all failure for {instrument_id}, awaiting reconciliation: {reason}"
                         );
                     }
-                }
+                },
             }
             Ok(())
         });
@@ -1056,7 +1008,7 @@ fn dispatch_ws_message(
             log::debug!("Open orders response: {} orders", resp.res.len());
         }
         AxOrdersWsMessage::Error(err) => {
-            log::error!("WebSocket error: {}", err.message);
+            log::warn!("WebSocket error: {}", err.message);
         }
         AxOrdersWsMessage::Reconnected => {
             log::info!("WebSocket reconnected");
@@ -1651,7 +1603,7 @@ fn create_fill_report(
     // The WS trade execution payload does not include fee data so
     // commission is zero here. The REST /fills endpoint (used during
     // reconciliation via parse_fill_report) includes accurate fees.
-    let commission = Money::new(0.0, instrument.quote_currency());
+    let commission = Money::zero(instrument.quote_currency());
 
     Some(FillReport::new(
         account_id,
@@ -1671,6 +1623,65 @@ fn create_fill_report(
     ))
 }
 
+fn validate_order_for_ax_submit(order: &OrderAny) -> anyhow::Result<()> {
+    if !matches!(
+        order.order_type(),
+        OrderType::Market | OrderType::Limit | OrderType::StopLimit
+    ) {
+        anyhow::bail!(
+            "Unsupported order type: {:?}, AX supports MARKET, LIMIT and STOP_LIMIT",
+            order.order_type(),
+        );
+    }
+
+    if order.time_in_force() == TimeInForce::Gtd {
+        anyhow::bail!("Unsupported time in force: GTD, AX supports GTC, IOC, FOK, and DAY");
+    }
+
+    AxOrderSide::try_from(order.order_side())
+        .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
+    quantity_to_contracts(order.quantity())?;
+
+    Ok(())
+}
+
+#[derive(Debug)]
+enum AxCommandFailure {
+    LocalValidation(String),
+    Ambiguous(String),
+}
+
+// The AX HTTP API documents only a bare 400 with no error schema, so no venue
+// failure can be allowlisted as an unambiguous rejection; those arrive via the
+// orders WS `Rejected` and `CancelRejected` events instead.
+fn classify_ax_http_failure(error: &AxHttpError) -> AxCommandFailure {
+    let message = error.to_string();
+    match error {
+        AxHttpError::MissingCredentials
+        | AxHttpError::MissingSessionToken
+        | AxHttpError::ValidationError(_)
+        | AxHttpError::BuildError(_) => AxCommandFailure::LocalValidation(message),
+        AxHttpError::ApiError { .. }
+        | AxHttpError::JsonError(_)
+        | AxHttpError::Canceled(_)
+        | AxHttpError::NetworkError(_)
+        | AxHttpError::UnexpectedStatus { .. } => AxCommandFailure::Ambiguous(message),
+    }
+}
+
+fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> AxCommandFailure {
+    match error {
+        AxOrdersWsClientError::ClientError(message) => {
+            AxCommandFailure::LocalValidation(message.clone())
+        }
+        AxOrdersWsClientError::Transport(_)
+        | AxOrdersWsClientError::ChannelError(_)
+        | AxOrdersWsClientError::AuthenticationError(_) => {
+            AxCommandFailure::Ambiguous(error.to_string())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -1679,6 +1690,7 @@ mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+        orders::builder::OrderTestBuilder,
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -1689,6 +1701,7 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
+        http::error::AxBuildError,
         websocket::{
             messages::{AxWsTradeExecution, OrderMetadata},
             orders::OrdersCaches,
@@ -2155,6 +2168,100 @@ mod tests {
         assert_eq!(
             url,
             "wss://example.com/orders/ws?token=abc&cancel_on_disconnect=true"
+        );
+    }
+
+    fn limit_order_for_validation(quantity: Quantity) -> OrderAny {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .side(OrderSide::Buy)
+            .quantity(quantity)
+            .price(Price::from("1.10"))
+            .build()
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_accepts_supported_limit_order() {
+        let order = limit_order_for_validation(Quantity::from("10"));
+
+        assert!(validate_order_for_ax_submit(&order).is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_denies_unsupported_order_type() {
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .trigger_price(Price::from("1.10"))
+            .build();
+
+        let err = validate_order_for_ax_submit(&order).unwrap_err();
+
+        assert!(err.to_string().contains("Unsupported order type"));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_denies_gtd_time_in_force() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .price(Price::from("1.10"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(2_000_000_000_000_000_000u64))
+            .build();
+
+        let err = validate_order_for_ax_submit(&order).unwrap_err();
+
+        assert!(err.to_string().contains("GTD"));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_denies_fractional_quantity() {
+        let order = limit_order_for_validation(Quantity::from("10.5"));
+
+        let err = validate_order_for_ax_submit(&order).unwrap_err();
+
+        assert!(err.to_string().contains("whole contract"));
+    }
+
+    #[rstest]
+    #[case(AxHttpError::MissingCredentials, true)]
+    #[case(AxHttpError::MissingSessionToken, true)]
+    #[case(AxHttpError::ValidationError("bad param".to_string()), true)]
+    #[case(AxHttpError::BuildError(AxBuildError::MissingOrderId), true)]
+    #[case(AxHttpError::ApiError { message: "invalid modification".to_string() }, false)]
+    #[case(AxHttpError::JsonError("parse failure".to_string()), false)]
+    #[case(AxHttpError::Canceled("shutdown".to_string()), false)]
+    #[case(AxHttpError::NetworkError("timeout".to_string()), false)]
+    #[case(AxHttpError::UnexpectedStatus { status: 400, body: "invalid".to_string() }, false)]
+    #[case(AxHttpError::UnexpectedStatus { status: 503, body: String::new() }, false)]
+    fn test_classify_ax_http_failure(#[case] error: AxHttpError, #[case] expect_local: bool) {
+        let failure = classify_ax_http_failure(&error);
+
+        assert_eq!(
+            matches!(failure, AxCommandFailure::LocalValidation(_)),
+            expect_local,
+            "failure was: {failure:?}"
+        );
+    }
+
+    #[rstest]
+    #[case(AxOrdersWsClientError::ClientError("missing venue_order_id".to_string()), true)]
+    #[case(AxOrdersWsClientError::ChannelError("handler closed".to_string()), false)]
+    #[case(AxOrdersWsClientError::Transport("connection reset".to_string()), false)]
+    #[case(AxOrdersWsClientError::AuthenticationError("token expired".to_string()), false)]
+    fn test_classify_ax_ws_failure(
+        #[case] error: AxOrdersWsClientError,
+        #[case] expect_local: bool,
+    ) {
+        let failure = classify_ax_ws_failure(&error);
+
+        assert_eq!(
+            matches!(failure, AxCommandFailure::LocalValidation(_)),
+            expect_local,
+            "failure was: {failure:?}"
         );
     }
 }

@@ -35,6 +35,8 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import FundingRateUpdate
+from nautilus_trader.model.data import IndexPriceUpdate
+from nautilus_trader.model.data import MarkPriceUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
@@ -139,6 +141,8 @@ class StreamingFeatherWriter:
             "quote_tick",
             "trade_tick",
             "funding_rate_update",
+            "index_price_update",
+            "mark_price_update",
             "option_greeks",
         }
         self.rotation_mode = rotation_mode
@@ -478,6 +482,8 @@ class StreamingFeatherWriter:
         | OrderBookDelta
         | OrderBookDepth10
         | FundingRateUpdate
+        | IndexPriceUpdate
+        | MarkPriceUpdate
         | object,
     ) -> dict[bytes, bytes]:
         # Derive instrument_id and (when possible) precision from the object to match catalog/Rust metadata.
@@ -543,6 +549,12 @@ class StreamingFeatherWriter:
                         b"size_precision": str(instrument.size_precision).encode(),
                     },
                 )
+        elif isinstance(obj, (MarkPriceUpdate, IndexPriceUpdate)):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.value.precision).encode(),
+                },
+            )
         elif isinstance(obj, FundingRateUpdate):
             # FundingRateUpdate only has instrument_id in Rust metadata; no precision.
             pass

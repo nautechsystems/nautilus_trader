@@ -104,7 +104,6 @@ nautilus-trading = { workspace = true }
 axum = { workspace = true }
 criterion = { workspace = true }
 dotenvy = { workspace = true }
-ecgfp5 = { workspace = true }
 iai = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }

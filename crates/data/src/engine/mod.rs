@@ -82,7 +82,7 @@ use nautilus_common::{
         UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
-        self, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
+        self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
         switchboard::{self, MessagingSwitchboard},
     },
     runner::get_data_cmd_sender,
@@ -959,9 +959,12 @@ impl DataEngine {
         if let Some(client_id) = cmd.client_id()
             && self.external_clients.contains(client_id)
         {
+            register_external_streaming_type(&cmd);
+
             if self.config.debug {
                 log::debug!("Skipping subscribe command for external client {client_id}: {cmd:?}");
             }
+
             return Ok(());
         }
 
@@ -1134,7 +1137,7 @@ impl DataEngine {
     fn topic_has_remaining_subscribers(cmd: &UnsubscribeCommand) -> bool {
         // Exact match only; wildcard observers must not block venue detach.
         // BookDeltas/Depth10 excluded: binary engine state cannot distinguish
-        // the internal BookUpdater handler from external subscribers
+        // the internal BookUpdater handler from external-client subscriptions
         match cmd {
             UnsubscribeCommand::Quotes(c) => {
                 let topic = switchboard::get_quotes_topic(c.instrument_id);
@@ -1638,24 +1641,25 @@ impl DataEngine {
 
     /// Processes a dynamically-typed data message.
     ///
-    /// Currently supports `InstrumentAny`, funding rates, instrument status, option greeks, and
+    /// Currently supports `InstrumentAny`, funding rates, option greeks, instrument status, and
     /// custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
         self.data_count += 1;
-        // Dynamically-typed entry point: `FundingRateUpdate`, `InstrumentStatus`, `OptionGreeks`,
+        // Dynamically-typed entry point: `FundingRateUpdate`, `OptionGreeks`, `InstrumentStatus`,
         // and custom data are also `Data` enum variants handled in `process_data`, but can arrive
         // here as typed data, whereas `InstrumentAny` is not a `Data` variant.
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
-        } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
-            self.handle_instrument_status(*status);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
             self.cache.borrow_mut().add_option_greeks(*option_greeks);
+            self.feed_option_greeks_to_pre_bootstrap_chain(option_greeks);
             let topic = switchboard::get_option_greeks_topic(option_greeks.instrument_id);
             msgbus::publish_option_greeks(topic, option_greeks);
             self.drain_deferred_commands();
+        } else if let Some(status) = data.downcast_ref::<InstrumentStatus>() {
+            self.handle_instrument_status(*status);
         } else if let Some(custom) = data.downcast_ref::<CustomData>() {
             self.handle_custom_data(custom);
         } else {
@@ -1698,20 +1702,39 @@ impl DataEngine {
                 self.handle_funding_rate(funding_rate);
                 self.drain_deferred_commands();
             }
-            Data::InstrumentStatus(status) => {
-                self.handle_instrument_status(status);
-                self.drain_deferred_commands();
-            }
             Data::OptionGreeks(greeks) => {
                 self.cache.borrow_mut().add_option_greeks(greeks);
+                self.feed_option_greeks_to_pre_bootstrap_chain(&greeks);
                 let topic = switchboard::get_option_greeks_topic(greeks.instrument_id);
                 msgbus::publish_option_greeks(topic, &greeks);
+                self.drain_deferred_commands();
+            }
+            Data::InstrumentStatus(status) => {
+                self.handle_instrument_status(status);
                 self.drain_deferred_commands();
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
+        }
+    }
+
+    fn feed_option_greeks_to_pre_bootstrap_chain(&self, greeks: &OptionGreeks) {
+        let Some(series_id) = self
+            .option_chain_instrument_index
+            .get(&greeks.instrument_id)
+            .copied()
+        else {
+            return;
+        };
+
+        let Some(manager_rc) = self.option_chain_managers.get(&series_id).cloned() else {
+            return;
+        };
+
+        if !manager_rc.borrow().is_bootstrapped() {
+            manager_rc.borrow_mut().handle_greeks(greeks);
         }
     }
 
@@ -1745,8 +1768,8 @@ impl DataEngine {
             Data::FundingRateUpdate(funding_rate) => {
                 self.handle_funding_rate_pipeline(funding_rate);
             }
-            Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
+            Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
             #[cfg(feature = "defi")]
@@ -3014,11 +3037,12 @@ impl DataEngine {
     }
 
     fn subscribe_synthetic_quotes(&mut self, instrument_id: InstrumentId) {
-        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
-            log::error!(
-                "Cannot subscribe to `QuoteTick` data for synthetic instrument {instrument_id}, not found",
-            );
-            return;
+        let synthetic = match self.cache.borrow().try_synthetic(&instrument_id).cloned() {
+            Ok(synthetic) => synthetic,
+            Err(e) => {
+                log::error!("Cannot subscribe to `QuoteTick` data for synthetic instrument: {e}");
+                return;
+            }
         };
 
         if !self.subscribed_synthetic_quotes.insert(instrument_id) {
@@ -3037,11 +3061,12 @@ impl DataEngine {
     }
 
     fn subscribe_synthetic_trades(&mut self, instrument_id: InstrumentId) {
-        let Some(synthetic) = self.cache.borrow().synthetic(&instrument_id).cloned() else {
-            log::error!(
-                "Cannot subscribe to `TradeTick` data for synthetic instrument {instrument_id}, not found",
-            );
-            return;
+        let synthetic = match self.cache.borrow().try_synthetic(&instrument_id).cloned() {
+            Ok(synthetic) => synthetic,
+            Err(e) => {
+                log::error!("Cannot subscribe to `TradeTick` data for synthetic instrument: {e}");
+                return;
+            }
         };
 
         if !self.subscribed_synthetic_trades.insert(instrument_id) {
@@ -4960,6 +4985,39 @@ fn resolve_parent_components(
         );
     };
     Ok(Some((Ustr::from(root), class)))
+}
+
+fn register_external_streaming_type(cmd: &SubscribeCommand) {
+    if let Some(payload_type) = streaming_payload_type(cmd) {
+        msgbus::get_message_bus()
+            .borrow_mut()
+            .add_streaming_type(payload_type);
+    }
+}
+
+fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
+    match cmd {
+        SubscribeCommand::Data(cmd) => Some(BusPayloadType::Custom(Ustr::from(
+            cmd.data_type.type_name(),
+        ))),
+        SubscribeCommand::Instrument(_) | SubscribeCommand::Instruments(_) => {
+            Some(BusPayloadType::Instrument)
+        }
+        SubscribeCommand::BookDeltas(_) | SubscribeCommand::BookSnapshots(_) => {
+            Some(BusPayloadType::OrderBookDeltas)
+        }
+        SubscribeCommand::BookDepth10(_) => Some(BusPayloadType::OrderBookDepth10),
+        SubscribeCommand::Quotes(_) => Some(BusPayloadType::QuoteTick),
+        SubscribeCommand::Trades(_) => Some(BusPayloadType::TradeTick),
+        SubscribeCommand::Bars(_) => Some(BusPayloadType::Bar),
+        SubscribeCommand::MarkPrices(_) => Some(BusPayloadType::MarkPriceUpdate),
+        SubscribeCommand::IndexPrices(_) => Some(BusPayloadType::IndexPriceUpdate),
+        SubscribeCommand::FundingRates(_) => Some(BusPayloadType::FundingRateUpdate),
+        SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
+        SubscribeCommand::InstrumentStatus(_)
+        | SubscribeCommand::InstrumentClose(_)
+        | SubscribeCommand::OptionChain(_) => None,
+    }
 }
 
 fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> {

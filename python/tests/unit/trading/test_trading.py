@@ -34,6 +34,7 @@ from nautilus_trader.model import BarType
 from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookOrder
 from nautilus_trader.model import BookType
+from nautilus_trader.model import ClientId
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import Currency
 from nautilus_trader.model import DataType
@@ -97,9 +98,86 @@ from nautilus_trader.trading import fx_next_start
 from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
+from tests.unit.common.actor import OrderFactoryProbeStrategy
 from tests.unit.common.actor import PortfolioHedgedProbeStrategy
 from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
+
+
+HISTORICAL_REQUEST_DATETIME_CASES = [
+    pytest.param("datetime-utc", id="datetime-utc"),
+    pytest.param("pandas-timestamp-utc", id="pandas-timestamp-utc"),
+    pytest.param("pandas-timestamp-utc-nanos", id="pandas-timestamp-utc-nanos"),
+]
+
+
+class HistoricalRequestProbeStrategy(Strategy):
+    observed_request_ids = {}
+    request_time = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    def on_start(self):
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        client_id = ClientId("SIM")
+        venue = Venue("SIM")
+        bar_type = BarType.from_str("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+        request_time = type(self).request_time
+
+        type(self).observed_request_ids = {
+            "data": self.request_data(
+                DataType("TestData"),
+                client_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "data"},
+            ),
+            "instrument": self.request_instrument(
+                instrument_id,
+                start=request_time,
+                params={"kind": "instrument"},
+            ),
+            "instruments": self.request_instruments(
+                venue,
+                end=request_time,
+                params={"kind": "instruments"},
+            ),
+            "book_deltas": self.request_book_deltas(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "deltas"},
+            ),
+            "book_depth": self.request_book_depth(
+                instrument_id,
+                end=request_time,
+                limit=2,
+                depth=5,
+                params={"kind": "depth"},
+            ),
+            "quotes": self.request_quotes(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "quotes"},
+            ),
+            "trades": self.request_trades(
+                instrument_id,
+                end=request_time,
+                limit=1,
+                params={"kind": "trades"},
+            ),
+            "funding_rates": self.request_funding_rates(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "funding-rates"},
+            ),
+            "bars": self.request_bars(
+                bar_type,
+                end=request_time,
+                limit=1,
+                params={"kind": "bars"},
+            ),
+        }
 
 
 def test_strategy_default_construction():
@@ -125,8 +203,8 @@ def test_strategy_construction_with_config():
         False,
         False,
         False,
-        0,
-        3,
+        100,
+        100,
         TimeInForce.GTC,
         False,
         True,
@@ -159,6 +237,56 @@ def test_strategy_portfolio_requires_registration():
 
     with pytest.raises(RuntimeError, match="registered with a trader"):
         _ = strategy.portfolio
+
+
+def test_strategy_order_factory_requires_registration():
+    strategy = Strategy()
+
+    with pytest.raises(RuntimeError, match="registered with a trader"):
+        _ = strategy.order_factory
+
+
+def test_strategy_order_factory_returns_registered_factory():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    OrderFactoryProbeStrategy.observed_order = None
+    OrderFactoryProbeStrategy.observed_invalid_order_error = None
+    OrderFactoryProbeStrategy.observed_next_client_order_id = None
+    OrderFactoryProbeStrategy.observed_client_order_id_count = None
+    OrderFactoryProbeStrategy.observed_order_list_id_count = None
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:OrderFactoryProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        order = OrderFactoryProbeStrategy.observed_order
+        assert order is not None
+        assert order.order_type == OrderType.MARKET
+        assert order.side == OrderSide.BUY
+        assert order.quantity == Quantity.from_str("100000")
+        assert "GTD not supported for Market orders" in (
+            OrderFactoryProbeStrategy.observed_invalid_order_error
+        )
+        assert OrderFactoryProbeStrategy.observed_next_client_order_id != order.client_order_id
+        assert OrderFactoryProbeStrategy.observed_client_order_id_count == 3
+        assert OrderFactoryProbeStrategy.observed_order_list_id_count == 0
+    finally:
+        engine.dispose()
 
 
 def test_strategy_portfolio_returns_registered_kernel_portfolio():
@@ -321,6 +449,234 @@ def test_strategy_portfolio_flat_methods_net_hedged_positions():
 
 
 LIFECYCLE_METHODS = ["start", "stop", "resume", "reset", "dispose", "degrade", "fault"]
+DATA_SUBSCRIPTION_PARAMETERS = ("data_type", "client_id", "params")
+DATA_REQUEST_PARAMETERS = ("data_type", "client_id", "start", "end", "limit", "params")
+VENUE_SUBSCRIPTION_PARAMETERS = ("venue", "client_id", "params")
+VENUE_REQUEST_PARAMETERS = ("venue", "start", "end", "client_id", "params")
+INSTRUMENT_SUBSCRIPTION_PARAMETERS = ("instrument_id", "client_id", "params")
+BOOK_DELTAS_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "depth",
+    "client_id",
+    "managed",
+    "params",
+)
+BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
+    "instrument_id",
+    "book_type",
+    "interval_ms",
+    "depth",
+    "client_id",
+    "params",
+)
+BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
+BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
+ORDER_SUBSCRIPTION_PARAMETERS = ("instrument_id",)
+OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
+    "series_id",
+    "strike_range",
+    "snapshot_interval_ms",
+    "client_id",
+    "params",
+)
+OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS = ("series_id", "client_id")
+INSTRUMENT_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "client_id", "params")
+BOOK_SNAPSHOT_REQUEST_PARAMETERS = ("instrument_id", "depth", "client_id", "params")
+BOOK_DELTAS_REQUEST_PARAMETERS = ("instrument_id", "start", "end", "limit", "client_id", "params")
+BOOK_DEPTH_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "depth",
+    "client_id",
+    "params",
+)
+INSTRUMENT_HISTORY_REQUEST_PARAMETERS = (
+    "instrument_id",
+    "start",
+    "end",
+    "limit",
+    "client_id",
+    "params",
+)
+BAR_REQUEST_PARAMETERS = ("bar_type", "start", "end", "limit", "client_id", "params")
+SUBMIT_ORDER_PARAMETERS = ("order", "position_id", "client_id", "params")
+SUBMIT_ORDER_LIST_PARAMETERS = ("order_list", "position_id", "client_id", "params")
+MODIFY_ORDER_PARAMETERS = (
+    "client_order_id",
+    "quantity",
+    "price",
+    "trigger_price",
+    "client_id",
+    "params",
+)
+CANCEL_ORDER_PARAMETERS = ("client_order_id", "client_id", "params")
+CANCEL_GTD_EXPIRY_PARAMETERS = ("order",)
+CANCEL_ORDERS_PARAMETERS = ("client_order_ids", "client_id", "params")
+CANCEL_ALL_ORDERS_PARAMETERS = ("instrument_id", "order_side", "client_id", "params")
+CLOSE_POSITION_PARAMETERS = (
+    "position",
+    "client_id",
+    "tags",
+    "time_in_force",
+    "reduce_only",
+    "quote_quantity",
+)
+CLOSE_ALL_POSITIONS_PARAMETERS = (
+    "instrument_id",
+    "position_side",
+    "client_id",
+    "tags",
+    "time_in_force",
+    "reduce_only",
+    "quote_quantity",
+)
+QUERY_ACCOUNT_PARAMETERS = ("account_id", "client_id", "params")
+QUERY_ORDER_PARAMETERS = ("order", "client_id", "params")
+DATA_SURFACE_SIGNATURES = [
+    ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_book_at_interval", BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_bars", BAR_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_book_at_interval", BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_quotes", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_trades", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_bars", BAR_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_mark_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_index_prices", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_funding_rates", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_greeks", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_option_chain", OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS),
+    ("unsubscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
+    ("request_data", DATA_REQUEST_PARAMETERS),
+    ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
+    ("request_instruments", VENUE_REQUEST_PARAMETERS),
+    ("request_book_snapshot", BOOK_SNAPSHOT_REQUEST_PARAMETERS),
+    ("request_book_deltas", BOOK_DELTAS_REQUEST_PARAMETERS),
+    ("request_book_depth", BOOK_DEPTH_REQUEST_PARAMETERS),
+    ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_bars", BAR_REQUEST_PARAMETERS),
+]
+EXECUTION_SIGNATURES = [
+    ("submit_order", SUBMIT_ORDER_PARAMETERS),
+    ("submit_order_list", SUBMIT_ORDER_LIST_PARAMETERS),
+    ("modify_order", MODIFY_ORDER_PARAMETERS),
+    ("cancel_order", CANCEL_ORDER_PARAMETERS),
+    ("cancel_gtd_expiry", CANCEL_GTD_EXPIRY_PARAMETERS),
+    ("cancel_orders", CANCEL_ORDERS_PARAMETERS),
+    ("cancel_all_orders", CANCEL_ALL_ORDERS_PARAMETERS),
+    ("close_position", CLOSE_POSITION_PARAMETERS),
+    ("close_all_positions", CLOSE_ALL_POSITIONS_PARAMETERS),
+    ("query_account", QUERY_ACCOUNT_PARAMETERS),
+    ("query_order", QUERY_ORDER_PARAMETERS),
+]
+
+NO_PARAMETERS = ()
+STATE_PARAMETERS = ("state",)
+EVENT_PARAMETERS = ("event",)
+
+LIFECYCLE_HOOK_SIGNATURES = [
+    ("on_start", NO_PARAMETERS),
+    ("on_stop", NO_PARAMETERS),
+    ("on_resume", NO_PARAMETERS),
+    ("on_reset", NO_PARAMETERS),
+    ("on_dispose", NO_PARAMETERS),
+    ("on_degrade", NO_PARAMETERS),
+    ("on_fault", NO_PARAMETERS),
+]
+SAVE_LOAD_HOOK_SIGNATURES = [
+    ("on_save", NO_PARAMETERS),
+    ("on_load", STATE_PARAMETERS),
+]
+MARKET_EXIT_HOOK_SIGNATURES = [
+    ("on_market_exit", NO_PARAMETERS),
+    ("post_market_exit", NO_PARAMETERS),
+]
+DATA_CALLBACK_SIGNATURES = [
+    ("on_time_event", EVENT_PARAMETERS),
+    ("on_data", ("data",)),
+    ("on_signal", ("signal",)),
+    ("on_instrument", ("instrument",)),
+    ("on_quote", ("quote",)),
+    ("on_trade", ("trade",)),
+    ("on_bar", ("bar",)),
+    ("on_book_deltas", ("deltas",)),
+    ("on_book", ("book",)),
+    ("on_mark_price", ("mark_price",)),
+    ("on_index_price", ("index_price",)),
+    ("on_funding_rate", ("funding_rate",)),
+    ("on_instrument_status", ("status",)),
+    ("on_instrument_close", ("close",)),
+    ("on_option_greeks", ("greeks",)),
+    ("on_option_chain", ("slice",)),
+]
+HISTORICAL_CALLBACK_SIGNATURES = [
+    ("on_historical_data", ("data",)),
+    ("on_historical_quotes", ("quotes",)),
+    ("on_historical_trades", ("trades",)),
+    ("on_historical_funding_rates", ("funding_rates",)),
+    ("on_historical_bars", ("bars",)),
+    ("on_historical_mark_prices", ("mark_prices",)),
+    ("on_historical_index_prices", ("index_prices",)),
+]
+ORDER_CALLBACK_SIGNATURES = [
+    ("on_order_initialized", EVENT_PARAMETERS),
+    ("on_order_event", EVENT_PARAMETERS),
+    ("on_order_denied", EVENT_PARAMETERS),
+    ("on_order_emulated", EVENT_PARAMETERS),
+    ("on_order_released", EVENT_PARAMETERS),
+    ("on_order_submitted", EVENT_PARAMETERS),
+    ("on_order_rejected", EVENT_PARAMETERS),
+    ("on_order_accepted", EVENT_PARAMETERS),
+    ("on_order_expired", EVENT_PARAMETERS),
+    ("on_order_triggered", EVENT_PARAMETERS),
+    ("on_order_pending_update", EVENT_PARAMETERS),
+    ("on_order_pending_cancel", EVENT_PARAMETERS),
+    ("on_order_modify_rejected", EVENT_PARAMETERS),
+    ("on_order_cancel_rejected", EVENT_PARAMETERS),
+    ("on_order_updated", EVENT_PARAMETERS),
+    ("on_order_canceled", EVENT_PARAMETERS),
+    ("on_order_filled", EVENT_PARAMETERS),
+]
+POSITION_CALLBACK_SIGNATURES = [
+    ("on_position_opened", EVENT_PARAMETERS),
+    ("on_position_event", EVENT_PARAMETERS),
+    ("on_position_changed", EVENT_PARAMETERS),
+    ("on_position_closed", EVENT_PARAMETERS),
+]
+CALLBACK_SIGNATURES = (
+    LIFECYCLE_HOOK_SIGNATURES
+    + SAVE_LOAD_HOOK_SIGNATURES
+    + MARKET_EXIT_HOOK_SIGNATURES
+    + DATA_CALLBACK_SIGNATURES
+    + HISTORICAL_CALLBACK_SIGNATURES
+    + ORDER_CALLBACK_SIGNATURES
+    + POSITION_CALLBACK_SIGNATURES
+)
 
 
 @pytest.mark.parametrize("method_name", LIFECYCLE_METHODS)
@@ -331,13 +687,77 @@ def test_strategy_lifecycle_methods_reject_pre_initialized(method_name):
         getattr(strategy, method_name)()
 
 
-def test_strategy_submit_order_signature():
-    sig = inspect.signature(Strategy.submit_order)
-    params = tuple(sig.parameters)
+@pytest.mark.parametrize(("method_name", "parameter_names"), EXECUTION_SIGNATURES)
+def test_strategy_execution_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
 
-    assert "order" in params
-    assert "position_id" in params
-    assert "client_id" in params
+    assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize(("method_name", "parameter_names"), DATA_SURFACE_SIGNATURES)
+def test_strategy_data_surface_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)
+def test_strategy_callback_methods_expose_expected_signatures(method_name, parameter_names):
+    strategy = Strategy()
+    signature = inspect.signature(getattr(strategy, method_name))
+
+    assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)
+def test_strategy_historical_requests_accept_datetimes_when_registered(request_time):
+    HistoricalRequestProbeStrategy.observed_request_ids = {}
+    HistoricalRequestProbeStrategy.request_time = _historical_request_time(request_time)
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="tests.unit.trading.test_trading:HistoricalRequestProbeStrategy",
+            config_path="nautilus_trader.trading:StrategyConfig",
+            config={},
+        ),
+    )
+
+    try:
+        engine.run()
+
+        assert set(HistoricalRequestProbeStrategy.observed_request_ids) == {
+            "data",
+            "instrument",
+            "instruments",
+            "book_deltas",
+            "book_depth",
+            "quotes",
+            "trades",
+            "funding_rates",
+            "bars",
+        }
+
+        for request_id in HistoricalRequestProbeStrategy.observed_request_ids.values():
+            assert UUID4.from_str(request_id)
+    finally:
+        engine.dispose()
+
+
+def _historical_request_time(request_time):
+    if request_time == "datetime-utc":
+        return dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+
+    pd = pytest.importorskip("pandas")
+
+    if request_time == "pandas-timestamp-utc":
+        return pd.Timestamp("1970-01-01T00:00:00Z")
+
+    if request_time == "pandas-timestamp-utc-nanos":
+        return pd.Timestamp(0, unit="ns", tz="UTC")
+
+    raise ValueError(f"Unknown historical request datetime case: {request_time}")
 
 
 def test_strategy_config_defaults():
@@ -349,8 +769,8 @@ def test_strategy_config_defaults():
         False,
         False,
         False,
-        0,
-        3,
+        100,
+        100,
         TimeInForce.GTC,
         False,
         True,

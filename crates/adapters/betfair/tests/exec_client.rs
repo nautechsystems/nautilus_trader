@@ -2300,6 +2300,18 @@ async fn test_batch_cancel_orders_missing_venue_id_emits_no_rejected_locally() {
 #[tokio::test]
 async fn test_modify_order_quantity_reduction_does_not_reject() {
     let (addr, state) = start_mock_http().await;
+
+    // Reducing 10 -> 4 cancels 6; OrderUpdated is built from the actual
+    // `sizeCancelled`, not the requested target, so a raced fill is not overfilled.
+    let fixture = load_fixture("rest/betting_cancel_orders_success.json");
+    let mut cancel: Value = serde_json::from_str(&fixture).unwrap();
+    cancel["result"]["instructionReports"][0]["sizeCancelled"] = serde_json::json!(6.0);
+    state
+        .betting_overrides
+        .lock()
+        .unwrap()
+        .insert(METHOD_CANCEL_ORDERS.to_string(), cancel["result"].clone());
+
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx, _data_rx, cache) = create_test_execution_client(addr, stream_port);
 
@@ -2349,11 +2361,18 @@ async fn test_modify_order_quantity_reduction_does_not_reject() {
     .await;
 
     tokio::time::sleep(Duration::from_millis(200)).await;
-    let event = rx.try_recv();
-    assert!(
-        event.is_err(),
-        "successful quantity reduction must not emit a modify event, was: {event:?}"
-    );
+
+    match rx.try_recv() {
+        Ok(ExecutionEvent::Order(OrderEventAny::Updated(updated))) => {
+            assert_eq!(updated.quantity, Quantity::from("4"));
+            assert!(
+                updated.price.is_none(),
+                "quantity reduction must not change price, was: {:?}",
+                updated.price
+            );
+        }
+        other => panic!("successful quantity reduction must emit OrderUpdated, was: {other:?}"),
+    }
 
     client.disconnect().await.unwrap();
     let _ = server.await;
@@ -3419,6 +3438,30 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
         Duration::from_secs(5),
     )
     .await;
+
+    // The replace success emits OrderUpdated directly, promoting the order to the
+    // new bet id (from the replace fixture) at the requested price.
+    let mut updated_seen = false;
+
+    for _ in 0..4 {
+        match tokio::time::timeout(Duration::from_secs(5), rx.recv()).await {
+            Ok(Some(ExecutionEvent::Order(OrderEventAny::Updated(updated)))) => {
+                assert_eq!(
+                    updated.venue_order_id,
+                    Some(VenueOrderId::from("240808766933"))
+                );
+                assert_eq!(updated.price, Some(Price::from("3.00")));
+                updated_seen = true;
+                break;
+            }
+            Ok(Some(_)) => {}
+            _ => break,
+        }
+    }
+    assert!(
+        updated_seen,
+        "successful price replace must emit OrderUpdated promoting the new bet id"
+    );
 
     // The replace task locks ocm_state after the response lands. Brief grace
     // period for the cross-task state update before sending the OCM cancel.

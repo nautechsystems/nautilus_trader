@@ -15,6 +15,8 @@
 
 pub mod burn;
 pub mod collect;
+pub mod fee_protocol_collect;
+pub mod fee_protocol_update;
 pub mod flash;
 pub mod initialize;
 pub mod mint;

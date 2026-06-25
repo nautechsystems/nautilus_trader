@@ -30,7 +30,7 @@ pub mod sort;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{data::ensure_rust_extractor_registered, identifiers::InstrumentId};
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
@@ -39,6 +39,9 @@ use crate::{
     config::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
         PolymarketUpDownEventSlugConfig,
+    },
+    data_types::{
+        PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
 };
@@ -197,6 +200,9 @@ fn extract_data_config_from_pyobject(
     let base_url_ws = getattr_optional(obj, "base_url_ws")?
         .map(|value| value.extract::<String>())
         .transpose()?;
+    let base_url_rtds = getattr_optional(obj, "base_url_rtds")?
+        .map(|value| value.extract::<String>())
+        .transpose()?;
     let base_url_gamma = getattr_optional(obj, "base_url_gamma")?
         .map(|value| value.extract::<String>())
         .transpose()?;
@@ -270,6 +276,7 @@ fn extract_data_config_from_pyobject(
         instrument_config,
         base_url_http,
         base_url_ws,
+        base_url_rtds,
         base_url_gamma,
         base_url_data_api,
         http_timeout_secs,
@@ -355,11 +362,17 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PolymarketExecClientConfig>()?;
     m.add_class::<PolymarketDataClientFactory>()?;
     m.add_class::<PolymarketExecutionClientFactory>()?;
+    m.add_class::<PolymarketRtdsCryptoPrice>()?;
+    m.add_class::<PolymarketRtdsEquityPrice>()?;
     m.add_function(pyo3::wrap_pyfunction!(
         sort::py_polymarket_trade_sort_key,
         m
     )?)?;
     m.add_function(pyo3::wrap_pyfunction!(sort::py_polymarket_trade_id, m)?)?;
+
+    register_polymarket_custom_data();
+    let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
+    let _result = ensure_rust_extractor_registered::<PolymarketRtdsEquityPrice>();
 
     let registry = get_global_pyo3_registry();
 
@@ -402,11 +415,22 @@ pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(all(test, feature = "python"))]
 mod tests {
+    use std::sync::Arc;
+
+    use nautilus_core::Params;
+    use nautilus_model::{
+        data::{CustomData, DataType, custom::CustomDataTrait, ensure_rust_extractor_registered},
+        types::Price,
+    };
     use pyo3::{prelude::*, types::PyDict};
     use rstest::rstest;
+    use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
-    use crate::config::PolymarketUpDownEventSlugConfig;
+    use crate::{
+        config::PolymarketUpDownEventSlugConfig,
+        data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data},
+    };
 
     #[rstest]
     fn extract_data_config_supports_python_style_namespace() {
@@ -456,6 +480,9 @@ mod tests {
                 .unwrap();
             config_kwargs
                 .set_item("base_url_gamma", "https://gamma.example")
+                .unwrap();
+            config_kwargs
+                .set_item("base_url_rtds", "wss://ws-live-data.example")
                 .unwrap();
             config_kwargs
                 .set_item("base_url_data_api", "https://data.example")
@@ -528,6 +555,10 @@ mod tests {
                 Some("https://gamma.example")
             );
             assert_eq!(
+                rust_config.base_url_rtds.as_deref(),
+                Some("wss://ws-live-data.example")
+            );
+            assert_eq!(
                 rust_config.base_url_data_api.as_deref(),
                 Some("https://data.example")
             );
@@ -591,6 +622,59 @@ mod tests {
                 .expect("extract rust config");
 
             assert_eq!(rust_config.update_instruments_interval_mins, None);
+        });
+    }
+
+    #[rstest]
+    fn custom_data_getter_unwraps_rtds_payload_to_python_class() {
+        Python::initialize();
+        Python::attach(|py| {
+            register_polymarket_custom_data();
+            let _result = ensure_rust_extractor_registered::<PolymarketRtdsCryptoPrice>();
+
+            let mut metadata = Params::new();
+            metadata.insert("symbol".to_string(), json!("btcusdt"));
+            let payload = Arc::new(PolymarketRtdsCryptoPrice::new(
+                "btcusdt".to_string(),
+                Price::from("67234.50"),
+                1_753_314_088_395,
+                1_753_314_088_421,
+                nautilus_core::UnixNanos::from_millis(1_753_314_088_395),
+                nautilus_core::UnixNanos::from_millis(1_753_314_088_421),
+            ));
+            let custom = CustomData::new(
+                payload,
+                DataType::new(
+                    PolymarketRtdsCryptoPrice::type_name_static(),
+                    Some(metadata),
+                    None,
+                ),
+            );
+
+            let py_custom = Py::new(py, custom).expect("create Python CustomData");
+            let py_payload = py_custom.bind(py).getattr("data").expect("CustomData.data");
+
+            assert_eq!(
+                py_payload.get_type().name().expect("type name"),
+                "PolymarketRtdsCryptoPrice"
+            );
+            assert_eq!(
+                py_payload
+                    .getattr("symbol")
+                    .expect("symbol")
+                    .extract::<String>()
+                    .expect("extract symbol"),
+                "btcusdt"
+            );
+            assert_eq!(
+                py_payload
+                    .getattr("value")
+                    .expect("value")
+                    .str()
+                    .expect("value str")
+                    .to_string(),
+                "67234.50"
+            );
         });
     }
 }

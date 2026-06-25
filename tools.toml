@@ -6,19 +6,16 @@
 # uv:             pyproject.toml [tool.uv]
 
 [prek]
-version = "0.4.3"
+version = "0.4.5"
 
 [pip-audit]
-version = "2.10.0"
+version = "2.10.1"
 
 [pypi-attestations]
 version = "0.0.29"
 
-[maturin]
-version = "1.13.3"
-
 [osv-scanner]
-version = "2.3.8"
+version = "2.4.0"
 
 [capnp]
 version = "1.4.0"

@@ -26,7 +26,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
-use nautilus_common::live::get_runtime;
+use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
     AtomicMap,
     consts::NAUTILUS_USER_AGENT,
@@ -41,6 +41,7 @@ use nautilus_model::{
 };
 use nautilus_network::{
     backoff::ExponentialBackoff,
+    http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
         AuthTracker, PingHandler, TransportBackend, WebSocketClient, WebSocketConfig,
@@ -374,7 +375,7 @@ impl AxOrdersWebSocketClient {
         let config = WebSocketConfig {
             url: self.url.clone(),
             headers: vec![
-                ("User-Agent".to_string(), NAUTILUS_USER_AGENT.to_string()),
+                (USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string()),
                 (
                     "Authorization".to_string(),
                     format!("Bearer {bearer_token}"),
@@ -555,9 +556,9 @@ impl AxOrdersWebSocketClient {
         // Get instrument from cache for precision
         let symbol = instrument_id.symbol.inner();
         let instrument = self.get_cached_instrument(&symbol).ok_or_else(|| {
-            AxOrdersWsClientError::ClientError(format!(
-                "Instrument {instrument_id} not found in cache"
-            ))
+            AxOrdersWsClientError::ClientError(
+                InstrumentLookupError::not_found(instrument_id).to_string(),
+            )
         })?;
 
         let ax_side = AxOrderSide::try_from(order_side)?;

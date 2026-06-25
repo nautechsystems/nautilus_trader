@@ -64,6 +64,36 @@ class PortfolioProbeStrategy(Strategy):
         type(self).observed_equity_by_account = portfolio.equity(account_id=account.id)
 
 
+class OrderFactoryProbeStrategy(Strategy):
+    observed_order = None
+    observed_invalid_order_error = None
+    observed_next_client_order_id = None
+    observed_client_order_id_count = None
+    observed_order_list_id_count = None
+
+    def on_start(self):
+        order_factory = self.order_factory
+
+        try:
+            order_factory.market(
+                InstrumentId.from_str("AUD/USD.SIM"),
+                OrderSide.BUY,
+                Quantity.from_str("100000"),
+                time_in_force=TimeInForce.GTD,
+            )
+        except ValueError as exc:
+            type(self).observed_invalid_order_error = str(exc)
+
+        type(self).observed_order = order_factory.market(
+            InstrumentId.from_str("AUD/USD.SIM"),
+            OrderSide.BUY,
+            Quantity.from_str("100000"),
+        )
+        type(self).observed_next_client_order_id = self.order_factory.generate_client_order_id()
+        type(self).observed_client_order_id_count = order_factory.get_client_order_id_count()
+        type(self).observed_order_list_id_count = order_factory.get_order_list_id_count()
+
+
 def _market_order(
     strategy: Strategy,
     instrument_id: InstrumentId,

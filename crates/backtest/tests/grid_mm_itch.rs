@@ -65,7 +65,8 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
                 .book_type(BookType::L1_MBP)
                 .starting_balances(vec![Money::from("1_000_000 USD")])
                 .base_currency(Currency::from("USD"))
-                .build(),
+                .build()
+                .unwrap(),
         )
         .unwrap();
     engine.add_instrument(instrument).unwrap();
@@ -73,12 +74,15 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
 }
 
 fn create_strategy(instrument_id: InstrumentId) -> GridMarketMaker {
-    let config = GridMarketMakerConfig::new(instrument_id, Quantity::from("100"))
-        .with_trade_size(Quantity::from("100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_skew_factor(0.01)
-        .with_requote_threshold_bps(5);
+    let config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("100"))
+        .trade_size(Quantity::from("100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .skew_factor(0.01)
+        .requote_threshold_bps(5)
+        .build();
     GridMarketMaker::new(config)
 }
 
@@ -114,9 +118,7 @@ fn test_grid_mm_itch_catalog_load() {
     // Write deltas to a temp catalog then query back
     let temp_dir = TempDir::new().unwrap();
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
-    catalog
-        .write_to_parquet(deltas.clone(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(&deltas, None, None, None).unwrap();
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
 
     let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);

@@ -48,7 +48,7 @@ pub struct FactoryRegistry {
     factory_extractors: Mutex<HashMap<String, FactoryExtractor>>,
     exec_factory_extractors: Mutex<HashMap<String, ExecFactoryExtractor>>,
     sim_exec_factory_extractors: Mutex<HashMap<String, SimExecFactoryExtractor>>,
-    config_extractors: Mutex<HashMap<String, ConfigExtractor>>,
+    config_extractors_by_type: Mutex<HashMap<String, ConfigExtractor>>,
 }
 
 impl FactoryRegistry {
@@ -59,7 +59,7 @@ impl FactoryRegistry {
             factory_extractors: Mutex::new(HashMap::new()),
             exec_factory_extractors: Mutex::new(HashMap::new()),
             sim_exec_factory_extractors: Mutex::new(HashMap::new()),
-            config_extractors: Mutex::new(HashMap::new()),
+            config_extractors_by_type: Mutex::new(HashMap::new()),
         }
     }
 
@@ -100,7 +100,7 @@ impl FactoryRegistry {
         type_name: String,
         extractor: ConfigExtractor,
     ) -> anyhow::Result<()> {
-        let mut extractors = self.config_extractors.lock().expect(MUTEX_POISONED);
+        let mut extractors = self.config_extractors_by_type.lock().expect(MUTEX_POISONED);
 
         if extractors.contains_key(&type_name) {
             anyhow::bail!("Config extractor '{type_name}' is already registered");
@@ -271,7 +271,7 @@ impl FactoryRegistry {
             .getattr(py, "__name__")?
             .extract::<String>(py)?;
 
-        let extractors = self.config_extractors.lock().expect(MUTEX_POISONED);
+        let extractors = self.config_extractors_by_type.lock().expect(MUTEX_POISONED);
         if let Some(extractor) = extractors.get(&config_type_name) {
             extractor(py, config)
         } else {

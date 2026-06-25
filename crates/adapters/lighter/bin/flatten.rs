@@ -403,11 +403,109 @@ async fn collect_positions(
 
     while tokio::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if let Ok(Some(NautilusWsMessage::PositionSnapshot(reports))) =
+
+        if let Ok(Some(NautilusWsMessage::PositionSnapshot {
+            reports,
+            skipped_market_ids,
+        })) =
             tokio::time::timeout(remaining.min(Duration::from_millis(500)), ws.next_event()).await
         {
-            latest = reports;
+            apply_position_snapshot(&mut latest, reports, &skipped_market_ids);
         }
     }
     latest
+}
+
+fn apply_position_snapshot(
+    latest: &mut Vec<PositionStatusReport>,
+    reports: Vec<PositionStatusReport>,
+    skipped_market_ids: &[i16],
+) {
+    if skipped_market_ids.is_empty() {
+        *latest = reports;
+        return;
+    }
+
+    for report in reports {
+        latest.retain(|r| r.instrument_id != report.instrument_id);
+        latest.push(report);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::{identifiers::InstrumentId, types::Quantity};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::complete_snapshot_replaces_latest(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![("DOGE-PERP.LIGHTER", "3.0")],
+        vec![],
+        vec![("DOGE-PERP.LIGHTER", "3.0")],
+    )]
+    #[case::incomplete_empty_snapshot_retains_latest(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![],
+        vec![0],
+        vec![("BTC-PERP.LIGHTER", "2.0"), ("ETH-PERP.LIGHTER", "1.0")],
+    )]
+    #[case::incomplete_snapshot_updates_reported_instrument(
+        vec![("ETH-PERP.LIGHTER", "1.0"), ("BTC-PERP.LIGHTER", "2.0")],
+        vec![("ETH-PERP.LIGHTER", "3.0")],
+        vec![1],
+        vec![("BTC-PERP.LIGHTER", "2.0"), ("ETH-PERP.LIGHTER", "3.0")],
+    )]
+    fn apply_position_snapshot_matrix(
+        #[case] prior: Vec<(&str, &str)>,
+        #[case] reports: Vec<(&str, &str)>,
+        #[case] skipped_market_ids: Vec<i16>,
+        #[case] expected: Vec<(&str, &str)>,
+    ) {
+        let mut latest = position_reports(prior);
+
+        apply_position_snapshot(&mut latest, position_reports(reports), &skipped_market_ids);
+
+        let expected: Vec<(String, String)> = expected
+            .into_iter()
+            .map(|(instrument_id, quantity)| (instrument_id.to_string(), quantity.to_string()))
+            .collect();
+        assert_eq!(summarize_positions(latest), expected);
+    }
+
+    fn position_reports(rows: Vec<(&str, &str)>) -> Vec<PositionStatusReport> {
+        rows.into_iter()
+            .map(|(instrument_id, quantity)| position_report(instrument_id, quantity))
+            .collect()
+    }
+
+    fn position_report(instrument_id: &str, quantity: &str) -> PositionStatusReport {
+        PositionStatusReport::new(
+            AccountId::new("LIGHTER-TEST-001"),
+            InstrumentId::from(instrument_id),
+            PositionSideSpecified::Long,
+            Quantity::from(quantity),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Some(UUID4::new()),
+            None,
+            None,
+        )
+    }
+
+    fn summarize_positions(mut reports: Vec<PositionStatusReport>) -> Vec<(String, String)> {
+        reports.sort_by_key(|report| report.instrument_id);
+        reports
+            .into_iter()
+            .map(|report| {
+                (
+                    report.instrument_id.to_string(),
+                    report.quantity.to_string(),
+                )
+            })
+            .collect()
+    }
 }

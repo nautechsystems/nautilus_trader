@@ -427,7 +427,11 @@ impl BitmexWebSocketClient {
                         }
 
                         if handler.send(BitmexWsMessage::Reconnected).is_err() {
-                            log::error!("Failed to forward reconnect event (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to forward reconnect event (receiver dropped)");
+                            } else {
+                                log::error!("Failed to forward reconnect event (receiver dropped)");
+                            }
                             break;
                         }
                     }
@@ -440,7 +444,11 @@ impl BitmexWebSocketClient {
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
-                            log::error!("Failed to send message (receiver dropped)");
+                            if handler.is_stopped() {
+                                log::debug!("Failed to send message (receiver dropped)");
+                            } else {
+                                log::error!("Failed to send message (receiver dropped)");
+                            }
                             break;
                         }
                     }

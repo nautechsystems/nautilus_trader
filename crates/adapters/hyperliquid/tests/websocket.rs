@@ -20,7 +20,7 @@ use std::{
     path::PathBuf,
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -60,6 +60,7 @@ struct TestServerState {
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>, // (type, success)
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     drop_next_connection: Arc<AtomicBool>,
+    next_upgrade_delay_ms: Arc<AtomicU64>,
     send_initial_ping: Arc<AtomicBool>,
     received_pong: Arc<AtomicBool>,
     last_pong: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
@@ -75,6 +76,7 @@ impl Default for TestServerState {
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             drop_next_connection: Arc::new(AtomicBool::new(false)),
+            next_upgrade_delay_ms: Arc::new(AtomicU64::new(0)),
             send_initial_ping: Arc::new(AtomicBool::new(false)),
             received_pong: Arc::new(AtomicBool::new(false)),
             last_pong: Arc::new(tokio::sync::Mutex::new(None)),
@@ -108,6 +110,12 @@ impl TestServerState {
             false
         }
     }
+
+    fn delay_next_upgrade(&self, delay: Duration) {
+        let delay_ms = u64::try_from(delay.as_millis()).expect("upgrade delay too large");
+        self.next_upgrade_delay_ms
+            .store(delay_ms, Ordering::Relaxed);
+    }
 }
 
 fn data_path() -> PathBuf {
@@ -124,6 +132,11 @@ async fn handle_ws_upgrade(
     ws: WebSocketUpgrade,
     State(state): State<Arc<TestServerState>>,
 ) -> Response {
+    let upgrade_delay_ms = state.next_upgrade_delay_ms.swap(0, Ordering::Relaxed);
+    if upgrade_delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(upgrade_delay_ms)).await;
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -383,6 +396,7 @@ fn cache_test_instruments(client: &mut HyperliquidWebSocketClient) {
             None,
             None,
             None,
+            None,
             ts,
             ts,
         ));
@@ -569,19 +583,22 @@ async fn test_is_active_false_during_reconnection() {
         .expect("client inactive");
     assert!(client.is_active(), "Client should be active after connect");
 
-    // Trigger disconnect
+    state.delay_next_upgrade(Duration::from_millis(500));
     state.drop_next_connection.store(true, Ordering::Relaxed);
     let _ = client
         .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
         .await;
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    wait_until_async(|| async { !client.is_active() }, Duration::from_secs(2)).await;
 
-    // During reconnection, is_active() should return false
     assert!(
         !client.is_active(),
         "Client should not be active during reconnection"
     );
+
+    wait_until_active(&client, 5.0)
+        .await
+        .expect("client did not reconnect");
 
     client.disconnect().await.expect("close failed");
 }

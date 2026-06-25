@@ -401,6 +401,7 @@ mod tests {
         let pool_address = "0x11b815efB8f581194ae79006d24E0d814B7697F6"
             .parse()
             .unwrap();
+
         let pool = Pool::new(
             chain,
             Arc::new(dex),

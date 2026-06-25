@@ -173,7 +173,7 @@ fn snapshot_anchored_mode_reclaims_only_before_latest_valid_restore_point() {
 #[rstest]
 #[case::missing(SnapshotAnchorStatus::Missing)]
 #[case::invalid(SnapshotAnchorStatus::Invalid(
-    "snapshot anchor high_watermark 2 exceeds manifest high_watermark 1".to_string(),
+    "snapshot anchor high_watermark 2 exceeds durable high_watermark 1".to_string(),
 ))]
 fn snapshot_anchored_mode_handles_unusable_snapshot_anchors_conservatively(
     #[case] snapshot_anchor: SnapshotAnchorStatus,

@@ -15,11 +15,9 @@
 
 //! Example demonstrating live data testing with the Derive adapter.
 //!
-//! Run with: `cargo run --example derive-data-tester --package nautilus-derive --features examples`
+//! Edit the constants below to change the environment, product kind, and target symbol.
 //!
-//! Uses Derive testnet by default. Set `DERIVE_ENVIRONMENT=mainnet` to use production data.
-//! Set `DERIVE_DATA_TESTER_KIND=perp|option|spot` to switch the product.
-//! Set `DERIVE_DATA_TESTER_SYMBOL` to test a specific venue symbol.
+//! Run with: `cargo run --example derive-data-tester --package nautilus-derive --features examples`
 
 use nautilus_common::enums::Environment;
 use nautilus_derive::{
@@ -34,23 +32,30 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::BarType,
     identifiers::{InstrumentId, TraderId},
-    stubs::TestDefault,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
+const DERIVE_ENVIRONMENT: DeriveEnvironment = DeriveEnvironment::Testnet;
+const TRADER_ID: &str = "TESTER-001";
+const NODE_NAME: &str = "DERIVE-DATA-TESTER-001";
+
 /// Base token used to build the instrument symbol.
 const TOKEN: &str = "ETH";
+/// Product kind used to build the instrument symbol and feed setup.
+const KIND: DeriveInstrumentType = DeriveInstrumentType::Perp;
+/// Overrides the per-kind default symbol when set.
+const SYMBOL: Option<&str> = None;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
     let environment = Environment::Live;
-    let derive_environment = derive_environment_from_env();
-    let trader_id = TraderId::test_default();
-    let node_name = "DERIVE-DATA-TESTER-001".to_string();
+    let derive_environment = DERIVE_ENVIRONMENT;
+    let trader_id = TraderId::from(TRADER_ID);
+    let node_name = NODE_NAME.to_string();
 
-    let setup = InstrumentSetup::from_env(TOKEN)?;
+    let setup = InstrumentSetup::resolve(KIND, TOKEN, SYMBOL);
     let instrument_id = InstrumentId::from(format!("{}.DERIVE", setup.symbol).as_str());
     let bar_type =
         BarType::from(format!("{}.DERIVE-15-MINUTE-LAST-EXTERNAL", setup.symbol).as_str());
@@ -86,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .request_bars(true)
         .request_funding_rates(setup.has_funding)
         .manage_book(true)
-        .build();
+        .build()?;
     let tester = DataTester::new(tester_config);
 
     node.add_actor(tester)?;
@@ -103,21 +108,8 @@ struct InstrumentSetup {
 }
 
 impl InstrumentSetup {
-    fn from_env(token: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let kind = instrument_type_from_env()?;
-        let mut setup = Self::resolve(kind, token);
-
-        if let Ok(symbol) = std::env::var("DERIVE_DATA_TESTER_SYMBOL")
-            && !symbol.trim().is_empty()
-        {
-            setup.symbol = symbol.trim().to_string();
-        }
-
-        Ok(setup)
-    }
-
-    fn resolve(kind: DeriveInstrumentType, token: &str) -> Self {
-        match kind {
+    fn resolve(kind: DeriveInstrumentType, token: &str, symbol: Option<&str>) -> Self {
+        let mut setup = match kind {
             DeriveInstrumentType::Perp => Self {
                 symbol: format!("{token}-PERP"),
                 has_funding: true,
@@ -135,29 +127,14 @@ impl InstrumentSetup {
                 has_funding: false,
                 has_greeks: false,
             },
-        }
-    }
-}
+        };
 
-fn instrument_type_from_env() -> Result<DeriveInstrumentType, Box<dyn std::error::Error>> {
-    match std::env::var("DERIVE_DATA_TESTER_KIND") {
-        Ok(value) if value.eq_ignore_ascii_case("spot") => Ok(DeriveInstrumentType::Erc20),
-        Ok(value) if value.eq_ignore_ascii_case("erc20") => Ok(DeriveInstrumentType::Erc20),
-        Ok(value) if value.eq_ignore_ascii_case("option") => Ok(DeriveInstrumentType::Option),
-        Ok(value) if value.eq_ignore_ascii_case("perp") => Ok(DeriveInstrumentType::Perp),
-        Ok(value) if value.eq_ignore_ascii_case("perpetual") => Ok(DeriveInstrumentType::Perp),
-        Ok(value) => Err(format!("unsupported DERIVE_DATA_TESTER_KIND: {value}").into()),
-        Err(_) => Ok(DeriveInstrumentType::Perp),
-    }
-}
-
-fn derive_environment_from_env() -> DeriveEnvironment {
-    match std::env::var("DERIVE_ENVIRONMENT") {
-        Ok(value)
-            if value.eq_ignore_ascii_case("mainnet") || value.eq_ignore_ascii_case("live") =>
+        if let Some(symbol) = symbol
+            && !symbol.trim().is_empty()
         {
-            DeriveEnvironment::Mainnet
+            setup.symbol = symbol.trim().to_string();
         }
-        _ => DeriveEnvironment::Testnet,
+
+        setup
     }
 }

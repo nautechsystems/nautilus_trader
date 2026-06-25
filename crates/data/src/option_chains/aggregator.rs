@@ -231,8 +231,11 @@ impl OptionChainAggregator {
     /// (calls have positive delta, puts negative; both are compared by absolute
     /// value), so a typical target selects an OTM strike on each side of ATM.
     /// Strikes with only pending Greeks (received before their first quote) are
-    /// eligible. When no Greeks are available yet, or none fall in the band, this
-    /// falls back to the ATM-relative window from [`StrikeRange::resolve`].
+    /// eligible. Before the resolver changes from a fallback set to a selected
+    /// set, every current fallback leg must have Greeks. This avoids unsubscribing
+    /// legs whose Greeks have not arrived yet, including when the fallback window
+    /// shifts with ATM. When no Greeks fall in the band, this falls back to the
+    /// ATM-relative window from [`StrikeRange::resolve`].
     fn resolve_delta(
         &self,
         target: f64,
@@ -251,11 +254,55 @@ impl OptionChainAggregator {
             .map(|(strike, _)| strike)
             .collect();
 
+        let fallback_strikes = self.strike_range.resolve(atm_price, all_strikes);
+
         if selected.is_empty() {
-            return self.strike_range.resolve(atm_price, all_strikes);
+            return fallback_strikes;
+        }
+
+        let selected_ids = self.instrument_ids_for_strikes(&selected);
+        let fallback_ids = self.instrument_ids_for_strikes(&fallback_strikes);
+
+        if self.active_ids != selected_ids && !self.delta_window_ready(&fallback_ids) {
+            return fallback_strikes;
         }
 
         selected
+    }
+
+    fn instrument_ids_for_strikes(&self, strikes: &[Price]) -> HashSet<InstrumentId> {
+        let strike_set: HashSet<Price> = strikes.iter().copied().collect();
+        self.instruments
+            .iter()
+            .filter(|(_, (strike, _))| strike_set.contains(strike))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    fn delta_window_ready(&self, instrument_ids: &HashSet<InstrumentId>) -> bool {
+        !instrument_ids.is_empty()
+            && instrument_ids
+                .iter()
+                .all(|id| self.instrument_has_greeks(id))
+    }
+
+    fn instrument_has_greeks(&self, instrument_id: &InstrumentId) -> bool {
+        if self.pending_greeks.contains_key(instrument_id) {
+            return true;
+        }
+
+        let Some((strike, kind)) = self.instruments.get(instrument_id) else {
+            return false;
+        };
+        let buffer = match kind {
+            OptionKind::Call => &self.call_buffer,
+            OptionKind::Put => &self.put_buffer,
+        };
+
+        buffer
+            .get(strike)
+            .and_then(|data| data.greeks.as_ref())
+            .is_some()
     }
 
     /// Collects every reported delta per strike, from buffered Greeks and from
@@ -1485,10 +1532,15 @@ mod tests {
 
         // Only the 55000 call sits at the 0.30 target.
         feed_quote_and_greeks(&mut agg, 40000, OptionKind::Call, 0.95);
+        feed_quote_and_greeks(&mut agg, 40000, OptionKind::Put, -0.95);
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.80);
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.80);
         feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.55);
         feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.30);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.12);
         feed_quote_and_greeks(&mut agg, 60000, OptionKind::Call, 0.12);
+        feed_quote_and_greeks(&mut agg, 60000, OptionKind::Put, -0.10);
 
         let active = agg.recompute_active_set();
         assert_eq!(active.len(), 2); // 55000 call + put
@@ -1505,9 +1557,13 @@ mod tests {
 
         // Band is [0.25, 0.35]: 0.50 and 0.10 are outside, 0.32 and 0.30 inside.
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.50);
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.50);
         feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.32);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.50);
         feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.30);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.50);
         feed_quote_and_greeks(&mut agg, 60000, OptionKind::Call, 0.10);
+        feed_quote_and_greeks(&mut agg, 60000, OptionKind::Put, -0.10);
 
         let active = agg.recompute_active_set();
         assert_eq!(active.len(), 4); // 50000 + 55000, both legs each
@@ -1524,8 +1580,13 @@ mod tests {
         set_atm_via_greeks(&mut agg, 50000.0);
         agg.recompute_active_set();
 
-        // Only the 45000 put reports greeks, isolating put-side matching.
+        // Only the 45000 put matches the target, isolating put-side matching.
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.55);
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.30);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.55);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.55);
 
         let active = agg.recompute_active_set();
         // |-0.30| == target, so the 45000 strike (both legs) is selected.
@@ -1559,6 +1620,12 @@ mod tests {
         set_atm_via_greeks(&mut agg, 50000.0);
         agg.recompute_active_set();
 
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.55);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.55);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.55);
+
         // Greeks arrive before any quote, so they land in pending_greeks.
         agg.update_greeks(&OptionGreeks {
             instrument_id: option_id(55000, OptionKind::Call),
@@ -1577,6 +1644,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_delta_waits_for_fallback_window_greeks_before_narrowing() {
+        let strikes = [45000, 50000, 55000];
+        let mut agg = make_delta_aggregator(&strikes, 0.30, 0.03);
+        set_atm_via_greeks(&mut agg, 50000.0);
+        agg.recompute_active_set();
+        assert_eq!(agg.instrument_ids().len(), 6); // fallback: all 3 strikes
+
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.30);
+
+        assert!(agg.check_rebalance(now()).is_none());
+        assert_eq!(agg.instrument_ids().len(), 6);
+    }
+
+    #[rstest]
+    fn test_delta_waits_when_fallback_window_shifts_during_warmup() {
+        let strikes: Vec<i64> = (0..13).map(|i| 40000 + i * 1000).collect();
+        let mut agg = make_delta_aggregator(&strikes, 0.30, 0.03);
+        set_atm_via_greeks(&mut agg, 46000.0);
+        agg.recompute_active_set();
+        assert!(
+            agg.active_ids()
+                .contains(&option_id(42000, OptionKind::Call))
+        );
+        assert!(
+            agg.active_ids()
+                .contains(&option_id(51000, OptionKind::Put))
+        );
+
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.30);
+        set_atm_via_greeks(&mut agg, 47000.0);
+
+        let action = agg
+            .check_rebalance(now())
+            .expect("fallback window shift should rebalance active legs");
+
+        assert!(action.add.contains(&option_id(52000, OptionKind::Call)));
+        assert!(!action.remove.contains(&option_id(42000, OptionKind::Call)));
+        assert!(!action.remove.contains(&option_id(51000, OptionKind::Put)));
+    }
+
+    #[rstest]
     fn test_delta_rebalances_on_greeks_with_atm_unchanged() {
         let strikes = [45000, 50000, 55000];
         let mut agg = make_delta_aggregator(&strikes, 0.30, 0.03);
@@ -1587,8 +1695,11 @@ mod tests {
 
         // Greeks arrive; only 55000 matches. The closest ATM strike is unchanged.
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.55);
         feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.45);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.45);
         feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.30);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.12);
 
         let action = agg
             .check_rebalance(now())
@@ -1611,8 +1722,11 @@ mod tests {
         set_atm_via_greeks(&mut agg, 50000.0);
         agg.recompute_active_set();
         feed_quote_and_greeks(&mut agg, 45000, OptionKind::Call, 0.55);
+        feed_quote_and_greeks(&mut agg, 45000, OptionKind::Put, -0.55);
         feed_quote_and_greeks(&mut agg, 50000, OptionKind::Call, 0.45);
+        feed_quote_and_greeks(&mut agg, 50000, OptionKind::Put, -0.45);
         feed_quote_and_greeks(&mut agg, 55000, OptionKind::Call, 0.30);
+        feed_quote_and_greeks(&mut agg, 55000, OptionKind::Put, -0.12);
 
         // First rebalance narrows to the 55000 legs.
         let action = agg.check_rebalance(now()).unwrap();

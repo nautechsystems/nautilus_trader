@@ -112,13 +112,16 @@ configures the strategy:
 ```rust
 let hedge_instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
 
-let strategy_config =
-    DeltaNeutralVolConfig::new("BTC".to_string(), hedge_instrument_id, client_id)
-        .with_contracts(1)
-        .with_rehedge_delta_threshold(0.5)
-        .with_rehedge_interval_secs(30)
-        .with_enter_strangle(false)
-        .with_iv_param_key("order_iv".to_string());
+let strategy_config = DeltaNeutralVolConfig::builder()
+    .option_family("BTC".to_string())
+    .hedge_instrument_id(hedge_instrument_id)
+    .client_id(client_id)
+    .contracts(1)
+    .rehedge_delta_threshold(0.5)
+    .rehedge_interval_secs(30)
+    .enter_strangle(false)
+    .iv_param_key("order_iv".to_string())
+    .build();
 
 let strategy = DeltaNeutralVol::new(strategy_config);
 ```

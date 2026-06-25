@@ -83,14 +83,52 @@ impl<'a> BorrowedStr<'a> {
         // SAFETY: producer commits to valid UTF-8.
         unsafe { core::str::from_utf8_unchecked(bytes) }
     }
+
+    /// Converts the borrowed string to a `&str`, validating UTF-8.
+    ///
+    /// Use this at trust boundaries where the producer's UTF-8 commitment
+    /// should be verified rather than assumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the bytes are not valid UTF-8.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the producing storage is still live.
+    pub unsafe fn try_as_str(&self) -> Result<&'a str, core::str::Utf8Error> {
+        if self.ptr.is_null() || self.len == 0 {
+            return Ok("");
+        }
+        // SAFETY: caller upholds the lifetime contract.
+        let bytes = unsafe { slice::from_raw_parts(self.ptr, self.len) };
+        core::str::from_utf8(bytes)
+    }
+
+    /// Converts the borrowed string to an owned `String`, replacing invalid
+    /// UTF-8 sequences with the replacement character.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure the producing storage is still live.
+    #[must_use]
+    pub unsafe fn to_string_lossy(&self) -> String {
+        if self.ptr.is_null() || self.len == 0 {
+            return String::new();
+        }
+        // SAFETY: caller upholds the lifetime contract.
+        let bytes = unsafe { slice::from_raw_parts(self.ptr, self.len) };
+        String::from_utf8_lossy(bytes).into_owned()
+    }
 }
 
 impl core::fmt::Debug for BorrowedStr<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         // SAFETY: Debug is best-effort; if the producer has dropped storage
         // this would be UB. The plug-in contract pins manifest strings to
-        // process lifetime so reads here are sound.
-        let s = unsafe { self.as_str() };
+        // process lifetime so reads here are sound. Lossy decoding keeps the
+        // impl sound for producers that violate the UTF-8 contract.
+        let s = unsafe { self.to_string_lossy() };
         write!(f, "BorrowedStr({s:?})")
     }
 }
@@ -335,6 +373,10 @@ pub enum PluginResult<T> {
 
 impl<T> PluginResult<T> {
     /// Converts to a `core::result::Result`, dropping the discriminant.
+    ///
+    /// # Errors
+    ///
+    /// Returns the contained [`PluginError`] when the boundary result is `Err`.
     pub fn into_result(self) -> Result<T, PluginError> {
         match self {
             Self::Ok(t) => Ok(t),

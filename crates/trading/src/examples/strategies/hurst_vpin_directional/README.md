@@ -77,11 +77,11 @@ use nautilus_trading::examples::strategies::{
 let instrument_id = InstrumentId::from("PF_XBTUSD.KRAKEN");
 let bar_type = BarType::from("PF_XBTUSD.KRAKEN-2000000-VALUE-LAST-INTERNAL");
 
-let config = HurstVpinDirectionalConfig::new(
-    instrument_id,
-    bar_type,
-    Quantity::from("0.01"),
-);
+let config = HurstVpinDirectionalConfig::builder()
+    .instrument_id(instrument_id)
+    .bar_type(bar_type)
+    .trade_size(Quantity::from("0.01"))
+    .build();
 
 engine.add_strategy(HurstVpinDirectional::new(config))?;
 ```

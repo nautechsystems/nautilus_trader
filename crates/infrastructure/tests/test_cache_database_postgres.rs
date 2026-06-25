@@ -27,7 +27,7 @@ mod serial_tests {
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::{Params, UnixNanos};
-    use nautilus_infrastructure::sql::cache::get_pg_cache_database;
+    use nautilus_infrastructure::sql::{cache::get_pg_cache_database, queries::DatabaseQueries};
     use nautilus_model::{
         accounts::{AccountAny, CashAccount},
         data::{
@@ -35,9 +35,12 @@ mod serial_tests {
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
         },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
-        events::{PositionSnapshot, account::stubs::cash_account_state_million_usd},
+        events::{
+            OrderEventAny, OrderFilled, PositionSnapshot,
+            account::stubs::cash_account_state_million_usd,
+        },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId,
             stubs::account_id,
         },
         instruments::{
@@ -90,6 +93,14 @@ mod serial_tests {
         pg_cache.close().unwrap();
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "USDC and USDT are distinct currency symbols in this integration test"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "integration test inserts all supported instrument variants"
+    )]
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_currency_and_instruments() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
@@ -426,6 +437,469 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_index_order_position_round_trip() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let client_order_id = ClientOrderId::new("O-19700101-000000-001-001-1");
+        let position_id_1 = PositionId::new("P-19700101-000000-001-001-1");
+        let position_id_2 = PositionId::new("P-19700101-000000-001-001-2");
+
+        pg_cache
+            .index_order_position(client_order_id, position_id_1)
+            .unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_index_order_position()
+                    .unwrap()
+                    .get(&client_order_id)
+                    == Some(&position_id_1)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        // Re-indexing the same order updates the mapping
+        pg_cache
+            .index_order_position(client_order_id, position_id_2)
+            .unwrap();
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_index_order_position()
+                    .unwrap()
+                    .get(&client_order_id)
+                    == Some(&position_id_2)
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let index = pg_cache.load_index_order_position().unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get(&client_order_id), Some(&position_id_2));
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_position_round_trip() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-POSITION-001"))
+            .build();
+        let increase_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-POSITION-002"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2.0"))
+            .client_order_id(ClientOrderId::new("O-PG-POSITION-003"))
+            .build();
+        let position_id = PositionId::new("P-PG-POSITION-ROUND-TRIP");
+
+        let OrderEventAny::Filled(open_fill) = TestOrderEventStubs::filled(
+            &open_order,
+            &instrument,
+            Some(TradeId::new("E-PG-POSITION-001")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let mut position = Position::new(&instrument, open_fill);
+        pg_cache.add_position(&position).unwrap();
+
+        let OrderEventAny::Filled(increase_fill) = TestOrderEventStubs::filled(
+            &increase_order,
+            &instrument,
+            Some(TradeId::new("E-PG-POSITION-002")),
+            Some(position.id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        position.apply(&increase_fill);
+        pg_cache.update_position(&position).unwrap();
+
+        let OrderEventAny::Filled(close_fill) = TestOrderEventStubs::filled(
+            &close_order,
+            &instrument,
+            Some(TradeId::new("E-PG-POSITION-003")),
+            Some(position.id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        position.apply(&close_fill);
+        pg_cache.update_position(&position).unwrap();
+
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_position(&position.id)
+                    .await
+                    .unwrap()
+                    .is_some_and(|loaded| loaded.events == position.events)
+                    && pg_cache.load_positions().await.unwrap().len() == 1
+                    && DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
+                        .await
+                        .unwrap()
+                        .len()
+                        == 3
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let loaded = pg_cache.load_position(&position.id).await.unwrap().unwrap();
+        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &position.id)
+            .await
+            .unwrap();
+
+        assert_entirely_equal(loaded, position.clone());
+        assert_eq!(events, position.events.clone());
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_position_replaces_event_log_for_reused_position_id() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        let open_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-NETTING-001"))
+            .build();
+        let close_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-NETTING-002"))
+            .build();
+        let reopen_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-NETTING-003"))
+            .build();
+        let position_id = PositionId::new("P-PG-NETTING-REUSED");
+
+        let OrderEventAny::Filled(open_fill) = TestOrderEventStubs::filled(
+            &open_order,
+            &instrument,
+            Some(TradeId::new("E-PG-NETTING-001")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let mut closed_position = Position::new(&instrument, open_fill);
+        pg_cache.add_position(&closed_position).unwrap();
+
+        let OrderEventAny::Filled(close_fill) = TestOrderEventStubs::filled(
+            &close_order,
+            &instrument,
+            Some(TradeId::new("E-PG-NETTING-002")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        closed_position.apply(&close_fill);
+        pg_cache.update_position(&closed_position).unwrap();
+
+        let OrderEventAny::Filled(reopen_fill) = TestOrderEventStubs::filled(
+            &reopen_order,
+            &instrument,
+            Some(TradeId::new("E-PG-NETTING-003")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let reopened_position = Position::new(&instrument, reopen_fill);
+        pg_cache.add_position(&reopened_position).unwrap();
+
+        wait_until_async(
+            || async {
+                let events =
+                    DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
+                        .await
+                        .unwrap();
+                events.len() == 1 && events[0].event_id == reopen_fill.event_id
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let events = DatabaseQueries::load_position_events(&pg_cache.pool, &reopened_position.id)
+            .await
+            .unwrap();
+
+        assert_eq!(events, reopened_position.events.clone());
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_position_duplicate_fill_returns_error() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-DUPLICATE-FILL"))
+            .build();
+        let position_id = PositionId::new("P-PG-DUPLICATE-FILL");
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("E-PG-DUPLICATE-FILL")),
+            Some(position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        DatabaseQueries::add_position_event(&pg_cache.pool, &fill)
+            .await
+            .unwrap();
+        DatabaseQueries::add_position_event(&pg_cache.pool, &fill)
+            .await
+            .unwrap();
+
+        let events: Vec<OrderFilled> =
+            DatabaseQueries::load_position_events(&pg_cache.pool, &position_id)
+                .await
+                .unwrap();
+        let result = pg_cache.load_position(&position_id).await;
+
+        assert_eq!(events.len(), 2);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("E-PG-DUPLICATE-FILL")
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_position_event_without_position_id_returns_error() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-MISSING-POSITION-ID"))
+            .build();
+        let OrderEventAny::Filled(mut fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("E-PG-MISSING-POSITION-ID")),
+            Some(PositionId::new("P-PG-MISSING-POSITION-ID")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        fill.position_id = None;
+
+        let result = DatabaseQueries::add_position_event(&pg_cache.pool, &fill).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no position_id"));
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_positions_skips_duplicate_fill_position() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .await
+                    .unwrap()
+                    .is_some()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let good_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-GOOD-POSITION"))
+            .build();
+        let corrupt_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-PG-CORRUPT-POSITION"))
+            .build();
+        let good_position_id = PositionId::new("P-PG-GOOD-POSITION");
+        let corrupt_position_id = PositionId::new("P-PG-CORRUPT-POSITION");
+
+        let OrderEventAny::Filled(good_fill) = TestOrderEventStubs::filled(
+            &good_order,
+            &instrument,
+            Some(TradeId::new("E-PG-GOOD-POSITION")),
+            Some(good_position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+        let good_position = Position::new(&instrument, good_fill);
+
+        let OrderEventAny::Filled(corrupt_fill) = TestOrderEventStubs::filled(
+            &corrupt_order,
+            &instrument,
+            Some(TradeId::new("E-PG-CORRUPT-POSITION")),
+            Some(corrupt_position_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) else {
+            unreachable!();
+        };
+
+        DatabaseQueries::add_position_event(&pg_cache.pool, &good_fill)
+            .await
+            .unwrap();
+        DatabaseQueries::add_position_event(&pg_cache.pool, &corrupt_fill)
+            .await
+            .unwrap();
+        DatabaseQueries::add_position_event(&pg_cache.pool, &corrupt_fill)
+            .await
+            .unwrap();
+
+        let positions = DatabaseQueries::load_positions(&pg_cache.pool)
+            .await
+            .unwrap();
+
+        assert_eq!(positions.len(), 1);
+        assert_eq!(
+            positions[0].events.as_slice(),
+            good_position.events.as_slice()
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_update_order_for_open_order() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
 
@@ -540,6 +1014,25 @@ mod serial_tests {
         .await;
         let account_result = pg_cache.load_account(&account.id()).await.unwrap();
         assert_entirely_equal(account_result.unwrap(), account);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_update_account_without_existing_event_returns_error() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let event = cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
+
+        let result = DatabaseQueries::add_account(&pg_cache.pool, true, event).await;
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Account event does not exist")
+        );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]

@@ -156,6 +156,16 @@ MODULE_FIXUPS: dict[str, StubFixup] = {
     ),
 }
 
+# Re-exports of hand-written (pure-Python) symbols to inject into generated module
+# stubs. PyO3's stub generator only knows about Rust pyclasses, so it drops these on
+# every regeneration; the redundant `as` alias marks them as explicit re-exports so
+# `from <module> import <symbol>` type-checks. Keyed by stub path suffix.
+EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
+    "nautilus_trader/analysis/__init__.pyi": (
+        "from nautilus_trader.analysis.reporter import ReportProvider as ReportProvider",
+    ),
+}
+
 MODEL_EXPORTS = frozenset(MODULE_FIXUPS["model"].all_exports)
 
 
@@ -311,6 +321,32 @@ def generate_stubs() -> bool:
     return True
 
 
+def inject_reexports(content: str, stub_path: Path) -> str:
+    """
+    Inject configured re-export imports for hand-written symbols into a module stub.
+    """
+    posix = stub_path.as_posix()
+    reexports = next((v for k, v in EXTRA_REEXPORTS.items() if posix.endswith(k)), None)
+
+    if not reexports:
+        return content
+
+    lines = content.split("\n")
+    missing = [imp for imp in reexports if imp not in lines]
+
+    if not missing:
+        return content
+
+    insert_at = 0
+
+    for i, line in enumerate(lines):
+        if line.startswith(("import ", "from ")):
+            insert_at = i + 1
+
+    lines[insert_at:insert_at] = missing
+    return "\n".join(lines)
+
+
 def post_process_stubs(root: Path) -> None:
     """Post-process all stub files: fix headers, rename methods, fix return types."""
     workspace_root = Path(__file__).parent.parent
@@ -360,6 +396,9 @@ def post_process_stubs(root: Path) -> None:
 
         # Import model symbols used without a module qualifier
         content = add_missing_model_imports(content)
+
+        # Inject re-exports for hand-written Python symbols (e.g. ReportProvider)
+        content = inject_reexports(content, stub_file)
 
         # Normalize formatting
         content = normalize_stub_content(content)
@@ -1007,7 +1046,7 @@ def _collect_pymethod_fixups(source: str, fixups: dict[str, ClassMethodFixup]) -
 
         j = i + 1
         while j < len(lines) and lines[j].strip().startswith("#["):
-            j += 1
+            _, j = consume_rust_attribute(lines, j)
 
         if j >= len(lines):
             break

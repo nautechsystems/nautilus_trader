@@ -19,8 +19,8 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder, StringArray, StringBuilder,
-        UInt8Array, UInt64Array,
+        Array, BinaryArray, BinaryBuilder, BooleanArray, BooleanBuilder, StringArray,
+        StringBuilder, UInt8Array, UInt64Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -41,7 +41,8 @@ use ustr::Ustr;
 
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, extract_column,
+    KEY_PRICE_PRECISION, extract_column, extract_column_by_name_or_index,
+    extract_optional_string_column_by_name, optional_ustr_value,
 };
 
 impl ArrowSchemaProvider for PerpetualContract {
@@ -71,6 +72,7 @@ impl ArrowSchemaProvider for PerpetualContract {
             Field::new("margin_maint", DataType::Utf8, false),
             Field::new("maker_fee", DataType::Utf8, false),
             Field::new("taker_fee", DataType::Utf8, false),
+            Field::new("tick_scheme", DataType::Utf8, true),
             Field::new("info", DataType::Binary, true), // nullable
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
@@ -116,6 +118,7 @@ impl EncodeToRecordBatch for PerpetualContract {
         let mut margin_maint_builder = StringBuilder::new();
         let mut maker_fee_builder = StringBuilder::new();
         let mut taker_fee_builder = StringBuilder::new();
+        let mut tick_scheme_builder = StringBuilder::new();
         let mut info_builder = BinaryBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
@@ -183,6 +186,12 @@ impl EncodeToRecordBatch for PerpetualContract {
             maker_fee_builder.append_value(perp.maker_fee.to_string());
             taker_fee_builder.append_value(perp.taker_fee.to_string());
 
+            if let Some(tick_scheme) = perp.tick_scheme {
+                tick_scheme_builder.append_value(tick_scheme);
+            } else {
+                tick_scheme_builder.append_null();
+            }
+
             // Encode info dict as JSON bytes (matching Python's msgspec.json.encode)
             if let Some(ref info) = perp.info {
                 match serde_json::to_vec(info) {
@@ -233,6 +242,7 @@ impl EncodeToRecordBatch for PerpetualContract {
                 Arc::new(margin_maint_builder.finish()),
                 Arc::new(maker_fee_builder.finish()),
                 Arc::new(taker_fee_builder.finish()),
+                Arc::new(tick_scheme_builder.finish()),
                 Arc::new(info_builder.finish()),
                 Arc::new(ts_event_builder.finish()),
                 Arc::new(ts_init_builder.finish()),
@@ -311,11 +321,21 @@ pub fn decode_perpetual_contract_batch(
         extract_column::<StringArray>(cols, "margin_maint", 21, DataType::Utf8)?;
     let maker_fee_values = extract_column::<StringArray>(cols, "maker_fee", 22, DataType::Utf8)?;
     let taker_fee_values = extract_column::<StringArray>(cols, "taker_fee", 23, DataType::Utf8)?;
-    let info_values = cols
-        .get(24)
-        .ok_or_else(|| EncodingError::MissingColumn("info", 24))?;
-    let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 25, DataType::UInt64)?;
-    let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 26, DataType::UInt64)?;
+    let tick_scheme_values = extract_optional_string_column_by_name(record_batch, "tick_scheme")?;
+    let info_values =
+        extract_column_by_name_or_index::<BinaryArray>(record_batch, "info", 24, DataType::Binary)?;
+    let ts_event_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_event",
+        25,
+        DataType::UInt64,
+    )?;
+    let ts_init_values = extract_column_by_name_or_index::<UInt64Array>(
+        record_batch,
+        "ts_init",
+        26,
+        DataType::UInt64,
+    )?;
 
     let mut result = Vec::with_capacity(num_rows);
 
@@ -500,7 +520,9 @@ pub fn decode_perpetual_contract_batch(
         let ts_event = UnixNanos::from(ts_event_values.value(i));
         let ts_init = UnixNanos::from(ts_init_values.value(i));
 
-        let perp = PerpetualContract::new(
+        let tick_scheme = optional_ustr_value(tick_scheme_values, i);
+
+        let perp = PerpetualContract::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -525,10 +547,12 @@ pub fn decode_perpetual_contract_batch(
             Some(margin_maint),
             Some(maker_fee),
             Some(taker_fee),
+            tick_scheme,
             info,
             ts_event,
             ts_init,
-        );
+        )
+        .map_err(|e| super::instrument_validation_error::<PerpetualContract>(i, e))?;
 
         result.push(perp);
     }

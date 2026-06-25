@@ -62,9 +62,7 @@ fn create_itch_catalog(quotes: &[QuoteTick], instrument: &InstrumentAny) -> (Tem
     let catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
 
     catalog.write_instruments(vec![instrument.clone()]).unwrap();
-    catalog
-        .write_to_parquet(quotes.to_vec(), None, None, None)
-        .unwrap();
+    catalog.write_to_parquet(quotes, None, None, None).unwrap();
 
     (temp_dir, catalog_path)
 }
@@ -78,6 +76,7 @@ fn xnas_venue_config() -> BacktestVenueConfig {
         .starting_balances(vec!["1_000_000 USD".to_string()])
         .base_currency(Currency::from("USD"))
         .build()
+        .unwrap()
 }
 
 fn quote_data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {
@@ -86,6 +85,7 @@ fn quote_data_config(catalog_path: &str, instrument_id: InstrumentId) -> Backtes
         .catalog_path(catalog_path.to_string())
         .instrument_id(instrument_id)
         .build()
+        .unwrap()
 }
 
 struct MarketOrderStrategy {
@@ -128,10 +128,12 @@ impl DataActor for MarketOrderStrategy {
     fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
         if !self.submitted {
             self.submitted = true;
-            let order = self.core.order_factory().market(
-                self.instrument_id,
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order().market(
+                instrument_id,
                 OrderSide::Buy,
-                self.trade_size,
+                trade_size,
                 None,
                 None,
                 None,
@@ -160,7 +162,8 @@ fn test_itch_node_oneshot() {
         .venues(vec![xnas_venue_config()])
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
@@ -203,7 +206,8 @@ fn test_itch_node_streaming() {
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .chunk_size(500)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
@@ -252,18 +256,22 @@ fn test_itch_node_grid_market_maker() {
         .data(vec![quote_data_config(&catalog_path, instrument_id)])
         .engine(engine_config)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
     node.build().unwrap();
 
-    let grid_config = GridMarketMakerConfig::new(instrument_id, Quantity::from("100"))
-        .with_trade_size(Quantity::from("100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_skew_factor(0.01)
-        .with_requote_threshold_bps(5);
+    let grid_config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("100"))
+        .trade_size(Quantity::from("100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .skew_factor(0.01)
+        .requote_threshold_bps(5)
+        .build();
     let strategy = GridMarketMaker::new(grid_config);
 
     let engine = node.get_engine_mut(&config_id).unwrap();
@@ -308,18 +316,22 @@ fn test_itch_node_streaming_grid_market_maker() {
         .engine(engine_config)
         .chunk_size(1000)
         .dispose_on_completion(false)
-        .build();
+        .build()
+        .unwrap();
     let config_id = config.id().to_string();
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
     node.build().unwrap();
 
-    let grid_config = GridMarketMakerConfig::new(instrument_id, Quantity::from("100"))
-        .with_trade_size(Quantity::from("100"))
-        .with_num_levels(3)
-        .with_grid_step_bps(10)
-        .with_skew_factor(0.01)
-        .with_requote_threshold_bps(5);
+    let grid_config = GridMarketMakerConfig::builder()
+        .instrument_id(instrument_id)
+        .max_position(Quantity::from("100"))
+        .trade_size(Quantity::from("100"))
+        .num_levels(3)
+        .grid_step_bps(10)
+        .skew_factor(0.01)
+        .requote_threshold_bps(5)
+        .build();
     let strategy = GridMarketMaker::new(grid_config);
 
     let engine = node.get_engine_mut(&config_id).unwrap();

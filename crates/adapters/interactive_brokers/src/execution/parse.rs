@@ -48,11 +48,11 @@ pub(crate) fn should_use_avg_fill_price(avg_fill_price: f64, instrument_id: &Ins
         && (avg_fill_price > 0.0 || is_spread_instrument_id(instrument_id))
 }
 
-pub(crate) fn ib_venue_order_id(order_id: i32, perm_id: i32) -> VenueOrderId {
-    if order_id != 0 {
-        VenueOrderId::new(order_id.to_string())
-    } else {
+pub(crate) fn ib_venue_order_id(order_id: i32, perm_id: i64) -> VenueOrderId {
+    if perm_id != 0 {
         VenueOrderId::new(format!("PERM-{perm_id}"))
+    } else {
+        VenueOrderId::new(order_id.to_string())
     }
 }
 
@@ -97,7 +97,7 @@ pub fn parse_execution_to_fill_report(
     let execution_price = execution.price * price_magnifier;
 
     // Determine order side
-    let order_side = IbAction::from_str(&execution.side)?.order_side();
+    let order_side = IbAction::from_str(execution.side.as_str())?.order_side();
 
     // Get instrument for precision
     let instrument = instrument_provider
@@ -108,8 +108,9 @@ pub fn parse_execution_to_fill_report(
     let last_qty = Quantity::new(execution.shares, instrument.size_precision());
     let last_px = Price::new(execution_price, instrument.price_precision());
 
-    // Create commission
-    let commission_money = Money::new(commission, Currency::from_str(commission_currency)?);
+    // Clamp only IB's -1 pending sentinel to 0.0 to preserve rebates
+    let commission_clamped = if commission == -1.0 { 0.0 } else { commission };
+    let commission_money = Money::new(commission_clamped, Currency::from_str(commission_currency)?);
 
     // Parse execution time
     let ts_event = parse_execution_time(&execution.time)?;
@@ -158,12 +159,12 @@ pub fn parse_order_status_to_report(
     // Get price magnifier from instrument provider
     let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
 
-    let mut nautilus_status = match IbOrderStatus::from_str(&order_status.status) {
+    let mut nautilus_status = match IbOrderStatus::from_str(order_status.status.as_str()) {
         Ok(status) => status.nautilus_status(),
         _ => {
             tracing::warn!(
                 "Unknown order status: {}, defaulting to SUBMITTED",
-                order_status.status
+                order_status.status.as_str()
             );
             NautilusOrderStatus::Submitted
         }
@@ -198,9 +199,10 @@ pub fn parse_order_status_to_report(
     let filled_qty = Quantity::new(order_status.filled, size_precision);
 
     // Get average price
-    let include_avg_px = should_use_avg_fill_price(order_status.average_fill_price, &instrument_id);
+    let average_fill_price = order_status.average_fill_price.unwrap_or(0.0);
+    let include_avg_px = should_use_avg_fill_price(average_fill_price, &instrument_id);
     let avg_px_value = if include_avg_px {
-        order_status.average_fill_price * price_magnifier
+        average_fill_price * price_magnifier
     } else {
         0.0
     };
@@ -421,11 +423,12 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
 mod tests {
     use ibapi::{
         contracts::Contract,
-        orders::{Action, Liquidity, Order},
+        orders::{Action, ExecutionSide, Liquidity, Order, OrderStatusKind},
     };
     use nautilus_model::{
         enums::TrailingOffsetType,
         identifiers::{Symbol, Venue},
+        instruments::{InstrumentAny, stubs::equity_aapl},
     };
     use rust_decimal::Decimal;
 
@@ -502,16 +505,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Submitted"),
+            status: OrderStatusKind::Submitted,
             filled: 0.0,
             remaining: 100.0,
-            average_fill_price: 0.0,
+            average_fill_price: Some(0.0),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: 0.0,
+            last_fill_price: Some(0.0),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let result = parse_order_status_to_report(
@@ -542,16 +545,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Filled"),
+            status: OrderStatusKind::Filled,
             filled: 100.0,
             remaining: 0.0,
-            average_fill_price: 150.25,
+            average_fill_price: Some(150.25),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: 150.25,
+            last_fill_price: Some(150.25),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let result = parse_order_status_to_report(
@@ -585,16 +588,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Filled"),
+            status: OrderStatusKind::Filled,
             filled: 1.0,
             remaining: 0.0,
-            average_fill_price: -2.25,
+            average_fill_price: Some(-2.25),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: -2.25,
+            last_fill_price: Some(-2.25),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let report = parse_order_status_to_report(
@@ -618,16 +621,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Inactive"),
+            status: OrderStatusKind::Inactive,
             filled: 0.0,
             remaining: 100.0,
-            average_fill_price: 0.0,
+            average_fill_price: Some(0.0),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: 0.0,
+            last_fill_price: Some(0.0),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let report = parse_order_status_to_report(
@@ -651,16 +654,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 0,
-            status: String::from("Submitted"),
+            status: OrderStatusKind::Submitted,
             filled: 3.0,
             remaining: 7.0,
-            average_fill_price: 150.25,
+            average_fill_price: Some(150.25),
             perm_id: 123_456,
             parent_id: 0,
-            last_fill_price: 150.25,
+            last_fill_price: Some(150.25),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
         let order = Order {
             action: Action::Buy,
@@ -690,9 +693,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_ib_venue_order_id_prefers_order_id_and_falls_back_to_perm_id() {
-        assert_eq!(ib_venue_order_id(123, 456).to_string(), "123");
-        assert_eq!(ib_venue_order_id(0, 456).to_string(), "PERM-456");
+    fn test_ib_venue_order_id_prefers_perm_id_and_falls_back_to_order_id() {
+        assert_eq!(ib_venue_order_id(123, 456).to_string(), "PERM-456");
+        assert_eq!(ib_venue_order_id(123, 0).to_string(), "123");
     }
 
     #[rstest]
@@ -813,16 +816,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Submitted"),
+            status: OrderStatusKind::Submitted,
             filled: 0.0,
             remaining: 5.0,
-            average_fill_price: 0.0,
+            average_fill_price: Some(0.0),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: 0.0,
+            last_fill_price: Some(0.0),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let order = Order {
@@ -863,16 +866,16 @@ mod tests {
 
         let order_status = OrderStatus {
             order_id: 12345,
-            status: String::from("Submitted"),
+            status: OrderStatusKind::Submitted,
             filled: 0.0,
             remaining: 5.0,
-            average_fill_price: 0.0,
+            average_fill_price: Some(0.0),
             perm_id: 0,
             parent_id: 0,
-            last_fill_price: 0.0,
+            last_fill_price: Some(0.0),
             client_id: 0,
             why_held: String::new(),
-            market_cap_price: 0.0,
+            market_cap_price: Some(0.0),
         };
 
         let order = Order {
@@ -918,7 +921,7 @@ mod tests {
             time: String::from("20230223 00:43:36 Universal"),
             account_number: String::new(),
             exchange: String::new(),
-            side: String::from("BOT"),
+            side: ExecutionSide::Bought,
             shares: 100.0,
             price: 150.25,
             perm_id: 0,
@@ -965,6 +968,56 @@ mod tests {
     }
 
     #[rstest]
+    fn test_parse_execution_to_fill_report_clamps_only_pending_commission_sentinel() {
+        let instrument_provider = create_test_instrument_provider();
+        let instrument = equity_aapl();
+        let instrument_id = instrument.id();
+        instrument_provider.insert_test_instrument(InstrumentAny::from(instrument), 265598, 1);
+        let account_id = AccountId::from("IB-001");
+        let contract = Contract::default();
+
+        for (commission, expected) in [(-1.0, 0.0), (-0.25, -0.25)] {
+            let execution = Execution {
+                order_id: 12345,
+                client_id: 0,
+                execution_id: format!("EXEC-{commission}"),
+                time: String::from("20230223 00:43:36 Universal"),
+                account_number: String::new(),
+                exchange: String::new(),
+                side: ExecutionSide::Bought,
+                shares: 100.0,
+                price: 150.25,
+                perm_id: 0,
+                liquidation: 0,
+                cumulative_quantity: 100.0,
+                average_price: 150.25,
+                order_reference: String::from("ORDER-REF-001"),
+                ev_rule: String::new(),
+                ev_multiplier: None,
+                model_code: String::new(),
+                last_liquidity: Liquidity::None,
+                pending_price_revision: false,
+                submitter: String::new(),
+            };
+
+            let report = parse_execution_to_fill_report(
+                &execution,
+                &contract,
+                commission,
+                "USD",
+                instrument_id,
+                account_id,
+                &instrument_provider,
+                UnixNanos::new(0),
+                None,
+            )
+            .unwrap();
+
+            assert_eq!(report.commission, Money::new(expected, Currency::USD()));
+        }
+    }
+
+    #[rstest]
     fn test_parse_execution_to_fill_report_sell() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
@@ -977,7 +1030,7 @@ mod tests {
             time: String::from("20230223 00:43:36 Universal"),
             account_number: String::new(),
             exchange: String::new(),
-            side: String::from("SLD"),
+            side: ExecutionSide::Sold,
             shares: 50.0,
             price: 151.0,
             perm_id: 0,

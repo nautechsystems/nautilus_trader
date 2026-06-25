@@ -13,17 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Convenience macros for implementing strategy boilerplate.
+//! Convenience macros for implementing trading component boilerplate.
 
-/// Implements `Deref<Target = DataActorCore>`, `DerefMut`, and `Strategy` for a strategy type.
+/// Implements `DataActorNative`, `StrategyNative`, and `Strategy` for a strategy type.
 ///
 /// The struct must contain a field of type [`StrategyCore`](crate::strategy::StrategyCore).
 /// By default the macro expects the field to be named `core`; pass a second argument
 /// to use a different name.
+/// The macro also adds an inherent `config()` method on the strategy type which
+/// returns the user-supplied [`StrategyConfig`](crate::strategy::StrategyConfig).
 ///
 /// An optional brace-delimited block adds extra methods to the generated `impl Strategy`.
-/// Do not redefine `core` or `core_mut` inside the block; they are already generated
-/// by the macro and duplicates will cause a compile error.
+/// Native runtime core access is generated through `StrategyNative`; normal strategy
+/// logic should use `Strategy` facade methods.
 ///
 /// # Examples
 ///
@@ -75,29 +77,125 @@ macro_rules! nautilus_strategy {
         $crate::nautilus_strategy!($ty, core, { $($extra)* });
     };
     ($ty:ty, $field:ident, { $($extra:item)* }) => {
-        impl ::std::ops::Deref for $ty {
-            type Target = $crate::_macro_reexports::DataActorCore;
-
-            fn deref(&self) -> &Self::Target {
-                &self.$field
+        impl $ty {
+            /// Returns the strategy configuration.
+            #[allow(dead_code, unreachable_pub)]
+            #[must_use]
+            pub fn config(&self) -> &$crate::strategy::StrategyConfig {
+                self.$field.config()
             }
         }
 
-        impl ::std::ops::DerefMut for $ty {
-            fn deref_mut(&mut self) -> &mut Self::Target {
+        impl $crate::_macro_reexports::DataActorNative for $ty {
+            fn core(&self) -> &$crate::_macro_reexports::DataActorCore {
+                $crate::_macro_reexports::DataActorNative::core(&self.$field)
+            }
+
+            fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
+                $crate::_macro_reexports::DataActorNative::core_mut(&mut self.$field)
+            }
+        }
+
+        impl $crate::strategy::StrategyNative for $ty {
+            fn strategy_core(&self) -> &$crate::strategy::StrategyCore {
+                &self.$field
+            }
+
+            fn strategy_core_mut(&mut self) -> &mut $crate::strategy::StrategyCore {
                 &mut self.$field
             }
         }
 
         impl $crate::strategy::Strategy for $ty {
-            fn core(&self) -> &$crate::strategy::StrategyCore {
+            $($extra)*
+        }
+    };
+}
+
+/// Implements `DataActorNative`, `ExecutionAlgorithmNative`, and `ExecutionAlgorithm` for an
+/// execution algorithm type.
+///
+/// The struct must contain a field of type
+/// [`ExecutionAlgorithmCore`](crate::algorithm::ExecutionAlgorithmCore). By default the macro
+/// expects the field to be named `core`; pass a second argument to use a different name.
+///
+/// A brace-delimited block adds `on_order` and any extra methods to the generated
+/// `impl ExecutionAlgorithm`. Native runtime core access is generated through
+/// `ExecutionAlgorithmNative`; normal execution algorithm logic should use
+/// `ExecutionAlgorithm` facade methods.
+///
+/// # Examples
+///
+/// ```ignore
+/// use nautilus_trading::{algorithm::ExecutionAlgorithmCore, nautilus_execution_algorithm};
+///
+/// pub struct MyExecutionAlgorithm {
+///     core: ExecutionAlgorithmCore,
+///     // ...
+/// }
+///
+/// nautilus_execution_algorithm!(MyExecutionAlgorithm, {
+///     fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
+///         // custom handling
+///         Ok(())
+///     }
+/// });
+/// ```
+///
+/// With a custom field name and hooks:
+///
+/// ```ignore
+/// pub struct MyExecutionAlgorithm {
+///     algorithm_core: ExecutionAlgorithmCore,
+///     // ...
+/// }
+///
+/// nautilus_execution_algorithm!(MyExecutionAlgorithm, algorithm_core, {
+///     fn on_order(&mut self, order: OrderAny) -> anyhow::Result<()> {
+///         // custom handling
+///         Ok(())
+///     }
+/// });
+/// ```
+#[macro_export]
+macro_rules! nautilus_execution_algorithm {
+    ($ty:ty) => {
+        compile_error!(
+            "nautilus_execution_algorithm! requires an `on_order` implementation block"
+        );
+    };
+    ($ty:ty, $field:ident) => {
+        compile_error!(
+            "nautilus_execution_algorithm! requires an `on_order` implementation block"
+        );
+    };
+    ($ty:ty, { $($extra:item)* }) => {
+        $crate::nautilus_execution_algorithm!($ty, core, { $($extra)* });
+    };
+    ($ty:ty, $field:ident, { $($extra:item)* }) => {
+        impl $crate::_macro_reexports::DataActorNative for $ty {
+            fn core(&self) -> &$crate::_macro_reexports::DataActorCore {
+                $crate::_macro_reexports::DataActorNative::core(&self.$field)
+            }
+
+            fn core_mut(&mut self) -> &mut $crate::_macro_reexports::DataActorCore {
+                $crate::_macro_reexports::DataActorNative::core_mut(&mut self.$field)
+            }
+        }
+
+        impl $crate::algorithm::ExecutionAlgorithmNative for $ty {
+            fn exec_algorithm_core(&self) -> &$crate::algorithm::ExecutionAlgorithmCore {
                 &self.$field
             }
 
-            fn core_mut(&mut self) -> &mut $crate::strategy::StrategyCore {
+            fn exec_algorithm_core_mut(
+                &mut self,
+            ) -> &mut $crate::algorithm::ExecutionAlgorithmCore {
                 &mut self.$field
             }
+        }
 
+        impl $crate::algorithm::ExecutionAlgorithm for $ty {
             $($extra)*
         }
     };

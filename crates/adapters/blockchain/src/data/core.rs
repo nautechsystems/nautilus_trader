@@ -22,7 +22,10 @@ use nautilus_core::{UnixNanos, hex, string::formatting::Separable};
 use nautilus_model::defi::{
     Block, Blockchain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolProfiler, PoolSwap,
     SharedChain, SharedDex, SharedPool,
-    data::{DefiData, DexPoolData, PoolFeeCollect, PoolFlash, block::BlockPosition},
+    data::{
+        DefiData, DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate,
+        PoolFlash, block::BlockPosition,
+    },
     pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
 };
@@ -34,7 +37,9 @@ use crate::{
     contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
     data::subscription::DefiDataSubscriptionManager,
     events::{
-        burn::BurnEvent, collect::CollectEvent, flash::FlashEvent, mint::MintEvent, swap::SwapEvent,
+        burn::BurnEvent, collect::CollectEvent, fee_protocol_collect::FeeProtocolCollectEvent,
+        fee_protocol_update::FeeProtocolUpdateEvent, flash::FlashEvent, mint::MintEvent,
+        swap::SwapEvent,
     },
     exchanges::{extended::DexExtended, get_dex_extended},
     hypersync::{
@@ -82,6 +87,49 @@ pub struct BlockchainDataClientCore {
     data_tx: Option<tokio::sync::mpsc::UnboundedSender<DataEvent>>,
     /// Cancellation token for graceful shutdown of long-running operations.
     cancellation_token: tokio_util::sync::CancellationToken,
+}
+
+/// Outcome of validating a pool snapshot against on-chain state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapshotValidation {
+    /// Hydrated from chain and matched the profiler state.
+    OnChain,
+    /// Emitted from deterministic replay and not checked against chain (the RPC could not serve the
+    /// block, or validation was skipped). Usable as a replay start point.
+    Replay,
+    /// Hydrated from chain and did not match the profiler state. Not usable as a replay start point.
+    Invalid,
+}
+
+impl SnapshotValidation {
+    /// Returns `true` if the snapshot is usable as a replay start point.
+    #[must_use]
+    pub const fn is_usable(self) -> bool {
+        !matches!(self, Self::Invalid)
+    }
+
+    /// Returns the database/JSON token for this state.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OnChain => "on_chain",
+            Self::Replay => "replay",
+            Self::Invalid => "invalid",
+        }
+    }
+
+    /// Parses the database/JSON token into a [`SnapshotValidation`].
+    ///
+    /// Returns `None` for an unrecognized token.
+    #[must_use]
+    pub fn from_db_token(token: &str) -> Option<Self> {
+        match token {
+            "on_chain" => Some(Self::OnChain),
+            "replay" => Some(Self::Replay),
+            "invalid" => Some(Self::Invalid),
+            _ => None,
+        }
+    }
 }
 
 impl BlockchainDataClientCore {
@@ -474,6 +522,8 @@ impl BlockchainDataClientCore {
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
         let collect_event_signature = dex_extended.collect_created_event.as_ref();
         let flash_event_signature = dex_extended.flash_created_event.as_ref();
+        let protocol_update_event_signature = dex_extended.fee_protocol_update_event.as_ref();
+        let protocol_collect_event_signature = dex_extended.fee_protocol_collect_event.as_ref();
         let initialize_event_signature: Option<&str> =
             dex_extended.initialize_event.as_ref().map(|s| s.as_ref());
 
@@ -500,6 +550,10 @@ impl BlockchainDataClientCore {
         )?;
         let flash_sig_bytes = flash_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+        let protocol_update_sig_bytes = protocol_update_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+        let protocol_collect_sig_bytes = protocol_collect_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
         let initialize_sig_bytes = initialize_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
@@ -514,9 +568,18 @@ impl BlockchainDataClientCore {
             event_signatures.push(event);
         }
 
+        if let Some(event) = dex_extended.fee_protocol_update_event.as_ref() {
+            event_signatures.push(event);
+        }
+
+        if let Some(event) = dex_extended.fee_protocol_collect_event.as_ref() {
+            event_signatures.push(event);
+        }
+
         if let Some(event) = dex_extended.flash_created_event.as_ref() {
             event_signatures.push(event);
         }
+
         let pool_events_stream = self
             .hypersync_client
             .request_contract_events_stream(
@@ -531,11 +594,15 @@ impl BlockchainDataClientCore {
         let mut last_block_saved = effective_from_block;
         let mut blocks_processed = 0;
 
+        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
         let mut swap_batch: Vec<PoolSwap> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut liquidity_batch: Vec<PoolLiquidityUpdate> = Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut collect_batch: Vec<PoolFeeCollect> = Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut protocol_update_batch: Vec<PoolFeeProtocolUpdate> =
+            Vec::with_capacity(EVENT_BATCH_SIZE);
+        let mut protocol_collect_batch: Vec<PoolFeeProtocolCollect> =
+            Vec::with_capacity(EVENT_BATCH_SIZE);
         let mut flash_batch: Vec<PoolFlash> = Vec::with_capacity(EVENT_BATCH_SIZE);
-        let mut block_batch: Vec<Block> = Vec::with_capacity(POOL_EVENT_BLOCK_BATCH_SIZE);
 
         // Track when we've moved beyond stale data and can use COPY
         let mut beyond_stale_data = last_block_across_pool_events_table
@@ -563,50 +630,81 @@ impl BlockchainDataClientCore {
                     let event_sig_bytes = extract_event_signature_bytes(&log)?;
             if event_sig_bytes == swap_sig_bytes.as_slice() {
                 let swap_event = dex_extended.parse_swap_event_hypersync(&log)?;
-                match self.process_pool_swap_event(&swap_event, &pool) {
-                    Ok(swap) => swap_batch.push(swap),
-                    Err(e) => log::error!("Failed to process swap event: {e}"),
-                }
+                let swap = self
+                    .process_pool_swap_event(&swap_event, &pool)
+                    .with_context(|| {
+                        format!("failed to process swap event at block {}", swap_event.block_number)
+                    })?;
+                swap_batch.push(swap);
             } else if event_sig_bytes == mint_sig_bytes.as_slice() {
                 let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
-                match self.process_pool_mint_event(&mint_event, &pool, &dex_extended) {
-                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
-                    Err(e) => log::error!("Failed to process mint event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_mint_event(&mint_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!("failed to process mint event at block {}", mint_event.block_number)
+                    })?;
+                liquidity_batch.push(liquidity_update);
             } else if event_sig_bytes == burn_sig_bytes.as_slice() {
                 let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
-                match self.process_pool_burn_event(&burn_event, &pool, &dex_extended) {
-                    Ok(liquidity_update) => liquidity_batch.push(liquidity_update),
-                    Err(e) => log::error!("Failed to process burn event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_burn_event(&burn_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!("failed to process burn event at block {}", burn_event.block_number)
+                    })?;
+                liquidity_batch.push(liquidity_update);
             } else if event_sig_bytes == collect_sig_bytes.as_slice() {
                 let collect_event = dex_extended.parse_collect_event_hypersync(&log)?;
-                match self.process_pool_collect_event(&collect_event, &pool, &dex_extended) {
-                    Ok(fee_collect) => collect_batch.push(fee_collect),
-                    Err(e) => log::error!("Failed to process collect event: {e}"),
-                }
+                let fee_collect = self
+                    .process_pool_collect_event(&collect_event, &pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process collect event at block {}",
+                            collect_event.block_number
+                        )
+                    })?;
+                collect_batch.push(fee_collect);
             } else if initialize_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
                 let initialize_event = dex_extended.parse_initialize_event_hypersync(&log)?;
                 self.cache
                     .update_pool_initialize_price_tick(&initialize_event)
                     .await?;
+            } else if protocol_update_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
+                let fee_protocol_update_event = dex_extended.parse_fee_protocol_update_event_hypersync(&log)?;
+                let update = self
+                    .process_pool_fee_protocol_update_event(&fee_protocol_update_event, &pool)
+                    .with_context(|| {
+                        format!(
+                            "failed to process SetFeeProtocol event at block {}",
+                            fee_protocol_update_event.block_number
+                        )
+                    })?;
+                protocol_update_batch.push(update);
+            } else if protocol_collect_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
+                let fee_protocol_collect_event = dex_extended.parse_fee_protocol_collect_event_hypersync(&log)?;
+                let collect = self
+                    .process_pool_fee_protocol_collect_event(&fee_protocol_collect_event, &pool)
+                    .with_context(|| {
+                        format!(
+                            "failed to process CollectProtocol event at block {}",
+                            fee_protocol_collect_event.block_number
+                        )
+                    })?;
+                protocol_collect_batch.push(collect);
             } else if flash_sig_bytes.as_ref().is_some_and(|sig| sig.as_slice() == event_sig_bytes) {
-                if let Some(parse_fn) = dex_extended.parse_flash_event_hypersync_fn {
-                    match parse_fn(dex_extended.dex.clone(), &log) {
-                        Ok(flash_event) => {
-                            match self.process_pool_flash_event(&flash_event, &pool) {
-                                Ok(flash) => flash_batch.push(flash),
-                                Err(e) => log::error!("Failed to process flash event: {e}"),
-                            }
-                        }
-                        Err(e) => log::error!("Failed to parse flash event: {e}"),
-                    }
-                }
+                let parse_fn = dex_extended
+                    .parse_flash_event_hypersync_fn
+                    .context("missing flash event parser")?;
+                let flash_event = parse_fn(dex_extended.dex.clone(), &log)
+                    .context("failed to parse flash event")?;
+                let flash = self
+                    .process_pool_flash_event(&flash_event, &pool)
+                    .with_context(|| {
+                        format!("failed to process flash event at block {}", flash_event.block_number)
+                    })?;
+                flash_batch.push(flash);
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
-                log::error!(
-                    "Unexpected event signature: {event_signature} for log {log:?}"
-                );
+                anyhow::bail!("unexpected event signature {event_signature} for log {log:?}");
             }
 
             // Check if we've moved beyond stale data (transition point for strategy change)
@@ -621,9 +719,12 @@ impl BlockchainDataClientCore {
                 // Flush all batches with ON CONFLICT to handle any remaining duplicates
                 self.flush_event_batches(
                     EVENT_BATCH_SIZE,
+                    &mut block_batch,
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut protocol_update_batch,
+                    &mut protocol_collect_batch,
                     &mut flash_batch,
                     false,
                     true,
@@ -636,9 +737,12 @@ impl BlockchainDataClientCore {
                 // Process batches when they reach batch size
                 self.flush_event_batches(
                     EVENT_BATCH_SIZE,
+                    &mut block_batch,
                     &mut swap_batch,
                     &mut liquidity_batch,
                     &mut collect_batch,
+                    &mut protocol_update_batch,
+                    &mut protocol_collect_batch,
                     &mut flash_batch,
                     false, // TODO temporary dont use copy command
                     false,
@@ -652,23 +756,43 @@ impl BlockchainDataClientCore {
             // Log progress if needed
             if metrics.should_log_progress(block_number, to_block) {
                 metrics.log_progress(block_number);
-                self.cache
-                    .update_pool_last_synced_block(dex, &pool_identifier, block_number)
-                    .await?;
+                self.flush_event_batches(
+                    EVENT_BATCH_SIZE,
+                    &mut block_batch,
+                    &mut swap_batch,
+                    &mut liquidity_batch,
+                    &mut collect_batch,
+                    &mut protocol_update_batch,
+                    &mut protocol_collect_batch,
+                    &mut flash_batch,
+                    false,
+                    true,
+                )
+                .await?;
+
+                if let Some(checkpoint_block) =
+                    Self::completed_pool_event_checkpoint(block_number, effective_from_block)
+                {
+                    self.cache
+                        .update_pool_last_synced_block(dex, &pool_identifier, checkpoint_block)
+                        .await?;
+                }
             }
         }
 
         self.flush_event_batches(
             EVENT_BATCH_SIZE,
+            &mut block_batch,
             &mut swap_batch,
             &mut liquidity_batch,
             &mut collect_batch,
+            &mut protocol_update_batch,
+            &mut protocol_collect_batch,
             &mut flash_batch,
             false,
             true,
         )
         .await?;
-        self.flush_pool_event_blocks(&mut block_batch).await?;
 
         metrics.log_final_stats();
         self.cache
@@ -690,40 +814,80 @@ impl BlockchainDataClientCore {
 
     #[expect(clippy::too_many_arguments)]
     async fn flush_event_batches(
-        &self,
+        &mut self,
         event_batch_size: usize,
+        block_batch: &mut Vec<Block>,
         swap_batch: &mut Vec<PoolSwap>,
         liquidity_batch: &mut Vec<PoolLiquidityUpdate>,
         collect_batch: &mut Vec<PoolFeeCollect>,
+        protocol_update_batch: &mut Vec<PoolFeeProtocolUpdate>,
+        protocol_collect_batch: &mut Vec<PoolFeeProtocolCollect>,
         flash_batch: &mut Vec<PoolFlash>,
         use_copy_command: bool,
         force_flush_all: bool,
     ) -> anyhow::Result<()> {
-        if (force_flush_all || swap_batch.len() >= event_batch_size) && !swap_batch.is_empty() {
+        let should_flush_swaps =
+            (force_flush_all || swap_batch.len() >= event_batch_size) && !swap_batch.is_empty();
+        let should_flush_liquidity = (force_flush_all || liquidity_batch.len() >= event_batch_size)
+            && !liquidity_batch.is_empty();
+        let should_flush_collects = (force_flush_all || collect_batch.len() >= event_batch_size)
+            && !collect_batch.is_empty();
+        let should_flush_protocol_update = (force_flush_all
+            || protocol_update_batch.len() >= event_batch_size)
+            && !protocol_update_batch.is_empty();
+        let should_flush_protocol_collect = (force_flush_all
+            || protocol_collect_batch.len() >= event_batch_size)
+            && !protocol_collect_batch.is_empty();
+        let should_flush_flash =
+            (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty();
+
+        if force_flush_all
+            || should_flush_swaps
+            || should_flush_liquidity
+            || should_flush_collects
+            || should_flush_protocol_update
+            || should_flush_protocol_collect
+            || should_flush_flash
+        {
+            self.flush_pool_event_blocks(block_batch).await?;
+        }
+
+        if should_flush_swaps {
             self.cache
                 .add_pool_swaps_batch(swap_batch, use_copy_command)
                 .await?;
             swap_batch.clear();
         }
 
-        if (force_flush_all || liquidity_batch.len() >= event_batch_size)
-            && !liquidity_batch.is_empty()
-        {
+        if should_flush_liquidity {
             self.cache
                 .add_pool_liquidity_updates_batch(liquidity_batch, use_copy_command)
                 .await?;
             liquidity_batch.clear();
         }
 
-        if (force_flush_all || collect_batch.len() >= event_batch_size) && !collect_batch.is_empty()
-        {
+        if should_flush_collects {
             self.cache
                 .add_pool_fee_collects_batch(collect_batch, use_copy_command)
                 .await?;
             collect_batch.clear();
         }
 
-        if (force_flush_all || flash_batch.len() >= event_batch_size) && !flash_batch.is_empty() {
+        if should_flush_protocol_update {
+            self.cache
+                .add_pool_fee_protocol_updates_batch(protocol_update_batch)
+                .await?;
+            protocol_update_batch.clear();
+        }
+
+        if should_flush_protocol_collect {
+            self.cache
+                .add_pool_fee_protocol_collect_batch(protocol_collect_batch)
+                .await?;
+            protocol_collect_batch.clear();
+        }
+
+        if should_flush_flash {
             self.cache.add_pool_flash_batch(flash_batch).await?;
             flash_batch.clear();
         }
@@ -757,11 +921,23 @@ impl BlockchainDataClientCore {
             .await
     }
 
+    fn completed_pool_event_checkpoint(
+        block_number: u64,
+        effective_from_block: u64,
+    ) -> Option<u64> {
+        let checkpoint_block = block_number.checked_sub(1)?;
+        (checkpoint_block >= effective_from_block).then_some(checkpoint_block)
+    }
+
     /// Processes a swap event and converts it to a pool swap.
+    ///
+    /// Trade-info computation can fail for degenerate MIN/MAX-tick swaps on near-zero-liquidity
+    /// pools, whose spot price overflows the price representation. Such failures are non-fatal: the
+    /// swap is kept with empty trade-info so an otherwise-valid event does not abort the pool sync.
     ///
     /// # Errors
     ///
-    /// Returns an error if swap event processing fails.
+    /// Returns an error if the swap event's block timestamp is missing from the cache.
     pub fn process_pool_swap_event(
         &self,
         swap_event: &SwapEvent,
@@ -778,7 +954,14 @@ impl BlockchainDataClientCore {
             pool.pool_identifier,
             timestamp,
         );
-        swap.calculate_trade_info(&pool.token0, &pool.token1, None)?;
+        // Keep the swap and leave price metadata empty rather than aborting the pool sync
+        if let Err(e) = swap.calculate_trade_info(&pool.token0, &pool.token1, None) {
+            log::warn!(
+                "Skipping trade info for swap at block {} on pool {}: {e}",
+                swap_event.block_number,
+                pool.instrument_id,
+            );
+        }
 
         Ok(swap)
     }
@@ -891,6 +1074,56 @@ impl BlockchainDataClientCore {
         Ok(flash)
     }
 
+    /// Processes a `SetFeeProtocol` event and converts it to a pool fee-protocol update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event's block timestamp is missing from the cache.
+    pub fn process_pool_fee_protocol_update_event(
+        &self,
+        fee_protocol_update_event: &FeeProtocolUpdateEvent,
+        pool: &SharedPool,
+    ) -> anyhow::Result<PoolFeeProtocolUpdate> {
+        let timestamp = self
+            .cache
+            .get_block_timestamp(fee_protocol_update_event.block_number)
+            .copied()
+            .context("missing block timestamp for SetFeeProtocol event")?;
+
+        let update = fee_protocol_update_event.to_pool_fee_protocol_update(
+            self.chain.clone(),
+            pool.instrument_id,
+            timestamp,
+        );
+
+        Ok(update)
+    }
+
+    /// Processes a `CollectProtocol` event and converts it to a pool protocol-fee withdrawal.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the event's block timestamp is missing from the cache.
+    pub fn process_pool_fee_protocol_collect_event(
+        &self,
+        fee_protocol_collect_event: &FeeProtocolCollectEvent,
+        pool: &SharedPool,
+    ) -> anyhow::Result<PoolFeeProtocolCollect> {
+        let timestamp = self
+            .cache
+            .get_block_timestamp(fee_protocol_collect_event.block_number)
+            .copied()
+            .context("missing block timestamp for CollectProtocol event")?;
+
+        let collect = fee_protocol_collect_event.to_pool_fee_protocol_collect(
+            self.chain.clone(),
+            pool.instrument_id,
+            timestamp,
+        );
+
+        Ok(collect)
+    }
+
     /// Synchronizes all pools and their tokens for a specific DEX within the given block range.
     ///
     /// This method performs a full sync of:
@@ -937,24 +1170,47 @@ impl BlockchainDataClientCore {
     ///
     /// Returns an error if DEX registration, cache operations, or pool loading fails.
     pub async fn register_dex_exchange(&mut self, dex_id: DexType) -> anyhow::Result<()> {
-        if let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) {
-            log::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
+        self.register_dex(dex_id).await?;
+        let _ = self.cache.load_pools(&dex_id).await?;
+        Ok(())
+    }
 
-            self.cache.add_dex(dex_extended.dex.clone()).await?;
-            let _ = self.cache.load_pools(&dex_id).await?;
+    /// Registers a decentralized exchange but loads only a single pool into the cache.
+    ///
+    /// Like [`Self::register_dex_exchange`], but loads just `pool_identifier` instead of the whole
+    /// DEX pool set, so per-pool tools (e.g. `analyze-pool`) avoid the full pool-set load. A pool
+    /// absent from the cache database is left for the caller's later lookup to report.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX registration or the pool load fails.
+    pub async fn register_dex_exchange_for_pool(
+        &mut self,
+        dex_id: DexType,
+        pool_identifier: &PoolIdentifier,
+    ) -> anyhow::Result<()> {
+        self.register_dex(dex_id).await?;
+        let _ = self.cache.load_pool(&dex_id, pool_identifier).await?;
+        Ok(())
+    }
 
-            self.subscription_manager.register_dex_for_subscriptions(
-                dex_id,
-                dex_extended.swap_created_event.as_ref(),
-                dex_extended.mint_created_event.as_ref(),
-                dex_extended.burn_created_event.as_ref(),
-                dex_extended.collect_created_event.as_ref(),
-                dex_extended.flash_created_event.as_deref(),
-            );
-            Ok(())
-        } else {
-            anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name)
-        }
+    /// Registers a DEX in the cache and its event signatures for subscriptions, without loading pools.
+    async fn register_dex(&mut self, dex_id: DexType) -> anyhow::Result<()> {
+        let Some(dex_extended) = get_dex_extended(self.chain.name, &dex_id) else {
+            anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name);
+        };
+
+        log::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
+        self.cache.add_dex(dex_extended.dex.clone()).await?;
+        self.subscription_manager.register_dex_for_subscriptions(
+            dex_id,
+            dex_extended.swap_created_event.as_ref(),
+            dex_extended.mint_created_event.as_ref(),
+            dex_extended.burn_created_event.as_ref(),
+            dex_extended.collect_created_event.as_ref(),
+            dex_extended.flash_created_event.as_deref(),
+        );
+        Ok(())
     }
 
     /// Bootstraps a [`PoolProfiler`] with the latest state for a given pool.
@@ -1066,18 +1322,15 @@ impl BlockchainDataClientCore {
         }
 
         // Sync the pool events before bootstrapping of pool profiler
-        if let Err(e) = self
-            .sync_pool_events(
-                &pool.dex.name,
-                pool.pool_identifier,
-                None,
-                Some(to_block),
-                false,
-            )
-            .await
-        {
-            log::error!("Failed to sync pool events for snapshot request: {e}");
-        }
+        self.sync_pool_events(
+            &pool.dex.name,
+            pool.pool_identifier,
+            None,
+            Some(to_block),
+            false,
+        )
+        .await
+        .context("failed to sync pool events for snapshot request")?;
 
         if !profiler.is_initialized {
             if let Some(initial_sqrt_price_x96) = pool.initial_sqrt_price_x96 {
@@ -1113,7 +1366,7 @@ impl BlockchainDataClientCore {
                 Ok(event) => {
                     profiler.process(&event)?;
                 }
-                Err(e) => log::error!("Error processing event: {e}"),
+                Err(e) => return Err(e).context("failed to stream pool event from database"),
             }
         }
 
@@ -1175,6 +1428,9 @@ impl BlockchainDataClientCore {
                 .strip_prefix("0x")
                 .unwrap_or(initialize_event_signature),
         )?;
+        let protocol_update_event_signature = dex_extended.fee_protocol_update_event.as_deref();
+        let protocol_update_sig_bytes = protocol_update_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
         let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
             block_position.number
@@ -1192,17 +1448,23 @@ impl BlockchainDataClientCore {
         // Enable embedded profiler reporting
         profiler.enable_reporting(from_block, total_blocks, BLOCKS_PROCESS_IN_SYNC_REPORT);
 
+        let mut event_signatures = vec![
+            mint_event_signature,
+            burn_event_signature,
+            initialize_event_signature,
+        ];
+
+        if let Some(event) = protocol_update_event_signature {
+            event_signatures.push(event);
+        }
+
         let pool_events_stream = self
             .hypersync_client
             .request_contract_events_stream(
                 from_block,
                 Some(to_block),
                 &profiler.pool.address,
-                vec![
-                    mint_event_signature,
-                    burn_event_signature,
-                    initialize_event_signature,
-                ],
+                event_signatures,
             )
             .await;
         tokio::pin!(pool_events_stream);
@@ -1240,24 +1502,48 @@ impl BlockchainDataClientCore {
                 }
             } else if event_sig_bytes == mint_sig_bytes {
                 let mint_event = dex_extended.parse_mint_event_hypersync(&log)?;
-                match self.process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended) {
-                    Ok(liquidity_update) => {
-                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
-                    }
-                    Err(e) => log::error!("Failed to process mint event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_mint_event(&mint_event, &profiler.pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process mint event at block {}",
+                            mint_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
             } else if event_sig_bytes == burn_sig_bytes {
                 let burn_event = dex_extended.parse_burn_event_hypersync(&log)?;
-                match self.process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended) {
-                    Ok(liquidity_update) => {
-                        profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
-                    }
-                    Err(e) => log::error!("Failed to process burn event: {e}"),
-                }
+                let liquidity_update = self
+                    .process_pool_burn_event(&burn_event, &profiler.pool, &dex_extended)
+                    .with_context(|| {
+                        format!(
+                            "failed to process burn event at block {}",
+                            burn_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::LiquidityUpdate(liquidity_update))?;
+            } else if protocol_update_sig_bytes
+                .as_ref()
+                .is_some_and(|sig| sig.as_slice() == event_sig_bytes)
+            {
+                let fee_protocol_update_event =
+                    dex_extended.parse_fee_protocol_update_event_hypersync(&log)?;
+                let update = self
+                    .process_pool_fee_protocol_update_event(
+                        &fee_protocol_update_event,
+                        &profiler.pool,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "failed to process SetFeeProtocol event at block {}",
+                            fee_protocol_update_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::FeeProtocolUpdate(update))?;
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
-                log::error!(
-                    "Unexpected event signature in bootstrap_latest_pool_profiler: {event_signature} for log {log:?}"
+                anyhow::bail!(
+                    "unexpected event signature in bootstrap_latest_pool_profiler: {event_signature} for log {log:?}"
                 );
             }
         }
@@ -1292,11 +1578,16 @@ impl BlockchainDataClientCore {
     /// This method performs integrity checking by comparing the profiler's internal state
     /// (positions, ticks, liquidity) with the actual on-chain smart contract state. For UniswapV3
     /// pools, it fetches current on-chain data and verifies that the profiler's tracked state matches.
-    /// If validation succeeds or is bypassed, the snapshot is marked as valid in the database.
+    /// Returns [`SnapshotValidation::OnChain`] when the profiler matches on-chain state,
+    /// [`SnapshotValidation::Invalid`] when it does not, and [`SnapshotValidation::Replay`] when the
+    /// on-chain state could not be fetched (e.g. a non-archive RPC for a historical block); in the
+    /// last case the replay-derived snapshot is kept. The resolved state is persisted for the
+    /// `OnChain` and `Invalid` outcomes; `Replay` leaves the snapshot at its inserted default so a
+    /// transient RPC failure cannot clobber a prior definitive verdict.
     ///
     /// # Errors
     ///
-    /// Returns an error if database operations fail when marking the snapshot as valid.
+    /// Returns an error if database operations fail when persisting the validation state.
     ///
     /// # Panics
     ///
@@ -1305,56 +1596,98 @@ impl BlockchainDataClientCore {
         &self,
         profiler: &PoolProfiler,
         already_validated: bool,
-    ) -> anyhow::Result<bool> {
-        // Determine validity and get block position for marking
-        let (is_valid, block_position) = if already_validated {
+    ) -> anyhow::Result<SnapshotValidation> {
+        let (validation, block_position) = if already_validated {
             // Skip RPC call - profiler was validated during construction from RPC
             log::info!("Snapshot already validated from RPC, skipping on-chain comparison");
             let last_event = profiler
                 .last_processed_event
                 .clone()
                 .expect("Profiler should have last_processed_event");
-            (true, last_event)
+            (SnapshotValidation::OnChain, Some(last_event))
         } else {
             // Fetch on-chain state and compare
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
                     log::info!("Comparing profiler state with on-chain state...");
                     let comparison = compare_pool_profiler_detailed(profiler, &on_chain_snapshot);
-                    let valid = comparison.is_valid_for_snapshot();
-                    if !valid {
+                    let validation = if comparison.is_valid_for_snapshot() {
+                        if !comparison.is_exact_match() {
+                            log::warn!(
+                                "Pool profiler snapshot has a non-structural mismatch (sqrt ratio, fee protocol, or protocol fees); accepting snapshot"
+                            );
+                        }
+                        SnapshotValidation::OnChain
+                    } else {
                         log::error!(
                             "Pool profiler state does NOT match on-chain smart contract state"
                         );
-                    } else if !comparison.is_exact_match() {
-                        log::warn!(
-                            "Pool profiler snapshot has a sqrt ratio mismatch only; accepting snapshot"
-                        );
-                    }
-                    (valid, on_chain_snapshot.block_position)
+                        SnapshotValidation::Invalid
+                    };
+                    (validation, Some(on_chain_snapshot.block_position))
                 }
                 Err(e) => {
-                    log::error!("Failed to check snapshot validity: {e}");
-                    return Ok(false);
+                    log::warn!(
+                        "Could not validate snapshot against on-chain state, keeping replay-derived snapshot: {e}"
+                    );
+                    // RPC could not reach the block. Report any stored verdict so stdout agrees with
+                    // a pre-existing on_chain/invalid row; the None block position below skips the
+                    // persist step, so a transient failure cannot clobber that verdict.
+                    let reported = self
+                        .stored_snapshot_validation(profiler)
+                        .await?
+                        .unwrap_or(SnapshotValidation::Replay);
+                    (reported, None)
                 }
             }
         };
 
-        // Mark snapshot as valid in database if validation passed
-        if is_valid && let Some(cache_database) = &self.cache.database {
+        if let (Some(block_position), Some(cache_database)) = (block_position, &self.cache.database)
+        {
             cache_database
-                .mark_pool_snapshot_valid(
+                .set_pool_snapshot_validation_state(
                     profiler.pool.chain.chain_id,
                     &profiler.pool.pool_identifier,
                     block_position.number,
                     block_position.transaction_index,
                     block_position.log_index,
+                    validation.as_str(),
                 )
                 .await?;
-            log::info!("Marked pool profiler snapshot as valid");
+            log::info!(
+                "Set pool snapshot validation state to {}",
+                validation.as_str()
+            );
         }
 
-        Ok(is_valid)
+        Ok(validation)
+    }
+
+    /// Reads the persisted [`SnapshotValidation`] for the profiler's current snapshot watermark.
+    ///
+    /// Returns `None` when no database is configured, the profiler has no processed event, or no
+    /// snapshot row exists at that watermark.
+    async fn stored_snapshot_validation(
+        &self,
+        profiler: &PoolProfiler,
+    ) -> anyhow::Result<Option<SnapshotValidation>> {
+        let (Some(block_position), Some(cache_database)) =
+            (profiler.last_processed_event.as_ref(), &self.cache.database)
+        else {
+            return Ok(None);
+        };
+
+        let stored = cache_database
+            .get_pool_snapshot_validation_state(
+                profiler.pool.chain.chain_id,
+                &profiler.pool.pool_identifier,
+                block_position.number,
+                block_position.transaction_index,
+                block_position.log_index,
+            )
+            .await?;
+
+        Ok(stored.and_then(|token| SnapshotValidation::from_db_token(&token)))
     }
 
     /// Fetches current on-chain pool state at the last processed block.
@@ -1363,7 +1696,11 @@ impl BlockchainDataClientCore {
     /// using the profiler's active positions and last processed block number.
     /// Used for profiler state restoration after bootstrapping and validation.
     async fn get_on_chain_snapshot(&self, profiler: &PoolProfiler) -> anyhow::Result<PoolSnapshot> {
-        if profiler.pool.dex.name == DexType::UniswapV3 {
+        // PancakeSwap V3 shares the Uniswap V3 pool read ABI, so it hydrates through the same contract
+        if matches!(
+            profiler.pool.dex.name,
+            DexType::UniswapV3 | DexType::PancakeSwapV3
+        ) {
             let last_processed_event = Self::last_processed_event_for_on_chain_snapshot(profiler)?;
             let timestamp = Self::timestamp_for_on_chain_snapshot(
                 profiler,
@@ -1453,6 +1790,12 @@ impl BlockchainDataClientCore {
                             }
                             DexPoolData::FeeCollect(collect) => {
                                 DataEvent::DeFi(DefiData::PoolFeeCollect(collect))
+                            }
+                            DexPoolData::FeeProtocolUpdate(update) => {
+                                DataEvent::DeFi(DefiData::PoolFeeProtocolUpdate(update))
+                            }
+                            DexPoolData::FeeProtocolCollect(collect) => {
+                                DataEvent::DeFi(DefiData::PoolFeeProtocolCollect(collect))
                             }
                             DexPoolData::Flash(flash) => {
                                 DataEvent::DeFi(DefiData::PoolFlash(flash))
@@ -1548,6 +1891,32 @@ mod tests {
     const WETH_USDT_CREATION_BLOCK: u64 = 12_375_326;
 
     #[rstest]
+    #[case(SnapshotValidation::OnChain, "on_chain", true)]
+    #[case(SnapshotValidation::Replay, "replay", true)]
+    #[case(SnapshotValidation::Invalid, "invalid", false)]
+    fn snapshot_validation_db_token_and_usability(
+        #[case] validation: SnapshotValidation,
+        #[case] expected_str: &str,
+        #[case] expected_usable: bool,
+    ) {
+        // as_str must match the pool_snapshot.validation_state CHECK values and the JSON contract;
+        // is_usable must match the load filter `validation_state <> 'invalid'`.
+        assert_eq!(validation.as_str(), expected_str);
+        assert_eq!(validation.is_usable(), expected_usable);
+        // from_db_token round-trips a stored token back to the enum, so a read-back verdict
+        // reports the same state that was persisted.
+        assert_eq!(
+            SnapshotValidation::from_db_token(expected_str),
+            Some(validation)
+        );
+    }
+
+    #[rstest]
+    fn snapshot_validation_from_db_token_rejects_unknown() {
+        assert_eq!(SnapshotValidation::from_db_token("bogus"), None);
+    }
+
+    #[rstest]
     fn last_processed_event_for_on_chain_snapshot_rejects_unprocessed_profiler() {
         let mut profiler = PoolProfiler::new(weth_usdt_pool());
         profiler
@@ -1606,6 +1975,23 @@ mod tests {
             error.to_string(),
             "missing block timestamp for on-chain snapshot"
         );
+    }
+
+    #[rstest]
+    #[case(100, 50, Some(99))]
+    #[case(50, 50, None)]
+    #[case(0, 0, None)]
+    fn completed_pool_event_checkpoint_excludes_in_flight_block(
+        #[case] block_number: u64,
+        #[case] effective_from_block: u64,
+        #[case] expected: Option<u64>,
+    ) {
+        let checkpoint = BlockchainDataClientCore::completed_pool_event_checkpoint(
+            block_number,
+            effective_from_block,
+        );
+
+        assert_eq!(checkpoint, expected);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1672,6 +2058,56 @@ mod tests {
             error_message.to_lowercase().contains(WETH_USDT_POOL),
             "hydration error should include pool address, was {error_message}"
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
+    async fn live_hypersync_parses_real_set_fee_protocol_update_event() {
+        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
+
+        // Arbitrum Uniswap V3 WETH/USDC.e 0.05% pool. Governance set the protocol fee to (4, 4)
+        // via SetFeeProtocol at block 438,989,951; slot0.feeProtocol reads 68.
+        let chain = Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain should exist")
+                .clone(),
+        );
+        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Arbitrum UniswapV3 should be registered");
+        let pool_address = address!("c31e54c7a869b9fcbecc14363cf510d1c41fa443");
+        let signature = dex_extended
+            .dex
+            .fee_protocol_update_event
+            .as_deref()
+            .expect("UniswapV3 should advertise the SetFeeProtocol signature");
+
+        let client = HyperSyncClient::new(chain, None, CancellationToken::new());
+        let stream = client
+            .request_contract_events_stream(
+                438_989_951,
+                Some(438_989_951),
+                &pool_address,
+                vec![signature],
+            )
+            .await;
+        tokio::pin!(stream);
+
+        let mut events = Vec::new();
+
+        while let Some(item) = stream.next().await {
+            if let PoolEventStreamItem::Log(log) = item {
+                events.push(
+                    dex_extended
+                        .parse_fee_protocol_update_event_hypersync(&log)
+                        .expect("real SetFeeProtocol log should parse"),
+                );
+            }
+        }
+
+        assert_eq!(events.len(), 1, "expected exactly one SetFeeProtocol event");
+        assert_eq!(events[0].block_number, 438_989_951);
+        assert_eq!(events[0].fee_protocol0_new, 4);
+        assert_eq!(events[0].fee_protocol1_new, 4);
     }
 
     fn weth_usdt_pool() -> SharedPool {

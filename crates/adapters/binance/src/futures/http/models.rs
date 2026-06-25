@@ -35,17 +35,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use crate::common::{
-    consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
-    encoder::decode_broker_id,
-    enums::{
-        BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
-        BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
-        BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
-        BinanceTradingStatus, BinanceWorkingType,
+use crate::{
+    common::{
+        consts::BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+        encoder::decode_broker_id,
+        enums::{
+            BinanceAlgoStatus, BinanceAlgoType, BinanceContractStatus, BinanceFuturesOrderType,
+            BinanceIncomeType, BinanceMarginType, BinanceOrderStatus, BinancePositionSide,
+            BinancePriceMatch, BinanceSelfTradePreventionMode, BinanceSide, BinanceTimeInForce,
+            BinanceTradingStatus, BinanceWorkingType,
+        },
+        models::BinanceRateLimit,
+        parse::parse_required_decimal,
     },
-    models::BinanceRateLimit,
-    parse::parse_required_decimal,
+    futures::conversions::normalize_futures_asset,
 };
 
 /// Server time response from `GET /fapi/v1/time`.
@@ -900,7 +903,7 @@ impl BinanceFuturesAccountInfo {
         // Ensure at least one balance exists
         if balances.is_empty() {
             let zero_currency = Currency::USDT();
-            let zero_money = Money::new(0.0, zero_currency);
+            let zero_money = Money::zero(zero_currency);
             let zero_balance = AccountBalance::new(zero_money, zero_money, zero_money);
             balances.push(zero_balance);
         }
@@ -1195,6 +1198,7 @@ impl BinanceUserTrade {
         instrument_id: InstrumentId,
         price_precision: u8,
         size_precision: u8,
+        bnfcr_currency: Currency,
         ts_init: UnixNanos,
     ) -> anyhow::Result<FillReport> {
         let ts_event = UnixNanos::from_millis(self.time as u64);
@@ -1219,7 +1223,9 @@ impl BinanceUserTrade {
         let commission_currency = self
             .commission_asset
             .as_ref()
-            .map_or_else(Currency::USDT, Currency::from);
+            .map_or(bnfcr_currency, |asset| {
+                normalize_futures_asset(asset, bnfcr_currency)
+            });
         let commission = match self.commission.as_ref() {
             Some(raw) => {
                 let decimal = parse_required_decimal(raw, "commission")?;
@@ -1379,10 +1385,14 @@ impl BinanceFuturesAlgoOrder {
             &self.client_algo_id,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         ));
-        let venue_order_id = self.actual_order_id.as_ref().map_or_else(
-            || VenueOrderId::new(self.algo_id.to_string()),
-            |id| VenueOrderId::new(id.clone()),
-        );
+        let venue_order_id = self
+            .actual_order_id
+            .as_ref()
+            .filter(|id| !id.is_empty())
+            .map_or_else(
+                || VenueOrderId::new(self.algo_id.to_string()),
+                |id| VenueOrderId::new(id.clone()),
+            );
 
         let order_side = match self.side {
             BinanceSide::Buy => OrderSide::Buy,
@@ -1976,6 +1986,7 @@ mod tests {
             InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             2,
             3,
+            Currency::USDT(),
             UnixNanos::from(1_000_000_000u64),
         );
 
@@ -2015,6 +2026,54 @@ mod tests {
         assert_eq!(
             report.client_order_id,
             Some(ClientOrderId::from("my-algo-order-1")),
+        );
+    }
+
+    #[rstest]
+    #[case(None, "123456789")]
+    #[case(Some(""), "123456789")]
+    #[case(Some("987654321"), "987654321")]
+    fn test_algo_order_to_report_selects_valid_venue_order_id(
+        #[case] actual_order_id: Option<&str>,
+        #[case] expected_venue_order_id: &str,
+    ) {
+        let order = BinanceFuturesAlgoOrder {
+            algo_id: 123456789,
+            client_algo_id: "x-aHRE4BCj-Rmy-algo-order-1".to_string(),
+            algo_type: BinanceAlgoType::Conditional,
+            order_type: BinanceFuturesOrderType::StopMarket,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BinanceSide::Buy,
+            position_side: Some(BinancePositionSide::Both),
+            time_in_force: Some(BinanceTimeInForce::Gtc),
+            quantity: Some("0.001".to_string()),
+            algo_status: Some(BinanceAlgoStatus::New),
+            trigger_price: Some("45000.00".to_string()),
+            price: None,
+            working_type: Some(BinanceWorkingType::MarkPrice),
+            close_position: Some(false),
+            price_protect: None,
+            reduce_only: Some(false),
+            activate_price: None,
+            callback_rate: None,
+            create_time: Some(1_625_474_304_765),
+            update_time: Some(1_625_474_304_765),
+            trigger_time: None,
+            actual_order_id: actual_order_id.map(str::to_string),
+            executed_qty: None,
+            avg_price: None,
+        };
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(
+            report.venue_order_id,
+            VenueOrderId::new(expected_venue_order_id)
         );
     }
 
