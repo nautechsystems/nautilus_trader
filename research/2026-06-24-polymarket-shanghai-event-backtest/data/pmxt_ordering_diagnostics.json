@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-06-25T06:46:58.709457+00:00",
+  "generated_at": "2026-06-25T08:04:10.894359+00:00",
   "curated_root": "C:\\Projects\\PolyReaper\\data\\curated\\polymarket\\events",
   "events": [
     {
@@ -104,6 +104,86 @@
         "received_gap_gt_1s": 34759,
         "received_gap_gt_5s": 8969,
         "received_gap_gt_60s": 78,
+        "timestamp_inversion_examples": [
+          {
+            "back_ms": 17121.0,
+            "received_gap_ms": 0.0,
+            "previous": {
+              "row": 109175,
+              "timestamp_received": "2026-06-08T14:47:52.027000+00:00",
+              "timestamp": "2026-06-08T14:45:30.824000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.1300",
+              "size": "13.000000",
+              "best_bid": "0.4400",
+              "best_ask": "0.4500"
+            },
+            "current": {
+              "row": 109176,
+              "timestamp_received": "2026-06-08T14:47:52.027000+00:00",
+              "timestamp": "2026-06-08T14:45:13.703000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.0100",
+              "size": "169.600000",
+              "best_bid": "0.4400",
+              "best_ask": "0.4500"
+            }
+          },
+          {
+            "back_ms": 16538.0,
+            "received_gap_ms": 64.0,
+            "previous": {
+              "row": 109187,
+              "timestamp_received": "2026-06-08T14:47:52.027000+00:00",
+              "timestamp": "2026-06-08T14:45:30.857000+00:00",
+              "event_type": "price_change",
+              "side": "SELL",
+              "price": "0.5400",
+              "size": "95.000000",
+              "best_bid": "0.4400",
+              "best_ask": "0.4500"
+            },
+            "current": {
+              "row": 109188,
+              "timestamp_received": "2026-06-08T14:47:52.091000+00:00",
+              "timestamp": "2026-06-08T14:45:14.319000+00:00",
+              "event_type": "price_change",
+              "side": "SELL",
+              "price": "0.6700",
+              "size": "5.000000",
+              "best_bid": "0.4400",
+              "best_ask": "0.4500"
+            }
+          },
+          {
+            "back_ms": 16493.0,
+            "received_gap_ms": 393.0,
+            "previous": {
+              "row": 167534,
+              "timestamp_received": "2026-06-09T00:04:07.631000+00:00",
+              "timestamp": "2026-06-08T23:59:52.819000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.3400",
+              "size": "944.100000",
+              "best_bid": "0.3500",
+              "best_ask": "0.3600"
+            },
+            "current": {
+              "row": 167535,
+              "timestamp_received": "2026-06-09T00:04:08.024000+00:00",
+              "timestamp": "2026-06-08T23:59:36.326000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.3400",
+              "size": "944.100000",
+              "best_bid": "0.3500",
+              "best_ask": "0.3600"
+            }
+          }
+        ],
         "price_change_batch_physical_order": {
           "price_change_rows": 332608,
           "batch_key_count": 328964,
@@ -248,6 +328,86 @@
         "received_gap_gt_1s": 34829,
         "received_gap_gt_5s": 7237,
         "received_gap_gt_60s": 66,
+        "timestamp_inversion_examples": [
+          {
+            "back_ms": 17337.0,
+            "received_gap_ms": 157.0,
+            "previous": {
+              "row": 353857,
+              "timestamp_received": "2026-06-10T09:16:38.495000+00:00",
+              "timestamp": "2026-06-10T09:16:38.433000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.9900",
+              "size": "521.930000",
+              "best_bid": "0.9980",
+              "best_ask": "0.9990"
+            },
+            "current": {
+              "row": 353858,
+              "timestamp_received": "2026-06-10T09:16:38.652000+00:00",
+              "timestamp": "2026-06-10T09:16:21.096000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.9900",
+              "size": "513.930000",
+              "best_bid": "0.9980",
+              "best_ask": "0.9990"
+            }
+          },
+          {
+            "back_ms": 16279.0,
+            "received_gap_ms": 310.0,
+            "previous": {
+              "row": 40954,
+              "timestamp_received": "2026-06-08T20:15:52.861000+00:00",
+              "timestamp": "2026-06-08T20:14:22.751000+00:00",
+              "event_type": "price_change",
+              "side": "BUY",
+              "price": "0.2500",
+              "size": "5.000000",
+              "best_bid": "0.3400",
+              "best_ask": "0.3600"
+            },
+            "current": {
+              "row": 40955,
+              "timestamp_received": "2026-06-08T20:15:53.171000+00:00",
+              "timestamp": "2026-06-08T20:14:06.472000+00:00",
+              "event_type": "book",
+              "side": null,
+              "price": null,
+              "size": null,
+              "best_bid": null,
+              "best_ask": null
+            }
+          },
+          {
+            "back_ms": 16240.0,
+            "received_gap_ms": 440.0,
+            "previous": {
+              "row": 41591,
+              "timestamp_received": "2026-06-08T20:37:05.003000+00:00",
+              "timestamp": "2026-06-08T20:35:38.503000+00:00",
+              "event_type": "price_change",
+              "side": "SELL",
+              "price": "0.4100",
+              "size": "30.000000",
+              "best_bid": "0.3400",
+              "best_ask": "0.3900"
+            },
+            "current": {
+              "row": 41592,
+              "timestamp_received": "2026-06-08T20:37:05.443000+00:00",
+              "timestamp": "2026-06-08T20:35:22.263000+00:00",
+              "event_type": "price_change",
+              "side": "SELL",
+              "price": "0.4100",
+              "size": "15.000000",
+              "best_bid": "0.3400",
+              "best_ask": "0.3900"
+            }
+          }
+        ],
         "price_change_batch_physical_order": {
           "price_change_rows": 378830,
           "batch_key_count": 375253,

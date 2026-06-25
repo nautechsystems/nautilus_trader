@@ -7,7 +7,8 @@
 - **直接证据**：脚本检查 parquet schema 后，没有发现 `sequence` / `message_id` 这类字段，所以不能直接证明 WebSocket 是否漏了某条消息。
 - **直接证据**：源 PMXT 小时文件列表在两个样本里都是连续的，没有发现小时级源文件缺口。
 - **直接证据**：全 event parquet 不是全局严格按 `timestamp_received` 排序；但本次回测选中的 YES token 在物理顺序下 `timestamp_received` 没有倒退。
-- **直接证据**：选中 token 按 `timestamp` 看存在大量倒退，说明 exchange/event timestamp 到达顺序不是严格单调；这更像 WebSocket / 上游事件时间乱序或延迟，而不是单纯 parquet 写乱。
+- **直接证据**：选中 token 按 `timestamp` 看存在大量倒退；也就是按收到顺序看，源侧 event timestamp 不是严格单调。
+- **推断**：如果把 `timestamp` 理解为 Polymarket/PMXT 源侧服务器时间，那么 WS 到达流里确实存在源时间乱序或延迟到达；但 parquet schema 没有直接说明它一定是 Polymarket matching/server clock。
 - **推断**：目前更强的证据指向“message 边界、event-time 乱序、snapshot/checkpoint 语义不完整”，还不能直接定性为 Polymarket WS 漏包。
 
 ## 指标表
@@ -37,6 +38,16 @@
 - selected token `timestamp_received` inversions: 0
 - selected token `timestamp` inversions: 89346
 - selected token max `timestamp` backstep: 17121ms
+
+**timestamp 倒退实例（selected token, physical received order）**
+
+这些例子展示的是：下一行的 `timestamp_received` 没有倒退，但 `timestamp` 比上一行更早。
+
+| back | recv gap | prev row | prev received | prev timestamp | prev event | current row | current received | current timestamp | current event |
+| ---: | ---: | ---: | --- | --- | --- | ---: | --- | --- | --- |
+| 17121ms | 0ms | 109175 | 2026-06-08T14:47:52.027000+00:00 | 2026-06-08T14:45:30.824000+00:00 | price_change BUY 0.1300 size=13.000000 | 109176 | 2026-06-08T14:47:52.027000+00:00 | 2026-06-08T14:45:13.703000+00:00 | price_change BUY 0.0100 size=169.600000 |
+| 16538ms | 64ms | 109187 | 2026-06-08T14:47:52.027000+00:00 | 2026-06-08T14:45:30.857000+00:00 | price_change SELL 0.5400 size=95.000000 | 109188 | 2026-06-08T14:47:52.091000+00:00 | 2026-06-08T14:45:14.319000+00:00 | price_change SELL 0.6700 size=5.000000 |
+| 16493ms | 393ms | 167534 | 2026-06-09T00:04:07.631000+00:00 | 2026-06-08T23:59:52.819000+00:00 | price_change BUY 0.3400 size=944.100000 | 167535 | 2026-06-09T00:04:08.024000+00:00 | 2026-06-08T23:59:36.326000+00:00 | price_change BUY 0.3400 size=944.100000 |
 
 **batch / snapshot**
 
@@ -95,6 +106,16 @@
 - selected token `timestamp` inversions: 95740
 - selected token max `timestamp` backstep: 17337ms
 
+**timestamp 倒退实例（selected token, physical received order）**
+
+这些例子展示的是：下一行的 `timestamp_received` 没有倒退，但 `timestamp` 比上一行更早。
+
+| back | recv gap | prev row | prev received | prev timestamp | prev event | current row | current received | current timestamp | current event |
+| ---: | ---: | ---: | --- | --- | --- | ---: | --- | --- | --- |
+| 17337ms | 157ms | 353857 | 2026-06-10T09:16:38.495000+00:00 | 2026-06-10T09:16:38.433000+00:00 | price_change BUY 0.9900 size=521.930000 | 353858 | 2026-06-10T09:16:38.652000+00:00 | 2026-06-10T09:16:21.096000+00:00 | price_change BUY 0.9900 size=513.930000 |
+| 16279ms | 310ms | 40954 | 2026-06-08T20:15:52.861000+00:00 | 2026-06-08T20:14:22.751000+00:00 | price_change BUY 0.2500 size=5.000000 | 40955 | 2026-06-08T20:15:53.171000+00:00 | 2026-06-08T20:14:06.472000+00:00 | book None None size=None |
+| 16240ms | 440ms | 41591 | 2026-06-08T20:37:05.003000+00:00 | 2026-06-08T20:35:38.503000+00:00 | price_change SELL 0.4100 size=30.000000 | 41592 | 2026-06-08T20:37:05.443000+00:00 | 2026-06-08T20:35:22.263000+00:00 | price_change SELL 0.4100 size=15.000000 |
+
 **batch / snapshot**
 
 - price_change rows: 378830
@@ -140,7 +161,7 @@
 - schema 缺少 sequence/message id：无法用单调序列直接判定 WS 漏包。
 - 全 event parquet 物理顺序存在小时级 `timestamp_received` 倒退；结合选中 token 无倒退，更像 event parquet 由多个 market/token 分块拼接，不是单 token WS 流乱序。
 - 选中 token `timestamp_received` 无倒退：本次回测 token 的接收顺序本身没有乱。
-- 选中 token `timestamp` 有大量倒退：事件时间到达顺序不是严格单调，回放不能只假设 event time 完全有序。
+- 选中 token `timestamp` 有大量倒退：按收到顺序看，源侧 event timestamp 不是严格单调，回放不能只假设 event time 完全有序。
 - 同 key 多行 batch 大量存在；物理顺序有少量 split key，但当前 replay sort 后 split key 为 0。
 - source hourly files 连续：没有小时级 coverage 缺口。
 

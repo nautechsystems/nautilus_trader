@@ -144,8 +144,63 @@ def ordering_metrics(df: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def json_value(value: Any) -> Any:
+    if pd.isna(value):
+        return None
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    return str(value)
+
+
+def timestamp_inversion_examples(df: pd.DataFrame, limit: int = 3) -> list[dict[str, Any]]:
+    if df.empty:
+        return []
+    event_ts = ts_ms(df["timestamp"])
+    received_ts = ts_ms(df["timestamp_received"])
+    backsteps = -event_ts.diff()
+    top = backsteps[backsteps > 0].sort_values(ascending=False).head(limit)
+    examples: list[dict[str, Any]] = []
+    for idx, back_ms in top.items():
+        if idx <= 0:
+            continue
+        prev = df.iloc[int(idx) - 1]
+        curr = df.iloc[int(idx)]
+        examples.append(
+            {
+                "back_ms": float(back_ms),
+                "received_gap_ms": float(received_ts.iloc[int(idx)] - received_ts.iloc[int(idx) - 1]),
+                "previous": {
+                    "row": int(prev["_row"]),
+                    "timestamp_received": json_value(prev["timestamp_received"]),
+                    "timestamp": json_value(prev["timestamp"]),
+                    "event_type": json_value(prev["event_type"]),
+                    "side": json_value(prev.get("side")),
+                    "price": json_value(prev.get("price")),
+                    "size": json_value(prev.get("size")),
+                    "best_bid": json_value(prev.get("best_bid")),
+                    "best_ask": json_value(prev.get("best_ask")),
+                },
+                "current": {
+                    "row": int(curr["_row"]),
+                    "timestamp_received": json_value(curr["timestamp_received"]),
+                    "timestamp": json_value(curr["timestamp"]),
+                    "event_type": json_value(curr["event_type"]),
+                    "side": json_value(curr.get("side")),
+                    "price": json_value(curr.get("price")),
+                    "size": json_value(curr.get("size")),
+                    "best_bid": json_value(curr.get("best_bid")),
+                    "best_ask": json_value(curr.get("best_ask")),
+                },
+            }
+        )
+    return examples
+
+
 def selected_token_metrics(df: pd.DataFrame, replay_summary: dict[str, Any] | None) -> dict[str, Any]:
     metrics = ordering_metrics(df)
+    df = df.copy()
+    df["_row"] = range(len(df))
+    metrics["timestamp_inversion_examples"] = timestamp_inversion_examples(df)
     price_changes = df[df["event_type"] == "price_change"].copy()
     key_cols = ["timestamp_received", "timestamp", "market", "asset_id", "event_type"]
     message_cols = ["timestamp_received", "timestamp", "market", "asset_id"]
@@ -287,7 +342,8 @@ def render_report(result: dict[str, Any]) -> str:
     lines.append("- **直接证据**：脚本检查 parquet schema 后，没有发现 `sequence` / `message_id` 这类字段，所以不能直接证明 WebSocket 是否漏了某条消息。")
     lines.append("- **直接证据**：源 PMXT 小时文件列表在两个样本里都是连续的，没有发现小时级源文件缺口。")
     lines.append("- **直接证据**：全 event parquet 不是全局严格按 `timestamp_received` 排序；但本次回测选中的 YES token 在物理顺序下 `timestamp_received` 没有倒退。")
-    lines.append("- **直接证据**：选中 token 按 `timestamp` 看存在大量倒退，说明 exchange/event timestamp 到达顺序不是严格单调；这更像 WebSocket / 上游事件时间乱序或延迟，而不是单纯 parquet 写乱。")
+    lines.append("- **直接证据**：选中 token 按 `timestamp` 看存在大量倒退；也就是按收到顺序看，源侧 event timestamp 不是严格单调。")
+    lines.append("- **推断**：如果把 `timestamp` 理解为 Polymarket/PMXT 源侧服务器时间，那么 WS 到达流里确实存在源时间乱序或延迟到达；但 parquet schema 没有直接说明它一定是 Polymarket matching/server clock。")
     lines.append("- **推断**：目前更强的证据指向“message 边界、event-time 乱序、snapshot/checkpoint 语义不完整”，还不能直接定性为 Polymarket WS 漏包。")
     lines.append("")
     lines.append("## 指标表")
@@ -345,6 +401,32 @@ def render_report(result: dict[str, Any]) -> str:
         lines.append(f"- selected token `timestamp` inversions: {selected['physical_timestamp_inversions']}")
         lines.append(f"- selected token max `timestamp` backstep: {fmt_ms(selected['physical_timestamp_max_back_ms'])}")
         lines.append("")
+        lines.append("**timestamp 倒退实例（selected token, physical received order）**")
+        lines.append("")
+        lines.append("这些例子展示的是：下一行的 `timestamp_received` 没有倒退，但 `timestamp` 比上一行更早。")
+        lines.append("")
+        lines.append("| back | recv gap | prev row | prev received | prev timestamp | prev event | current row | current received | current timestamp | current event |")
+        lines.append("| ---: | ---: | ---: | --- | --- | --- | ---: | --- | --- | --- |")
+        for example in selected["timestamp_inversion_examples"]:
+            prev = example["previous"]
+            curr = example["current"]
+            prev_event = f"{prev['event_type']} {prev['side']} {prev['price']} size={prev['size']}"
+            curr_event = f"{curr['event_type']} {curr['side']} {curr['price']} size={curr['size']}"
+            lines.append(
+                "| {back} | {gap} | {prev_row} | {prev_recv} | {prev_ts} | {prev_event} | {curr_row} | {curr_recv} | {curr_ts} | {curr_event} |".format(
+                    back=fmt_ms(example["back_ms"]),
+                    gap=fmt_ms(example["received_gap_ms"]),
+                    prev_row=prev["row"],
+                    prev_recv=prev["timestamp_received"],
+                    prev_ts=prev["timestamp"],
+                    prev_event=prev_event,
+                    curr_row=curr["row"],
+                    curr_recv=curr["timestamp_received"],
+                    curr_ts=curr["timestamp"],
+                    curr_event=curr_event,
+                )
+            )
+        lines.append("")
         lines.append("**batch / snapshot**")
         lines.append("")
         lines.append(f"- price_change rows: {physical_batch.get('price_change_rows')}")
@@ -376,7 +458,7 @@ def render_report(result: dict[str, Any]) -> str:
     lines.append("- schema 缺少 sequence/message id：无法用单调序列直接判定 WS 漏包。")
     lines.append("- 全 event parquet 物理顺序存在小时级 `timestamp_received` 倒退；结合选中 token 无倒退，更像 event parquet 由多个 market/token 分块拼接，不是单 token WS 流乱序。")
     lines.append("- 选中 token `timestamp_received` 无倒退：本次回测 token 的接收顺序本身没有乱。")
-    lines.append("- 选中 token `timestamp` 有大量倒退：事件时间到达顺序不是严格单调，回放不能只假设 event time 完全有序。")
+    lines.append("- 选中 token `timestamp` 有大量倒退：按收到顺序看，源侧 event timestamp 不是严格单调，回放不能只假设 event time 完全有序。")
     lines.append("- 同 key 多行 batch 大量存在；物理顺序有少量 split key，但当前 replay sort 后 split key 为 0。")
     lines.append("- source hourly files 连续：没有小时级 coverage 缺口。")
     lines.append("")
