@@ -119,6 +119,10 @@ def main() -> None:
             "price_change_batch_compared",
             "price_change_batch_mismatches",
             "price_change_batch_mismatch_rate",
+            "raw_snapshot_pairs",
+            "raw_snapshot_bbo_mismatches",
+            "raw_snapshot_bbo_mismatch_rate",
+            "same_message_snapshot_pairs",
             "snapshot_pairs",
             "snapshot_bbo_mismatches",
             "snapshot_bbo_mismatch_rate",
@@ -154,6 +158,16 @@ def main() -> None:
                 ],
                 "price_change_batch_mismatch_rate": summary["replay_quality"]["pmxt_derived_bbo_diagnostic"][
                     "price_change_batch_mismatch_rate"
+                ],
+                "raw_snapshot_pairs": summary["replay_quality"]["snapshot_alignment"]["raw_snapshot_pairs"],
+                "raw_snapshot_bbo_mismatches": summary["replay_quality"]["snapshot_alignment"][
+                    "raw_snapshot_bbo_mismatches"
+                ],
+                "raw_snapshot_bbo_mismatch_rate": summary["replay_quality"]["snapshot_alignment"][
+                    "raw_snapshot_bbo_mismatch_rate"
+                ],
+                "same_message_snapshot_pairs": summary["replay_quality"]["snapshot_alignment"][
+                    "same_message_snapshot_pairs"
                 ],
                 "snapshot_pairs": summary["replay_quality"]["snapshot_alignment"]["snapshot_pairs"],
                 "snapshot_bbo_mismatches": summary["replay_quality"]["snapshot_alignment"][

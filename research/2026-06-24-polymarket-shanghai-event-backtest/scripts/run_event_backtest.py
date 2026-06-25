@@ -239,6 +239,22 @@ def bbo_equal(left: tuple[float | None, float | None], right: tuple[float | None
     )
 
 
+def normalize_pmxt_bbo(best_bid: float | None, best_ask: float | None) -> tuple[float | None, float | None]:
+    """Normalize PMXT diagnostic BBO sentinels without changing the replayed book."""
+    if best_bid is not None and best_bid <= PRICE_EPSILON:
+        best_bid = None
+    if best_ask is not None and best_ask >= 1.0 - PRICE_EPSILON:
+        best_ask = None
+    return best_bid, best_ask
+
+
+def diagnostic_bbo_equal(
+    local_bbo: tuple[float | None, float | None],
+    pmxt_bbo: tuple[float | None, float | None],
+) -> bool:
+    return bbo_equal(local_bbo, normalize_pmxt_bbo(*pmxt_bbo))
+
+
 def update_book_from_price_change(
     bids: dict[float, float],
     asks: dict[float, float],
@@ -363,7 +379,10 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     if df.empty:
         raise SystemExit(f"no parquet rows found for token_id={selection.token_id}")
     df["_row"] = range(len(df))
-    df = df.sort_values(["timestamp_received", "timestamp", "_row"], kind="mergesort")
+    # `timestamp` is the exchange/event time and should drive replay order.
+    # `timestamp_received` is still part of the price_change batch key and is
+    # used here as a stable tie-breaker for rows with the same event time.
+    df = df.sort_values(["timestamp", "timestamp_received", "_row"], kind="mergesort")
 
     bids: dict[float, float] = {}
     asks: dict[float, float] = {}
@@ -399,9 +418,21 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
 
     price_change_batch_compared = 0
     price_change_batch_mismatches = 0
+    rows = list(df.itertuples(index=False))
 
     def price_change_batch_key(row: Any) -> tuple[Any, Any, Any, Any, Any]:
         return (row.timestamp_received, row.timestamp, row.market, row.asset_id, row.event_type)
+
+    def message_key(row: Any) -> tuple[Any, Any, Any, Any]:
+        return (row.timestamp_received, row.timestamp, row.market, row.asset_id)
+
+    price_change_message_keys = {
+        message_key(row) for row in rows if row.event_type == "price_change"
+    }
+    same_message_snapshot_pairs = 0
+    raw_snapshot_pairs = 0
+    raw_snapshot_bbo_mismatches = 0
+    raw_snapshot_full_book_mismatches = 0
 
     def update_replayed_bbo() -> tuple[float | None, float | None]:
         nonlocal final_bid, final_ask, quote_bid, quote_ask
@@ -501,7 +532,6 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
-    rows = list(df.itertuples(index=False))
     i = 0
     while i < len(rows):
         row = rows[i]
@@ -535,11 +565,9 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             best_bid, best_ask = update_replayed_bbo()
             pmxt_bid = as_float(getattr(batch[-1], "best_bid", None))
             pmxt_ask = as_float(getattr(batch[-1], "best_ask", None))
-            if pmxt_bid is not None and pmxt_ask is not None:
+            if pmxt_bid is not None or pmxt_ask is not None:
                 price_change_batch_compared += 1
-                if best_bid is None or best_ask is None:
-                    price_change_batch_mismatches += 1
-                elif abs(best_bid - pmxt_bid) > PRICE_EPSILON or abs(best_ask - pmxt_ask) > PRICE_EPSILON:
+                if not diagnostic_bbo_equal((best_bid, best_ask), (pmxt_bid, pmxt_ask)):
                     price_change_batch_mismatches += 1
             record_book_sanity(best_bid, best_ask)
             maybe_run_book_strategy(ts, best_bid, best_ask)
@@ -550,11 +578,23 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             next_bids = parse_levels(row.bids)
             next_asks = parse_levels(row.asks)
             if initialized:
-                snapshot_pairs += 1
-                if not bbo_equal(best_bid_ask(bids, asks), best_bid_ask(next_bids, next_asks)):
-                    snapshot_bbo_mismatches += 1
-                if not books_equal(bids, next_bids) or not books_equal(asks, next_asks):
-                    snapshot_full_book_mismatches += 1
+                raw_snapshot_pairs += 1
+                local_bbo = best_bid_ask(bids, asks)
+                snapshot_bbo = best_bid_ask(next_bids, next_asks)
+                raw_bbo_mismatch = not bbo_equal(local_bbo, snapshot_bbo)
+                raw_full_book_mismatch = not books_equal(bids, next_bids) or not books_equal(asks, next_asks)
+                if raw_bbo_mismatch:
+                    raw_snapshot_bbo_mismatches += 1
+                if raw_full_book_mismatch:
+                    raw_snapshot_full_book_mismatches += 1
+                if message_key(row) in price_change_message_keys:
+                    same_message_snapshot_pairs += 1
+                else:
+                    snapshot_pairs += 1
+                    if raw_bbo_mismatch:
+                        snapshot_bbo_mismatches += 1
+                    if raw_full_book_mismatch:
+                        snapshot_full_book_mismatches += 1
             bids = next_bids
             asks = next_asks
             initialized = True
@@ -738,6 +778,12 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     snapshot_full_book_mismatch_rate = None
     if snapshot_pairs:
         snapshot_full_book_mismatch_rate = snapshot_full_book_mismatches / snapshot_pairs
+    raw_snapshot_bbo_mismatch_rate = None
+    if raw_snapshot_pairs:
+        raw_snapshot_bbo_mismatch_rate = raw_snapshot_bbo_mismatches / raw_snapshot_pairs
+    raw_snapshot_full_book_mismatch_rate = None
+    if raw_snapshot_pairs:
+        raw_snapshot_full_book_mismatch_rate = raw_snapshot_full_book_mismatches / raw_snapshot_pairs
     trade_off_book_rate = None
     if trades_checked:
         trade_off_book_rate = trades_off_book / trades_checked
@@ -790,13 +836,20 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "replay_events_after_initial_book": replay_events,
             "skipped_before_initial_book": skipped_before_book,
             "pmxt_derived_bbo_diagnostic": {
-                "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth.",
+                "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth. Boundary best_ask>=1.0 and best_bid<=0.0 are normalized as missing quotes for diagnostics only.",
                 "price_change_batch_compared": price_change_batch_compared,
                 "price_change_batch_mismatches": price_change_batch_mismatches,
                 "price_change_batch_mismatch_rate": price_change_batch_mismatch_rate,
                 "bbo_mismatch_warn_threshold": BBO_MISMATCH_WARN_THRESHOLD,
             },
             "snapshot_alignment": {
+                "note": "Primary snapshot mismatch rates exclude book snapshots that share the same timestamp_received/timestamp/market/asset_id key with price_change rows, because those are likely same-message checkpoints rather than independent next snapshots.",
+                "raw_snapshot_pairs": raw_snapshot_pairs,
+                "raw_snapshot_bbo_mismatches": raw_snapshot_bbo_mismatches,
+                "raw_snapshot_bbo_mismatch_rate": raw_snapshot_bbo_mismatch_rate,
+                "raw_snapshot_full_book_mismatches": raw_snapshot_full_book_mismatches,
+                "raw_snapshot_full_book_mismatch_rate": raw_snapshot_full_book_mismatch_rate,
+                "same_message_snapshot_pairs": same_message_snapshot_pairs,
                 "snapshot_pairs": snapshot_pairs,
                 "snapshot_bbo_mismatches": snapshot_bbo_mismatches,
                 "snapshot_bbo_mismatch_rate": snapshot_bbo_mismatch_rate,
