@@ -48,11 +48,11 @@ use crate::{
 /// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
 /// underflows the throttler's `limit - 1` indexing, and a zero `interval_ns` disables
 /// throttling entirely.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimit {
-    pub limit: NonZeroUsize,
-    pub interval_ns: NonZeroU64,
+    limit: NonZeroUsize,
+    interval_ns: NonZeroU64,
 }
 
 impl RateLimit {
@@ -79,6 +79,18 @@ impl RateLimit {
     pub fn new(limit: usize, interval_ns: u64) -> Self {
         Self::new_checked(limit, interval_ns).expect(FAILED)
     }
+
+    /// Maximum number of messages that can be sent within the interval.
+    #[must_use]
+    pub const fn limit(&self) -> usize {
+        self.limit.get()
+    }
+
+    /// Interval between messages in nanoseconds.
+    #[must_use]
+    pub const fn interval_ns(&self) -> u64 {
+        self.interval_ns.get()
+    }
 }
 
 /// Throttler rate limits messages by dropping or buffering them.
@@ -86,13 +98,9 @@ impl RateLimit {
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
 ///
-/// # Construction invariants
-///
-/// `limit` and `interval` must be non-zero. The constructor validates this and
-/// panics otherwise: a zero `limit` underflows the window indexing in
-/// [`Throttler::delta_next`] and divides by zero in [`Throttler::used`], and a
-/// zero `interval` disables throttling entirely. Prefer [`RateLimit`] to make
-/// degenerate values unrepresentable at the type level.
+/// The throttler stores its limit and interval as non-zero values from
+/// [`RateLimit`]. Internal counters, buffers, and timer state stay private so
+/// callers can observe state without breaking rate-limit invariants.
 ///
 /// # Callback contract
 ///
@@ -103,30 +111,17 @@ impl RateLimit {
 /// borrow-check protection. Route side effects through an asynchronous queue
 /// when in doubt.
 pub struct Throttler<T, F> {
-    /// The number of messages received.
-    pub recv_count: usize,
-    /// The number of messages sent.
-    pub sent_count: usize,
-    /// Whether the throttler is currently limiting the message rate.
-    pub is_limiting: bool,
-    /// The maximum number of messages that can be sent within the interval.
-    pub limit: usize,
-    /// The buffer of messages to be sent.
-    pub buffer: VecDeque<T>,
-    /// The timestamps of the sent messages.
-    pub timestamps: VecDeque<UnixNanos>,
-    /// The clock used to keep track of time.
-    pub clock: Rc<RefCell<dyn Clock>>,
-    /// The actor ID of the throttler.
-    pub actor_id: Ustr,
-    /// The interval between messages in nanoseconds.
-    interval: u64,
-    /// The unique timer name, namespaced as `{base}-{actor_id}` so that several
-    /// throttlers sharing one clock never collide on timer registration.
+    clock: Rc<RefCell<dyn Clock>>,
+    actor_id: Ustr,
     timer_name: Ustr,
-    /// The callback to send a message.
+    limit: NonZeroUsize,
+    interval_ns: NonZeroU64,
+    buffer: VecDeque<T>,
+    timestamps: VecDeque<UnixNanos>,
+    is_limiting: bool,
+    recv_count: usize,
+    sent_count: usize,
     output_send: F,
-    /// The callback to drop a message.
     output_drop: Option<F>,
 }
 
@@ -152,14 +147,15 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Throttler))
-            .field("recv_count", &self.recv_count)
-            .field("sent_count", &self.sent_count)
-            .field("is_limiting", &self.is_limiting)
-            .field("limit", &self.limit)
+            .field("actor_id", &self.actor_id)
+            .field("timer_name", &self.timer_name)
+            .field("limit", &self.limit())
+            .field("interval_ns", &self.interval_ns())
             .field("buffer", &self.buffer)
             .field("timestamps", &self.timestamps)
-            .field("interval", &self.interval)
-            .field("timer_name", &self.timer_name)
+            .field("is_limiting", &self.is_limiting)
+            .field("recv_count", &self.recv_count)
+            .field("sent_count", &self.sent_count)
             .finish()
     }
 }
@@ -170,42 +166,30 @@ where
 {
     /// Creates a new [`Throttler`] instance.
     ///
-    /// `limit` and `interval` must be non-zero. The timer is registered under a
-    /// name namespaced by `actor_id` so multiple throttlers can share one clock.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `limit` or `interval` is zero.
+    /// The timer is registered under a name namespaced by `actor_id` so multiple
+    /// throttlers can share one clock.
     #[inline]
     pub fn new(
-        limit: usize,
-        interval: u64,
+        rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: &str,
         output_send: F,
         output_drop: Option<F>,
         actor_id: Ustr,
     ) -> Self {
-        let limit_nonzero = NonZeroUsize::new(limit)
-            .ok_or_else(|| anyhow::anyhow!("Invalid limit: {limit} (must be non-zero)"))
-            .expect(FAILED);
-        let interval_nonzero = NonZeroU64::new(interval)
-            .ok_or_else(|| anyhow::anyhow!("Invalid interval: {interval} (must be non-zero)"))
-            .expect(FAILED);
-
         Self {
+            clock,
+            actor_id,
+            timer_name: Ustr::from(format!("{timer_name}-{actor_id}").as_str()),
+            limit: rate_limit.limit,
+            interval_ns: rate_limit.interval_ns,
+            buffer: VecDeque::new(),
+            timestamps: VecDeque::with_capacity(rate_limit.limit.get().min(1024)),
+            is_limiting: false,
             recv_count: 0,
             sent_count: 0,
-            is_limiting: false,
-            limit: limit_nonzero.get(),
-            buffer: VecDeque::new(),
-            timestamps: VecDeque::with_capacity(limit_nonzero.get().min(1024)),
-            clock,
-            interval: interval_nonzero.get(),
-            timer_name: Ustr::from(format!("{timer_name}-{actor_id}").as_str()),
             output_send,
             output_drop,
-            actor_id,
         }
     }
 
@@ -222,7 +206,7 @@ where
     ///
     /// Panics if setting the time alert on the internal clock fails.
     #[inline]
-    pub(crate) fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
+    pub(crate) fn set_timer(&self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
         let mut clock = self.clock.borrow_mut();
         if clock.timer_exists(&self.timer_name) {
@@ -240,8 +224,8 @@ where
     /// Uses saturating subtraction so a clock regression or a future-dated
     /// timestamp yields a zero delta instead of panicking.
     #[inline]
-    pub fn delta_next(&mut self) -> u64 {
-        match self.timestamps.get(self.limit - 1) {
+    pub fn delta_next(&self) -> u64 {
+        match self.timestamps.get(self.limit.get() - 1) {
             Some(ts) => {
                 let diff = self
                     .clock
@@ -249,7 +233,7 @@ where
                     .timestamp_ns()
                     .as_u64()
                     .saturating_sub(ts.as_u64());
-                self.interval.saturating_sub(diff)
+                self.interval_ns.get().saturating_sub(diff)
             }
             None => 0,
         }
@@ -284,11 +268,39 @@ impl<T, F> Throttler<T, F> {
     /// Counts sent messages whose timestamps fall inside the current interval
     /// window. Shared by [`Throttler::used`] and [`Throttler::try_reserve`].
     fn count_in_window(&self) -> usize {
-        let interval_start = self.clock.borrow().timestamp_ns().as_i64() - self.interval as i64;
+        let interval_start =
+            self.clock.borrow().timestamp_ns().as_i64() - self.interval_ns.get() as i64;
         self.timestamps
             .iter()
             .take_while(|&&ts| ts.as_i64() > interval_start)
             .count()
+    }
+
+    /// Maximum number of messages that can be sent within the interval.
+    #[inline]
+    pub const fn limit(&self) -> usize {
+        self.limit.get()
+    }
+
+    /// Interval between messages in nanoseconds.
+    #[inline]
+    pub const fn interval_ns(&self) -> u64 {
+        self.interval_ns.get()
+    }
+
+    /// Rate limit configured for this throttler.
+    #[inline]
+    pub const fn rate_limit(&self) -> RateLimit {
+        RateLimit {
+            limit: self.limit,
+            interval_ns: self.interval_ns,
+        }
+    }
+
+    /// Number of messages queued in buffer.
+    #[inline]
+    pub fn qsize(&self) -> usize {
+        self.buffer.len()
     }
 
     /// Fractional value of rate limit consumed in current interval.
@@ -298,13 +310,25 @@ impl<T, F> Throttler<T, F> {
             return 0.0;
         }
         let messages_in_current_interval = self.count_in_window();
-        (messages_in_current_interval as f64) / (self.limit as f64)
+        (messages_in_current_interval as f64) / (self.limit.get() as f64)
     }
 
-    /// Number of messages queued in buffer.
+    /// Whether the throttler is currently limiting the message rate.
     #[inline]
-    pub fn qsize(&self) -> usize {
-        self.buffer.len()
+    pub const fn is_limiting(&self) -> bool {
+        self.is_limiting
+    }
+
+    /// Number of messages received.
+    #[inline]
+    pub const fn recv_count(&self) -> usize {
+        self.recv_count
+    }
+
+    /// Number of messages sent.
+    #[inline]
+    pub const fn sent_count(&self) -> usize {
+        self.sent_count
     }
 }
 
@@ -345,7 +369,7 @@ where
     pub(crate) fn send_msg(&mut self, msg: T) {
         let now = self.clock.borrow().timestamp_ns();
 
-        if self.timestamps.len() >= self.limit {
+        if self.timestamps.len() >= self.limit.get() {
             self.timestamps.pop_back();
         }
         self.timestamps.push_front(now);
@@ -380,7 +404,7 @@ where
 
         let used = self.count_in_window();
 
-        if self.limit.saturating_sub(used) < count {
+        if self.limit.get().saturating_sub(used) < count {
             self.is_limiting = true;
 
             if delta > 0 {
@@ -392,7 +416,7 @@ where
         let now = self.clock.borrow().timestamp_ns();
 
         for _ in 0..count {
-            if self.timestamps.len() >= self.limit {
+            if self.timestamps.len() >= self.limit.get() {
                 self.timestamps.pop_back();
             }
             self.timestamps.push_front(now);
@@ -618,11 +642,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case(0, 1_000)]
+    #[case(1_000, 0)]
+    #[should_panic]
+    fn test_rate_limit_new_panics_on_zero(#[case] limit: usize, #[case] interval_ns: u64) {
+        let _ = RateLimit::new(limit, interval_ns);
+    }
+
+    #[rstest]
     fn test_rate_limit_new_checked_accepts_positive() {
         let rate = RateLimit::new_checked(5, 10).unwrap();
 
-        assert_eq!(rate.limit.get(), 5);
-        assert_eq!(rate.interval_ns.get(), 10);
+        assert_eq!(rate.limit(), 5);
+        assert_eq!(rate.interval_ns(), 10);
     }
 
     #[fixture]
@@ -633,13 +665,12 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns.get();
+        let interval = rate_limit.interval_ns();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit.get(),
-                rate_limit.interval_ns.get(),
+                rate_limit,
                 clock,
                 "buffer_timer",
                 output_send,
@@ -663,13 +694,12 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
         let rate_limit = RateLimit::new(5, 10);
-        let interval = rate_limit.interval_ns.get();
+        let interval = rate_limit.interval_ns();
         let actor_id = Ustr::from(UUID4::new().as_str());
 
         TestThrottler {
             throttler: Throttler::new(
-                rate_limit.limit.get(),
-                rate_limit.interval_ns.get(),
+                rate_limit,
                 clock,
                 "dropper_timer",
                 output_send,
@@ -964,25 +994,49 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0, 10)]
-    #[case(5, 0)]
-    fn test_new_panics_on_zero_limit_or_interval(#[case] limit: usize, #[case] interval: u64) {
+    fn test_new_preserves_rate_limit() {
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            Throttler::<u64, Box<dyn Fn(u64)>>::new(
-                limit,
-                interval,
-                clock,
-                "should_panic",
-                Box::new(|_| ()) as Box<dyn Fn(u64)>,
-                None,
-                Ustr::from("panic-actor"),
-            );
-        }));
-        assert!(
-            result.is_err(),
-            "expected panic for limit={limit} interval={interval}"
+        let rate_limit = RateLimit::new(5, 10);
+
+        let throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
+            rate_limit,
+            clock,
+            "rate_limit",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            Ustr::from("rate-limit-actor"),
         );
+
+        assert_eq!(throttler.rate_limit(), rate_limit);
+        assert_eq!(throttler.limit(), 5);
+        assert_eq!(throttler.interval_ns(), 10);
+    }
+
+    #[rstest]
+    fn test_debug_output_includes_identity_and_state() {
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let actor_id = Ustr::from("debug-actor");
+        let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
+            RateLimit::new(5, 10),
+            clock,
+            "debug_timer",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            actor_id,
+        );
+
+        throttler.send(42);
+
+        let debug = format!("{throttler:?}");
+        let timer_name = Ustr::from("debug_timer-debug-actor");
+
+        assert!(debug.contains(&format!("actor_id: {actor_id:?}")));
+        assert!(debug.contains(&format!("timer_name: {timer_name:?}")));
+        assert!(debug.contains("limit: 5"));
+        assert!(debug.contains("interval_ns: 10"));
+        assert!(debug.contains("is_limiting: false"));
+        assert!(debug.contains("recv_count: 1"));
+        assert!(debug.contains("sent_count: 1"));
     }
 
     #[rstest]
@@ -1014,8 +1068,7 @@ mod tests {
         let mk = |base: &str| -> SharedThrottler {
             let clock: Rc<RefCell<dyn Clock>> = Rc::clone(&clock) as Rc<RefCell<dyn Clock>>;
             Throttler::new(
-                5,
-                interval,
+                RateLimit::new(5, interval),
                 clock,
                 base,
                 Box::new(|_| ()) as Box<dyn Fn(u64)>,
@@ -1151,7 +1204,7 @@ mod tests {
             let now = throttler.clock.borrow().timestamp_ns().as_u64();
             let limit_filled_within_interval = throttler
                 .timestamps
-                .get(throttler.limit - 1)
+                .get(throttler.limit() - 1)
                 .is_some_and(|&ts| (now - ts.as_u64()) < interval);
             let expected_limiting = buffered_messages && limit_filled_within_interval;
             assert_eq!(throttler.is_limiting, expected_limiting);
@@ -1212,8 +1265,7 @@ mod tests {
 
             let interval = 10u64;
             let throttler = Throttler::new(
-                5,
-                interval,
+                RateLimit::new(5, interval),
                 Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
                 "prop_drop_timer",
                 sent_cb,

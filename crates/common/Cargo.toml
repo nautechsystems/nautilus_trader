@@ -42,7 +42,10 @@ python = [
 live = ["tokio"]
 simulation = ["live", "madsim", "nautilus-core/simulation"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 capnp = [
   "dep:capnp",
   "dep:nautilus-serialization",
