@@ -168,6 +168,11 @@ name = "logging"
 path = "benches/logging.rs"
 harness = false
 
+[[bench]]
+name = "throttler"
+path = "benches/throttler.rs"
+harness = false
+
 # Run with `cargo run -p nautilus-common --features live --example greeks_actor_example`
 [[example]]
 name = "greeks_actor_example"

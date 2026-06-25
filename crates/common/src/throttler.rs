@@ -43,6 +43,8 @@ use crate::{
     timer::{TimeEvent, TimeEventCallback},
 };
 
+const MAX_INITIAL_TIMESTAMPS_CAPACITY: usize = 1024;
+
 /// Represents a throttling limit per interval.
 ///
 /// The non-zero field types make a degenerate rate limit unrepresentable: a zero `limit`
@@ -116,6 +118,7 @@ pub struct Throttler<T, F> {
     timer_name: Ustr,
     limit: NonZeroUsize,
     interval_ns: NonZeroU64,
+    large_limit: bool,
     buffer: VecDeque<T>,
     timestamps: VecDeque<UnixNanos>,
     is_limiting: bool,
@@ -183,8 +186,11 @@ where
             timer_name: Ustr::from(format!("{timer_name}-{actor_id}").as_str()),
             limit: rate_limit.limit,
             interval_ns: rate_limit.interval_ns,
+            large_limit: rate_limit.limit.get() > MAX_INITIAL_TIMESTAMPS_CAPACITY,
             buffer: VecDeque::new(),
-            timestamps: VecDeque::with_capacity(rate_limit.limit.get().min(1024)),
+            timestamps: VecDeque::with_capacity(
+                rate_limit.limit.get().min(MAX_INITIAL_TIMESTAMPS_CAPACITY),
+            ),
             is_limiting: false,
             recv_count: 0,
             sent_count: 0,
@@ -208,6 +214,11 @@ where
     #[inline]
     pub(crate) fn set_timer(&self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
+        self.set_timer_after(delta, callback);
+    }
+
+    #[inline]
+    fn set_timer_after(&self, delta: u64, callback: Option<TimeEventCallback>) {
         let mut clock = self.clock.borrow_mut();
         if clock.timer_exists(&self.timer_name) {
             clock.cancel_timer(&self.timer_name);
@@ -233,6 +244,17 @@ where
                     .timestamp_ns()
                     .as_u64()
                     .saturating_sub(ts.as_u64());
+                self.interval_ns.get().saturating_sub(diff)
+            }
+            None => 0,
+        }
+    }
+
+    #[inline]
+    fn delta_next_at(&self, now: UnixNanos) -> u64 {
+        match self.timestamps.get(self.limit.get() - 1) {
+            Some(ts) => {
+                let diff = now.as_u64().saturating_sub(ts.as_u64());
                 self.interval_ns.get().saturating_sub(diff)
             }
             None => 0,
@@ -267,9 +289,20 @@ impl<T, F> Throttler<T, F> {
 
     /// Counts sent messages whose timestamps fall inside the current interval
     /// window. Shared by [`Throttler::used`] and [`Throttler::try_reserve`].
-    fn count_in_window(&self) -> usize {
-        let interval_start =
-            self.clock.borrow().timestamp_ns().as_i64() - self.interval_ns.get() as i64;
+    fn count_in_window(&self, now: UnixNanos) -> usize {
+        let interval_start = now.as_i64() - self.interval_ns.get() as i64;
+
+        if let Some(oldest) = self.timestamps.back()
+            && oldest.as_i64() > interval_start
+        {
+            return self.timestamps.len();
+        }
+
+        match self.timestamps.front() {
+            Some(newest) if newest.as_i64() > interval_start => {}
+            _ => return 0,
+        }
+
         self.timestamps
             .iter()
             .take_while(|&&ts| ts.as_i64() > interval_start)
@@ -309,7 +342,7 @@ impl<T, F> Throttler<T, F> {
         if self.timestamps.is_empty() {
             return 0.0;
         }
-        let messages_in_current_interval = self.count_in_window();
+        let messages_in_current_interval = self.count_in_window(self.clock.borrow().timestamp_ns());
         (messages_in_current_interval as f64) / (self.limit.get() as f64)
     }
 
@@ -393,7 +426,8 @@ where
             return true;
         }
 
-        let delta = self.delta_next();
+        let now = self.clock.borrow().timestamp_ns();
+        let delta = self.delta_next_at(now);
         if self.is_limiting && delta == 0 && self.buffer.is_empty() {
             self.is_limiting = false;
         }
@@ -402,18 +436,16 @@ where
             return false;
         }
 
-        let used = self.count_in_window();
+        let used = self.count_in_window(now);
 
         if self.limit.get().saturating_sub(used) < count {
             self.is_limiting = true;
 
             if delta > 0 {
-                self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
+                self.set_timer_after(delta, Some(throttler_resume::<T, F>(self.actor_id)));
             }
             return false;
         }
-
-        let now = self.clock.borrow().timestamp_ns();
 
         for _ in 0..count {
             if self.timestamps.len() >= self.limit.get() {
@@ -434,7 +466,8 @@ where
             if !self.is_limiting {
                 log::debug!("Limiting");
                 let cb = Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback());
-                self.set_timer(cb);
+                let delta = self.delta_next();
+                self.set_timer_after(delta, cb);
                 self.is_limiting = true;
             }
         } else {
@@ -446,7 +479,8 @@ where
 
             if !self.is_limiting {
                 log::debug!("Limiting");
-                self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
+                let delta = self.delta_next();
+                self.set_timer_after(delta, Some(throttler_resume::<T, F>(self.actor_id)));
                 self.is_limiting = true;
             }
         }
@@ -460,7 +494,16 @@ where
     {
         self.recv_count += 1;
 
-        let delta = self.delta_next();
+        if self.large_limit && self.timestamps.len() < self.limit.get() && !self.is_limiting {
+            self.send_msg(msg);
+            return;
+        }
+
+        let delta = if self.is_limiting && !self.buffer.is_empty() {
+            0
+        } else {
+            self.delta_next()
+        };
 
         // Auto-reset when the rate window has passed but no timer callback
         // arrived (e.g. for embedded throttlers not registered as actors).
@@ -586,7 +629,7 @@ mod tests {
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use super::{RateLimit, Throttler, ThrottlerProcess};
+    use super::{MAX_INITIAL_TIMESTAMPS_CAPACITY, RateLimit, Throttler, ThrottlerProcess};
     use crate::{
         clock::{Clock, TestClock},
         msgbus::{self, Handler},
@@ -806,6 +849,58 @@ mod tests {
         // not armed to avoid an immediate-fire zero-delta timer. The next call
         // re-evaluates via the auto-reset branch.
         assert_eq!(timer_count_with_prefix(throttler, "buffer_timer"), 0);
+
+        assert!(throttler.try_reserve(2));
+
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.recv_count, 8);
+        assert_eq!(throttler.sent_count, 5);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(!throttler.is_limiting);
+    }
+
+    #[rstest]
+    fn test_try_reserve_rejects_batch_larger_than_limit() {
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
+            RateLimit::new(5, 10),
+            clock,
+            "reserve_over_limit",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            Ustr::from("reserve-over-limit-actor"),
+        );
+
+        assert!(!throttler.try_reserve(6));
+
+        assert_eq!(throttler.used(), 0.0);
+        assert_eq!(throttler.recv_count, 6);
+        assert_eq!(throttler.sent_count, 0);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_try_reserve_zero_count_is_noop() {
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
+            RateLimit::new(5, 10),
+            clock,
+            "reserve_zero",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            Ustr::from("reserve-zero-actor"),
+        );
+
+        assert!(throttler.try_reserve(0));
+
+        assert_eq!(throttler.used(), 0.0);
+        assert_eq!(throttler.recv_count, 0);
+        assert_eq!(throttler.sent_count, 0);
+        assert_eq!(throttler.qsize(), 0);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
     }
 
     #[rstest]
@@ -991,6 +1086,71 @@ mod tests {
         assert!(!throttler.is_limiting);
         assert_eq!(throttler.recv_count, 7);
         assert_eq!(throttler.sent_count, 6);
+    }
+
+    #[rstest]
+    fn test_embedded_dropping_auto_resets_after_window_without_actor_callback() {
+        let clock: Rc<RefCell<TestClock>> = Rc::new(RefCell::new(TestClock::new()));
+        let sent = Rc::new(RefCell::new(0));
+        let dropped = Rc::new(RefCell::new(0));
+
+        let sent_cb = {
+            let sent = Rc::clone(&sent);
+            Box::new(move |_| *sent.borrow_mut() += 1) as Box<dyn Fn(u64)>
+        };
+        let drop_cb = {
+            let dropped = Rc::clone(&dropped);
+            Box::new(move |_| *dropped.borrow_mut() += 1) as Box<dyn Fn(u64)>
+        };
+
+        let mut throttler = Throttler::new(
+            RateLimit::new(5, 10),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            "embedded_drop_timer",
+            sent_cb,
+            Some(drop_cb),
+            Ustr::from("embedded-drop-actor"),
+        );
+
+        for _ in 0..6 {
+            throttler.send(42);
+        }
+        let events = clock.borrow_mut().advance_time(10.into(), true);
+        throttler.send(42);
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(*sent.borrow(), 6);
+        assert_eq!(*dropped.borrow(), 1);
+        assert_eq!(throttler.recv_count, 7);
+        assert_eq!(throttler.sent_count, 6);
+        assert!(!throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_large_limit_fast_path_admits_until_limit_then_limits() {
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let limit = MAX_INITIAL_TIMESTAMPS_CAPACITY + 1;
+        let mut throttler = Throttler::<u64, Box<dyn Fn(u64)>>::new(
+            RateLimit::new(limit, 10),
+            clock,
+            "large_limit_timer",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            Ustr::from("large-limit-actor"),
+        );
+
+        for _ in 0..limit {
+            throttler.send(42);
+        }
+        throttler.send(42);
+
+        assert_eq!(throttler.used(), 1.0);
+        assert_eq!(throttler.recv_count, limit + 1);
+        assert_eq!(throttler.sent_count, limit);
+        assert_eq!(throttler.qsize(), 1);
+        assert!(throttler.is_limiting);
+        assert_eq!(throttler.clock.borrow().timer_count(), 1);
     }
 
     #[rstest]
