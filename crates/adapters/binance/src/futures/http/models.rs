@@ -942,6 +942,7 @@ impl BinanceFuturesAccountInfo {
             AccountType::Margin,
             balances,
             margins,
+            vec![],
             true, // is_reported
             UUID4::new(),
             ts_event,

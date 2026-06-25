@@ -1008,6 +1008,7 @@ mod tests {
             AccountType::Cash,
             vec![],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             UnixNanos::from(1),
@@ -1186,6 +1187,7 @@ mod tests {
             AccountType::Cash,
             vec![],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             UnixNanos::from(1),
@@ -1356,6 +1358,7 @@ mod tests {
             let account = AccountState::new(
                 AccountId::from("SIM-001"),
                 AccountType::Cash,
+                vec![],
                 vec![],
                 vec![],
                 true,

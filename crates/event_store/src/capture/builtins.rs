@@ -2950,6 +2950,7 @@ mod tests {
                 Money::from("1000000 USD"),
             )],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             UnixNanos::from(110),

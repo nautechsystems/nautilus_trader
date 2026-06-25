@@ -332,6 +332,7 @@ impl BinanceFuturesExecutionClient {
             account_type,
             balances,
             margins,
+            vec![],
             true, // reported
             UUID4::new(),
             ts_now,

@@ -16,7 +16,7 @@ use rstest::fixture;
 
 use crate::{
     identifiers::stubs::instrument_id_btc_usdt,
-    types::{AccountBalance, MarginBalance, Money},
+    types::{AccountBalance, BorrowBalance, MarginBalance, Money},
 };
 
 #[fixture]
@@ -33,4 +33,11 @@ pub fn stub_margin_balance() -> MarginBalance {
     let maintenance = Money::from("20000 USD");
     let instrument = instrument_id_btc_usdt();
     MarginBalance::new(initial, maintenance, Some(instrument))
+}
+
+#[fixture]
+pub fn stub_borrow_balance() -> BorrowBalance {
+    let borrowed = Money::from("1000 USDT");
+    let accrued_interest = Money::from("5 USDT");
+    BorrowBalance::new(borrowed, accrued_interest)
 }

@@ -1126,6 +1126,7 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
             Money::from("100.0 USDT"),
         )],
         vec![],
+        vec![],
         true,
         nautilus_core::UUID4::new(),
         UnixNanos::default(),

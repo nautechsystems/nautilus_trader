@@ -3096,6 +3096,7 @@ mod tests {
             AccountType::Cash,
             vec![],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             0.into(),

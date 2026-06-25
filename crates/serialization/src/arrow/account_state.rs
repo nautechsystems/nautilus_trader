@@ -29,6 +29,7 @@ const ACCOUNT_STATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("base_currency", true),
     JsonFieldSpec::utf8_json("balances", false),
     JsonFieldSpec::utf8_json("margins", false),
+    JsonFieldSpec::utf8_json("borrows", false),
     JsonFieldSpec::boolean("is_reported", false),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
@@ -86,6 +87,7 @@ mod tests {
         assert_eq!(decoded[0].account_id, state.account_id);
         assert_eq!(decoded[0].balances, state.balances);
         assert_eq!(decoded[0].margins, state.margins);
+        assert_eq!(decoded[0].borrows, state.borrows);
         assert_eq!(decoded[0].base_currency, state.base_currency);
     }
 }

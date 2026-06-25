@@ -46,6 +46,7 @@ impl Default for CashAccount {
                 Money::from("1000000 USD"),
             )],
             vec![],
+            vec![],
             true,
             uuid4(),
             0.into(),

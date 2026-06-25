@@ -362,7 +362,8 @@ pub fn parse_futures_account_update(
         AccountType::Margin,
         balances,
         vec![], // Margins handled separately
-        true,   // is_reported
+        vec![],
+        true, // is_reported
         UUID4::new(),
         ts_event,
         ts_init,

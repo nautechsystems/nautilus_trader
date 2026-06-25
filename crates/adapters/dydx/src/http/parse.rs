@@ -1548,6 +1548,7 @@ pub fn parse_account_state(
         AccountType::Margin, // dYdX uses cross-margin
         balances,
         margins,
+        vec![],
         true, // is_reported - comes from venue
         UUID4::new(),
         ts_event,
@@ -1666,6 +1667,7 @@ pub fn parse_account_state_from_http(
         AccountType::Margin,
         balances,
         margins,
+        vec![],
         true, // is_reported - comes from venue
         UUID4::new(),
         ts_event,

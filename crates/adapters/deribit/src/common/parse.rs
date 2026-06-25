@@ -713,6 +713,7 @@ pub fn parse_account_state(
         account_type,
         balances,
         margins,
+        vec![],
         is_reported,
         UUID4::new(),
         ts_event,
@@ -789,6 +790,7 @@ pub fn parse_portfolio_to_account_state(
         account_type,
         balances,
         margins,
+        vec![],
         is_reported,
         UUID4::new(),
         ts_init, // Use ts_init for both since we don't have server timestamp in portfolio msg

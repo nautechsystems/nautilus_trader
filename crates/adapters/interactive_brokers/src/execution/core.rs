@@ -1308,6 +1308,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                         account_type,
                         balances,
                         margins,
+                        vec![],
                         true,
                         UUID4::new(),
                         ts_event,

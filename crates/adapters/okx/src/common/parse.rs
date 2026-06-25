@@ -51,7 +51,7 @@ use nautilus_model::{
         CryptoPerpetual, CurrencyPair, InstrumentAny,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, BorrowBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, de::DeserializeOwned};
@@ -2647,6 +2647,7 @@ pub fn parse_account_state(
     ts_init: UnixNanos,
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
+    let mut borrows = Vec::new();
 
     for b in &okx_account.details {
         // Skip balances with empty or whitespace-only currency codes
@@ -2658,6 +2659,25 @@ pub fn parse_account_state(
 
         // Get or create currency (consistent with instrument parsing)
         let currency = Currency::get_or_create_crypto_with_context(ccy_str, Some("balance detail"));
+
+        if let Some(borrowed) = parse_balance_field(&b.liab, "liab", ccy_str)
+            && !borrowed.is_zero()
+        {
+            let interest =
+                parse_balance_field(&b.interest, "interest", ccy_str).unwrap_or(Decimal::ZERO);
+
+            if let Ok(borrowed) = Money::from_decimal(borrowed, currency)
+                && let Ok(accrued_interest) = Money::from_decimal(interest, currency)
+            {
+                borrows.push(BorrowBalance::new(borrowed, accrued_interest));
+            } else {
+                log::warn!(
+                    "Skipping borrow detail for {ccy_str} with invalid liab '{}' / interest '{}'",
+                    b.liab,
+                    b.interest
+                );
+            }
+        }
 
         // Parse balance values, skip if invalid
         let Some(total) = parse_balance_field(&b.cash_bal, "cash_bal", ccy_str) else {
@@ -2739,6 +2759,7 @@ pub fn parse_account_state(
         account_type,
         balances,
         margins,
+        borrows,
         is_reported,
         event_id,
         ts_event,

@@ -232,6 +232,7 @@ mod tests {
                 Money::from("1.0 BTC"),
             )],
             vec![],
+            vec![],
             true,
             nautilus_core::UUID4::new(),
             nautilus_core::UnixNanos::default(),

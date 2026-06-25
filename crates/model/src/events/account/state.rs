@@ -18,6 +18,7 @@ use std::{collections::HashMap, fmt::Display};
 use nautilus_core::{UUID4, UnixNanos};
 use serde::{Deserialize, Serialize};
 
+use crate::types::BorrowBalance;
 use crate::{
     enums::AccountType,
     identifiers::{AccountId, InstrumentId},
@@ -46,6 +47,8 @@ pub struct AccountState {
     pub balances: Vec<AccountBalance>,
     /// The margin balances in the account.
     pub margins: Vec<MarginBalance>,
+    /// The borrow balances in the account.
+    pub borrows: Vec<BorrowBalance>,
     /// Indicates if the account state is reported by the exchange
     /// (as opposed to system-calculated).
     pub is_reported: bool,
@@ -66,6 +69,7 @@ impl AccountState {
         account_type: AccountType,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
+        borrows: Vec<BorrowBalance>,
         is_reported: bool,
         event_id: UUID4,
         ts_event: UnixNanos,
@@ -78,6 +82,7 @@ impl AccountState {
             base_currency,
             balances,
             margins,
+            borrows,
             is_reported,
             event_id,
             ts_event,
@@ -85,20 +90,23 @@ impl AccountState {
         }
     }
 
-    /// Returns `true` if this account state has the same balances and margins as another.
+    /// Returns `true` if this account state has the same balances, margins and borrows
+    /// as another.
     ///
-    /// This compares all balances and margins for equality, returning `true` only if
-    /// all balances and margins are equal. If any balance or margin is different or
+    /// This compares all balances, margins and borrows for equality, returning `true`
+    /// only if all of them are equal. If any balance, margin or borrow is different or
     /// missing, returns `false`.
     ///
     /// # Note
     ///
     /// This method does not compare event IDs, timestamps, or other metadata - only
-    /// the actual balance and margin values.
+    /// the actual balance, margin and borrow values.
     #[must_use]
     pub fn has_same_balances_and_margins(&self, other: &Self) -> bool {
         // Quick check - if lengths differ, they can't be equal
-        if self.balances.len() != other.balances.len() || self.margins.len() != other.margins.len()
+        if self.balances.len() != other.balances.len()
+            || self.margins.len() != other.margins.len()
+            || self.borrows.len() != other.borrows.len()
         {
             return false;
         }
@@ -155,6 +163,31 @@ impl AccountState {
             }
         }
 
+        // Compare borrows by currency
+        let self_borrows: HashMap<Currency, &BorrowBalance> = self
+            .borrows
+            .iter()
+            .map(|borrow| (borrow.currency, borrow))
+            .collect();
+
+        let other_borrows: HashMap<Currency, &BorrowBalance> = other
+            .borrows
+            .iter()
+            .map(|borrow| (borrow.currency, borrow))
+            .collect();
+
+        // Check if all borrows are equal
+        for (currency, self_borrow) in &self_borrows {
+            match other_borrows.get(currency) {
+                Some(other_borrow) => {
+                    if self_borrow != other_borrow {
+                        return false;
+                    }
+                }
+                None => return false, // Currency missing in other
+            }
+        }
+
         true
     }
 }
@@ -163,7 +196,7 @@ impl Display for AccountState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], event_id={})",
+            "{}(account_id={}, account_type={}, base_currency={}, is_reported={}, balances=[{}], margins=[{}], borrows=[{}], event_id={})",
             stringify!(AccountState),
             self.account_id,
             self.account_type,
@@ -180,6 +213,11 @@ impl Display for AccountState {
             self.margins
                 .iter()
                 .map(|m| format!("{m}"))
+                .collect::<Vec<String>>()
+                .join(", "),
+            self.borrows
+                .iter()
+                .map(|b| format!("{b}"))
                 .collect::<Vec<String>>()
                 .join(", "),
             self.event_id
@@ -207,7 +245,7 @@ mod tests {
             account::stubs::{cash_account_state, margin_account_state},
         },
         identifiers::{AccountId, InstrumentId},
-        types::{AccountBalance, Currency, MarginBalance, Money},
+        types::{AccountBalance, BorrowBalance, Currency, MarginBalance, Money},
     };
 
     #[rstest]
@@ -224,7 +262,7 @@ mod tests {
             display,
             "AccountState(account_id=SIM-001, account_type=CASH, base_currency=USD, is_reported=true, \
             balances=[AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)], \
-            margins=[], event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
+            margins=[], borrows=[], event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
         );
     }
 
@@ -236,7 +274,7 @@ mod tests {
             "AccountState(account_id=SIM-001, account_type=MARGIN, base_currency=USD, is_reported=true, \
             balances=[AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)], \
             margins=[MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)], \
-            event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
+            borrows=[], event_id=16578139-a945-4b65-b46c-bc131a15d8e7)"
         );
     }
 
@@ -341,6 +379,53 @@ mod tests {
     }
 
     #[rstest]
+    fn test_has_same_balances_and_margins_when_different_borrow_amounts() {
+        let usd = Currency::USD();
+        let mut state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        state1.borrows = vec![BorrowBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(5.0, usd),
+        )];
+        // Same currency, different accrued interest
+        state2.borrows = vec![BorrowBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(10.0, usd),
+        )];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_different_borrow_currencies() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let mut state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        state1.borrows = vec![BorrowBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(5.0, usd),
+        )];
+        state2.borrows = vec![BorrowBalance::new(
+            Money::new(1000.0, eur),
+            Money::new(5.0, eur),
+        )];
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
+    fn test_has_same_balances_and_margins_when_missing_borrow() {
+        let usd = Currency::USD();
+        let state1 = margin_account_state();
+        let mut state2 = margin_account_state();
+        // Add an additional borrow to state2
+        state2.borrows.push(BorrowBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(5.0, usd),
+        ));
+        assert!(!state1.has_same_balances_and_margins(&state2));
+    }
+
+    #[rstest]
     fn test_has_same_balances_and_margins_with_empty_collections() {
         let account_id = AccountId::new("TEST-001");
         let event_id = UUID4::new();
@@ -352,6 +437,7 @@ mod tests {
             AccountType::Cash,
             vec![], // Empty balances
             vec![], // Empty margins
+            vec![], // Empty borrows
             true,
             event_id,
             ts_event,
@@ -364,6 +450,7 @@ mod tests {
             AccountType::Cash,
             vec![], // Empty balances
             vec![], // Empty margins
+            vec![], // Empty borrows
             true,
             UUID4::new(),       // Different event_id
             UnixNanos::from(3), // Different timestamps
@@ -412,11 +499,17 @@ mod tests {
             ),
         ];
 
+        let borrows = vec![BorrowBalance::new(
+            Money::new(1000.0, usd),
+            Money::new(5.0, usd),
+        )];
+
         let state1 = AccountState::new(
             account_id,
             AccountType::Margin,
             balances.clone(),
             margins.clone(),
+            borrows.clone(),
             true,
             event_id,
             ts_event,
@@ -429,6 +522,7 @@ mod tests {
             AccountType::Margin,
             balances,
             margins,
+            borrows,
             true,
             UUID4::new(),       // Different event_id
             UnixNanos::from(3), // Different timestamps
