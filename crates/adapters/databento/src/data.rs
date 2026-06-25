@@ -37,7 +37,8 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse,
         data::{
-            BarsResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
+            BarsResponse, BookDeltasResponse, BookDepthResponse, InstrumentResponse,
+            InstrumentsResponse, QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth,
             RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
             SubscribeBookDeltas, SubscribeInstrument, SubscribeInstrumentStatus, SubscribeQuotes,
             SubscribeTrades, TradesResponse, UnsubscribeBookDeltas, UnsubscribeInstrumentStatus,
@@ -47,6 +48,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, Params, UnixNanos,
+    datetime::{NANOSECONDS_IN_DAY, datetime_to_unix_nanos},
     string::secret::REDACTED,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -306,6 +308,17 @@ impl DatabentoDataClient {
         channels.clear();
     }
 
+    fn abort_active_tasks(&self) {
+        let handles = {
+            let mut task_handles = self.task_handles.lock().expect(MUTEX_POISONED);
+            std::mem::take(&mut *task_handles)
+        };
+
+        for handle in handles {
+            handle.abort();
+        }
+    }
+
     /// Initializes the live feed handler for streaming data.
     fn initialize_live_feed(
         &self,
@@ -313,6 +326,8 @@ impl DatabentoDataClient {
     ) -> tokio::sync::mpsc::UnboundedSender<HandlerCommand> {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (msg_tx, msg_rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed_dataset = dataset.clone();
+        let feed_channels = self.cmd_channels.clone();
 
         let mut feed_handler = DatabentoFeedHandler::new(
             self.config.credential.clone(),
@@ -330,6 +345,10 @@ impl DatabentoDataClient {
             if let Err(e) = feed_handler.run().await {
                 log::error!("Feed handler error: {e}");
             }
+            feed_channels
+                .lock()
+                .expect(MUTEX_POISONED)
+                .remove(&feed_dataset);
         });
 
         let cancellation_token = self.cancellation_token.clone();
@@ -444,6 +463,8 @@ impl DataClient for DatabentoDataClient {
         self.send_close_to_active_feeds();
         self.clear_feed_channels();
         self.cancellation_token.cancel();
+        self.abort_active_tasks();
+
         self.cancellation_token = CancellationToken::new();
 
         self.is_connected.store(false, Ordering::Relaxed);
@@ -726,16 +747,13 @@ impl DataClient for DatabentoDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = request.venue.unwrap_or(*DATABENTO_VENUE);
-        let start_nanos = request
-            .start
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
-        let end_nanos = request
-            .end
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
         let request_params = request.params;
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
         get_runtime().spawn(async move {
-            let query_params = instruments_query_params(dataset, start_nanos, end_nanos);
+            let query_params = instruments_query_params(dataset, query_start, query_end);
 
             match historical_client.get_range_instruments(query_params).await {
                 Ok(instruments) => {
@@ -758,6 +776,18 @@ impl DataClient for DatabentoDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request instruments: {e}");
+                    let response = DataResponse::Instruments(InstrumentsResponse::new(
+                        request_id,
+                        client_id,
+                        venue,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty instruments");
                 }
             }
         });
@@ -774,17 +804,14 @@ impl DataClient for DatabentoDataClient {
         let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = request
-            .start
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
-        let end_nanos = request
-            .end
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
         let request_params = request.params;
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
         get_runtime().spawn(async move {
             let query_params =
-                instrument_query_params(dataset, instrument_id, start_nanos, end_nanos);
+                instrument_query_params(dataset, instrument_id, query_start, query_end);
 
             match historical_client.get_range_instruments(query_params).await {
                 Ok(instruments) => {
@@ -829,24 +856,31 @@ impl DataClient for DatabentoDataClient {
         let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = request
-            .start
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
-        let end_nanos = request
-            .end
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
         let limit = request.limit.map(|limit| limit.get() as u64);
         let request_params = request.params;
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let schema = schema_from_params(request_params.as_ref(), dbn::Schema::Mbp1, QUOTE_SCHEMAS)?
             .to_string();
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
         get_runtime().spawn(async move {
+            seed_price_precision_if_needed(
+                &historical_client,
+                dataset.as_str(),
+                instrument_id,
+                query_start,
+                query_end,
+                price_precision,
+            )
+            .await;
+
             let params = RangeQueryParams {
                 dataset,
                 symbols,
-                start: start_nanos.unwrap_or_default(),
-                end: end_nanos,
+                start: query_start,
+                end: query_end,
                 limit,
                 price_precision,
             };
@@ -874,6 +908,18 @@ impl DataClient for DatabentoDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request quotes: {e}");
+                    let response = DataResponse::Quotes(QuotesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty quotes");
                 }
             }
         });
@@ -891,25 +937,32 @@ impl DataClient for DatabentoDataClient {
         let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
-        let start_nanos = request
-            .start
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
-        let end_nanos = request
-            .end
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
         let limit = request.limit.map(|limit| limit.get() as u64);
         let request_params = request.params;
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let schema =
             schema_from_params(request_params.as_ref(), dbn::Schema::Trades, TRADE_SCHEMAS)?
                 .to_string();
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
         get_runtime().spawn(async move {
+            seed_price_precision_if_needed(
+                &historical_client,
+                dataset.as_str(),
+                instrument_id,
+                query_start,
+                query_end,
+                price_precision,
+            )
+            .await;
+
             let params = RangeQueryParams {
                 dataset,
                 symbols,
-                start: start_nanos.unwrap_or_default(),
-                end: end_nanos,
+                start: query_start,
+                end: query_end,
                 limit,
                 price_precision,
             };
@@ -937,6 +990,18 @@ impl DataClient for DatabentoDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request trades: {e}");
+                    let response = DataResponse::Trades(TradesResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty trades");
                 }
             }
         });
@@ -955,23 +1020,30 @@ impl DataClient for DatabentoDataClient {
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let bar_type = request.bar_type;
-        let start_nanos = request
-            .start
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
-        let end_nanos = request
-            .end
-            .map(|dt| UnixNanos::from(dt.timestamp_nanos_opt().unwrap_or(0) as u64));
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
         let limit = request.limit.map(|limit| limit.get() as u64);
         let request_params = request.params;
         let price_precision = price_precision_from_params(request_params.as_ref())?;
         let timestamp_on_close = self.config.bars_timestamp_on_close;
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
 
         get_runtime().spawn(async move {
+            seed_price_precision_if_needed(
+                &historical_client,
+                dataset.as_str(),
+                instrument_id,
+                query_start,
+                query_end,
+                price_precision,
+            )
+            .await;
+
             let params = RangeQueryParams {
                 dataset,
                 symbols,
-                start: start_nanos.unwrap_or_default(),
-                end: end_nanos,
+                start: query_start,
+                end: query_end,
                 limit,
                 price_precision,
             };
@@ -986,6 +1058,18 @@ impl DataClient for DatabentoDataClient {
                         "Unsupported bar aggregation: {:?}",
                         bar_type.spec().aggregation
                     );
+                    let response = DataResponse::Bars(BarsResponse::new(
+                        request_id,
+                        client_id,
+                        bar_type,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty bars");
                     return;
                 }
             };
@@ -1013,6 +1097,170 @@ impl DataClient for DatabentoDataClient {
                 }
                 Err(e) => {
                     log::error!("Failed to request bars: {e}");
+                    let response = DataResponse::Bars(BarsResponse::new(
+                        request_id,
+                        client_id,
+                        bar_type,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty bars");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        log::debug!("Request book depth: {request:?}");
+
+        let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let instrument_id = request.instrument_id;
+        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let limit = request.limit.map(|limit| limit.get() as u64);
+        let depth = request.depth.map(|depth| depth.get());
+        let request_params = request.params;
+        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
+
+        get_runtime().spawn(async move {
+            seed_price_precision_if_needed(
+                &historical_client,
+                dataset.as_str(),
+                instrument_id,
+                query_start,
+                query_end,
+                price_precision,
+            )
+            .await;
+
+            let params = RangeQueryParams {
+                dataset,
+                symbols,
+                start: query_start,
+                end: query_end,
+                limit,
+                price_precision,
+            };
+
+            match historical_client
+                .get_range_order_book_depth10(params, depth)
+                .await
+            {
+                Ok(depths) => {
+                    log::info!("Retrieved {} order book depths", depths.len());
+                    let response = DataResponse::BookDepth(BookDepthResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        depths,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "book depth");
+                }
+                Err(e) => {
+                    log::error!("Failed to request order book depths: {e}");
+                    let response = DataResponse::BookDepth(BookDepthResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty book depth");
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
+        log::debug!("Request book deltas: {request:?}");
+
+        let historical_client = self.historical.clone();
+        let data_sender = self.data_sender.clone();
+        let dataset = self.get_dataset_for_venue(request.instrument_id.venue)?;
+        let instrument_id = request.instrument_id;
+        let symbols = historical_client.prepare_symbols_from_instrument_ids(&[instrument_id]);
+        let request_id = request.request_id;
+        let client_id = request.client_id.unwrap_or(self.client_id);
+        let start_nanos = datetime_to_unix_nanos(request.start);
+        let end_nanos = datetime_to_unix_nanos(request.end);
+        let limit = request.limit.map(|limit| limit.get() as u64);
+        let request_params = request.params;
+        let price_precision = price_precision_from_params(request_params.as_ref())?;
+        let (query_start, query_end) = resolve_request_time_range(start_nanos, end_nanos);
+
+        get_runtime().spawn(async move {
+            seed_price_precision_if_needed(
+                &historical_client,
+                dataset.as_str(),
+                instrument_id,
+                query_start,
+                query_end,
+                price_precision,
+            )
+            .await;
+
+            let params = RangeQueryParams {
+                dataset,
+                symbols,
+                start: query_start,
+                end: query_end,
+                limit,
+                price_precision,
+            };
+
+            match historical_client.get_range_order_book_deltas(params).await {
+                Ok(deltas) => {
+                    log::info!("Retrieved {} order book deltas", deltas.len());
+                    let response = DataResponse::BookDeltas(BookDeltasResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        deltas,
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "book deltas");
+                }
+                Err(e) => {
+                    log::error!("Failed to request order book deltas: {e}");
+                    let response = DataResponse::BookDeltas(BookDeltasResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        Vec::new(),
+                        start_nanos,
+                        end_nanos,
+                        get_atomic_clock_realtime().get_time_ns(),
+                        request_params,
+                    ));
+
+                    send_data_response(&data_sender, response, "empty book deltas");
                 }
             }
         });
@@ -1023,13 +1271,13 @@ impl DataClient for DatabentoDataClient {
 
 fn instruments_query_params(
     dataset: String,
-    start_nanos: Option<UnixNanos>,
+    start_nanos: UnixNanos,
     end_nanos: Option<UnixNanos>,
 ) -> RangeQueryParams {
     RangeQueryParams {
         dataset,
         symbols: vec!["ALL_SYMBOLS".to_string()],
-        start: start_nanos.unwrap_or_default(),
+        start: start_nanos,
         end: end_nanos,
         limit: None,
         price_precision: None,
@@ -1039,7 +1287,7 @@ fn instruments_query_params(
 fn instrument_query_params(
     dataset: String,
     instrument_id: InstrumentId,
-    start_nanos: Option<UnixNanos>,
+    start_nanos: UnixNanos,
     end_nanos: Option<UnixNanos>,
 ) -> RangeQueryParams {
     RangeQueryParams {
@@ -1048,10 +1296,70 @@ fn instrument_query_params(
             instrument_id,
             &mut AHashMap::new(),
         )],
-        start: start_nanos.unwrap_or_default(),
+        start: start_nanos,
         end: end_nanos,
         limit: None,
         price_precision: None,
+    }
+}
+
+fn resolve_request_time_range(
+    start_nanos: Option<UnixNanos>,
+    end_nanos: Option<UnixNanos>,
+) -> (UnixNanos, Option<UnixNanos>) {
+    let mut end = end_nanos.unwrap_or_else(|| get_atomic_clock_realtime().get_time_ns());
+    let mut start = start_nanos.unwrap_or_else(|| start_of_utc_day(end));
+
+    if start > end {
+        start = end;
+    }
+
+    if start == end {
+        if end.as_u64() > 0 {
+            start = UnixNanos::from(end.as_u64() - 1);
+        } else {
+            end = UnixNanos::from(1);
+        }
+    }
+
+    (start, Some(end))
+}
+
+fn start_of_utc_day(timestamp: UnixNanos) -> UnixNanos {
+    UnixNanos::from((timestamp.as_u64() / NANOSECONDS_IN_DAY) * NANOSECONDS_IN_DAY)
+}
+
+async fn seed_price_precision_if_needed(
+    historical_client: &DatabentoHistoricalClient,
+    dataset: &str,
+    instrument_id: InstrumentId,
+    start_nanos: UnixNanos,
+    end_nanos: Option<UnixNanos>,
+    price_precision: Option<u8>,
+) {
+    if price_precision.is_some()
+        || historical_client
+            .price_precision(instrument_id.symbol)
+            .is_some()
+    {
+        return;
+    }
+
+    let query_params =
+        instrument_query_params(dataset.to_string(), instrument_id, start_nanos, end_nanos);
+
+    if let Err(e) = historical_client.get_range_instruments(query_params).await {
+        log::warn!("Failed to seed price precision for {instrument_id}: {e}");
+    }
+}
+
+fn send_data_response(
+    data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    response: DataResponse,
+    label: &str,
+) {
+    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+        log::error!("Failed to send {label} response: {e}");
     }
 }
 
@@ -1173,6 +1481,24 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_stop_aborts_active_tasks_and_marks_disconnected() {
+        let mut client = test_data_client();
+
+        let handle = tokio::spawn(async { std::future::pending::<()>().await });
+        {
+            let mut handles = client.task_handles.lock().expect(MUTEX_POISONED);
+            handles.push(handle);
+        }
+        client.is_connected.store(true, Ordering::Relaxed);
+
+        client.stop().unwrap();
+
+        assert!(client.task_handles.lock().expect(MUTEX_POISONED).is_empty());
+        assert!(client.is_disconnected());
+    }
+
+    #[rstest]
     #[case("EQUS", "EQUS.PLUS")] // overrides the apply_default EQUS -> EQUS.MINI mapping
     #[case("GLBX", "EQUS.MINI")] // overrides the apply_default GLBX -> GLBX.MDP3 mapping
     fn test_venue_dataset_map_overrides_default(#[case] venue: &str, #[case] dataset: &str) {
@@ -1265,7 +1591,7 @@ mod tests {
         let start = UnixNanos::from(1_000_000_000);
         let end = UnixNanos::from(2_000_000_000);
 
-        let params = instruments_query_params("GLBX.MDP3".to_string(), Some(start), Some(end));
+        let params = instruments_query_params("GLBX.MDP3".to_string(), start, Some(end));
 
         assert_eq!(params.dataset, "GLBX.MDP3");
         assert_eq!(params.symbols, vec!["ALL_SYMBOLS"]);
@@ -1279,14 +1605,38 @@ mod tests {
     fn test_instrument_query_params_requests_single_symbol() {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let params = instrument_query_params("GLBX.MDP3".to_string(), instrument_id, None, None);
+        let start = UnixNanos::from(1_000_000_000);
+        let end = UnixNanos::from(2_000_000_000);
+
+        let params =
+            instrument_query_params("GLBX.MDP3".to_string(), instrument_id, start, Some(end));
 
         assert_eq!(params.dataset, "GLBX.MDP3");
         assert_eq!(params.symbols, vec!["ESM4"]);
-        assert_eq!(params.start, UnixNanos::default());
-        assert_eq!(params.end, None);
+        assert_eq!(params.start, start);
+        assert_eq!(params.end, Some(end));
         assert_eq!(params.limit, None);
         assert_eq!(params.price_precision, None);
+    }
+
+    #[rstest]
+    fn test_resolve_request_time_range_defaults_to_end_day() {
+        let end = UnixNanos::from(1_706_443_200_000_000_001);
+
+        let (start, resolved_end) = resolve_request_time_range(None, Some(end));
+
+        assert_eq!(start, UnixNanos::from(1_706_400_000_000_000_000));
+        assert_eq!(resolved_end, Some(end));
+    }
+
+    #[rstest]
+    fn test_resolve_request_time_range_makes_empty_interval_non_empty() {
+        let end = UnixNanos::from(1_706_443_200_000_000_001);
+
+        let (start, resolved_end) = resolve_request_time_range(Some(end), Some(end));
+
+        assert_eq!(start, UnixNanos::from(end.as_u64() - 1));
+        assert_eq!(resolved_end, Some(end));
     }
 
     #[rstest]

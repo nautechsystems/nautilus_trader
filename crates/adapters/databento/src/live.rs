@@ -512,21 +512,26 @@ impl DatabentoFeedHandler {
                         delay.as_secs()
                     );
 
-                    tokio::select! {
-                        () = tokio::time::sleep(delay) => {}
-                        cmd = self.cmd_rx.recv() => {
-                            match cmd {
-                                Some(HandlerCommand::Close) => {
-                                    log::info!("Close received during backoff");
-                                    return Ok(());
-                                }
-                                None => {
-                                    log::debug!("Command channel closed during backoff");
-                                    return Ok(());
-                                }
-                                Some(cmd) => {
-                                    log::debug!("Buffering command received during backoff: {cmd:?}");
-                                    self.buffered_commands.push(cmd);
+                    let sleep = tokio::time::sleep(delay);
+                    tokio::pin!(sleep);
+
+                    loop {
+                        tokio::select! {
+                            () = &mut sleep => break,
+                            cmd = self.cmd_rx.recv() => {
+                                match cmd {
+                                    Some(HandlerCommand::Close) => {
+                                        log::info!("Close received during backoff");
+                                        return Ok(());
+                                    }
+                                    None => {
+                                        log::debug!("Command channel closed during backoff");
+                                        return Ok(());
+                                    }
+                                    Some(cmd) => {
+                                        log::debug!("Buffering command received during backoff: {cmd:?}");
+                                        self.buffered_commands.push(cmd);
+                                    }
                                 }
                             }
                         }

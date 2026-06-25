@@ -306,12 +306,16 @@ pub fn decode_quantity(value: u64) -> Quantity {
 }
 
 /// Decodes a quantity from the given optional value, where `i64::MAX` indicates missing data.
+///
+/// # Errors
+///
+/// Returns an error if the quantity is negative.
 #[inline(always)]
-#[must_use]
-pub fn decode_optional_quantity(value: i64) -> Option<Quantity> {
+pub fn decode_optional_quantity(value: i64) -> anyhow::Result<Option<Quantity>> {
     match value {
-        i64::MAX => None,
-        _ => Some(Quantity::from(value)),
+        i64::MAX => Ok(None),
+        value if value >= 0 => Ok(Some(Quantity::from(value))),
+        value => anyhow::bail!("Invalid negative quantity: {value}"),
     }
 }
 

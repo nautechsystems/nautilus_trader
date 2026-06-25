@@ -342,12 +342,20 @@ fn test_decode_price_or_undef(#[case] value: i64, #[case] precision: u8, #[case]
 }
 
 #[rstest]
-#[case(i64::MAX, None)] // None for i32::MAX
-#[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
-#[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
+#[case(i64::MAX, None)] // None for i64::MAX
+#[case(0, Some(Quantity::from(0_u64)))] // 0 is valid quantity
+#[case(10, Some(Quantity::from(10_u64)))] // Arbitrary valid quantity
 fn test_decode_optional_quantity(#[case] value: i64, #[case] expected: Option<Quantity>) {
-    let actual = decode_optional_quantity(value);
+    let actual = decode_optional_quantity(value).unwrap();
     assert_eq!(actual, expected);
+}
+
+#[rstest]
+fn test_decode_optional_quantity_rejects_negative_value() {
+    let result = decode_optional_quantity(-1);
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("-1"));
 }
 
 #[rstest]

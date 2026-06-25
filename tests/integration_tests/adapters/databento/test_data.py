@@ -146,6 +146,62 @@ def test_resolve_ids_duplicate_instrument_ids_preserved(databento_client):
 
 
 @pytest.mark.asyncio
+async def test_live_future_exception_clears_general_client_state(databento_client):
+    future = asyncio.get_running_loop().create_future()
+    live_client = MagicMock()
+    databento_client._live_client_futures.add(future)
+    databento_client._live_client_future_datasets[future] = ("GLBX.MDP3", False)
+    databento_client._has_subscribed["GLBX.MDP3"] = True
+    databento_client._live_clients["GLBX.MDP3"] = live_client
+    future.set_exception(RuntimeError("boom"))
+
+    databento_client._log_future_exception_callback(future)
+
+    assert future not in databento_client._live_client_futures
+    assert future not in databento_client._live_client_future_datasets
+    assert "GLBX.MDP3" not in databento_client._has_subscribed
+    assert "GLBX.MDP3" not in databento_client._live_clients
+
+
+@pytest.mark.asyncio
+async def test_live_future_exception_clears_mbo_client_state(databento_client):
+    future = asyncio.get_running_loop().create_future()
+    live_client = MagicMock()
+    databento_client._live_client_futures.add(future)
+    databento_client._live_client_future_datasets[future] = ("GLBX.MDP3", True)
+    databento_client._live_clients_mbo["GLBX.MDP3"] = live_client
+    future.set_exception(RuntimeError("boom"))
+
+    databento_client._log_future_exception_callback(future)
+
+    assert future not in databento_client._live_client_futures
+    assert future not in databento_client._live_client_future_datasets
+    assert "GLBX.MDP3" not in databento_client._live_clients_mbo
+
+
+@pytest.mark.asyncio
+async def test_disconnect_clears_live_client_state(databento_client):
+    future = asyncio.get_running_loop().create_future()
+    general_client = MagicMock()
+    general_client.is_running.return_value = False
+    mbo_client = MagicMock()
+    mbo_client.is_running.return_value = False
+    databento_client._live_clients["GLBX.MDP3"] = general_client
+    databento_client._live_clients_mbo["GLBX.MDP3"] = mbo_client
+    databento_client._has_subscribed["GLBX.MDP3"] = True
+    databento_client._live_client_futures.add(future)
+    databento_client._live_client_future_datasets[future] = ("GLBX.MDP3", False)
+
+    await databento_client._disconnect()
+
+    assert not databento_client._live_clients
+    assert not databento_client._live_clients_mbo
+    assert not databento_client._has_subscribed
+    assert not databento_client._live_client_futures
+    assert not databento_client._live_client_future_datasets
+
+
+@pytest.mark.asyncio
 async def test_subscribe_imbalance_passes_price_precision(
     databento_client,
     instrument_provider,

@@ -137,6 +137,12 @@ impl DatabentoHistoricalClient {
         self.price_precisions.insert(symbol, price_precision);
     }
 
+    /// Returns a cached `price_precision` for the given `symbol`.
+    #[must_use]
+    pub fn price_precision(&self, symbol: Symbol) -> Option<u8> {
+        self.price_precisions.load().get(&symbol).copied()
+    }
+
     /// Resolves a price precision for the given `instrument_id`.
     ///
     /// Resolution order:
@@ -971,10 +977,12 @@ mod tests {
     #[rstest]
     fn test_set_price_precision_inserts_into_cache(historical_client: DatabentoHistoricalClient) {
         let symbol = Symbol::from("ESM4");
+
+        assert_eq!(historical_client.price_precision(symbol), None);
+
         historical_client.set_price_precision(symbol, 2);
 
-        let precisions = historical_client.price_precisions.load();
-        assert_eq!(precisions.get(&symbol), Some(&2));
+        assert_eq!(historical_client.price_precision(symbol), Some(2));
     }
 
     #[rstest]

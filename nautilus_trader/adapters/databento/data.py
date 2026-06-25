@@ -187,6 +187,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
+        self._live_client_future_datasets: dict[asyncio.Future, tuple[Dataset, bool]] = {}
         self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hardcoded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
@@ -238,6 +239,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         await self._close_live_clients()
         await self._cancel_pending_futures()
+        self._live_clients.clear()
+        self._live_clients_mbo.clear()
+        self._has_subscribed.clear()
+        self._live_client_future_datasets.clear()
 
     async def _close_live_clients(self) -> None:
         for dataset, live_client in self._live_clients.items():
@@ -300,12 +305,25 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._log.debug("Canceled task 'buffer_mbo_subscriptions'")
 
     def _log_future_exception_callback(self, future: asyncio.Future) -> None:
+        self._live_client_futures.discard(future)
+        dataset_info = self._live_client_future_datasets.pop(future, None)
+
         if future.cancelled():
             return  # Normal cancellation
 
         exc = future.exception()
         if exc:
             self._log.error(f"Future raised: {exc}")
+
+            if dataset_info is None:
+                return
+
+            dataset, is_mbo = dataset_info
+            if is_mbo:
+                self._live_clients_mbo.pop(dataset, None)
+            else:
+                self._has_subscribed.pop(dataset, None)
+                self._live_clients.pop(dataset, None)
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset
@@ -356,6 +374,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
+            self._live_client_future_datasets[future] = (dataset, False)
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed", LogColor.BLUE)
 
@@ -750,6 +769,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             future.add_done_callback(self._log_future_exception_callback)
             self._live_client_futures.add(future)
+            self._live_client_future_datasets[future] = (dataset, True)
         except asyncio.CancelledError:
             self._log.warning(
                 "Canceled task 'subscribe_order_book_deltas_batch'",
