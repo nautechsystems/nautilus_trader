@@ -155,7 +155,7 @@ runs:
 
     # https://github.com/actions-rust-lang/setup-rust-toolchain
     - name: Set up Rust toolchain
-      uses: actions-rust-lang/setup-rust-toolchain@2b1f5e9b395427c92ee4e3331786ca3c37afe2d7 # v1.16.0
+      uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 # v1.16.1
       with:
         toolchain: ${{ env.TOOLCHAIN }}
         components: clippy,rustfmt
@@ -186,7 +186,7 @@ runs:
     - name: Install cargo-nextest
       if: inputs.build-type != 'pre-commit' && runner.os != 'macOS'
       # https://github.com/taiki-e/install-action
-      uses: taiki-e/install-action@db5fb34fa772531a3ece57ca434f579eb334e0fb # v2.75.30
+      uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
       with:
         tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
 
@@ -249,7 +249,7 @@ runs:
 
     - name: Install uv
       # https://github.com/astral-sh/setup-uv
-      uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+      uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
       with:
         version: ${{ env.UV_VERSION }}
         enable-cache: ${{ inputs.uv-cache-enabled }}
