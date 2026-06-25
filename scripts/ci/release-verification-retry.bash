@@ -37,7 +37,7 @@ release_verification_failure_is_retryable() {
 
   retryable_terms="invalid log entry|checkpoint|signature[[:space:]]+not[[:space:]]+found|rekor|tuf|sigstore|consisten|transparency[[:space:]]+log|inclusion"
   retryable_terms="${retryable_terms}|timeout|timed out|connection reset|connection refused|temporarily unavailable|too many requests|rate limit"
-  retryable_terms="${retryable_terms}|failed to fetch|could not fetch|service unavailable|internal server error|HTTP[[:space:]]+(429|5[0-9][0-9])|status[[:space:]]+(429|5[0-9][0-9])"
+  retryable_terms="${retryable_terms}|failed to fetch|could not fetch|service unavailable|internal server error|HTTP[[:space:]]+(404|429|5[0-9][0-9])|status[[:space:]]+(404|429|5[0-9][0-9])|returned error:[[:space:]]+404"
   grep -Eiq "$retryable_terms" "$output_file"
 }
 

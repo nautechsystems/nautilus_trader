@@ -57,7 +57,7 @@ pypi_publisher_repository="${PYPI_PUBLISHER_REPOSITORY:-$github_repository}"
 pypi_publisher_workflow="${PYPI_PUBLISHER_WORKFLOW:-build.yml}"
 pypi_publisher_environment="${PYPI_PUBLISHER_ENVIRONMENT:-release}"
 pypi_attestations_version="${PYPI_ATTESTATIONS_VERSION:-$(bash scripts/tool-version.sh pypi-attestations)}"
-pypi_attestation_verify_attempts="${PYPI_ATTESTATION_VERIFY_ATTEMPTS:-7}"
+pypi_attestation_verify_attempts="${PYPI_ATTESTATION_VERIFY_ATTEMPTS:-9}"
 pypi_attestation_verify_retry_delay_seconds="${PYPI_ATTESTATION_VERIFY_RETRY_DELAY_SECONDS:-15}"
 pypi_attestation_verify_max_retry_delay_seconds="${PYPI_ATTESTATION_VERIFY_MAX_RETRY_DELAY_SECONDS:-120}"
 
@@ -101,6 +101,7 @@ manual_crate_exceptions_used_file="${work_dir}/manual-crate-publish-exceptions-u
 curl_to_file() {
   local url=$1
   local output=$2
+  shift 2
 
   curl --proto '=https' --tlsv1.2 --silent --show-error --fail --location \
     --retry "$curl_retries" \
@@ -108,6 +109,7 @@ curl_to_file() {
     --connect-timeout "$curl_connect_timeout" \
     --max-time "$curl_max_time" \
     --header "User-Agent: ${cargo_publish_user_agent}" \
+    "$@" \
     --output "$output" \
     "$url"
 }
@@ -233,21 +235,15 @@ verify_pypi() {
       "$expected_sha256"
 
     provenance_file="${work_dir}/${filename}.provenance.json"
-    wait_for_registry_state \
-      "PyPI provenance for ${filename}" \
-      check_pypi_provenance \
-      "$filename" \
-      "$provenance_file"
-
     run_release_verification_with_retry \
       "pypi-attestations verify ${filename}" \
       "$pypi_attestation_verify_attempts" \
       "$pypi_attestation_verify_retry_delay_seconds" \
       "$pypi_attestation_verify_max_retry_delay_seconds" \
-      uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
-      pypi-attestations verify pypi \
-      --repository "https://github.com/${pypi_publisher_repository}" \
-      "$remote_url"
+      verify_pypi_attestation \
+      "$filename" \
+      "$remote_url" \
+      "$provenance_file"
   done < "$expected_tsv"
 }
 
@@ -322,10 +318,16 @@ check_pypi_file() {
 check_pypi_provenance() {
   local filename=$1
   local provenance_file=$2
+  local provenance_url
+
+  provenance_url="https://pypi.org/integrity/${pypi_project}/${package_version}/${filename}/provenance"
+  provenance_url="${provenance_url}?cache-bust=${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-0}-${RANDOM}-${RANDOM}"
 
   if ! curl_to_file \
-    "https://pypi.org/integrity/${pypi_project}/${package_version}/${filename}/provenance" \
-    "$provenance_file"; then
+    "$provenance_url" \
+    "$provenance_file" \
+    --header "Cache-Control: no-cache, no-store, max-age=0" \
+    --header "Pragma: no-cache"; then
     return 1
   fi
 
@@ -351,6 +353,20 @@ check_pypi_provenance() {
     echo "expected environment: ${pypi_publisher_environment}"
     return 2
   fi
+}
+
+verify_pypi_attestation() {
+  local filename=$1
+  local remote_url=$2
+  local provenance_file=$3
+
+  check_pypi_provenance "$filename" "$provenance_file" || return $?
+
+  uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
+    pypi-attestations verify pypi \
+    --repository "https://github.com/${pypi_publisher_repository}" \
+    --provenance-file "$provenance_file" \
+    "$remote_url"
 }
 
 sparse_index_path() {

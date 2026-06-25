@@ -13,6 +13,8 @@ MAX_RETRIES=3
 CORRUPTION_PATTERNS=(
   "cannot contain null bytes"
   "cannot execute binary file"
+  "Failed to clone"
+  "Illegal byte sequence"
   "Metadata field Name not found"
 )
 
