@@ -339,6 +339,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     columns = [
         "timestamp_received",
         "timestamp",
+        "market",
         "event_type",
         "asset_id",
         "bids",
@@ -362,7 +363,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     if df.empty:
         raise SystemExit(f"no parquet rows found for token_id={selection.token_id}")
     df["_row"] = range(len(df))
-    df = df.sort_values(["timestamp_received", "_row"], kind="mergesort")
+    df = df.sort_values(["timestamp_received", "timestamp", "_row"], kind="mergesort")
 
     bids: dict[float, float] = {}
     asks: dict[float, float] = {}
@@ -381,7 +382,6 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     bbo_samples: list[dict[str, Any]] = []
     replay_events = 0
     skipped_before_book = 0
-    bbo_row_mismatch = 0
     book_events = 0
     price_change_events = 0
     trade_events = 0
@@ -397,9 +397,154 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     trades_side_touch = 0
     trades_off_book = 0
 
-    for row in df.itertuples(index=False):
+    price_change_batch_compared = 0
+    price_change_batch_mismatches = 0
+
+    def price_change_batch_key(row: Any) -> tuple[Any, Any, Any, Any, Any]:
+        return (row.timestamp_received, row.timestamp, row.market, row.asset_id, row.event_type)
+
+    def update_replayed_bbo() -> tuple[float | None, float | None]:
+        nonlocal final_bid, final_ask, quote_bid, quote_ask
+        best_bid, best_ask = best_bid_ask(bids, asks)
+        final_bid, final_ask = best_bid, best_ask
+        if best_bid is not None and best_ask is not None and best_bid < best_ask:
+            quote_bid, quote_ask = best_bid, best_ask
+        return best_bid, best_ask
+
+    def record_book_sanity(best_bid: float | None, best_ask: float | None) -> None:
+        nonlocal crossed_or_locked_books, negative_spread_samples
+        if best_bid is None or best_ask is None:
+            return
+        if best_bid >= best_ask:
+            crossed_or_locked_books += 1
+        if best_ask - best_bid < -PRICE_EPSILON:
+            negative_spread_samples += 1
+
+    def maybe_run_book_strategy(ts: Any, best_bid: float | None, best_ask: float | None) -> None:
+        nonlocal inventory, cash, last_decision_ts, last_decision_mid
+        mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
+        mark = mid if mid is not None else 0.0
+        if (
+            args.strategy == "buy_hold_first_ask"
+            and mid is not None
+            and best_ask is not None
+            and not fills
+            and inventory < float(args.max_inventory)
+        ):
+            fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
+            inventory += fill_qty
+            cash -= fill_qty * best_ask
+            append_fill(
+                fills,
+                timestamp=ts,
+                strategy=args.strategy,
+                reason="first_valid_ask",
+                fill_side="BUY",
+                quantity=fill_qty,
+                price=best_ask,
+                inventory_after=inventory,
+                cash_after=cash,
+            )
+        elif args.strategy in {"momentum_taker", "contrarian_taker"} and mid is not None:
+            ts_value = pd.Timestamp(ts)
+            should_decide = last_decision_ts is None or ts_value - last_decision_ts >= decision_frequency
+            if should_decide:
+                if last_decision_mid is not None:
+                    delta = mid - last_decision_mid
+                    signal: str | None = None
+                    if delta >= float(args.signal_threshold):
+                        signal = "BUY" if args.strategy == "momentum_taker" else "SELL"
+                    elif delta <= -float(args.signal_threshold):
+                        signal = "SELL" if args.strategy == "momentum_taker" else "BUY"
+                    if signal == "BUY" and best_ask is not None and inventory < float(args.max_inventory):
+                        fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
+                        inventory += fill_qty
+                        cash -= fill_qty * best_ask
+                        append_fill(
+                            fills,
+                            timestamp=ts,
+                            strategy=args.strategy,
+                            reason=f"mid_delta={delta:.6f}",
+                            fill_side="BUY",
+                            quantity=fill_qty,
+                            price=best_ask,
+                            inventory_after=inventory,
+                            cash_after=cash,
+                        )
+                    elif signal == "SELL" and best_bid is not None and inventory > -float(args.max_inventory):
+                        fill_qty = min(float(args.quote_size), inventory + float(args.max_inventory))
+                        inventory -= fill_qty
+                        cash += fill_qty * best_bid
+                        append_fill(
+                            fills,
+                            timestamp=ts,
+                            strategy=args.strategy,
+                            reason=f"mid_delta={delta:.6f}",
+                            fill_side="SELL",
+                            quantity=fill_qty,
+                            price=best_bid,
+                            inventory_after=inventory,
+                            cash_after=cash,
+                        )
+                last_decision_ts = ts_value
+                last_decision_mid = mid
+        bbo_samples.append(
+            {
+                "timestamp": pd.Timestamp(ts),
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "mid": mid,
+                "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
+                "inventory": inventory,
+                "cash": cash,
+                "mtm_equity": cash + inventory * mark,
+            }
+        )
+
+    rows = list(df.itertuples(index=False))
+    i = 0
+    while i < len(rows):
+        row = rows[i]
         event_type = row.event_type
         ts = row.timestamp_received
+
+        if event_type == "price_change":
+            key = price_change_batch_key(row)
+            j = i + 1
+            while j < len(rows) and rows[j].event_type == "price_change" and price_change_batch_key(rows[j]) == key:
+                j += 1
+            batch = rows[i:j]
+            price_change_events += len(batch)
+            if not initialized:
+                skipped_before_book += len(batch)
+                i = j
+                continue
+            for change in batch:
+                price = as_float(change.price)
+                size = as_float(change.size)
+                if price is None or size is None:
+                    continue
+                update_book_from_price_change(
+                    bids,
+                    asks,
+                    price=price,
+                    size=size,
+                    side=str(change.side).upper(),
+                )
+            replay_events += len(batch)
+            best_bid, best_ask = update_replayed_bbo()
+            pmxt_bid = as_float(getattr(batch[-1], "best_bid", None))
+            pmxt_ask = as_float(getattr(batch[-1], "best_ask", None))
+            if pmxt_bid is not None and pmxt_ask is not None:
+                price_change_batch_compared += 1
+                if best_bid is None or best_ask is None:
+                    price_change_batch_mismatches += 1
+                elif abs(best_bid - pmxt_bid) > PRICE_EPSILON or abs(best_ask - pmxt_ask) > PRICE_EPSILON:
+                    price_change_batch_mismatches += 1
+            record_book_sanity(best_bid, best_ask)
+            maybe_run_book_strategy(ts, best_bid, best_ask)
+            i = j
+            continue
 
         if event_type == "book":
             next_bids = parse_levels(row.bids)
@@ -414,29 +559,21 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             asks = next_asks
             initialized = True
             book_events += 1
-            best_bid, best_ask = best_bid_ask(bids, asks)
-            if best_bid is not None and best_ask is not None and best_bid >= best_ask:
-                crossed_or_locked_books += 1
-        elif event_type == "price_change":
-            price_change_events += 1
-            if not initialized:
-                skipped_before_book += 1
-                continue
-            price = as_float(row.price)
-            size = as_float(row.size)
-            side = str(row.side).upper()
-            if price is None or size is None:
-                continue
-            update_book_from_price_change(bids, asks, price=price, size=size, side=side)
+            replay_events += 1
+            best_bid, best_ask = update_replayed_bbo()
+            record_book_sanity(best_bid, best_ask)
+            maybe_run_book_strategy(ts, best_bid, best_ask)
         elif event_type == "last_trade_price":
             trade_events += 1
             if not initialized:
                 trades_without_book += 1
                 skipped_before_book += 1
+                i += 1
                 continue
             trade_price = as_float(row.price)
             trade_size = as_float(row.size)
             if trade_price is None or trade_size is None:
+                i += 1
                 continue
             current_bid, current_ask = best_bid_ask(bids, asks)
             if current_bid is None or current_ask is None:
@@ -452,191 +589,81 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                     trades_side_touch += 1
                 elif trade_side == "SELL" and abs(trade_price - current_bid) <= PRICE_EPSILON:
                     trades_side_touch += 1
-            if args.strategy != "maker_bbo":
-                continue
-            fill_side, fill_qty, fill_price = fill_decision(
-                trade_side=row.side,
-                trade_price=trade_price,
-                trade_size=trade_size,
-                quote_bid=quote_bid,
-                quote_ask=quote_ask,
-                quote_size=float(args.quote_size),
-                inventory=inventory,
-                max_inventory=float(args.max_inventory),
-                fill_model=args.fill_model,
-            )
-            if fill_side == "BUY" and fill_qty > 0:
-                inventory += fill_qty
-                cash -= fill_qty * fill_price
-                append_fill(
-                    fills,
-                    timestamp=ts,
-                    strategy=args.strategy,
-                    reason="maker_trade_print",
-                    fill_side=fill_side,
-                    quantity=fill_qty,
-                    price=fill_price,
+            if args.strategy == "maker_bbo":
+                fill_side, fill_qty, fill_price = fill_decision(
+                    trade_side=row.side,
                     trade_price=trade_price,
                     trade_size=trade_size,
-                    trade_side=row.side,
-                    inventory_after=inventory,
-                    cash_after=cash,
-                    transaction_hash=row.transaction_hash,
+                    quote_bid=quote_bid,
+                    quote_ask=quote_ask,
+                    quote_size=float(args.quote_size),
+                    inventory=inventory,
+                    max_inventory=float(args.max_inventory),
+                    fill_model=args.fill_model,
                 )
-                mark = 0.0 if quote_bid is None or quote_ask is None else (quote_bid + quote_ask) / 2
-                bbo_samples.append(
-                    {
-                        "timestamp": pd.Timestamp(ts),
-                        "best_bid": quote_bid,
-                        "best_ask": quote_ask,
-                        "mid": None if quote_bid is None or quote_ask is None else mark,
-                        "spread": None if quote_bid is None or quote_ask is None else quote_ask - quote_bid,
-                        "inventory": inventory,
-                        "cash": cash,
-                        "mtm_equity": cash + inventory * mark,
-                    }
-                )
-            elif fill_side == "SELL" and fill_qty > 0:
-                inventory -= fill_qty
-                cash += fill_qty * fill_price
-                append_fill(
-                    fills,
-                    timestamp=ts,
-                    strategy=args.strategy,
-                    reason="maker_trade_print",
-                    fill_side=fill_side,
-                    quantity=fill_qty,
-                    price=fill_price,
-                    trade_price=trade_price,
-                    trade_size=trade_size,
-                    trade_side=row.side,
-                    inventory_after=inventory,
-                    cash_after=cash,
-                    transaction_hash=row.transaction_hash,
-                )
-                mark = 0.0 if quote_bid is None or quote_ask is None else (quote_bid + quote_ask) / 2
-                bbo_samples.append(
-                    {
-                        "timestamp": pd.Timestamp(ts),
-                        "best_bid": quote_bid,
-                        "best_ask": quote_ask,
-                        "mid": None if quote_bid is None or quote_ask is None else mark,
-                        "spread": None if quote_bid is None or quote_ask is None else quote_ask - quote_bid,
-                        "inventory": inventory,
-                        "cash": cash,
-                        "mtm_equity": cash + inventory * mark,
-                    }
-                )
+                if fill_side == "BUY" and fill_qty > 0:
+                    inventory += fill_qty
+                    cash -= fill_qty * fill_price
+                    append_fill(
+                        fills,
+                        timestamp=ts,
+                        strategy=args.strategy,
+                        reason="maker_trade_print",
+                        fill_side=fill_side,
+                        quantity=fill_qty,
+                        price=fill_price,
+                        trade_price=trade_price,
+                        trade_size=trade_size,
+                        trade_side=row.side,
+                        inventory_after=inventory,
+                        cash_after=cash,
+                        transaction_hash=row.transaction_hash,
+                    )
+                elif fill_side == "SELL" and fill_qty > 0:
+                    inventory -= fill_qty
+                    cash += fill_qty * fill_price
+                    append_fill(
+                        fills,
+                        timestamp=ts,
+                        strategy=args.strategy,
+                        reason="maker_trade_print",
+                        fill_side=fill_side,
+                        quantity=fill_qty,
+                        price=fill_price,
+                        trade_price=trade_price,
+                        trade_size=trade_size,
+                        trade_side=row.side,
+                        inventory_after=inventory,
+                        cash_after=cash,
+                        transaction_hash=row.transaction_hash,
+                    )
+                if fill_side is not None and fill_qty > 0:
+                    best_bid, best_ask = best_bid_ask(bids, asks)
+                    mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
+                    mark = mid if mid is not None else 0.0
+                    bbo_samples.append(
+                        {
+                            "timestamp": pd.Timestamp(ts),
+                            "best_bid": best_bid,
+                            "best_ask": best_ask,
+                            "mid": mid,
+                            "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
+                            "inventory": inventory,
+                            "cash": cash,
+                            "mtm_equity": cash + inventory * mark,
+                        }
+                    )
+            replay_events += 1
         elif event_type == "tick_size_change":
             tick_events += 1
             if not initialized:
                 skipped_before_book += 1
+                i += 1
                 continue
-        else:
-            continue
-
-        if not initialized:
-            continue
-
-        replay_events += 1
-        best_bid, best_ask = best_bid_ask(bids, asks)
-        final_bid, final_ask = best_bid, best_ask
-        if best_bid is not None and best_ask is not None and best_bid < best_ask:
-            quote_bid, quote_ask = best_bid, best_ask
-
-        pmxt_bid = as_float(getattr(row, "best_bid", None))
-        pmxt_ask = as_float(getattr(row, "best_ask", None))
-        if event_type == "price_change" and pmxt_bid is not None and pmxt_ask is not None:
-            if best_bid is None or best_ask is None:
-                bbo_row_mismatch += 1
-            elif abs(best_bid - pmxt_bid) > 1e-9 or abs(best_ask - pmxt_ask) > 1e-9:
-                bbo_row_mismatch += 1
-        if event_type == "price_change" and best_bid is not None and best_ask is not None:
-            if best_bid >= best_ask:
-                crossed_or_locked_books += 1
-            if best_ask - best_bid < -PRICE_EPSILON:
-                negative_spread_samples += 1
-
-        if event_type in {"book", "price_change", "tick_size_change"}:
-            mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
-            mark = mid if mid is not None else 0.0
-            if (
-                args.strategy == "buy_hold_first_ask"
-                and mid is not None
-                and best_ask is not None
-                and not fills
-                and inventory < float(args.max_inventory)
-            ):
-                fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
-                inventory += fill_qty
-                cash -= fill_qty * best_ask
-                append_fill(
-                    fills,
-                    timestamp=ts,
-                    strategy=args.strategy,
-                    reason="first_valid_ask",
-                    fill_side="BUY",
-                    quantity=fill_qty,
-                    price=best_ask,
-                    inventory_after=inventory,
-                    cash_after=cash,
-                )
-                mark = mid
-            elif args.strategy in {"momentum_taker", "contrarian_taker"} and mid is not None:
-                ts_value = pd.Timestamp(ts)
-                should_decide = last_decision_ts is None or ts_value - last_decision_ts >= decision_frequency
-                if should_decide:
-                    if last_decision_mid is not None:
-                        delta = mid - last_decision_mid
-                        signal: str | None = None
-                        if delta >= float(args.signal_threshold):
-                            signal = "BUY" if args.strategy == "momentum_taker" else "SELL"
-                        elif delta <= -float(args.signal_threshold):
-                            signal = "SELL" if args.strategy == "momentum_taker" else "BUY"
-                        if signal == "BUY" and best_ask is not None and inventory < float(args.max_inventory):
-                            fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
-                            inventory += fill_qty
-                            cash -= fill_qty * best_ask
-                            append_fill(
-                                fills,
-                                timestamp=ts,
-                                strategy=args.strategy,
-                                reason=f"mid_delta={delta:.6f}",
-                                fill_side="BUY",
-                                quantity=fill_qty,
-                                price=best_ask,
-                                inventory_after=inventory,
-                                cash_after=cash,
-                            )
-                        elif signal == "SELL" and best_bid is not None and inventory > -float(args.max_inventory):
-                            fill_qty = min(float(args.quote_size), inventory + float(args.max_inventory))
-                            inventory -= fill_qty
-                            cash += fill_qty * best_bid
-                            append_fill(
-                                fills,
-                                timestamp=ts,
-                                strategy=args.strategy,
-                                reason=f"mid_delta={delta:.6f}",
-                                fill_side="SELL",
-                                quantity=fill_qty,
-                                price=best_bid,
-                                inventory_after=inventory,
-                                cash_after=cash,
-                            )
-                    last_decision_ts = ts_value
-                    last_decision_mid = mid
-            bbo_samples.append(
-                {
-                    "timestamp": pd.Timestamp(ts),
-                    "best_bid": best_bid,
-                    "best_ask": best_ask,
-                    "mid": mid,
-                    "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
-                    "inventory": inventory,
-                    "cash": cash,
-                    "mtm_equity": cash + inventory * mark,
-                }
-            )
+            replay_events += 1
+            best_bid, best_ask = update_replayed_bbo()
+            maybe_run_book_strategy(ts, best_bid, best_ask)
+        i += 1
 
     final_mid = None
     if final_bid is not None and final_ask is not None:
@@ -717,9 +744,14 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     trade_side_touch_rate = None
     if trades_checked:
         trade_side_touch_rate = trades_side_touch / trades_checked
+    price_change_batch_mismatch_rate = None
+    if price_change_batch_compared:
+        price_change_batch_mismatch_rate = price_change_batch_mismatches / price_change_batch_compared
     results_validated = (
         snapshot_bbo_mismatch_rate is not None
         and snapshot_bbo_mismatch_rate <= SNAPSHOT_BBO_MISMATCH_WARN_THRESHOLD
+        and price_change_batch_mismatch_rate is not None
+        and price_change_batch_mismatch_rate <= BBO_MISMATCH_WARN_THRESHOLD
         and trade_off_book_rate is not None
         and trade_off_book_rate <= TRADE_OFF_BOOK_WARN_THRESHOLD
     )
@@ -758,8 +790,10 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "replay_events_after_initial_book": replay_events,
             "skipped_before_initial_book": skipped_before_book,
             "pmxt_derived_bbo_diagnostic": {
-                "note": "PMXT row best_bid/best_ask is treated as a stale/derived diagnostic field, not replay ground truth.",
-                "bbo_row_mismatch_count": bbo_row_mismatch,
+                "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth.",
+                "price_change_batch_compared": price_change_batch_compared,
+                "price_change_batch_mismatches": price_change_batch_mismatches,
+                "price_change_batch_mismatch_rate": price_change_batch_mismatch_rate,
                 "bbo_mismatch_warn_threshold": BBO_MISMATCH_WARN_THRESHOLD,
             },
             "snapshot_alignment": {

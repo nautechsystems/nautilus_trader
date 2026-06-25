@@ -28,33 +28,35 @@
     "price_change_events": 332608,
     "trade_events": 617,
     "tick_size_change_events": 1,
-    "replay_events_after_initial_book": 333359,
+    "replay_events_after_initial_book": 333976,
     "skipped_before_initial_book": 525,
     "pmxt_derived_bbo_diagnostic": {
-      "note": "PMXT row best_bid/best_ask is treated as a stale/derived diagnostic field, not replay ground truth.",
-      "bbo_row_mismatch_count": 41350,
+      "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth.",
+      "price_change_batch_compared": 328442,
+      "price_change_batch_mismatches": 15168,
+      "price_change_batch_mismatch_rate": 0.04618166982298245,
       "bbo_mismatch_warn_threshold": 0.01
     },
     "snapshot_alignment": {
       "snapshot_pairs": 1274,
-      "snapshot_bbo_mismatches": 386,
-      "snapshot_bbo_mismatch_rate": 0.3029827315541601,
-      "snapshot_full_book_mismatches": 1095,
-      "snapshot_full_book_mismatch_rate": 0.859497645211931,
+      "snapshot_bbo_mismatches": 315,
+      "snapshot_bbo_mismatch_rate": 0.24725274725274726,
+      "snapshot_full_book_mismatches": 1083,
+      "snapshot_full_book_mismatch_rate": 0.8500784929356358,
       "snapshot_bbo_mismatch_warn_threshold": 0.01
     },
     "book_sanity": {
-      "crossed_or_locked_books": 5048,
-      "negative_spread_samples": 2093
+      "crossed_or_locked_books": 1508,
+      "negative_spread_samples": 695
     },
     "trade_sanity": {
-      "trades_checked": 607,
-      "trades_without_book": 10,
-      "trades_inside_or_at_book": 539,
-      "trades_side_touch": 387,
-      "trades_off_book": 68,
-      "trade_off_book_rate": 0.11202635914332784,
-      "trade_side_touch_rate": 0.6375617792421746,
+      "trades_checked": 606,
+      "trades_without_book": 11,
+      "trades_inside_or_at_book": 582,
+      "trades_side_touch": 384,
+      "trades_off_book": 24,
+      "trade_off_book_rate": 0.039603960396039604,
+      "trade_side_touch_rate": 0.6336633663366337,
       "trade_off_book_warn_threshold": 0.2
     },
     "results_validated": false,

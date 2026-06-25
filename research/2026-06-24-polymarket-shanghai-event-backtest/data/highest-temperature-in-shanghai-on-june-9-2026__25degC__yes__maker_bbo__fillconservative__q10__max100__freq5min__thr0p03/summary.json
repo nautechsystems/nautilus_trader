@@ -31,50 +31,52 @@
     "replay_events_after_initial_book": 333976,
     "skipped_before_initial_book": 525,
     "pmxt_derived_bbo_diagnostic": {
-      "note": "PMXT row best_bid/best_ask is treated as a stale/derived diagnostic field, not replay ground truth.",
-      "bbo_row_mismatch_count": 41350,
+      "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth.",
+      "price_change_batch_compared": 328442,
+      "price_change_batch_mismatches": 15168,
+      "price_change_batch_mismatch_rate": 0.04618166982298245,
       "bbo_mismatch_warn_threshold": 0.01
     },
     "snapshot_alignment": {
       "snapshot_pairs": 1274,
-      "snapshot_bbo_mismatches": 386,
-      "snapshot_bbo_mismatch_rate": 0.3029827315541601,
-      "snapshot_full_book_mismatches": 1095,
-      "snapshot_full_book_mismatch_rate": 0.859497645211931,
+      "snapshot_bbo_mismatches": 315,
+      "snapshot_bbo_mismatch_rate": 0.24725274725274726,
+      "snapshot_full_book_mismatches": 1083,
+      "snapshot_full_book_mismatch_rate": 0.8500784929356358,
       "snapshot_bbo_mismatch_warn_threshold": 0.01
     },
     "book_sanity": {
-      "crossed_or_locked_books": 5048,
-      "negative_spread_samples": 2093
+      "crossed_or_locked_books": 1508,
+      "negative_spread_samples": 695
     },
     "trade_sanity": {
-      "trades_checked": 607,
-      "trades_without_book": 10,
-      "trades_inside_or_at_book": 539,
-      "trades_side_touch": 387,
-      "trades_off_book": 68,
-      "trade_off_book_rate": 0.11202635914332784,
-      "trade_side_touch_rate": 0.6375617792421746,
+      "trades_checked": 606,
+      "trades_without_book": 11,
+      "trades_inside_or_at_book": 582,
+      "trades_side_touch": 384,
+      "trades_off_book": 24,
+      "trade_off_book_rate": 0.039603960396039604,
+      "trade_side_touch_rate": 0.6336633663366337,
       "trade_off_book_warn_threshold": 0.2
     },
     "results_validated": false,
     "result_label": "smoke_test_unvalidated"
   },
   "backtest": {
-    "fills": 322,
-    "buy_fills": 153,
-    "sell_fills": 169,
-    "buy_qty": 1123.63,
-    "sell_qty": 1202.5600000000002,
-    "gross_notional": 1313.263155773,
-    "ending_inventory": -78.92999999999999,
-    "ending_cash": 41.570035772999994,
+    "fills": 288,
+    "buy_fills": 139,
+    "sell_fills": 149,
+    "buy_qty": 967.73,
+    "sell_qty": 1039.51,
+    "gross_notional": 1154.194406686,
+    "ending_inventory": -71.77999999999999,
+    "ending_cash": 40.518886685999966,
     "final_best_bid": 0.999,
     "final_best_ask": null,
     "final_mid": null,
-    "mtm_pnl": 41.570035772999994,
-    "settlement_pnl": -37.359964227,
-    "return_on_gross_notional": -0.028448193389701504
+    "mtm_pnl": 40.518886685999966,
+    "settlement_pnl": -31.26111331400002,
+    "return_on_gross_notional": -0.02708479016438748
   },
   "outputs": {
     "fills_csv": "research/2026-06-24-polymarket-shanghai-event-backtest/data/highest-temperature-in-shanghai-on-june-9-2026__25degC__yes__maker_bbo__fillconservative__q10__max100__freq5min__thr0p03/fills.csv",
