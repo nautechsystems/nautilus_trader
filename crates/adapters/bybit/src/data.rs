@@ -267,6 +267,7 @@ impl BybitDataClient {
                                         diff_and_emit_instruments(
                                             &fetched, &mut inst_cache, subs.as_ref(), &sender,
                                         );
+
                                         for (id, action) in statuses {
                                             if inst_cache.contains_key(&id) {
                                                 all_statuses.insert(id, action);
