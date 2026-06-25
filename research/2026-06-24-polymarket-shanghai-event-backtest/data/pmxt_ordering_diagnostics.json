@@ -1,0 +1,294 @@
+{
+  "generated_at": "2026-06-25T06:46:58.709457+00:00",
+  "curated_root": "C:\\Projects\\PolyReaper\\data\\curated\\polymarket\\events",
+  "events": [
+    {
+      "event_slug": "highest-temperature-in-shanghai-on-june-9-2026",
+      "market_label": "25°C",
+      "token_side": "YES",
+      "token_id": "93683348120137447419301462197228170067558545967622008841151707439369216600718",
+      "parquet_path": "C:\\Projects\\PolyReaper\\data\\curated\\polymarket\\events\\highest-temperature-in-shanghai-on-june-9-2026\\orderbook.parquet",
+      "schema_columns": [
+        "timestamp_received",
+        "timestamp",
+        "market",
+        "event_type",
+        "asset_id",
+        "bids",
+        "asks",
+        "price",
+        "size",
+        "side",
+        "best_bid",
+        "best_ask",
+        "fee_rate_bps",
+        "transaction_hash",
+        "old_tick_size",
+        "new_tick_size"
+      ],
+      "sequence_like_columns": [],
+      "schema_has_sequence_or_message_id": false,
+      "source_hour_coverage": {
+        "source_file_count": 56,
+        "parsed_hour_count": 56,
+        "first_source_hour": "2026-06-07T04:00:00+00:00",
+        "last_source_hour": "2026-06-09T11:00:00+00:00",
+        "missing_source_hours": []
+      },
+      "all_rows_physical_order": {
+        "row_count": 3925774,
+        "first_timestamp_received": "2026-06-07T04:34:05.018000+00:00",
+        "last_timestamp_received": "2026-06-09T11:59:55.580000+00:00",
+        "event_type_counts": {
+          "price_change": 3907501,
+          "book": 13300,
+          "last_trade_price": 4961,
+          "tick_size_change": 12
+        },
+        "physical_timestamp_received_inversions": 1176,
+        "physical_timestamp_received_max_back_ms": 3599852.0,
+        "physical_timestamp_inversions": 945559,
+        "physical_timestamp_max_back_ms": 3863051.0,
+        "received_minus_event_ms_quantiles": {
+          "0.0": -19.0,
+          "0.001": 7.0,
+          "0.01": 28.0,
+          "0.5": 1768.0,
+          "0.99": 255657.3500000001,
+          "0.999": 298947.76699999906,
+          "1.0": 1684283.0
+        },
+        "negative_received_minus_event_rows": 1752,
+        "received_positive_gap_ms_quantiles": {
+          "0.5": 427.0,
+          "0.9": 4496.0,
+          "0.99": 29886.0,
+          "0.999": 107604.10199999763,
+          "1.0": 704979.0
+        },
+        "received_gap_gt_1s": 612299,
+        "received_gap_gt_5s": 179055,
+        "received_gap_gt_60s": 6222
+      },
+      "selected_token_physical_order": {
+        "row_count": 334501,
+        "first_timestamp_received": "2026-06-07T04:34:30.268000+00:00",
+        "last_timestamp_received": "2026-06-09T11:59:15.163000+00:00",
+        "event_type_counts": {
+          "price_change": 332608,
+          "book": 1275,
+          "last_trade_price": 617,
+          "tick_size_change": 1
+        },
+        "physical_timestamp_received_inversions": 0,
+        "physical_timestamp_received_max_back_ms": null,
+        "physical_timestamp_inversions": 89346,
+        "physical_timestamp_max_back_ms": 17121.0,
+        "received_minus_event_ms_quantiles": {
+          "0.0": -19.0,
+          "0.001": 2.0,
+          "0.01": 24.0,
+          "0.5": 1528.0,
+          "0.99": 254555.0,
+          "0.999": 300969.0,
+          "1.0": 330692.0
+        },
+        "negative_received_minus_event_rows": 243,
+        "received_positive_gap_ms_quantiles": {
+          "0.5": 317.0,
+          "0.9": 2867.0,
+          "0.99": 17129.74000000005,
+          "0.999": 43034.65399999742,
+          "1.0": 183322.0
+        },
+        "received_gap_gt_1s": 34759,
+        "received_gap_gt_5s": 8969,
+        "received_gap_gt_60s": 78,
+        "price_change_batch_physical_order": {
+          "price_change_rows": 332608,
+          "batch_key_count": 328964,
+          "multi_row_batch_count": 3602,
+          "multi_row_batch_rows": 7246,
+          "max_batch_size": 5,
+          "split_batch_key_count": 43,
+          "split_batch_rows": 86,
+          "exact_duplicate_price_change_rows": 0
+        },
+        "price_change_batch_replay_sort": {
+          "price_change_rows": 332608,
+          "batch_key_count": 328964,
+          "multi_row_batch_count": 3602,
+          "multi_row_batch_rows": 7246,
+          "max_batch_size": 5,
+          "split_batch_key_count": 0,
+          "split_batch_rows": 0,
+          "exact_duplicate_price_change_rows": 0
+        },
+        "book_snapshot": {
+          "book_rows": 1275,
+          "same_message_as_price_change_rows": 1078,
+          "book_gap_ms_quantiles": {
+            "0.5": 25221.0,
+            "0.9": 402641.00000000023,
+            "0.99": 2240087.3799999966,
+            "0.999": 7415529.705999632,
+            "1.0": 13812251.0
+          },
+          "book_gap_gt_60s": 359,
+          "book_gap_gt_300s": 153
+        },
+        "replay_quality_from_harness": {
+          "batch_bbo_mismatch_rate": 0.04130409630924181,
+          "snapshot_bbo_mismatch_rate": 0.14720812182741116,
+          "raw_snapshot_bbo_mismatch_rate": 0.24411302982731553,
+          "trade_off_book_rate": 0.037953795379537955,
+          "result_label": "smoke_test_unvalidated"
+        }
+      }
+    },
+    {
+      "event_slug": "highest-temperature-in-shanghai-on-june-10-2026",
+      "market_label": "28°C",
+      "token_side": "YES",
+      "token_id": "79468022192238370215968228824413698994937653291968216025900787429247470618594",
+      "parquet_path": "C:\\Projects\\PolyReaper\\data\\curated\\polymarket\\events\\highest-temperature-in-shanghai-on-june-10-2026\\orderbook.parquet",
+      "schema_columns": [
+        "timestamp_received",
+        "timestamp",
+        "market",
+        "event_type",
+        "asset_id",
+        "bids",
+        "asks",
+        "price",
+        "size",
+        "side",
+        "best_bid",
+        "best_ask",
+        "fee_rate_bps",
+        "transaction_hash",
+        "old_tick_size",
+        "new_tick_size"
+      ],
+      "sequence_like_columns": [],
+      "schema_has_sequence_or_message_id": false,
+      "source_hour_coverage": {
+        "source_file_count": 56,
+        "parsed_hour_count": 56,
+        "first_source_hour": "2026-06-08T04:00:00+00:00",
+        "last_source_hour": "2026-06-10T11:00:00+00:00",
+        "missing_source_hours": []
+      },
+      "all_rows_physical_order": {
+        "row_count": 5238231,
+        "first_timestamp_received": "2026-06-08T04:26:36.213000+00:00",
+        "last_timestamp_received": "2026-06-10T11:59:59.045000+00:00",
+        "event_type_counts": {
+          "price_change": 5223572,
+          "book": 10828,
+          "last_trade_price": 3813,
+          "tick_size_change": 18
+        },
+        "physical_timestamp_received_inversions": 1176,
+        "physical_timestamp_received_max_back_ms": 3599952.0,
+        "physical_timestamp_inversions": 1250507,
+        "physical_timestamp_max_back_ms": 3835564.0,
+        "received_minus_event_ms_quantiles": {
+          "0.0": -20.0,
+          "0.001": 16.0,
+          "0.01": 31.0,
+          "0.5": 356.0,
+          "0.99": 211331.0,
+          "0.999": 276669.0,
+          "1.0": 964932.0
+        },
+        "negative_received_minus_event_rows": 412,
+        "received_positive_gap_ms_quantiles": {
+          "0.5": 374.0,
+          "0.9": 3708.0,
+          "0.99": 20587.0,
+          "0.999": 50243.0,
+          "1.0": 1524510.0
+        },
+        "received_gap_gt_1s": 733612,
+        "received_gap_gt_5s": 202920,
+        "received_gap_gt_60s": 1747
+      },
+      "selected_token_physical_order": {
+        "row_count": 380116,
+        "first_timestamp_received": "2026-06-08T04:26:59.159000+00:00",
+        "last_timestamp_received": "2026-06-10T11:59:59.045000+00:00",
+        "event_type_counts": {
+          "price_change": 378830,
+          "last_trade_price": 430,
+          "book": 855,
+          "tick_size_change": 1
+        },
+        "physical_timestamp_received_inversions": 0,
+        "physical_timestamp_received_max_back_ms": null,
+        "physical_timestamp_inversions": 95740,
+        "physical_timestamp_max_back_ms": 17337.0,
+        "received_minus_event_ms_quantiles": {
+          "0.0": -17.0,
+          "0.001": 15.0,
+          "0.01": 30.0,
+          "0.5": 231.0,
+          "0.99": 207287.59999999963,
+          "0.999": 266897.655,
+          "1.0": 495834.0
+        },
+        "negative_received_minus_event_rows": 23,
+        "received_positive_gap_ms_quantiles": {
+          "0.5": 310.0,
+          "0.9": 1995.0,
+          "0.99": 14731.700000000012,
+          "0.999": 42238.43000000002,
+          "1.0": 839125.0
+        },
+        "received_gap_gt_1s": 34829,
+        "received_gap_gt_5s": 7237,
+        "received_gap_gt_60s": 66,
+        "price_change_batch_physical_order": {
+          "price_change_rows": 378830,
+          "batch_key_count": 375253,
+          "multi_row_batch_count": 3553,
+          "multi_row_batch_rows": 7130,
+          "max_batch_size": 3,
+          "split_batch_key_count": 40,
+          "split_batch_rows": 80,
+          "exact_duplicate_price_change_rows": 0
+        },
+        "price_change_batch_replay_sort": {
+          "price_change_rows": 378830,
+          "batch_key_count": 375253,
+          "multi_row_batch_count": 3553,
+          "multi_row_batch_rows": 7130,
+          "max_batch_size": 3,
+          "split_batch_key_count": 0,
+          "split_batch_rows": 0,
+          "exact_duplicate_price_change_rows": 0
+        },
+        "book_snapshot": {
+          "book_rows": 855,
+          "same_message_as_price_change_rows": 676,
+          "book_gap_ms_quantiles": {
+            "0.5": 68093.0,
+            "0.9": 644740.6999999997,
+            "0.99": 2311039.059999994,
+            "0.999": 6778173.061999954,
+            "1.0": 8970848.0
+          },
+          "book_gap_gt_60s": 440,
+          "book_gap_gt_300s": 170
+        },
+        "replay_quality_from_harness": {
+          "batch_bbo_mismatch_rate": 0.02911212422738028,
+          "snapshot_bbo_mismatch_rate": 0.0893854748603352,
+          "raw_snapshot_bbo_mismatch_rate": 0.20491803278688525,
+          "trade_off_book_rate": 0.009732360097323601,
+          "result_label": "smoke_test_unvalidated"
+        }
+      }
+    }
+  ]
+}
