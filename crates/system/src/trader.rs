@@ -846,6 +846,10 @@ impl Trader {
             msgbus::deregister_any(endpoint.into());
         }
 
+        for clock in self.clocks.values() {
+            clock.borrow_mut().cancel_timers();
+        }
+
         self.actor_ids.clear();
         self.strategy_ids.clear();
         self.strategy_stop_fns.clear();
@@ -866,6 +870,9 @@ impl Trader {
             log::debug!("Disposing strategy {strategy_id}");
             dispose_component(&strategy_id.inner())?;
             let component_id = ComponentId::new(strategy_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
 
             // Remove only this strategy's own msgbus handlers
@@ -902,6 +909,9 @@ impl Trader {
             let _ = stop_component(&actor_id.inner());
             dispose_component(&actor_id.inner())?;
             let component_id = ComponentId::new(actor_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
         }
 
@@ -922,6 +932,9 @@ impl Trader {
             let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
             msgbus::deregister_any(endpoint.into());
             let component_id = ComponentId::new(exec_algorithm_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
         }
 
@@ -977,6 +990,9 @@ impl Trader {
 
         self.actor_ids.swap_remove(pos);
         let component_id = ComponentId::new(actor_id.inner().as_str());
+        if let Some(clock) = self.clocks.get(&component_id) {
+            clock.borrow_mut().cancel_timers();
+        }
         self.clocks.remove(&component_id);
 
         log::info!("Removed actor {actor_id} from trader {}", self.trader_id);
@@ -1100,6 +1116,9 @@ impl Trader {
         self.strategy_ids.swap_remove(pos);
         self.strategy_stop_fns.remove(strategy_id);
         let component_id = ComponentId::new(strategy_id.inner().as_str());
+        if let Some(clock) = self.clocks.get(&component_id) {
+            clock.borrow_mut().cancel_timers();
+        }
         self.clocks.remove(&component_id);
 
         log::info!(
