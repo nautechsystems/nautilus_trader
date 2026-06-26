@@ -89,6 +89,8 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-testkit = { workspace = true }
+
 criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
@@ -107,6 +109,7 @@ harness = false
 name = "clients"
 harness = false
 
+# Run with `cargo run --example databento-data-tester --package nautilus-databento`.
 [[example]]
 name = "databento-data-tester"
 path = "examples/node_data_tester.rs"

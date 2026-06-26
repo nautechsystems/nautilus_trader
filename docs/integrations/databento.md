@@ -51,6 +51,14 @@ these components directly.
 
 See the [live examples](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
 
+Rust examples live under
+[`crates/adapters/databento/examples/`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/databento/examples/).
+The data tester subscribes to live quotes and trades for the configured instrument when run:
+
+```bash
+cargo run --example databento-data-tester --package nautilus-databento
+```
+
 ## Databento documentation
 
 See the [Databento new users guide](https://databento.com/docs/quickstart/new-user-guides).
