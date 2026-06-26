@@ -279,6 +279,14 @@ impl Timer for LiveTimer {
     }
 }
 
+impl Drop for LiveTimer {
+    fn drop(&mut self) {
+        if let Some(handle) = self.task_handle.take() {
+            handle.abort();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{num::NonZeroU64, sync::Arc};
