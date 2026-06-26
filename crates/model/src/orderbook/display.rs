@@ -16,7 +16,7 @@
 //! Functions related to order book display.
 
 use rust_decimal::Decimal;
-use tabled::{Table, Tabled, settings::Style};
+use tabled::{builder::Builder, settings::Style};
 
 use super::{BookPrice, level::BookLevel, own::OwnBookLevel};
 use crate::{
@@ -24,7 +24,6 @@ use crate::{
     orderbook::{OrderBook, own::OwnOrderBook},
 };
 
-#[derive(Tabled)]
 struct BookLevelDisplay {
     bids: String,
     price: String,
@@ -117,7 +116,7 @@ pub(crate) fn pprint_book(
             .collect()
     };
 
-    let table = Table::new(data).with(Style::rounded()).to_string();
+    let table = render_book_levels(data);
 
     let header = format!(
         "bid_levels: {}\nask_levels: {}\nsequence: {}\nupdate_count: {}\nts_last: {}",
@@ -219,7 +218,7 @@ pub(crate) fn pprint_own_book(
             .collect()
     };
 
-    let table = Table::new(data).with(Style::rounded()).to_string();
+    let table = render_book_levels(data);
 
     let header = format!(
         "bid_levels: {}\nask_levels: {}\nupdate_count: {}\nts_last: {}",
@@ -230,4 +229,15 @@ pub(crate) fn pprint_own_book(
     );
 
     format!("{header}\n{table}")
+}
+
+fn render_book_levels(data: Vec<BookLevelDisplay>) -> String {
+    let mut builder = Builder::with_capacity(data.len() + 1, 3);
+    builder.push_record(["bids", "price", "asks"]);
+
+    for level in data {
+        builder.push_record([level.bids, level.price, level.asks]);
+    }
+
+    builder.build().with(Style::rounded()).to_string()
 }

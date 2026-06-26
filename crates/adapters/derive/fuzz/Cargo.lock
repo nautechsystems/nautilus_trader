@@ -4463,21 +4463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b5dc662e6da844ad6e428ad16b57967c9d33c82e16bb1c258326c0c078605dff"
 dependencies = [
  "papergrid",
- "tabled_derive",
  "testing_table",
-]
-
-[[package]]
-name = "tabled_derive"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea5d1b13ca6cff1f9231ffd62f15eefd72543dab5e468735f1a456728a02846"
-dependencies = [
- "heck",
- "proc-macro-error2",
- "proc-macro2",
- "quote",
- "syn 2.0.118",
 ]
 
 [[package]]

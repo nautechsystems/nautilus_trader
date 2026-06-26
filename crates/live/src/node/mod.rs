@@ -110,7 +110,7 @@ use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
 };
-use tabled::{Table, Tabled, settings::Style};
+use tabled::{builder::Builder, settings::Style};
 
 use crate::{
     execution::{
@@ -529,16 +529,6 @@ impl LiveNode {
     }
 
     fn log_connection_status(&self) {
-        #[derive(Tabled)]
-        struct ClientStatus {
-            #[tabled(rename = "Client")]
-            client: String,
-            #[tabled(rename = "Type")]
-            client_type: &'static str,
-            #[tabled(rename = "Connected")]
-            connected: bool,
-        }
-
         let data_status = self.kernel.data_client_connection_status();
         let exec_status = self.kernel.exec_client_connection_status();
 
@@ -560,7 +550,7 @@ impl LiveNode {
             });
         }
 
-        let table = Table::new(&rows).with(Style::rounded()).to_string();
+        let table = render_client_statuses(rows);
 
         log::warn!(
             "Timed out ({:?}) waiting for engines to connect\n\n{table}\n\n\
@@ -2131,6 +2121,27 @@ impl PendingEvents {
     }
 }
 
+struct ClientStatus {
+    client: String,
+    client_type: &'static str,
+    connected: bool,
+}
+
+fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
+    let mut builder = Builder::with_capacity(rows.len() + 1, 3);
+    builder.push_record(["Client", "Type", "Connected"]);
+
+    for row in rows {
+        builder.push_record([
+            row.client,
+            row.client_type.to_string(),
+            row.connected.to_string(),
+        ]);
+    }
+
+    builder.build().with(Style::rounded()).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -2173,6 +2184,32 @@ mod tests {
     use rstest::*;
 
     use super::*;
+
+    #[rstest]
+    fn test_render_client_statuses() {
+        let rows = vec![
+            ClientStatus {
+                client: "BINANCE".to_string(),
+                client_type: "Data",
+                connected: true,
+            },
+            ClientStatus {
+                client: "SIM".to_string(),
+                client_type: "Execution",
+                connected: false,
+            },
+        ];
+
+        let output = render_client_statuses(rows);
+        let expected = "╭─────────┬───────────┬───────────╮\n\
+│ Client  │ Type      │ Connected │\n\
+├─────────┼───────────┼───────────┤\n\
+│ BINANCE │ Data      │ true      │\n\
+│ SIM     │ Execution │ false     │\n\
+╰─────────┴───────────┴───────────╯";
+
+        assert_eq!(output, expected);
+    }
 
     #[derive(Debug)]
     struct ReplayKernelEventStore {
