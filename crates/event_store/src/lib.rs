@@ -42,6 +42,7 @@
 
 pub mod backend;
 pub mod capture;
+pub mod codec;
 pub mod entry;
 pub mod error;
 pub mod hash;
