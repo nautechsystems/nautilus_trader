@@ -31,7 +31,7 @@ use nautilus_model::{
         OrderSide,
     },
     identifiers::{InstrumentId, TradeId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::InstrumentAny,
     types::{
         Currency, Price, Quantity,
         price::{PRICE_UNDEF, decode_raw_price_i64},
@@ -862,20 +862,162 @@ fn test_decode_ohlcv_msg() {
 }
 
 #[rstest]
-fn test_decode_definition_msg() {
-    let path = test_data_path().join("test_data.definition.dbn.zst");
+fn test_decode_definition_msg_equity() {
+    let path = test_data_path().join("test_data.definition.equity.dbn.zst");
     let mut dbn_stream = Decoder::from_zstd_file(path)
         .unwrap()
         .decode_stream::<dbn::InstrumentDefMsg>();
     let msg = dbn_stream.next().unwrap().unwrap();
 
-    let instrument_id = InstrumentId::from("ESM4.GLBX");
-    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()));
-
-    let instrument = result
+    let instrument_id = InstrumentId::from("MSFT.XNAS");
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
         .expect("decode failed")
-        .expect("definition class should produce an instrument");
-    assert_eq!(instrument.multiplier(), Quantity::from(1));
+        .expect("equity class 'K' should produce an instrument");
+
+    let InstrumentAny::Equity(equity) = result else {
+        panic!("Expected Equity");
+    };
+    assert_eq!(equity.id, instrument_id);
+    assert_eq!(equity.raw_symbol.as_str(), "MSFT");
+    assert_eq!(equity.currency, Currency::from("USD"));
+    assert_eq!(equity.price_precision, 2);
+    assert_eq!(equity.price_increment, Price::from("0.01"));
+    assert_eq!(equity.lot_size, Some(Quantity::from(100)));
+    assert_eq!(equity.ts_init, 0);
+}
+
+#[rstest]
+fn test_decode_definition_msg_futures_contract() {
+    let path = test_data_path().join("test_data.definition.futures_contract.dbn.zst");
+    let mut dbn_stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+    let msg = dbn_stream.next().unwrap().unwrap();
+
+    let instrument_id = InstrumentId::from("ESU6.GLBX");
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("future class 'F' should produce an instrument");
+
+    let InstrumentAny::FuturesContract(future) = result else {
+        panic!("Expected FuturesContract");
+    };
+    assert_eq!(future.id, instrument_id);
+    assert_eq!(future.raw_symbol.as_str(), "ESU6");
+    assert_eq!(future.asset_class, AssetClass::Index);
+    assert_eq!(future.underlying.as_str(), "ES");
+    assert_eq!(future.currency, Currency::from("USD"));
+    assert_eq!(future.price_precision, 2);
+    assert_eq!(future.price_increment, Price::from("0.25"));
+    assert_eq!(future.multiplier, Quantity::from(50));
+    assert_eq!(future.ts_init, 0);
+}
+
+#[rstest]
+fn test_decode_definition_msg_futures_spread() {
+    let path = test_data_path().join("test_data.definition.futures_spread.dbn.zst");
+    let mut dbn_stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+    let msg = dbn_stream.next().unwrap().unwrap();
+
+    let instrument_id = InstrumentId::from("ESU6-ESM7.GLBX");
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("futures spread class 'S' should produce an instrument");
+
+    let InstrumentAny::FuturesSpread(spread) = result else {
+        panic!("Expected FuturesSpread");
+    };
+    assert_eq!(spread.id, instrument_id);
+    assert_eq!(spread.raw_symbol.as_str(), "ESU6-ESM7");
+    assert_eq!(spread.asset_class, AssetClass::Index);
+    assert_eq!(spread.underlying.as_str(), "ES");
+    assert_eq!(spread.strategy_type.as_str(), "EQ");
+    assert_eq!(spread.currency, Currency::from("USD"));
+    assert_eq!(spread.price_precision, 2);
+    assert_eq!(spread.price_increment, Price::from("0.05"));
+    assert_eq!(spread.multiplier, Quantity::from(1));
+    assert_eq!(spread.ts_init, 0);
+}
+
+#[rstest]
+fn test_decode_definition_msg_option_contract() {
+    let path = test_data_path().join("test_data.definition.option.dbn.zst");
+    let mut dbn_stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+
+    // First record: call ('C')
+    let msg = dbn_stream.next().unwrap().unwrap();
+    let call_id = InstrumentId::from("ESU6 C9600.GLBX");
+    let result = decode_instrument_def_msg(msg, call_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(call) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(call.id, call_id);
+    assert_eq!(call.raw_symbol.as_str(), "ESU6 C9600");
+    assert_eq!(call.asset_class, AssetClass::Commodity);
+    assert_eq!(call.option_kind, OptionKind::Call);
+    assert_eq!(call.strike_price, Price::from("9600.00"));
+    assert_eq!(call.underlying.as_str(), "ESU6");
+    assert_eq!(call.currency, Currency::from("USD"));
+    assert_eq!(call.multiplier, Quantity::from(50));
+    assert_eq!(call.ts_init, 0);
+
+    // Second record: put ('P')
+    let msg = dbn_stream.next().unwrap().unwrap();
+    let put_id = InstrumentId::from("ESU6 P6575.GLBX");
+    let result = decode_instrument_def_msg(msg, put_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("option class 'P' should produce an instrument");
+    let InstrumentAny::OptionContract(put) = result else {
+        panic!("Expected OptionContract");
+    };
+    assert_eq!(put.id, put_id);
+    assert_eq!(put.raw_symbol.as_str(), "ESU6 P6575");
+    assert_eq!(put.option_kind, OptionKind::Put);
+    assert_eq!(put.strike_price, Price::from("6575.00"));
+}
+
+#[rstest]
+fn test_decode_definition_msg_option_spread() {
+    let path = test_data_path().join("test_data.definition.option_spread.dbn.zst");
+    let mut dbn_stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+
+    // First record: option spread ('T')
+    let msg = dbn_stream.next().unwrap().unwrap();
+    let spread_id = InstrumentId::from("UD:2E: SG 2500275.GLBX");
+    let result = decode_instrument_def_msg(msg, spread_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("option spread class 'T' should produce an instrument");
+    let InstrumentAny::OptionSpread(spread) = result else {
+        panic!("Expected OptionSpread");
+    };
+    assert_eq!(spread.id, spread_id);
+    assert_eq!(spread.raw_symbol.as_str(), "UD:2E: SG 2500275");
+    assert_eq!(spread.asset_class, AssetClass::Commodity);
+    assert_eq!(spread.strategy_type.as_str(), "SG");
+    assert_eq!(spread.currency, Currency::from("USD"));
+    assert_eq!(spread.multiplier, Quantity::from(1));
+    assert_eq!(spread.ts_init, 0);
+
+    // Second record: mixed multi-leg spread ('M')
+    let msg = dbn_stream.next().unwrap().unwrap();
+    let mixed_id = InstrumentId::from("UD:T$:CFO 2632896.GLBX");
+    let result = decode_instrument_def_msg(msg, mixed_id, Some(0.into()))
+        .expect("decode failed")
+        .expect("mixed spread class 'M' should produce an instrument");
+    let InstrumentAny::OptionSpread(mixed) = result else {
+        panic!("Expected OptionSpread");
+    };
+    assert_eq!(mixed.id, mixed_id);
+    assert_eq!(mixed.raw_symbol.as_str(), "UD:T$:CFO 2632896");
+    assert_eq!(mixed.strategy_type.as_str(), "CV:FO");
 }
 
 #[rstest]

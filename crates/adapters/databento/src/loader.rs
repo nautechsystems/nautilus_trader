@@ -1013,7 +1013,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(test_data_path().join("test_data.definition.dbn.zst"))]
+    #[case(test_data_path().join("test_data.definition.equity.dbn.zst"))]
     fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
         let instruments = loader.load_instruments(&path, false, false).unwrap();
 
@@ -1029,7 +1029,7 @@ mod tests {
     fn test_load_instruments_populates_price_precisions_cache(
         mut loader_without_seed: DatabentoDataLoader,
     ) {
-        let path = test_data_path().join("test_data.definition.dbn.zst");
+        let path = test_data_path().join("test_data.definition.equity.dbn.zst");
         assert!(loader_without_seed.get_price_precisions().is_empty());
 
         let instruments = loader_without_seed
