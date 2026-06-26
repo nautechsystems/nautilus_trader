@@ -248,6 +248,31 @@ def normalize_pmxt_bbo(best_bid: float | None, best_ask: float | None) -> tuple[
     return best_bid, best_ask
 
 
+def mark_price_for_inventory(
+    best_bid: float | None,
+    best_ask: float | None,
+    inventory: float,
+) -> float | None:
+    """Return a conservative display mark for inventory.
+
+    Mid is preferred when both sides are present. Near resolution Polymarket
+    books can become one-sided (for example bid=0.999 with no ask). Marking
+    those rows at zero creates false tail cliffs in report equity curves, so
+    fall back to the available liquidation side when possible.
+    """
+    if best_bid is not None and best_ask is not None:
+        return (best_bid + best_ask) / 2
+    if inventory > 0 and best_bid is not None:
+        return best_bid
+    if inventory < 0 and best_ask is not None:
+        return best_ask
+    if best_bid is not None:
+        return best_bid
+    if best_ask is not None:
+        return best_ask
+    return None
+
+
 def diagnostic_bbo_equal(
     local_bbo: tuple[float | None, float | None],
     pmxt_bbo: tuple[float | None, float | None],
@@ -454,7 +479,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     def maybe_run_book_strategy(ts: Any, best_bid: float | None, best_ask: float | None) -> None:
         nonlocal inventory, cash, last_decision_ts, last_decision_mid
         mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
-        mark = mid if mid is not None else 0.0
+        mark = mark_price_for_inventory(best_bid, best_ask, inventory)
         if (
             args.strategy == "buy_hold_first_ask"
             and mid is not None
@@ -525,10 +550,11 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 "best_bid": best_bid,
                 "best_ask": best_ask,
                 "mid": mid,
+                "mark_price": mark,
                 "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
                 "inventory": inventory,
                 "cash": cash,
-                "mtm_equity": cash + inventory * mark,
+                "mtm_equity": cash + inventory * (mark or 0.0),
             }
         )
 
@@ -680,17 +706,18 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 if fill_side is not None and fill_qty > 0:
                     best_bid, best_ask = best_bid_ask(bids, asks)
                     mid = None if best_bid is None or best_ask is None else (best_bid + best_ask) / 2
-                    mark = mid if mid is not None else 0.0
+                    mark = mark_price_for_inventory(best_bid, best_ask, inventory)
                     bbo_samples.append(
                         {
                             "timestamp": pd.Timestamp(ts),
                             "best_bid": best_bid,
                             "best_ask": best_ask,
                             "mid": mid,
+                            "mark_price": mark,
                             "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
                             "inventory": inventory,
                             "cash": cash,
-                            "mtm_equity": cash + inventory * mark,
+                            "mtm_equity": cash + inventory * (mark or 0.0),
                         }
                     )
             replay_events += 1

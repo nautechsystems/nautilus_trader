@@ -101,6 +101,7 @@ timestamp, timestamp_received, original_row
 - `buy_hold_first_ask` 是最基本的 settlement sanity check。两个 event 都为正，因为这次选的 YES token 最终都 resolve YES。
 - 6 月 10 日 momentum 为正、contrarian 为负，这和 winning YES token 在样本路径里向胜出方向移动是相符的。
 - `maker_bbo` 在两个 event 都亏，但这里主要反映当前 fill model 粗糙且偏保守。它现在只是 harness / plumbing test，不是 maker 策略结论。
+- 本版已修正尾部单边盘口的盯市展示：当尾部只有 `best_bid=0.999`、没有 `best_ask` 时，正库存不再用 0 作为 mark price，而是用可用 bid 做保守 mark。因此 equity 曲线尾部不会再出现由展示口径造成的假 cliff。
 
 ## 7. 当前结果可信度标签
 
