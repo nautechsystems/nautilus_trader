@@ -1,79 +1,85 @@
-﻿# Polymarket Shanghai event backtest: ideal-sort smoke report
+# Polymarket 上海天气事件回测：理想排序 smoke report
 
-Date: 2026-06-26
-Scope: two curated Shanghai temperature Polymarket events from PMXT parquet, selected winning YES token only.
-Status: **research smoke test, not production validation**.
+日期：2026-06-26
+范围：两个从 PMXT parquet 瘦身出来的上海最高温 Polymarket event；当前只跑最终胜出的 YES token。
+状态：**research smoke test，不是生产级验证回测**。
 
-This report is the first version of the Polymarket strategy-report format. It is intentionally more than a log: every run should carry (1) replay contract, (2) data-quality diagnostics, (3) strategy assumptions, (4) PnL/equity/fill outputs, and (5) explicit validity labels.
+这份报告是 Polymarket 策略研究报告格式的第一版。它不是单纯记录“程序跑通了”，而是希望每次回测都同时带上：
 
-## 0. Why the previous report was too thin
+1. 回放契约；
+2. 数据质量诊断；
+3. 策略假设；
+4. PnL / equity / fill 结果；
+5. 明确的结果可信度标签。
 
-NautilusTrader is a strong event-driven trading/backtest engine, but it does not magically produce a Polymarket research report by itself. For this repo we still need a Polymarket research layer around it:
+## 0. 为什么上一版报告太薄
 
-1. **Data adapter layer**: PMXT parquet -> ordered L2 book events -> strategy inputs.
-2. **Market semantics layer**: condition/token mapping, YES/NO settlement, fees, rewards, tick-size/delay rules.
-3. **Fill model layer**: taker/maker assumptions, partial fill rules, queue approximation.
-4. **Report layer**: replay quality, charts, strategy assumptions, result labels, and known invalidation risks.
+NautilusTrader 是一个很强的事件驱动交易 / 回测引擎，但它不会自动替我们生成 Polymarket 研究报告。对这个 repo 来说，我们还需要在 NautilusTrader 外面补一层 Polymarket research layer：
 
-This note starts that report layer. The current strategies are deliberately simple; the report shape is the more important deliverable at this stage.
+1. **数据适配层**：PMXT parquet -> 有序 L2 book events -> 策略输入。
+2. **市场语义层**：condition / token 映射、YES/NO 结算、fee、reward、tick size、delay 规则。
+3. **成交模型层**：taker / maker 假设、部分成交、队列估计。
+4. **报告层**：回放质量、图表、策略假设、结果标签、已知失效风险。
 
-## 1. Replay ordering used in this pass
+这一版报告先把报告层搭起来。当前策略故意很简单；这个阶段更重要的是确定以后报告应该长什么样，而不是马上证明某个策略赚钱。
 
-Current replay code sorts PMXT rows by:
+## 1. 本次回放的排序口径
+
+当前代码对 PMXT rows 的排序是：
 
 ```text
 timestamp, timestamp_received, original_row
 ```
 
-Meaning:
+含义：
 
-- `timestamp` is treated as the ideal source/event-time order.
-- `timestamp_received` is only the tie-breaker and price_change batch boundary.
-- `original_row` keeps sorting stable when both timestamps are equal.
-- `price_change` rows with the same `(timestamp_received, timestamp, market, asset_id, event_type)` are applied as one batch before comparing PMXT batch-level BBO.
+- `timestamp` 暂时被当作理想的 source / event time 顺序。
+- `timestamp_received` 只作为 tie-breaker，以及 price_change batch 的边界字段。
+- `original_row` 用来保证在两个 timestamp 都相同时排序稳定。
+- 相同 `(timestamp_received, timestamp, market, asset_id, event_type)` 的 `price_change` rows 会作为一个 batch 一次性应用，然后再和 PMXT batch-level BBO 对比。
 
-This is the right mode for a first "ideal historical research" test. It is **not** yet the final live-realistic replay contract. Later we still need to decide whether production historical replay should use source-time order, receive-time order, or a hybrid with snapshot resets and drift markers.
+这是第一阶段“理想历史回放研究”的合理口径。它**不是**最终 live-realistic replay contract。后面仍然要决定生产级历史回放到底应该使用 source-time、receive-time，还是带 snapshot reset / drift marker 的 hybrid replay。
 
-## 2. Replay quality dashboard
+## 2. 回放质量
 
-![Replay quality](report_assets/replay_quality.svg)
+![回放质量](report_assets/replay_quality.svg)
 
 | Event | Market | Price-change batch BBO mismatch | Snapshot BBO mismatch | Raw snapshot BBO mismatch | Trade off-book rate |
 | --- | --- | ---: | ---: | ---: | ---: |
 | highest-temperature-in-shanghai-on-june-9-2026 | 25C YES | 4.13% | 14.72% | 24.41% | 3.80% |
 | highest-temperature-in-shanghai-on-june-10-2026 | 28C YES | 2.91% | 8.94% | 20.49% | 0.97% |
 
-Read:
+解读：
 
-- The replay is usable for an ideal-sort smoke test: event processing completes, L2 books are maintained, simple strategies run end-to-end, and trade-vs-book checks are not obviously broken.
-- It is not yet a validated production backtest: BBO mismatch is still non-zero, especially around snapshots.
-- June 10 looks cleaner than June 9 by these diagnostics.
-- These diagnostics must travel with every strategy result; otherwise PnL alone is misleading.
+- 作为 ideal-sort smoke test，目前已经可以用：事件能完整处理，L2 book 能维护，简单策略能端到端跑完，trade-vs-book 检查没有明显崩坏。
+- 但它还不是已经验证过的生产级回测：BBO mismatch 仍然非零，尤其 snapshot 相关 mismatch 还比较明显。
+- 从这些诊断看，6 月 10 日样本比 6 月 9 日更干净。
+- 这些诊断必须跟随每一次策略结果一起展示；只看 PnL 很容易误判。
 
-## 3. Market path
+## 3. 市场价格路径
 
-![BBO and mid price paths](report_assets/price_paths.svg)
+![BBO 和 mid 价格路径](report_assets/price_paths.svg)
 
-These charts are 5-minute BBO samples from the replayed selected YES token.
+这张图是 replay 后 selected YES token 的 5 分钟 BBO 采样。
 
-Why this chart belongs in every report:
+每份 report 都应该有这张图，原因是：
 
-1. It shows whether the strategy was trading a market that actually moved.
-2. It catches obviously broken books, e.g. crossed/empty/stale-looking paths.
-3. It gives intuition for momentum/contrarian results before looking at PnL.
+1. 先看市场本身有没有有效移动，避免在坏数据上讨论策略。
+2. 快速发现明显错误的 book，例如 crossed book、空 book、长时间 stale。
+3. 在看 PnL 之前，先给 momentum / contrarian 的结果一个价格路径直觉。
 
-## 4. Strategy definitions in this smoke suite
+## 4. 本次 smoke suite 的策略定义
 
-| Strategy | Purpose | Current limitation |
+| Strategy | 目的 | 当前限制 |
 | --- | --- | --- |
-| `buy_hold_first_ask` | Settlement sanity check: buy winning YES once and hold to final payout. | Not a tradable strategy benchmark; uses hindsight-selected winning token in this report. |
-| `momentum_taker` | Simple path-following taker rule based on mid-price changes. | No fees, no latency, no market-impact model. |
-| `contrarian_taker` | Opposite of momentum, useful as a sign/sanity pair. | Same limitations as momentum. |
-| `maker_bbo` | Plumbing test for maker-style quotes around BBO. | Current fill model is naive/harsh; do **not** interpret as real maker edge. |
+| `buy_hold_first_ask` | 结算 sanity check：第一次能买到 winning YES 就买入并持有到结算。 | 不是可交易策略 benchmark；这份报告里使用的是事后已知的 winning token。 |
+| `momentum_taker` | 简单趋势跟随 taker 规则，根据 mid-price 变化交易。 | 没有 fee、latency、market impact 模型。 |
+| `contrarian_taker` | momentum 的反向规则，用作符号和路径 sanity check。 | 限制同 momentum。 |
+| `maker_bbo` | maker-style quote 的 plumbing test，检查挂单 / fill / inventory / PnL 链路。 | 当前 fill model 很粗糙且偏保守，**不能**解读成真实 maker edge。 |
 
-## 5. Result dashboard
+## 5. 策略结果
 
-![Strategy PnL](report_assets/strategy_pnl.svg)
+![策略 PnL](report_assets/strategy_pnl.svg)
 
 | Event | Market | Strategy | Fills | Ending inventory | Gross notional | Settlement PnL | Return on gross notional |
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
@@ -86,54 +92,55 @@ Why this chart belongs in every report:
 | Jun 10 | 28C YES | momentum_taker | 27 | 90.00 | 145.70 | 26.50 | 18.19% |
 | Jun 10 | 28C YES | contrarian_taker | 27 | -90.00 | 143.90 | -36.70 | -25.50% |
 
-## 6. Equity curves
+## 6. 权益曲线
 
-![Equity curves](report_assets/equity_curves.svg)
+![权益曲线](report_assets/equity_curves.svg)
 
-Read:
+解读：
 
-- `buy_hold_first_ask` is the basic settlement sanity check. It is positive on both events because both selected YES tokens resolved YES.
-- June 10 momentum being positive while contrarian is negative is directionally plausible if the winning YES token trends upward during the sampled path.
-- `maker_bbo` loses on both events here, but this mainly reflects the current conservative/naive fill model. It is a harness test, not a maker-strategy conclusion.
+- `buy_hold_first_ask` 是最基本的 settlement sanity check。两个 event 都为正，因为这次选的 YES token 最终都 resolve YES。
+- 6 月 10 日 momentum 为正、contrarian 为负，这和 winning YES token 在样本路径里向胜出方向移动是相符的。
+- `maker_bbo` 在两个 event 都亏，但这里主要反映当前 fill model 粗糙且偏保守。它现在只是 harness / plumbing test，不是 maker 策略结论。
 
-## 7. Validity label
+## 7. 当前结果可信度标签
 
-Current label remains:
+当前 label 仍然是：
 
 ```text
 smoke_test_unvalidated
 ```
 
-This label is correct because the following are still open:
+这个标签是对的，因为下面这些还没有完全确定：
 
-1. PMXT historical replay contract: source-time vs receive-time vs hybrid.
-2. Snapshot handling: when to reset local book, and how to mark drift.
-3. Fee/reward/rebate model.
-4. Polymarket tick-size and delay rule snapshots.
-5. Maker fill model, partial fills, and queue approximation.
-6. Settlement/result metadata and event semantics.
+1. PMXT 历史回放契约：source-time、receive-time，还是 hybrid。
+2. Snapshot 处理：什么时候 reset 本地 book，怎么标记 drift。
+3. Fee / reward / rebate 模型。
+4. Polymarket tick-size 和 delay rule 的历史 snapshot。
+5. Maker fill model、partial fill、queue approximation。
+6. Settlement / final result 元数据和 event 语义。
 
-## 8. Proposed standard report format going forward
+## 8. 后续标准 report 应该包含什么
 
-Every strategy/factor report should have these sections:
+后面每一份策略 / 因子报告都应该包含这些部分：
 
-1. **Run manifest**: data source, event universe, tokens, date range, code commit, parameters.
-2. **Replay contract**: ordering rule, batch rule, snapshot reset rule, fill model version.
-3. **Data quality dashboard**: BBO mismatch, snapshot mismatch, trade-vs-book, missing windows, schema drift.
-4. **Market overview**: price path, spread/depth, volume/trade count, settlement outcome.
-5. **Strategy definition**: signal, execution rule, inventory/risk limits, fee assumptions.
-6. **Performance dashboard**: PnL, return on gross, equity curve, drawdown, turnover, inventory.
-7. **Fill/execution diagnostics**: fills by side, fill price vs BBO, maker/taker split, off-book trades.
-8. **Sensitivity checks**: alternative fill model, latency, fees, queue assumptions, replay ordering.
-9. **Validity label**: smoke / research / validated / production-candidate.
-10. **Decision**: continue, modify, discard, or needs data/infra work.
+1. **Run manifest**：数据源、event universe、tokens、日期范围、代码 commit、参数。
+2. **Replay contract**：排序规则、batch 规则、snapshot reset 规则、fill model 版本。
+3. **数据质量 dashboard**：BBO mismatch、snapshot mismatch、trade-vs-book、缺失窗口、schema drift。
+4. **市场概览**：价格路径、spread / depth、volume / trade count、最终结算结果。
+5. **策略定义**：signal、执行规则、inventory / risk limit、fee 假设。
+6. **表现 dashboard**：PnL、return on gross、equity curve、drawdown、turnover、inventory。
+7. **Fill / execution 诊断**：按 side 的成交、fill price vs BBO、maker/taker split、off-book trades。
+8. **敏感性检查**：不同 fill model、latency、fee、queue 假设、replay ordering。
+9. **可信度标签**：smoke / research / validated / production-candidate。
+10. **结论动作**：继续、修改、放弃，还是需要补数据 / infra。
 
-## 9. Current conclusion
+## 9. 当前结论
 
-For near-term research we can proceed with this ideal-sort mode:
+短期研究可以先按这个 ideal-sort 模式推进：
 
 ```text
-sort by source timestamp -> group same-message price_change batches -> replay L2 -> run simple strategies -> carry replay-quality diagnostics into every result
+按 source timestamp 排序 -> 同 message price_change batch 分组 -> L2 replay -> 跑简单策略 -> 每个结果都携带 replay-quality diagnostics
 ```
 
-This is enough to start organizing strategy experiments and factor-style research. It is not enough to claim production-grade historical execution accuracy.
+这已经足够开始组织策略实验和类似因子研究的 workflow。
+但它还不足以宣称生产级历史撮合精度。
