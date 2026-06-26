@@ -271,7 +271,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error when plug-ins are configured without `nautilus-plugin-host`.
+    /// Returns an error when plug-ins are configured without host-side support.
     #[cfg(feature = "plugin")]
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
@@ -279,7 +279,7 @@ impl LiveNode {
         }
 
         anyhow::bail!(
-            "LiveNodeConfig.plugins requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+            "LiveNodeConfig.plugins requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )
     }
 
@@ -287,7 +287,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error when plug-ins are configured without `nautilus-plugin-host`.
+    /// Returns an error when plug-ins are configured without host-side support.
     #[cfg(not(feature = "plugin"))]
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
@@ -295,7 +295,7 @@ impl LiveNode {
         }
 
         anyhow::bail!(
-            "LiveNodeConfig.plugins requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+            "LiveNodeConfig.plugins requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )
     }
 
@@ -303,7 +303,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Returns an error because dynamic plug-in hosting lives in `nautilus-plugin-host`.
+    /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
     #[cfg(feature = "plugin")]
     #[expect(
         clippy::needless_pass_by_value,
@@ -313,7 +313,7 @@ impl LiveNode {
         config.validate_runtime_support(self.config.plugins.len())?;
 
         anyhow::bail!(
-            "LiveNode::add_plugin requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+            "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )
     }
 
@@ -321,7 +321,7 @@ impl LiveNode {
     ///
     /// # Errors
     ///
-    /// Always returns an error explaining that `nautilus-plugin-host` is required.
+    /// Always returns an error explaining that host-side support is required.
     #[cfg(not(feature = "plugin"))]
     #[expect(
         clippy::needless_pass_by_value,
@@ -330,7 +330,7 @@ impl LiveNode {
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
         let _ = config;
         anyhow::bail!(
-            "LiveNode::add_plugin requires nautilus-plugin-host; nautilus-plugin is the guest SDK only"
+            "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )
     }
 
