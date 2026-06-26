@@ -97,6 +97,9 @@ impl RateOfChange {
     }
 
     pub fn update_raw(&mut self, price: f64) {
+        if self.prices.len() == self.period {
+            let _ = self.prices.pop_front();
+        }
         let _ = self.prices.push_back(price);
 
         if !self.initialized {
@@ -157,7 +160,7 @@ mod tests {
         }
 
         assert!(roc_10.initialized());
-        assert_eq!(roc_10.value, 1.081_081_881_387_059);
+        assert_eq!(roc_10.value, 0.28428852094735724);
     }
 
     #[rstest]
@@ -171,5 +174,18 @@ mod tests {
         assert!(!roc_10.initialized());
         assert!(!roc_10.has_inputs);
         assert_eq!(roc_10.value, 0.0);
+    }
+
+    #[rstest]
+    fn test_value_respects_period_window() {
+        let mut roc = RateOfChange::new(3, Some(false));
+
+        roc.update_raw(100.0);
+        roc.update_raw(1.0);
+        roc.update_raw(2.0);
+        roc.update_raw(3.0);
+        roc.update_raw(4.0);
+
+        assert_eq!(roc.value, 1.0);
     }
 }
