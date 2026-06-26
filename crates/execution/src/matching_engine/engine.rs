@@ -110,6 +110,7 @@ pub struct OrderMatchingEngine {
     execution_bar_deltas: IndexMap<BarType, TimeDelta>,
     account_ids: IndexMap<TraderId, AccountId>,
     cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
+    post_match_order_ids: IndexSet<ClientOrderId>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
     bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
@@ -194,6 +195,7 @@ impl OrderMatchingEngine {
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
             cached_filled_qty: IndexMap::new(),
+            post_match_order_ids: IndexSet::new(),
             ids_generator,
             last_trade_size: None,
             bid_consumption: IndexMap::new(),
@@ -247,6 +249,7 @@ impl OrderMatchingEngine {
         self.execution_bar_deltas.clear();
         self.account_ids.clear();
         self.cached_filled_qty.clear();
+        self.post_match_order_ids.clear();
         self.core.reset();
         self.target_bid = None;
         self.target_ask = None;
@@ -1089,7 +1092,7 @@ impl OrderMatchingEngine {
                 );
                 self.cancel_order(&order, None);
             } else {
-                let _ = self.core.delete_order(client_order_id);
+                self.delete_core_order(client_order_id);
                 self.cached_filled_qty.swap_remove(&client_order_id);
             }
         }
@@ -3301,7 +3304,7 @@ impl OrderMatchingEngine {
     // `iterate_bids/asks` does not produce a spurious fill action.
     fn purge_stale_core_entry(&mut self, client_order_id: ClientOrderId) {
         if self.core.order_exists(client_order_id) {
-            let _ = self.core.delete_order(client_order_id);
+            self.delete_core_order(client_order_id);
         }
         self.cached_filled_qty.swap_remove(&client_order_id);
     }
@@ -3316,7 +3319,7 @@ impl OrderMatchingEngine {
         // Gate on `is_closed`, not `is_open`: cache may transiently hold the
         // order in `Submitted` (process_limit_order accepts before cache add)
         if order.is_closed() {
-            let _ = self.core.delete_order(client_order_id);
+            self.delete_core_order(client_order_id);
             return Some(order);
         }
 
@@ -3329,10 +3332,12 @@ impl OrderMatchingEngine {
             .is_some_and(|existing| *existing == new_match_info);
 
         if unchanged {
+            self.track_post_match_order(&order);
             return Some(order);
         }
 
-        let _ = self.core.delete_order(client_order_id);
+        self.delete_core_order(client_order_id);
+        self.track_post_match_order(&order);
         self.core.add_order(new_match_info);
         Some(order)
     }
@@ -3825,10 +3830,14 @@ impl OrderMatchingEngine {
             }
         }
 
+        let mut matched_order = false;
+
         if self.market_status == MarketStatus::Open {
             // Process bid actions before snapshotting asks so cross-side
             // contingencies (OCO/OUO) mutate state between sides
             for action in self.core.iterate_bids() {
+                matched_order = true;
+
                 match action {
                     MatchAction::FillLimit(id) => self.fill_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
@@ -3836,6 +3845,8 @@ impl OrderMatchingEngine {
             }
 
             for action in self.core.iterate_asks() {
+                matched_order = true;
+
                 match action {
                     MatchAction::FillLimit(id) => self.fill_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
@@ -3843,30 +3854,46 @@ impl OrderMatchingEngine {
             }
         }
 
-        let order_ids: Vec<ClientOrderId> =
-            self.core.iter_orders().map(|m| m.client_order_id).collect();
+        let order_ids: Vec<ClientOrderId> = if matched_order {
+            self.core.iter_orders().map(|m| m.client_order_id).collect()
+        } else if self.post_match_order_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.core
+                .iter_orders()
+                .filter_map(|order| {
+                    self.post_match_order_ids
+                        .contains(&order.client_order_id)
+                        .then_some(order.client_order_id)
+                })
+                .collect()
+        };
         let support_gtd_orders = self.config.support_gtd_orders;
 
         for client_order_id in order_ids {
-            let action = {
+            let (action, keep_tracking) = {
                 let cache = self.cache.borrow();
                 let Some(order) = cache.order(&client_order_id) else {
+                    self.post_match_order_ids.swap_remove(&client_order_id);
                     continue;
                 };
 
-                post_match_order_action(&order, support_gtd_orders, timestamp_ns, |order| {
-                    order.clone()
-                })
+                (
+                    post_match_order_action(&order, support_gtd_orders, timestamp_ns, |order| {
+                        order.clone()
+                    }),
+                    Self::requires_post_match_maintenance(&order),
+                )
             };
 
             match action {
                 PostMatchOrderAction::RemoveClosed => {
-                    let _ = self.core.delete_order(client_order_id);
+                    self.delete_core_order(client_order_id);
                     self.cached_filled_qty.swap_remove(&client_order_id);
                     continue;
                 }
                 PostMatchOrderAction::Expire(order) => {
-                    let _ = self.core.delete_order(client_order_id);
+                    self.delete_core_order(client_order_id);
                     self.cached_filled_qty.swap_remove(&client_order_id);
                     self.expire_order(&order);
                     continue;
@@ -3882,7 +3909,11 @@ impl OrderMatchingEngine {
                         self.resync_core_entry(client_order_id);
                     }
                 }
-                PostMatchOrderAction::NoMaintenance => {}
+                PostMatchOrderAction::NoMaintenance => {
+                    if !keep_tracking {
+                        self.post_match_order_ids.swap_remove(&client_order_id);
+                    }
+                }
             }
 
             // Single-shot: only the first order after a trigger fill sees
@@ -5008,7 +5039,7 @@ impl OrderMatchingEngine {
 
         if order.is_closed() || fully_filled {
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self.core.delete_order(order.client_order_id());
+                self.delete_core_order(order.client_order_id());
             }
             // MarketToLimit reads `cached_filled_qty` in its caller to compute leaves;
             // its own cleanup happens there after the read.
@@ -5537,7 +5568,25 @@ impl OrderMatchingEngine {
         }
 
         let match_info = Self::matching_core_entry(order);
+        self.track_post_match_order(order);
         self.core.add_order(match_info);
+    }
+
+    fn track_post_match_order(&mut self, order: &OrderAny) {
+        self.post_match_order_ids.insert(order.client_order_id());
+    }
+
+    fn delete_core_order(&mut self, client_order_id: ClientOrderId) {
+        self.post_match_order_ids.swap_remove(&client_order_id);
+        let _ = self.core.delete_order(client_order_id);
+    }
+
+    fn requires_post_match_maintenance(order: &OrderAny) -> bool {
+        order.expire_time().is_some()
+            || matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            )
     }
 
     fn matching_core_entry(order: &OrderAny) -> RestingOrder {
@@ -5589,7 +5638,7 @@ impl OrderMatchingEngine {
 
         // Check if order exists in OrderMatching core, and delete it if it does
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self.core.delete_order(order.client_order_id());
+            self.delete_core_order(order.client_order_id());
         }
         self.cached_filled_qty.swap_remove(&order.client_order_id());
 
@@ -5880,7 +5929,7 @@ impl OrderMatchingEngine {
             .is_limit_matched(order.order_side_specified(), price)
         {
             if order.is_post_only() {
-                let _ = self.core.delete_order(client_order_id);
+                self.delete_core_order(client_order_id);
                 self.cached_filled_qty.swap_remove(&client_order_id);
                 let event = self.create_order_rejected(
                     &order,

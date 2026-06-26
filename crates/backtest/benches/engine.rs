@@ -25,6 +25,8 @@
 //!   strategy, risk, execution client, exchange, matching engine, cache, and portfolio path.
 //! - `passive_limit_orders`: quote-driven strategy accumulating resting limit orders so
 //!   `OrderMatchingCore` maintains passive order state while quote and trade ticks iterate.
+//! - `gtd_limit_expiry`: quote-driven strategy submitting passive GTD limit orders which expire
+//!   on following trade ticks.
 //! - `data_routes`: bar, L2 delta, depth10, mark/index price, funding, status, and close event
 //!   routing through the engine and simulated exchange.
 //! - `order_type_sweep`: one strategy submits market, limit, stop, touched, and trailing orders
@@ -53,11 +55,12 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BarAggregation, BookAction, BookType,
-        InstrumentCloseType, MarketStatusAction, OmsType, OrderSide, PriceType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        InstrumentCloseType, MarketStatusAction, OmsType, OrderSide, OrderStatus, PriceType,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     identifiers::{InstrumentId, StrategyId, TradeId, Venue},
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+    orders::Order,
     types::{Money, Price, Quantity},
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
@@ -72,6 +75,8 @@ const QUOTE_INTERVAL_NS: u64 = 1_000_000;
 const TRADE_OFFSET_NS: u64 = 500_000;
 const MARKET_ORDER_INTERVAL: usize = 10;
 const PASSIVE_ORDER_INTERVAL: usize = 20;
+const GTD_ORDER_INTERVAL: usize = 20;
+const GTD_EXPIRY_OFFSET_NS: u64 = TRADE_OFFSET_NS / 2;
 
 fn bench_run(c: &mut Criterion) {
     let mut group = c.benchmark_group("backtest_engine/run");
@@ -116,6 +121,23 @@ fn bench_run(c: &mut Criterion) {
                     run_engine_iterations(iters, data_count, expected_orders, || {
                         build_passive_limit_orders(data.clone(), quote_count)
                     })
+                });
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("gtd_limit_expiry", data_count),
+            &data,
+            |b, data| {
+                let expected_orders = quote_count / GTD_ORDER_INTERVAL;
+                b.iter_custom(|iters| {
+                    run_engine_iterations_with_expired_orders(
+                        iters,
+                        data_count,
+                        expected_orders,
+                        expected_orders,
+                        || build_gtd_limit_expiry(data.clone(), quote_count),
+                    )
                 });
             },
         );
@@ -235,6 +257,55 @@ where
     elapsed
 }
 
+fn run_engine_iterations_with_expired_orders<F>(
+    iters: u64,
+    expected_iterations: usize,
+    expected_orders: usize,
+    expected_expired_orders: usize,
+    mut build_engine: F,
+) -> Duration
+where
+    F: FnMut() -> BacktestEngine,
+{
+    let mut elapsed = Duration::ZERO;
+
+    for _ in 0..iters {
+        let mut engine = build_engine();
+        let started = Instant::now();
+        engine
+            .run(None, None, None, false)
+            .expect("backtest run should succeed");
+        elapsed += started.elapsed();
+
+        black_box(engine.iteration());
+        assert_eq!(engine.iteration(), expected_iterations);
+        assert_eq!(engine.get_result().total_orders, expected_orders);
+
+        {
+            let cache = engine.kernel().cache();
+            let cache = cache.borrow();
+            let closed_orders = cache.orders_closed(None, None, None, None, None);
+            assert_eq!(
+                closed_orders.len(),
+                expected_expired_orders,
+                "expected all GTD benchmark orders to be closed",
+            );
+            let expired_orders = closed_orders
+                .iter()
+                .filter(|order| order.status() == OrderStatus::Expired)
+                .count();
+            assert_eq!(
+                expired_orders, expected_expired_orders,
+                "expected all closed GTD benchmark orders to be expired",
+            );
+        }
+
+        engine.dispose();
+    }
+
+    elapsed
+}
+
 fn build_market_data_replay(data: Vec<Data>) -> BacktestEngine {
     build_engine_with_config(data, None, EngineBuildConfig::default())
 }
@@ -258,6 +329,18 @@ fn build_passive_limit_orders(data: Vec<Data>, quote_count: usize) -> BacktestEn
         Some(StrategyWorkload::Passive(PassiveLimitOrders::new(
             instrument_id,
             quote_count / PASSIVE_ORDER_INTERVAL,
+        ))),
+        EngineBuildConfig::default(),
+    )
+}
+
+fn build_gtd_limit_expiry(data: Vec<Data>, quote_count: usize) -> BacktestEngine {
+    let instrument_id = crypto_perpetual_ethusdt().id();
+    build_engine_with_config(
+        data,
+        Some(StrategyWorkload::Gtd(GtdLimitExpiry::new(
+            instrument_id,
+            quote_count / GTD_ORDER_INTERVAL,
         ))),
         EngineBuildConfig::default(),
     )
@@ -318,6 +401,9 @@ fn build_engine_with_config(
         Some(StrategyWorkload::Passive(strategy)) => engine
             .add_strategy(strategy)
             .expect("passive limit strategy should be added"),
+        Some(StrategyWorkload::Gtd(strategy)) => engine
+            .add_strategy(strategy)
+            .expect("GTD limit strategy should be added"),
         Some(StrategyWorkload::OrderSweep(strategy)) => engine
             .add_strategy(strategy)
             .expect("order type sweep strategy should be added"),
@@ -623,6 +709,7 @@ fn generate_order_trigger_data(instrument_id: InstrumentId, quote_count: usize) 
 enum StrategyWorkload {
     Market(AlternatingMarketOrders),
     Passive(PassiveLimitOrders),
+    Gtd(GtdLimitExpiry),
     OrderSweep(OrderTypeSweep),
 }
 
@@ -782,6 +869,87 @@ impl DataActor for PassiveLimitOrders {
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.cancel_all_orders(self.instrument_id, None, None, None)
+    }
+}
+
+struct GtdLimitExpiry {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    trade_size: Quantity,
+    max_orders: usize,
+    quote_count: usize,
+    orders_submitted: usize,
+}
+
+impl GtdLimitExpiry {
+    fn new(instrument_id: InstrumentId, max_orders: usize) -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("BENCH-GTD-LIMIT-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+            instrument_id,
+            trade_size: Quantity::from("0.010"),
+            max_orders,
+            quote_count: 0,
+            orders_submitted: 0,
+        }
+    }
+
+    fn submit_gtd_limit_order(&mut self, expire_time: UnixNanos) -> anyhow::Result<()> {
+        let side = if self.orders_submitted.is_multiple_of(2) {
+            OrderSide::Buy
+        } else {
+            OrderSide::Sell
+        };
+        let limit_price = passive_limit_price(side, self.orders_submitted);
+        let order = self.order().limit(
+            self.instrument_id,
+            side,
+            self.trade_size,
+            limit_price,
+            Some(TimeInForce::Gtd),
+            Some(expire_time),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.orders_submitted += 1;
+        self.submit_order(order, None, None, None)
+    }
+}
+
+nautilus_strategy!(GtdLimitExpiry);
+
+impl Debug for GtdLimitExpiry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(GtdLimitExpiry)).finish()
+    }
+}
+
+impl DataActor for GtdLimitExpiry {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.quote_count += 1;
+        if self.quote_count.is_multiple_of(GTD_ORDER_INTERVAL)
+            && self.orders_submitted < self.max_orders
+        {
+            self.submit_gtd_limit_order(quote.ts_event + GTD_EXPIRY_OFFSET_NS)?;
+        }
+        Ok(())
     }
 }
 

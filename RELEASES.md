@@ -14,24 +14,24 @@ Released on TBD (UTC).
 ### Security
 
 ### Fixes
+- Fixed `Throttler` timer handling to namespace timers by actor and cancel them on teardown (Rust)
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
-- Fixed `Throttler` timer handling to namespace timers by actor and cancel them on teardown (Rust)
 
 ### Internal Improvements
+- Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
+- Hardened plugin ABI surface to reject manifest ABI mismatches (Rust)
+- Hardened CI release provenance checks with provenance refetch and transient 404 retries
 - Optimized `OrderMatchingEngine` post-match actions to avoid cloning resting orders (Rust)
+- Optimized `OrderMatchingEngine` no-match GTD and trailing-order paths (Rust)
 - Optimized Databento adapter decode and loader paths (Rust)
 - Optimized `Throttler` hot paths and added Criterion benches (Rust)
-- Hardened plugin ABI surface to reject manifest ABI mismatches (Rust)
-- Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
-- Hardened CI release provenance checks with provenance refetch and transient 404 retries
-- Adopted a valid LGPLv3+ trove classifier for v2 wheels
 
 ### Documentation Updates
+- Added a Lighter Rust quickstart and get-started guide
 - Standardized the `request_bars` callback pattern for live bar warmup (#4311), thanks @dfjmax
 - Refined Databento dataset configuration docs for schema limits and symbology inference
 - Refined event sourcing marker sidecar docs to match the shipped markers module
-- Added a Lighter Rust quickstart and get-started guide
 
 ### Deprecations
 
