@@ -537,6 +537,7 @@ mod tests {
             clock as Rc<RefCell<dyn Clock>>,
             cache,
             portfolio,
+            None,
         )));
         trader.borrow_mut().initialize().unwrap();
 

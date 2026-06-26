@@ -33,6 +33,7 @@ use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 
 use crate::{
+    clock_factory::ClockFactory,
     config::KernelConfig,
     event_store::{EventStoreFactory, KernelEventStore},
     kernel::NautilusKernel,
@@ -65,6 +66,7 @@ pub struct NautilusKernelBuilder {
     portfolio: Option<PortfolioConfig>,
     msgbus: Option<MessageBusConfig>,
     event_store_factory: Option<EventStoreFactory>,
+    clock_factory: Option<ClockFactory>,
     external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
     external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
 }
@@ -94,6 +96,7 @@ impl Debug for NautilusKernelBuilder {
             .field("portfolio", &self.portfolio)
             .field("msgbus", &self.msgbus)
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field("clock_factory", &self.clock_factory.is_some())
             .field(
                 "external_msgbus_factory",
                 &self.external_msgbus_factory.is_some(),
@@ -133,6 +136,7 @@ impl NautilusKernelBuilder {
             portfolio: None,
             msgbus: None,
             event_store_factory: None,
+            clock_factory: None,
             external_msgbus_factory: None,
             external_msgbus_egress: None,
         }
@@ -289,6 +293,20 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Inject a caller-supplied clock factory for the kernel and component clocks.
+    ///
+    /// The factory is invoked for the kernel clock and once per registered component. Each
+    /// invocation should return a fresh instance. Without a factory, live/sandbox systems use
+    /// `LiveClock::default()`.
+    #[must_use]
+    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
+    {
+        self.clock_factory = Some(Rc::new(factory));
+        self
+    }
+
     /// Inject external message bus egress for serialized message bus publications.
     #[must_use]
     pub fn with_external_msgbus_egress(
@@ -360,6 +378,7 @@ impl NautilusKernelBuilder {
             config,
             self.cache_database,
             self.event_store_factory,
+            self.clock_factory,
         )?;
 
         let config = kernel.config.msgbus().unwrap_or_default();
@@ -645,6 +664,82 @@ mod tests {
         assert!(
             Rc::ptr_eq(&received_clock, &kernel.clock()),
             "factory must receive the kernel's clock Rc, not a fresh allocation",
+        );
+    }
+
+    #[cfg(feature = "live")]
+    #[rstest]
+    fn test_builder_with_clock_factory_drives_kernel_and_component_clocks() {
+        use nautilus_common::clock::TestClock;
+
+        let calls = Rc::new(Cell::new(0usize));
+        let calls_in_closure = calls.clone();
+
+        let kernel = NautilusKernelBuilder::new(
+            "ClockFactoryKernel".to_string(),
+            TraderId::from("TRADER-CF"),
+            Environment::Live,
+        )
+        .with_clock_factory(move || {
+            calls_in_closure.set(calls_in_closure.get() + 1);
+            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+        })
+        .build()
+        .expect("kernel builds with clock factory");
+
+        assert_eq!(
+            calls.get(),
+            1,
+            "kernel clock must consume exactly one factory call"
+        );
+        assert!(
+            (*kernel.clock().borrow()).as_any().is::<TestClock>(),
+            "kernel clock must be the factory-produced TestClock"
+        );
+
+        let c1 = kernel
+            .trader()
+            .borrow_mut()
+            .create_component_clock(ComponentId::new("COMP-1"));
+        let c2 = kernel
+            .trader()
+            .borrow_mut()
+            .create_component_clock(ComponentId::new("COMP-2"));
+
+        assert_eq!(
+            calls.get(),
+            3,
+            "factory must back kernel clock and each component clock"
+        );
+        assert!((*c1.borrow()).as_any().is::<TestClock>());
+        assert!((*c2.borrow()).as_any().is::<TestClock>());
+    }
+
+    #[cfg(feature = "live")]
+    #[rstest]
+    fn test_builder_without_clock_factory_uses_live_clock_default() {
+        use nautilus_common::live::clock::LiveClock; // nautilus-import-ok
+
+        let kernel = NautilusKernelBuilder::new(
+            "DefaultClockKernel".to_string(),
+            TraderId::from("TRADER-DC"),
+            Environment::Live,
+        )
+        .build()
+        .expect("kernel builds without a clock factory");
+
+        assert!(
+            (*kernel.clock().borrow()).as_any().is::<LiveClock>(),
+            "no factory uses LiveClock::default for the kernel clock"
+        );
+
+        let comp = kernel
+            .trader()
+            .borrow_mut()
+            .create_component_clock(ComponentId::new("COMP-D"));
+        assert!(
+            (*comp.borrow()).as_any().is::<LiveClock>(),
+            "no factory uses LiveClock::default for component clocks"
         );
     }
 

@@ -1928,6 +1928,7 @@ mod tests {
             config,
             None,
             Some(Box::new(event_store_factory)),
+            None,
         )
         .unwrap();
         engine.instance_id = engine.kernel.instance_id;
