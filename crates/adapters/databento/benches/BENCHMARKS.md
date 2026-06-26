@@ -13,7 +13,7 @@ Absolute numbers vary by machine; only same-machine deltas are meaningful.
 ```bash
 sudo cpupower frequency-set -g performance
 CARGO_BUILD_JOBS=16 setarch "$(uname -m)" -R cargo bench -p nautilus-databento --profile bench-lto \
-    --bench data --bench micros
+    --bench data --bench micros --bench clients
 sudo cpupower frequency-set -g powersave
 ```
 
@@ -73,6 +73,28 @@ data files.
 | `large_mbo/dbn_stream_decode`   | 2.75 ms | 25.1 M/s   |
 | `large_mbo/loader_collect`      | 5.67 ms | 11.6 M/s   |
 | `large_mbo/loader_stream_count` | 5.35 ms | 12.3 M/s   |
+
+## Client end-to-end (`clients.rs`)
+
+Deterministic local-network benches for the public client surfaces. The
+historical rows route `DatabentoHistoricalClient` through a local HTTP fixture
+server that returns committed DBN zstd fixtures. The live row routes
+`DatabentoFeedHandler` through the mock LSG protocol server. The trade row
+measures one session with authenticate, subscribe, start, symbol mapping, 100
+trade records, message-channel receive, and close. The MBO row keeps one live
+session open after subscribe/start warmup, then measures repeated 10,000-record
+MBO byte bursts through socket read, DBN decode, live handler dispatch, MBO
+buffering, and message-channel receive.
+
+These rows are useful for same-machine regressions in client orchestration.
+They are not external Databento service latency claims.
+
+| Bench                                | Median  | Throughput |
+|--------------------------------------|---------|------------|
+| `historical_client/trades_http`      | 65.5 µs | 30.5 k/s   |
+| `historical_client/mbp1_quotes_http` | 66.3 µs | 30.2 k/s   |
+| `live_client/trades_mock_lsg`        | 41.1 ms | 2.43 k/s   |
+| `live_client/mbo_stream_mock_lsg`    | 3.40 ms | 2.94 M/s   |
 
 ## Component breakdown (`micros.rs`)
 

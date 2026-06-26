@@ -103,6 +103,10 @@ harness = false
 name = "micros"
 harness = false
 
+[[bench]]
+name = "clients"
+harness = false
+
 [[example]]
 name = "databento-data-tester"
 path = "examples/node_data_tester.rs"

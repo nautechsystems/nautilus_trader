@@ -573,6 +573,53 @@ async fn test_subscribe_book_deltas_mbo() {
 
 #[rstest]
 #[tokio::test]
+async fn test_mbo_single_f_last_emits_one_delta() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(mbo_msg_with_ts(
+        INSTRUMENT_ID,
+        b'A',
+        b'B',
+        128,
+        101_000_000_000,
+        101_000_000_000,
+    ));
+    server.disconnect();
+
+    let handle = tokio::spawn(async move { handler.run().await });
+
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Mbo)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    match msg {
+        DatabentoMessage::Data(Data::Deltas(deltas)) => {
+            assert_eq!(deltas.instrument_id.symbol.as_str(), RAW_SYMBOL);
+            assert_eq!(deltas.deltas.len(), 1);
+            assert_eq!(deltas.flags, 128);
+            assert_eq!(deltas.sequence, 1);
+            assert_eq!(deltas.ts_event, 101_000_000_000u64);
+            assert_eq!(deltas.deltas[0].flags, 128);
+            assert_eq!(deltas.deltas[0].sequence, 1);
+            assert_eq!(deltas.deltas[0].ts_event, 101_000_000_000u64);
+        }
+        other => panic!("expected Data::Deltas, was {other:?}"),
+    }
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    let _ = handle.await;
+    server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_close_during_backoff() {
     let server = MockLsgServer::new(TEST_DATASET).await;
     let (cmd_tx, _msg_rx, mut handler) = create_test_handler(&server.addr(), TEST_DATASET);

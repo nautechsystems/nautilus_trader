@@ -1299,14 +1299,27 @@ fn process_mbo_delta(
     buffering_start: &mut Option<UnixNanos>,
     buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
 ) -> anyhow::Result<Option<OrderBookDeltas_API>> {
+    let is_last = RecordFlag::F_LAST.matches(flags);
+    let is_snapshot = RecordFlag::F_SNAPSHOT.matches(flags);
+
+    // Most live MBO events are single non-snapshot deltas, avoid map churn on that path
+    if is_last
+        && !is_snapshot
+        && buffering_start.is_none()
+        && !buffered_deltas.contains_key(&delta.instrument_id)
+    {
+        let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
+        return Ok(Some(OrderBookDeltas_API::new(deltas)));
+    }
+
     let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
     buffer.push(delta);
 
-    if !RecordFlag::F_LAST.matches(flags) {
+    if !is_last {
         return Ok(None);
     }
 
-    if RecordFlag::F_SNAPSHOT.matches(flags) {
+    if is_snapshot {
         return Ok(None);
     }
 
@@ -1520,6 +1533,33 @@ mod tests {
 
         assert!(result.is_none());
         assert_eq!(buffered[&instrument_id].len(), 1);
+    }
+
+    #[rstest]
+    fn test_mbo_single_f_last_emits_without_buffering() {
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let ts_event = 1_000_000_000;
+        let mut delta = test_delta(instrument_id, ts_event);
+        delta.flags = 128;
+        delta.sequence = 42;
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        let result =
+            process_mbo_delta(delta, delta.flags, &mut buffering_start, &mut buffered).unwrap();
+
+        let emitted = result.expect("single F_LAST delta should emit");
+        assert_eq!(emitted.instrument_id, instrument_id);
+        assert_eq!(emitted.deltas.len(), 1);
+        assert_eq!(emitted.flags, 128);
+        assert_eq!(emitted.sequence, 42);
+        assert_eq!(emitted.ts_event, UnixNanos::from(ts_event));
+        assert_eq!(emitted.deltas[0].instrument_id, instrument_id);
+        assert_eq!(emitted.deltas[0].flags, 128);
+        assert_eq!(emitted.deltas[0].sequence, 42);
+        assert_eq!(emitted.deltas[0].ts_event, UnixNanos::from(ts_event));
+        assert!(buffering_start.is_none());
+        assert!(buffered.is_empty());
     }
 
     #[rstest]

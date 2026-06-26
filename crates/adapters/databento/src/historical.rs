@@ -110,6 +110,56 @@ impl DatabentoHistoricalClient {
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build client: {e}"))?;
 
+        Self::from_client(
+            credential,
+            publishers_filepath,
+            clock,
+            use_exchange_as_venue,
+            client,
+        )
+    }
+
+    /// Creates a new [`DatabentoHistoricalClient`] instance with a custom API base URL.
+    ///
+    /// This is intended for tests, benchmarks, and controlled deployments that route
+    /// Databento Historical API requests through a proxy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client creation, URL parsing, or publisher loading fails.
+    pub fn new_with_base_url(
+        credential: Credential,
+        publishers_filepath: PathBuf,
+        clock: &'static AtomicTime,
+        use_exchange_as_venue: bool,
+        base_url: &str,
+    ) -> anyhow::Result<Self> {
+        let client = databento::HistoricalClient::builder()
+            .user_agent_extension(NAUTILUS_USER_AGENT.into())
+            .base_url(base_url.parse().map_err(|e| {
+                anyhow::anyhow!("Failed to parse Databento Historical API base URL: {e}")
+            })?)
+            .key(credential.api_key())
+            .map_err(|e| anyhow::anyhow!("Failed to create client builder: {e}"))?
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build client: {e}"))?;
+
+        Self::from_client(
+            credential,
+            publishers_filepath,
+            clock,
+            use_exchange_as_venue,
+            client,
+        )
+    }
+
+    fn from_client(
+        credential: Credential,
+        publishers_filepath: PathBuf,
+        clock: &'static AtomicTime,
+        use_exchange_as_venue: bool,
+        client: databento::HistoricalClient,
+    ) -> anyhow::Result<Self> {
         let file_content = fs::read_to_string(publishers_filepath)?;
         let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
@@ -1020,6 +1070,24 @@ mod tests {
             false,
         )
         .unwrap()
+    }
+
+    #[rstest]
+    fn test_new_with_base_url_rejects_invalid_url() {
+        let err = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            "://invalid",
+        )
+        .expect_err("expected invalid base URL to fail");
+        let err_msg = format!("{err}");
+
+        assert!(
+            err_msg.contains("Failed to parse Databento Historical API base URL"),
+            "unexpected error message: {err_msg}",
+        );
     }
 
     #[rstest]

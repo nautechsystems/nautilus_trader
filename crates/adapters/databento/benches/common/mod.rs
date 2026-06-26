@@ -50,9 +50,12 @@ pub(crate) fn repository_path(relative_path: impl AsRef<Path>) -> PathBuf {
         .join(relative_path)
 }
 
+pub(crate) fn publishers_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("publishers.json")
+}
+
 pub(crate) fn loader() -> DatabentoDataLoader {
-    let publishers = Path::new(env!("CARGO_MANIFEST_DIR")).join("publishers.json");
-    let mut loader = DatabentoDataLoader::new(Some(publishers)).unwrap();
+    let mut loader = DatabentoDataLoader::new(Some(publishers_path())).unwrap();
     loader.set_price_precision(Symbol::from("ESM4"), PRICE_PRECISION);
     loader
 }
