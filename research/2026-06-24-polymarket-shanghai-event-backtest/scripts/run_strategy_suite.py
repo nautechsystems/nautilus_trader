@@ -115,10 +115,16 @@ def main() -> None:
             "ending_inventory",
             "gross_notional",
             "settlement_pnl",
+            "mtm_pnl",
+            "final_mark_price",
             "return_on_gross_notional",
             "price_change_batch_compared",
             "price_change_batch_mismatches",
             "price_change_batch_mismatch_rate",
+            "split_price_change_batch_key_count",
+            "final_tick_size",
+            "tick_size_changes_applied",
+            "fill_tick_price_violations",
             "raw_snapshot_pairs",
             "raw_snapshot_bbo_mismatches",
             "raw_snapshot_bbo_mismatch_rate",
@@ -149,6 +155,8 @@ def main() -> None:
                 "ending_inventory": summary["backtest"]["ending_inventory"],
                 "gross_notional": summary["backtest"]["gross_notional"],
                 "settlement_pnl": summary["backtest"]["settlement_pnl"],
+                "mtm_pnl": summary["backtest"]["mtm_pnl"],
+                "final_mark_price": summary["backtest"]["final_mark_price"],
                 "return_on_gross_notional": summary["backtest"]["return_on_gross_notional"],
                 "price_change_batch_compared": summary["replay_quality"]["pmxt_derived_bbo_diagnostic"][
                     "price_change_batch_compared"
@@ -159,6 +167,12 @@ def main() -> None:
                 "price_change_batch_mismatch_rate": summary["replay_quality"]["pmxt_derived_bbo_diagnostic"][
                     "price_change_batch_mismatch_rate"
                 ],
+                "split_price_change_batch_key_count": summary["replay_quality"]["pmxt_derived_bbo_diagnostic"][
+                    "split_price_change_batch_key_count"
+                ],
+                "final_tick_size": summary["replay_quality"]["tick_size"]["final_tick_size"],
+                "tick_size_changes_applied": summary["replay_quality"]["tick_size"]["tick_size_changes_applied"],
+                "fill_tick_price_violations": summary["replay_quality"]["tick_size"]["fill_tick_price_violations"],
                 "raw_snapshot_pairs": summary["replay_quality"]["snapshot_alignment"]["raw_snapshot_pairs"],
                 "raw_snapshot_bbo_mismatches": summary["replay_quality"]["snapshot_alignment"][
                     "raw_snapshot_bbo_mismatches"

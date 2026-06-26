@@ -160,6 +160,20 @@ def as_float(value: Any) -> float | None:
     return float(value)
 
 
+def as_decimal(value: Any) -> Decimal | None:
+    if value is None or pd.isna(value):
+        return None
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
+
+def decimal_to_json(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value.normalize(), "f")
+
+
 def as_utc_iso(value: Any) -> str | None:
     if value is None or pd.isna(value):
         return None
@@ -271,6 +285,13 @@ def mark_price_for_inventory(
     if best_ask is not None:
         return best_ask
     return None
+
+
+def price_on_tick(price: float, tick_size: Decimal | None) -> bool:
+    if tick_size is None or tick_size <= 0:
+        return True
+    price_decimal = Decimal(str(price))
+    return price_decimal % tick_size == 0
 
 
 def diagnostic_bbo_equal(
@@ -416,6 +437,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     quote_ask: float | None = None
     final_bid: float | None = None
     final_ask: float | None = None
+    current_tick_size = Decimal("0.01")
     last_decision_ts: pd.Timestamp | None = None
     last_decision_mid: float | None = None
     decision_frequency = pd.Timedelta(args.decision_frequency)
@@ -430,6 +452,12 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     price_change_events = 0
     trade_events = 0
     tick_events = 0
+    tick_size_changes_applied = 0
+    tick_size_old_mismatches = 0
+    tick_size_old_mismatch_examples: list[dict[str, Any]] = []
+    fill_tick_price_checks = 0
+    fill_tick_price_violations = 0
+    fill_tick_price_violation_examples: list[dict[str, Any]] = []
     snapshot_pairs = 0
     snapshot_bbo_mismatches = 0
     snapshot_full_book_mismatches = 0
@@ -454,6 +482,37 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     price_change_message_keys = {
         message_key(row) for row in rows if row.event_type == "price_change"
     }
+    completed_price_change_batch_keys: set[tuple[Any, Any, Any, Any, Any]] = set()
+    split_price_change_batch_keys: set[tuple[Any, Any, Any, Any, Any]] = set()
+    last_price_change_key: tuple[Any, Any, Any, Any, Any] | None = None
+    in_price_change_run = False
+    for row in rows:
+        if row.event_type == "price_change":
+            key = price_change_batch_key(row)
+            if not in_price_change_run or key != last_price_change_key:
+                if in_price_change_run and last_price_change_key is not None:
+                    completed_price_change_batch_keys.add(last_price_change_key)
+                if key in completed_price_change_batch_keys:
+                    split_price_change_batch_keys.add(key)
+                last_price_change_key = key
+            in_price_change_run = True
+        else:
+            if in_price_change_run and last_price_change_key is not None:
+                completed_price_change_batch_keys.add(last_price_change_key)
+            in_price_change_run = False
+            last_price_change_key = None
+    if in_price_change_run and last_price_change_key is not None:
+        completed_price_change_batch_keys.add(last_price_change_key)
+    split_price_change_batch_key_examples = [
+        {
+            "timestamp_received": as_utc_iso(key[0]),
+            "timestamp": as_utc_iso(key[1]),
+            "market": str(key[2]),
+            "asset_id": str(key[3]),
+            "event_type": str(key[4]),
+        }
+        for key in list(split_price_change_batch_keys)[:5]
+    ]
     same_message_snapshot_pairs = 0
     raw_snapshot_pairs = 0
     raw_snapshot_bbo_mismatches = 0
@@ -465,7 +524,25 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
         final_bid, final_ask = best_bid, best_ask
         if best_bid is not None and best_ask is not None and best_bid < best_ask:
             quote_bid, quote_ask = best_bid, best_ask
+        else:
+            quote_bid, quote_ask = None, None
         return best_bid, best_ask
+
+    def record_fill_tick_price(price: float, ts: Any, context: str) -> None:
+        nonlocal fill_tick_price_checks, fill_tick_price_violations
+        fill_tick_price_checks += 1
+        if price_on_tick(price, current_tick_size):
+            return
+        fill_tick_price_violations += 1
+        if len(fill_tick_price_violation_examples) < 5:
+            fill_tick_price_violation_examples.append(
+                {
+                    "timestamp": as_utc_iso(ts),
+                    "context": context,
+                    "price": price,
+                    "tick_size": decimal_to_json(current_tick_size),
+                }
+            )
 
     def record_book_sanity(best_bid: float | None, best_ask: float | None) -> None:
         nonlocal crossed_or_locked_books, negative_spread_samples
@@ -490,6 +567,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
             inventory += fill_qty
             cash -= fill_qty * best_ask
+            record_fill_tick_price(best_ask, ts, "buy_hold_first_ask")
             append_fill(
                 fills,
                 timestamp=ts,
@@ -516,6 +594,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                         fill_qty = min(float(args.quote_size), float(args.max_inventory) - inventory)
                         inventory += fill_qty
                         cash -= fill_qty * best_ask
+                        record_fill_tick_price(best_ask, ts, args.strategy)
                         append_fill(
                             fills,
                             timestamp=ts,
@@ -531,6 +610,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                         fill_qty = min(float(args.quote_size), inventory + float(args.max_inventory))
                         inventory -= fill_qty
                         cash += fill_qty * best_bid
+                        record_fill_tick_price(best_bid, ts, args.strategy)
                         append_fill(
                             fills,
                             timestamp=ts,
@@ -551,6 +631,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 "best_ask": best_ask,
                 "mid": mid,
                 "mark_price": mark,
+                "tick_size": decimal_to_json(current_tick_size),
                 "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
                 "inventory": inventory,
                 "cash": cash,
@@ -670,6 +751,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 if fill_side == "BUY" and fill_qty > 0:
                     inventory += fill_qty
                     cash -= fill_qty * fill_price
+                    record_fill_tick_price(fill_price, ts, "maker_bbo")
                     append_fill(
                         fills,
                         timestamp=ts,
@@ -688,6 +770,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 elif fill_side == "SELL" and fill_qty > 0:
                     inventory -= fill_qty
                     cash += fill_qty * fill_price
+                    record_fill_tick_price(fill_price, ts, "maker_bbo")
                     append_fill(
                         fills,
                         timestamp=ts,
@@ -714,6 +797,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                             "best_ask": best_ask,
                             "mid": mid,
                             "mark_price": mark,
+                            "tick_size": decimal_to_json(current_tick_size),
                             "spread": None if best_bid is None or best_ask is None else best_ask - best_bid,
                             "inventory": inventory,
                             "cash": cash,
@@ -723,6 +807,23 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             replay_events += 1
         elif event_type == "tick_size_change":
             tick_events += 1
+            old_tick_size = as_decimal(row.old_tick_size)
+            new_tick_size = as_decimal(row.new_tick_size)
+            if old_tick_size is not None and old_tick_size != current_tick_size:
+                tick_size_old_mismatches += 1
+                if len(tick_size_old_mismatch_examples) < 5:
+                    tick_size_old_mismatch_examples.append(
+                        {
+                            "timestamp_received": as_utc_iso(row.timestamp_received),
+                            "timestamp": as_utc_iso(row.timestamp),
+                            "expected_current_tick_size": decimal_to_json(current_tick_size),
+                            "event_old_tick_size": decimal_to_json(old_tick_size),
+                            "event_new_tick_size": decimal_to_json(new_tick_size),
+                        }
+                    )
+            if new_tick_size is not None:
+                current_tick_size = new_tick_size
+                tick_size_changes_applied += 1
             if not initialized:
                 skipped_before_book += 1
                 i += 1
@@ -735,7 +836,8 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     final_mid = None
     if final_bid is not None and final_ask is not None:
         final_mid = (final_bid + final_ask) / 2
-    mtm_pnl = cash + inventory * (final_mid or 0.0)
+    final_mark_price = mark_price_for_inventory(final_bid, final_ask, inventory)
+    mtm_pnl = cash + inventory * (final_mark_price or 0.0)
     settlement_pnl = None
     if selection.settlement_value is not None:
         settlement_pnl = cash + inventory * selection.settlement_value
@@ -867,7 +969,19 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
                 "price_change_batch_compared": price_change_batch_compared,
                 "price_change_batch_mismatches": price_change_batch_mismatches,
                 "price_change_batch_mismatch_rate": price_change_batch_mismatch_rate,
+                "split_price_change_batch_key_count": len(split_price_change_batch_keys),
+                "split_price_change_batch_key_examples": split_price_change_batch_key_examples,
                 "bbo_mismatch_warn_threshold": BBO_MISMATCH_WARN_THRESHOLD,
+            },
+            "tick_size": {
+                "initial_tick_size": "0.01",
+                "final_tick_size": decimal_to_json(current_tick_size),
+                "tick_size_changes_applied": tick_size_changes_applied,
+                "old_tick_size_mismatches": tick_size_old_mismatches,
+                "old_tick_size_mismatch_examples": tick_size_old_mismatch_examples,
+                "fill_tick_price_checks": fill_tick_price_checks,
+                "fill_tick_price_violations": fill_tick_price_violations,
+                "fill_tick_price_violation_examples": fill_tick_price_violation_examples,
             },
             "snapshot_alignment": {
                 "note": "Primary snapshot mismatch rates exclude book snapshots that share the same timestamp_received/timestamp/market/asset_id key with price_change rows, because those are likely same-message checkpoints rather than independent next snapshots.",
@@ -913,6 +1027,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "final_best_bid": final_bid,
             "final_best_ask": final_ask,
             "final_mid": final_mid,
+            "final_mark_price": final_mark_price,
             "mtm_pnl": mtm_pnl,
             "settlement_pnl": settlement_pnl,
             "return_on_gross_notional": None
@@ -926,8 +1041,9 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
         },
         "assumptions": [
             "Single-token research harness; not a full event-level negRisk/combo model.",
-            "maker_bbo uses PMXT last_trade_price events and fills only at our standing best bid/ask when trade side is compatible.",
+            "maker_bbo uses PMXT last_trade_price events and fills only at the current valid two-sided uncrossed BBO when trade side is compatible; quotes are cleared when the replayed book becomes one-sided or crossed.",
             "Taker strategies assume immediate top-of-book execution at sampled BBO and do not model taker delay or slippage beyond top level.",
+            "tick_size_change is tracked as replay state starting at 0.01 and updating from each event new_tick_size; fill prices are checked against the active tick grid.",
             "No latency, queue priority, fees, rebates, rewards, or partial queue-ahead model yet.",
             "L2 book is reconstructed from PMXT book snapshots plus price_change rows for the selected asset_id.",
         ],

@@ -24,7 +24,7 @@
 <rect x="308.5" y="160.2" width="91.2" height="8.6" fill="#ff7f0e" opacity="0.85"><title>contrarian_taker -3.15</title></rect>
 <text class="small" transform="translate(354.1,382) rotate(-35)" text-anchor="end">contrarian taker</text>
 <text class="small" x="354.1" y="181.8" text-anchor="middle">-3.2</text>
-<rect x="407.8" y="160.2" width="91.2" height="85.8" fill="#d62728" opacity="0.85"><title>maker_bbo -31.45</title></rect>
+<rect x="407.8" y="160.2" width="91.2" height="85.8" fill="#d62728" opacity="0.85"><title>maker_bbo -31.44</title></rect>
 <text class="small" transform="translate(453.4,382) rotate(-35)" text-anchor="end">maker bbo</text>
 <text class="small" x="453.4" y="258.9" text-anchor="middle">-31.4</text>
 <text x="695.0" y="395">Jun 10 / 28C YES</text>
@@ -37,7 +37,7 @@
 <rect x="748.5" y="160.2" width="91.2" height="100.1" fill="#ff7f0e" opacity="0.85"><title>contrarian_taker -36.70</title></rect>
 <text class="small" transform="translate(794.1,382) rotate(-35)" text-anchor="end">contrarian taker</text>
 <text class="small" x="794.1" y="273.3" text-anchor="middle">-36.7</text>
-<rect x="847.8" y="160.2" width="91.2" height="146.9" fill="#d62728" opacity="0.85"><title>maker_bbo -53.87</title></rect>
+<rect x="847.8" y="160.2" width="91.2" height="146.9" fill="#d62728" opacity="0.85"><title>maker_bbo -53.86</title></rect>
 <text class="small" transform="translate(893.4,382) rotate(-35)" text-anchor="end">maker bbo</text>
 <text class="small" x="893.4" y="320.1" text-anchor="middle">-53.9</text>
 </svg>

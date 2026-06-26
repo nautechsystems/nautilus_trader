@@ -35,7 +35,19 @@
       "price_change_batch_compared": 328442,
       "price_change_batch_mismatches": 13566,
       "price_change_batch_mismatch_rate": 0.04130409630924181,
+      "split_price_change_batch_key_count": 0,
+      "split_price_change_batch_key_examples": [],
       "bbo_mismatch_warn_threshold": 0.01
+    },
+    "tick_size": {
+      "initial_tick_size": "0.01",
+      "final_tick_size": "0.001",
+      "tick_size_changes_applied": 1,
+      "old_tick_size_mismatches": 0,
+      "old_tick_size_mismatch_examples": [],
+      "fill_tick_price_checks": 34,
+      "fill_tick_price_violations": 0,
+      "fill_tick_price_violation_examples": []
     },
     "snapshot_alignment": {
       "note": "Primary snapshot mismatch rates exclude book snapshots that share the same timestamp_received/timestamp/market/asset_id key with price_change rows, because those are likely same-message checkpoints rather than independent next snapshots.",
@@ -81,7 +93,8 @@
     "final_best_bid": 0.999,
     "final_best_ask": null,
     "final_mid": null,
-    "mtm_pnl": -31.840000000000003,
+    "final_mark_price": 0.999,
+    "mtm_pnl": -11.860000000000003,
     "settlement_pnl": -11.840000000000003,
     "return_on_gross_notional": -0.0913862303179994
   },
@@ -92,8 +105,9 @@
   },
   "assumptions": [
     "Single-token research harness; not a full event-level negRisk/combo model.",
-    "maker_bbo uses PMXT last_trade_price events and fills only at our standing best bid/ask when trade side is compatible.",
+    "maker_bbo uses PMXT last_trade_price events and fills only at the current valid two-sided uncrossed BBO when trade side is compatible; quotes are cleared when the replayed book becomes one-sided or crossed.",
     "Taker strategies assume immediate top-of-book execution at sampled BBO and do not model taker delay or slippage beyond top level.",
+    "tick_size_change is tracked as replay state starting at 0.01 and updating from each event new_tick_size; fill prices are checked against the active tick grid.",
     "No latency, queue priority, fees, rebates, rewards, or partial queue-ahead model yet.",
     "L2 book is reconstructed from PMXT book snapshots plus price_change rows for the selected asset_id."
   ]

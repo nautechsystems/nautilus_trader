@@ -53,6 +53,20 @@ def f(value: str | float | int) -> float:
         return 0.0
 
 
+def optional_float(value: str | float | int | None) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    try:
+        parsed = float(value)
+    except Exception:
+        return None
+    if parsed != parsed:  # NaN
+        return None
+    return parsed
+
+
 def esc(s: object) -> str:
     return html.escape(str(s), quote=True)
 
@@ -91,6 +105,25 @@ def polyline(points: list[tuple[float, float]], color: str, width: float = 2.0) 
         return ""
     pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in points)
     return f'<polyline fill="none" stroke="{color}" stroke-width="{width}" points="{pts}"/>'
+
+
+def optional_polyline(
+    points: list[tuple[float, float | None]],
+    color: str,
+    width: float = 2.0,
+) -> str:
+    parts: list[str] = []
+    current: list[tuple[float, float]] = []
+    for x, y in points:
+        if y is None:
+            if len(current) >= 2:
+                parts.append(polyline(current, color, width))
+            current = []
+            continue
+        current.append((x, y))
+    if len(current) >= 2:
+        parts.append(polyline(current, color, width))
+    return "\n".join(parts)
 
 
 def bar_chart(summary: list[dict[str, str]]) -> str:
@@ -189,21 +222,22 @@ def price_paths(summary: list[dict[str, str]]) -> str:
     for pi, event in enumerate(EVENT_NAMES):
         rows = read_csv(find_case_dir(by_event[event]) / "bbo_5min.csv")
         times = [parse_dt(r["timestamp"]).timestamp() for r in rows]
-        bids = [f(r["best_bid"]) for r in rows]
-        asks = [f(r["best_ask"]) for r in rows]
-        mids = [f(r["mid"]) for r in rows]
+        bids = [optional_float(r["best_bid"]) for r in rows]
+        asks = [optional_float(r["best_ask"]) for r in rows]
+        mids = [optional_float(r["mid"]) for r in rows]
+        observed_prices = [v for v in bids + asks + mids if v is not None]
         top = m["top"] + pi * (panel_h + 35)
         bottom = top + panel_h
         xmap, _, _ = scale(times, m["left"], width - m["right"], 0.0)
-        ymap, _, _ = scale(bids + asks + mids + [0, 1], bottom, top, 0.03)
+        ymap, _, _ = scale(observed_prices + [0, 1], bottom, top, 0.03)
         for yv in [0, .25, .5, .75, 1.0]:
             y = ymap(yv)
             body.append(f'<line class="grid" x1="{m["left"]}" y1="{y:.1f}" x2="{width-m["right"]}" y2="{y:.1f}"/>')
             body.append(f'<text class="small" x="18" y="{y+4:.1f}">{yv:.2f}</text>')
         body.append(f'<text x="{m["left"]}" y="{top-8:.1f}">{esc(EVENT_NAMES[event])}</text>')
-        body.append(polyline([(xmap(t), ymap(v)) for t, v in zip(times, bids)], COLORS["bid"], 1.2))
-        body.append(polyline([(xmap(t), ymap(v)) for t, v in zip(times, asks)], COLORS["ask"], 1.2))
-        body.append(polyline([(xmap(t), ymap(v)) for t, v in zip(times, mids)], COLORS["mid"], 2.0))
+        body.append(optional_polyline([(xmap(t), None if v is None else ymap(v)) for t, v in zip(times, bids)], COLORS["bid"], 1.2))
+        body.append(optional_polyline([(xmap(t), None if v is None else ymap(v)) for t, v in zip(times, asks)], COLORS["ask"], 1.2))
+        body.append(optional_polyline([(xmap(t), None if v is None else ymap(v)) for t, v in zip(times, mids)], COLORS["mid"], 2.0))
         body.append(f'<text class="small" x="{width-240}" y="{top+15:.1f}" fill="{COLORS["mid"]}">mid</text>')
         body.append(f'<text class="small" x="{width-200}" y="{top+15:.1f}" fill="{COLORS["bid"]}">bid</text>')
         body.append(f'<text class="small" x="{width-160}" y="{top+15:.1f}" fill="{COLORS["ask"]}">ask</text>')

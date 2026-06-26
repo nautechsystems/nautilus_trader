@@ -81,16 +81,16 @@ timestamp, timestamp_received, original_row
 
 ![策略 PnL](report_assets/strategy_pnl.svg)
 
-| Event | Market | Strategy | Fills | Ending inventory | Gross notional | Settlement PnL | Return on gross notional |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Jun 9 | 25C YES | maker_bbo | 287 | -71.78 | 1144.85 | -31.45 | -2.75% |
-| Jun 9 | 25C YES | buy_hold_first_ask | 1 | 10.00 | 2.20 | 7.80 | 354.55% |
-| Jun 9 | 25C YES | momentum_taker | 34 | 20.00 | 129.56 | -11.84 | -9.14% |
-| Jun 9 | 25C YES | contrarian_taker | 34 | -20.00 | 126.59 | -3.15 | -2.49% |
-| Jun 10 | 28C YES | maker_bbo | 182 | -52.59 | 767.51 | -53.87 | -7.02% |
-| Jun 10 | 28C YES | buy_hold_first_ask | 1 | 10.00 | 2.30 | 7.70 | 334.78% |
-| Jun 10 | 28C YES | momentum_taker | 27 | 90.00 | 145.70 | 26.50 | 18.19% |
-| Jun 10 | 28C YES | contrarian_taker | 27 | -90.00 | 143.90 | -36.70 | -25.50% |
+| Event | Market | Strategy | Fills | Ending inventory | Gross notional | Settlement PnL | MTM PnL | Final mark | Return on gross notional |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Jun 9 | 25C YES | maker_bbo | 286 | -61.78 | 1134.86 | -31.44 | -31.37 | 0.999 | -2.77% |
+| Jun 9 | 25C YES | buy_hold_first_ask | 1 | 10.00 | 2.20 | 7.80 | 7.79 | 0.999 | 354.55% |
+| Jun 9 | 25C YES | momentum_taker | 34 | 20.00 | 129.56 | -11.84 | -11.86 | 0.999 | -9.14% |
+| Jun 9 | 25C YES | contrarian_taker | 34 | -20.00 | 126.59 | -3.15 | -3.13 | 0.999 | -2.49% |
+| Jun 10 | 28C YES | maker_bbo | 181 | -42.59 | 757.52 | -53.86 | -53.82 | 0.999 | -7.11% |
+| Jun 10 | 28C YES | buy_hold_first_ask | 1 | 10.00 | 2.30 | 7.70 | 7.69 | 0.999 | 334.78% |
+| Jun 10 | 28C YES | momentum_taker | 27 | 90.00 | 145.70 | 26.50 | 26.41 | 0.999 | 18.19% |
+| Jun 10 | 28C YES | contrarian_taker | 27 | -90.00 | 143.90 | -36.70 | -36.61 | 0.999 | -25.50% |
 
 ## 6. 权益曲线
 
