@@ -63,13 +63,21 @@ pub(super) const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 
 const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
-fn fnv1a_mix(hash: &mut u64, bytes: &[u8]) {
+fn fnv1a_mix_bytes(hash: &mut u64, bytes: &[u8]) {
     for &byte in bytes {
         *hash ^= u64::from(byte);
         *hash = hash.wrapping_mul(FNV_PRIME);
     }
+}
+
+fn fnv1a_finish_field(hash: &mut u64) {
     *hash ^= 0xff;
     *hash = hash.wrapping_mul(FNV_PRIME);
+}
+
+fn fnv1a_mix(hash: &mut u64, bytes: &[u8]) {
+    fnv1a_mix_bytes(hash, bytes);
+    fnv1a_finish_field(hash);
 }
 
 /// Derives a deterministic [`TradeId`] for Databento schemas that do not
@@ -86,13 +94,29 @@ pub(super) fn derive_cmbp_trade_id(
     side: c_char,
 ) -> TradeId {
     let mut hash: u64 = FNV_OFFSET_BASIS;
-    fnv1a_mix(&mut hash, instrument_id.to_string().as_bytes());
+    fnv1a_mix_bytes(&mut hash, instrument_id.symbol.as_str().as_bytes());
+    fnv1a_mix_bytes(&mut hash, b".");
+    fnv1a_mix_bytes(&mut hash, instrument_id.venue.as_str().as_bytes());
+    fnv1a_finish_field(&mut hash);
     fnv1a_mix(&mut hash, &ts_event.to_le_bytes());
     fnv1a_mix(&mut hash, &ts_recv.to_le_bytes());
     fnv1a_mix(&mut hash, &price.to_le_bytes());
     fnv1a_mix(&mut hash, &size.to_le_bytes());
     fnv1a_mix(&mut hash, &[side as u8]);
-    TradeId::new(format!("{hash:016x}"))
+    trade_id_from_hash(hash)
+}
+
+fn trade_id_from_hash(hash: u64) -> TradeId {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut bytes = [0u8; 16];
+    let mut value = hash;
+    for byte in bytes.iter_mut().rev() {
+        *byte = HEX[(value & 0x0f) as usize];
+        value >>= 4;
+    }
+
+    TradeId::from_bytes(&bytes).expect("16 lowercase hex bytes are valid TradeId")
 }
 
 #[inline(always)]
@@ -331,76 +355,42 @@ pub fn decode_bbo_msg(
 ///
 /// # Errors
 ///
-/// Returns an error if the number of levels in `msg.levels` is not exactly `DEPTH10_LEN`.
+/// This function does not currently return an error; the result type matches the common decode API.
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
     price_precision: u8,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<OrderBookDepth10> {
-    let mut bids = Vec::with_capacity(DEPTH10_LEN);
-    let mut asks = Vec::with_capacity(DEPTH10_LEN);
-    let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
-    let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
+    let mut bids = [BookOrder::default(); DEPTH10_LEN];
+    let mut asks = [BookOrder::default(); DEPTH10_LEN];
+    let mut bid_counts = [0u32; DEPTH10_LEN];
+    let mut ask_counts = [0u32; DEPTH10_LEN];
 
-    for level in &msg.levels {
-        // Empty Databento levels carry the i64::MAX sentinel; decode them as
-        // NULL_ORDER so the matching engine's precision check skips them.
-        let bid_order = if level.bid_px == i64::MAX {
-            BookOrder::default()
-        } else {
-            BookOrder::new(
+    for (index, level) in msg.levels.iter().enumerate() {
+        // Empty Databento levels carry the i64::MAX sentinel; leave NULL_ORDER
+        // so the matching engine's precision check skips them.
+        if level.bid_px != i64::MAX {
+            bids[index] = BookOrder::new(
                 OrderSide::Buy,
                 decode_price_or_undef(level.bid_px, price_precision),
                 decode_quantity(level.bid_sz as u64),
                 0,
-            )
-        };
+            );
+        }
 
-        let ask_order = if level.ask_px == i64::MAX {
-            BookOrder::default()
-        } else {
-            BookOrder::new(
+        if level.ask_px != i64::MAX {
+            asks[index] = BookOrder::new(
                 OrderSide::Sell,
                 decode_price_or_undef(level.ask_px, price_precision),
                 decode_quantity(level.ask_sz as u64),
                 0,
-            )
-        };
+            );
+        }
 
-        bids.push(bid_order);
-        asks.push(ask_order);
-        bid_counts.push(level.bid_ct);
-        ask_counts.push(level.ask_ct);
+        bid_counts[index] = level.bid_ct;
+        ask_counts[index] = level.ask_ct;
     }
-
-    let bids: [BookOrder; DEPTH10_LEN] = bids.try_into().map_err(|v: Vec<BookOrder>| {
-        anyhow::anyhow!(
-            "Expected exactly {DEPTH10_LEN} bid levels, received {}",
-            v.len()
-        )
-    })?;
-
-    let asks: [BookOrder; DEPTH10_LEN] = asks.try_into().map_err(|v: Vec<BookOrder>| {
-        anyhow::anyhow!(
-            "Expected exactly {DEPTH10_LEN} ask levels, received {}",
-            v.len()
-        )
-    })?;
-
-    let bid_counts: [u32; DEPTH10_LEN] = bid_counts.try_into().map_err(|v: Vec<u32>| {
-        anyhow::anyhow!(
-            "Expected exactly {DEPTH10_LEN} bid counts, received {}",
-            v.len()
-        )
-    })?;
-
-    let ask_counts: [u32; DEPTH10_LEN] = ask_counts.try_into().map_err(|v: Vec<u32>| {
-        anyhow::anyhow!(
-            "Expected exactly {DEPTH10_LEN} ask counts, received {}",
-            v.len()
-        )
-    })?;
 
     let ts_event = msg.ts_recv.into();
     let ts_init = ts_init.unwrap_or(ts_event);

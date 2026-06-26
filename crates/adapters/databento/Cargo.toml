@@ -89,9 +89,19 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
+
+# Canonical data-path benches; see crates/adapters/databento/benches/BENCHMARKS.md for context
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
 
 [[example]]
 name = "databento-data-tester"

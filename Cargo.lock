@@ -5892,6 +5892,7 @@ dependencies = [
  "anyhow",
  "arrow 58.3.0",
  "async-trait",
+ "criterion",
  "databento",
  "dotenvy",
  "fallible-streaming-iterator",

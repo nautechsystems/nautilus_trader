@@ -25,7 +25,7 @@ use databento::dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::{BarType, BookOrder, DEPTH10_LEN, Data},
+    data::{BarType, Data},
     enums::{
         AggressorSide, AssetClass, BookAction, InstrumentClass, MarketStatusAction, OptionKind,
         OrderSide,
@@ -116,6 +116,14 @@ fn test_derive_cmbp_trade_id_format_is_16_hex_chars() {
             .chars()
             .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
     );
+}
+
+#[rstest]
+fn test_derive_cmbp_trade_id_value_is_stable() {
+    let instrument_id = InstrumentId::from("ES.c.0.GLBX");
+    let trade_id = derive_cmbp_trade_id(instrument_id, 1, 2, 100, 5, 'B' as c_char);
+
+    assert_eq!(trade_id.as_str(), "de34b4ff8c6f2fcb");
 }
 
 #[rstest]
@@ -1209,43 +1217,6 @@ fn test_decode_mbp10_msg_with_undefined_levels() {
     assert_eq!(depth.bids[0].price.precision, 2);
     assert_eq!(depth.asks[0].side, OrderSide::Sell);
     assert_eq!(depth.asks[0].price.precision, 2);
-}
-
-#[rstest]
-fn test_array_conversion_error_handling() {
-    let mut bids = Vec::new();
-    let mut asks = Vec::new();
-
-    // Intentionally create fewer than DEPTH10_LEN elements
-    for i in 0..5 {
-        bids.push(BookOrder::new(
-            OrderSide::Buy,
-            Price::from(format!("{}.00", 100 - i)),
-            Quantity::from(10),
-            i as u64,
-        ));
-        asks.push(BookOrder::new(
-            OrderSide::Sell,
-            Price::from(format!("{}.00", 101 + i)),
-            Quantity::from(10),
-            i as u64,
-        ));
-    }
-
-    let result: Result<[BookOrder; DEPTH10_LEN], _> =
-        bids.try_into().map_err(|v: Vec<BookOrder>| {
-            anyhow::anyhow!(
-                "Expected exactly {DEPTH10_LEN} bid levels, received {}",
-                v.len()
-            )
-        });
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("Expected exactly 10 bid levels, received 5")
-    );
 }
 
 #[rstest]
