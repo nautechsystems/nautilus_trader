@@ -17,6 +17,7 @@
 
 use std::{fmt::Debug, fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc};
 
+use ahash::AHashMap;
 use databento::{
     dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
@@ -174,6 +175,25 @@ impl DatabentoHistoricalClient {
             })
     }
 
+    fn resolve_cached_price_precision(
+        &self,
+        instrument_id: &InstrumentId,
+        price_precision: Option<u8>,
+        precision_cache: &mut AHashMap<InstrumentId, u8>,
+    ) -> anyhow::Result<u8> {
+        if let Some(precision) = price_precision {
+            return Ok(precision);
+        }
+
+        if let Some(precision) = precision_cache.get(instrument_id) {
+            return Ok(*precision);
+        }
+
+        let precision = self.resolve_price_precision(instrument_id, None)?;
+        precision_cache.insert(*instrument_id, precision);
+        Ok(precision)
+    }
+
     /// Gets the date range for a specific dataset.
     ///
     /// # Errors
@@ -324,6 +344,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<QuoteTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -334,8 +355,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, _) = decode_record(
                 &record,
@@ -443,6 +467,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<OrderBookDepth10> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -453,8 +478,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
                 let depth = decode_mbp10_msg(msg, instrument_id, price_precision, None)?;
@@ -511,6 +539,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<OrderBookDelta> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -521,8 +550,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(msg) = record.get::<dbn::MboMsg>() {
                 let (delta, _trade) =
@@ -597,6 +629,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<TradeTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -607,8 +640,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, data2) =
                 decode_record(&record, instrument_id, price_precision, None, true, true)?;
@@ -708,6 +744,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<Bar> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::OhlcvMsg>().await? {
@@ -719,8 +756,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, _) = decode_record(
                 &record,
@@ -782,6 +822,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<DatabentoImbalance> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::ImbalanceMsg>().await? {
@@ -793,8 +834,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, None)?;
             result.push(imbalance);
@@ -843,6 +887,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<DatabentoStatistics> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::StatMsg>().await? {
@@ -860,8 +905,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(statistics) =
                 decode_statistics_msg(msg, instrument_id, price_precision, None)?

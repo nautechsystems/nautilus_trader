@@ -497,8 +497,7 @@ impl DatabentoFeedHandler {
                             log::error!("Giving up reconnection after {timeout_mins} minutes");
                             self.send_msg(DatabentoMessage::Error(anyhow::anyhow!(
                                 "Reconnection timeout after {timeout_mins} minutes: {e}"
-                            )))
-                            .await;
+                            )));
                             break Err(e);
                         }
                     }
@@ -781,7 +780,7 @@ impl DatabentoFeedHandler {
                 handle_error_msg(msg);
             } else if let Some(msg) = record.get::<dbn::SystemMsg>() {
                 if let Some(ack) = handle_system_msg(msg, ts_init) {
-                    self.send_msg(DatabentoMessage::SubscriptionAck(ack)).await;
+                    self.send_msg(DatabentoMessage::SubscriptionAck(ack));
                 }
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
                 // Remove instrument ID index as the raw symbol may have changed
@@ -806,94 +805,78 @@ impl DatabentoFeedHandler {
                         )?;
                     }
                 }
-                let maybe_data = {
-                    let sym_map = self.symbol_venue_map.load();
-                    handle_instrument_def_msg(
-                        msg,
-                        &record,
-                        &symbol_map,
-                        &self.publisher_venue_map,
-                        &sym_map,
-                        &mut instrument_id_map,
-                        ts_init,
-                    )?
-                };
+                let maybe_data = handle_instrument_def_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                    ts_init,
+                )?;
 
                 if let Some(data) = maybe_data {
                     instrument_def_price_precision_map
                         .insert(msg.hd.instrument_id, data.price_precision());
-                    self.send_msg(DatabentoMessage::Instrument(Box::new(data)))
-                        .await;
+                    self.send_msg(DatabentoMessage::Instrument(Box::new(data)));
                 }
             } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
-                let data = {
-                    let sym_map = self.symbol_venue_map.load();
-                    handle_status_msg(
-                        msg,
-                        &record,
-                        &symbol_map,
-                        &self.publisher_venue_map,
-                        &sym_map,
-                        &mut instrument_id_map,
-                        ts_init,
-                    )?
-                };
-                self.send_msg(DatabentoMessage::Status(data)).await;
+                let data = handle_status_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                    ts_init,
+                )?;
+                self.send_msg(DatabentoMessage::Status(data));
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
-                let data = {
-                    let sym_map = self.symbol_venue_map.load();
-                    handle_imbalance_msg(
-                        msg,
-                        &record,
-                        &symbol_map,
-                        &self.publisher_venue_map,
-                        &sym_map,
-                        &mut instrument_id_map,
-                        &instrument_def_price_precision_map,
-                        &subscription_price_precision_map,
-                        &self.price_precision_overrides,
-                        ts_init,
-                    )?
-                };
-                self.send_msg(DatabentoMessage::Imbalance(data)).await;
+                let data = handle_imbalance_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                    &instrument_def_price_precision_map,
+                    &subscription_price_precision_map,
+                    &self.price_precision_overrides,
+                    ts_init,
+                )?;
+                self.send_msg(DatabentoMessage::Imbalance(data));
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
-                let maybe_data = {
-                    let sym_map = self.symbol_venue_map.load();
-                    handle_statistics_msg(
-                        msg,
-                        &record,
-                        &symbol_map,
-                        &self.publisher_venue_map,
-                        &sym_map,
-                        &mut instrument_id_map,
-                        &instrument_def_price_precision_map,
-                        &subscription_price_precision_map,
-                        &self.price_precision_overrides,
-                        ts_init,
-                    )?
-                };
+                let maybe_data = handle_statistics_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                    &instrument_def_price_precision_map,
+                    &subscription_price_precision_map,
+                    &self.price_precision_overrides,
+                    ts_init,
+                )?;
 
                 if let Some(data) = maybe_data {
-                    self.send_msg(DatabentoMessage::Statistics(data)).await;
+                    self.send_msg(DatabentoMessage::Statistics(data));
                 }
             } else {
                 // Decode a generic record with possible errors
-                let res = {
-                    let sym_map = self.symbol_venue_map.load();
-                    handle_record(
-                        record,
-                        &symbol_map,
-                        &self.publisher_venue_map,
-                        &sym_map,
-                        &mut instrument_id_map,
-                        &instrument_def_price_precision_map,
-                        &subscription_price_precision_map,
-                        &self.price_precision_overrides,
-                        ts_init,
-                        &initialized_books,
-                        self.bars_timestamp_on_close,
-                    )
-                };
+                let res = handle_record(
+                    record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                    &instrument_def_price_precision_map,
+                    &subscription_price_precision_map,
+                    &self.price_precision_overrides,
+                    ts_init,
+                    &initialized_books,
+                    self.bars_timestamp_on_close,
+                );
                 let (mut data1, data2) = match res {
                     Ok(decoded) => decoded,
                     Err(e) => {
@@ -929,18 +912,18 @@ impl DatabentoFeedHandler {
                 }
 
                 if let Some(data) = data1 {
-                    self.send_msg(DatabentoMessage::Data(data)).await;
+                    self.send_msg(DatabentoMessage::Data(data));
                 }
 
                 if let Some(data) = data2 {
-                    self.send_msg(DatabentoMessage::Data(data)).await;
+                    self.send_msg(DatabentoMessage::Data(data));
                 }
             }
         }
     }
 
     /// Sends a message to the message processing task.
-    async fn send_msg(&self, msg: DatabentoMessage) {
+    fn send_msg(&self, msg: DatabentoMessage) {
         log::trace!("Sending {msg:?}");
         match self.msg_tx.send(msg) {
             Ok(()) => {}
@@ -1031,6 +1014,10 @@ fn update_price_precision_map_with_symbol_mapping_msg(
 ) -> anyhow::Result<()> {
     subscription_price_precision_map.remove(&msg.hd.instrument_id);
 
+    if price_precision_overrides.is_empty() {
+        return Ok(());
+    }
+
     let stype_in_symbol = msg
         .stype_in_symbol()
         .map_err(|e| anyhow::anyhow!("Error decoding `stype_in_symbol`: {e}"))?;
@@ -1079,7 +1066,7 @@ fn update_instrument_id_map(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
 ) -> anyhow::Result<InstrumentId> {
     let header = record.header();
@@ -1099,8 +1086,8 @@ fn update_instrument_id_map(
     let symbol = Symbol::from_str_unchecked(raw_symbol);
 
     let publisher_id = header.publisher_id;
-    let venue = if let Some(venue) = symbol_venue_map.get(&symbol) {
-        *venue
+    let venue = if let Some(venue) = symbol_venue_map.get_cloned(&symbol) {
+        venue
     } else {
         let venue = publisher_venue_map
             .get(&publisher_id)
@@ -1123,7 +1110,7 @@ fn handle_instrument_def_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Option<InstrumentAny>> {
@@ -1143,7 +1130,7 @@ fn handle_status_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentStatus> {
@@ -1164,7 +1151,7 @@ fn handle_imbalance_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
@@ -1196,7 +1183,7 @@ fn handle_statistics_msg(
     record: &dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
@@ -1233,7 +1220,7 @@ fn handle_record(
     record: dbn::RecordRef,
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AHashMap<Symbol, Venue>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
     instrument_id_map: &mut AHashMap<u32, InstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
