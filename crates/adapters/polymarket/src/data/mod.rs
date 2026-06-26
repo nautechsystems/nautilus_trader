@@ -391,7 +391,7 @@ impl DataClient for PolymarketDataClient {
             "Tracking Polymarket RTDS custom data subscription: {}",
             cmd.data_type
         );
-        let Some(wire) = self.rtds_feed.track_subscribe(cmd.data_type)? else {
+        let Some(_) = self.rtds_feed.track_subscribe(cmd.data_type)? else {
             return Ok(());
         };
 
@@ -401,7 +401,7 @@ impl DataClient for PolymarketDataClient {
 
         let feed = self.rtds_feed.clone();
         get_runtime().spawn(async move {
-            if let Err(e) = feed.subscribe_live(wire).await {
+            if let Err(e) = feed.subscribe_live().await {
                 log::error!("Failed to subscribe RTDS custom data: {e}");
             }
         });

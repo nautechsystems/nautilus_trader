@@ -260,7 +260,7 @@ impl PolymarketRtdsFeed {
         Ok(())
     }
 
-    pub(crate) async fn subscribe_live(&self, wire: RtdsWireSubscription) -> anyhow::Result<()> {
+    pub(crate) async fn subscribe_live(&self) -> anyhow::Result<()> {
         let _guard = self.inner.wire_mutex.lock().await;
         let fresh_connect = self.ensure_connected_locked().await?;
         if fresh_connect {
@@ -271,13 +271,7 @@ impl PolymarketRtdsFeed {
             anyhow::bail!("RTDS WebSocket client unavailable after connect");
         };
 
-        log::debug!(
-            "Subscribing Polymarket RTDS topic={} type={} filters={:?}",
-            wire.topic,
-            wire.msg_type,
-            wire.filters
-        );
-        self.send_wire_request(&ws, "subscribe", vec![wire]).await
+        self.send_subscribe_snapshot(&ws).await
     }
 
     pub(crate) async fn unsubscribe_live(&self, wire: RtdsWireSubscription) -> anyhow::Result<()> {
@@ -437,11 +431,7 @@ impl PolymarketRtdsFeed {
             old_handle.abort();
         }
 
-        let subscriptions = self.snapshot_wire_subscriptions();
-        if !subscriptions.is_empty() {
-            self.send_wire_request(&ws, "subscribe", subscriptions)
-                .await?;
-        }
+        self.send_subscribe_snapshot(&ws).await?;
 
         Ok(true)
     }
@@ -452,6 +442,19 @@ impl PolymarketRtdsFeed {
             .iter()
             .map(|entry| entry.wire.clone())
             .collect()
+    }
+
+    async fn send_subscribe_snapshot(&self, ws: &Arc<WebSocketClient>) -> anyhow::Result<()> {
+        let subscriptions = self.snapshot_wire_subscriptions();
+        if subscriptions.is_empty() {
+            return Ok(());
+        }
+
+        log::debug!(
+            "Subscribing Polymarket RTDS snapshot with {} subscription(s)",
+            subscriptions.len()
+        );
+        self.send_wire_request(ws, "subscribe", subscriptions).await
     }
 
     async fn send_wire_request(
@@ -806,7 +809,20 @@ fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
 
 #[cfg(test)]
 mod tests {
+    use std::{net::SocketAddr, sync::Arc, time::Duration};
+
+    use axum::{
+        Router,
+        extract::{
+            State,
+            ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
+        },
+        response::Response,
+        routing::get,
+    };
+    use futures_util::StreamExt;
     use nautilus_common::messages::DataEvent;
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use serde_json::json;
@@ -846,6 +862,61 @@ mod tests {
             tx,
         );
         (feed, rx)
+    }
+
+    #[derive(Clone, Default)]
+    struct TestServerState {
+        received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    }
+
+    async fn handle_rtds_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<TestServerState>,
+    ) -> Response {
+        ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
+    }
+
+    async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
+        while let Some(result) = socket.next().await {
+            let Ok(message) = result else { break };
+
+            match message {
+                AxumWsMessage::Text(text) => {
+                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
+                    };
+                    state.received_payloads.lock().await.push(payload);
+                }
+                AxumWsMessage::Ping(data) => {
+                    if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
+                        break;
+                    }
+                }
+                AxumWsMessage::Close(_) => break,
+                _ => {}
+            }
+        }
+    }
+
+    async fn start_rtds_server(state: TestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind RTDS test server");
+        let addr = listener
+            .local_addr()
+            .expect("missing RTDS test server address");
+        let router = Router::new()
+            .route("/rtds", get(handle_rtds_upgrade))
+            .with_state(state);
+
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("RTDS test server failed");
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        addr
     }
 
     #[rstest]
@@ -1028,5 +1099,61 @@ mod tests {
         assert_eq!(feed.tracked_subscription_count(), 0);
         assert_eq!(wire.topic, "equity_prices");
         assert_eq!(wire.filters.as_deref(), Some(r#"{"symbol":"AAPL"}"#));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_subscribe_replays_full_snapshot_while_connected() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.track_subscribe(crypto_data_type("ETHUSDT"))
+            .expect("track ETH")
+            .expect("ETH should produce a new wire subscription");
+        feed.subscribe_live().await.expect("subscribe live");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.received_payloads.lock().await.len() >= 2 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let incremental = payloads.last().expect("incremental payload");
+        let subscriptions = incremental["subscriptions"]
+            .as_array()
+            .expect("subscriptions array");
+        let filters: Vec<&str> = subscriptions
+            .iter()
+            .filter_map(|sub| sub["filters"].as_str())
+            .collect();
+
+        assert_eq!(incremental["action"].as_str(), Some("subscribe"));
+        assert_eq!(subscriptions.len(), 2);
+        assert!(filters.contains(&r#"{"symbol":"BTCUSDT"}"#));
+        assert!(filters.contains(&r#"{"symbol":"ETHUSDT"}"#));
     }
 }
