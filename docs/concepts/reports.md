@@ -267,8 +267,8 @@ total_pnls = [Money(amount, currency) for currency, amount in pnl_by_currency.it
 
 ## Backtest post-run analysis
 
-After a backtest completes, analysis is available through various reports
-and the portfolio analyzer.
+After a backtest completes, analysis is available through result statistics
+and generated reports.
 
 ### Accessing backtest results
 
@@ -276,10 +276,13 @@ and the portfolio analyzer.
 # After backtest run
 engine.run(start=start_time, end=end_time)
 
-# Generate reports using Trader helper methods
-orders_report = engine.trader.generate_orders_report()
-positions_report = engine.trader.generate_positions_report()
-fills_report = engine.trader.generate_fills_report()
+# Access result statistics
+result = engine.get_result()
+
+# Generate reports from the backtest engine
+fills_report = engine.generate_fills_report()
+venue = engine.list_venues()[0]
+account_report = engine.generate_account_report(venue=venue)
 
 # Or access data directly for custom analysis
 orders = engine.cache.orders()
@@ -289,25 +292,24 @@ snapshots = engine.cache.position_snapshots()
 
 ### Portfolio statistics
 
-The portfolio analyzer provides performance metrics:
+The backtest result provides performance metrics:
 
 ```python
-# Access portfolio analyzer
-portfolio = engine.portfolio
+# Access backtest result statistics
+result = engine.get_result()
 
 # Get different categories of statistics
-stats_pnls = portfolio.analyzer.get_performance_stats_pnls()
-stats_returns = portfolio.analyzer.get_performance_stats_returns()
-stats_general = portfolio.analyzer.get_performance_stats_general()
+stats_pnls = result.stats_pnls
+stats_returns = result.stats_returns
+stats_general = result.stats_general
 ```
 
 :::info
-For detailed information about available statistics and creating custom metrics,
-see the [Portfolio guide](portfolio.md#portfolio-statistics). The Portfolio guide covers:
+For detailed information about available statistics, see the
+[Portfolio guide](portfolio.md#portfolio-statistics). The Portfolio guide covers:
 
 - Built-in statistics categories (PnLs, returns, positions, orders based).
-- Creating custom statistics with `PortfolioStatistic`.
-- Registering and using custom metrics.
+- Portfolio report context.
 
 :::
 
@@ -336,9 +338,14 @@ This creates an interactive HTML report with:
 For more control, generate individual plots:
 
 ```python
+import pandas as pd
+
 from nautilus_trader.analysis import create_equity_curve
 
-returns = engine.portfolio.analyzer.returns()
+returns = pd.Series(
+    [0.01, -0.005, 0.002],
+    index=pd.date_range("2024-01-01", periods=3, tz="UTC"),
+)
 fig = create_equity_curve(returns, title="My Strategy Equity")
 fig.show()  # Display in browser
 fig.write_image("equity.png")  # Export to PNG (requires kaleido)
@@ -388,14 +395,15 @@ engine.run(start=start_time, end=end_time)
 
 # Collect results
 positions_closed = engine.cache.positions_closed()
-stats_pnls = engine.portfolio.analyzer.get_performance_stats_pnls()
-stats_returns = engine.portfolio.analyzer.get_performance_stats_returns()
-stats_general = engine.portfolio.analyzer.get_performance_stats_general()
+result = engine.get_result()
+stats_pnls = result.stats_pnls
+stats_returns = result.stats_returns
+stats_general = result.stats_general
 
 # Create summary dictionary
 results = {
     "total_positions": len(positions_closed),
-    "pnl_total": stats_pnls.get("PnL (total)"),
+    "pnl_total": stats_pnls.get("USD", {}).get("PnL (total)"),
     "sharpe_ratio": stats_returns.get("Sharpe Ratio (252 days)"),
     "profit_factor": stats_general.get("Profit Factor"),
     "win_rate": stats_general.get("Win Rate"),

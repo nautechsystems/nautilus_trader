@@ -1032,7 +1032,7 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 .PHONY: sync-v2
 sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$(info $(M) Syncing v2 Python dependencies...)
-	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
+	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
 build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
