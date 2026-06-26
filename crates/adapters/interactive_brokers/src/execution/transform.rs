@@ -90,7 +90,7 @@ pub fn nautilus_order_to_ib_order(
 
     apply_expire_time_policy(&mut ib_order, order);
     apply_account_policy(&mut ib_order, order);
-    apply_quantity_policy(&mut ib_order, order, instrument_provider);
+    apply_quantity_policy(&mut ib_order, order, instrument_provider)?;
     apply_trailing_order_policy(&mut ib_order, order, price_magnifier)?;
     apply_display_quantity_policy(&mut ib_order, order);
 
