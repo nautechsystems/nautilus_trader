@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Fixed `Throttler` timer handling to namespace timers by actor and cancel them on teardown (Rust)
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
+- Fixed Binance Futures `exchangeInfo` decode for the `TRADING_HALT` contract status (Python)
 
 ### Internal Improvements
 - Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)

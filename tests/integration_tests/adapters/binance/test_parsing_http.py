@@ -18,7 +18,9 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesSymbolConfig
+from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -79,3 +81,25 @@ class TestBinanceHttpParsing:
         assert data[1].isAutoAddMargin is True
         assert data[1].leverage == 25
         assert data[1].maxNotionalValue == "2000000"
+
+    def test_parse_futures_exchange_info_with_trading_halt_status(self):
+        # Regression: Binance returns status="TRADING_HALT" for an active
+        # contract that is temporarily halted. The value was missing from
+        # BinanceFuturesContractStatus, so msgspec rejected the whole
+        # exchangeInfo decode (ValidationError at `$.symbols[N].status`).
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.http_responses",
+            resource="http_futures_market_exchange_info.json",
+        )
+        assert raw
+        # Arrange: force one active symbol into TRADING_HALT
+        payload = msgspec.json.decode(raw)
+        payload["symbols"][0]["status"] = "TRADING_HALT"
+        patched = msgspec.json.encode(payload)
+        decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
+
+        # Act
+        data = decoder.decode(patched)
+
+        # Assert
+        assert data.symbols[0].status == BinanceFuturesContractStatus.TRADING_HALT
