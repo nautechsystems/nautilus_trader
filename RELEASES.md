@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
 
 ### Breaking Changes
+- **Breaking:** the `event_store` on-disk envelope format changed (bincode replaced by a hardened positional codec). Beta stores written by v1.227-v1.229 are rejected with a clear `Corrupted` error and must be regenerated; there is no migrator.
 - Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
 - Changed `Throttler` rate limit fields to non-zero accessors instead of public fields (Rust)
 

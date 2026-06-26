@@ -57,6 +57,7 @@ pub mod snapshot;
 pub mod verifier;
 pub mod writer;
 
+mod format;
 mod wire;
 
 pub use backend::{

@@ -1326,11 +1326,12 @@ mod tests {
 
     #[rstest]
     fn decodes_a_bincode_blob_as_bad_magic() {
-        let cfg = bincode::config::standard();
-        let bytes = bincode::serde::encode_to_vec("old-format".to_string(), cfg).unwrap();
+        // bincode standard() encoding of String "old-format", frozen so the test needs
+        // no bincode dependency: varint len 10 (0x0A) ++ b"old-format".
+        const OLD_BINCODE_STRING: &[u8] = b"\x0aold-format";
 
         assert!(matches!(
-            decode_from_slice::<String>(&bytes),
+            decode_from_slice::<String>(OLD_BINCODE_STRING),
             Err(CodecError::BadMagic)
         ));
     }

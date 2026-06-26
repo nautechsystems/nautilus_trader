@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! On-disk envelope contract: bincode round-trips for `EventStoreEntry` and `RunManifest`
+//! On-disk envelope contract: codec round-trips for `EventStoreEntry` and `RunManifest`
 //! must preserve every field, and the recomputed hash on a decoded entry must still match
 //! the stored hash.
 
@@ -21,7 +21,7 @@ use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_event_store::{
-    EventStoreEntry, Headers, RegisteredComponents, RunManifest, RunStatus, Topic,
+    EventStoreEntry, Headers, RegisteredComponents, RunManifest, RunStatus, Topic, codec,
     compute_entry_hash,
 };
 use rstest::rstest;
@@ -79,11 +79,8 @@ fn round_trip<T>(value: &T) -> T
 where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
-    let config = bincode::config::standard();
-    let encoded = bincode::serde::encode_to_vec(value, config).expect("serialize");
-    let (decoded, _) =
-        bincode::serde::decode_from_slice::<T, _>(&encoded, config).expect("deserialize");
-    decoded
+    let encoded = codec::encode_to_vec(value).expect("serialize");
+    codec::decode_from_slice::<T>(&encoded).expect("deserialize")
 }
 
 #[rstest]
@@ -97,7 +94,7 @@ fn entry_round_trip_empty_headers() {
 
 #[rstest]
 fn entry_round_trip_populated_headers() {
-    // All three header fields must round-trip through bincode and the hash must
+    // All three header fields must round-trip through the codec and the hash must
     // still validate; catches regressions in `wire::nanos_as_u64` and in
     // `Option<UUID4>` serde coupling under non-self-describing formats.
     let headers = Headers {

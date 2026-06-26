@@ -28,9 +28,9 @@
 //! tag so forensics scans see entries identical to the bare-type capture path.
 //!
 //! The payload serialization format is MessagePack via `rmp-serde`. The on-disk envelope
-//! codec stays bincode (positional, non-self-describing); MessagePack inside the payload
-//! handles the upstream Nautilus types that carry `#[serde(tag = "type")]` internal
-//! tagging, which a non-self-describing format like bincode cannot round-trip.
+//! uses the positional codec; MessagePack inside the payload handles the upstream Nautilus
+//! types that carry `#[serde(tag = "type")]` internal tagging, which a non-self-describing
+//! format cannot round-trip.
 
 use std::collections::HashSet;
 

@@ -26,7 +26,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bincode::config::{Configuration, standard};
 use nautilus_core::UnixNanos;
 use redb::{
     CommitError, Database, DatabaseError, Durability, ReadOnlyDatabase, ReadTransaction,
@@ -36,8 +35,10 @@ use redb::{
 
 use crate::{
     backend::{AppendEntry, EventStore, IndexKey, IndexKind, ScanDirection},
+    codec,
     entry::EventStoreEntry,
     error::EventStoreError,
+    format,
     manifest::{RunManifest, RunStatus},
     snapshot::{SnapshotAnchor, validate_new_anchor},
 };
@@ -50,8 +51,6 @@ const SNAPSHOT_ANCHOR_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new
 
 const MANIFEST_KEY: &str = "current";
 const SNAPSHOT_ANCHOR_KEY: &str = "latest";
-
-const BINCODE_CONFIG: Configuration = standard();
 
 /// On-disk [`EventStore`] backed by a per-run [`redb`] file.
 ///
@@ -212,6 +211,7 @@ impl RedbBackend {
         }
 
         let db = ReadOnlyDatabase::open(&path).map_err(map_read_only_database_err)?;
+        format::verify_store_format(&db)?;
         let manifest = Self::read_manifest(&db)?.ok_or_else(|| {
             EventStoreError::Corrupted(format!(
                 "missing manifest in run file at {}",
@@ -299,7 +299,10 @@ impl RedbBackend {
 
     fn read_run_manifest(path: &Path) -> Result<RunManifest, EventStoreError> {
         let manifest = match ReadOnlyDatabase::open(path) {
-            Ok(db) => Self::read_manifest(&db)?,
+            Ok(db) => {
+                format::verify_store_format(&db)?;
+                Self::read_manifest(&db)?
+            }
             // Each durable commit deletes redb's allocator-state table and only a clean
             // `Database::drop` rewrites it, so a hard-killed process leaves a file the
             // read-only open refuses. A writable open repairs it for future opens.
@@ -309,6 +312,7 @@ impl RedbBackend {
                     path.display()
                 );
                 let db = Database::open(path).map_err(map_database_err)?;
+                format::verify_store_format(&db)?;
                 Self::read_manifest(&db)?
             }
             Err(e) => return Err(map_read_only_database_err(e)),
@@ -342,6 +346,7 @@ impl RedbBackend {
             txn.open_table(SNAPSHOT_ANCHOR_TABLE)
                 .map_err(map_table_err)?;
         }
+        format::write_store_format(&txn)?;
         insert_run_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
@@ -363,9 +368,8 @@ impl RedbBackend {
             return Ok(None);
         };
         let bytes = value.value();
-        let (manifest, _) =
-            bincode::serde::decode_from_slice::<RunManifest, _>(bytes, BINCODE_CONFIG)
-                .map_err(|e| EventStoreError::Corrupted(format!("decode manifest: {e}")))?;
+        let manifest = codec::decode_from_slice::<RunManifest>(bytes)
+            .map_err(|e| EventStoreError::Corrupted(format!("decode manifest: {e}")))?;
         Ok(Some(manifest))
     }
 
@@ -382,9 +386,8 @@ impl RedbBackend {
             return Ok(None);
         };
         let bytes = value.value();
-        let (anchor, _) =
-            bincode::serde::decode_from_slice::<SnapshotAnchor, _>(bytes, BINCODE_CONFIG)
-                .map_err(|e| EventStoreError::Corrupted(format!("decode snapshot anchor: {e}")))?;
+        let anchor = codec::decode_from_slice::<SnapshotAnchor>(bytes)
+            .map_err(|e| EventStoreError::Corrupted(format!("decode snapshot anchor: {e}")))?;
         Ok(Some(anchor))
     }
 
@@ -411,8 +414,8 @@ impl RedbBackend {
             let (key, value) = row.map_err(map_storage_err)?;
             let bytes = value.value();
 
-            match bincode::serde::decode_from_slice::<EventStoreEntry, _>(bytes, BINCODE_CONFIG) {
-                Ok((entry, _)) => {
+            match codec::decode_from_slice::<EventStoreEntry>(bytes) {
+                Ok(entry) => {
                     if entry.ts_init > max_ts {
                         max_ts = entry.ts_init;
                     }
@@ -455,6 +458,7 @@ impl EventStore for RedbBackend {
         let db = Database::create(&path).map_err(map_database_err)?;
 
         if path_existed {
+            format::verify_store_format(&db)?;
             let on_disk = Self::read_manifest(&db)?.ok_or_else(|| {
                 EventStoreError::Corrupted(format!(
                     "missing manifest in existing run file at {}",
@@ -524,7 +528,7 @@ impl EventStore for RedbBackend {
         let encoded: Vec<Vec<u8>> = entries
             .iter()
             .map(|append| {
-                bincode::serde::encode_to_vec(&append.entry, BINCODE_CONFIG).map_err(|e| {
+                codec::encode_to_vec(&append.entry).map_err(|e| {
                     EventStoreError::Backend(format!("encode entry seq={}: {e}", append.entry.seq))
                 })
             })
@@ -617,11 +621,8 @@ impl EventStore for RedbBackend {
                 });
             }
             let bytes = v.value();
-            let (entry, _) =
-                bincode::serde::decode_from_slice::<EventStoreEntry, _>(bytes, BINCODE_CONFIG)
-                    .map_err(|e| {
-                        EventStoreError::Corrupted(format!("decode entry seq={seq}: {e}"))
-                    })?;
+            let entry = codec::decode_from_slice::<EventStoreEntry>(bytes)
+                .map_err(|e| EventStoreError::Corrupted(format!("decode entry seq={seq}: {e}")))?;
 
             if entry.recompute_hash() != entry.entry_hash {
                 return Err(EventStoreError::HashMismatch { seq });
@@ -664,9 +665,8 @@ impl EventStore for RedbBackend {
         };
 
         let bytes = value.value();
-        let (entry, _) =
-            bincode::serde::decode_from_slice::<EventStoreEntry, _>(bytes, BINCODE_CONFIG)
-                .map_err(|e| EventStoreError::Corrupted(format!("decode entry seq={seq}: {e}")))?;
+        let entry = codec::decode_from_slice::<EventStoreEntry>(bytes)
+            .map_err(|e| EventStoreError::Corrupted(format!("decode entry seq={seq}: {e}")))?;
 
         if entry.recompute_hash() != entry.entry_hash {
             return Err(EventStoreError::HashMismatch { seq });
@@ -714,7 +714,7 @@ impl EventStore for RedbBackend {
         let latest = Self::read_snapshot_anchor(state.db.readable())?;
         validate_new_anchor(&anchor, state.high_watermark, latest.as_ref())?;
 
-        let bytes = bincode::serde::encode_to_vec(&anchor, BINCODE_CONFIG)
+        let bytes = codec::encode_to_vec(&anchor)
             .map_err(|e| EventStoreError::Backend(format!("encode snapshot anchor: {e}")))?;
         let db = state.db.read_write()?;
         let txn = begin_immediate_write(db)?;
@@ -782,7 +782,7 @@ fn insert_run_manifest(
     txn: &WriteTransaction,
     manifest: &RunManifest,
 ) -> Result<(), EventStoreError> {
-    let bytes = bincode::serde::encode_to_vec(manifest, BINCODE_CONFIG)
+    let bytes = codec::encode_to_vec(manifest)
         .map_err(|e| EventStoreError::Backend(format!("encode manifest: {e}")))?;
     let mut table = txn.open_table(MANIFEST_TABLE).map_err(map_table_err)?;
     table
@@ -879,8 +879,46 @@ fn map_transaction_err(err: TransactionError) -> EventStoreError {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use tempfile::TempDir;
 
     use super::*;
+
+    fn raw_run_path(base: &Path, run_id: &str) -> PathBuf {
+        let dir = base.join("trader-001");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        dir.join(format!("{run_id}.redb"))
+    }
+
+    fn create_pre_codec_run_file(path: &Path) {
+        let entries: TableDefinition<u64, &[u8]> = TableDefinition::new("entries");
+        let manifest: TableDefinition<&str, &[u8]> = TableDefinition::new("manifest");
+        let db = Database::create(path).expect("create redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            txn.open_table(entries).expect("open entries");
+            let mut table = txn.open_table(manifest).expect("open manifest");
+            table
+                .insert("current", b"old-format".as_slice())
+                .expect("insert");
+        }
+        txn.commit().expect("commit");
+    }
+
+    #[rstest]
+    fn read_run_manifest_rejects_store_without_format_marker() {
+        let tmp = TempDir::new().expect("tempdir");
+        let path = raw_run_path(tmp.path(), "run-old-format");
+        create_pre_codec_run_file(&path);
+
+        let err = RedbBackend::read_run_manifest(&path).expect_err("must reject old format");
+
+        match err {
+            EventStoreError::Corrupted(msg) => {
+                assert!(msg.contains("regenerated"), "msg was: {msg}");
+            }
+            other => panic!("expected Corrupted, was {other:?}"),
+        }
+    }
 
     #[rstest]
     #[case::file_too_large(ErrorKind::FileTooLarge, true)]

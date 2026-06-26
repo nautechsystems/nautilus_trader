@@ -28,7 +28,6 @@ use std::{
     process::Command,
 };
 
-use bincode::config::standard;
 use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_core::UnixNanos;
@@ -36,7 +35,7 @@ use nautilus_event_store::{
     AppendEntry, DataClass, DataCursorSnapshot, EventStore, EventStoreEntry, GapRange, Headers,
     IndexKey, IndexKind, MarkerBackend, MarkerManifest, RedbBackend, RedbMarkerBackend,
     RegisteredComponents, RunManifest, RunStatus, SnapshotAnchor, StreamCursor, Topic, Verifier,
-    VerifyFinding, compute_entry_hash, compute_marker_hash,
+    VerifyFinding, codec, compute_entry_hash, compute_marker_hash,
 };
 use redb::ReadableTable;
 use rstest::rstest;
@@ -340,7 +339,7 @@ fn binary_hash_mismatch_exits_corrupt_without_quarantine() {
     let path = run_path(&tmp, run_id);
     let mut tampered = build_entry(2, 11);
     tampered.payload = Bytes::from_static(b"\xFF");
-    let bytes = bincode::serde::encode_to_vec(&tampered, standard()).expect("encode");
+    let bytes = codec::encode_to_vec(&tampered).expect("encode");
     {
         let db = redb::Database::create(&path).expect("open redb");
         let txn = db.begin_write().expect("begin write");
@@ -577,7 +576,7 @@ fn open_redb_rejects_missing_run() {
 #[rstest]
 fn manufactured_seq_swap_surfaces_as_finding() {
     // Build a sealed run, then overwrite the bytes at table key=2 with the
-    // bincode-encoded entry whose embedded seq is 99. The hash recomputes
+    // codec-encoded entry whose embedded seq is 99. The hash recomputes
     // correctly because the hash hashes entry.seq=99, so scan_seq returns
     // Ok(Some(entry)) without raising HashMismatch. The verifier must catch
     // the key/embedded-seq divergence.
@@ -588,7 +587,7 @@ fn manufactured_seq_swap_surfaces_as_finding() {
     let path = tmp.path().join(INSTANCE_ID).join(format!("{run_id}.redb"));
     let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
     let substitute = build_entry(99, 11);
-    let bytes = bincode::serde::encode_to_vec(&substitute, standard()).expect("encode");
+    let bytes = codec::encode_to_vec(&substitute).expect("encode");
     {
         let db = redb::Database::create(&path).expect("open redb");
         let txn = db.begin_write().expect("begin write");

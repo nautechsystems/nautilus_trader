@@ -41,7 +41,6 @@ nautilus-persistence = { workspace = true, optional = true }
 
 ahash = { workspace = true }
 anyhow = { workspace = true }
-bincode = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 indexmap = { workspace = true }
