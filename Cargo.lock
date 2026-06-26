@@ -5439,6 +5439,7 @@ dependencies = [
  "cbindgen",
  "chrono",
  "chrono-tz",
+ "criterion",
  "indexmap 2.14.0",
  "log",
  "nautilus-analysis",
