@@ -128,7 +128,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
+        Bar, BarType, BookOrder, BorrowRate, FundingRateUpdate, OrderBookDelta, OrderBookDeltas,
+        TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BarAggregation, BookAction, LiquiditySide, OptionKind,
@@ -151,6 +152,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        consts::BYBIT_VENUE,
         enums::{
             BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
             BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
@@ -161,9 +163,10 @@ use crate::{
     },
     http::{
         models::{
-            BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse,
-            BybitInstrumentLinear, BybitInstrumentOption, BybitInstrumentSpot, BybitKline,
-            BybitOrderbookResult, BybitPosition, BybitTrade, BybitWalletBalance,
+            BybitCollateralInfo, BybitExecution, BybitFeeRate, BybitFunding,
+            BybitInstrumentInverse, BybitInstrumentLinear, BybitInstrumentOption,
+            BybitInstrumentSpot, BybitKline, BybitOrderbookResult, BybitPosition, BybitTrade,
+            BybitWalletBalance,
         },
         query::BybitNativeTpSlParams,
     },
@@ -777,6 +780,41 @@ pub fn parse_funding_rate(
         None, // next_funding_ns not provided with historical funding rates
         ts_event,
         ts_event,
+    ))
+}
+
+/// Parses a REST collateral info payload into a [`BorrowRate`].
+pub fn parse_borrow_rate(
+    info: &BybitCollateralInfo,
+    ts_init: UnixNanos,
+) -> anyhow::Result<BorrowRate> {
+    let currency = get_currency(info.currency.as_str());
+
+    let hourly_rate = match info.hourly_borrow_rate.trim() {
+        "" => Decimal::ZERO,
+        s => parse_decimal(s, "collateral.hourlyBorrowRate")?,
+    };
+    let rate = hourly_rate * Decimal::from(24 * 365);
+
+    let borrow_limit = match info.max_borrowing_amount.trim() {
+        "" => None,
+        s => {
+            let limit_amount: f64 = s
+                .parse()
+                .with_context(|| format!("invalid f64 for collateral.maxBorrowingAmount: {s:?}"))?;
+            Some(Money::new(limit_amount, currency))
+        }
+    };
+
+    Ok(BorrowRate::new(
+        currency,
+        *BYBIT_VENUE,
+        rate,
+        60,   // Bybit borrow interest accrues hourly
+        None, // next_accrual_ns not provided by the collateral-info endpoint
+        borrow_limit,
+        ts_init,
+        ts_init,
     ))
 }
 

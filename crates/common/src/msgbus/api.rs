@@ -32,8 +32,8 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BorrowRate, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -47,11 +47,11 @@ use ustr::Ustr;
 
 pub use super::external::republish_external_message;
 use super::{
-    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
-    DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
-    INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
-    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BORROW_RATE_HANDLERS,
+    BusPayloadType, DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS,
+    HANDLER_BUFFER_CAP, INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS,
+    OPTION_CHAIN_HANDLERS, OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS,
+    PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send,
     external::forward_to_external_egress,
@@ -394,6 +394,18 @@ pub fn subscribe_funding_rates(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to borrow rate updates matching a pattern.
+pub fn subscribe_borrow_rates(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<BorrowRate>,
+    priority: Option<u32>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_borrow_rates
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
 /// Subscribes a handler to greeks data matching a pattern.
 pub fn subscribe_greeks(
     pattern: MStr<Pattern>,
@@ -662,6 +674,14 @@ pub fn unsubscribe_funding_rates(
         .unsubscribe(pattern, handler);
 }
 
+/// Unsubscribes a handler from borrow rate updates.
+pub fn unsubscribe_borrow_rates(pattern: MStr<Pattern>, handler: &TypedHandler<BorrowRate>) {
+    get_message_bus()
+        .borrow_mut()
+        .router_borrow_rates
+        .unsubscribe(pattern, handler);
+}
+
 /// Unsubscribes a handler from account state updates.
 pub fn unsubscribe_account_state(pattern: MStr<Pattern>, handler: &TypedHandler<AccountState>) {
     get_message_bus()
@@ -921,6 +941,15 @@ pub fn exact_subscriber_count_funding_rates(topic: MStr<Topic>) -> usize {
         .exact_subscriber_count(topic)
 }
 
+/// Returns the exact subscriber count for borrow rates on a topic,
+/// excluding wildcard pattern subscriptions.
+pub fn exact_subscriber_count_borrow_rates(topic: MStr<Topic>) -> usize {
+    get_message_bus()
+        .borrow()
+        .router_borrow_rates
+        .exact_subscriber_count(topic)
+}
+
 /// Returns the exact subscriber count for option greeks on a topic,
 /// excluding wildcard pattern subscriptions.
 pub fn exact_subscriber_count_option_greeks(topic: MStr<Topic>) -> usize {
@@ -1121,6 +1150,16 @@ pub fn publish_funding_rate(topic: MStr<Topic>, funding_rate: &FundingRateUpdate
     );
 
     forward_to_external_egress(topic, BusPayloadType::FundingRateUpdate, funding_rate);
+}
+
+/// Publishes a borrow rate update to subscribers on a topic.
+pub fn publish_borrow_rate(topic: MStr<Topic>, borrow_rate: &BorrowRate) {
+    publish_typed(
+        topic,
+        &BORROW_RATE_HANDLERS,
+        |bus, h| bus.router_borrow_rates.fill_matching_handlers(topic, h),
+        borrow_rate,
+    );
 }
 
 /// Publishes greeks data to subscribers on a topic.

@@ -23,13 +23,13 @@ use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
     RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-    UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    SubscribeBorrowRates, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBorrowRates, UnsubscribeCustomData,
+    UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{
@@ -207,6 +207,16 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscribe operation fails.
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Subscribes to borrow rate updates for the specified currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscribe operation fails.
+    fn subscribe_borrow_rates(&mut self, cmd: SubscribeBorrowRates) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -419,6 +429,16 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Unsubscribes from borrow rate updates for the specified currency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_borrow_rates(&mut self, cmd: &UnsubscribeBorrowRates) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }

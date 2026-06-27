@@ -20,6 +20,7 @@ use std::ffi::CStr;
 
 pub mod bar;
 pub mod bet;
+pub mod borrow;
 pub mod close;
 #[cfg(feature = "python")]
 pub mod custom;
@@ -50,9 +51,9 @@ use pyo3::{prelude::*, types::PyCapsule};
 #[cfg(any(feature = "cython-compat", feature = "ffi"))]
 use crate::data::DataFFI;
 use crate::data::{
-    Bar, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-    MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick, close::InstrumentClose,
-    is_monotonically_increasing_by_init, register_python_data_class,
+    Bar, BorrowRate, CustomData, Data, DataType, FundingRateUpdate, IndexPriceUpdate,
+    InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, QuoteTick, TradeTick,
+    close::InstrumentClose, is_monotonically_increasing_by_init, register_python_data_class,
 };
 
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
@@ -768,6 +769,25 @@ pub fn pyobjects_to_funding_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<F
     }
 
     Ok(funding_rates)
+}
+
+/// Transforms the given Python objects into a vector of [`BorrowRate`] objects.
+///
+/// # Errors
+///
+/// Returns a `PyErr` if element conversion fails or the data is not monotonically increasing.
+pub fn pyobjects_to_borrow_rates(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<BorrowRate>> {
+    let borrow_rates: Vec<BorrowRate> = data
+        .into_iter()
+        .map(|obj| BorrowRate::from_pyobject(&obj))
+        .collect::<PyResult<Vec<BorrowRate>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&borrow_rates) {
+        return Err(to_pyvalue_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(borrow_rates)
 }
 
 #[cfg(all(test, feature = "python", feature = "ffi"))]
