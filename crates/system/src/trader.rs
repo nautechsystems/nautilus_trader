@@ -53,9 +53,12 @@ use nautilus_trading::{
 };
 use ustr::Ustr;
 
-use crate::registration::{
-    base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
-    strategy_registration_id,
+use crate::{
+    clock_factory::ClockFactory,
+    registration::{
+        base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
+        strategy_registration_id,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,6 +96,8 @@ pub struct Trader {
     cache: Rc<RefCell<Cache>>,
     /// Portfolio reference for strategy registration.
     portfolio: Rc<RefCell<Portfolio>>,
+    /// Optional caller-supplied factory for per-component clocks in live/sandbox.
+    clock_factory: Option<ClockFactory>,
     /// Registered actor IDs (actors stored in global registry).
     actor_ids: Vec<ActorId>,
     /// Registered strategy IDs (strategies stored in global registry).
@@ -129,6 +134,7 @@ impl Trader {
         clock: Rc<RefCell<dyn Clock>>,
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
+        clock_factory: Option<ClockFactory>,
     ) -> Self {
         let ts_created = clock.borrow().timestamp_ns();
 
@@ -140,6 +146,7 @@ impl Trader {
             clock,
             cache,
             portfolio,
+            clock_factory,
             actor_ids: Vec::new(),
             strategy_ids: Vec::new(),
             strategy_stop_fns: AHashMap::new(),
@@ -250,7 +257,10 @@ impl Trader {
     pub fn create_component_clock(&mut self, component_id: ComponentId) -> Rc<RefCell<dyn Clock>> {
         let clock: Rc<RefCell<dyn Clock>> = match self.environment {
             Environment::Backtest => Rc::new(RefCell::new(TestClock::new())),
-            Environment::Live | Environment::Sandbox => Self::create_live_clock(),
+            Environment::Live | Environment::Sandbox => match &self.clock_factory {
+                Some(factory) => factory(),
+                None => Self::create_live_clock(),
+            },
         };
         self.clocks.insert(component_id, clock.clone());
         clock
@@ -1224,7 +1234,10 @@ impl Component for Trader {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     use nautilus_common::{
         actor::{
@@ -1395,6 +1408,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         assert_eq!(trader.trader_id(), trader_id);
@@ -1427,6 +1441,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         assert_eq!(
@@ -1449,6 +1464,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let actor = TestDataActor::new(DataActorConfig::default());
@@ -1475,6 +1491,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = DataActorConfig {
@@ -1514,6 +1531,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -1547,6 +1565,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let strategy_id = StrategyId::from("ExampleStrategy-XNAS");
@@ -1587,6 +1606,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let strategy_id = StrategyId::from("ExampleStrategy-XNAS");
@@ -1631,6 +1651,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let strategy1 = TestStrategy::new(StrategyConfig::default());
@@ -1661,6 +1682,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let mut strategy = TestStrategy::new(StrategyConfig::default());
@@ -1693,6 +1715,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -1733,6 +1756,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         assert!(
@@ -1768,6 +1792,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -1798,6 +1823,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = ExecutionAlgorithmConfig {
@@ -1828,6 +1854,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
         trader.state = ComponentState::Running;
 
@@ -1860,6 +1887,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         // Add components
@@ -1911,6 +1939,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         // Initially pre-initialized
@@ -1963,6 +1992,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -2011,6 +2041,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -2053,6 +2084,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         // Simulate running state
@@ -2078,6 +2110,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         // Simulate disposed state
@@ -2103,6 +2136,7 @@ mod tests {
             clock.clone(),
             cache,
             portfolio,
+            None,
         );
 
         let component_a = ComponentId::new("ACTOR-A");
@@ -2113,6 +2147,37 @@ mod tests {
         // Each component gets its own clock instance
         assert_ne!(clock_a.as_ptr() as *const _, clock.as_ptr() as *const _);
         assert_ne!(clock_a.as_ptr() as *const _, clock_b.as_ptr() as *const _);
+    }
+
+    #[rstest]
+    fn test_create_component_clock_live_uses_factory_with_distinct_instances() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+            create_trader_components();
+        let calls = Rc::new(Cell::new(0usize));
+        let calls_in_closure = calls.clone();
+        let factory: ClockFactory = Rc::new(move || {
+            calls_in_closure.set(calls_in_closure.get() + 1);
+            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+        });
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Sandbox,
+            clock,
+            cache,
+            portfolio,
+            Some(factory),
+        );
+
+        let a = trader.create_component_clock(ComponentId::new("ACTOR-A"));
+        let b = trader.create_component_clock(ComponentId::new("ACTOR-B"));
+
+        assert_eq!(calls.get(), 2, "factory invoked once per component");
+        assert!(
+            !Rc::ptr_eq(&a, &b),
+            "each component must get its own clock instance"
+        );
     }
 
     #[rstest]
@@ -2129,6 +2194,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let config = StrategyConfig {
@@ -2185,6 +2251,7 @@ mod tests {
             clock,
             cache,
             portfolio,
+            None,
         );
 
         let actor_a = TestDataActor::new(DataActorConfig {
