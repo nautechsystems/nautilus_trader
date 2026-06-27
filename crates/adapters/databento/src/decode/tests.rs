@@ -870,7 +870,7 @@ fn test_decode_definition_msg_equity() {
     let msg = dbn_stream.next().unwrap().unwrap();
 
     let instrument_id = InstrumentId::from("MSFT.XNAS");
-    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("equity class 'K' should produce an instrument");
 
@@ -895,7 +895,7 @@ fn test_decode_definition_msg_futures_contract() {
     let msg = dbn_stream.next().unwrap().unwrap();
 
     let instrument_id = InstrumentId::from("ESU6.GLBX");
-    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("future class 'F' should produce an instrument");
 
@@ -922,7 +922,7 @@ fn test_decode_definition_msg_futures_spread() {
     let msg = dbn_stream.next().unwrap().unwrap();
 
     let instrument_id = InstrumentId::from("ESU6-ESM7.GLBX");
-    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, instrument_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("futures spread class 'S' should produce an instrument");
 
@@ -951,7 +951,7 @@ fn test_decode_definition_msg_option_contract() {
     // First record: call ('C')
     let msg = dbn_stream.next().unwrap().unwrap();
     let call_id = InstrumentId::from("ESU6 C9600.GLBX");
-    let result = decode_instrument_def_msg(msg, call_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, call_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("option class 'C' should produce an instrument");
     let InstrumentAny::OptionContract(call) = result else {
@@ -965,12 +965,18 @@ fn test_decode_definition_msg_option_contract() {
     assert_eq!(call.underlying.as_str(), "ESU6");
     assert_eq!(call.currency, Currency::from("USD"));
     assert_eq!(call.multiplier, Quantity::from(50));
+    // GLBX expirations carry an accurate intraday time (2026-09-18 13:30 UTC) and must not be
+    // touched by the OPRA expiry correction.
+    assert_eq!(
+        call.expiration_ns,
+        UnixNanos::from(1_789_738_200_000_000_000)
+    );
     assert_eq!(call.ts_init, 0);
 
     // Second record: put ('P')
     let msg = dbn_stream.next().unwrap().unwrap();
     let put_id = InstrumentId::from("ESU6 P6575.GLBX");
-    let result = decode_instrument_def_msg(msg, put_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, put_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("option class 'P' should produce an instrument");
     let InstrumentAny::OptionContract(put) = result else {
@@ -992,7 +998,7 @@ fn test_decode_definition_msg_option_spread() {
     // First record: option spread ('T')
     let msg = dbn_stream.next().unwrap().unwrap();
     let spread_id = InstrumentId::from("UD:2E: SG 2500275.GLBX");
-    let result = decode_instrument_def_msg(msg, spread_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, spread_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("option spread class 'T' should produce an instrument");
     let InstrumentAny::OptionSpread(spread) = result else {
@@ -1009,7 +1015,7 @@ fn test_decode_definition_msg_option_spread() {
     // Second record: mixed multi-leg spread ('M')
     let msg = dbn_stream.next().unwrap().unwrap();
     let mixed_id = InstrumentId::from("UD:T$:CFO 2632896.GLBX");
-    let result = decode_instrument_def_msg(msg, mixed_id, Some(0.into()))
+    let result = decode_instrument_def_msg(msg, mixed_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("mixed spread class 'M' should produce an instrument");
     let InstrumentAny::OptionSpread(mixed) = result else {
@@ -1018,6 +1024,44 @@ fn test_decode_definition_msg_option_spread() {
     assert_eq!(mixed.id, mixed_id);
     assert_eq!(mixed.raw_symbol.as_str(), "UD:T$:CFO 2632896");
     assert_eq!(mixed.strategy_type.as_str(), "CV:FO");
+}
+
+#[rstest]
+fn test_decode_option_contract_corrects_opra_midnight_expiration() {
+    // OPRA.PILLAR (publisher 22 = XCBO) supplies expirations with date-level precision: an option
+    // expiring 16:00 New York on 2026-06-29 arrives stamped at midnight UTC. The decoder must
+    // reinterpret it at 16:00 New York (20:00 UTC), end to end from the publisher-derived dataset.
+    let msg = dbn::InstrumentDefMsg {
+        hd: dbn::RecordHeader::new::<dbn::InstrumentDefMsg>(
+            dbn::enums::rtype::INSTRUMENT_DEF,
+            22,
+            1,
+            1_000_000_000,
+        ),
+        ts_recv: 1_000_000_000,
+        instrument_class: 'C' as c_char,
+        exchange: cstr::<5>("XCBO"),
+        currency: cstr::<4>("USD"),
+        strike_price: 5_000_000_000_000,
+        min_price_increment: 10_000_000,
+        unit_of_measure_qty: 1_000_000_000,
+        min_lot_size_round_lot: 1,
+        expiration: 1_782_691_200_000_000_000, // 2026-06-29 00:00 UTC (date-level)
+        ..Default::default()
+    };
+
+    let instrument_id = InstrumentId::from("SPX.XCBO");
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
+        .expect("option should decode")
+        .expect("option class 'C' should produce an instrument");
+    let InstrumentAny::OptionContract(option) = result else {
+        panic!("Expected OptionContract");
+    };
+    // 2026-06-29 16:00 America/New_York == 20:00 UTC
+    assert_eq!(
+        option.expiration_ns,
+        UnixNanos::from(1_782_763_200_000_000_000)
+    );
 }
 
 #[rstest]
@@ -1085,7 +1129,7 @@ fn test_decode_instrument_def_msg_unsupported_class_returns_none(#[case] instrum
     };
 
     let instrument_id = InstrumentId::from("SPX.XCBO");
-    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
         .expect("decoder should not bail on unsupported class");
     assert!(result.is_none());
 }
@@ -1111,7 +1155,7 @@ fn test_decode_instrument_def_msg_fx_spot_returns_currency_pair() {
     };
 
     let instrument_id = InstrumentId::from("EURUSD.FX");
-    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
         .expect("FX spot should decode")
         .expect("FX spot should return an instrument");
 
@@ -1143,7 +1187,7 @@ fn test_decode_instrument_def_msg_unparsable_fx_spot_returns_none() {
     };
 
     let instrument_id = InstrumentId::from("INVALID.FX");
-    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()))
+    let result = decode_instrument_def_msg(&msg, instrument_id, Some(0.into()), None)
         .expect("unparsable FX spot should not abort the batch");
 
     assert!(result.is_none());

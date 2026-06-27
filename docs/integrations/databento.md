@@ -492,6 +492,33 @@ to the appropriate Nautilus `Instrument` type.
 | Index                      | `I`  | Not yet available        |
 | Bond                       | `B`  | Not yet available        |
 
+### Option expiration correction
+
+OPRA option definitions (dataset `OPRA.PILLAR`) carry the expiration with date-level precision: the
+time-of-day is zeroed to midnight UTC. An option expiring at 16:00 New York time therefore arrives
+stamped on the prior evening in New York, which makes the matching engine treat the contract as
+expired before its final trading session. The loader corrects such midnight-UTC OPRA expirations to
+16:00 New York time by default, leaving every other dataset (and any expiration that already carries
+an intraday time, such as CME Globex) untouched.
+
+Override the default, or set per-underlying times, with `expiration_overrides`. It maps a dataset to
+a mapping of underlying symbol to time, where the reserved key `default` sets the dataset-wide time:
+
+```python
+loader.from_dbn_file(
+    path,
+    expiration_overrides={
+        "OPRA.PILLAR": {"default": "16:00", "SPX": "09:30"},
+    },
+)
+```
+
+Times use `HH:MM` or `HH:MM:SS` in the exchange-local timezone (New York for OPRA). Only datasets
+with a built-in correction rule (currently `OPRA.PILLAR`) can be tuned; an unknown or rule-less
+dataset such as `GLBX.MDP3` raises a `ValueError`. The correction keys on the option's underlying, so
+it cannot distinguish series that share an underlying but settle at different times (for example
+AM-settled SPX versus PM-settled SPXW); set the time that matches the contracts you are loading.
+
 ### Price precision
 
 Databento raw prices are fixed-point integers scaled by 1e-9. The adapter derives

@@ -68,6 +68,8 @@ nautilus-system = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 databento = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }

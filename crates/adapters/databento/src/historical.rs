@@ -322,7 +322,7 @@ impl DatabentoHistoricalClient {
                 instrument_id.venue = venue;
             }
 
-            match decode_instrument_def_msg(msg, instrument_id, None) {
+            match decode_instrument_def_msg(msg, instrument_id, None, None) {
                 Ok(Some(instrument)) => instruments.push(instrument),
                 Ok(None) => {} // Decoder logged a warning for the unsupported class
                 Err(e) => anyhow::bail!("Failed to decode instrument {instrument_id}: {e}"),

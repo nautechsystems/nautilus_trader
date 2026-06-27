@@ -5893,6 +5893,8 @@ dependencies = [
  "anyhow",
  "arrow 58.3.0",
  "async-trait",
+ "chrono",
+ "chrono-tz",
  "criterion",
  "databento",
  "dotenvy",

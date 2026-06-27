@@ -7855,6 +7855,7 @@ class DatabentoDataLoader:
         filepath: str,
         use_exchange_as_venue: bool,
         skip_on_error: bool = False,
+        expiration_overrides: dict[str, dict[str, str]] | None = None,
     ) -> list[Instrument]: ...
     def load_order_book_deltas(
         self,
