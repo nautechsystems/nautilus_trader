@@ -45,7 +45,8 @@ python = [
 turmoil = ["dep:turmoil", "nautilus-network/turmoil"]
 
 [package.metadata.docs.rs]
-features = ["python"]
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["hypersync", "turmoil"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]

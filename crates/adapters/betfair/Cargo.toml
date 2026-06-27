@@ -46,6 +46,7 @@ python = [
 ignored = ["arrow"] # Used by `custom_data` macro expansion
 
 [package.metadata.docs.rs]
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
 features = ["high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 

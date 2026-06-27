@@ -60,7 +60,18 @@ ignored = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = [
+  "capnp",
+  "defi",
+  "ffi",
+  "high-precision",
+  "indicators",
+  "live",
+  "sbe",
+  "simulation",
+  "tracing-bridge",
+]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
