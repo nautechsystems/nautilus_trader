@@ -3171,6 +3171,14 @@ impl DataEngine {
                 .as_ref()
                 .and_then(|params| params.get_u64("quote_build_delay"))
                 .unwrap_or(0),
+            cmd.params
+                .as_ref()
+                .and_then(|params| params.get_bool("disable_vega_pricing"))
+                .unwrap_or(false),
+            cmd.params
+                .as_ref()
+                .and_then(|params| params.get_u64("vega_pricing_timeout_seconds"))
+                .unwrap_or(60),
             None,
             None,
         )));

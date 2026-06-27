@@ -1857,6 +1857,8 @@ cdef class SpreadQuoteAggregator:
         bint historical,
         object update_interval_seconds = None,
         int quote_build_delay = 0,
+        bint disable_vega_pricing = False,
+        int vega_pricing_timeout_seconds = 60,
     ):
         self._handler = handler
         self._clock = clock
@@ -1888,12 +1890,16 @@ cdef class SpreadQuoteAggregator:
         self.historical_mode = historical
         self._update_interval_seconds = update_interval_seconds
         self._quote_build_delay = quote_build_delay
+        self._disable_vega_pricing = disable_vega_pricing
+        self._vega_pricing_temporarily_disabled = False
+        self._vega_pricing_timeout_seconds = vega_pricing_timeout_seconds
         self.is_running = False
         self._historical_events = []
 
         # Timers on a same clock execute first based on their timer name
         # "SPREAD_QUOTE_..." < "TIME_BAR_..."
         self._timer_name = f"SPREAD_QUOTE_{self._spread_instrument_id}"
+        self._vega_pricing_timeout_timer_name = f"VEGA_PRICING_TIMEOUT_{self._spread_instrument_id}"
         self._has_update = False
 
     cpdef void set_historical_mode(self, bint historical_mode, handler: Callable[[QuoteTick], None], GreeksCalculator greeks_calculator):
@@ -1932,11 +1938,14 @@ cdef class SpreadQuoteAggregator:
         )
 
     cpdef void stop_timer(self):
-        if self._update_interval_seconds is None:
-            return
-
-        if self._timer_name in self._clock.timer_names:
+        if (
+            self._update_interval_seconds is not None
+            and self._timer_name in self._clock.timer_names
+        ):
             self._clock.cancel_timer(self._timer_name)
+
+        if self._vega_pricing_timeout_timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(self._vega_pricing_timeout_timer_name)
 
     cpdef void handle_quote_tick(self, QuoteTick tick):
         if self._update_interval_seconds is not None and self.historical_mode:
@@ -2010,6 +2019,11 @@ cdef class SpreadQuoteAggregator:
         if not self._has_update:
             return
 
+        cdef bint use_vega_pricing = not (
+            self._disable_vega_pricing
+            or self._vega_pricing_temporarily_disabled
+        )
+
         for idx, leg_id in enumerate(self._leg_ids):
             tick = self._last_quotes.get(leg_id)
             if tick is None:
@@ -2029,14 +2043,15 @@ cdef class SpreadQuoteAggregator:
             if not self._is_futures_spread:
                 self._mid_prices[idx] = (ask_price + bid_price) * 0.5
                 self._bid_ask_spreads[idx] = ask_price - bid_price
-                greeks_data = self._greeks_calculator.instrument_greeks(
-                    leg_id,
-                    percent_greeks=True,
-                    use_cached_greeks=True,
-                    vega_time_weight_base=30,
-                )
-                if greeks_data is not None:
-                    self._vegas[idx] = greeks_data.vega
+                if use_vega_pricing:
+                    greeks_data = self._greeks_calculator.instrument_greeks(
+                        leg_id,
+                        percent_greeks=True,
+                        use_cached_greeks=True,
+                        vega_time_weight_base=30,
+                    )
+                    if greeks_data is not None:
+                        self._vegas[idx] = greeks_data.vega
 
         cdef tuple raw_bid_ask_prices
         if self._is_futures_spread:
@@ -2050,6 +2065,12 @@ cdef class SpreadQuoteAggregator:
         self._handler(spread_quote)
 
     cdef tuple _create_option_spread_prices(self):
+        if (
+            self._disable_vega_pricing
+            or self._vega_pricing_temporarily_disabled
+        ):
+            return self._create_futures_spread_prices()
+
         vega_multipliers = np.divide(
             self._bid_ask_spreads,
             self._vegas,
@@ -2063,8 +2084,10 @@ cdef class SpreadQuoteAggregator:
             self._log.warning(
                 f"No vega information available for the components of {self._spread_instrument_id}. "
                 f"Will generate spread quote using component quotes only. "
+                f"Vega pricing is disabled for {self._vega_pricing_timeout_seconds} seconds. "
                 f"Subscribe to some underlying price information for more precise quotes."
             )
+            self._start_vega_pricing_timeout()
             return self._create_futures_spread_prices()
 
         vega_multiplier = np.abs(non_zero_multipliers).mean()
@@ -2079,6 +2102,20 @@ cdef class SpreadQuoteAggregator:
         raw_ask_price = spread_mid_price + bid_ask_spread * 0.5
 
         return (raw_bid_price, raw_ask_price)
+
+    cdef void _clear_vega_pricing_timeout(self, TimeEvent event):
+        self._vega_pricing_temporarily_disabled = False
+
+    cdef void _start_vega_pricing_timeout(self):
+        self._vega_pricing_temporarily_disabled = True
+        if self._vega_pricing_timeout_timer_name in self._clock.timer_names:
+            return
+
+        self._clock.set_time_alert_ns(
+            name=self._vega_pricing_timeout_timer_name,
+            alert_time_ns=self._clock.timestamp_ns() + secs_to_nanos(self._vega_pricing_timeout_seconds),
+            callback=self._clear_vega_pricing_timeout,
+        )
 
     cdef tuple _create_futures_spread_prices(self):
         # Calculate spread ask: for positive ratios use ask, for negative ratios use bid
