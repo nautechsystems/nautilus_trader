@@ -90,6 +90,7 @@ pub const STREAM_OP_AUTHENTICATION: &str = "authentication";
 pub const STREAM_OP_MARKET_SUBSCRIPTION: &str = "marketSubscription";
 pub const STREAM_OP_ORDER_SUBSCRIPTION: &str = "orderSubscription";
 pub const STREAM_OP_RACE_SUBSCRIPTION: &str = "raceSubscription";
+pub const STREAM_OP_CRICKET_SUBSCRIPTION: &str = "cricketSubscription";
 pub const STREAM_OP_HEARTBEAT: &str = "heartbeat";
 
 // HTTP header names
