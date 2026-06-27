@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
+- Fixed Interactive Brokers (Rust) stock contract resolution for non-USD and cross-listed symbols (#4335)
 
 ### Internal Improvements
 - Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
