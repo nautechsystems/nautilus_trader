@@ -33,6 +33,7 @@ use ahash::AHashMap;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId, Venue},
+    types::Currency,
 };
 
 use super::mstr::{Endpoint, MStr, Pattern, Topic};
@@ -393,6 +394,10 @@ define_switchboard! {
     get_funding_rate_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.funding_rates.{}.{}", instrument_id.venue, instrument_id.symbol;
 
+    borrow_rate_topics: (Currency, Venue),
+    get_borrow_rate_topic(currency: Currency, venue: Venue) -> (currency, venue),
+    "data.borrow_rates.{}.{}", venue, currency;
+
     funding_settlement_topics: InstrumentId,
     get_funding_settlement_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.funding_settlements.{}.{}", instrument_id.venue, instrument_id.symbol;
@@ -530,6 +535,16 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
+    pub fn get_pipeline_borrow_rate_topic(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+    ) -> MStr<Topic> {
+        let live = self.get_borrow_rate_topic(currency, venue);
+        self.pipeline_topic(live)
+    }
+
+    #[must_use]
     pub fn get_pipeline_instrument_status_topic(
         &mut self,
         instrument_id: InstrumentId,
@@ -634,6 +649,7 @@ define_wrappers! {
     get_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_borrow_rate_topic(currency: Currency, venue: Venue) -> MStr<Topic>,
     get_funding_settlement_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
@@ -648,6 +664,7 @@ define_wrappers! {
     get_pipeline_mark_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_index_price_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_funding_rate_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_pipeline_borrow_rate_topic(currency: Currency, venue: Venue) -> MStr<Topic>,
     get_pipeline_instrument_status_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,

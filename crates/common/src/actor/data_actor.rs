@@ -33,8 +33,9 @@ use nautilus_model::defi::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BorrowRate, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+        QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
     },
@@ -43,6 +44,7 @@ use nautilus_model::{
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, OptionSeriesId, TraderId, Venue},
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
+    types::Currency,
 };
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
@@ -70,16 +72,16 @@ use crate::{
             QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
             RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
             RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
-            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookSnapshots,
-            UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
-            is_parent_subscription,
+            SubscribeBookSnapshots, SubscribeBorrowRates, SubscribeCommand, SubscribeCustomData,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+            UnsubscribeBookSnapshots, UnsubscribeBorrowRates, UnsubscribeCommand,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
         system::ShutdownSystem,
     },
@@ -87,11 +89,12 @@ use crate::{
         self, MStr, Pattern, ShareableMessageHandler, Topic, TypedHandler, get_message_bus,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_pattern, get_book_deltas_topic,
-            get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
-            get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
-            get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
-            get_option_chain_topic, get_option_greeks_topic, get_order_canceled_topic,
-            get_order_filled_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_book_snapshots_topic, get_borrow_rate_topic, get_custom_topic,
+            get_funding_rate_topic, get_index_price_topic, get_instrument_close_topic,
+            get_instrument_status_topic, get_instrument_topic, get_instruments_pattern,
+            get_mark_price_topic, get_option_chain_topic, get_option_greeks_topic,
+            get_order_canceled_topic, get_order_filled_topic, get_quotes_topic, get_signal_pattern,
+            get_trades_topic,
         },
     },
     signal::Signal,
@@ -489,6 +492,16 @@ pub trait DataActor: Component {
     /// Returns an error if handling the funding rate update fails.
     #[allow(unused_variables)]
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a borrow rate update.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the borrow rate update fails.
+    #[allow(unused_variables)]
+    fn on_borrow_rate(&mut self, borrow_rate: &BorrowRate) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -993,6 +1006,20 @@ pub trait DataActor: Component {
         }
 
         if let Err(e) = self.on_funding_rate(funding_rate) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received borrow rate update.
+    fn handle_borrow_rate(&mut self, borrow_rate: &BorrowRate) {
+        log_received(&borrow_rate);
+
+        if self.not_running() {
+            log_not_running(&borrow_rate);
+            return;
+        }
+
+        if let Err(e) = self.on_borrow_rate(borrow_rate) {
             log_error(&e);
         }
     }
@@ -1672,6 +1699,35 @@ pub trait DataActor: Component {
         );
     }
 
+    /// Subscribe to streaming [`BorrowRate`] data for the `currency` at the `venue`.
+    fn subscribe_borrow_rates(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        let topic = get_borrow_rate_topic(currency, venue);
+
+        let handler = TypedHandler::from(move |borrow_rate: &BorrowRate| {
+            get_actor_unchecked::<Self>(&actor_id).handle_borrow_rate(borrow_rate);
+        });
+
+        DataActorCore::subscribe_borrow_rates(
+            self.core_mut(),
+            topic,
+            handler,
+            currency,
+            venue,
+            client_id,
+            params,
+        );
+    }
+
     /// Subscribe to streaming [`OptionGreeks`] data for the `instrument_id`.
     fn subscribe_option_greeks(
         &mut self,
@@ -2149,6 +2205,26 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_funding_rates(self.core_mut(), instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from streaming [`BorrowRate`] data for the `currency` at the `venue`.
+    fn unsubscribe_borrow_rates(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_borrow_rates(
+            self.core_mut(),
+            currency,
+            venue,
+            client_id,
+            params,
+        );
     }
 
     /// Unsubscribe from streaming [`OptionGreeks`] data for the `instrument_id`.
@@ -2793,6 +2869,7 @@ pub struct DataActorCore {
     mark_price_handlers: AHashMap<MStr<Topic>, TypedHandler<MarkPriceUpdate>>,
     index_price_handlers: AHashMap<MStr<Topic>, TypedHandler<IndexPriceUpdate>>,
     funding_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<FundingRateUpdate>>,
+    borrow_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<BorrowRate>>,
     option_greeks_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionGreeks>>,
     option_chain_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionChainSlice>>,
     order_event_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderEventAny>>,
@@ -3137,6 +3214,29 @@ impl DataActorCore {
         }
     }
 
+    pub(crate) fn add_borrow_rate_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<BorrowRate>,
+    ) {
+        if self.borrow_rate_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate borrow rate subscription to '{topic}'",
+                self.actor_id
+            );
+            return;
+        }
+        self.borrow_rate_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_borrow_rates(topic.into(), handler, None);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn remove_borrow_rate_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.borrow_rate_handlers.remove(&topic) {
+            msgbus::unsubscribe_borrow_rates(topic.into(), &handler);
+        }
+    }
+
     pub(crate) fn add_option_greeks_subscription(
         &mut self,
         topic: MStr<Topic>,
@@ -3356,6 +3456,7 @@ impl DataActorCore {
             mark_price_handlers: AHashMap::new(),
             index_price_handlers: AHashMap::new(),
             funding_rate_handlers: AHashMap::new(),
+            borrow_rate_handlers: AHashMap::new(),
             option_greeks_handlers: AHashMap::new(),
             option_chain_handlers: AHashMap::new(),
             order_event_handlers: AHashMap::new(),
@@ -4053,6 +4154,33 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Helper method for registering borrow rates subscriptions from the trait.
+    pub fn subscribe_borrow_rates(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<BorrowRate>,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        self.add_borrow_rate_subscription(topic, handler);
+
+        let command = SubscribeCommand::BorrowRates(SubscribeBorrowRates {
+            currency,
+            client_id,
+            venue: Some(venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
     /// Helper method for registering option greeks subscriptions from the trait.
     pub fn subscribe_option_greeks(
         &mut self,
@@ -4478,6 +4606,32 @@ impl DataActorCore {
             instrument_id,
             client_id,
             venue: Some(instrument_id.venue),
+            command_id: UUID4::new(),
+            ts_init: self.timestamp_ns(),
+            correlation_id: None,
+            params,
+        });
+
+        self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Helper method for unsubscribing from borrow rates.
+    pub fn unsubscribe_borrow_rates(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        let topic = get_borrow_rate_topic(currency, venue);
+        self.remove_borrow_rate_subscription(topic);
+
+        let command = UnsubscribeCommand::BorrowRates(UnsubscribeBorrowRates {
+            currency,
+            client_id,
+            venue: Some(venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,

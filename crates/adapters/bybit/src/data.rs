@@ -23,45 +23,6 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet};
-use anyhow::Context;
-use futures_util::{StreamExt, pin_mut};
-use nautilus_common::{
-    clients::DataClient,
-    live::{runner::get_data_event_sender, runtime::get_runtime},
-    messages::{
-        DataEvent,
-        data::{
-            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
-            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentStatus,
-            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
-        },
-    },
-};
-use nautilus_core::{
-    AtomicMap, AtomicSet,
-    datetime::datetime_to_unix_nanos,
-    time::{AtomicTime, get_atomic_clock_realtime},
-};
-use nautilus_model::{
-    data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
-    enums::{BookType, MarketStatusAction},
-    identifiers::{ClientId, InstrumentId, Venue},
-    instruments::{Instrument, InstrumentAny},
-    orderbook::book::OrderBook,
-};
-use rust_decimal::Decimal;
-use tokio::{task::JoinHandle, time::Duration};
-use tokio_util::sync::CancellationToken;
-use ustr::Ustr;
-
 use crate::{
     common::{
         consts::{BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_VENUE},
@@ -85,6 +46,51 @@ use crate::{
         },
     },
 };
+use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
+use futures_util::{StreamExt, pin_mut};
+use nautilus_common::{
+    clients::DataClient,
+    live::{runner::get_data_event_sender, runtime::get_runtime},
+    messages::{
+        DataEvent,
+        data::{
+            BarsResponse, BookResponse, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBorrowRates,
+            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBorrowRates,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
+            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        },
+    },
+};
+use nautilus_core::datetime::NANOSECONDS_IN_MINUTE;
+use nautilus_core::{
+    AtomicMap, AtomicSet,
+    datetime::datetime_to_unix_nanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
+use nautilus_model::{
+    data::{BarType, Data, ForwardPrice, OrderBookDeltas_API, QuoteTick},
+    enums::{BookType, MarketStatusAction},
+    identifiers::{ClientId, InstrumentId, Venue},
+    instruments::{Instrument, InstrumentAny},
+    orderbook::book::OrderBook,
+    types::Currency,
+};
+use rust_decimal::Decimal;
+use tokio::{task::JoinHandle, time::Duration};
+use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
+
+/// Small offset applied after each hour boundary before polling borrow rates,
+/// allowing the newly published rate to propagate on Bybit's side.
+const BORROW_RATE_POLL_OFFSET_SECS: u64 = 10;
 
 /// Live market data client for Bybit.
 #[derive(Debug)]
@@ -106,6 +112,7 @@ pub struct BybitDataClient {
     instrument_status_subs: Arc<AtomicSet<InstrumentId>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
     instrument_subs: Arc<AtomicSet<InstrumentId>>,
+    borrow_rate_subs: Arc<AtomicSet<Currency>>,
     /// Venue-wide subscription: when set, definition updates are emitted for all instruments.
     subscribe_all_instruments: Arc<AtomicBool>,
     clock: &'static AtomicTime,
@@ -186,6 +193,7 @@ impl BybitDataClient {
             instrument_status_subs: Arc::new(AtomicSet::new()),
             status_cache: Arc::new(AtomicMap::new()),
             instrument_subs: Arc::new(AtomicSet::new()),
+            borrow_rate_subs: Arc::new(AtomicSet::new()),
             subscribe_all_instruments: Arc::new(AtomicBool::new(false)),
             clock,
         })
@@ -318,6 +326,64 @@ impl BybitDataClient {
         });
         self.tasks.push(handle);
         log::info!("Instrument polling started: interval={poll_secs}s");
+    }
+
+    // Bybit borrow rates change at the top of each hour, so the task aligns its
+    // first poll to the next hour boundary (plus a small offset to let the new rate
+    // propagate) and then polls every hour.
+    fn spawn_borrow_rate_polling(&mut self) {
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let subs = self.borrow_rate_subs.clone();
+        let cancel = self.cancellation_token.clone();
+        let clock = self.clock;
+
+        let handle = get_runtime().spawn(async move {
+            let now_ns = clock.get_time_ns().as_u64();
+            let until_next_hour_ns =
+                (NANOSECONDS_IN_MINUTE * 60) - (now_ns % (NANOSECONDS_IN_MINUTE * 60));
+            let initial_delay = Duration::from_nanos(until_next_hour_ns)
+                + Duration::from_secs(BORROW_RATE_POLL_OFFSET_SECS);
+
+            tokio::select! {
+                () = tokio::time::sleep(initial_delay) => {}
+                () = cancel.cancelled() => {
+                    log::debug!("Bybit borrow rate polling task cancelled");
+                    return;
+                }
+            }
+
+            let mut interval = tokio::time::interval(Duration::from_secs(3_600));
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        if subs.is_empty() {
+                            continue;
+                        }
+
+                        match http.request_borrow_rates(None).await {
+                            Ok(rates) => {
+                                for rate in rates {
+                                    if subs.contains(&rate.currency) {
+                                        send_data(&sender, Data::BorrowRate(rate));
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Bybit borrow rate poll failed: {e}");
+                            }
+                        }
+                    }
+                    () = cancel.cancelled() => {
+                        log::debug!("Bybit borrow rate polling task cancelled");
+                        break;
+                    }
+                }
+            }
+        });
+        self.tasks.push(handle);
+        log::info!("Borrow rate polling started: interval=3600s (aligned to hour)");
     }
 }
 
@@ -649,6 +715,7 @@ impl DataClient for BybitDataClient {
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
         self.instrument_subs.store(AHashSet::new());
+        self.borrow_rate_subs.store(AHashSet::new());
         self.subscribe_all_instruments
             .store(false, Ordering::Relaxed);
         Ok(())
@@ -814,6 +881,8 @@ impl DataClient for BybitDataClient {
             self.spawn_instrument_polling(&product_types, poll_secs);
         }
 
+        self.spawn_borrow_rate_polling();
+
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
@@ -853,6 +922,7 @@ impl DataClient for BybitDataClient {
         self.instrument_status_subs.store(AHashSet::new());
         self.status_cache.store(AHashMap::new());
         self.instrument_subs.store(AHashSet::new());
+        self.borrow_rate_subs.store(AHashSet::new());
         self.subscribe_all_instruments
             .store(false, Ordering::Relaxed);
         self.is_connected.store(false, Ordering::Release);
@@ -1016,6 +1086,36 @@ impl DataClient for BybitDataClient {
                 "funding rate subscription",
             );
         }
+        Ok(())
+    }
+
+    fn subscribe_borrow_rates(&mut self, cmd: SubscribeBorrowRates) -> anyhow::Result<()> {
+        let currency = cmd.currency;
+        self.borrow_rate_subs.insert(currency);
+
+        // Emit an initial snapshot promptly rather than waiting for the next hourly poll.
+        // The hourly aligned updates are served by the borrow rate polling task.
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+
+        get_runtime().spawn(async move {
+            match http
+                .request_borrow_rates(Some(currency.code.to_string()))
+                .await
+            {
+                Ok(rates) => {
+                    for rate in rates {
+                        if rate.currency == currency {
+                            send_data(&sender, Data::BorrowRate(rate));
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Bybit initial borrow rate fetch failed for {currency}: {e}");
+                }
+            }
+        });
+
         Ok(())
     }
 
@@ -1284,6 +1384,11 @@ impl DataClient for BybitDataClient {
                 "funding rate unsubscribe",
             );
         }
+        Ok(())
+    }
+
+    fn unsubscribe_borrow_rates(&mut self, cmd: &UnsubscribeBorrowRates) -> anyhow::Result<()> {
+        self.borrow_rate_subs.remove(&cmd.currency);
         Ok(())
     }
 

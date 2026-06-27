@@ -97,7 +97,7 @@ use indexmap::IndexMap;
 use nautilus_core::UUID4;
 use nautilus_model::{
     data::{
-        Bar, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
+        Bar, BorrowRate, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
         OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -241,6 +241,7 @@ pub struct MessageBus {
     pub(crate) router_mark_prices: TopicRouter<MarkPriceUpdate>,
     pub(crate) router_index_prices: TopicRouter<IndexPriceUpdate>,
     pub(crate) router_funding_rates: TopicRouter<FundingRateUpdate>,
+    pub(crate) router_borrow_rates: TopicRouter<BorrowRate>,
     pub(crate) router_order_events: TopicRouter<OrderEventAny>,
     pub(crate) router_position_events: TopicRouter<PositionEvent>,
     pub(crate) router_account_state: TopicRouter<AccountState>,
@@ -336,6 +337,7 @@ impl MessageBus {
             router_mark_prices: TopicRouter::new(),
             router_index_prices: TopicRouter::new(),
             router_funding_rates: TopicRouter::new(),
+            router_borrow_rates: TopicRouter::new(),
             router_order_events: TopicRouter::new(),
             router_position_events: TopicRouter::new(),
             router_account_state: TopicRouter::new(),
@@ -519,6 +521,7 @@ impl MessageBus {
         self.router_mark_prices.clear();
         self.router_index_prices.clear();
         self.router_funding_rates.clear();
+        self.router_borrow_rates.clear();
         self.router_order_events.clear();
         self.router_position_events.clear();
         self.router_account_state.clear();

@@ -99,9 +99,9 @@ use nautilus_core::{
 use nautilus_model::defi::DefiData;
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
-        InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BorrowRate, CustomData, Data, DataType, FundingRateUpdate, HasTsInit,
+        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -1652,6 +1652,8 @@ impl DataEngine {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {
             self.handle_funding_rate(*funding_rate);
+        } else if let Some(borrow_rate) = data.downcast_ref::<BorrowRate>() {
+            self.handle_borrow_rate(*borrow_rate);
         } else if let Some(option_greeks) = data.downcast_ref::<OptionGreeks>() {
             self.cache.borrow_mut().add_option_greeks(*option_greeks);
             self.feed_option_greeks_to_pre_bootstrap_chain(option_greeks);
@@ -1700,6 +1702,10 @@ impl DataEngine {
             }
             Data::FundingRateUpdate(funding_rate) => {
                 self.handle_funding_rate(funding_rate);
+                self.drain_deferred_commands();
+            }
+            Data::BorrowRate(borrow_rate) => {
+                self.handle_borrow_rate(borrow_rate);
                 self.drain_deferred_commands();
             }
             Data::OptionGreeks(greeks) => {
@@ -1767,6 +1773,9 @@ impl DataEngine {
             Data::IndexPriceUpdate(index_price) => self.handle_index_price_pipeline(index_price),
             Data::FundingRateUpdate(funding_rate) => {
                 self.handle_funding_rate_pipeline(funding_rate);
+            }
+            Data::BorrowRate(borrow_rate) => {
+                self.handle_borrow_rate_pipeline(borrow_rate);
             }
             Data::OptionGreeks(greeks) => self.handle_option_greeks_pipeline(greeks),
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
@@ -2653,6 +2662,13 @@ impl DataEngine {
         msgbus::publish_funding_rate(topic, &funding_rate);
     }
 
+    /// Handles a borrow rate update by publishing it to the message bus.
+    pub fn handle_borrow_rate(&mut self, borrow_rate: BorrowRate) {
+        // TODO: Cache
+        let topic = switchboard::get_borrow_rate_topic(borrow_rate.currency, borrow_rate.venue);
+        msgbus::publish_borrow_rate(topic, &borrow_rate);
+    }
+
     fn handle_instrument_status(&mut self, status: InstrumentStatus) {
         if let Err(e) = self
             .cache
@@ -2816,6 +2832,13 @@ impl DataEngine {
 
         let topic = switchboard::get_pipeline_funding_rate_topic(funding_rate.instrument_id);
         msgbus::publish_funding_rate(topic, &funding_rate);
+    }
+
+    fn handle_borrow_rate_pipeline(&self, borrow_rate: BorrowRate) {
+        // TODO: Cache
+        let topic =
+            switchboard::get_pipeline_borrow_rate_topic(borrow_rate.currency, borrow_rate.venue);
+        msgbus::publish_borrow_rate(topic, &borrow_rate);
     }
 
     fn handle_instrument_status_pipeline(&self, status: InstrumentStatus) {
@@ -5014,7 +5037,8 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
         SubscribeCommand::IndexPrices(_) => Some(BusPayloadType::IndexPriceUpdate),
         SubscribeCommand::FundingRates(_) => Some(BusPayloadType::FundingRateUpdate),
         SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
-        SubscribeCommand::InstrumentStatus(_)
+        SubscribeCommand::BorrowRates(_)
+        | SubscribeCommand::InstrumentStatus(_)
         | SubscribeCommand::InstrumentClose(_)
         | SubscribeCommand::OptionChain(_) => None,
     }

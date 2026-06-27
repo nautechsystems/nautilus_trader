@@ -30,11 +30,12 @@ use nautilus_common::{
         RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
         RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
         RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        SubscribeBorrowRates, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBorrowRates, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
         UnsubscribeTrades,
@@ -46,6 +47,7 @@ use nautilus_model::defi::Blockchain;
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
+    types::Currency,
 };
 
 #[cfg(feature = "defi")]
@@ -72,6 +74,7 @@ pub struct DataClientAdapter {
     pub subscriptions_mark_prices: AHashSet<InstrumentId>,
     pub subscriptions_index_prices: AHashSet<InstrumentId>,
     pub subscriptions_funding_rates: AHashSet<InstrumentId>,
+    pub subscriptions_borrow_rates: AHashSet<Currency>,
     pub subscriptions_option_greeks: AHashSet<InstrumentId>,
     #[cfg(feature = "defi")]
     pub subscriptions_blocks: AHashSet<Blockchain>,
@@ -149,6 +152,7 @@ impl DataClientAdapter {
             subscriptions_mark_prices: AHashSet::new(),
             subscriptions_index_prices: AHashSet::new(),
             subscriptions_funding_rates: AHashSet::new(),
+            subscriptions_borrow_rates: AHashSet::new(),
             subscriptions_option_greeks: AHashSet::new(),
             subscriptions_bars: AHashSet::new(),
             subscriptions_instrument_status: AHashSet::new(),
@@ -209,6 +213,7 @@ impl DataClientAdapter {
             SubscribeCommand::MarkPrices(cmd) => self.subscribe_mark_prices(cmd),
             SubscribeCommand::IndexPrices(cmd) => self.subscribe_index_prices(cmd),
             SubscribeCommand::FundingRates(cmd) => self.subscribe_funding_rates(cmd),
+            SubscribeCommand::BorrowRates(cmd) => self.subscribe_borrow_rates(cmd),
             SubscribeCommand::Bars(cmd) => self.subscribe_bars(cmd),
             SubscribeCommand::InstrumentStatus(cmd) => self.subscribe_instrument_status(cmd),
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
@@ -234,6 +239,7 @@ impl DataClientAdapter {
             UnsubscribeCommand::MarkPrices(cmd) => self.unsubscribe_mark_prices(cmd),
             UnsubscribeCommand::IndexPrices(cmd) => self.unsubscribe_index_prices(cmd),
             UnsubscribeCommand::FundingRates(cmd) => self.unsubscribe_funding_rates(cmd),
+            UnsubscribeCommand::BorrowRates(cmd) => self.unsubscribe_borrow_rates(cmd),
             UnsubscribeCommand::InstrumentStatus(cmd) => self.unsubscribe_instrument_status(cmd),
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
@@ -545,6 +551,32 @@ impl DataClientAdapter {
         {
             self.subscriptions_funding_rates.remove(&cmd.instrument_id);
             self.client.unsubscribe_funding_rates(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Subscribes to borrow rate updates for a currency, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_borrow_rates(&mut self, cmd: SubscribeBorrowRates) -> anyhow::Result<()> {
+        if !self.subscriptions_borrow_rates.contains(&cmd.currency) {
+            self.subscriptions_borrow_rates.insert(cmd.currency);
+            self.client.subscribe_borrow_rates(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from borrow rate updates for a currency, updating internal state and forwarding to the client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_borrow_rates(&mut self, cmd: &UnsubscribeBorrowRates) -> anyhow::Result<()> {
+        if self.subscriptions_borrow_rates.contains(&cmd.currency) {
+            self.subscriptions_borrow_rates.remove(&cmd.currency);
+            self.client.unsubscribe_borrow_rates(cmd)?;
         }
         Ok(())
     }
