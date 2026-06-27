@@ -112,7 +112,7 @@ impl RateOfChange {
 
         if let Some(first) = self.prices.front() {
             if self.use_log {
-                self.value = (price / first).log10();
+                self.value = (price / first).ln();
             } else {
                 self.value = (price - first) / first;
             }
@@ -160,7 +160,7 @@ mod tests {
         }
 
         assert!(roc_10.initialized());
-        assert_eq!(roc_10.value, 0.28428852094735724);
+        assert_eq!(roc_10.value, 0.6545985104427102);
     }
 
     #[rstest]
