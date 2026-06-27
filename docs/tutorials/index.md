@@ -73,7 +73,7 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 | Tutorial                                                                                    | Description                                          | Data                |
 |:--------------------------------------------------------------------------------------------|:-----------------------------------------------------|:--------------------|
 | [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)                        | Book imbalance actor on Betfair L2 data.             | User‑provided       |
-| [Composite Market Making on Lighter RWA with Databento DBEQ NVDA](lighter_rwa_composite_mm) | Signal‑skewed MM on NVDA‑PERP.                       | Databento + Lighter |
+| [Composite Market Making on Lighter RWA with Databento EQUS NVDA](lighter_rwa_composite_mm) | Signal‑skewed MM on NVDA‑PERP.                       | Databento + Lighter |
 | [Hurst/VPIN Directional Strategy (Kraken Futures)](hurst_vpin_kraken)                       | Regime‑filtered informed‑flow strategy on PF_XBTUSD. | Tardis.dev          |
 
 [backtest_fx_bars]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_fx_bars.py

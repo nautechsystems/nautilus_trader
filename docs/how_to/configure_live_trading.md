@@ -74,10 +74,10 @@ config = TradingNodeConfig(
 | `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
 | `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
-| `timeout_reconciliation` | 10.0         | Reconciliation timeout in seconds.          |
+| `timeout_reconciliation` | 30.0         | Reconciliation timeout in seconds.          |
 | `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
 | `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |
-| `timeout_post_stop`      | 5.0          | Post‑stop cleanup timeout.                  |
+| `timeout_post_stop`      | 10.0         | Post‑stop cleanup timeout.                  |
 
 ### Cache database configuration
 
@@ -124,7 +124,7 @@ use nautilus_common::{
     enums::SerializationEncoding,
     msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
 };
-use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
+use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
 
 let config = MessageBusConfig {
     encoding: SerializationEncoding::Json,
@@ -143,7 +143,7 @@ let backing = RedisMessageBusConfig {
     ..Default::default()
 };
 
-let message_bus_backing = backing.create(
+let message_bus_backing = RedisMessageBusFactory::new(backing).create(
     trader_id,
     instance_id,
     config.clone(),

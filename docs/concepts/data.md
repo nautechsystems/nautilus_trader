@@ -433,9 +433,9 @@ self.register_indicator_for_bars(bar_type, self.ema)
 ### Performance considerations
 
 Bar aggregators track OHLC prices via the fixed-point `Price` type. Threshold comparisons for
-tick and volume aggregators use integer arithmetic, while value-based and imbalance/runs aggregators
-currently use `f64` for notional value and signed accumulation (these are being migrated to
-fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
+tick and volume aggregators, including their imbalance and runs variants, use integer arithmetic,
+while value-based aggregators (value, value imbalance, and value runs) currently use `f64` for
+notional value and signed accumulation (these are being migrated to fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
 overhead:
 
 - **Time bars** are the most efficient for high-throughput data. The aggregator accumulates

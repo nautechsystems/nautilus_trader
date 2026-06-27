@@ -10,11 +10,11 @@ Plug-in artifact identity and boundary primitives for
 [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-plugin` crate provides the public contract that lets an independently compiled Rust
-cdylib identify itself to a Nautilus host. It defines versioned build metadata, allocator-safe
-boundary values, opaque host tokens, and the `nautilus_plugin!` macro for exporting the standard
-entry symbol and manifest.
+cdylib carry a versioned identity. It defines versioned build metadata, allocator-safe boundary
+values, opaque boundary tokens, and the `nautilus_plugin!` macro for exporting the standard entry
+symbol and manifest.
 
-This crate gives hosted artifacts a consistent identity and a compact contract for Nautilus deployments.
+This crate gives plug-in artifacts a consistent identity and a compact contract.
 
 ## NautilusTrader
 
@@ -28,11 +28,11 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
-- `host`: Retains compatibility with host-enabled plug-in manifests.
+- `host`: Optional plug-in manifest compatibility flag.
 
 ## Documentation
 
-See [the docs](https://docs.rs/nautilus-plugin) for more detailed usage.
+See [the docs](https://docs.rs/nautilus-plugin) for the API reference.
 
 ## License
 

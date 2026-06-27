@@ -113,7 +113,7 @@ native-traits applicability matrix and this method table:
 
 - [`DataActorNative` methods](../concepts/rust.md#dataactornative-methods)
 
-Those types do not cross Python or plug-in boundaries, so portable actors
+Those types do not cross the Python boundary, so portable actors
 should use facade methods such as:
 
 - `clock()`

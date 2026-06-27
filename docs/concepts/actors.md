@@ -60,8 +60,7 @@ config.
 
 Rust authors implement `DataActor` and use the facade methods on `self`.
 `DataActorNative` is native-only access for runtime wiring and borrowed
-core state. Import it only for same-binary performance paths or host integration
-internals.
+core state. Import it only for same-binary performance paths or internal runtime wiring.
 :::
 
 ## Lifecycle

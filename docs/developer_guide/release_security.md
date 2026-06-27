@@ -139,22 +139,21 @@ Verify:
 - The PyPI publish attestation reports repository `nautechsystems/nautilus_trader`,
   workflow `build.yml`, and environment `release`.
 
-Fish-compatible example:
+Example:
 
-```fish
-set -gx TAG v1.228.0
-set -gx REPO nautechsystems/nautilus_trader
-set -gx ARTIFACT nautilus_trader-1.228.0.tar.gz
-set -gx ISSUER https://token.actions.githubusercontent.com
-set -gx IDENTITY \
-  '^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/build\.yml@refs/heads/(master|nightly)$'
+```bash
+export TAG=v1.228.0
+export REPO=nautechsystems/nautilus_trader
+export ARTIFACT=nautilus_trader-1.228.0.tar.gz
+export ISSUER=https://token.actions.githubusercontent.com
+export IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/build\.yml@refs/heads/(master|nightly)$'
 
-gh release download $TAG --repo $REPO --pattern $ARTIFACT --pattern $ARTIFACT.sha256
-sha256sum -c $ARTIFACT.sha256
-gh attestation verify $ARTIFACT \
-  --repo $REPO \
-  --cert-identity-regex $IDENTITY \
-  --cert-oidc-issuer $ISSUER
+gh release download "$TAG" --repo "$REPO" --pattern "$ARTIFACT" --pattern "$ARTIFACT.sha256"
+sha256sum -c "$ARTIFACT.sha256"
+gh attestation verify "$ARTIFACT" \
+  --repo "$REPO" \
+  --cert-identity-regex "$IDENTITY" \
+  --cert-oidc-issuer "$ISSUER"
 ```
 
 ### PyPI publish provenance
@@ -165,18 +164,18 @@ Verify:
 - PyPI provenance exposes the expected GitHub publisher identity.
 - `pypi-attestations verify` accepts the downloaded file URL.
 
-Fish-compatible example:
+Example:
 
-```fish
-set -gx VERSION 1.228.0
-set -gx ARTIFACT nautilus_trader-1.228.0.tar.gz
-set -gx PYPI_URL (curl -sS https://pypi.org/pypi/nautilus_trader/$VERSION/json | \
+```bash
+export VERSION=1.228.0
+export ARTIFACT=nautilus_trader-1.228.0.tar.gz
+export PYPI_URL=$(curl -sS "https://pypi.org/pypi/nautilus_trader/$VERSION/json" | \
   jq -r --arg artifact "$ARTIFACT" '.urls[] | select(.filename == $artifact) | .url')
 
 uv run --no-project --no-build --with pypi-attestations -- \
   pypi-attestations verify pypi \
   --repository https://github.com/nautechsystems/nautilus_trader \
-  $PYPI_URL
+  "$PYPI_URL"
 ```
 
 ### Rust crates
@@ -189,20 +188,20 @@ Verify:
 - `published_by` is `null`, unless `crates-manifest.json` records an explicit
   `manual_token_publish` exception.
 
-Fish-compatible example:
+Example:
 
-```fish
-set -gx CRATE nautilus-core
-set -gx VERSION 0.58.0
-set -gx REPO nautechsystems/nautilus_trader
-set -gx VERSION_JSON (curl -sS https://crates.io/api/v1/crates/$CRATE/versions | \
+```bash
+export CRATE=nautilus-core
+export VERSION=0.58.0
+export REPO=nautechsystems/nautilus_trader
+export VERSION_JSON=$(curl -sS "https://crates.io/api/v1/crates/$CRATE/versions" | \
   jq -c --arg version "$VERSION" '.versions[] | select(.num == $version)')
-set -gx CRATE_SHA256 (printf '%s\n' "$VERSION_JSON" | jq -r '.checksum')
+export CRATE_SHA256=$(printf '%s\n' "$VERSION_JSON" | jq -r '.checksum')
 
 printf '%s\n' "$VERSION_JSON" | jq -e --arg repo "$REPO" \
   '.trustpub_data.provider == "github" and .trustpub_data.repository == $repo and .published_by == null'
-curl -sSL https://static.crates.io/crates/$CRATE/$CRATE-$VERSION.crate -o $CRATE-$VERSION.crate
-test (sha256sum $CRATE-$VERSION.crate | cut -d ' ' -f 1) = $CRATE_SHA256
+curl -sSL "https://static.crates.io/crates/$CRATE/$CRATE-$VERSION.crate" -o "$CRATE-$VERSION.crate"
+test "$(sha256sum "$CRATE-$VERSION.crate" | cut -d ' ' -f 1)" = "$CRATE_SHA256"
 ```
 
 ### Docker images
@@ -213,22 +212,21 @@ Verify:
 - The cosign signature identity matches the Docker workflow.
 - The SPDX SBOM attestation is bound to the same image digest.
 
-Fish-compatible example:
+Example:
 
-```fish
-set -gx IMAGE_BASE ghcr.io/nautechsystems/nautilus_trader
-set -gx DIGEST (crane digest $IMAGE_BASE:latest)
-set -gx IMAGE $IMAGE_BASE@$DIGEST
-set -gx ISSUER https://token.actions.githubusercontent.com
-set -gx IDENTITY \
-  '^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/docker\.yml@refs/heads/(master|nightly)$'
+```bash
+export IMAGE_BASE=ghcr.io/nautechsystems/nautilus_trader
+export DIGEST=$(crane digest "$IMAGE_BASE:latest")
+export IMAGE=$IMAGE_BASE@$DIGEST
+export ISSUER=https://token.actions.githubusercontent.com
+export IDENTITY='^https://github\.com/nautechsystems/nautilus_trader/\.github/workflows/docker\.yml@refs/heads/(master|nightly)$'
 
-cosign verify $IMAGE --certificate-identity-regexp $IDENTITY --certificate-oidc-issuer $ISSUER
+cosign verify "$IMAGE" --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER"
 cosign verify-attestation \
   --type https://spdx.dev/Document/v2.3 \
-  $IMAGE \
-  --certificate-identity-regexp $IDENTITY \
-  --certificate-oidc-issuer $ISSUER
+  "$IMAGE" \
+  --certificate-identity-regexp "$IDENTITY" \
+  --certificate-oidc-issuer "$ISSUER"
 ```
 
 ## Manual recovery posture

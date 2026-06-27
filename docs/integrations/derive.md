@@ -116,10 +116,10 @@ Steps to reach a position where the execution client can submit a signed order:
 6. **Set the environment variables.** Export the three values the client reads in testnet
    mode (or pass them on `DeriveExecClientConfig`, where the config field wins):
 
-   ```fish
-   set -gx DERIVE_TESTNET_WALLET_ADDRESS      "0x..."   # Derive Chain smart-contract wallet
-   set -gx DERIVE_TESTNET_SESSION_PRIVATE_KEY "0x..."   # secp256k1 session-key private key
-   set -gx DERIVE_TESTNET_SUBACCOUNT_ID       "12345"   # integer subaccount id
+   ```bash
+   export DERIVE_TESTNET_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
+   export DERIVE_TESTNET_SESSION_PRIVATE_KEY="0x..."  # secp256k1 session-key private key
+   export DERIVE_TESTNET_SUBACCOUNT_ID="12345"  # integer subaccount id
    ```
 
 ### Minimum funding
@@ -168,10 +168,10 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 6. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecClientConfig`, where the config field wins):
 
-   ```fish
-   set -gx DERIVE_WALLET_ADDRESS      "0x..."   # Derive Chain smart-contract wallet
-   set -gx DERIVE_SESSION_PRIVATE_KEY "0x..."   # secp256k1 session-key private key
-   set -gx DERIVE_SUBACCOUNT_ID       "12345"   # integer subaccount id
+   ```bash
+   export DERIVE_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
+   export DERIVE_SESSION_PRIVATE_KEY="0x..."  # secp256k1 session-key private key
+   export DERIVE_SUBACCOUNT_ID="12345"  # integer subaccount id
    ```
 
    The `node_exec_tester` example is pinned to `DeriveEnvironment::Testnet`; flip

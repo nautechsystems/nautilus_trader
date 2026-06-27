@@ -96,13 +96,13 @@ without the aligned feature set.
 Use the Rust feature for narrow checks that do not include the full aligned feature set. Keep the
 environment override in the command so a stale shell value cannot force standard-precision bindings:
 
-```fish
+```bash
 env HIGH_PRECISION=true cargo check -p nautilus-model --features ffi,python,high-precision
 ```
 
 Before committing FFI-related work, verify those generated files did not drift:
 
-```fish
+```bash
 git diff -- nautilus_trader/core/includes/model.h nautilus_trader/core/rust/model.pxd
 ```
 
@@ -204,7 +204,7 @@ The `check_anyhow_usage.sh` pre-commit hook enforces these anyhow conventions au
 - Start messages with a capitalised word, prefer complete sentences, and omit terminal periods (e.g. `"Processing batch"`, not `"Processing batch."`).
 
 :::info[Automated enforcement]
-The `check_logging_macro_usage.sh` pre-commit hook enforces fully qualified logging macros.
+The `check_logging_conventions.sh` pre-commit hook enforces fully qualified logging macros.
 :::
 
 ### Error handling

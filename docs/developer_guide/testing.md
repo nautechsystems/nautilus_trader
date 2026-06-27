@@ -180,7 +180,7 @@ The `--benchmark-disable-gc` flag prevents garbage collection from skewing resul
 ```bash
 make cargo-test
 # or
-cargo nextest run --workspace --features "python,ffi,high-precision,defi" --cargo-profile nextest
+cargo nextest run --workspace --features "arrow,ffi,python,high-precision,streaming,defi" --cargo-profile nextest --lib --tests
 ```
 
 #### Testing with optional features

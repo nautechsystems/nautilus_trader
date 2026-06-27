@@ -474,7 +474,7 @@ worker subprocess so a bad file aborts the worker, not the caller.
 
 Verify a sealed run file:
 
-```fish
+```bash
 cargo run -p nautilus-event-store --bin verify -- /path/to/run.redb
 ```
 
@@ -507,13 +507,13 @@ Current alpha use is focused on local inspection and verification of run files.
 
 Verify a run after copying or restoring it:
 
-```fish
+```bash
 cargo run -p nautilus-event-store --bin verify -- ./event_store/trader-001/1700000000-cafe0001.redb
 ```
 
 Increase the verifier timeout for a large sealed run:
 
-```fish
+```bash
 env NAUTILUS_EVENT_STORE_VERIFY_TIMEOUT_SECS=120 \
     cargo run -p nautilus-event-store --bin verify -- ./event_store/trader-001/1700000000-cafe0001.redb
 ```
