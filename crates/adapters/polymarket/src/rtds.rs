@@ -123,6 +123,14 @@ impl RtdsTopic {
     }
 }
 
+#[derive(Clone, Copy)]
+enum TimestampGuard {
+    // Snapshots can replay, so drop points at or before the high-water mark.
+    Snapshot,
+    // Live updates never replay, so drop only strictly-older points.
+    Live,
+}
+
 #[derive(Clone, Debug)]
 struct ParsedSubscription {
     key: String,
@@ -402,6 +410,10 @@ impl PolymarketRtdsFeed {
             }
 
             if self.inner.sync_version.load(Ordering::Acquire) == target_version {
+                // Clear the running flag, then re-check the version. A schedule_sync that
+                // bumped the version between the work above and this store saw the flag still
+                // set and skipped spawning a loop, so its work would be lost unless we pick it
+                // up here by re-acquiring the flag and looping again.
                 self.inner.sync_running.store(false, Ordering::Release);
 
                 if self.inner.sync_version.load(Ordering::Acquire) == target_version {
@@ -658,8 +670,12 @@ impl PolymarketRtdsFeed {
             return;
         }
 
-        if !self.should_emit_timestamp_ms(RtdsTopic::CryptoPrices, &symbol_lower, payload.timestamp)
-        {
+        if !self.should_emit_timestamp_ms(
+            RtdsTopic::CryptoPrices,
+            &symbol_lower,
+            payload.timestamp,
+            TimestampGuard::Live,
+        ) {
             return;
         }
 
@@ -713,6 +729,7 @@ impl PolymarketRtdsFeed {
                 RtdsTopic::CryptoPrices,
                 &symbol_lower,
                 point.timestamp,
+                TimestampGuard::Snapshot,
             ) {
                 continue;
             }
@@ -747,8 +764,12 @@ impl PolymarketRtdsFeed {
             return;
         }
 
-        if !self.should_emit_timestamp_ms(RtdsTopic::EquityPrices, &symbol_lower, payload.timestamp)
-        {
+        if !self.should_emit_timestamp_ms(
+            RtdsTopic::EquityPrices,
+            &symbol_lower,
+            payload.timestamp,
+            TimestampGuard::Live,
+        ) {
             return;
         }
 
@@ -814,6 +835,7 @@ impl PolymarketRtdsFeed {
                 RtdsTopic::EquityPrices,
                 &symbol_lower,
                 point.timestamp,
+                TimestampGuard::Snapshot,
             ) {
                 continue;
             }
@@ -873,14 +895,22 @@ impl PolymarketRtdsFeed {
         topic: RtdsTopic,
         symbol_lower: &str,
         timestamp_ms: u64,
+        guard: TimestampGuard,
     ) -> bool {
         let key = tracked_key(topic.as_str(), symbol_lower);
         match self.inner.last_emitted_timestamps_ms.get_mut(&key) {
             Some(mut last_seen) => {
-                if timestamp_ms <= *last_seen {
+                let stale = match guard {
+                    TimestampGuard::Snapshot => timestamp_ms <= *last_seen,
+                    TimestampGuard::Live => timestamp_ms < *last_seen,
+                };
+
+                if stale {
                     false
                 } else {
-                    *last_seen = timestamp_ms;
+                    if timestamp_ms > *last_seen {
+                        *last_seen = timestamp_ms;
+                    }
                     true
                 }
             }
@@ -975,8 +1005,7 @@ mod tests {
         routing::get,
     };
     use futures_util::StreamExt;
-    use nautilus_common::messages::DataEvent;
-    use nautilus_common::testing::wait_until_async;
+    use nautilus_common::{messages::DataEvent, testing::wait_until_async};
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use serde_json::json;
@@ -1130,6 +1159,40 @@ mod tests {
         assert_eq!(payload.value, Price::from("61035.86"));
         assert_eq!(payload.price_timestamp_ms, 1780730269000);
         assert_eq!(payload.message_timestamp_ms, 1780730269142);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_price_update_emits_distinct_same_millisecond_points() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("btcusdt"))
+            .expect("track subscribe");
+
+        // Two distinct live updates sharing one millisecond timestamp must both emit;
+        // only replayed snapshots collapse equal timestamps.
+        feed.handle_text_for_test(RTDS_CRYPTO_UPDATE_FIXTURE);
+
+        let mut second: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
+        second["payload"]["value"] = json!(61040.12);
+        feed.handle_text_for_test(&second.to_string());
+
+        let first_event = rx.try_recv().expect("first custom data event");
+        let second_event = rx.try_recv().expect("second custom data event");
+        assert!(rx.try_recv().is_err());
+
+        for (event, expected_value) in [(first_event, "61035.86"), (second_event, "61040.12")] {
+            let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoPrice>()
+                .expect("PolymarketRtdsCryptoPrice");
+
+            assert_eq!(payload.value, Price::from(expected_value));
+            assert_eq!(payload.price_timestamp_ms, 1780730269000);
+        }
     }
 
     #[rstest]
