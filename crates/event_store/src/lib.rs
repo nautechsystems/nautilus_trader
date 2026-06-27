@@ -42,6 +42,7 @@
 
 pub mod backend;
 pub mod capture;
+pub mod codec;
 pub mod entry;
 pub mod error;
 pub mod hash;
@@ -56,6 +57,7 @@ pub mod snapshot;
 pub mod verifier;
 pub mod writer;
 
+mod format;
 mod wire;
 
 pub use backend::{

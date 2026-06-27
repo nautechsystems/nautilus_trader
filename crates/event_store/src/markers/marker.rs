@@ -389,20 +389,18 @@ mod tests {
     }
 
     #[rstest]
-    fn marker_record_bincode_roundtrip() {
-        let cfg = bincode::config::standard();
-
+    fn marker_record_codec_roundtrip() {
         // DataCursorSnapshot
         let snap = baseline_snapshot();
-        let bytes = bincode::serde::encode_to_vec(&snap, cfg).unwrap();
-        let (decoded, _): (DataCursorSnapshot, _) =
-            bincode::serde::decode_from_slice(&bytes, cfg).unwrap();
+        let bytes = crate::codec::encode_to_vec(&snap).expect("encode");
+        let decoded =
+            crate::codec::decode_from_slice::<DataCursorSnapshot>(&bytes).expect("decode");
         assert_eq!(snap, decoded);
 
         // HiFiMarker
         let hifi = baseline_hifi();
-        let bytes = bincode::serde::encode_to_vec(&hifi, cfg).unwrap();
-        let (decoded, _): (HiFiMarker, _) = bincode::serde::decode_from_slice(&bytes, cfg).unwrap();
+        let bytes = crate::codec::encode_to_vec(&hifi).expect("encode");
+        let decoded = crate::codec::decode_from_slice::<HiFiMarker>(&bytes).expect("decode");
         assert_eq!(hifi, decoded);
 
         // MarkerGap
@@ -411,8 +409,8 @@ mod tests {
             to_marker_seq: 10,
             reason: MarkerGapReason::Overflow,
         };
-        let bytes = bincode::serde::encode_to_vec(&gap, cfg).unwrap();
-        let (decoded, _): (MarkerGap, _) = bincode::serde::decode_from_slice(&bytes, cfg).unwrap();
+        let bytes = crate::codec::encode_to_vec(&gap).expect("encode");
+        let decoded = crate::codec::decode_from_slice::<MarkerGap>(&bytes).expect("decode");
         assert_eq!(gap, decoded);
 
         // StreamDictEntry
@@ -421,9 +419,8 @@ mod tests {
             data_cls: DataClass::Bar,
             identifier: "BTCUSDT-PERP.BINANCE".to_string(),
         };
-        let bytes = bincode::serde::encode_to_vec(&dict, cfg).unwrap();
-        let (decoded, _): (StreamDictEntry, _) =
-            bincode::serde::decode_from_slice(&bytes, cfg).unwrap();
+        let bytes = crate::codec::encode_to_vec(&dict).expect("encode");
+        let decoded = crate::codec::decode_from_slice::<StreamDictEntry>(&bytes).expect("decode");
         assert_eq!(dict, decoded);
     }
 
@@ -517,15 +514,14 @@ mod tests {
     proptest! {
         #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
 
-        // Any cursor snapshot survives a bincode encode/decode unchanged
+        // Any cursor snapshot survives a codec encode/decode unchanged
         #[rstest]
-        fn prop_marker_snapshot_bincode_roundtrip(
+        fn prop_marker_snapshot_codec_roundtrip(
             marker_seq in any::<u64>(),
             event_seq_before in any::<u64>(),
             ts_init in any::<u64>(),
             cursors in proptest::collection::vec((any::<u32>(), any::<u64>(), any::<u64>()), 0..8),
         ) {
-            let cfg = bincode::config::standard();
             let snap = DataCursorSnapshot {
                 marker_seq,
                 event_seq_before,
@@ -540,15 +536,14 @@ mod tests {
                     .collect(),
             };
 
-            let bytes = bincode::serde::encode_to_vec(&snap, cfg).expect("encode");
-            let (decoded, _): (DataCursorSnapshot, _) =
-                bincode::serde::decode_from_slice(&bytes, cfg).expect("decode");
+            let bytes = crate::codec::encode_to_vec(&snap).expect("encode");
+            let decoded = crate::codec::decode_from_slice::<DataCursorSnapshot>(&bytes).expect("decode");
             prop_assert_eq!(snap, decoded);
         }
 
-        // Any high-fidelity marker survives a bincode encode/decode unchanged
+        // Any high-fidelity marker survives a codec encode/decode unchanged
         #[rstest]
-        fn prop_hifi_marker_bincode_roundtrip(
+        fn prop_hifi_marker_codec_roundtrip(
             marker_seq in any::<u64>(),
             event_seq_before in any::<u64>(),
             slot in any::<u32>(),
@@ -557,7 +552,6 @@ mod tests {
             same_ts_ordinal in any::<u32>(),
             fingerprint in proptest::array::uniform32(any::<u8>()),
         ) {
-            let cfg = bincode::config::standard();
             let marker = HiFiMarker {
                 marker_seq,
                 event_seq_before,
@@ -568,9 +562,8 @@ mod tests {
                 record_fingerprint: fingerprint,
             };
 
-            let bytes = bincode::serde::encode_to_vec(&marker, cfg).expect("encode");
-            let (decoded, _): (HiFiMarker, _) =
-                bincode::serde::decode_from_slice(&bytes, cfg).expect("decode");
+            let bytes = crate::codec::encode_to_vec(&marker).expect("encode");
+            let decoded = crate::codec::decode_from_slice::<HiFiMarker>(&bytes).expect("decode");
             prop_assert_eq!(marker, decoded);
         }
     }

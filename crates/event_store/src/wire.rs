@@ -15,11 +15,11 @@
 
 //! Wire-format adapters for the on-disk event store envelope.
 //!
-//! `UnixNanos` deserializes through `deserialize_any`, which non-self-describing formats
-//! such as bincode reject. The on-disk envelope therefore serializes timestamp fields as
-//! raw `u64` and reconstructs the strong type on read.
+//! `UnixNanos` deserializes through `deserialize_any`, which the non-self-describing positional
+//! codec rejects. The on-disk envelope therefore serializes timestamp fields as raw `u64` and
+//! reconstructs the strong type on read.
 
-/// Serializes [`nautilus_core::UnixNanos`] as a raw `u64` so bincode can round-trip it.
+/// Serializes [`nautilus_core::UnixNanos`] as a raw `u64` so the positional codec can round-trip it.
 pub(crate) mod nanos_as_u64 {
     use nautilus_core::UnixNanos;
     use serde::{Deserialize, Deserializer, Serializer};
