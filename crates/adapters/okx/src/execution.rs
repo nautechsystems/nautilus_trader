@@ -107,7 +107,7 @@ impl OKXExecutionClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             config.api_passphrase.clone(),
-            config.base_url_http.clone(),
+            Some(config.http_base_url()),
             config.http_timeout_secs,
             config.max_retries,
             config.retry_delay_initial_ms,

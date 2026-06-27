@@ -29,6 +29,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import OKXContractType
 from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
+from nautilus_trader.core.nautilus_pyo3 import OKXRegion
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
@@ -183,11 +184,13 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
 
         """
         environment = config.environment or OKXEnvironment.LIVE
+        region = config.region or OKXRegion.GLOBAL
+        base_url_http = config.base_url_http or nautilus_pyo3.get_okx_http_base_url(region)
         client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
-            base_url=config.base_url_http,
+            base_url=base_url_http,
             environment=environment,
             timeout_secs=config.http_timeout_secs,
             max_retries=config.max_retries,
@@ -253,11 +256,13 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
 
         """
         environment = config.environment or OKXEnvironment.LIVE
+        region = config.region or OKXRegion.GLOBAL
+        base_url_http = config.base_url_http or nautilus_pyo3.get_okx_http_base_url(region)
         client: nautilus_pyo3.OKXHttpClient = get_cached_okx_http_client(
             api_key=config.api_key,
             api_secret=config.api_secret,
             api_passphrase=config.api_passphrase,
-            base_url=config.base_url_http,
+            base_url=base_url_http,
             environment=environment,
             timeout_secs=config.http_timeout_secs,
             max_retries=config.max_retries,

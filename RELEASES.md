@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added v2 Python visualization (tearsheet) support with a `visualization` extra
 - Added Bybit instrument subscription support via instrument-info polling (#4305), thanks @dxwil
+- Added OKX region support for global, EEA, and US endpoints (#4318), thanks @dxwil
 - Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
 
 ### Breaking Changes

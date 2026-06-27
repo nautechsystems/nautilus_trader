@@ -35,6 +35,7 @@ from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
+from nautilus_trader.core.nautilus_pyo3 import OKXRegion
 from nautilus_trader.core.nautilus_pyo3 import OKXTradeMode
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
@@ -161,6 +162,7 @@ class OKXExecutionClient(LiveExecutionClient):
         margin_mode = str(config.margin_mode) if config.margin_mode else None
 
         self._environment = config.environment or OKXEnvironment.LIVE
+        self._region = config.region or OKXRegion.GLOBAL
 
         # Configuration
         self._config = config
@@ -168,6 +170,7 @@ class OKXExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
         self._log.info(f"environment={self._environment}", LogColor.BLUE)
+        self._log.info(f"region={self._region}", LogColor.BLUE)
         self._log.info(f"config.margin_mode={margin_mode}", LogColor.BLUE)
         self._log.info(f"{config.use_spot_margin=}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
@@ -208,7 +211,10 @@ class OKXExecutionClient(LiveExecutionClient):
         self._attached_oco_bindings: dict[ClientOrderId, OKXAttachedOcoBinding] = {}
 
         # WebSocket API
-        _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(self._environment)
+        _private_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_private(
+            self._environment,
+            self._region,
+        )
         self._ws_client = nautilus_pyo3.OKXWebSocketClient.with_credentials(
             url=_private_url,
             api_key=config.api_key,
