@@ -1172,11 +1172,11 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         for inst_type in &instrument_types {
-            log::info!("Subscribing to orders channel for {inst_type:?}");
+            log::debug!("Subscribing to orders channel for {inst_type:?}");
             self.ws_private.subscribe_orders(*inst_type).await?;
 
             if self.config.use_fills_channel {
-                log::info!("Subscribing to fills channel for {inst_type:?}");
+                log::debug!("Subscribing to fills channel for {inst_type:?}");
                 if let Err(e) = self.ws_private.subscribe_fills(*inst_type).await {
                     log::warn!("Failed to subscribe to fills channel ({inst_type:?}): {e}");
                 }
@@ -1186,7 +1186,7 @@ impl ExecutionClient for OKXExecutionClient {
         self.ws_private.subscribe_account().await?;
 
         if self.config.load_spreads {
-            log::info!("Subscribing to Nitro spread orders channel");
+            log::debug!("Subscribing to Nitro spread orders channel");
             self.ws_business.subscribe_spread_orders().await?;
         }
 

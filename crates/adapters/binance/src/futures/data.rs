@@ -1724,7 +1724,7 @@ impl DataClient for BinanceFuturesDataClient {
         self.book_buffers
             .insert(instrument_id, BookBuffer::new(epoch));
 
-        log::info!("OrderBook snapshot rebuild for {instrument_id} @ depth {depth} starting");
+        log::debug!("OrderBook snapshot rebuild for {instrument_id} @ depth {depth} starting");
 
         // Subscribe to the unthrottled diff depth stream for Futures.
         let ws = self.ws_public_client.clone();

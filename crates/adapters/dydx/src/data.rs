@@ -515,14 +515,14 @@ impl DataClient for DydxDataClient {
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_mark_price_subs.insert(instrument_id);
-        log::info!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_index_price_subs.insert(instrument_id);
-        log::info!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
@@ -555,7 +555,7 @@ impl DataClient for DydxDataClient {
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_funding_rate_subs.insert(instrument_id);
-        log::info!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
@@ -565,7 +565,7 @@ impl DataClient for DydxDataClient {
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_instrument_status_subs.insert(instrument_id);
-        log::info!("Subscribed to instrument status for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to instrument status for {instrument_id} (via v4_markets channel)");
 
         // Replay last known status (initial snapshot arrives before subscription)
         if let Some(status) = self.last_instrument_statuses.get(&instrument_id)
@@ -648,13 +648,13 @@ impl DataClient for DydxDataClient {
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         self.active_mark_price_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from mark prices for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from mark prices for {}", cmd.instrument_id);
         Ok(())
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         self.active_index_price_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from index prices for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from index prices for {}", cmd.instrument_id);
         Ok(())
     }
 
@@ -686,7 +686,7 @@ impl DataClient for DydxDataClient {
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         self.active_funding_rate_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from funding rates for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from funding rates for {}", cmd.instrument_id);
         Ok(())
     }
 

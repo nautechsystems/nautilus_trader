@@ -536,8 +536,6 @@ impl DataClient for DatabentoDataClient {
     ///
     /// Returns an error if the subscription request fails.
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!("Subscribe instrument: {cmd:?}");
-
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
@@ -561,8 +559,6 @@ impl DataClient for DatabentoDataClient {
     ///
     /// Returns an error if the subscription request fails.
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!("Subscribe quotes: {cmd:?}");
-
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let symbol = cmd.instrument_id.symbol.to_string();
         let price_precision = price_precision_from_params(cmd.params.as_ref())?
@@ -594,8 +590,6 @@ impl DataClient for DatabentoDataClient {
     ///
     /// Returns an error if the subscription request fails.
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        log::debug!("Subscribe trades: {cmd:?}");
-
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let symbol = cmd.instrument_id.symbol.to_string();
         let price_precision = price_precision_from_params(cmd.params.as_ref())?
@@ -627,8 +621,6 @@ impl DataClient for DatabentoDataClient {
     ///
     /// Returns an error if the subscription request fails.
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!("Subscribe book deltas: {cmd:?}");
-
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
@@ -655,8 +647,6 @@ impl DataClient for DatabentoDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!("Subscribe instrument status: {cmd:?}");
-
         let dataset = self.get_dataset_for_venue(cmd.instrument_id.venue)?;
         let start_after_subscribe = self.get_or_create_feed_handler(&dataset);
 
@@ -676,8 +666,6 @@ impl DataClient for DatabentoDataClient {
 
     // Unsubscribe methods
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!("Unsubscribe quotes: {cmd:?}");
-
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
@@ -690,8 +678,6 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!("Unsubscribe trades: {cmd:?}");
-
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
@@ -704,8 +690,6 @@ impl DataClient for DatabentoDataClient {
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!("Unsubscribe book deltas: {cmd:?}");
-
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.
@@ -721,8 +705,6 @@ impl DataClient for DatabentoDataClient {
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!("Unsubscribe instrument status: {cmd:?}");
-
         // Note: Databento live API doesn't support granular unsubscribing.
         // The feed handler manages subscriptions and can handle reconnections
         // with the appropriate subscription state.

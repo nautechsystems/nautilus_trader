@@ -505,7 +505,7 @@ impl SubmitBroadcaster {
 
         *self.health_check_task.write().await = Some(task);
 
-        log::info!(
+        log::debug!(
             "SubmitBroadcaster started with {} clients",
             self.transports.len()
         );
@@ -525,7 +525,7 @@ impl SubmitBroadcaster {
             task.abort();
         }
 
-        log::info!("SubmitBroadcaster stopped");
+        log::debug!("SubmitBroadcaster stopped");
     }
 
     async fn run_health_checks(&self) {

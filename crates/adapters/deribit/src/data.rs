@@ -852,8 +852,6 @@ impl DataClient for DeribitDataClient {
         let http_client = self.http_client.clone();
         let instruments = Arc::clone(&self.instruments);
 
-        log::debug!("Subscribing to quotes for {instrument_id}");
-
         get_runtime().spawn(async move {
             if needs_load
                 && let Err(e) =
@@ -1129,7 +1127,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
 
-        log::info!("Subscribing to instrument status for {instrument_id} ({kind}.{currency})");
+        log::debug!("Subscribing to instrument status for {instrument_id} ({kind}.{currency})");
 
         get_runtime().spawn(async move {
             if let Err(e) = ws.subscribe_instrument_status(&kind, &currency).await {
@@ -1202,7 +1200,7 @@ impl DataClient for DeribitDataClient {
             return Ok(());
         };
 
-        log::info!("Subscribing to Deribit volatility index: {index_name}");
+        log::debug!("Subscribing to Deribit volatility index: {index_name}");
 
         let ws = self
             .ws_client
@@ -1232,7 +1230,7 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
 
-        log::info!("Unsubscribing from instrument status for {instrument_id} ({kind}.{currency})");
+        log::debug!("Unsubscribing from instrument status for {instrument_id} ({kind}.{currency})");
 
         get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_instrument_status(&kind, &currency).await {
@@ -1396,8 +1394,6 @@ impl DataClient for DeribitDataClient {
             .ok_or_else(|| anyhow::anyhow!("WebSocket client not initialized"))?
             .clone();
         let instrument_id = cmd.instrument_id;
-
-        log::debug!("Unsubscribing from quotes for {instrument_id}");
 
         get_runtime().spawn(async move {
             if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
@@ -1604,7 +1600,7 @@ impl DataClient for DeribitDataClient {
             return Ok(());
         };
 
-        log::info!("Unsubscribing from Deribit volatility index: {index_name}");
+        log::debug!("Unsubscribing from Deribit volatility index: {index_name}");
 
         let ws = self
             .ws_client

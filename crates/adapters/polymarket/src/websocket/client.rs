@@ -247,7 +247,7 @@ impl PolymarketWebSocketClient {
             }
             WsChannel::User => {
                 if self.user_subscribed.load(Ordering::Relaxed) {
-                    log::info!("Replaying user subscribe onto new session");
+                    log::debug!("Replaying user subscribe onto new session");
                     cmd_tx
                         .send(HandlerCommand::SubscribeUser)
                         .map_err(|e| anyhow::anyhow!("Failed to replay SubscribeUser: {e}"))?;

@@ -23,6 +23,7 @@ Released on TBD (UTC).
 - Hardened plugin ABI surface to reject manifest ABI mismatches (Rust)
 - Hardened CI release provenance checks with provenance refetch and transient 404 retries
 - Improved default Rust builds to avoid abandoned `proc-macro-error2` (#4315), thanks for reporting @folknor
+- Standardized data subscription logging with a single canonical confirmation and reduced adapter log noise (Rust)
 - Optimized `OrderMatchingEngine` post-match actions to avoid cloning resting orders (Rust)
 - Optimized `OrderMatchingEngine` no-match GTD and trailing-order paths (Rust)
 - Optimized Databento adapter decode and loader paths (Rust)

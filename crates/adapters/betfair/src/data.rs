@@ -854,7 +854,6 @@ impl DataClient for BetfairDataClient {
             }
         });
 
-        log::info!("Subscribing to book deltas for {instrument_id}");
         Ok(())
     }
 

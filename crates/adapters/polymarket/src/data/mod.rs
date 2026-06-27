@@ -439,7 +439,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -462,7 +461,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to quotes for {instrument_id}");
         Ok(())
     }
 
@@ -485,7 +483,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to trades for {instrument_id}");
         Ok(())
     }
 
@@ -497,7 +494,6 @@ impl DataClient for PolymarketDataClient {
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -507,7 +503,6 @@ impl DataClient for PolymarketDataClient {
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from quotes for {instrument_id}");
         Ok(())
     }
 
@@ -516,7 +511,6 @@ impl DataClient for PolymarketDataClient {
         self.active_trade_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from trades for {instrument_id}");
         Ok(())
     }
 

@@ -459,7 +459,7 @@ impl CancelBroadcaster {
 
         *self.health_check_task.write().await = Some(task);
 
-        log::info!(
+        log::debug!(
             "CancelBroadcaster started with {} clients",
             self.transports.len()
         );
@@ -479,7 +479,7 @@ impl CancelBroadcaster {
             task.abort();
         }
 
-        log::info!("CancelBroadcaster stopped");
+        log::debug!("CancelBroadcaster stopped");
     }
 
     async fn run_health_checks(&self) {

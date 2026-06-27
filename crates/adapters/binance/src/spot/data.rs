@@ -1664,7 +1664,7 @@ impl DataClient for BinanceSpotDataClient {
                 self.book_buffers
                     .insert(instrument_id, BookBuffer::new(epoch));
 
-                log::info!("OrderBook full snapshot rebuild for {instrument_id} starting");
+                log::debug!("OrderBook full snapshot rebuild for {instrument_id} starting");
 
                 let stream = format!("{symbol_lower}@depth");
                 self.spawn_ws(

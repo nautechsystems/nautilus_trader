@@ -152,7 +152,7 @@ impl DydxGrpcClient {
 
             match Self::new(url_str.to_string()).await {
                 Ok(client) => {
-                    log::info!("Successfully connected to gRPC node: {url_str}");
+                    log::debug!("Successfully connected to gRPC node: {url_str}");
                     return Ok(client);
                 }
                 Err(e) => {
@@ -229,7 +229,7 @@ impl DydxGrpcClient {
 
             match endpoint.connect().await {
                 Ok(connected_channel) => {
-                    log::info!("Successfully reconnected to gRPC node: {url_str}");
+                    log::debug!("Successfully reconnected to gRPC node: {url_str}");
 
                     // Update all service clients with the new channel
                     self.channel = connected_channel.clone();
