@@ -668,8 +668,10 @@ mod tests {
         let url = format!("http://{addr}");
 
         // Cap above the 1 MiB payload: body should be returned intact.
-        let mut client = InnerHttpClient::default();
-        client.max_response_bytes = 4 * 1024 * 1024;
+        let client = InnerHttpClient {
+            max_response_bytes: 4 * 1024 * 1024,
+            ..Default::default()
+        };
 
         let response = client
             .send_request(
@@ -693,8 +695,10 @@ mod tests {
         let url = format!("http://{addr}");
 
         // Cap below the 1 MiB payload: the request must fail rather than buffer it.
-        let mut client = InnerHttpClient::default();
-        client.max_response_bytes = 16 * 1024;
+        let client = InnerHttpClient {
+            max_response_bytes: 16 * 1024,
+            ..Default::default()
+        };
 
         let result = client
             .send_request(
