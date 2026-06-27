@@ -177,6 +177,38 @@ fn open_rejects_store_with_future_format_marker() {
     assert_corrupted(RedbBackend::open_sealed_file(&path));
 }
 
+#[rstest]
+fn list_runs_rejects_store_without_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-old-format");
+    create_pre_codec_run_file(&path);
+
+    assert_corrupted_regenerated(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
+}
+
+#[rstest]
+fn list_runs_rejects_store_with_future_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-future-format");
+    create_future_format_run_file(&path);
+
+    assert_corrupted(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
+}
+
+#[rstest]
+fn list_runs_rejects_unsupported_store_even_with_healthy_run() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut backend = RedbBackend::new(tmp.path());
+    backend.open_run(manifest("run-good")).expect("open run");
+    backend.seal(RunStatus::Ended).expect("seal");
+    drop(backend);
+
+    let path = raw_run_path(tmp.path(), "run-old-format");
+    create_pre_codec_run_file(&path);
+
+    assert_corrupted_regenerated(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
+}
+
 fn append_with(seq: u64, ts_init: u64, index_keys: Vec<IndexKey>) -> AppendEntry {
     AppendEntry::new(build_entry(seq, Headers::empty(), ts_init), index_keys)
 }

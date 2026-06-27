@@ -250,14 +250,16 @@ impl RedbBackend {
     /// died hard (kill, OOM, power loss) lacks redb's allocator-state table and refuses
     /// the read-only open; the listing falls back to a writable open, which performs
     /// redb's repair pass and leaves the file readable again. Files that still cannot
-    /// be opened or that lack a manifest are skipped with a logged error so one damaged
-    /// file cannot block recovery or retention over the healthy runs; such files never
-    /// become recovery parents or reclaim candidates and are left in place for manual
-    /// inspection.
+    /// be opened or that lack a manifest are skipped with a logged error so one
+    /// current-format damaged file cannot block recovery or retention over the healthy
+    /// runs; such files never become recovery parents or reclaim candidates and are
+    /// left in place for manual inspection. Unsupported store formats are returned as
+    /// errors rather than skipped because they require operator action.
     ///
     /// # Errors
     ///
-    /// Returns [`EventStoreError::Backend`] when the directory iterator fails.
+    /// Returns [`EventStoreError::Backend`] when the directory iterator fails, or
+    /// [`EventStoreError::Corrupted`] when a run file uses an unsupported store format.
     pub fn list_runs(
         base_dir: &Path,
         instance_id: &str,
@@ -288,6 +290,7 @@ impl RedbBackend {
 
             match Self::read_run_manifest(&path) {
                 Ok(manifest) => manifests.push(manifest),
+                Err(e) if format::is_unsupported_store_format(&e) => return Err(e),
                 Err(e) => {
                     log::error!("Skipping unreadable run file {}: {e}", path.display());
                 }
@@ -300,7 +303,7 @@ impl RedbBackend {
     fn read_run_manifest(path: &Path) -> Result<RunManifest, EventStoreError> {
         let manifest = match ReadOnlyDatabase::open(path) {
             Ok(db) => {
-                format::verify_store_format(&db)?;
+                Self::verify_listed_store_format(&db, path)?;
                 Self::read_manifest(&db)?
             }
             // Each durable commit deletes redb's allocator-state table and only a clean
@@ -312,17 +315,39 @@ impl RedbBackend {
                     path.display()
                 );
                 let db = Database::open(path).map_err(map_database_err)?;
-                format::verify_store_format(&db)?;
+                Self::verify_listed_store_format(&db, path)?;
                 Self::read_manifest(&db)?
             }
             Err(e) => return Err(map_read_only_database_err(e)),
         };
-        manifest.ok_or_else(|| {
-            EventStoreError::Corrupted(format!(
-                "missing manifest in run file at {}",
-                path.display()
-            ))
-        })
+        manifest.ok_or_else(|| missing_manifest(path))
+    }
+
+    fn verify_listed_store_format<D: ReadableDatabase + ?Sized>(
+        db: &D,
+        path: &Path,
+    ) -> Result<(), EventStoreError> {
+        match format::verify_store_format(db) {
+            Ok(()) => Ok(()),
+            Err(e) if format::is_missing_store_format(&e) && !Self::manifest_row_exists(db)? => {
+                Err(missing_manifest(path))
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    fn manifest_row_exists<D: ReadableDatabase + ?Sized>(db: &D) -> Result<bool, EventStoreError> {
+        let txn = db.begin_read().map_err(map_transaction_err)?;
+        let table = match txn.open_table(MANIFEST_TABLE) {
+            Ok(table) => table,
+            Err(TableError::TableDoesNotExist(_)) => return Ok(false),
+            Err(e) => return Err(map_table_err(e)),
+        };
+
+        table
+            .get(MANIFEST_KEY)
+            .map(|value| value.is_some())
+            .map_err(map_storage_err)
     }
 
     fn state(&self) -> Result<&RunState, EventStoreError> {
@@ -769,6 +794,13 @@ impl EventStore for RedbBackend {
     fn high_watermark(&self) -> Result<u64, EventStoreError> {
         Ok(self.state()?.high_watermark)
     }
+}
+
+fn missing_manifest(path: &Path) -> EventStoreError {
+    EventStoreError::Corrupted(format!(
+        "missing manifest in run file at {}",
+        path.display()
+    ))
 }
 
 fn begin_immediate_write(db: &Database) -> Result<WriteTransaction, EventStoreError> {

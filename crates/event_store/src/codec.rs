@@ -33,6 +33,7 @@ use thiserror::Error;
 const MAGIC: [u8; 4] = *b"NESC";
 const VERSION: u8 = 1;
 const HEADER_LEN: usize = MAGIC.len() + 1;
+const MAX_COLLECTION_COUNT: usize = 1_048_576;
 
 /// Serializes `value` into a freshly allocated, framed codec buffer.
 ///
@@ -89,10 +90,10 @@ pub enum CodecError {
     /// The frame version is not supported by this decoder.
     #[error("unsupported codec version: {0}")]
     UnsupportedVersion(u8),
-    /// An encoded length would exceed the remaining input.
+    /// An encoded byte length would exceed the remaining input.
     #[error("encoded length {claimed} exceeds remaining input {remaining}")]
     LengthOverflow {
-        /// Claimed encoded length or collection count, as the raw on-wire `u64`.
+        /// Claimed encoded byte length, as the raw on-wire `u64`.
         ///
         /// Kept as `u64` (not `usize`) so the reported value is exact on every
         /// target, including a length that overflows `usize` on a sub-64-bit
@@ -101,6 +102,14 @@ pub enum CodecError {
         claimed: u64,
         /// Bytes remaining in the input when the length was checked.
         remaining: usize,
+    },
+    /// An encoded collection count exceeded the supported maximum.
+    #[error("encoded collection count {claimed} exceeds maximum {max}")]
+    CountOverflow {
+        /// Claimed collection count, as the raw on-wire `u64`.
+        claimed: u64,
+        /// Maximum supported collection count.
+        max: usize,
     },
     /// A string was not valid UTF-8.
     #[error("invalid utf-8 in encoded string")]
@@ -151,6 +160,18 @@ struct Encoder {
 impl Encoder {
     fn write_len(&mut self, len: usize) {
         self.out.extend_from_slice(&(len as u64).to_le_bytes());
+    }
+
+    fn write_count(&mut self, count: usize) -> Result<(), CodecError> {
+        if count > MAX_COLLECTION_COUNT {
+            return Err(CodecError::CountOverflow {
+                claimed: count as u64,
+                max: MAX_COLLECTION_COUNT,
+            });
+        }
+
+        self.write_len(count);
+        Ok(())
     }
 
     fn write_variant(&mut self, variant_index: u32) {
@@ -299,7 +320,7 @@ impl ser::Serializer for &mut Encoder {
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         let len = len.ok_or(CodecError::MissingLen)?;
-        self.write_len(len);
+        self.write_count(len)?;
         Ok(self)
     }
 
@@ -328,7 +349,7 @@ impl ser::Serializer for &mut Encoder {
 
     fn serialize_map(self, len: Option<usize>) -> Result<Self::SerializeMap, Self::Error> {
         let len = len.ok_or(CodecError::MissingLen)?;
-        self.write_len(len);
+        self.write_count(len)?;
         Ok(self)
     }
 
@@ -517,7 +538,7 @@ impl<'de> Decoder<'de> {
         Ok(slice)
     }
 
-    fn read_len(&mut self) -> Result<usize, CodecError> {
+    fn read_byte_len(&mut self) -> Result<usize, CodecError> {
         let raw = self.read_u64()?;
         let remaining = self.remaining();
         // A length is valid only if it both fits `usize` and is within the
@@ -528,6 +549,17 @@ impl<'de> Decoder<'de> {
             _ => Err(CodecError::LengthOverflow {
                 claimed: raw,
                 remaining,
+            }),
+        }
+    }
+
+    fn read_count(&mut self) -> Result<usize, CodecError> {
+        let raw = self.read_u64()?;
+        match usize::try_from(raw) {
+            Ok(count) if count <= MAX_COLLECTION_COUNT => Ok(count),
+            _ => Err(CodecError::CountOverflow {
+                claimed: raw,
+                max: MAX_COLLECTION_COUNT,
             }),
         }
     }
@@ -671,7 +703,7 @@ impl<'de> de::Deserializer<'de> for &mut Decoder<'de> {
     where
         V: Visitor<'de>,
     {
-        let len = self.read_len()?;
+        let len = self.read_byte_len()?;
         let bytes = self.take(len)?;
         let value = str::from_utf8(bytes).map_err(|_| CodecError::InvalidUtf8)?;
         visitor.visit_borrowed_str(value)
@@ -688,7 +720,7 @@ impl<'de> de::Deserializer<'de> for &mut Decoder<'de> {
     where
         V: Visitor<'de>,
     {
-        let len = self.read_len()?;
+        let len = self.read_byte_len()?;
         let bytes = self.take(len)?;
         visitor.visit_borrowed_bytes(bytes)
     }
@@ -744,7 +776,7 @@ impl<'de> de::Deserializer<'de> for &mut Decoder<'de> {
     where
         V: Visitor<'de>,
     {
-        let remaining = self.read_len()?;
+        let remaining = self.read_count()?;
         visitor.visit_seq(SeqReader {
             dec: self,
             remaining,
@@ -777,7 +809,7 @@ impl<'de> de::Deserializer<'de> for &mut Decoder<'de> {
     where
         V: Visitor<'de>,
     {
-        let remaining = self.read_len()?;
+        let remaining = self.read_count()?;
         visitor.visit_map(MapReader {
             dec: self,
             remaining,
@@ -961,7 +993,7 @@ mod tests {
     use nautilus_system::RegisteredComponents;
     use proptest::{prelude::*, test_runner::Config as ProptestConfig};
     use rstest::rstest;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serializer};
     use ustr::Ustr;
 
     use super::*;
@@ -1012,6 +1044,18 @@ mod tests {
     #[derive(Debug, PartialEq, Serialize, Deserialize)]
     struct BoolProbe {
         b: bool,
+    }
+
+    struct TooManySeq;
+
+    impl Serialize for TooManySeq {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let seq = serializer.serialize_seq(Some(MAX_COLLECTION_COUNT + 1))?;
+            SerializeSeq::end(seq)
+        }
     }
 
     fn roundtrip<T>(value: &T) -> T
@@ -1270,6 +1314,13 @@ mod tests {
     }
 
     #[rstest]
+    fn roundtrip_zero_width_sequence() {
+        let value = vec![(); 10];
+
+        assert_eq!(roundtrip(&value), value);
+    }
+
+    #[rstest]
     fn encode_is_deterministic() {
         let entry = entry(headers_populated());
         let manifest = sealed_manifest();
@@ -1355,13 +1406,39 @@ mod tests {
     }
 
     #[rstest]
-    fn length_overflow_rejected() {
+    fn forged_sequence_count_rejected_on_eof() {
         let mut bytes = encode_to_vec(&vec![1_u8, 2, 3]).unwrap();
         bytes[HEADER_LEN..HEADER_LEN + 8].copy_from_slice(&99_u64.to_le_bytes());
 
         assert!(matches!(
             decode_from_slice::<Vec<u8>>(&bytes),
-            Err(CodecError::LengthOverflow { claimed: 99, .. })
+            Err(CodecError::UnexpectedEof { .. })
+        ));
+    }
+
+    #[rstest]
+    fn collection_count_overflow_rejected() {
+        let mut bytes = encode_to_vec(&vec![1_u8, 2, 3]).unwrap();
+        let too_many = (MAX_COLLECTION_COUNT as u64) + 1;
+        bytes[HEADER_LEN..HEADER_LEN + 8].copy_from_slice(&too_many.to_le_bytes());
+
+        assert!(matches!(
+            decode_from_slice::<Vec<u8>>(&bytes),
+            Err(CodecError::CountOverflow {
+                claimed,
+                max: MAX_COLLECTION_COUNT
+            }) if claimed == too_many
+        ));
+    }
+
+    #[rstest]
+    fn collection_count_overflow_rejected_on_encode() {
+        assert!(matches!(
+            encode_to_vec(&TooManySeq),
+            Err(CodecError::CountOverflow {
+                claimed,
+                max: MAX_COLLECTION_COUNT
+            }) if claimed == (MAX_COLLECTION_COUNT as u64) + 1
         ));
     }
 

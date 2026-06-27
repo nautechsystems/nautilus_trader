@@ -34,6 +34,7 @@ pub(crate) const BETA_REGEN_MSG: &str = "event store written by an unsupported o
      (pre-codec beta v1.227-1.229); the format changed and these stores \
      must be regenerated";
 
+const UNSUPPORTED_VERSION_MSG_PREFIX: &str = "unsupported event store on-disk format version ";
 const FORMAT_TABLE: TableDefinition<&str, u32> = TableDefinition::new("store_format");
 const FORMAT_KEY: &str = "codec";
 
@@ -67,8 +68,21 @@ pub(crate) fn verify_store_format<D: ReadableDatabase + ?Sized>(
         Ok(())
     } else {
         Err(EventStoreError::Corrupted(format!(
-            "unsupported event store on-disk format version {version}; supported version is {STORE_FORMAT_VERSION}",
+            "{UNSUPPORTED_VERSION_MSG_PREFIX}{version}; supported version is {STORE_FORMAT_VERSION}",
         )))
+    }
+}
+
+pub(crate) fn is_missing_store_format(err: &EventStoreError) -> bool {
+    matches!(err, EventStoreError::Corrupted(msg) if msg == BETA_REGEN_MSG)
+}
+
+pub(crate) fn is_unsupported_store_format(err: &EventStoreError) -> bool {
+    match err {
+        EventStoreError::Corrupted(msg) => {
+            msg == BETA_REGEN_MSG || msg.starts_with(UNSUPPORTED_VERSION_MSG_PREFIX)
+        }
+        _ => false,
     }
 }
 
