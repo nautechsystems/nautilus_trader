@@ -2161,6 +2161,26 @@ mod tests {
     }
 
     #[rstest]
+    fn test_deserialize_user_fills_with_dust_conversion() {
+        // #4325 regression: a userFills batch must decode whole, not fail on one
+        // unmodeled direction. Fixture is real mainnet wire data.
+        let fills: Vec<HyperliquidFill> = load_test_data("http_user_fills_dust_conversion.json");
+
+        let dirs: Vec<HyperliquidFillDirection> = fills.iter().map(|f| f.dir).collect();
+
+        assert_eq!(
+            dirs,
+            vec![
+                HyperliquidFillDirection::OpenLong,
+                HyperliquidFillDirection::CloseShort,
+                HyperliquidFillDirection::Buy,
+                HyperliquidFillDirection::SpotDustConversion,
+                HyperliquidFillDirection::NetChildVaults,
+            ],
+        );
+    }
+
+    #[rstest]
     fn test_resolve_fee_currency_outcome_token_returns_quote_even_when_registered() {
         let meta = OutcomeMeta {
             outcomes: vec![OutcomeMarket {

@@ -425,6 +425,8 @@ pub enum HyperliquidLiquidationMethod {
 #[strum(serialize_all = "camelCase")]
 pub enum HyperliquidPositionType {
     OneWay,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Hyperliquid TWAP order status.
@@ -438,6 +440,8 @@ pub enum HyperliquidTwapStatus {
     Terminated,
     Finished,
     Error,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -782,10 +786,18 @@ pub enum HyperliquidFillDirection {
     #[serde(rename = "Auto-Deleveraging")]
     #[strum(serialize = "Auto-Deleveraging")]
     AutoDeleveraging,
+    /// Vault-leader netting of child vault positions.
+    #[serde(rename = "Net Child Vaults")]
+    #[strum(serialize = "Net Child Vaults")]
+    NetChildVaults,
     /// Buying an asset (spot only).
     Buy,
     /// Selling an asset (spot only).
     Sell,
+    /// HIP-1 spot dust conversion: sub-lot spot balances sold to the quote token.
+    #[serde(rename = "Spot Dust Conversion")]
+    #[strum(serialize = "Spot Dust Conversion")]
+    SpotDustConversion,
     /// HIP-4 outcome settlement; venue closes side-token holdings at the
     /// resolved value (1 quote token for the winning side, 0 for the loser).
     #[serde(rename = "Settlement")]
@@ -811,6 +823,9 @@ pub enum HyperliquidFillDirection {
     #[serde(rename = "Negate Outcome")]
     #[strum(serialize = "Negate Outcome")]
     NegateOutcome,
+    /// Catch-all for unmodeled fill directions; informational only.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Represents info request types for the Hyperliquid info endpoint.
@@ -1166,7 +1181,15 @@ mod tests {
                 HyperliquidFillDirection::AutoDeleveraging,
                 "\"Auto-Deleveraging\"",
             ),
+            (
+                HyperliquidFillDirection::NetChildVaults,
+                "\"Net Child Vaults\"",
+            ),
             (HyperliquidFillDirection::Buy, "\"Buy\""),
+            (
+                HyperliquidFillDirection::SpotDustConversion,
+                "\"Spot Dust Conversion\"",
+            ),
             (HyperliquidFillDirection::Settlement, "\"Settlement\""),
             (HyperliquidFillDirection::SplitOutcome, "\"Split Outcome\""),
             (HyperliquidFillDirection::MergeOutcome, "\"Merge Outcome\""),
@@ -1187,6 +1210,30 @@ mod tests {
                 variant
             );
         }
+    }
+
+    #[rstest]
+    fn test_fill_direction_unknown_is_lenient() {
+        assert_eq!(
+            serde_json::from_str::<HyperliquidFillDirection>("\"Some New Direction\"").unwrap(),
+            HyperliquidFillDirection::Unknown,
+        );
+    }
+
+    #[rstest]
+    fn test_position_type_unknown_is_lenient() {
+        assert_eq!(
+            serde_json::from_str::<HyperliquidPositionType>("\"hedge\"").unwrap(),
+            HyperliquidPositionType::Unknown,
+        );
+    }
+
+    #[rstest]
+    fn test_twap_status_unknown_is_lenient() {
+        assert_eq!(
+            serde_json::from_str::<HyperliquidTwapStatus>("\"paused\"").unwrap(),
+            HyperliquidTwapStatus::Unknown,
+        );
     }
 
     #[rstest]
