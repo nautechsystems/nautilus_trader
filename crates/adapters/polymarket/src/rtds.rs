@@ -17,7 +17,10 @@
 
 use std::{
     str::FromStr,
-    sync::{Arc, Mutex as StdMutex},
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicBool, AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -66,9 +69,15 @@ struct PolymarketRtdsFeedInner {
     clock: &'static AtomicTime,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     subscriptions: dashmap::DashMap<String, TrackedSubscription>,
+    last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
+    // Tracks the last venue state we successfully pushed so incremental syncs
+    // can send only the delta from desired state to live wire state.
+    live_subscriptions: StdMutex<AHashMap<String, RtdsWireSubscription>>,
     ws_client: StdMutex<Option<Arc<WebSocketClient>>>,
     task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
     wire_mutex: tokio::sync::Mutex<()>,
+    sync_version: AtomicU64,
+    sync_running: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -180,9 +189,13 @@ impl PolymarketRtdsFeed {
                 clock,
                 data_sender,
                 subscriptions: dashmap::DashMap::new(),
+                last_emitted_timestamps_ms: dashmap::DashMap::new(),
+                live_subscriptions: StdMutex::new(AHashMap::new()),
                 ws_client: StdMutex::new(None),
                 task_handle: StdMutex::new(None),
                 wire_mutex: tokio::sync::Mutex::new(()),
+                sync_version: AtomicU64::new(0),
+                sync_running: AtomicBool::new(false),
             }),
         }
     }
@@ -191,10 +204,7 @@ impl PolymarketRtdsFeed {
         !self.inner.subscriptions.is_empty()
     }
 
-    pub(crate) fn track_subscribe(
-        &self,
-        data_type: DataType,
-    ) -> anyhow::Result<Option<RtdsWireSubscription>> {
+    pub(crate) fn track_subscribe(&self, data_type: DataType) -> anyhow::Result<bool> {
         let parsed = ParsedSubscription::from_data_type(&data_type)?;
         let mut entry = self
             .inner
@@ -219,22 +229,19 @@ impl PolymarketRtdsFeed {
                 ref_count: 1,
             });
 
-        Ok(should_send_wire.then_some(parsed.wire))
+        Ok(should_send_wire)
     }
 
-    pub(crate) fn track_unsubscribe(
-        &self,
-        data_type: &DataType,
-    ) -> anyhow::Result<Option<RtdsWireSubscription>> {
+    pub(crate) fn track_unsubscribe(&self, data_type: &DataType) -> anyhow::Result<bool> {
         let parsed = ParsedSubscription::from_data_type(data_type)?;
         let mut entry = match self.inner.subscriptions.get_mut(&parsed.key) {
             Some(entry) => entry,
-            None => return Ok(None),
+            None => return Ok(false),
         };
 
         let data_type_key = data_type.topic().to_string();
         let Some(tracked) = entry.data_types.get_mut(&data_type_key) else {
-            return Ok(None);
+            return Ok(false);
         };
 
         if tracked.ref_count > 1 {
@@ -245,58 +252,41 @@ impl PolymarketRtdsFeed {
 
         if entry.total_ref_count > 1 {
             entry.total_ref_count -= 1;
-            return Ok(None);
+            return Ok(false);
         }
 
-        let wire = entry.wire.clone();
         drop(entry);
         self.inner.subscriptions.remove(&parsed.key);
-        Ok(Some(wire))
+        self.inner.last_emitted_timestamps_ms.remove(&parsed.key);
+        Ok(true)
     }
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
         let _guard = self.inner.wire_mutex.lock().await;
-        let _fresh_connect = self.ensure_connected_locked().await?;
-        Ok(())
-    }
-
-    pub(crate) async fn subscribe_live(&self, wire: RtdsWireSubscription) -> anyhow::Result<()> {
-        let _guard = self.inner.wire_mutex.lock().await;
         let fresh_connect = self.ensure_connected_locked().await?;
-        if fresh_connect {
-            return Ok(());
-        }
-
         let Some(ws) = self.current_ws() else {
             anyhow::bail!("RTDS WebSocket client unavailable after connect");
         };
-
-        log::debug!(
-            "Subscribing Polymarket RTDS topic={} type={} filters={:?}",
-            wire.topic,
-            wire.msg_type,
-            wire.filters
-        );
-        self.send_wire_request(&ws, "subscribe", vec![wire]).await
+        self.reconcile_live_locked(&ws, fresh_connect).await?;
+        Ok(())
     }
 
-    pub(crate) async fn unsubscribe_live(&self, wire: RtdsWireSubscription) -> anyhow::Result<()> {
-        let _guard = self.inner.wire_mutex.lock().await;
-        let Some(ws) = self.current_ws() else {
-            return Ok(());
-        };
+    pub(crate) fn schedule_sync(&self) {
+        self.inner.sync_version.fetch_add(1, Ordering::AcqRel);
 
-        if !ws.is_active() {
-            return Ok(());
+        if self
+            .inner
+            .sync_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
         }
 
-        log::debug!(
-            "Unsubscribing Polymarket RTDS topic={} type={} filters={:?}",
-            wire.topic,
-            wire.msg_type,
-            wire.filters
-        );
-        self.send_wire_request(&ws, "unsubscribe", vec![wire]).await
+        let feed = self.clone();
+        get_runtime().spawn(async move {
+            feed.run_sync_loop().await;
+        });
     }
 
     pub(crate) async fn disconnect(&self) {
@@ -317,6 +307,12 @@ impl PolymarketRtdsFeed {
         if let Some(ws) = ws {
             ws.disconnect().await;
         }
+
+        self.inner
+            .live_subscriptions
+            .lock()
+            .expect("RTDS live_subscriptions mutex poisoned")
+            .clear();
 
         if let Some(handle) = handle {
             let abort_handle = handle.abort_handle();
@@ -349,6 +345,12 @@ impl PolymarketRtdsFeed {
             });
         }
 
+        self.inner
+            .live_subscriptions
+            .lock()
+            .expect("RTDS live_subscriptions mutex poisoned")
+            .clear();
+
         if let Some(handle) = self
             .inner
             .task_handle
@@ -378,12 +380,54 @@ impl PolymarketRtdsFeed {
         self.handle_text_message(text);
     }
 
+    #[cfg(test)]
+    fn sync_running_for_test(&self) -> bool {
+        self.inner.sync_running.load(Ordering::Acquire)
+    }
+
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
         self.inner
             .ws_client
             .lock()
             .expect("RTDS ws_client mutex poisoned")
             .clone()
+    }
+
+    async fn run_sync_loop(&self) {
+        loop {
+            let target_version = self.inner.sync_version.load(Ordering::Acquire);
+
+            if let Err(e) = self.sync_live_once().await {
+                log::error!("Failed to sync RTDS custom data subscriptions: {e}");
+            }
+
+            if self.inner.sync_version.load(Ordering::Acquire) == target_version {
+                self.inner.sync_running.store(false, Ordering::Release);
+
+                if self.inner.sync_version.load(Ordering::Acquire) == target_version {
+                    break;
+                }
+
+                if self
+                    .inner
+                    .sync_running
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    async fn sync_live_once(&self) -> anyhow::Result<()> {
+        let _guard = self.inner.wire_mutex.lock().await;
+        let fresh_connect = self.ensure_connected_locked().await?;
+        let Some(ws) = self.current_ws() else {
+            anyhow::bail!("RTDS WebSocket client unavailable after sync");
+        };
+
+        self.reconcile_live_locked(&ws, fresh_connect).await
     }
 
     async fn ensure_connected_locked(&self) -> anyhow::Result<bool> {
@@ -437,21 +481,82 @@ impl PolymarketRtdsFeed {
             old_handle.abort();
         }
 
-        let subscriptions = self.snapshot_wire_subscriptions();
-        if !subscriptions.is_empty() {
-            self.send_wire_request(&ws, "subscribe", subscriptions)
-                .await?;
-        }
-
         Ok(true)
     }
 
-    fn snapshot_wire_subscriptions(&self) -> Vec<RtdsWireSubscription> {
+    fn snapshot_wire_subscriptions(&self) -> AHashMap<String, RtdsWireSubscription> {
         self.inner
             .subscriptions
             .iter()
-            .map(|entry| entry.wire.clone())
+            .map(|entry| (entry.key().clone(), entry.wire.clone()))
             .collect()
+    }
+
+    async fn reconcile_live_locked(
+        &self,
+        ws: &Arc<WebSocketClient>,
+        reset_live_state: bool,
+    ) -> anyhow::Result<()> {
+        if !ws.is_active() {
+            return Ok(());
+        }
+
+        if reset_live_state {
+            self.inner
+                .live_subscriptions
+                .lock()
+                .expect("RTDS live_subscriptions mutex poisoned")
+                .clear();
+        }
+
+        let desired = self.snapshot_wire_subscriptions();
+        let (unsubscribe, subscribe) = {
+            let live = self
+                .inner
+                .live_subscriptions
+                .lock()
+                .expect("RTDS live_subscriptions mutex poisoned");
+            let unsubscribe = live
+                .iter()
+                .filter(|(key, _)| !desired.contains_key(*key))
+                .map(|(_, wire)| wire.clone())
+                .collect::<Vec<_>>();
+            let subscribe = desired
+                .iter()
+                .filter(|(key, _)| !live.contains_key(*key))
+                .map(|(_, wire)| wire.clone())
+                .collect::<Vec<_>>();
+            (unsubscribe, subscribe)
+        };
+
+        if !unsubscribe.is_empty() {
+            log::debug!(
+                "Unsubscribing Polymarket RTDS delta with {} subscription(s)",
+                unsubscribe.len()
+            );
+            self.send_wire_request(ws, "unsubscribe", unsubscribe)
+                .await?;
+        }
+
+        if !subscribe.is_empty() {
+            log::debug!(
+                "Subscribing Polymarket RTDS delta with {} subscription(s)",
+                subscribe.len()
+            );
+            self.send_wire_request(ws, "subscribe", subscribe).await?;
+        }
+
+        let mut live = self
+            .inner
+            .live_subscriptions
+            .lock()
+            .expect("RTDS live_subscriptions mutex poisoned");
+        live.retain(|key, _| desired.contains_key(key));
+        for (key, wire) in desired {
+            live.insert(key, wire);
+        }
+
+        Ok(())
     }
 
     async fn send_wire_request(
@@ -484,11 +589,7 @@ impl PolymarketRtdsFeed {
                 Some(Message::Text(text)) => {
                     if text.as_str() == "reconnected" {
                         log::info!("Polymarket RTDS reconnected");
-                        let subscriptions = self.snapshot_wire_subscriptions();
-                        if let Err(e) = self
-                            .send_wire_request(&ws, "subscribe", subscriptions)
-                            .await
-                        {
+                        if let Err(e) = self.replay_after_reconnect(&ws).await {
                             log::error!("Failed to replay RTDS subscriptions after reconnect: {e}");
                         }
                         continue;
@@ -557,6 +658,11 @@ impl PolymarketRtdsFeed {
             return;
         }
 
+        if !self.should_emit_timestamp_ms(RtdsTopic::CryptoPrices, &symbol_lower, payload.timestamp)
+        {
+            return;
+        }
+
         let value = match price_from_json_number("value", &payload.value) {
             Ok(value) => value,
             Err(e) => {
@@ -603,6 +709,14 @@ impl PolymarketRtdsFeed {
                 }
             };
 
+            if !self.should_emit_timestamp_ms(
+                RtdsTopic::CryptoPrices,
+                &symbol_lower,
+                point.timestamp,
+            ) {
+                continue;
+            }
+
             let ts_event = UnixNanos::from_millis(point.timestamp);
             let ts_init = self.inner.clock.get_time_ns();
             let custom_payload = Arc::new(PolymarketRtdsCryptoPrice::new(
@@ -630,6 +744,11 @@ impl PolymarketRtdsFeed {
         let symbol_lower = payload.symbol.to_ascii_lowercase();
         let data_types = self.matching_data_types(RtdsTopic::EquityPrices, &symbol_lower);
         if data_types.is_empty() {
+            return;
+        }
+
+        if !self.should_emit_timestamp_ms(RtdsTopic::EquityPrices, &symbol_lower, payload.timestamp)
+        {
             return;
         }
 
@@ -691,6 +810,14 @@ impl PolymarketRtdsFeed {
                 }
             };
 
+            if !self.should_emit_timestamp_ms(
+                RtdsTopic::EquityPrices,
+                &symbol_lower,
+                point.timestamp,
+            ) {
+                continue;
+            }
+
             let ts_event = UnixNanos::from_millis(point.timestamp);
             let ts_init = self.inner.clock.get_time_ns();
             let custom_payload = Arc::new(PolymarketRtdsEquityPrice::new(
@@ -739,6 +866,36 @@ impl PolymarketRtdsFeed {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn should_emit_timestamp_ms(
+        &self,
+        topic: RtdsTopic,
+        symbol_lower: &str,
+        timestamp_ms: u64,
+    ) -> bool {
+        let key = tracked_key(topic.as_str(), symbol_lower);
+        match self.inner.last_emitted_timestamps_ms.get_mut(&key) {
+            Some(mut last_seen) => {
+                if timestamp_ms <= *last_seen {
+                    false
+                } else {
+                    *last_seen = timestamp_ms;
+                    true
+                }
+            }
+            None => {
+                self.inner
+                    .last_emitted_timestamps_ms
+                    .insert(key, timestamp_ms);
+                true
+            }
+        }
+    }
+
+    async fn replay_after_reconnect(&self, ws: &Arc<WebSocketClient>) -> anyhow::Result<()> {
+        let _guard = self.inner.wire_mutex.lock().await;
+        self.reconcile_live_locked(ws, true).await
     }
 }
 
@@ -806,7 +963,20 @@ fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
 
 #[cfg(test)]
 mod tests {
+    use std::{net::SocketAddr, sync::Arc, time::Duration};
+
+    use axum::{
+        Router,
+        extract::{
+            State,
+            ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
+        },
+        response::Response,
+        routing::get,
+    };
+    use futures_util::StreamExt;
     use nautilus_common::messages::DataEvent;
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
     use rstest::rstest;
     use serde_json::json;
@@ -848,13 +1018,68 @@ mod tests {
         (feed, rx)
     }
 
+    #[derive(Clone, Default)]
+    struct TestServerState {
+        received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    }
+
+    async fn handle_rtds_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<TestServerState>,
+    ) -> Response {
+        ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
+    }
+
+    async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
+        while let Some(result) = socket.next().await {
+            let Ok(message) = result else { break };
+
+            match message {
+                AxumWsMessage::Text(text) => {
+                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
+                    };
+                    state.received_payloads.lock().await.push(payload);
+                }
+                AxumWsMessage::Ping(data) => {
+                    if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
+                        break;
+                    }
+                }
+                AxumWsMessage::Close(_) => break,
+                _ => {}
+            }
+        }
+    }
+
+    async fn start_rtds_server(state: TestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind RTDS test server");
+        let addr = listener
+            .local_addr()
+            .expect("missing RTDS test server address");
+        let router = Router::new()
+            .route("/rtds", get(handle_rtds_upgrade))
+            .with_state(state);
+
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("RTDS test server failed");
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        addr
+    }
+
     #[rstest]
     fn test_track_subscribe_reuses_symbol_wire_subscription() {
         let (feed, _rx) = make_feed();
-        let first_wire = feed
+        let first_changed = feed
             .track_subscribe(crypto_data_type("BTCUSDT"))
             .expect("track first");
-        let second_wire = feed
+        let second_changed = feed
             .track_subscribe(crypto_data_type("btcusdt"))
             .expect("track second");
 
@@ -864,27 +1089,21 @@ mod tests {
             2,
             "distinct DataType topics should share one wire subscription",
         );
-        assert_eq!(
-            first_wire.and_then(|wire| wire.filters),
-            Some(r#"{"symbol":"BTCUSDT"}"#.to_string())
-        );
-        assert!(second_wire.is_none());
+        assert!(first_changed);
+        assert!(!second_changed);
     }
 
     #[rstest]
-    fn test_track_subscribe_returns_new_symbol_wire_subscription() {
+    fn test_track_subscribe_returns_changed_for_new_symbol() {
         let (feed, _rx) = make_feed();
         feed.track_subscribe(crypto_data_type("BTCUSDT"))
             .expect("track first symbol");
 
-        let wire = feed
+        let changed = feed
             .track_subscribe(crypto_data_type("ETHUSDT"))
-            .expect("track second symbol")
-            .expect("wire subscription");
+            .expect("track second symbol");
 
-        assert_eq!(wire.topic, "crypto_prices");
-        assert_eq!(wire.msg_type, "update");
-        assert_eq!(wire.filters.as_deref(), Some(r#"{"symbol":"ETHUSDT"}"#));
+        assert!(changed);
     }
 
     #[rstest]
@@ -946,6 +1165,21 @@ mod tests {
             assert_eq!(payload.price_timestamp_ms, expected_ts);
             assert_eq!(payload.message_timestamp_ms, 1780726213178);
         }
+    }
+
+    #[rstest]
+    fn test_handle_crypto_price_subscribe_skips_duplicate_snapshot_points() {
+        let (feed, mut rx) = make_feed();
+        let data_type = crypto_data_type("BTCUSDT");
+        feed.track_subscribe(data_type).expect("track subscribe");
+
+        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+
+        while rx.try_recv().is_ok() {}
+
+        feed.handle_text_for_test(RTDS_CRYPTO_SUBSCRIBE_FIXTURE);
+
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1014,19 +1248,220 @@ mod tests {
     }
 
     #[rstest]
+    fn test_handle_equity_price_subscribe_skips_duplicate_snapshot_points() {
+        let (feed, mut rx) = make_feed();
+        let data_type = equity_data_type("AAPL");
+        feed.track_subscribe(data_type).expect("track subscribe");
+
+        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+
+        while rx.try_recv().is_ok() {}
+
+        feed.handle_text_for_test(RTDS_EQUITY_SUBSCRIBE_FIXTURE);
+
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_track_unsubscribe_removes_last_symbol_reference() {
         let (feed, _rx) = make_feed();
         let data_type = equity_data_type("AAPL");
-        feed.track_subscribe(data_type.clone())
-            .expect("track subscribe");
+        assert!(
+            feed.track_subscribe(data_type.clone())
+                .expect("track subscribe")
+        );
 
-        let wire = feed
-            .track_unsubscribe(&data_type)
-            .expect("track unsubscribe")
-            .expect("wire unsubscribe");
-
+        assert!(
+            feed.track_unsubscribe(&data_type)
+                .expect("track unsubscribe")
+        );
         assert_eq!(feed.tracked_subscription_count(), 0);
-        assert_eq!(wire.topic, "equity_prices");
-        assert_eq!(wire.filters.as_deref(), Some(r#"{"symbol":"AAPL"}"#));
+        assert!(
+            !feed
+                .track_unsubscribe(&data_type)
+                .expect("repeat unsubscribe should no-op")
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_sync_subscribes_only_new_symbol_while_connected() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        assert!(
+            feed.track_subscribe(crypto_data_type("ETHUSDT"))
+                .expect("track ETH")
+        );
+        feed.sync_live_once().await.expect("sync live");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { state.received_payloads.lock().await.len() >= 2 }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let incremental = payloads.last().expect("incremental payload");
+        let subscriptions = incremental["subscriptions"]
+            .as_array()
+            .expect("subscriptions array");
+
+        assert_eq!(incremental["action"].as_str(), Some("subscribe"));
+        assert_eq!(subscriptions.len(), 1);
+        assert!(
+            subscriptions
+                .iter()
+                .filter_map(|sub| sub["filters"].as_str())
+                .any(|filters| filters == r#"{"symbol":"ETHUSDT"}"#)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_sync_unsubscribes_only_removed_symbol_while_connected() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let btc = crypto_data_type("BTCUSDT");
+        let eth = crypto_data_type("ETHUSDT");
+        assert!(feed.track_subscribe(btc).expect("track BTC"));
+        assert!(feed.track_subscribe(eth.clone()).expect("track ETH"));
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        assert!(feed.track_unsubscribe(&eth).expect("track unsubscribe"));
+        feed.sync_live_once().await.expect("sync live");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let incremental = payloads.last().expect("unsubscribe payload");
+        let subscriptions = incremental["subscriptions"]
+            .as_array()
+            .expect("subscriptions array");
+
+        assert_eq!(incremental["action"].as_str(), Some("unsubscribe"));
+        assert_eq!(subscriptions.len(), 1);
+        assert_eq!(
+            subscriptions[0]["filters"].as_str(),
+            Some(r#"{"symbol":"ETHUSDT"}"#)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_schedule_sync_coalesces_new_symbols_into_one_wire_subscribe() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        let wire_guard = feed.inner.wire_mutex.lock().await;
+        assert!(
+            feed.track_subscribe(crypto_data_type("ETHUSDT"))
+                .expect("track ETH")
+        );
+        feed.schedule_sync();
+        assert!(
+            feed.track_subscribe(crypto_data_type("SOLUSDT"))
+                .expect("track SOL")
+        );
+        feed.schedule_sync();
+        drop(wire_guard);
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                let feed = feed.clone();
+                async move {
+                    state.received_payloads.lock().await.len() == 1 && !feed.sync_running_for_test()
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let incremental = payloads.last().expect("coalesced payload");
+        let subscriptions = incremental["subscriptions"]
+            .as_array()
+            .expect("subscriptions array");
+        let filters: Vec<&str> = subscriptions
+            .iter()
+            .filter_map(|sub| sub["filters"].as_str())
+            .collect();
+
+        assert_eq!(incremental["action"].as_str(), Some("subscribe"));
+        assert_eq!(subscriptions.len(), 2);
+        assert!(filters.contains(&r#"{"symbol":"ETHUSDT"}"#));
+        assert!(filters.contains(&r#"{"symbol":"SOLUSDT"}"#));
     }
 }

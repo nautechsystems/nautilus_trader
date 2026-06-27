@@ -391,20 +391,16 @@ impl DataClient for PolymarketDataClient {
             "Tracking Polymarket RTDS custom data subscription: {}",
             cmd.data_type
         );
-        let Some(wire) = self.rtds_feed.track_subscribe(cmd.data_type)? else {
+        let changed = self.rtds_feed.track_subscribe(cmd.data_type)?;
+        if !changed {
             return Ok(());
-        };
+        }
 
         if !self.is_connected() {
             return Ok(());
         }
 
-        let feed = self.rtds_feed.clone();
-        get_runtime().spawn(async move {
-            if let Err(e) = feed.subscribe_live(wire).await {
-                log::error!("Failed to subscribe RTDS custom data: {e}");
-            }
-        });
+        self.rtds_feed.schedule_sync();
 
         Ok(())
     }
@@ -527,20 +523,16 @@ impl DataClient for PolymarketDataClient {
             "Tracking Polymarket RTDS custom data unsubscription: {}",
             cmd.data_type
         );
-        let Some(wire) = self.rtds_feed.track_unsubscribe(&cmd.data_type)? else {
+        let changed = self.rtds_feed.track_unsubscribe(&cmd.data_type)?;
+        if !changed {
             return Ok(());
-        };
+        }
 
         if !self.is_connected() {
             return Ok(());
         }
 
-        let feed = self.rtds_feed.clone();
-        get_runtime().spawn(async move {
-            if let Err(e) = feed.unsubscribe_live(wire).await {
-                log::error!("Failed to unsubscribe RTDS custom data: {e}");
-            }
-        });
+        self.rtds_feed.schedule_sync();
 
         Ok(())
     }
