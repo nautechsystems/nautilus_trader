@@ -149,8 +149,8 @@ fn portfolio(
     simple_cache.add_instrument(instrument_ethusdt).unwrap();
 
     Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     )
 }
@@ -585,8 +585,8 @@ fn test_order_topic_republishes_last_account_state_without_order_update(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     portfolio.update_account(&cash_account_state);
@@ -639,8 +639,8 @@ fn test_order_endpoint_then_topic_publishes_account_state_once(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     portfolio.update_account(&cash_account_state);
@@ -726,8 +726,8 @@ fn test_position_update_publishes_margin_account_state(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     let account_state = get_margin_account(Some(account_id.as_str()));
@@ -797,8 +797,8 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     let account_state = get_margin_account(Some(account_id.as_str()));
@@ -867,8 +867,8 @@ fn test_cash_order_updates_use_event_account_orders(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
 
@@ -997,8 +997,8 @@ fn test_account_updates_use_event_account_orders_and_positions(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
 
@@ -1172,8 +1172,8 @@ fn test_cash_fill_endpoint_then_position_publishes_account_state_once(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     portfolio.update_account(&cash_account_state);
@@ -1249,8 +1249,8 @@ fn test_rejected_endpoint_then_topic_republishes_existing_account_state_once(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
     portfolio.update_account(&cash_account_state);
@@ -1491,7 +1491,7 @@ fn test_update_order_without_account_state_restores_account(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
 
     portfolio.update_order(&OrderEventAny::Accepted(accepted));
 
@@ -1536,7 +1536,7 @@ fn test_update_order_filled_restores_account_before_unrealized_pnl(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
     let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
@@ -1588,7 +1588,7 @@ fn test_update_order_filled_without_cached_order_updates_account(
     simple_cache.add_account(account).unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(cache.clone(), Rc::new(RefCell::new(clock)), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
     let filled = build_order_filled(
         TraderId::test_default(),
         StrategyId::test_default(),
@@ -1642,7 +1642,7 @@ fn test_update_order_filled_spread_instrument_skips_balance_update(
         .unwrap();
 
     let cache = Rc::new(RefCell::new(simple_cache));
-    let mut portfolio = Portfolio::new(cache, Rc::new(RefCell::new(clock)), None);
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache, None);
     let filled = build_order_filled(
         order.trader_id(),
         order.strategy_id(),
@@ -1819,7 +1819,7 @@ fn test_initialize_orders_cash_account_with_base_currency() {
 
     let cache = Rc::new(RefCell::new(cache));
     let clock = Rc::new(RefCell::new(TestClock::new()));
-    let mut portfolio = Portfolio::new(cache.clone(), clock, None);
+    let mut portfolio = Portfolio::new(clock, cache.clone(), None);
 
     // Cash account with base_currency set (like Polymarket with USDC)
     let account_state = AccountState::new(
@@ -2924,8 +2924,8 @@ fn test_position_records_account_currency_realized_pnl(
         .build()
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -4320,8 +4320,8 @@ fn test_snapshot_timer_arms_and_disarms_on_position_lifecycle(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -4761,8 +4761,8 @@ fn test_equity_cash_account_foreign_settlement_converts(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -4842,8 +4842,8 @@ fn test_equity_rounds_once_across_small_foreign_positions(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -4921,8 +4921,8 @@ fn test_missing_xrate_flags_instrument(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -5188,8 +5188,8 @@ fn test_initialize_positions_arms_snapshot_timer_for_reconciled_venues(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -5237,7 +5237,7 @@ fn test_emit_snapshot_publishes_and_appends_to_ring(instrument_audusd: Instrumen
         .snapshot_interval_ms(1_000)
         .build()
         .unwrap();
-    let mut portfolio = Portfolio::new(cache, clock, Some(config));
+    let mut portfolio = Portfolio::new(clock, cache, Some(config));
 
     // Capture published snapshots
     let captured: Rc<RefCell<Vec<PortfolioSnapshot>>> = Rc::new(RefCell::new(Vec::new()));
@@ -5317,8 +5317,8 @@ fn test_reset_cancels_snapshot_timers(
         .unwrap();
 
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         Some(config),
     );
 
@@ -5379,8 +5379,8 @@ fn test_portfolio_statistics_returns_snapshot(
         .add_instrument(instrument_audusd.clone())
         .unwrap();
     let mut portfolio = Portfolio::new(
-        Rc::new(RefCell::new(simple_cache)),
         Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
         None,
     );
 

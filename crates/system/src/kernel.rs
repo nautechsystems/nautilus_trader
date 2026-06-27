@@ -15,13 +15,14 @@
 
 use std::{
     cell::{Cell, Ref, RefCell},
+    fmt::Debug,
     rc::Rc,
     time::Duration,
 };
 
 use nautilus_common::{
     cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
-    clock::{Clock, TestClock},
+    clock::Clock,
     component::Component,
     enums::Environment,
     logging::{
@@ -96,6 +97,53 @@ pub struct NautilusKernel {
     event_store_replay: bool,
 }
 
+/// Optional construction-time dependencies for [`NautilusKernel`].
+#[derive(Default)]
+pub struct NautilusKernelDependencies {
+    clock_factory: Option<ClockFactory>,
+    cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
+    event_store_factory: Option<EventStoreFactory>,
+}
+
+impl Debug for NautilusKernelDependencies {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(NautilusKernelDependencies))
+            .field("clock_factory", &self.clock_factory.is_some())
+            .field("cache_database", &self.cache_database.is_some())
+            .field("event_store_factory", &self.event_store_factory.is_some())
+            .finish()
+    }
+}
+
+impl NautilusKernelDependencies {
+    /// Add a clock factory.
+    #[must_use]
+    pub fn with_clock_factory(mut self, clock_factory: Option<ClockFactory>) -> Self {
+        self.clock_factory = clock_factory;
+        self
+    }
+
+    /// Add a cache database adapter.
+    #[must_use]
+    pub fn with_cache_database(
+        mut self,
+        cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
+    ) -> Self {
+        self.cache_database = cache_database;
+        self
+    }
+
+    /// Add an event-store factory.
+    #[must_use]
+    pub fn with_event_store_factory(
+        mut self,
+        event_store_factory: Option<EventStoreFactory>,
+    ) -> Self {
+        self.event_store_factory = event_store_factory;
+        self
+    }
+}
+
 impl NautilusKernel {
     /// Create a new [`NautilusKernelBuilder`] for fluent configuration.
     #[must_use]
@@ -113,7 +161,7 @@ impl NautilusKernel {
     ///
     /// Returns an error if the kernel fails to initialize.
     pub fn new<T: NautilusKernelConfig + 'static>(name: String, config: T) -> anyhow::Result<Self> {
-        Self::new_with(name, config, None, None, None)
+        Self::new_with(name, config, None, None)
     }
 
     /// Create a new [`NautilusKernel`] instance with an injected cache database adapter.
@@ -131,7 +179,7 @@ impl NautilusKernel {
         config: T,
         cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
     ) -> anyhow::Result<Self> {
-        Self::new_with(name, config, cache_database, None, None)
+        Self::new_with(name, config, cache_database, None)
     }
 
     /// Create a new [`NautilusKernel`] instance with optional cache database and event store
@@ -150,8 +198,31 @@ impl NautilusKernel {
         config: T,
         cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
         event_store_factory: Option<EventStoreFactory>,
-        clock_factory: Option<ClockFactory>,
     ) -> anyhow::Result<Self> {
+        Self::new_with_dependencies(
+            name,
+            config,
+            NautilusKernelDependencies::default()
+                .with_cache_database(cache_database)
+                .with_event_store_factory(event_store_factory),
+        )
+    }
+
+    /// Create a new [`NautilusKernel`] instance with construction-time dependencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the kernel fails to initialize or an injected factory fails.
+    pub fn new_with_dependencies<T: NautilusKernelConfig + 'static>(
+        name: String,
+        config: T,
+        dependencies: NautilusKernelDependencies,
+    ) -> anyhow::Result<Self> {
+        let NautilusKernelDependencies {
+            clock_factory,
+            cache_database,
+            event_store_factory,
+        } = dependencies;
         let instance_id = config.instance_id().unwrap_or_default();
         let machine_id = Self::determine_machine_id()?;
 
@@ -166,7 +237,9 @@ impl NautilusKernel {
 
         log::info!("Building system kernel");
 
-        let clock = Self::initialize_clock(config.environment(), clock_factory.as_ref());
+        let clock_factory =
+            clock_factory.unwrap_or_else(|| ClockFactory::for_environment(config.environment()));
+        let clock = clock_factory.clock();
         let event_store = match event_store_factory {
             Some(factory) => Some(factory(instance_id, clock.clone())?),
             None => None,
@@ -188,8 +261,8 @@ impl NautilusKernel {
         }
 
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             config.portfolio(),
         )));
 
@@ -221,10 +294,9 @@ impl NautilusKernel {
             config.trader_id(),
             instance_id,
             config.environment(),
-            clock.clone(),
+            clock_factory,
             cache.clone(),
             portfolio.clone(),
-            clock_factory,
         )));
 
         let ts_created = clock.borrow().timestamp_ns();
@@ -313,39 +385,6 @@ impl NautilusKernel {
         }
 
         Ok(log_guard)
-    }
-
-    fn initialize_clock(
-        environment: Environment,
-        clock_factory: Option<&ClockFactory>,
-    ) -> Rc<RefCell<dyn Clock>> {
-        match environment {
-            Environment::Backtest => {
-                let test_clock = TestClock::new();
-                Rc::new(RefCell::new(test_clock))
-            }
-            #[cfg(feature = "live")]
-            Environment::Live | Environment::Sandbox => {
-                if let Some(factory) = clock_factory {
-                    factory()
-                } else {
-                    let live_clock = nautilus_common::live::clock::LiveClock::default(); // nautilus-import-ok
-                    Rc::new(RefCell::new(live_clock))
-                }
-            }
-            #[cfg(not(feature = "live"))]
-            Environment::Live | Environment::Sandbox => {
-                if let Some(factory) = clock_factory {
-                    factory()
-                } else {
-                    panic!(
-                        "Live/Sandbox environment requires the 'live' feature to be enabled. \
-                         Build with `--features live` or supply a clock factory via \
-                         NautilusKernelBuilder::with_clock_factory / LiveNodeBuilder::with_clock_factory."
-                    );
-                }
-            }
-        }
     }
 
     fn initialize_cache(

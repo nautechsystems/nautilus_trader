@@ -39,7 +39,7 @@ use nautilus_system::{
     clock_factory::ClockFactory,
     config::StreamingConfig,
     event_store::{EventStoreFactory, KernelEventStore},
-    kernel::NautilusKernel,
+    kernel::{NautilusKernel, NautilusKernelDependencies},
 };
 
 use super::{
@@ -272,6 +272,16 @@ impl LiveNodeBuilder {
         self
     }
 
+    /// Inject a caller-supplied clock factory for the kernel and component clocks.
+    #[must_use]
+    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
+    {
+        self.clock_factory = Some(ClockFactory::new(factory));
+        self
+    }
+
     /// Set the cache configuration.
     #[must_use]
     pub fn with_cache_config(mut self, config: CacheConfig) -> Self {
@@ -351,16 +361,6 @@ impl LiveNodeBuilder {
             + 'static,
     {
         self.event_store_factory = Some(Box::new(factory));
-        self
-    }
-
-    /// Inject a caller-supplied clock factory for the kernel and component clocks.
-    #[must_use]
-    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
-    where
-        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
-    {
-        self.clock_factory = Some(Rc::new(factory));
         self
     }
 
@@ -511,12 +511,12 @@ impl LiveNodeBuilder {
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
-        let kernel = NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with_dependencies(
             self.name.clone(),
             self.config.clone(),
-            None,
-            self.event_store_factory.take(),
-            self.clock_factory.take(),
+            NautilusKernelDependencies::default()
+                .with_clock_factory(self.clock_factory.take())
+                .with_event_store_factory(self.event_store_factory.take()),
         )?;
 
         self.install_external_msgbus_factory(&kernel)?;

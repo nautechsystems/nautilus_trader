@@ -147,8 +147,8 @@ impl Debug for Portfolio {
 
 impl Portfolio {
     pub fn new(
-        cache: Rc<RefCell<Cache>>,
         clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
         config: Option<PortfolioConfig>,
     ) -> Self {
         let config = config.unwrap_or_default();

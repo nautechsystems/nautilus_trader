@@ -36,7 +36,7 @@ use crate::{
     clock_factory::ClockFactory,
     config::KernelConfig,
     event_store::{EventStoreFactory, KernelEventStore},
-    kernel::NautilusKernel,
+    kernel::{NautilusKernel, NautilusKernelDependencies},
 };
 
 /// Builder for constructing a [`NautilusKernel`] with a fluent API.
@@ -58,6 +58,7 @@ pub struct NautilusKernelBuilder {
     timeout_disconnection: Duration,
     delay_post_stop: Duration,
     timeout_shutdown: Duration,
+    clock_factory: Option<ClockFactory>,
     cache: Option<CacheConfig>,
     cache_database: Option<Box<dyn CacheDatabaseAdapter>>,
     data_engine: Option<DataEngineConfig>,
@@ -66,7 +67,6 @@ pub struct NautilusKernelBuilder {
     portfolio: Option<PortfolioConfig>,
     msgbus: Option<MessageBusConfig>,
     event_store_factory: Option<EventStoreFactory>,
-    clock_factory: Option<ClockFactory>,
     external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
     external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
 }
@@ -88,6 +88,7 @@ impl Debug for NautilusKernelBuilder {
             .field("timeout_disconnection", &self.timeout_disconnection)
             .field("delay_post_stop", &self.delay_post_stop)
             .field("timeout_shutdown", &self.timeout_shutdown)
+            .field("clock_factory", &self.clock_factory.is_some())
             .field("cache", &self.cache)
             .field("cache_database", &self.cache_database.is_some())
             .field("data_engine", &self.data_engine)
@@ -96,7 +97,6 @@ impl Debug for NautilusKernelBuilder {
             .field("portfolio", &self.portfolio)
             .field("msgbus", &self.msgbus)
             .field("event_store_factory", &self.event_store_factory.is_some())
-            .field("clock_factory", &self.clock_factory.is_some())
             .field(
                 "external_msgbus_factory",
                 &self.external_msgbus_factory.is_some(),
@@ -128,6 +128,7 @@ impl NautilusKernelBuilder {
             timeout_disconnection: Duration::from_secs(10),
             delay_post_stop: Duration::from_secs(10),
             timeout_shutdown: Duration::from_secs(5),
+            clock_factory: None,
             cache: None,
             cache_database: None,
             data_engine: None,
@@ -136,7 +137,6 @@ impl NautilusKernelBuilder {
             portfolio: None,
             msgbus: None,
             event_store_factory: None,
-            clock_factory: None,
             external_msgbus_factory: None,
             external_msgbus_egress: None,
         }
@@ -221,6 +221,20 @@ impl NautilusKernelBuilder {
         self
     }
 
+    /// Inject a caller-supplied clock factory for the kernel and component clocks.
+    ///
+    /// The factory is invoked for the kernel clock and once per registered component. Each
+    /// invocation should return a fresh instance. Without a factory, live/sandbox systems use
+    /// `LiveClock::default()`.
+    #[must_use]
+    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
+    {
+        self.clock_factory = Some(ClockFactory::new(factory));
+        self
+    }
+
     /// Set the cache configuration.
     #[must_use]
     pub fn with_cache_config(mut self, config: CacheConfig) -> Self {
@@ -293,20 +307,6 @@ impl NautilusKernelBuilder {
         self
     }
 
-    /// Inject a caller-supplied clock factory for the kernel and component clocks.
-    ///
-    /// The factory is invoked for the kernel clock and once per registered component. Each
-    /// invocation should return a fresh instance. Without a factory, live/sandbox systems use
-    /// `LiveClock::default()`.
-    #[must_use]
-    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
-    where
-        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
-    {
-        self.clock_factory = Some(Rc::new(factory));
-        self
-    }
-
     /// Inject external message bus egress for serialized message bus publications.
     #[must_use]
     pub fn with_external_msgbus_egress(
@@ -373,12 +373,13 @@ impl NautilusKernelBuilder {
             streaming: None,
         };
 
-        let kernel = NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with_dependencies(
             self.name,
             config,
-            self.cache_database,
-            self.event_store_factory,
-            self.clock_factory,
+            NautilusKernelDependencies::default()
+                .with_clock_factory(self.clock_factory)
+                .with_cache_database(self.cache_database)
+                .with_event_store_factory(self.event_store_factory),
         )?;
 
         let config = kernel.config.msgbus().unwrap_or_default();

@@ -108,7 +108,7 @@ impl Harness {
         let instrument_id = instrument.id();
         cache.borrow_mut().add_instrument(instrument).unwrap();
 
-        let portfolio = Portfolio::new(cache.clone(), clock.clone(), None);
+        let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
         let risk_engine = Rc::new(RefCell::new(RiskEngine::new(
             RiskEngineConfig::default(),
             portfolio,
@@ -308,8 +308,8 @@ impl Harness {
 
         let mut tester = ExecTester::new(config);
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            self.cache.clone(),
             self.clock.clone(),
+            self.cache.clone(),
             None,
         )));
         StrategyNative::strategy_core_mut(&mut tester)

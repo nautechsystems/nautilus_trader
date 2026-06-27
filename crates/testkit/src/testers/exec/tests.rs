@@ -63,8 +63,8 @@ fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
-        cache.clone(),
         clock.clone(),
+        cache.clone(),
         None,
     )));
 
