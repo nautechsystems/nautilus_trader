@@ -68,6 +68,7 @@ from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import filename_to_class
 from nautilus_trader.persistence.funcs import urisafe_identifier
+from nautilus_trader.serialization.arrow.serializer import _RUST_CUSTOM_TYPE_REGISTRY
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 
 
@@ -81,14 +82,6 @@ NautilusRustDataType = Union[  # noqa: UP007 (mypy does not like pipe operators)
     nautilus_pyo3.Bar,
     nautilus_pyo3.OptionGreeks,
 ]
-
-
-# Rust custom data types that have been registered via ensure_custom_data_registered
-# and can be queried through the DataFusion/Rust backend using add_custom_file.
-# Types listed here must have compatible Arrow schemas between their Python and Rust
-# encoders, and must be written with the Rust encoder for the Rust read path to work.
-# Custom data is returned as Python lists (not FFI capsules) from the Rust backend.
-_RUST_CUSTOM_DATA_TYPES: set[str] = {"BinanceBar"}
 
 
 class FeatherFile(NamedTuple):
@@ -1709,7 +1702,21 @@ class ParquetDataCatalog(BaseDataCatalog):
                         continue
 
                     inner = item.data if hasattr(item, "data") else item
-                    data.append(data_cls.from_dict(inner.to_dict()))  # type: ignore[attr-defined]
+
+                    if isinstance(inner, data_cls):
+                        data.append(inner)
+                    else:
+                        from_dict = getattr(data_cls, "from_dict", None)
+                        to_dict = getattr(inner, "to_dict", None)
+
+                        if callable(from_dict) and callable(to_dict):
+                            data.append(from_dict(to_dict()))
+                            continue
+
+                        raise TypeError(
+                            f"Cannot reconstruct Rust custom data `{data_cls.__name__}` "
+                            "from catalog query result",
+                        )
             else:
                 data.extend(capsule_to_list(chunk))
                 # Reclaim the leaked Vec<DataFFI>; capsule has a no-op destructor
@@ -2017,7 +2024,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         Check if data_cls is a Rust custom data type with Arrow support.
         """
-        return hasattr(data_cls, "__name__") and data_cls.__name__ in _RUST_CUSTOM_DATA_TYPES
+        return hasattr(data_cls, "__name__") and data_cls.__name__ in _RUST_CUSTOM_TYPE_REGISTRY
 
     def _build_query(
         self,
@@ -2223,9 +2230,14 @@ class ParquetDataCatalog(BaseDataCatalog):
             List of file paths matching the data class.
 
         """
-        file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
-        glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
+
+        if self._is_rust_custom_data(data_cls):
+            glob_path = f"{base_path}/data/custom/{data_cls.__name__}/**/*.parquet"
+        else:
+            file_prefix = class_to_filename(data_cls)
+            glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
+
         file_paths: list[str] = self.fs.glob(glob_path)
 
         return file_paths
@@ -2386,10 +2398,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls: type[Data],
         identifier: str | None = None,
     ) -> str:
-        file_prefix = class_to_filename(data_cls)
         # Remove trailing slash from path to avoid double slashes
         base_path = self.path.rstrip("/")
-        directory = f"{base_path}/data/{file_prefix}"
+
+        if self._is_rust_custom_data(data_cls):
+            directory = f"{base_path}/data/custom/{data_cls.__name__}"
+        else:
+            file_prefix = class_to_filename(data_cls)
+            directory = f"{base_path}/data/{file_prefix}"
 
         # Identifier can be an instrument_id or a bar_type
         if identifier is not None:
@@ -2409,7 +2425,28 @@ class ParquetDataCatalog(BaseDataCatalog):
         A list of data type names (as directory stems) in the catalog.
 
         """
-        return self._list_directory_stems("data")
+        data_types = self._list_directory_stems("data")
+
+        if "custom" not in data_types:
+            return data_types
+
+        expanded: list[str] = []
+
+        for data_type in data_types:
+            if data_type != "custom":
+                expanded.append(data_type)
+                continue
+
+            custom_glob = f"{self.path.rstrip('/')}/data/custom/*"
+            for path in sorted(self.fs.glob(custom_glob)):
+                if not self.fs.isdir(path):
+                    continue
+
+                type_name = Path(path).stem
+                data_cls = _RUST_CUSTOM_TYPE_REGISTRY.get(type_name)
+                expanded.append(class_to_filename(data_cls) if data_cls is not None else type_name)
+
+        return list(dict.fromkeys(expanded))
 
     def list_backtest_runs(self) -> list[str]:
         """

@@ -19,9 +19,12 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.adapters.binance import BinanceFuturesLiquidation
+from nautilus_trader.adapters.binance import BinanceFuturesOpenInterest
+from nautilus_trader.adapters.binance import BinanceFuturesTicker
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.objects import Price
@@ -357,6 +360,59 @@ def test_binance_futures_liquidation_type_supports_all_market_subscription() -> 
     # Assert
     assert data_type.type == BinanceFuturesLiquidation
     assert data_type.metadata == {}
+
+
+def test_binance_rust_custom_types_support_python_strategy_surfaces(tmp_path) -> None:
+    # Uses file protocol because the Rust query path is part of the contract being verified.
+    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
+    pyo3_catalog = nautilus_pyo3.ParquetDataCatalog(catalog.path)
+    instrument_id = nautilus_pyo3.InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
+
+    ticker_type = DataType(
+        BinanceFuturesTicker,
+        metadata={"instrument_id": instrument_id.value},
+    )
+    open_interest_type = DataType(
+        BinanceFuturesOpenInterest,
+        metadata={"instrument_id": instrument_id.value},
+    )
+
+    assert ticker_type.type == BinanceFuturesTicker
+    assert open_interest_type.type == BinanceFuturesOpenInterest
+
+    ticker = BinanceFuturesTicker(
+        instrument_id,
+        "1.0",
+        "2.0",
+        "100.0",
+        "101.0",
+        "0.1",
+        "99.0",
+        "102.0",
+        "98.0",
+        "10.0",
+        "1000.0",
+        5,
+        6,
+        1,
+        2,
+        3,
+        7,
+        7,
+    )
+    ticker_data_type = nautilus_pyo3.model.DataType(
+        "BinanceFuturesTicker",
+        None,
+        instrument_id.value,
+    )
+    pyo3_catalog.write_custom_data([nautilus_pyo3.model.CustomData(ticker_data_type, ticker)])
+
+    result = catalog.query(BinanceFuturesTicker, identifiers=[instrument_id.value])
+
+    assert len(result) == 1
+    assert isinstance(result[0], BinanceFuturesTicker)
+    assert str(result[0].instrument_id) == instrument_id.value
+    assert str(result[0].last_price) == "101.0"
 
 
 @pytest.fixture

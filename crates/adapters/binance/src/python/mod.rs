@@ -121,6 +121,13 @@ fn py_decode_binance_futures_client_order_id(encoded: &str) -> String {
     decode_broker_id(encoded, BINANCE_NAUTILUS_FUTURES_BROKER_ID)
 }
 
+fn register_binance_custom_data_for_python_query() {
+    register_binance_custom_data();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesLiquidation>();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesTicker>();
+    let _result = ensure_rust_extractor_registered::<BinanceFuturesOpenInterest>();
+}
+
 /// Binance adapter Python module.
 ///
 /// Loaded as `nautilus_pyo3.binance`.
@@ -159,15 +166,10 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         py_decode_binance_futures_client_order_id,
         m
     )?)?;
-
     // Register BinanceBar for Arrow/JSON serialization and Python extraction
     ensure_custom_data_registered::<BinanceBar>();
     let _result = ensure_rust_extractor_registered::<BinanceBar>();
-    register_binance_custom_data();
-    let _result = ensure_rust_extractor_registered::<BinanceFuturesLiquidation>();
-    let _result = ensure_rust_extractor_registered::<BinanceFuturesTicker>();
-    let _result = ensure_rust_extractor_registered::<BinanceFuturesOpenInterest>();
-    let _result = ensure_rust_extractor_registered::<BinanceFuturesOpenInterestHist>();
+    register_binance_custom_data_for_python_query();
 
     let registry = get_global_pyo3_registry();
 

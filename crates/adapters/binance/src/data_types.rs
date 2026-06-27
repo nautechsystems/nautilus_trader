@@ -27,97 +27,29 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::{Price, Quantity},
 };
+use nautilus_persistence_macros::custom_data;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Binance Futures current open interest snapshot.
 #[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
 )]
 #[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.binance")
 )]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesOpenInterest {
     /// The instrument for this snapshot.
     pub instrument_id: InstrumentId,
     /// The total open interest value.
+    #[custom_data_field(serde)]
     pub open_interest: Decimal,
     /// UNIX timestamp (nanoseconds) when the snapshot event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
-}
-
-impl BinanceFuturesOpenInterest {
-    /// Creates a new [`BinanceFuturesOpenInterest`] instance.
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        open_interest: Decimal,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            open_interest,
-            ts_event,
-            ts_init,
-        }
-    }
-}
-
-impl HasTsInit for BinanceFuturesOpenInterest {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl CustomDataTrait for BinanceFuturesOpenInterest {
-    fn type_name(&self) -> &'static str {
-        "BinanceFuturesOpenInterest"
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    fn to_json(&self) -> anyhow::Result<String> {
-        Ok(serde_json::to_string(self)?)
-    }
-
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
-
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        if let Some(o) = other.as_any().downcast_ref::<Self>() {
-            self == o
-        } else {
-            false
-        }
-    }
-
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
-    }
-
-    fn type_name_static() -> &'static str {
-        "BinanceFuturesOpenInterest"
-    }
-
-    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
-        let json_str = serde_json::to_string(&value)?;
-        let parsed: Self = serde_json::from_str(&json_str)?;
-        Ok(Arc::new(parsed))
-    }
 }
 
 /// Binance Futures historical open interest point.
@@ -256,26 +188,30 @@ impl CustomDataTrait for BinanceFuturesOpenInterestHist {
 
 /// Binance Futures liquidation update from the `forceOrder` stream.
 #[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
 )]
 #[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.binance")
 )]
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BinanceFuturesLiquidation {
     /// The instrument for this liquidation event.
     pub instrument_id: InstrumentId,
     /// The liquidation order side.
+    #[custom_data_field(serde)]
     pub side: OrderSide,
     /// The order price.
+    #[custom_data_field(serde)]
     pub price: Price,
     /// The average fill price.
+    #[custom_data_field(serde)]
     pub average_price: Price,
     /// The last filled quantity.
+    #[custom_data_field(serde)]
     pub last_filled_qty: Quantity,
     /// The cumulative filled quantity.
+    #[custom_data_field(serde)]
     pub accumulated_qty: Quantity,
     /// UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
@@ -283,116 +219,47 @@ pub struct BinanceFuturesLiquidation {
     pub ts_init: UnixNanos,
 }
 
-impl BinanceFuturesLiquidation {
-    /// Creates a new [`BinanceFuturesLiquidation`] instance.
-    #[must_use]
-    #[expect(clippy::too_many_arguments)]
-    pub fn new(
-        instrument_id: InstrumentId,
-        side: OrderSide,
-        price: Price,
-        average_price: Price,
-        last_filled_qty: Quantity,
-        accumulated_qty: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            side,
-            price,
-            average_price,
-            last_filled_qty,
-            accumulated_qty,
-            ts_event,
-            ts_init,
-        }
-    }
-}
-
-impl HasTsInit for BinanceFuturesLiquidation {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl CustomDataTrait for BinanceFuturesLiquidation {
-    fn type_name(&self) -> &'static str {
-        "BinanceFuturesLiquidation"
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    fn to_json(&self) -> anyhow::Result<String> {
-        Ok(serde_json::to_string(self)?)
-    }
-
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
-
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        if let Some(o) = other.as_any().downcast_ref::<Self>() {
-            self == o
-        } else {
-            false
-        }
-    }
-
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
-    }
-
-    fn type_name_static() -> &'static str {
-        "BinanceFuturesLiquidation"
-    }
-
-    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
-        let json_str = serde_json::to_string(&value)?;
-        let parsed: Self = serde_json::from_str(&json_str)?;
-        Ok(Arc::new(parsed))
-    }
-}
-
 /// Binance Futures 24-hour ticker statistics from the `ticker` stream.
 #[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.binance", from_py_object)
+    feature = "arrow",
+    custom_data(pyo3, stub_module = "nautilus_trader.adapters.binance")
 )]
 #[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.binance")
+    not(feature = "arrow"),
+    custom_data(pyo3, no_arrow, stub_module = "nautilus_trader.adapters.binance")
 )]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BinanceFuturesTicker {
     /// The instrument for these 24-hour statistics.
     pub instrument_id: InstrumentId,
     /// Price change over the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub price_change: Decimal,
     /// Price change percentage over the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub price_change_percent: Decimal,
     /// Weighted average price over the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub weighted_avg_price: Decimal,
     /// Last traded price.
+    #[custom_data_field(serde)]
     pub last_price: Decimal,
     /// Last traded quantity.
+    #[custom_data_field(serde)]
     pub last_qty: Decimal,
     /// Open price for the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub open_price: Decimal,
     /// High price for the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub high_price: Decimal,
     /// Low price for the rolling 24-hour window.
+    #[custom_data_field(serde)]
     pub low_price: Decimal,
     /// Total traded base asset volume.
+    #[custom_data_field(serde)]
     pub volume: Decimal,
     /// Total traded quote asset volume.
+    #[custom_data_field(serde)]
     pub quote_volume: Decimal,
     /// Statistics open time.
     pub open_time: UnixNanos,
@@ -410,115 +277,30 @@ pub struct BinanceFuturesTicker {
     pub ts_init: UnixNanos,
 }
 
-impl BinanceFuturesTicker {
-    /// Creates a new [`BinanceFuturesTicker`] instance.
-    #[must_use]
-    #[expect(clippy::too_many_arguments)]
-    pub fn new(
-        instrument_id: InstrumentId,
-        price_change: Decimal,
-        price_change_percent: Decimal,
-        weighted_avg_price: Decimal,
-        last_price: Decimal,
-        last_qty: Decimal,
-        open_price: Decimal,
-        high_price: Decimal,
-        low_price: Decimal,
-        volume: Decimal,
-        quote_volume: Decimal,
-        open_time: UnixNanos,
-        close_time: UnixNanos,
-        first_trade_id: i64,
-        last_trade_id: i64,
-        num_trades: i64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
-            instrument_id,
-            price_change,
-            price_change_percent,
-            weighted_avg_price,
-            last_price,
-            last_qty,
-            open_price,
-            high_price,
-            low_price,
-            volume,
-            quote_volume,
-            open_time,
-            close_time,
-            first_trade_id,
-            last_trade_id,
-            num_trades,
-            ts_event,
-            ts_init,
-        }
-    }
-}
-
-impl HasTsInit for BinanceFuturesTicker {
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
-impl CustomDataTrait for BinanceFuturesTicker {
-    fn type_name(&self) -> &'static str {
-        "BinanceFuturesTicker"
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    fn to_json(&self) -> anyhow::Result<String> {
-        Ok(serde_json::to_string(self)?)
-    }
-
-    fn clone_arc(&self) -> Arc<dyn CustomDataTrait> {
-        Arc::new(self.clone())
-    }
-
-    fn eq_arc(&self, other: &dyn CustomDataTrait) -> bool {
-        if let Some(o) = other.as_any().downcast_ref::<Self>() {
-            self == o
-        } else {
-            false
-        }
-    }
-
-    #[cfg(feature = "python")]
-    fn to_pyobject(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::Py<pyo3::PyAny>> {
-        nautilus_model::data::custom::clone_pyclass_to_pyobject(self, py)
-    }
-
-    fn type_name_static() -> &'static str {
-        "BinanceFuturesTicker"
-    }
-
-    fn from_json(value: serde_json::Value) -> anyhow::Result<Arc<dyn CustomDataTrait>> {
-        let json_str = serde_json::to_string(&value)?;
-        let parsed: Self = serde_json::from_str(&json_str)?;
-        Ok(Arc::new(parsed))
-    }
-}
-
 /// Registers Binance custom data types.
 ///
 /// Safe to call multiple times (idempotent via internal `Once` guards).
 pub fn register_binance_custom_data() {
-    let _ =
-        nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesOpenInterest>();
+    #[cfg(feature = "arrow")]
+    {
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesOpenInterest>();
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesLiquidation>();
+        nautilus_serialization::ensure_custom_data_registered::<BinanceFuturesTicker>();
+    }
+
+    #[cfg(not(feature = "arrow"))]
+    {
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<
+            BinanceFuturesOpenInterest,
+        >();
+        let _ =
+            nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesLiquidation>();
+        let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesTicker>();
+    }
+
     let _ = nautilus_model::data::ensure_custom_data_json_registered::<
         BinanceFuturesOpenInterestHist,
     >();
-    let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesLiquidation>();
-    let _ = nautilus_model::data::ensure_custom_data_json_registered::<BinanceFuturesTicker>();
 }
 
 #[cfg(test)]
@@ -528,13 +310,25 @@ mod tests {
 
     #[cfg(feature = "python")]
     use nautilus_core::Params;
-    #[cfg(feature = "python")]
+    #[cfg(feature = "arrow")]
+    use nautilus_model::data::Data;
+    #[cfg(feature = "arrow")]
     use nautilus_model::data::{CustomData, DataType};
+    #[cfg(feature = "python")]
+    use nautilus_model::data::{CustomData as PyCustomData, DataType as PyDataType};
+    #[cfg(feature = "arrow")]
+    use nautilus_persistence::backend::catalog::ParquetDataCatalog;
+    #[cfg(feature = "arrow")]
+    use nautilus_serialization::arrow::{
+        ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch,
+    };
     #[cfg(feature = "python")]
     use pyo3::{prelude::*, types::PyList};
     use rstest::rstest;
     #[cfg(feature = "python")]
     use rust_decimal::Decimal;
+    #[cfg(feature = "arrow")]
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -542,6 +336,330 @@ mod tests {
     fn test_register_binance_custom_data_is_idempotent() {
         register_binance_custom_data();
         register_binance_custom_data();
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_futures_open_interest_arrow_round_trip() {
+        let original = BinanceFuturesOpenInterest::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Decimal::from_str_exact("123456.789012345678").unwrap(),
+            UnixNanos::from(1_u64),
+            UnixNanos::from(2_u64),
+        );
+        let metadata = BinanceFuturesOpenInterest::metadata(&original);
+        let batch =
+            BinanceFuturesOpenInterest::encode_batch(&metadata, std::slice::from_ref(&original))
+                .unwrap();
+        let decoded = BinanceFuturesOpenInterest::decode_data_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        match &decoded[0] {
+            Data::Custom(custom) => {
+                let round_trip = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesOpenInterest>()
+                    .expect("expected BinanceFuturesOpenInterest");
+                assert_eq!(round_trip, &original);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_futures_liquidation_arrow_schema_uses_serde_backed_fields() {
+        use arrow::datatypes::DataType;
+
+        let schema = BinanceFuturesLiquidation::get_schema(None);
+
+        assert_eq!(schema.fields().len(), 8);
+        assert_eq!(schema.field(0).name(), "instrument_id");
+        assert!(matches!(
+            schema.field(0).data_type(),
+            DataType::Utf8 | DataType::Utf8View
+        ));
+
+        for field_name in [
+            "side",
+            "price",
+            "average_price",
+            "last_filled_qty",
+            "accumulated_qty",
+        ] {
+            let field = schema.field_with_name(field_name).unwrap();
+            assert!(matches!(
+                field.data_type(),
+                DataType::Utf8 | DataType::Utf8View
+            ));
+        }
+        assert_eq!(
+            schema.field_with_name("ts_event").unwrap().data_type(),
+            &DataType::UInt64
+        );
+        assert_eq!(
+            schema.field_with_name("ts_init").unwrap().data_type(),
+            &DataType::UInt64
+        );
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_futures_liquidation_arrow_round_trip() {
+        let original = BinanceFuturesLiquidation::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            OrderSide::Sell,
+            Price::from("65432.10"),
+            Price::from("65431.50"),
+            Quantity::from("0.250"),
+            Quantity::from("1.500"),
+            UnixNanos::from(3_u64),
+            UnixNanos::from(4_u64),
+        );
+        let metadata = BinanceFuturesLiquidation::metadata(&original);
+        let batch =
+            BinanceFuturesLiquidation::encode_batch(&metadata, std::slice::from_ref(&original))
+                .unwrap();
+        let decoded = BinanceFuturesLiquidation::decode_data_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        match &decoded[0] {
+            Data::Custom(custom) => {
+                let round_trip = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesLiquidation>()
+                    .expect("expected BinanceFuturesLiquidation");
+                assert_eq!(round_trip, &original);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_futures_ticker_arrow_round_trip() {
+        let original = BinanceFuturesTicker::new(
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            Decimal::from_str_exact("12.34").unwrap(),
+            Decimal::from_str_exact("5.67").unwrap(),
+            Decimal::from_str_exact("62345.123456").unwrap(),
+            Decimal::from_str_exact("62350.000001").unwrap(),
+            Decimal::from_str_exact("0.010000").unwrap(),
+            Decimal::from_str_exact("62000.000000").unwrap(),
+            Decimal::from_str_exact("63000.000000").unwrap(),
+            Decimal::from_str_exact("61000.000000").unwrap(),
+            Decimal::from_str_exact("1234.567890").unwrap(),
+            Decimal::from_str_exact("76543210.123456").unwrap(),
+            UnixNanos::from(10_u64),
+            UnixNanos::from(11_u64),
+            100,
+            200,
+            300,
+            UnixNanos::from(12_u64),
+            UnixNanos::from(13_u64),
+        );
+        let metadata = BinanceFuturesTicker::metadata(&original);
+        let batch =
+            BinanceFuturesTicker::encode_batch(&metadata, std::slice::from_ref(&original)).unwrap();
+        let decoded = BinanceFuturesTicker::decode_data_batch(&metadata, batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        match &decoded[0] {
+            Data::Custom(custom) => {
+                let round_trip = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesTicker>()
+                    .expect("expected BinanceFuturesTicker");
+                assert_eq!(round_trip, &original);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "arrow")]
+    #[rstest]
+    fn test_binance_futures_custom_data_catalog_round_trip() {
+        use std::sync::Arc;
+
+        register_binance_custom_data();
+        let temp_dir = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ids = vec![instrument_id.to_string()];
+
+        let liquidation_type = DataType::new(
+            "BinanceFuturesLiquidation",
+            None,
+            Some(instrument_id.to_string()),
+        );
+        let liquidation = BinanceFuturesLiquidation::new(
+            instrument_id,
+            OrderSide::Sell,
+            Price::from("65432.10"),
+            Price::from("65431.50"),
+            Quantity::from("0.250"),
+            Quantity::from("1.500"),
+            UnixNanos::from(100_u64),
+            UnixNanos::from(101_u64),
+        );
+        let liquidation_path = catalog
+            .write_custom_data_batch(
+                vec![CustomData::new(
+                    Arc::new(liquidation.clone()),
+                    liquidation_type,
+                )],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+        assert!(
+            liquidation_path
+                .to_string_lossy()
+                .contains("data/custom/BinanceFuturesLiquidation/BTCUSDT-PERP.BINANCE")
+        );
+
+        let liquidation_rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceFuturesLiquidation",
+                Some(&ids),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(liquidation_rows.len(), 1);
+        match &liquidation_rows[0] {
+            Data::Custom(custom) => {
+                let row = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesLiquidation>()
+                    .expect("expected BinanceFuturesLiquidation");
+                assert_eq!(row, &liquidation);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+
+        let ticker_type = DataType::new(
+            "BinanceFuturesTicker",
+            None,
+            Some(instrument_id.to_string()),
+        );
+        let ticker = BinanceFuturesTicker::new(
+            instrument_id,
+            Decimal::from_str_exact("12.34").unwrap(),
+            Decimal::from_str_exact("5.67").unwrap(),
+            Decimal::from_str_exact("62345.123456").unwrap(),
+            Decimal::from_str_exact("62350.000001").unwrap(),
+            Decimal::from_str_exact("0.010000").unwrap(),
+            Decimal::from_str_exact("62000.000000").unwrap(),
+            Decimal::from_str_exact("63000.000000").unwrap(),
+            Decimal::from_str_exact("61000.000000").unwrap(),
+            Decimal::from_str_exact("1234.567890").unwrap(),
+            Decimal::from_str_exact("76543210.123456").unwrap(),
+            UnixNanos::from(110_u64),
+            UnixNanos::from(111_u64),
+            100,
+            200,
+            300,
+            UnixNanos::from(112_u64),
+            UnixNanos::from(113_u64),
+        );
+        let ticker_path = catalog
+            .write_custom_data_batch(
+                vec![CustomData::new(Arc::new(ticker.clone()), ticker_type)],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+        assert!(
+            ticker_path
+                .to_string_lossy()
+                .contains("data/custom/BinanceFuturesTicker/BTCUSDT-PERP.BINANCE")
+        );
+
+        let ticker_rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceFuturesTicker",
+                Some(&ids),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(ticker_rows.len(), 1);
+        match &ticker_rows[0] {
+            Data::Custom(custom) => {
+                let row = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesTicker>()
+                    .expect("expected BinanceFuturesTicker");
+                assert_eq!(row, &ticker);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
+
+        let open_interest_type = DataType::new(
+            "BinanceFuturesOpenInterest",
+            None,
+            Some(instrument_id.to_string()),
+        );
+        let open_interest = BinanceFuturesOpenInterest::new(
+            instrument_id,
+            Decimal::from_str_exact("123456.789012345678").unwrap(),
+            UnixNanos::from(120_u64),
+            UnixNanos::from(121_u64),
+        );
+        let open_interest_path = catalog
+            .write_custom_data_batch(
+                vec![CustomData::new(
+                    Arc::new(open_interest.clone()),
+                    open_interest_type,
+                )],
+                None,
+                None,
+                Some(false),
+            )
+            .unwrap();
+        assert!(
+            open_interest_path
+                .to_string_lossy()
+                .contains("data/custom/BinanceFuturesOpenInterest/BTCUSDT-PERP.BINANCE")
+        );
+
+        let open_interest_rows = catalog
+            .query_custom_data_dynamic(
+                "BinanceFuturesOpenInterest",
+                Some(&ids),
+                None,
+                None,
+                None,
+                None,
+                true,
+            )
+            .unwrap();
+        assert_eq!(open_interest_rows.len(), 1);
+        match &open_interest_rows[0] {
+            Data::Custom(custom) => {
+                let row = custom
+                    .data
+                    .as_any()
+                    .downcast_ref::<BinanceFuturesOpenInterest>()
+                    .expect("expected BinanceFuturesOpenInterest");
+                assert_eq!(row, &open_interest);
+            }
+            other => panic!("Expected Data::Custom, was {other:?}"),
+        }
     }
 
     #[cfg(feature = "python")]
@@ -582,9 +700,9 @@ mod tests {
                 serde_json::Value::String("5m".to_string()),
             );
 
-            let custom = CustomData::new(
+            let custom = PyCustomData::new(
                 Arc::new(payload),
-                DataType::new(
+                PyDataType::new(
                     "BinanceFuturesOpenInterestHist",
                     Some(metadata),
                     Some("BTCUSDT-PERP.BINANCE".to_string()),

@@ -427,6 +427,16 @@ def register_rust_custom_serializer(
         _RUST_CUSTOM_TYPE_REGISTRY[class_name] = data_cls
 
 
+def register_rust_custom_type(
+    class_name: str,
+    data_cls: type,
+) -> None:
+    """
+    Register a Rust custom data type for catalog query/path resolution.
+    """
+    _RUST_CUSTOM_TYPE_REGISTRY[class_name] = data_cls
+
+
 # TODO - breaking while we don't have access to rust schemas
 # Check we have each type defined only once (rust or python)
 # assert not set(NAUTILUS_ARROW_SCHEMA).intersection(RUST_SERIALIZERS)

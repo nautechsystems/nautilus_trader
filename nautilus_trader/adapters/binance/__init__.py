@@ -47,12 +47,14 @@ from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPri
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.arrow.serializer import register_rust_custom_serializer
+from nautilus_trader.serialization.arrow.serializer import register_rust_custom_type
 
 
 register_serializable_type(
@@ -76,6 +78,11 @@ BinanceFuturesOpenInterestHistPoint = _binance_mod.BinanceFuturesOpenInterestHis
 BinanceFuturesOpenInterestHist = _binance_mod.BinanceFuturesOpenInterestHist
 
 
+def _register_binance_rust_query_type(data_cls: type) -> None:
+    register_custom_data_class(data_cls)
+    register_rust_custom_type(data_cls.__name__, data_cls)
+
+
 def _convert_binance_bar_to_pyo3(bar: BinanceBar) -> object:
     return _binance_mod.BinanceBar.from_dict(BinanceBar.to_dict(bar))
 
@@ -86,7 +93,6 @@ register_rust_custom_serializer(
     _convert_binance_bar_to_pyo3,
     data_cls=BinanceBar,
 )
-
 
 BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA: Final[pa.schema] = pa.schema(
     {
@@ -111,6 +117,10 @@ register_arrow(
     encoder=make_dict_serializer(BINANCE_FUTURES_MARK_PRICE_UPDATE_ARROW_SCHEMA),
     decoder=make_dict_deserializer(BinanceFuturesMarkPriceUpdate),
 )
+
+_register_binance_rust_query_type(BinanceFuturesOpenInterest)
+_register_binance_rust_query_type(BinanceFuturesLiquidation)
+_register_binance_rust_query_type(BinanceFuturesTicker)
 
 decode_binance_spot_client_order_id = nautilus_pyo3.binance.decode_binance_spot_client_order_id  # type: ignore[attr-defined]
 decode_binance_futures_client_order_id = (

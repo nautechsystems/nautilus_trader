@@ -22,6 +22,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+arrow = []
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
 high-precision = ["nautilus-model/high-precision"]
 extension-module = [
@@ -34,6 +35,7 @@ extension-module = [
   "python",
 ]
 python = [
+  "arrow",
   "dep:nautilus-system",
   "nautilus-common/python",
   "nautilus-core/python",
@@ -56,6 +58,7 @@ nautilus-core = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true }
+nautilus-persistence-macros = { workspace = true }
 nautilus-serialization = { workspace = true, features = ["sbe", "arrow"] }
 nautilus-system = { workspace = true, optional = true }
 
@@ -89,6 +92,7 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true }
 
@@ -97,6 +101,7 @@ criterion = { workspace = true }
 dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tempfile = { workspace = true }
 toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-binance --bench encoder`
