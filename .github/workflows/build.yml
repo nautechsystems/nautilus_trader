@@ -263,19 +263,6 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
-      # Fork-PR runners keep the workspace on the small root fs; bind the target
-      # dir to the larger /mnt disk (path stays workspace-relative for rust-cache).
-      - name: Back Cargo target with /mnt ephemeral disk (fork PRs)
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork
-        run: |
-          target="${{ github.workspace }}/target/build-linux-x86"
-          backing="/mnt/cargo-target/build-linux-x86"
-          sudo mkdir -p "$backing"
-          sudo chown "$(id -u):$(id -g)" "$backing"
-          mkdir -p "$target"
-          sudo mount --bind "$backing" "$target"
-          df -h / /mnt
-
       - name: Common setup
         uses: ./.github/actions/common-setup
         with:
@@ -308,6 +295,26 @@ jobs:
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data
+
+      # Fork-PR runners vary in disk size; fail early with a clear message
+      # rather than a cryptic linker Bus error when a small VM runs out.
+      - name: Check available disk space
+        if: >-
+          needs.plan.outputs.run-rust-tests == 'true'
+          && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.fork
+        run: |
+          echo "::group::Disk space before Rust tests"
+          df -h /
+          echo "::endgroup::"
+          avail_gb=$(($(df -Pk / | awk 'NR==2 {print $4}') / 1024 / 1024))
+          echo "Available on / : ${avail_gb}G"
+          if [ "${avail_gb}" -lt 25 ]; then
+            echo "::error::Only ${avail_gb}G free, runner too small for the Rust build. Re-run for a larger VM."
+            exit 1
+          elif [ "${avail_gb}" -lt 40 ]; then
+            echo "::warning::Only ${avail_gb}G free, the Rust build may run out of space, re-run if it fails."
+          fi
 
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
