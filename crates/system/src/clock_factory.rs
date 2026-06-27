@@ -26,7 +26,7 @@ use nautilus_common::clock::Clock;
 /// Cloneable factory closure invoked to construct a fresh [`Clock`] instance.
 ///
 /// Invoked once for the kernel clock and once per registered component, so it is `Fn`
-/// (re-invokable) and wrapped in [`Rc`] (the same factory is shared by the kernel and the
+/// (re-invocable) and wrapped in [`Rc`] (the same factory is shared by the kernel and the
 /// [`Trader`](crate::trader::Trader)). Each invocation must return a brand-new clock instance to
 /// preserve the per-component-instance invariant.
 pub type ClockFactory = Rc<dyn Fn() -> Rc<RefCell<dyn Clock>>>;
