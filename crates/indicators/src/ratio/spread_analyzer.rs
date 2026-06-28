@@ -88,6 +88,14 @@ impl Indicator for SpreadAnalyzer {
         self.current = spread;
         self.spreads.push(spread);
 
+        // Bound the rolling window to `capacity`, matching the Cython
+        // `deque(maxlen=capacity)`. Without this the buffer grows unbounded and
+        // `fast_mean_iterated` errors (panicking on `unwrap`) once the length
+        // exceeds `capacity`.
+        if self.spreads.len() > self.capacity {
+            self.spreads.remove(0);
+        }
+
         // Update average spread
         self.average =
             fast_mean_iterated(&self.spreads, spread, self.average, self.capacity, false).unwrap();
@@ -213,6 +221,33 @@ mod tests {
         }
 
         assert_eq!(spread_analyzer_10.average, 0.050_000_000_000_001_9);
+    }
+
+    #[rstest]
+    fn test_handles_more_inputs_than_capacity_without_panic(
+        mut spread_analyzer_10: SpreadAnalyzer,
+    ) {
+        // Regression: feeding more than `capacity` quotes must not panic, and the
+        // internal window must stay bounded to `capacity` (matching the Cython
+        // `deque(maxlen=capacity)`). Previously the unbounded buffer caused
+        // `fast_mean_iterated` to error and panic on the (capacity + 1)th quote.
+        let bid_price: [&str; 15] = [
+            "100.50", "100.45", "100.55", "100.60", "100.52", "100.48", "100.53", "100.57",
+            "100.49", "100.51", "100.54", "100.56", "100.58", "100.50", "100.52",
+        ];
+
+        let ask_price: [&str; 15] = [
+            "100.55", "100.50", "100.60", "100.65", "100.57", "100.53", "100.58", "100.62",
+            "100.54", "100.56", "100.59", "100.61", "100.63", "100.55", "100.57",
+        ];
+
+        for i in 0..15 {
+            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
+        }
+
+        assert!(spread_analyzer_10.initialized());
+        assert_eq!(spread_analyzer_10.spreads.len(), 10);
+        assert!((spread_analyzer_10.average - 0.05).abs() < 1e-9);
     }
 
     #[rstest]
