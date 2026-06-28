@@ -38,7 +38,8 @@ use nautilus_common::{
             SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes,
             SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
             UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -708,6 +709,18 @@ impl DataClient for HyperliquidDataClient {
             ws.subscribe_bars(bar_type).await
         });
 
+        Ok(())
+    }
+
+    fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
+        // `subscribe_instrument` only emits the cached instrument; it opens no
+        // venue channel, so there is nothing to tear down here.
+        Ok(())
+    }
+
+    fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
+        // See `unsubscribe_instrument`: instrument subscriptions carry no
+        // venue-side state to unsubscribe from.
         Ok(())
     }
 
