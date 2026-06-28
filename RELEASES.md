@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures `TRADING_HALT` contract status handling (Rust and Python) (#4320), thanks @YeeTsai
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
+- Fixed Interactive Brokers (Rust) stock contract resolution for non-USD and cross-listed symbols (#4335), thanks @dfjmax
 - Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
 - Fixed Lighter stop-market and market-if-touched order modification rejected for a missing price
 - Fixed Polymarket reconciliation producing out-of-range fill prices
