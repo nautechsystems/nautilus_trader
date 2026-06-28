@@ -8,35 +8,74 @@ Examples include listed futures calendar spreads and exchange-supported spread m
 
 ## Fields
 
-| Field              | Rust type          | Python type       | Required/default | Notes                                      |
-|--------------------|--------------------|-------------------|------------------|--------------------------------------------|
-| `instrument_id`    | `InstrumentId`     | `InstrumentId`    | Required         | Stored as `id` in Rust.                    |
-| `raw_symbol`       | `Symbol`           | `Symbol`          | Required         | Native venue symbol.                       |
-| `asset_class`      | `AssetClass`       | `AssetClass`      | Required         | Asset class of the underlying strategy.    |
-| `exchange`         | `Option<Ustr>`     | `str \| None`      | `None`           | Exchange MIC or venue code when known.     |
-| `underlying`       | `Ustr`             | `str`             | Required         | Underlying product or product family.      |
-| `strategy_type`    | `Ustr`             | `str`             | Required         | Venue strategy type, such as calendar.     |
-| `activation_ns`    | `UnixNanos`        | `int`             | Required         | Strategy activation timestamp.             |
-| `expiration_ns`    | `UnixNanos`        | `int`             | Required         | Strategy expiration timestamp.             |
-| `currency`         | `Currency`         | `Currency`        | Required         | Quote and settlement currency.             |
-| `price_precision`  | `u8`               | `int`             | Required         | Decimal places allowed for prices.         |
-| `price_increment`  | `Price`            | `Price`           | Required         | Smallest valid price step.                 |
-| `size_precision`   | `u8`               | `int`             | `0`              | Futures spreads trade in whole contracts.  |
-| `size_increment`   | `Quantity`         | `Quantity`        | `1`              | Minimum contract size step.                |
-| `multiplier`       | `Quantity`         | `Quantity`        | Required         | Strategy multiplier.                       |
-| `lot_size`         | `Quantity`         | `Quantity`        | Required         | Rounded lot or contract lot size.          |
-| `margin_init`      | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                       |
-| `margin_maint`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                   |
-| `maker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.    |
-| `taker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.    |
-| `max_quantity`     | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                    |
-| `min_quantity`     | `Option<Quantity>` | `Quantity \| None` | `1`              | Minimum order quantity.                    |
-| `max_price`        | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.        |
-| `min_price`        | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.        |
-| `tick_scheme_name` | N/A                | `str \| None`      | `None`           | Registered variable tick scheme name.      |
-| `info`             | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                          |
-| `ts_event`         | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`          | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds.   |
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field             | Type               | Required/default | Notes                                     |
+|-------------------|--------------------|------------------|-------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         | Stored as `id` in Rust.                   |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                      |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the underlying strategy.   |
+| `exchange`        | `Option<Ustr>`     | `None`           | Exchange MIC or venue code when known.    |
+| `underlying`      | `Ustr`             | Required         | Underlying product or product family.     |
+| `strategy_type`   | `Ustr`             | Required         | Venue strategy type, such as calendar.    |
+| `activation_ns`   | `UnixNanos`        | Required         | Strategy activation timestamp.            |
+| `expiration_ns`   | `UnixNanos`        | Required         | Strategy expiration timestamp.            |
+| `currency`        | `Currency`         | Required         | Quote and settlement currency.            |
+| `price_precision` | `u8`               | Required         | Decimal places allowed for prices.        |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.                |
+| `size_precision`  | `u8`               | `0`              | Futures spreads trade in whole contracts. |
+| `size_increment`  | `Quantity`         | `1`              | Minimum contract size step.               |
+| `multiplier`      | `Quantity`         | Required         | Strategy multiplier.                      |
+| `lot_size`        | `Quantity`         | Required         | Rounded lot or contract lot size.         |
+| `margin_init`     | `Option<Decimal>`  | `0`              | Initial margin rate.                      |
+| `margin_maint`    | `Option<Decimal>`  | `0`              | Maintenance margin rate.                  |
+| `maker_fee`       | `Option<Decimal>`  | `0`              | Maker fee rate. Negative values rebate.   |
+| `taker_fee`       | `Option<Decimal>`  | `0`              | Taker fee rate. Negative values rebate.   |
+| `max_quantity`    | `Option<Quantity>` | `None`           | Maximum order quantity.                   |
+| `min_quantity`    | `Option<Quantity>` | `1`              | Minimum order quantity.                   |
+| `max_price`       | `Option<Price>`    | `None`           | Maximum valid quote or order price.       |
+| `min_price`       | `Option<Price>`    | `None`           | Minimum valid quote or order price.       |
+| `tick_scheme`     | `Option<Ustr>`     | `None`           | Registered variable tick scheme name.     |
+| `info`            | `Option<Params>`   | `None`           | Adapter metadata.                         |
+| `ts_event`        | `UnixNanos`        | Required         | Event timestamp in nanoseconds.           |
+| `ts_init`         | `UnixNanos`        | Required         | Initialization timestamp in nanoseconds.  |
+
+</Tab>
+<Tab value="Python">
+
+| Field             | Type               | Required/default | Notes                                     |
+|-------------------|--------------------|------------------|-------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         |                                           |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                      |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the underlying strategy.   |
+| `exchange`        | `str \| None`      | `None`           | Exchange MIC or venue code when known.    |
+| `underlying`      | `str`              | Required         | Underlying product or product family.     |
+| `strategy_type`   | `str`              | Required         | Venue strategy type, such as calendar.    |
+| `activation_ns`   | `int`              | Required         | Strategy activation timestamp.            |
+| `expiration_ns`   | `int`              | Required         | Strategy expiration timestamp.            |
+| `currency`        | `Currency`         | Required         | Quote and settlement currency.            |
+| `price_precision` | `int`              | Required         | Decimal places allowed for prices.        |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.                |
+| `size_precision`  | `int`              | `0`              | Futures spreads trade in whole contracts. |
+| `size_increment`  | `Quantity`         | `1`              | Minimum contract size step.               |
+| `multiplier`      | `Quantity`         | Required         | Strategy multiplier.                      |
+| `lot_size`        | `Quantity`         | Required         | Rounded lot or contract lot size.         |
+| `margin_init`     | `Decimal \| None`  | `0`              | Initial margin rate.                      |
+| `margin_maint`    | `Decimal \| None`  | `0`              | Maintenance margin rate.                  |
+| `maker_fee`       | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.   |
+| `taker_fee`       | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.   |
+| `max_quantity`    | `Quantity \| None` | `None`           | Maximum order quantity.                   |
+| `min_quantity`    | `Quantity \| None` | `1`              | Minimum order quantity.                   |
+| `max_price`       | `Price \| None`    | `None`           | Maximum valid quote or order price.       |
+| `min_price`       | `Price \| None`    | `None`           | Minimum valid quote or order price.       |
+| `tick_scheme`     | `str \| None`      | `None`           | Registered variable tick scheme name.     |
+| `info`            | `dict \| None`     | `None`           | Adapter metadata.                         |
+| `ts_event`        | `int`              | Required         | Event timestamp in nanoseconds.           |
+| `ts_init`         | `int`              | Required         | Initialization timestamp in nanoseconds.  |
+
+</Tab>
+</Tabs>
 
 *Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
@@ -86,30 +125,30 @@ let es_spread = FuturesSpread::builder()
 ```python tab="Python"
 import pandas as pd
 
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments import FuturesSpread
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import FuturesSpread
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
 
 es_spread = FuturesSpread(
     instrument_id=InstrumentId.from_str("ESM4-ESU4.GLBX"),
     raw_symbol=Symbol("ESM4-ESU4"),
     asset_class=AssetClass.INDEX,
-    exchange="XCME",
     underlying="ES",
     strategy_type="EQ",
     activation_ns=pd.Timestamp("2022-06-21T13:30:00", tz="UTC").value,
     expiration_ns=pd.Timestamp("2024-06-21T13:30:00", tz="UTC").value,
-    currency=USD,
+    currency=Currency.from_str("USD"),
     price_precision=2,
     price_increment=Price.from_str("0.01"),
     multiplier=Quantity.from_int(1),
     lot_size=Quantity.from_int(1),
     ts_event=0,
     ts_init=0,
+    exchange="XCME",
 )
 ```
 

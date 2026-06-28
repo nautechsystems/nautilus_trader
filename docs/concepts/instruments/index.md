@@ -99,7 +99,7 @@ complete constructor and struct fields for that type.
 | `info`              | Adapter metadata preserved from the venue or data source.               |
 | `ts_event`          | UNIX nanosecond timestamp for when the definition event occurred.       |
 | `ts_init`           | UNIX nanosecond timestamp for when Nautilus initialized the object.     |
-| `tick_scheme_name`  | Registered variable tick scheme name where the type supports one.       |
+| `tick_scheme`       | Registered variable tick scheme name where the type supports one.       |
 
 ## Symbology
 
@@ -128,10 +128,10 @@ Rust users work with the `nautilus_model` instrument structs and `InstrumentAny`
 use nautilus_model::instruments::{CurrencyPair, InstrumentAny};
 ```
 
-Python users normally work with instrument classes from `nautilus_trader.model.instruments`:
+Python users normally work with instrument classes from `nautilus_trader.model`:
 
 ```python
-from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model import CurrencyPair
 ```
 
 Both surfaces represent the same instrument contract: identity, precision, increments,

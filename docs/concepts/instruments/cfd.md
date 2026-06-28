@@ -8,32 +8,68 @@ Examples include CFD contracts on FX, equities, indexes, and commodities.
 
 ## Fields
 
-| Field              | Rust type          | Python type       | Required/default | Notes                                   |
-|--------------------|--------------------|-------------------|------------------|-----------------------------------------|
-| `instrument_id`    | `InstrumentId`     | `InstrumentId`    | Required         | Stored as `id` in Rust.                 |
-| `raw_symbol`       | `Symbol`           | `Symbol`          | Required         | Native venue symbol.                    |
-| `asset_class`      | `AssetClass`       | `AssetClass`      | Required         | Asset class of the underlying.          |
-| `base_currency`    | `Option<Currency>` | `Currency \| None` | `None`           | Base currency when the CFD tracks one.  |
-| `quote_currency`   | `Currency`         | `Currency`        | Required         | Currency used to quote and value prices. |
-| `price_precision`  | `u8`               | `int`             | Required         | Decimal places allowed for prices.      |
-| `size_precision`   | `u8`               | `int`             | Required         | Decimal places allowed for order sizes. |
-| `price_increment`  | `Price`            | `Price`           | Required         | Smallest valid price step.              |
-| `size_increment`   | `Quantity`         | `Quantity`        | Required         | Smallest valid size step.               |
-| `lot_size`         | `Option<Quantity>` | `Quantity \| None` | `None`           | Rounded lot or board size.              |
-| `max_quantity`     | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                 |
-| `min_quantity`     | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                 |
-| `max_notional`     | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.           |
-| `min_notional`     | `Option<Money>`    | `Money \| None`    | `None`           | Minimum order notional value.           |
-| `max_price`        | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.     |
-| `min_price`        | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.     |
-| `margin_init`      | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                    |
-| `margin_maint`     | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                |
-| `maker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate. |
-| `taker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate. |
-| `tick_scheme_name` | N/A                | `str \| None`      | `None`           | Registered variable tick scheme name.   |
-| `info`             | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                       |
-| `ts_event`         | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.         |
-| `ts_init`          | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds. |
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field             | Type               | Required/default | Notes                                    |
+|-------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                     |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the underlying.           |
+| `base_currency`   | `Option<Currency>` | `None`           | Base currency when the CFD tracks one.   |
+| `quote_currency`  | `Currency`         | Required         | Currency used to quote and value prices. |
+| `price_precision` | `u8`               | Required         | Decimal places allowed for prices.       |
+| `size_precision`  | `u8`               | Required         | Decimal places allowed for order sizes.  |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.               |
+| `size_increment`  | `Quantity`         | Required         | Smallest valid size step.                |
+| `lot_size`        | `Option<Quantity>` | `None`           | Rounded lot or board size.               |
+| `max_quantity`    | `Option<Quantity>` | `None`           | Maximum order quantity.                  |
+| `min_quantity`    | `Option<Quantity>` | `None`           | Minimum order quantity.                  |
+| `max_notional`    | `Option<Money>`    | `None`           | Maximum order notional value.            |
+| `min_notional`    | `Option<Money>`    | `None`           | Minimum order notional value.            |
+| `max_price`       | `Option<Price>`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`       | `Option<Price>`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`     | `Option<Decimal>`  | `0`              | Initial margin rate.                     |
+| `margin_maint`    | `Option<Decimal>`  | `0`              | Maintenance margin rate.                 |
+| `maker_fee`       | `Option<Decimal>`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`       | `Option<Decimal>`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`     | `Option<Ustr>`     | `None`           | Registered variable tick scheme name.    |
+| `info`            | `Option<Params>`   | `None`           | Adapter metadata.                        |
+| `ts_event`        | `UnixNanos`        | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`         | `UnixNanos`        | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+<Tab value="Python">
+
+| Field             | Type               | Required/default | Notes                                    |
+|-------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         |                                          |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                     |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the underlying.           |
+| `base_currency`   | `Currency \| None` | `None`           | Base currency when the CFD tracks one.   |
+| `quote_currency`  | `Currency`         | Required         | Currency used to quote and value prices. |
+| `price_precision` | `int`              | Required         | Decimal places allowed for prices.       |
+| `size_precision`  | `int`              | Required         | Decimal places allowed for order sizes.  |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.               |
+| `size_increment`  | `Quantity`         | Required         | Smallest valid size step.                |
+| `lot_size`        | `Quantity \| None` | `None`           | Rounded lot or board size.               |
+| `max_quantity`    | `Quantity \| None` | `None`           | Maximum order quantity.                  |
+| `min_quantity`    | `Quantity \| None` | `None`           | Minimum order quantity.                  |
+| `max_notional`    | `Money \| None`    | `None`           | Maximum order notional value.            |
+| `min_notional`    | `Money \| None`    | `None`           | Minimum order notional value.            |
+| `max_price`       | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`       | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`     | `Decimal \| None`  | `0`              | Initial margin rate.                     |
+| `margin_maint`    | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
+| `maker_fee`       | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`       | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`     | `str \| None`      | `None`           | Registered variable tick scheme name.    |
+| `info`            | `dict \| None`     | `None`           | Adapter metadata.                        |
+| `ts_event`        | `int`              | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`         | `int`              | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+</Tabs>
 
 *Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
@@ -80,32 +116,31 @@ let audusd = Cfd::builder()
 ```python tab="Python"
 from decimal import Decimal
 
-from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments import Cfd
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Cfd
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
 
 audusd = Cfd(
     instrument_id=InstrumentId.from_str("AUDUSD.OANDA"),
     raw_symbol=Symbol("AUD/USD"),
     asset_class=AssetClass.FX,
-    base_currency=AUD,
-    quote_currency=USD,
+    quote_currency=Currency.from_str("USD"),
     price_precision=5,
     price_increment=Price.from_str("0.00001"),
     size_precision=0,
     size_increment=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+    base_currency=Currency.from_str("AUD"),
     lot_size=Quantity.from_int(1000),
     margin_init=Decimal("0.03"),
     margin_maint=Decimal("0.03"),
     maker_fee=Decimal("0.00002"),
     taker_fee=Decimal("0.00002"),
-    ts_event=0,
-    ts_init=0,
 )
 ```
 
