@@ -317,7 +317,7 @@ impl BybitDataClient {
             }
         });
         self.tasks.push(handle);
-        log::info!("Instrument polling started: interval={poll_secs}s");
+        log::debug!("Instrument polling started: interval={poll_secs}s");
     }
 }
 
@@ -726,7 +726,7 @@ impl DataClient for BybitDataClient {
                     }
                 }
             }
-            log::info!(
+            log::debug!(
                 "Seeded instrument status cache with {} entries",
                 status_map.len()
             );
@@ -1839,7 +1839,7 @@ impl DataClient for BybitDataClient {
             let result = if let Some(inst_id) = instrument_id {
                 // Single-instrument path: fetch ticker for one symbol
                 let raw_symbol = extract_raw_symbol(inst_id.symbol.as_str()).to_string();
-                log::info!(
+                log::debug!(
                     "Requesting forward price for {underlying} (single instrument: {raw_symbol})"
                 );
 
@@ -1864,7 +1864,7 @@ impl DataClient for BybitDataClient {
                             })
                             .collect();
 
-                        log::info!(
+                        log::debug!(
                             "Fetched {} forward price for {underlying} (single instrument: {raw_symbol})",
                             forward_prices.len(),
                         );
@@ -1874,7 +1874,7 @@ impl DataClient for BybitDataClient {
                 }
             } else {
                 // Bulk path: fetch all option tickers
-                log::info!("Requesting option forward prices for base_coin={underlying} (bulk)");
+                log::debug!("Requesting option forward prices for base_coin={underlying} (bulk)");
 
                 match http_client.request_option_tickers_raw(&underlying).await {
                     Ok(tickers) => {
@@ -1913,7 +1913,7 @@ impl DataClient for BybitDataClient {
                             })
                             .collect();
 
-                        log::info!(
+                        log::debug!(
                             "Fetched {} forward prices (per-expiry) for {underlying}",
                             forward_prices.len(),
                         );

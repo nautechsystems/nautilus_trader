@@ -429,7 +429,7 @@ impl BybitWebSocketClient {
                             log::info!("WebSocket reconnected");
                         }
                         BybitWsMessage::Auth(_) => {
-                            log::info!("WebSocket authenticated");
+                            log::debug!("WebSocket authenticated");
                         }
                     }
                 }

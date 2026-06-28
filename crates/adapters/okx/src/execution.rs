@@ -1042,7 +1042,7 @@ impl ExecutionClient for OKXExecutionClient {
                         continue;
                     }
 
-                    log::info!(
+                    log::debug!(
                         "Loaded {} {instrument_type:?} instruments",
                         instruments.len()
                     );
@@ -1069,7 +1069,7 @@ impl ExecutionClient for OKXExecutionClient {
                             continue;
                         }
 
-                        log::info!(
+                        log::debug!(
                             "Loaded {} {instrument_type:?} instruments for family {family}",
                             instruments.len()
                         );
@@ -1205,7 +1205,7 @@ impl ExecutionClient for OKXExecutionClient {
             .context("failed to request OKX account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -1419,7 +1419,7 @@ impl ExecutionClient for OKXExecutionClient {
                 ws_private.cache_inst_id_codes(all_inst_id_codes.clone());
                 ws_business.cache_instruments(&all_instruments);
                 ws_business.cache_inst_id_codes(all_inst_id_codes);
-                log::info!("Instruments initialized");
+                log::debug!("Instruments initialized");
             }
         });
 

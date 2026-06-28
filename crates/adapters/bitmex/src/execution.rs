@@ -398,7 +398,7 @@ impl BitmexExecutionClient {
 
     fn apply_account_id(&mut self, account_id: AccountId) {
         if self.core.account_id != account_id {
-            log::info!(
+            log::debug!(
                 "Discovered BitMEX account ID: account_id={} (was {})",
                 account_id,
                 self.core.account_id
@@ -1013,7 +1013,7 @@ impl ExecutionClient for BitmexExecutionClient {
             }
         };
 
-        log::info!(
+        log::debug!(
             "Submitting BitMEX order list: order_list_id={}, count={}",
             cmd.order_list.id,
             orders.len(),

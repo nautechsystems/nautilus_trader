@@ -251,7 +251,7 @@ impl BitmexWsFeedHandler {
                             limit,
                             ..
                         } => {
-                            log::info!(
+                            log::debug!(
                                 "Welcome to the BitMEX Realtime API: version={}, heartbeat={}, rate_limit={:?}",
                                 version,
                                 heartbeat_enabled,
@@ -396,7 +396,7 @@ impl BitmexWsFeedHandler {
                 .eq_ignore_ascii_case(BitmexWsAuthAction::AuthKeyExpires.as_ref())
             {
                 if success {
-                    log::info!("WebSocket authenticated");
+                    log::debug!("WebSocket authenticated");
                     self.auth_tracker.succeed();
                     return Some(BitmexWsMessage::Authenticated);
                 } else {

@@ -1424,13 +1424,13 @@ impl BitmexHttpClient {
         }
 
         if skipped_count > 0 {
-            log::info!(
+            log::debug!(
                 "Skipped {skipped_count} unsupported instrument type(s) out of {total_count} total"
             );
         }
 
         if inactive_count > 0 {
-            log::info!(
+            log::debug!(
                 "Skipped {inactive_count} inactive instrument(s) out of {total_count} total"
             );
         }

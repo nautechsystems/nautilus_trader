@@ -131,13 +131,13 @@ impl AxOrdersWsFeedHandler {
 
     async fn reauthenticate(&mut self) {
         if self.bearer_token.is_some() {
-            log::info!("Re-authenticating after reconnection");
+            log::debug!("Re-authenticating after reconnection");
 
             // Ax uses Bearer token in connection headers which persist across reconnect
             self.auth_tracker.succeed();
             self.message_queue
                 .push_back(AxOrdersWsMessage::Authenticated);
-            log::info!("Re-authentication completed");
+            log::debug!("Re-authentication completed");
         } else {
             log::warn!("Cannot re-authenticate: no bearer token stored");
         }

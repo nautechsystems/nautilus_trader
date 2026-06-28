@@ -460,7 +460,7 @@ impl OrderRequestState {
                  relying on reconciliation to recover any orphan order",
             );
         } else {
-            log::info!(
+            log::debug!(
                 "Submit timeout: compensating cancel sent req_id={req_id} cl_ord_ids={cl_ord_ids:?}",
             );
         }

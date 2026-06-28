@@ -195,7 +195,7 @@ impl BinanceSpotWsTradingHandler {
                     if let Message::Text(ref text) = msg
                         && text.as_str() == RECONNECTED
                     {
-                        log::info!("Handler received reconnection signal");
+                        log::debug!("Handler received reconnection signal");
 
                         // Fail any pending requests - they won't get responses on new connection
                         self.fail_pending_requests();
@@ -462,7 +462,7 @@ impl BinanceSpotWsTradingHandler {
                 // Success response
                 match meta {
                     BinanceSpotWsTradingRequestMeta::SessionLogon => {
-                        log::info!("Session authenticated");
+                        log::debug!("Session authenticated");
                         self.emit(BinanceSpotWsTradingMessage::Authenticated);
                     }
                     BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
@@ -675,7 +675,7 @@ impl BinanceSpotWsTradingHandler {
                 })
             }
             BinanceSpotWsTradingRequestMeta::SessionLogon => {
-                log::info!("Session authenticated (SBE response)");
+                log::debug!("Session authenticated (SBE response)");
                 Ok(BinanceSpotWsTradingMessage::Authenticated)
             }
             BinanceSpotWsTradingRequestMeta::SubscribeUserData => {

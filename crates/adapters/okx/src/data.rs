@@ -1121,7 +1121,7 @@ impl DataClient for OKXDataClient {
         let channel = match depth {
             50 => {
                 if vip < OKXVipLevel::Vip4 {
-                    log::info!(
+                    log::debug!(
                         "VIP level {vip} insufficient for 50-depth channel, falling back to default"
                     );
                     OKXBookChannel::Book

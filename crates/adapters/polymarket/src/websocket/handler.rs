@@ -349,7 +349,7 @@ impl FeedHandler {
                             }
                         }
                         Message::Close(_) => {
-                            log::info!("WebSocket close frame received");
+                            log::debug!("WebSocket close frame received");
                             return None;
                         }
                         _ => {}

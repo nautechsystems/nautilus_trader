@@ -187,7 +187,7 @@ impl KrakenSpotDataClient {
 
         self.http.cache_instruments(&instruments);
 
-        log::info!(
+        log::debug!(
             "Loaded instruments: client_id={}, count={}",
             self.client_id,
             instruments.len()
@@ -639,7 +639,7 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Spot data client: {}", self.client_id);
+        log::debug!("Disposing Spot data client: {}", self.client_id);
         self.stop()
     }
 
@@ -827,7 +827,7 @@ impl DataClient for KrakenSpotDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::info!(
+        log::debug!(
             "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
             cmd.instrument_id,
         );

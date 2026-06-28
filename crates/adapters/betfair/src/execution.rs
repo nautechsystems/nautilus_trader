@@ -276,7 +276,7 @@ impl BetfairExecutionClient {
         let mut state = self.ocm_state.lock().expect(MUTEX_POISONED);
         state.sync_from_orders(&order_data);
 
-        log::info!("Synced OCM state from {} cached orders", order_data.len());
+        log::debug!("Synced OCM state from {} cached orders", order_data.len());
     }
 
     /// Resyncs OCM state from cache and drains any OCMs the network handler
@@ -416,7 +416,7 @@ impl BetfairExecutionClient {
                         is_reconciling.store(true, Ordering::Release);
                         let _ = reconnect_tx.send(());
                     } else {
-                        log::info!("Betfair execution stream connected");
+                        log::debug!("Betfair execution stream connected");
                     }
                 }
                 StreamMessage::Status(status) => {
@@ -512,7 +512,7 @@ impl BetfairExecutionClient {
                             ts_event,
                             ts_init,
                         );
-                        log::info!("Order voided: bet_id={}, size_voided={sv}", uo.id);
+                        log::debug!("Order voided: bet_id={}, size_voided={sv}", uo.id);
                         let custom = custom_data_with_instrument(Arc::new(voided), instrument_id);
 
                         if let Err(e) = data_sender.send(DataEvent::Data(Data::Custom(custom))) {
@@ -600,7 +600,7 @@ impl BetfairExecutionClient {
         if report.order_status == OrderStatus::Canceled
             && let Some(reason) = report.cancel_reason.as_deref()
         {
-            log::info!(
+            log::debug!(
                 "Betfair order {} ({}) canceled: reason={}, matched={}, canceled={}, lapsed={}, voided={}",
                 report
                     .client_order_id
@@ -2769,7 +2769,7 @@ fn should_emit_http_reject(
         .stream_reported_client_orders
         .contains(client_order_id)
     {
-        log::info!(
+        log::debug!(
             "Suppressing late HTTP rejection for {client_order_id}: OCM already reported order state ({reason})"
         );
         return false;

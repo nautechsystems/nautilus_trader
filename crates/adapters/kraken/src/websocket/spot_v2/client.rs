@@ -358,7 +358,7 @@ impl KrakenSpotWebSocketClient {
                                 }
                             }
 
-                            log::info!(
+                            log::debug!(
                                 "Resubscribing after reconnection: count={}",
                                 payloads.len()
                             );

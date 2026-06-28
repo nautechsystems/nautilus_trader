@@ -41,7 +41,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     enums::LogColor,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
-    log_info,
+    log_debug,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -424,7 +424,7 @@ impl LighterExecutionClient {
         let (active_rest, cross_check) =
             tier_quota_report(tier, self.config.rest_quota_per_min, standard_rest);
 
-        log_info!(
+        log_debug!(
             "Lighter execution account {account_index} reported tier {tier} \
              (account_type={code}); active REST quota {active_rest} req/min",
             color = LogColor::Blue
@@ -439,7 +439,7 @@ impl LighterExecutionClient {
                 );
             }
             Some(TierCrossCheck::RaiseHint { documented }) => {
-                log_info!(
+                log_debug!(
                     "Lighter {tier} tier permits up to {documented} REST req/min; set \
                      rest_quota_per_min (and register the caller IP with Lighter) to use it",
                     color = LogColor::Blue
@@ -925,7 +925,7 @@ impl LighterExecutionClient {
                                                 credential.api_key_index(),
                                                 response.nonce,
                                             );
-                                            log::info!(
+                                            log::debug!(
                                                 "Hard-refreshed Lighter nonce after invalid-nonce \
                                                  rejection: account_index={}, next_nonce={}",
                                                 credential.account_index(),
@@ -1136,7 +1136,7 @@ impl LighterExecutionClient {
                         api_key_index,
                         response.nonce,
                     );
-                    log::info!(
+                    log::debug!(
                         "Resynced Lighter nonce baseline after skip-window exhaustion: \
                          account_index={account_index}, api_key_index={api_key_index}, \
                          next_nonce={}",
@@ -2736,7 +2736,7 @@ async fn resync_nonce_after_invalid_nonce(
                 credential.api_key_index(),
                 response.nonce,
             );
-            log::info!(
+            log::debug!(
                 "Hard-refreshed Lighter nonce after invalid-nonce batch rejection: \
                  account_index={}, next_nonce={}",
                 credential.account_index(),

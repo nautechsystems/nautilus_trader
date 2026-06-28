@@ -284,7 +284,7 @@ impl Secrets {
             .map_err(|e| Error::bad_request(format!("Failed to derive address: {e}")))?;
         let address = format!("{:#x}", signer.address());
 
-        log::info!(
+        log::debug!(
             "Polymarket credentials resolved: address={}, funder={:?}, api_key={}...)",
             address,
             funder.as_deref().map(|s| &s[..10.min(s.len())]),

@@ -986,7 +986,7 @@ where
             );
 
             if notice.code == 162 {
-                tracing::info!("Market data subscription cancelled for {}", instrument_id);
+                tracing::debug!("Market data subscription cancelled for {}", instrument_id);
                 return Ok(StreamAction::Stop);
             }
             Ok(StreamAction::Continue)
@@ -1057,7 +1057,7 @@ where
             );
 
             if notice.code == 162 {
-                tracing::info!("Option greeks subscription cancelled for {}", instrument_id);
+                tracing::debug!("Option greeks subscription cancelled for {}", instrument_id);
                 return Ok(StreamAction::Stop);
             }
             Ok(StreamAction::Continue)

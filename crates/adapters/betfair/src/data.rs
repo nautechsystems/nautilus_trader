@@ -430,7 +430,7 @@ impl BetfairDataClient {
                         log::info!("Betfair data stream reconnected");
                         let _ = reconnect_tx.send(());
                     } else {
-                        log::info!("Betfair data stream connected");
+                        log::debug!("Betfair data stream connected");
                     }
                 }
                 StreamMessage::Status(status) => {
@@ -600,7 +600,7 @@ impl DataClient for BetfairDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Betfair data client: {}", self.client_id);
+        log::debug!("Disposing Betfair data client: {}", self.client_id);
         self.stop()
     }
 
@@ -646,7 +646,7 @@ impl DataClient for BetfairDataClient {
             }
         }
 
-        log::info!("Cached {} instruments for {}", loaded.len(), self.client_id,);
+        log::debug!("Cached {} instruments for {}", loaded.len(), self.client_id,);
 
         let session_token = self
             .http_client
@@ -723,7 +723,7 @@ impl DataClient for BetfairDataClient {
                         }
                     }));
 
-                    log::info!("Betfair race stream connected");
+                    log::debug!("Betfair race stream connected");
                 }
                 Err(e) => {
                     log::warn!("Betfair race stream connect failed: {e}");
@@ -780,7 +780,7 @@ impl DataClient for BetfairDataClient {
                         }
                     }));
 
-                    log::info!("Betfair cricket stream connected");
+                    log::debug!("Betfair cricket stream connected");
                 }
                 Err(e) => {
                     log::warn!("Betfair cricket stream connect failed: {e}");

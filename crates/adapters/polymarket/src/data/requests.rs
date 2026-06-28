@@ -161,7 +161,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
             summary.error = stats.error;
         }
 
-        log::info!(
+        log::debug!(
             "Polymarket manual resolve request requested={} fetched={} resolved={} emitted={} failed={} skipped_non_binary={} clob_fallback_successes={} timed_out_watchlist={} used_watchlist_fallback={}",
             summary.requested_condition_ids.len(),
             summary.fetched_markets,

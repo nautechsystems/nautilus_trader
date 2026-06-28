@@ -469,7 +469,7 @@ impl PolymarketRtdsFeed {
                 .await
                 .context("failed to connect Polymarket RTDS WebSocket")?,
         );
-        log::info!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
+        log::debug!("Polymarket RTDS WebSocket connected: {}", self.inner.url);
 
         let feed = self.clone();
         let ws_for_task = Arc::clone(&ws);

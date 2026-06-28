@@ -406,7 +406,7 @@ impl DataClient for AxDataClient {
                 )
                 .await
                 .context("Failed to authenticate with Ax")?;
-            log::info!("Authenticated with Ax");
+            log::debug!("Authenticated with Ax");
             self.ws_client.set_auth_token(token);
         }
 
@@ -428,7 +428,7 @@ impl DataClient for AxDataClient {
             }
         }
         self.http_client.cache_instruments(&instruments);
-        log::info!(
+        log::debug!(
             "Cached {} instruments",
             self.http_client.get_cached_symbols().len()
         );
@@ -437,7 +437,7 @@ impl DataClient for AxDataClient {
             .connect()
             .await
             .context("Failed to connect WebSocket")?;
-        log::info!("WebSocket connected");
+        log::debug!("WebSocket connected");
         self.spawn_message_handler();
         self.spawn_instrument_refresh();
 
@@ -593,7 +593,7 @@ impl DataClient for AxDataClient {
                                         .get(&instrument_id) != Some(update);
 
                                     if should_emit {
-                                        log::info!(
+                                        log::debug!(
                                             "Funding rate for {symbol}: {}",
                                             update.rate,
                                         );
@@ -759,7 +759,7 @@ impl DataClient for AxDataClient {
                     if cancel.is_cancelled() {
                         return;
                     }
-                    log::info!("Fetched {} instruments from Ax", instruments.len());
+                    log::debug!("Fetched {} instruments from Ax", instruments.len());
                     for inst in &instruments {
                         instruments_cache.insert(inst.symbol().inner(), inst.clone());
                     }

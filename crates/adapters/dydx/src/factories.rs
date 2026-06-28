@@ -234,7 +234,7 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
             transport_backend: dydx_config.transport_backend,
         };
 
-        log::info!(
+        log::debug!(
             "Resolving wallet address: config={:?}, network={}, env_var={}",
             dydx_config.wallet_address,
             dydx_config.network,
@@ -247,14 +247,14 @@ impl ExecutionClientFactory for DydxExecutionClientFactory {
         let wallet_address = if let Some(addr) =
             resolve_wallet_address(dydx_config.wallet_address.clone(), dydx_config.network)
         {
-            log::info!("Using wallet address from config/env: {addr}");
+            log::debug!("Using wallet address from config/env: {addr}");
             addr
         } else if let Some(credential) = DydxCredential::resolve(
             dydx_config.private_key.as_deref(),
             dydx_config.network,
             dydx_config.authenticator_ids.clone(),
         )? {
-            log::info!(
+            log::debug!(
                 "Derived wallet address from private key: {}",
                 credential.address
             );

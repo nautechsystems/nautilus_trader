@@ -286,7 +286,7 @@ pub async fn load_instruments(
     let filtered: Vec<&FlattenedMarket> =
         all_markets.iter().filter(|m| filter.matches(m)).collect();
 
-    log::info!("Found {} markets matching filter", filtered.len());
+    log::debug!("Found {} markets matching filter", filtered.len());
 
     let market_ids: Vec<MarketId> = filtered
         .iter()
@@ -344,7 +344,7 @@ pub async fn load_instruments(
         }
     }
 
-    log::info!("Loaded {} instruments", all_instruments.len());
+    log::debug!("Loaded {} instruments", all_instruments.len());
     Ok(all_instruments)
 }
 

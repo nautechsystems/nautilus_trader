@@ -191,7 +191,7 @@ pub async fn get_or_connect(
         guard.insert(key.clone(), (Arc::clone(&client), 1));
     }
 
-    tracing::info!(
+    tracing::debug!(
         "Registered new shared IB client (host={}, port={}, client_id={})",
         host,
         port,

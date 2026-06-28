@@ -328,11 +328,11 @@ impl SigningCredential {
     pub fn new(api_key: String, api_secret: String) -> Self {
         match Ed25519Credential::new(api_key.clone(), &api_secret) {
             Ok(ed25519) => {
-                log::info!("Auto-detected Ed25519 API key");
+                log::debug!("Auto-detected Ed25519 API key");
                 Self::Ed25519(Box::new(ed25519))
             }
             Err(_) => {
-                log::info!("Using HMAC SHA256 API key");
+                log::debug!("Using HMAC SHA256 API key");
                 Self::Hmac(Credential::new(api_key, api_secret))
             }
         }

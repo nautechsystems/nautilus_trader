@@ -134,7 +134,7 @@ impl AxMdWsFeedHandler {
             return;
         }
 
-        log::info!("Replaying {} subscriptions after reconnect", topics.len());
+        log::debug!("Replaying {} subscriptions after reconnect", topics.len());
 
         for topic in topics {
             self.subscriptions.mark_subscribe(&topic);
@@ -171,7 +171,7 @@ impl AxMdWsFeedHandler {
             }
         }
 
-        log::info!("Subscription replay completed");
+        log::debug!("Subscription replay completed");
     }
 
     fn parse_market_data_level(s: &str) -> Option<AxMarketDataLevel> {

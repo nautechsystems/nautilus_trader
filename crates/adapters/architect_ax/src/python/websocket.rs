@@ -613,7 +613,7 @@ impl PyAxOrdersWebSocketClient {
                             log::info!("AX orders WebSocket reconnected");
                         }
                         AxOrdersWsMessage::Authenticated => {
-                            log::info!("AX orders WebSocket authenticated");
+                            log::debug!("AX orders WebSocket authenticated");
                         }
                     }
                 }

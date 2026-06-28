@@ -30,7 +30,7 @@ use std::{
 
 use arc_swap::ArcSwap;
 use futures_util::Stream;
-use nautilus_common::{enums::LogColor, live::get_runtime, log_info};
+use nautilus_common::{enums::LogColor, live::get_runtime, log_debug};
 use nautilus_core::{
     AtomicMap, AtomicSet, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt,
     time::get_atomic_clock_realtime,
@@ -179,7 +179,7 @@ impl DeribitWebSocketClient {
             Credential::resolve_with_env_fallback(api_key, api_secret, environment, env_fallback)?;
 
         if credential.is_some() {
-            log::info!("Credentials loaded ({environment})");
+            log::debug!("Credentials loaded ({environment})");
         } else {
             log::debug!("No credentials configured - unauthenticated mode");
         }
@@ -499,7 +499,7 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the connection fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        log_info!(
+        log_debug!(
             "Connecting to WebSocket: {}",
             self.url,
             color = LogColor::Blue
@@ -780,7 +780,7 @@ impl DeribitWebSocketClient {
         });
 
         self.task_handle = Some(Arc::new(task_handle));
-        log::info!("Connected to WebSocket");
+        log::debug!("Connected to WebSocket");
 
         Ok(())
     }
@@ -791,7 +791,7 @@ impl DeribitWebSocketClient {
     ///
     /// Returns an error if the close operation fails.
     pub async fn close(&self) -> DeribitWsResult<()> {
-        log::info!("Closing WebSocket connection");
+        log::debug!("Closing WebSocket connection");
         self.signal.store(true, Ordering::Relaxed);
 
         let _ = self.cmd_tx.read().await.send(HandlerCommand::Disconnect);
@@ -875,7 +875,7 @@ impl DeribitWebSocketClient {
         // Determine scope
         let scope = session_name.map(|name| format!("session:{name}"));
 
-        log::info!("Authenticating WebSocket...");
+        log::debug!("Authenticating WebSocket...");
 
         let rx = self.auth_tracker.begin();
 
@@ -891,7 +891,7 @@ impl DeribitWebSocketClient {
             .await
         {
             Ok(()) => {
-                log::info!("WebSocket authenticated successfully");
+                log::debug!("WebSocket authenticated successfully");
                 Ok(())
             }
             Err(e) => {

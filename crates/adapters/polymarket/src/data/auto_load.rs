@@ -135,7 +135,7 @@ impl PolymarketDataClient {
                 return;
             }
 
-            log::info!(
+            log::debug!(
                 "Auto-loading {} missing instrument(s): {batch:?}",
                 batch.len(),
             );
@@ -333,7 +333,7 @@ impl PolymarketDataClient {
                 } else {
                     "transient"
                 };
-                log::info!(
+                log::debug!(
                     "Auto-load retry {}/{} for {} {kind} instrument(s) in {:.1}s",
                     attempt + 1,
                     max_retries,

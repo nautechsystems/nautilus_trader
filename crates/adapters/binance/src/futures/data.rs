@@ -700,7 +700,7 @@ impl BinanceFuturesDataClient {
                 for (instrument_id, depth) in subs {
                     book_buffers.insert(instrument_id, BookBuffer::new(epoch));
 
-                    log::info!(
+                    log::debug!(
                         "OrderBook snapshot rebuild for {instrument_id} @ depth {depth} \
                         starting (reconnect, epoch={epoch})"
                     );
@@ -1056,7 +1056,7 @@ impl BinanceFuturesDataClient {
                     }
                 }
 
-                log::info!(
+                log::debug!(
                     "OrderBook snapshot rebuild for {instrument_id} completed \
                     (lastUpdateId={last_update_id}, replayed={replayed})"
                 );
@@ -1564,7 +1564,7 @@ impl DataClient for BinanceFuturesDataClient {
                 }
             });
             self.tasks.push(poll_handle);
-            log::info!("Futures instrument status polling started: interval={poll_secs}s");
+            log::debug!("Futures instrument status polling started: interval={poll_secs}s");
         }
 
         self.is_connected.store(true, Ordering::Release);

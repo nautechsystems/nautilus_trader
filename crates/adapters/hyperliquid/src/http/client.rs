@@ -1305,7 +1305,7 @@ impl HyperliquidHttpClient {
 
         // Vault tokens aren't in standard API, create synthetic instruments
         if coin.as_str().starts_with("vntls:") {
-            log::info!("Creating synthetic instrument for vault token: {coin}");
+            log::debug!("Creating synthetic instrument for vault token: {coin}");
 
             let ts_event = self.clock.get_time_ns();
 

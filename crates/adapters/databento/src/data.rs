@@ -259,7 +259,7 @@ impl DatabentoDataClient {
         let mut channels = self.cmd_channels.lock().expect(MUTEX_POISONED);
 
         if !channels.contains_key(dataset) {
-            log::info!("Creating new feed handler for dataset: {dataset}");
+            log::debug!("Creating new feed handler for dataset: {dataset}");
             let cmd_tx = self.initialize_live_feed(dataset.to_string());
             channels.insert(dataset.to_string(), cmd_tx);
 
@@ -369,7 +369,7 @@ impl DatabentoDataClient {
                                 }
                             }
                             Some(DatabentoMessage::Instrument(instrument)) => {
-                                log::info!("Received instrument definition: {}", instrument.id());
+                                log::debug!("Received instrument definition: {}", instrument.id());
                                 if let Err(e) = data_sender.send(DataEvent::Instrument(*instrument)) {
                                     log::error!("Failed to send instrument: {e}");
                                 }
@@ -403,7 +403,7 @@ impl DatabentoDataClient {
                                 log::error!("Feed handler error: {error}");
                             }
                             Some(DatabentoMessage::Close) => {
-                                log::info!("Feed handler closed");
+                                log::debug!("Feed handler closed");
                                 break;
                             }
                             None => {
@@ -739,7 +739,7 @@ impl DataClient for DatabentoDataClient {
 
             match historical_client.get_range_instruments(query_params).await {
                 Ok(instruments) => {
-                    log::info!("Retrieved {} instruments", instruments.len());
+                    log::debug!("Retrieved {} instruments", instruments.len());
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -872,7 +872,7 @@ impl DataClient for DatabentoDataClient {
                 .await
             {
                 Ok(quotes) => {
-                    log::info!("Retrieved {} quotes", quotes.len());
+                    log::debug!("Retrieved {} quotes", quotes.len());
                     let response = DataResponse::Quotes(QuotesResponse::new(
                         request_id,
                         client_id,
@@ -954,7 +954,7 @@ impl DataClient for DatabentoDataClient {
                 .await
             {
                 Ok(trades) => {
-                    log::info!("Retrieved {} trades", trades.len());
+                    log::debug!("Retrieved {} trades", trades.len());
                     let response = DataResponse::Trades(TradesResponse::new(
                         request_id,
                         client_id,
@@ -1061,7 +1061,7 @@ impl DataClient for DatabentoDataClient {
                 .await
             {
                 Ok(bars) => {
-                    log::info!("Retrieved {} bars", bars.len());
+                    log::debug!("Retrieved {} bars", bars.len());
                     let response = DataResponse::Bars(BarsResponse::new(
                         request_id,
                         client_id,
@@ -1141,7 +1141,7 @@ impl DataClient for DatabentoDataClient {
                 .await
             {
                 Ok(depths) => {
-                    log::info!("Retrieved {} order book depths", depths.len());
+                    log::debug!("Retrieved {} order book depths", depths.len());
                     let response = DataResponse::BookDepth(BookDepthResponse::new(
                         request_id,
                         client_id,
@@ -1215,7 +1215,7 @@ impl DataClient for DatabentoDataClient {
 
             match historical_client.get_range_order_book_deltas(params).await {
                 Ok(deltas) => {
-                    log::info!("Retrieved {} order book deltas", deltas.len());
+                    log::debug!("Retrieved {} order book deltas", deltas.len());
                     let response = DataResponse::BookDeltas(BookDeltasResponse::new(
                         request_id,
                         client_id,

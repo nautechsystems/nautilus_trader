@@ -233,7 +233,7 @@ impl PostBatcher {
                 }
             }
         }
-        log::info!("Post lane terminated: lane={lane_name}");
+        log::debug!("Post lane terminated: lane={lane_name}");
     }
 
     pub async fn enqueue(&self, item: ScheduledPost) -> Result<()> {

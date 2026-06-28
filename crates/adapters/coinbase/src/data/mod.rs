@@ -190,7 +190,7 @@ impl CoinbaseDataClient {
             self.ws_client.update_instrument(instrument.clone()).await;
         }
 
-        log::info!("Bootstrapped {} instruments", instruments.len());
+        log::debug!("Bootstrapped {} instruments", instruments.len());
         Ok(instruments)
     }
 
@@ -210,12 +210,12 @@ impl CoinbaseDataClient {
         let status_subs = Arc::clone(&self.instrument_status_subs);
 
         let task = get_runtime().spawn(async move {
-            log::info!("Coinbase WebSocket consumption loop started");
+            log::debug!("Coinbase WebSocket consumption loop started");
 
             loop {
                 tokio::select! {
                     () = cancellation_token.cancelled() => {
-                        log::info!("WebSocket consumption loop cancelled");
+                        log::debug!("WebSocket consumption loop cancelled");
                         break;
                     }
                     msg_opt = out_rx.recv() => {
@@ -230,11 +230,11 @@ impl CoinbaseDataClient {
                 }
             }
 
-            log::info!("Coinbase WebSocket consumption loop finished");
+            log::debug!("Coinbase WebSocket consumption loop finished");
         });
 
         self.tasks.push(task);
-        log::info!("WebSocket consumption task spawned");
+        log::debug!("WebSocket consumption task spawned");
         Ok(())
     }
 

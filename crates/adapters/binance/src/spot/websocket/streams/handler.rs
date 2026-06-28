@@ -124,7 +124,7 @@ impl BinanceSpotWsFeedHandler {
                     if let Message::Text(ref text) = msg
                         && text.as_str() == RECONNECTED
                     {
-                        log::info!("Handler received reconnection signal");
+                        log::debug!("Handler received reconnection signal");
                         return Some(BinanceSpotWsMessage::Reconnected);
                     }
 

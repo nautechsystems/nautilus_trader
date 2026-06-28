@@ -163,7 +163,7 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::info!(
+            log::debug!(
                 "Subscribing to '{}' on chain '{}'",
                 subscription_id,
                 self.chain.name

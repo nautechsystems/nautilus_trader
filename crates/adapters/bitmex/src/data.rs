@@ -481,7 +481,7 @@ impl BitmexDataClient {
                 }
             }
             BitmexAction::Delete => {
-                log::info!(
+                log::debug!(
                     "Received instrument delete action for {} instrument(s)",
                     data.len(),
                 );
@@ -761,7 +761,7 @@ impl DataClient for BitmexDataClient {
         let depth = cmd.depth.map_or(0, |d| d.get());
         let channel = if depth > 0 && depth <= 25 {
             if depth != 25 {
-                log::info!(
+                log::debug!(
                     "BitMEX only supports depth 25 for L2 deltas, using L2_25 for requested depth {depth}"
                 );
             }

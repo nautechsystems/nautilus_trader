@@ -1463,7 +1463,7 @@ impl BinanceFuturesHttpClient {
                     }
                 }
 
-                log::info!(
+                log::debug!(
                     "Loaded USD-M perpetual instruments: count={}",
                     instruments.len()
                 );
@@ -1494,7 +1494,7 @@ impl BinanceFuturesHttpClient {
                     }
                 }
 
-                log::info!(
+                log::debug!(
                     "Loaded COIN-M perpetual instruments: count={}",
                     instruments.len()
                 );

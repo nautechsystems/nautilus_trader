@@ -129,7 +129,7 @@ async fn stream_from_websocket(
     let (ws_stream, ws_resp) = connect_async(url).await?;
 
     handle_connection_response(&ws_resp)?;
-    log::info!("Connected to {base_url}");
+    log::debug!("Connected to {base_url}");
 
     Ok(stream! {
         let (writer, mut reader) = ws_stream.split();
@@ -138,7 +138,7 @@ async fn stream_from_websocket(
         // Timeout awaiting the next record before checking signal
         let timeout = Duration::from_millis(10);
 
-        log::info!("Streaming from websocket...");
+        log::debug!("Streaming from websocket...");
 
         loop {
             if signal.load(Ordering::Relaxed) {
@@ -204,7 +204,7 @@ async fn stream_from_websocket(
             }
         }
 
-        log::info!("Shutdown stream");
+        log::debug!("Shutdown stream");
     })
 }
 

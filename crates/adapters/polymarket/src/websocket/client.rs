@@ -223,7 +223,7 @@ impl PolymarketWebSocketClient {
         let client_mode = client.connection_mode_atomic();
         self.connection_mode = client_mode;
 
-        log::info!("Polymarket WebSocket connected: {}", self.url);
+        log::debug!("Polymarket WebSocket connected: {}", self.url);
 
         cmd_tx
             .send(HandlerCommand::SetClient(client))
@@ -236,7 +236,7 @@ impl PolymarketWebSocketClient {
             WsChannel::Market => {
                 let topics = self.subscriptions.all_topics();
                 if !topics.is_empty() {
-                    log::info!(
+                    log::debug!(
                         "Replaying {} market subscription(s) onto new session",
                         topics.len()
                     );
@@ -323,7 +323,7 @@ impl PolymarketWebSocketClient {
 
     /// Disconnects the WebSocket connection.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        log::info!("Disconnecting Polymarket WebSocket");
+        log::debug!("Disconnecting Polymarket WebSocket");
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {

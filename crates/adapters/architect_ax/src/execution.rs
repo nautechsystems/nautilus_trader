@@ -259,7 +259,7 @@ impl AxExecutionClient {
                     })?;
 
                     let price = Price::from(limit_price_decimal.to_string().as_str());
-                    log::info!("Market order take-through price: {price} for {instrument_id}",);
+                    log::debug!("Market order take-through price: {price} for {instrument_id}",);
                     Some(price)
                 } else {
                     limit_price
@@ -424,7 +424,7 @@ impl ExecutionClient for AxExecutionClient {
             if instruments.is_empty() {
                 log::warn!("No instruments returned from AX");
             } else {
-                log::info!("Loaded {} instruments", instruments.len());
+                log::debug!("Loaded {} instruments", instruments.len());
                 self.http_client.cache_instruments(&instruments);
                 self.ws_orders.cache_instruments(&instruments);
             }
@@ -433,7 +433,7 @@ impl ExecutionClient for AxExecutionClient {
 
         let token = self.authenticate().await?;
         self.ws_orders.connect(&token).await?;
-        log::info!("Connected to orders WebSocket");
+        log::debug!("Connected to orders WebSocket");
 
         let should_spawn = match &self.ws_stream_handle {
             None => true,
@@ -471,7 +471,7 @@ impl ExecutionClient for AxExecutionClient {
             .context("failed to request AX account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -690,7 +690,7 @@ impl ExecutionClient for AxExecutionClient {
                         entry.venue_order_id = Some(new_venue_order_id);
                         entry.pending_trigger_price = trigger_price;
                     }
-                    log::info!("Order replaced: old={} new={}", request.oid, resp.oid);
+                    log::debug!("Order replaced: old={} new={}", request.oid, resp.oid);
                 }
                 // No replace failure is an unambiguous rejection (see
                 // `classify_ax_http_failure`); leave the order pending.
@@ -742,7 +742,7 @@ impl ExecutionClient for AxExecutionClient {
         self.spawn_task("cancel_all_orders", async move {
             match http_client.cancel_all_orders(instrument_id).await {
                 Ok(()) => {
-                    log::info!("Canceled all orders for {instrument_id}");
+                    log::debug!("Canceled all orders for {instrument_id}");
 
                     // AX does not push WS cancel confirmations for HTTP-initiated
                     // cancels, so emit OrderCanceled events locally and clean up

@@ -482,7 +482,7 @@ impl DatabentoFeedHandler {
                         attempt = 0;
                         self.backoff.reset();
                     } else {
-                        log::info!("Session ended normally");
+                        log::debug!("Session ended normally");
                         break Ok(());
                     }
                 }
@@ -520,7 +520,7 @@ impl DatabentoFeedHandler {
                             cmd = self.cmd_rx.recv() => {
                                 match cmd {
                                     Some(HandlerCommand::Close) => {
-                                        log::info!("Close received during backoff");
+                                        log::debug!("Close received during backoff");
                                         return Ok(());
                                     }
                                     None => {
@@ -602,7 +602,7 @@ impl DatabentoFeedHandler {
         let mut start_buffered = false;
 
         if !self.buffered_commands.is_empty() {
-            log::info!(
+            log::debug!(
                 "Processing {} buffered commands",
                 self.buffered_commands.len()
             );
@@ -648,7 +648,7 @@ impl DatabentoFeedHandler {
             running = true;
             log::info!("Resubscription complete");
         } else if start_buffered {
-            log::info!("Starting session from buffered Start command");
+            log::debug!("Starting session from buffered Start command");
             buffering_start = if self.replay {
                 Some(clock.get_time_ns())
             } else {
@@ -759,14 +759,14 @@ impl DatabentoFeedHandler {
                 Ok(Some(record)) => record,
                 Ok(None) => {
                     if session_start.elapsed() >= self.success_threshold {
-                        log::info!("Session ended after successful run");
+                        log::debug!("Session ended after successful run");
                         return Ok(true);
                     }
                     anyhow::bail!("Session ended by gateway");
                 }
                 Err(e) => {
                     if session_start.elapsed() >= self.success_threshold {
-                        log::info!("Connection error after successful run: {e}");
+                        log::debug!("Connection error after successful run: {e}");
                         return Ok(true);
                     }
                     anyhow::bail!("Connection error: {e}");
@@ -948,7 +948,7 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
     match msg.code() {
         Ok(dbn::SystemCode::SubscriptionAck) => {
             let message = msg.msg().unwrap_or("<invalid utf-8>");
-            log::info!("Subscription acknowledged: {message}");
+            log::debug!("Subscription acknowledged: {message}");
 
             let schema = parse_ack_message(message);
 
@@ -969,7 +969,7 @@ fn handle_system_msg(msg: &dbn::SystemMsg, ts_received: UnixNanos) -> Option<Sub
         }
         Ok(dbn::SystemCode::ReplayCompleted) => {
             let message = msg.msg().unwrap_or("<invalid utf-8>");
-            log::info!("Replay completed: {message}");
+            log::debug!("Replay completed: {message}");
             None
         }
         _ => {

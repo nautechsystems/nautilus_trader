@@ -410,9 +410,9 @@ impl TardisDataClient {
                 }
                 Some(Ok(tungstenite::Message::Close(frame))) => {
                     if let Some(frame) = frame {
-                        log::info!("WebSocket closed: {} {}", frame.code, frame.reason);
+                        log::debug!("WebSocket closed: {} {}", frame.code, frame.reason);
                     } else {
-                        log::info!("WebSocket closed");
+                        log::debug!("WebSocket closed");
                     }
                     return true;
                 }
@@ -422,7 +422,7 @@ impl TardisDataClient {
                     return true;
                 }
                 None => {
-                    log::info!("Stream ended");
+                    log::debug!("Stream ended");
                     return true;
                 }
             }

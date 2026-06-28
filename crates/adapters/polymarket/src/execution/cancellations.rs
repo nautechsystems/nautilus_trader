@@ -61,7 +61,7 @@ impl PolymarketExecutionClient {
             {
                 Some(id) => id,
                 None => {
-                    log::info!(
+                    log::debug!(
                         "Cancel for {} deferred, venue_order_id not yet available",
                         cmd.client_order_id
                     );
@@ -146,7 +146,7 @@ impl PolymarketExecutionClient {
                 }
             }
 
-            log::info!("Canceled {} orders", response.canceled.len());
+            log::debug!("Canceled {} orders", response.canceled.len());
             Ok(())
         });
     }
@@ -188,7 +188,7 @@ impl PolymarketExecutionClient {
                 process_cancel_result(&response, venue_id_str, order, vid, &emitter, clock);
             }
 
-            log::info!("Batch canceled {} orders", response.canceled.len());
+            log::debug!("Batch canceled {} orders", response.canceled.len());
             Ok(())
         });
     }
@@ -206,7 +206,7 @@ pub(super) fn process_cancel_result(
         let reason = reason_opt.as_deref().unwrap_or("unknown reason");
         match CancelOutcome::classify(reason) {
             CancelOutcome::AlreadyDone => {
-                log::info!(
+                log::debug!(
                     "Cancel rejected for {}: {reason} - awaiting WS for terminal state",
                     order.client_order_id()
                 );

@@ -241,7 +241,7 @@ impl HyperliquidDataClient {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Bootstrapped {} instruments with {} coin mappings",
             self.instruments.len(),
             self.coin_to_instrument_id.len()
@@ -267,12 +267,12 @@ impl HyperliquidDataClient {
         let cancellation_token = self.cancellation_token.clone();
 
         let task = get_runtime().spawn(async move {
-            log::info!("Hyperliquid WebSocket consumption loop started");
+            log::debug!("Hyperliquid WebSocket consumption loop started");
 
             loop {
                 tokio::select! {
                     () = cancellation_token.cancelled() => {
-                        log::info!("WebSocket consumption loop cancelled");
+                        log::debug!("WebSocket consumption loop cancelled");
                         break;
                     }
                     msg_opt = ws_client.next_event() => {
@@ -362,12 +362,12 @@ impl HyperliquidDataClient {
                 }
             }
 
-            log::info!("Hyperliquid WebSocket consumption loop finished");
+            log::debug!("Hyperliquid WebSocket consumption loop finished");
         });
 
         let mut slot = self.ws_stream_handle.lock().expect(MUTEX_POISONED);
         *slot = Some(task);
-        log::info!("WebSocket consumption task spawned");
+        log::debug!("WebSocket consumption task spawned");
 
         Ok(())
     }
@@ -1317,7 +1317,7 @@ pub(crate) fn parse_l2_book_snapshot(
         book.add(order, 0, (bids_len + i) as u64, ts_event);
     }
 
-    log::info!(
+    log::debug!(
         "Built order book for {instrument_id} with {} bids and {} asks",
         bids.len(),
         asks.len(),

@@ -299,7 +299,7 @@ impl FeedHandler {
             Message::Ping(_data) => vec![],
             Message::Binary(_bin) => vec![],
             Message::Close(_frame) => {
-                log::info!("WebSocket close frame received");
+                log::debug!("WebSocket close frame received");
                 vec![]
             }
             Message::Frame(_) => vec![],
@@ -735,7 +735,7 @@ impl FeedHandler {
     ) -> DydxWsResult<Vec<DydxWsOutputMessage>> {
         match msg {
             DydxWsMessage::Connected(_) => {
-                log::info!("dYdX WebSocket connected");
+                log::debug!("dYdX WebSocket connected");
                 Ok(vec![])
             }
             DydxWsMessage::Subscribed(sub) => {

@@ -196,7 +196,7 @@ impl BinanceSpotPublicWsHandler {
         if let Ok(text) = std::str::from_utf8(&raw)
             && text == RECONNECTED
         {
-            log::info!("WebSocket reconnected signal received");
+            log::debug!("WebSocket reconnected signal received");
             return vec![BinanceSpotPublicWsMessage::Reconnected];
         }
 

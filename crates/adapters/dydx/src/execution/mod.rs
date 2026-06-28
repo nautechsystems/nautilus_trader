@@ -784,7 +784,7 @@ impl DydxExecutionClient {
         });
 
         self.ws_stream_handle = Some(handle);
-        log::info!("WebSocket stream handler started");
+        log::debug!("WebSocket stream handler started");
     }
 
     /// Marks instruments as initialized after HTTP client has fetched them.
@@ -1332,7 +1332,7 @@ impl ExecutionClient for DydxExecutionClient {
         let client_id_u32 = encoded.client_id;
         let client_metadata = encoded.client_metadata;
 
-        log::info!(
+        log::debug!(
             "[SUBMIT_ORDER] Nautilus '{}' -> dYdX u32={} meta={:#x} | instrument={} side={:?} qty={} type={:?}",
             client_order_id,
             client_id_u32,
@@ -1820,7 +1820,7 @@ impl ExecutionClient for DydxExecutionClient {
                 .push(("batch_submit_short_term", handle));
         } else {
             // All orders are long-term - can batch in single transaction
-            log::info!(
+            log::debug!(
                 "Batch submitting {} long-term limit orders in single transaction",
                 order_params.len()
             );
@@ -1988,7 +1988,7 @@ impl ExecutionClient for DydxExecutionClient {
         };
         let client_id_u32 = encoded.client_id;
 
-        log::info!(
+        log::debug!(
             "[CANCEL_ORDER] Nautilus '{client_order_id}' -> dYdX u32={client_id_u32} | instrument={instrument_id}"
         );
 
@@ -2375,7 +2375,7 @@ impl ExecutionClient for DydxExecutionClient {
         // Use current time as approximation; actual timestamps will come from WebSocket updates
         self.block_time_monitor
             .record_block(initial_height.0 as u64, chrono::Utc::now());
-        log::info!("Initial block height: {}", initial_height.0);
+        log::debug!("Initial block height: {}", initial_height.0);
 
         *self.grpc_client.write().await = Some(grpc_client.clone());
 
@@ -2435,7 +2435,7 @@ impl ExecutionClient for DydxExecutionClient {
         log::debug!("Subscribed to markets");
 
         // Subscribe to subaccount updates (wallet is always initialized for execution client)
-        log::info!(
+        log::debug!(
             "Using wallet address for queries: {} (subaccount {})",
             self.wallet_address,
             self.subaccount_number
@@ -2953,7 +2953,7 @@ impl ExecutionClient for DydxExecutionClient {
             fill_reports.retain(|r| r.ts_event >= cutoff);
             let fills_removed = fills_before - fill_reports.len();
 
-            log::info!(
+            log::debug!(
                 "Lookback filter ({}min): orders {}->{} (removed {}), fills {}->{} (removed {}), positions {} (unfiltered)",
                 mins,
                 orders_before,

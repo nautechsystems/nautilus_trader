@@ -352,7 +352,7 @@ impl OrderFillTrackerMap {
             let order_side = s.order_side;
             let instrument_id = s.instrument_id;
 
-            log::info!(
+            log::debug!(
                 "Order {venue_order_id} MATCHED with dust residual {leaves:.6} -- \
                  emitting synthetic fill to reach FILLED"
             );
@@ -387,7 +387,7 @@ impl OrderFillTrackerMap {
             })
         } else {
             if leaves >= DUST_SNAP_THRESHOLD {
-                log::info!(
+                log::debug!(
                     "Order {venue_order_id} MATCHED with significant residual \
                      {leaves:.6} (filled {}/{})",
                     s.cumulative_filled,
@@ -573,7 +573,7 @@ fn snap_fill_qty_in(
         Some(s) => {
             let diff = s.submitted_qty.as_f64() - fill_qty.as_f64();
             if diff < 0.0 && diff.abs() < DUST_SNAP_THRESHOLD {
-                log::info!(
+                log::debug!(
                     "Snapping overfill {fill_qty} -> {} (dust={diff:+.6})",
                     s.submitted_qty,
                 );

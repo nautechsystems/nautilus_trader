@@ -391,7 +391,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::Pool(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing subscribe pool command for {}",
                     cmd.instrument_id
                 );
@@ -427,7 +427,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_flashes(dex, pool_address);
 
-                    log::info!(
+                    log::debug!(
                         "Subscribed to all pool events for {} at address {}",
                         cmd.instrument_id,
                         pool_address
@@ -442,7 +442,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolSwaps(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing subscribe pool swaps command for {}",
                     cmd.instrument_id
                 );
@@ -473,7 +473,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing subscribe pool liquidity updates command for address: {}",
                     cmd.instrument_id
                 );
@@ -505,7 +505,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolFeeCollects(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing subscribe pool fee collects command for address: {}",
                     cmd.instrument_id
                 );
@@ -537,7 +537,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiSubscribeCommand::PoolFlashEvents(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing subscribe pool flash command for address: {}",
                     cmd.instrument_id
                 );
@@ -592,7 +592,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::Pool(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing unsubscribe pool command for {}",
                     cmd.instrument_id
                 );
@@ -620,7 +620,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_flashes(dex, pool_address);
 
-                    log::info!(
+                    log::debug!(
                         "Unsubscribed from all pool events for {} at address {}",
                         cmd.instrument_id,
                         pool_address
@@ -655,7 +655,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolLiquidityUpdates(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing unsubscribe pool liquidity updates command for {}",
                     cmd.instrument_id
                 );
@@ -681,7 +681,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolFeeCollects(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing unsubscribe pool fee collects command for {}",
                     cmd.instrument_id
                 );
@@ -707,7 +707,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolFlashEvents(cmd) => {
-                log::info!(
+                log::debug!(
                     "Processing unsubscribe pool flash command for {}",
                     cmd.instrument_id
                 );
@@ -768,7 +768,7 @@ impl BlockchainDataClient {
                         {
                             Ok((profiler, already_valid)) => match profiler.extract_snapshot() {
                                 Ok(snapshot) => {
-                                    log::info!(
+                                    log::debug!(
                                         "Saving pool snapshot with {} positions and {} ticks to database...",
                                         snapshot.positions.len(),
                                         snapshot.ticks.len()

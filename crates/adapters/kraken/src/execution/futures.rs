@@ -287,7 +287,7 @@ impl KrakenFuturesExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
 
-        log::info!(
+        log::debug!(
             "Canceling order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
         );
 
@@ -476,7 +476,7 @@ impl KrakenFuturesExecutionClient {
         let quantity = cmd.quantity;
         let price = cmd.price;
 
-        log::info!(
+        log::debug!(
             "Modifying order: venue_order_id={venue_order_id:?}, client_order_id={client_order_id}"
         );
 
@@ -590,7 +590,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
                 .request_instruments()
                 .await
                 .context("Failed to load Kraken futures instruments")?;
-            log::info!("Loaded {} Futures instruments", instruments.len());
+            log::debug!("Loaded {} Futures instruments", instruments.len());
             self.http.cache_instruments(&instruments);
             self.core.set_instruments_initialized();
         }
@@ -623,7 +623,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .context("Failed to request Kraken futures account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -866,7 +866,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
 
-        log::info!(
+        log::debug!(
             "Submitting order list: order_list_id={}, count={}",
             cmd.order_list.id,
             orders.len()
@@ -1027,7 +1027,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             return Ok(());
         }
 
-        log::info!(
+        log::debug!(
             "Canceling all orders: instrument_id={instrument_id}, side={:?}",
             cmd.order_side
         );
@@ -1086,7 +1086,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
     }
 
     fn batch_cancel_orders(&self, cmd: BatchCancelOrders) -> anyhow::Result<()> {
-        log::info!(
+        log::debug!(
             "Batch canceling orders: instrument_id={}, count={}",
             cmd.instrument_id,
             cmd.cancels.len()

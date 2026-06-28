@@ -821,7 +821,7 @@ impl DeribitWsFeedHandler {
                 }
             }
             HandlerCommand::InitializeInstruments(instruments) => {
-                log::info!("Handler received {} instruments", instruments.len());
+                log::debug!("Handler received {} instruments", instruments.len());
                 self.instruments_cache.clear();
                 for inst in instruments {
                     self.instruments_cache
@@ -1195,7 +1195,7 @@ impl DeribitWsFeedHandler {
                             if let Some(result) = &response.result {
                                 match serde_json::from_value::<u64>(result.clone()) {
                                     Ok(count) => {
-                                        log::info!(
+                                        log::debug!(
                                             "Cancelled {count} orders for instrument {instrument_id}"
                                         );
                                         // Individual order status updates come via user.orders subscription
@@ -1341,7 +1341,7 @@ impl DeribitWsFeedHandler {
                                     Ok(order_response) => {
                                         let venue_order_id =
                                             VenueOrderId::new(&order_response.order.order_id);
-                                        log::info!(
+                                        log::debug!(
                                             "Order updated: venue_order_id={}, client_order_id={}, state={}",
                                             venue_order_id,
                                             client_order_id,
@@ -1430,7 +1430,7 @@ impl DeribitWsFeedHandler {
                             if let Some(result) = &response.result {
                                 match serde_json::from_value::<DeribitOrderMsg>(result.clone()) {
                                     Ok(order_msg) => {
-                                        log::info!(
+                                        log::debug!(
                                             "Order state received: venue_order_id={}, client_order_id={}, state={}",
                                             order_msg.order_id,
                                             client_order_id,
@@ -1867,7 +1867,7 @@ impl DeribitWsFeedHandler {
                             match serde_json::from_value::<DeribitInstrumentStateMsg>(data.clone())
                             {
                                 Ok(state_msg) => {
-                                    log::info!(
+                                    log::debug!(
                                         "Instrument state change: {} -> {} (timestamp: {})",
                                         state_msg.instrument_name,
                                         state_msg.state,
@@ -2475,7 +2475,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         Message::Close(_) => {
-                            log::info!("Received close frame");
+                            log::debug!("Received close frame");
                         }
                         _ => {}
                     }

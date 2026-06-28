@@ -271,7 +271,7 @@ impl DydxDataClient {
             return Ok(instruments);
         }
 
-        log::info!("Loaded {} instruments into shared cache", instruments.len());
+        log::debug!("Loaded {} instruments into shared cache", instruments.len());
 
         self.ws_client.cache_instruments(instruments.clone());
 
@@ -696,7 +696,7 @@ impl DataClient for DydxDataClient {
     ) -> anyhow::Result<()> {
         self.active_instrument_status_subs
             .remove(&cmd.instrument_id);
-        log::info!(
+        log::debug!(
             "Unsubscribed from instrument status for {}",
             cmd.instrument_id
         );
@@ -785,7 +785,7 @@ impl DataClient for DydxDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments(None, None, None).await {
                 Ok(instruments) => {
-                    log::info!("Fetched {} instruments from dYdX", instruments.len());
+                    log::debug!("Fetched {} instruments from dYdX", instruments.len());
 
                     for instrument in &instruments {
                         instrument_cache.insert_instrument_only(instrument.clone());
@@ -1480,7 +1480,7 @@ impl DydxDataClient {
     }
 
     fn handle_new_instrument_discovered(ticker: &str, ctx: &WsMessageContext) {
-        log::info!("New instrument discovered via WebSocket: {ticker}");
+        log::debug!("New instrument discovered via WebSocket: {ticker}");
 
         let http_client = ctx.http_client.clone();
         let ws_client = ctx.ws_client.clone();
@@ -1494,7 +1494,7 @@ impl DydxDataClient {
                     if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
                         log::error!("Failed to emit new instrument: {e}");
                     }
-                    log::info!("Fetched and cached new instrument: {ticker}");
+                    log::debug!("Fetched and cached new instrument: {ticker}");
                 }
                 Ok(None) => {
                     log::warn!("New instrument {ticker} not found or inactive");

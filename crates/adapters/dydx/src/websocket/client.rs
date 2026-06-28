@@ -574,7 +574,7 @@ impl DydxWebSocketClient {
         self.connection_mode.store(slot.connection_mode.clone());
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
-        log::info!("Connected dYdX WebSocket pool: {}", self.url);
+        log::debug!("Connected dYdX WebSocket pool: {}", self.url);
         Ok(())
     }
 
@@ -749,7 +749,7 @@ impl DydxWebSocketClient {
                 slots.push(new_slot);
                 slots.len() - 1
             };
-            log::info!(
+            log::debug!(
                 "dYdX pool slot {new_idx} connected: url={}, channel={:?}",
                 self.url,
                 channel,

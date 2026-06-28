@@ -202,7 +202,7 @@ impl DefiDataSubscriptionManager {
                 .insert(dex, Self::normalize_topic(flash_event_signature));
         }
 
-        log::info!("Registered DEX for subscriptions: {dex:?}");
+        log::debug!("Registered DEX for subscriptions: {dex:?}");
     }
 
     /// Subscribes to swap events for a specific pool address on a DEX.

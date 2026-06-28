@@ -551,7 +551,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             if instruments.is_empty() {
                 log::warn!("No instruments returned for Binance Spot");
             } else {
-                log::info!("Loaded {} Spot instruments", instruments.len());
+                log::debug!("Loaded {} Spot instruments", instruments.len());
                 self.http_client.cache_instruments(instruments);
             }
 
@@ -565,7 +565,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .context("failed to request Binance account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -581,7 +581,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         if let Some(mut ws_trading) = self.ws_trading_client.take() {
             match ws_trading.connect().await {
                 Ok(()) => {
-                    log::info!("Connected to Binance Spot WS trading API");
+                    log::debug!("Connected to Binance Spot WS trading API");
 
                     let ws_trading_clone = ws_trading.clone();
                     let emitter = self.emitter.clone();
@@ -768,7 +768,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                         log::warn!("No instruments returned for Binance Spot");
                     } else {
                         http_client.cache_instruments(instruments);
-                        log::info!("Instruments initialized");
+                        log::debug!("Instruments initialized");
                     }
                 }
                 Err(e) => {
@@ -1676,7 +1676,7 @@ fn dispatch_ws_trading_message(
             emitter.send_account_state(state);
         }
         BinanceSpotWsTradingMessage::BalanceUpdate(update) => {
-            log::info!(
+            log::debug!(
                 "Balance update: asset={}, delta={}",
                 update.asset,
                 update.delta,
@@ -1694,10 +1694,10 @@ fn dispatch_ws_trading_message(
             });
         }
         BinanceSpotWsTradingMessage::Connected => {
-            log::info!("WS trading API connected");
+            log::debug!("WS trading API connected");
         }
         BinanceSpotWsTradingMessage::Authenticated => {
-            log::info!("WS trading API authenticated");
+            log::debug!("WS trading API authenticated");
             ws_authenticated.notify_one();
         }
         BinanceSpotWsTradingMessage::Reconnected => {

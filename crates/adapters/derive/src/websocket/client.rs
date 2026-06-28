@@ -335,7 +335,7 @@ impl DeriveWebSocketClient {
         self.conn_id.store(Arc::new(UUID4::new().to_string()));
 
         self.connection_mode.store(client.connection_mode_atomic());
-        log::info!("Derive WebSocket connected: {}", self.url);
+        log::debug!("Derive WebSocket connected: {}", self.url);
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             return Err(DeriveWsError::transport(format!(
@@ -491,7 +491,7 @@ impl DeriveWebSocketClient {
     /// Returns [`DeriveWsError::Transport`] when the disconnect command
     /// cannot be enqueued; the handler still tears down on signal.
     pub async fn disconnect(&mut self) -> Result<()> {
-        log::info!("Disconnecting Derive WebSocket");
+        log::debug!("Disconnecting Derive WebSocket");
         self.teardown().await;
         Ok(())
     }
@@ -1128,7 +1128,7 @@ async fn login_via_handler(
     {
         Ok(_) => {
             auth_tracker.succeed();
-            log::info!("Derive WebSocket authenticated");
+            log::debug!("Derive WebSocket authenticated");
             Ok(())
         }
         Err(e) => {

@@ -218,7 +218,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             {
                 ctx.pending_snapshot_after_tick_change
                     .remove(&instrument_id);
-                log::info!("Resumed book for {instrument_id} after tick size change");
+                log::debug!("Resumed book for {instrument_id} after tick size change");
             }
         }
 
@@ -379,7 +379,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 return;
             }
 
-            log::info!(
+            log::debug!(
                 "Tick size changed for {}: {} -> {}",
                 change.asset_id,
                 change.old_tick_size,
@@ -515,7 +515,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                     } else {
                                         "empty result"
                                     };
-                                    log::info!(
+                                    log::debug!(
                                         "New market empty fetch retry {attempt}/{NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS} for key='{dedupe_key}' slug='{slug}' ({reason})",
                                     );
 
@@ -625,7 +625,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             );
 
             if emitted > 0 {
-                log::info!(
+                log::debug!(
                     "Applied market_resolved for condition_id={} winner={} ({}) tracked_instruments={emitted}",
                     resolved.market,
                     resolved.winning_asset_id,

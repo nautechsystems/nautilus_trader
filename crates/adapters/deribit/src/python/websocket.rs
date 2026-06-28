@@ -303,7 +303,7 @@ impl DeribitWebSocketClient {
                             log::info!("WebSocket reconnected");
                         }
                         NautilusWsMessage::Authenticated(auth_result) => {
-                            log::info!("WebSocket authenticated (scope: {})", auth_result.scope);
+                            log::debug!("WebSocket authenticated (scope: {})", auth_result.scope);
                         }
                         NautilusWsMessage::InstrumentStatus(status) => {
                             call_python_with_data(&call_soon, &callback, |py| {

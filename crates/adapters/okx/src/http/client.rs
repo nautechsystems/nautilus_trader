@@ -2569,7 +2569,7 @@ impl OKXHttpClient {
             book.add(order, 0, (bids_len + i) as u64, ts_event);
         }
 
-        log::info!(
+        log::debug!(
             "Fetched order book for {} with {} bids and {} asks",
             instrument_id,
             snapshot.bids.len(),
@@ -2665,7 +2665,7 @@ impl OKXHttpClient {
             ));
         }
 
-        log::info!(
+        log::debug!(
             "Fetched order book snapshot for {} with {} bids and {} asks",
             instrument_id,
             snapshot.bids.len(),
@@ -2732,7 +2732,7 @@ impl OKXHttpClient {
         // cache.add_funding_rates (which push_fronts) leaves the newest at front
         rates.reverse();
 
-        log::info!(
+        log::debug!(
             "Fetched {} funding rates for {}",
             rates.len(),
             instrument_id,
