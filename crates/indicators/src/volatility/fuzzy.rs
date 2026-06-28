@@ -324,6 +324,18 @@ impl FuzzyCandlesticks {
         self.last_low = low;
 
         let total = (high - low).abs();
+
+        // Bound the rolling windows to `period`, matching the Cython
+        // `deque(maxlen=period)`. Without this the fixed-capacity deques grow to
+        // their 1024 capacity, so the means (sum / period) and standard
+        // deviations are computed over far more than `period` candles.
+        if self.lengths.len() == self.period {
+            self.lengths.pop_front();
+            self.body_percents.pop_front();
+            self.upper_wick_percents.pop_front();
+            self.lower_wick_percents.pop_front();
+        }
+
         let _ = self.lengths.push_back(total);
 
         if total == 0.0 {
@@ -615,6 +627,42 @@ mod tests {
 
         let expected_vec = vec![-1, 1, 1, 3, 1];
         assert_eq!(fuzzy_candlesticks_10.vector, expected_vec);
+    }
+
+    #[rstest]
+    fn test_windows_bounded_to_period(mut fuzzy_candlesticks_10: FuzzyCandlesticks) {
+        // Regression: the four rolling windows must stay bounded to `period`
+        // (matching the Cython `deque(maxlen=period)`). Previously the
+        // fixed-capacity deques grew to their 1024 capacity, so the means
+        // (sum / period) and standard deviations were computed over far more than
+        // `period` candles.
+        let bars = [
+            (150.25, 153.4, 148.1, 152.75),
+            (152.8, 155.2, 151.3, 151.95),
+            (151.9, 152.85, 147.6, 148.2),
+            (148.3, 150.75, 146.9, 150.4),
+            (150.5, 154.3, 149.8, 153.9),
+            (153.95, 155.8, 152.2, 152.6),
+            (152.7, 153.4, 148.5, 149.1),
+            (149.2, 151.9, 147.3, 151.5),
+            (151.6, 156.4, 151.0, 155.8),
+            (155.9, 157.2, 153.7, 154.3),
+            (154.3, 158.0, 153.0, 157.2),
+            (157.2, 159.5, 155.1, 156.0),
+            (156.0, 156.9, 152.4, 153.1),
+            (153.1, 155.0, 150.2, 154.8),
+            (154.8, 157.7, 154.0, 156.9),
+        ];
+
+        for (open, high, low, close) in bars {
+            fuzzy_candlesticks_10.update_raw(open, high, low, close);
+        }
+
+        assert!(fuzzy_candlesticks_10.initialized());
+        assert_eq!(fuzzy_candlesticks_10.lengths.len(), 10);
+        assert_eq!(fuzzy_candlesticks_10.body_percents.len(), 10);
+        assert_eq!(fuzzy_candlesticks_10.upper_wick_percents.len(), 10);
+        assert_eq!(fuzzy_candlesticks_10.lower_wick_percents.len(), 10);
     }
 
     #[rstest]
