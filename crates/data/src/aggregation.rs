@@ -2209,8 +2209,12 @@ pub struct SpreadQuoteAggregator {
     quote_build_delay: u64,
     has_update: bool,
     timer_name: String,
+    vega_pricing_timeout_timer_name: String,
     historical_event_at_ts_init: Option<TimeEvent>,
     vega_provider: Option<Box<dyn VegaProvider>>,
+    disable_vega_pricing: bool,
+    vega_pricing_temporarily_disabled: bool,
+    vega_pricing_timeout_seconds: u64,
     price_rounder: Option<Box<dyn SpreadPriceRounder>>,
     is_running: bool,
     aggregator_weak: Option<Weak<RefCell<Self>>>,
@@ -2245,6 +2249,8 @@ impl SpreadQuoteAggregator {
         historical_mode: bool,
         update_interval_seconds: Option<u64>,
         quote_build_delay: u64,
+        disable_vega_pricing: bool,
+        vega_pricing_timeout_seconds: u64,
         vega_provider: Option<Box<dyn VegaProvider>>,
         price_rounder: Option<Box<dyn SpreadPriceRounder>>,
     ) -> Self {
@@ -2256,6 +2262,8 @@ impl SpreadQuoteAggregator {
             assert!(r != 0, "Ratio cannot be zero");
         }
         let timer_name = format!("SPREAD_QUOTE_{spread_instrument_id}");
+        let vega_pricing_timeout_timer_name =
+            format!("VEGA_PRICING_TIMEOUT_{spread_instrument_id}");
         Self {
             spread_instrument_id,
             leg_ids,
@@ -2279,8 +2287,12 @@ impl SpreadQuoteAggregator {
             quote_build_delay,
             has_update: false,
             timer_name,
+            vega_pricing_timeout_timer_name,
             historical_event_at_ts_init: None,
             vega_provider,
+            disable_vega_pricing,
+            vega_pricing_temporarily_disabled: false,
+            vega_pricing_timeout_seconds,
             price_rounder,
             is_running: false,
             aggregator_weak: None,
@@ -2333,20 +2345,18 @@ impl SpreadQuoteAggregator {
     ///
     /// Panics if called with `None` in timer mode without a prior [`Self::prepare_for_timer_mode`] call.
     pub fn start_timer(&mut self, aggregator_rc: Option<Rc<RefCell<Self>>>) {
+        if let Some(rc) = aggregator_rc {
+            self.aggregator_weak = Some(Rc::downgrade(&rc));
+        }
+
         let Some(interval_secs) = self.update_interval_seconds else {
             return;
         };
-        let aggregator_weak = if let Some(rc) = aggregator_rc {
-            let weak = Rc::downgrade(&rc);
-            self.aggregator_weak = Some(weak.clone());
-            weak
-        } else {
-            self.aggregator_weak.clone().expect(
-                "SpreadQuoteAggregator: timer mode requires prepare_for_timer_mode(rc) to be \
+        let aggregator_weak = self.aggregator_weak.clone().expect(
+            "SpreadQuoteAggregator: timer mode requires prepare_for_timer_mode(rc) to be \
                  called first with the Rc that wraps this aggregator (before feeding quotes in \
                  historical mode or before start_timer(None)).",
-            )
-        };
+        );
 
         let callback = TimeEventCallback::RustLocal(Rc::new(move |event: TimeEvent| {
             if let Some(agg) = aggregator_weak.upgrade() {
@@ -2383,17 +2393,25 @@ impl SpreadQuoteAggregator {
 
     /// Stops the timer when in timer-driven mode.
     pub fn stop_timer(&mut self) {
-        if self.update_interval_seconds.is_none() {
-            return;
+        if self.update_interval_seconds.is_some()
+            && self
+                .clock
+                .borrow()
+                .timer_names()
+                .contains(&self.timer_name.as_str())
+        {
+            self.clock.borrow_mut().cancel_timer(&self.timer_name);
         }
 
         if self
             .clock
             .borrow()
             .timer_names()
-            .contains(&self.timer_name.as_str())
+            .contains(&self.vega_pricing_timeout_timer_name.as_str())
         {
-            self.clock.borrow_mut().cancel_timer(&self.timer_name);
+            self.clock
+                .borrow_mut()
+                .cancel_timer(&self.vega_pricing_timeout_timer_name);
         }
     }
 
@@ -2481,6 +2499,9 @@ impl SpreadQuoteAggregator {
             return;
         }
 
+        let use_vega_pricing =
+            !(self.disable_vega_pricing || self.vega_pricing_temporarily_disabled);
+
         for (idx, &leg_id) in self.leg_ids.iter().enumerate() {
             let Some(tick) = self.last_quotes.get(&leg_id) else {
                 log::error!(
@@ -2501,7 +2522,8 @@ impl SpreadQuoteAggregator {
                 self.mid_prices[idx] = f64::midpoint(ask_price, bid_price);
                 self.bid_ask_spreads[idx] = ask_price - bid_price;
 
-                if let Some(ref vp) = self.vega_provider
+                if use_vega_pricing
+                    && let Some(ref vp) = self.vega_provider
                     && let Some(vega) = vp.vega_for_leg(leg_id)
                 {
                     self.vegas[idx] = vega;
@@ -2518,7 +2540,11 @@ impl SpreadQuoteAggregator {
         (self.handler)(spread_quote);
     }
 
-    fn create_option_spread_prices(&self) -> (f64, f64) {
+    fn create_option_spread_prices(&mut self) -> (f64, f64) {
+        if self.disable_vega_pricing || self.vega_pricing_temporarily_disabled {
+            return self.create_futures_spread_prices();
+        }
+
         let vega_multipliers: Vec<f64> = (0..self.n_legs)
             .map(|i| {
                 if self.vegas[i] == 0.0 {
@@ -2536,9 +2562,11 @@ impl SpreadQuoteAggregator {
 
         if non_zero.is_empty() {
             log::warn!(
-                "No vega information available for the components of {}. Will generate spread quote using component quotes only",
-                self.spread_instrument_id
+                "No vega information available for the components of {}; will generate spread quote using component quotes only, vega pricing is disabled for {} seconds, subscribe to some underlying price information for more precise quotes",
+                self.spread_instrument_id,
+                self.vega_pricing_timeout_seconds
             );
+            self.start_vega_pricing_timeout();
             return self.create_futures_spread_prices();
         }
         let vega_multiplier = non_zero.iter().map(|x| x.abs()).sum::<f64>() / non_zero.len() as f64;
@@ -2559,6 +2587,44 @@ impl SpreadQuoteAggregator {
         let raw_bid = spread_mid_price - bid_ask_spread * 0.5;
         let raw_ask = spread_mid_price + bid_ask_spread * 0.5;
         (raw_bid, raw_ask)
+    }
+
+    fn clear_vega_pricing_timeout(&mut self) {
+        self.vega_pricing_temporarily_disabled = false;
+    }
+
+    fn start_vega_pricing_timeout(&mut self) {
+        self.vega_pricing_temporarily_disabled = true;
+
+        if self
+            .clock
+            .borrow()
+            .timer_names()
+            .contains(&self.vega_pricing_timeout_timer_name.as_str())
+        {
+            return;
+        }
+
+        let Some(aggregator_weak) = self.aggregator_weak.clone() else {
+            return;
+        };
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |_event: TimeEvent| {
+            if let Some(agg) = aggregator_weak.upgrade() {
+                agg.borrow_mut().clear_vega_pricing_timeout();
+            }
+        }));
+        let alert_time =
+            self.clock.borrow().timestamp_ns() + self.vega_pricing_timeout_seconds * 1_000_000_000;
+
+        self.clock
+            .borrow_mut()
+            .set_time_alert_ns(
+                &self.vega_pricing_timeout_timer_name,
+                alert_time,
+                Some(callback),
+                Some(true),
+            )
+            .expect("Failed to set spread quote vega pricing timeout");
     }
 
     fn create_futures_spread_prices(&self) -> (f64, f64) {
@@ -6103,6 +6169,8 @@ mod tests {
             false,
             None,
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6158,6 +6226,8 @@ mod tests {
             false,
             None,
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6213,6 +6283,8 @@ mod tests {
             false,
             None,
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6268,6 +6340,8 @@ mod tests {
             false,
             Some(1),
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6345,6 +6419,8 @@ mod tests {
             true,
             Some(1),
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6419,6 +6495,8 @@ mod tests {
             true,
             Some(1),
             0,
+            false,
+            60,
             None,
             None,
         );
@@ -6488,6 +6566,8 @@ mod tests {
             false,
             None,
             0,
+            false,
+            60,
             Some(Box::new(vega_provider)),
             None,
         );
@@ -6533,7 +6613,7 @@ mod tests {
         vega_provider.insert(leg1, 0.0);
         vega_provider.insert(leg2, 0.0);
 
-        let mut agg = SpreadQuoteAggregator::new(
+        let agg = SpreadQuoteAggregator::new(
             spread_id,
             &legs,
             false,
@@ -6542,16 +6622,20 @@ mod tests {
             Box::new(move |q: QuoteTick| {
                 handler_clone.lock().expect(MUTEX_POISONED).push(q);
             }),
-            clock,
+            clock.clone(),
             false,
             None,
             0,
+            false,
+            1,
             Some(Box::new(vega_provider)),
             None,
         );
+        let rc = Rc::new(RefCell::new(agg));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
 
         let ts = UnixNanos::from(1_000_000_000);
-        agg.handle_quote_tick(QuoteTick::new(
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
             leg1,
             Price::from("10.00"),
             Price::from("10.10"),
@@ -6560,7 +6644,7 @@ mod tests {
             ts,
             ts,
         ));
-        agg.handle_quote_tick(QuoteTick::new(
+        rc.borrow_mut().handle_quote_tick(QuoteTick::new(
             leg2,
             Price::from("20.00"),
             Price::from("20.10"),
@@ -6569,11 +6653,144 @@ mod tests {
             ts,
             ts,
         ));
-        let quotes = handler.lock().expect(MUTEX_POISONED);
-        assert_eq!(quotes.len(), 1);
-        let q = &quotes[0];
-        assert_eq!(q.bid_price, Price::from("-10.10"));
-        assert_eq!(q.ask_price, Price::from("-9.90"));
+        {
+            let quotes = handler.lock().expect(MUTEX_POISONED);
+            assert_eq!(quotes.len(), 1);
+            let q = &quotes[0];
+            assert_eq!(q.bid_price, Price::from("-10.10"));
+            assert_eq!(q.ask_price, Price::from("-9.90"));
+        }
+        assert!(rc.borrow().vega_pricing_temporarily_disabled);
+
+        let timeout_name = rc.borrow().vega_pricing_timeout_timer_name.clone();
+        assert!(
+            clock
+                .borrow()
+                .timer_names()
+                .contains(&timeout_name.as_str())
+        );
+
+        let events = clock
+            .borrow_mut()
+            .advance_time(UnixNanos::from(2_000_000_000), true);
+
+        for handler in clock.borrow().match_handlers(events) {
+            handler.run();
+        }
+
+        assert!(!rc.borrow().vega_pricing_temporarily_disabled);
+
+        let cancel_handler = Arc::new(Mutex::new(Vec::new()));
+        let cancel_handler_clone = Arc::clone(&cancel_handler);
+        let mut cancel_vega_provider = MapVegaProvider::new();
+        cancel_vega_provider.insert(leg1, 0.0);
+        cancel_vega_provider.insert(leg2, 0.0);
+        let cancel_agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            false,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                cancel_handler_clone.lock().expect(MUTEX_POISONED).push(q);
+            }),
+            clock.clone(),
+            false,
+            None,
+            0,
+            false,
+            10,
+            Some(Box::new(cancel_vega_provider)),
+            None,
+        );
+        let cancel_rc = Rc::new(RefCell::new(cancel_agg));
+        cancel_rc
+            .borrow_mut()
+            .start_timer(Some(Rc::clone(&cancel_rc)));
+        cancel_rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        cancel_rc.borrow_mut().handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("20.00"),
+            Price::from("20.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        let cancel_timeout_name = cancel_rc.borrow().vega_pricing_timeout_timer_name.clone();
+        assert!(
+            clock
+                .borrow()
+                .timer_names()
+                .contains(&cancel_timeout_name.as_str())
+        );
+        cancel_rc.borrow_mut().stop_timer();
+        assert!(
+            !clock
+                .borrow()
+                .timer_names()
+                .contains(&cancel_timeout_name.as_str())
+        );
+
+        let permanent_handler = Arc::new(Mutex::new(Vec::new()));
+        let permanent_handler_clone = Arc::clone(&permanent_handler);
+        let mut permanent_vega_provider = MapVegaProvider::new();
+        permanent_vega_provider.insert(leg1, 0.15);
+        permanent_vega_provider.insert(leg2, 0.12);
+        let mut permanent_agg = SpreadQuoteAggregator::new(
+            spread_id,
+            &legs,
+            false,
+            instrument.price_precision(),
+            0,
+            Box::new(move |q: QuoteTick| {
+                permanent_handler_clone
+                    .lock()
+                    .expect(MUTEX_POISONED)
+                    .push(q);
+            }),
+            Rc::new(RefCell::new(TestClock::new())),
+            false,
+            None,
+            0,
+            true,
+            1,
+            Some(Box::new(permanent_vega_provider)),
+            None,
+        );
+
+        permanent_agg.handle_quote_tick(QuoteTick::new(
+            leg1,
+            Price::from("10.00"),
+            Price::from("10.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+        permanent_agg.handle_quote_tick(QuoteTick::new(
+            leg2,
+            Price::from("20.00"),
+            Price::from("20.10"),
+            Quantity::from(100),
+            Quantity::from(100),
+            ts,
+            ts,
+        ));
+
+        let permanent_quotes = permanent_handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(permanent_quotes.len(), 1);
+        assert_eq!(permanent_quotes[0].bid_price, Price::from("-10.10"));
+        assert_eq!(permanent_quotes[0].ask_price, Price::from("-9.90"));
+        assert!(!permanent_agg.vega_pricing_temporarily_disabled);
     }
 
     #[rstest]
@@ -6601,6 +6818,8 @@ mod tests {
             false,
             None,
             0,
+            false,
+            60,
             None,
             Some(Box::new(rounder)),
         );

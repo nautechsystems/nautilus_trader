@@ -6117,6 +6117,7 @@ class TestSpreadQuoteAggregator:
             clock=self.clock,
             historical=False,
             update_interval_seconds=None,
+            vega_pricing_timeout_seconds=1,
         )
 
         option1_quote = QuoteTick(
@@ -6152,6 +6153,54 @@ class TestSpreadQuoteAggregator:
         # Ask = 1.10 - 2.00 = -0.90
         assert spread_quote.bid_price.as_double() == -1.10
         assert spread_quote.ask_price.as_double() == -0.90
+        assert aggregator._vega_pricing_temporarily_disabled
+
+        assert aggregator._vega_pricing_timeout_timer_name in self.clock.timer_names
+
+        events = self.clock.advance_time(self.clock.timestamp_ns() + 2 * NANOSECONDS_IN_SECOND)
+        for event in events:
+            event.handle()
+
+        assert not aggregator._vega_pricing_temporarily_disabled
+
+        cancel_handler = []
+        cancel_aggregator = SpreadQuoteAggregator(
+            spread_instrument=self.spread_instrument,
+            handler=cancel_handler.append,
+            greeks_calculator=greeks_calculator,
+            clock=self.clock,
+            historical=False,
+            update_interval_seconds=None,
+            vega_pricing_timeout_seconds=10,
+        )
+
+        cancel_aggregator.handle_quote_tick(option1_quote)
+        cancel_aggregator.handle_quote_tick(option2_quote)
+
+        assert cancel_aggregator._vega_pricing_timeout_timer_name in self.clock.timer_names
+        cancel_aggregator.stop_timer()
+        assert cancel_aggregator._vega_pricing_timeout_timer_name not in self.clock.timer_names
+
+        permanent_handler = []
+        permanent_aggregator = SpreadQuoteAggregator(
+            spread_instrument=self.spread_instrument,
+            handler=permanent_handler.append,
+            greeks_calculator=greeks_calculator,
+            clock=self.clock,
+            historical=False,
+            update_interval_seconds=None,
+            disable_vega_pricing=True,
+            vega_pricing_timeout_seconds=1,
+        )
+        permanent_aggregator._vegas[:] = [0.15, 0.12]
+
+        permanent_aggregator.handle_quote_tick(option1_quote)
+        permanent_aggregator.handle_quote_tick(option2_quote)
+
+        assert len(permanent_handler) == 1
+        assert permanent_handler[0].bid_price.as_double() == -1.10
+        assert permanent_handler[0].ask_price.as_double() == -0.90
+        assert not permanent_aggregator._vega_pricing_temporarily_disabled
 
 
 class TestSpreadQuoteAggregatorHistoricalMode:
