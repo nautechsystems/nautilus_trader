@@ -1601,12 +1601,13 @@ impl LiveNode {
             );
         }
 
-        // Register external order claims before adding strategy (which moves it)
+        // Capture strategy-owned values before adding the strategy, which moves it
         let strategy_id = self
             .kernel
             .trader
             .borrow()
             .prepare_strategy_for_registration(&mut strategy)?;
+        let oms_type = StrategyNative::strategy_core(&strategy).config.oms_type;
         if let Some(claims) = strategy.external_order_claims() {
             for instrument_id in &claims {
                 self.exec_manager
@@ -1620,7 +1621,16 @@ impl LiveNode {
             );
         }
 
-        self.kernel.trader.borrow_mut().add_strategy(strategy)
+        self.kernel.trader.borrow_mut().add_strategy(strategy)?;
+
+        if let Some(oms_type) = oms_type {
+            self.kernel
+                .exec_engine
+                .borrow_mut()
+                .register_oms_type(strategy_id, oms_type);
+        }
+
+        Ok(())
     }
 
     /// Adds an execution algorithm to the trader.
@@ -2161,9 +2171,11 @@ mod tests {
         replace_exec_cmd_sender,
     };
     use nautilus_common::{
+        actor::DataActor,
         cache::Cache,
         clock::Clock,
         enums::SerializationEncoding,
+        messages::execution::{SubmitOrder, TradingCommand},
         msgbus::{
             self, BusMessage, BusPayloadType, MessageBusBacking, MessageBusBackingFactory,
             MessageBusConfig, MessageBusExternalEgress, MessageBusExternalIngress,
@@ -2171,16 +2183,24 @@ mod tests {
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_execution::engine::{ExecutionEngine, SnapshotAnchorer};
+    use nautilus_execution::engine::{
+        ExecutionEngine, SnapshotAnchorer, stubs::StubExecutionClient,
+    };
     use nautilus_model::{
         data::QuoteTick,
-        enums::OrderType,
-        identifiers::{AccountId, ClientId, InstrumentId, TraderId, VenueOrderId},
+        enums::{OmsType, OrderStatus, OrderType},
+        identifiers::{
+            AccountId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, VenueOrderId,
+        },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
+    use nautilus_trading::{
+        nautilus_strategy,
+        strategy::{config::StrategyConfig, core::StrategyCore},
+    };
     use rstest::*;
 
     use super::*;
@@ -2261,6 +2281,23 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct TestStrategy {
+        core: StrategyCore,
+    }
+
+    impl TestStrategy {
+        fn new(config: StrategyConfig) -> Self {
+            Self {
+                core: StrategyCore::new(config),
+            }
+        }
+    }
+
+    impl DataActor for TestStrategy {}
+
+    nautilus_strategy!(TestStrategy);
+
     fn live_node_with_replay_store(fail_restore: bool) -> LiveNode {
         // load_state must be true: the kernel rejects event-store replay otherwise,
         // and LiveNodeConfig defaults it to false.
@@ -2277,6 +2314,88 @@ mod tests {
             });
 
         builder.build().unwrap()
+    }
+
+    #[rstest]
+    fn test_add_strategy_registers_configured_hedging_oms_type() {
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let strategy_id = StrategyId::from("FUNDING_ARBITRAGE-001");
+
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(strategy_id),
+            oms_type: Some(OmsType::Hedging),
+            ..Default::default()
+        }))
+        .unwrap();
+
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let client_id = ClientId::from("STUB");
+
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(StubExecutionClient::new(
+                client_id,
+                AccountId::from("TEST-ACCOUNT"),
+                instrument_id.venue,
+                OmsType::Netting,
+                None,
+            )))
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(node.trader_id())
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let position_id = PositionId::new("CUSTOM-POSITION-001");
+
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), Some(position_id), Some(client_id), true)
+            .unwrap();
+
+        let submit_order = SubmitOrder::new(
+            order.trader_id(),
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            order.client_order_id(),
+            order.init_event().clone(),
+            order.exec_algorithm_id(),
+            Some(position_id),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        node.kernel
+            .exec_engine
+            .borrow()
+            .execute(TradingCommand::SubmitOrder(submit_order));
+
+        let exec_engine = node.kernel.exec_engine.borrow();
+        let cache = exec_engine.cache().borrow();
+        let cached_order = cache
+            .order(&order.client_order_id())
+            .expect("Order should be cached");
+
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
     }
 
     #[rstest]

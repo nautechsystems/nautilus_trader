@@ -23,6 +23,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
+- Fixed Rust strategy `oms_type` registration for custom HEDGING position IDs (#4327), thanks for reporting @dxwil
 - Fixed Architect AX execution reconciliation for open positions and fills
 - Fixed Architect AX to deny unsupported order types and times in force locally
 - Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
