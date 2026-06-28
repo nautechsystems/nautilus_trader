@@ -1734,6 +1734,36 @@ fn test_maintain_stop_ioc_does_not_resubmit_after_rejection(
 }
 
 #[rstest]
+fn test_maintain_stop_gtc_does_not_resubmit_after_rejection(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    // A rejected GTC stop must not resubmit (would churn the venue)
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = true;
+    config.stop_order_type = OrderType::StopMarket;
+    config.stop_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let buy_id = tester.buy_stop_order.as_ref().unwrap().client_order_id();
+    apply_rejected_in_cache(&cache, buy_id);
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let submits = submit_orders(&risk_saver);
+    assert_eq!(submits.len(), 1, "rejected GTC stop should not resubmit");
+    assert_eq!(
+        tester.buy_stop_order.as_ref().unwrap().status(),
+        OrderStatus::Rejected,
+    );
+}
+
+#[rstest]
 #[case::buy(OrderSide::Buy, "3001.0", "3002.0", "3002.0", "3003.0")]
 #[case::sell(OrderSide::Sell, "2999.0", "3000.0", "2998.0", "2999.0")]
 fn test_limit_cancel_replace_guard_fires_once(
