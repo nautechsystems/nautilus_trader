@@ -22,6 +22,10 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
+- Fixed Architect AX execution reconciliation for open positions and fills
+- Fixed Architect AX to deny unsupported order types and times in force locally
+- Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
+- Fixed Architect AX market data for null ticker prices and order book snapshot requests
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
