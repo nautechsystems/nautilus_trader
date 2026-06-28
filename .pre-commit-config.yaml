@@ -291,6 +291,14 @@ repos:
         files: "^scripts/ci/(publish-cargo-crates\\.sh|test-publish-cargo-crates-check\\.bash)$"
         pass_filenames: false
 
+      - id: check-release-github-assets
+        name: check mocked GitHub release assets
+        description: Checks mocked GitHub release asset verification and checksum publication
+        entry: bash scripts/ci/test-release-github-assets.bash
+        language: system
+        files: "^scripts/ci/(publish-release-checksums\\.sh|(verify-github-release|test-release-github)-assets\\.bash)$"
+        pass_filenames: false
+
       - id: fmt
         name: cargo fmt
         description: Format files with cargo fmt

@@ -67,13 +67,15 @@ Keep these sequencing rules intact when editing `.github/workflows/build.yml`:
   `id-token: write`; those registrations depend on the `release` environment.
 - Non-OIDC integrity and asset-upload jobs should avoid `environment: release` unless they need
   release environment secrets or approvals.
-- `publish-release-integrity` must run after PyPI and crates.io publishing so it verifies the
-  registries against the release manifest before attaching final integrity assets.
+- `publish-release-integrity` must run after PyPI and crates.io publishing. It generates the
+  release manifest first, verifies registries against that manifest, then attaches final integrity
+  assets only after verification passes.
 - `publish-github-release` must be the final stable release job. GitHub recommends creating a
   draft release, attaching all assets, then publishing the draft before enabling release
   immutability. Once GitHub release immutability is enabled for the repo, published release assets
   and the release tag cannot be changed; only the title and release notes remain editable. The job
-  verifies GitHub's release attestation after publishing the draft.
+  verifies the final draft asset set before publishing and verifies GitHub's release attestation
+  after publishing the draft.
 
 ## Versioning
 
@@ -136,11 +138,13 @@ mismatches also fail.
 - [ ] Verify the `build` workflow completes:
   - Wheels built for Linux x86/ARM, macOS, Windows
   - `cargo-deny` and `cargo-vet` pass
+  - Release docs/features and Cargo publish preflights pass before tagging
   - Tag and draft GitHub release created
   - Wheels and sdist attached to the GitHub release before package registry publishing
   - Cargo crates published to crates.io or skipped because the version already exists
   - Wheels and sdist published to PyPI
-  - Release checksums, registry verification, crates manifest, and attestation siblings published
+  - Registry verification passes before release checksums, crates manifest, and attestation siblings
+    are attached
   - GitHub release published after all release assets and integrity assets are attached
 - [ ] Verify the `docker` workflow completes (images built and pushed)
 - [ ] Verify the `build-docs` workflow completes (docs rebuild triggered)

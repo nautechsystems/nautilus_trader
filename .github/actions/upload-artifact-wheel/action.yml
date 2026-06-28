@@ -1,6 +1,12 @@
 name: Upload wheel artifact to GitHub Actions
 description: Upload wheel artifact to GitHub Actions
 
+inputs:
+  retention-days:
+    description: Number of days to retain the uploaded wheel artifact
+    required: false
+    default: "1"
+
 runs:
   using: "composite"
   steps:
@@ -40,4 +46,4 @@ runs:
         name: ${{ env.ASSET_NAME }}
         path: dist/nautilus_trader-*.whl
         if-no-files-found: error
-        retention-days: 1
+        retention-days: ${{ inputs.retention-days }}

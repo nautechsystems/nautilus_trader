@@ -348,6 +348,8 @@ jobs:
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
+        with:
+          retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-linux-arm:
     strategy:
@@ -476,6 +478,8 @@ jobs:
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
+        with:
+          retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-macos:
     # macOS stays off develop pushes and pre-commit-only test runs.
@@ -633,6 +637,8 @@ jobs:
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
+        with:
+          retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   build-windows:
     # Windows stays off PRs, develop pushes, and pre-commit-only test runs.
@@ -708,6 +714,8 @@ jobs:
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
+        with:
+          retention-days: ${{ github.ref_name == 'master' && '7' || '1' }}
 
   publish-wheels-develop:
     name: publish-wheels-develop
@@ -1056,6 +1064,7 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             tuf-repo-cdn.sigstore.dev:443
+            rekor.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443
@@ -1077,6 +1086,9 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
+
+      - name: Check Rekor readiness
+        run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Download built wheel artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -1120,7 +1132,97 @@ jobs:
             dist/nautilus_trader-*.whl.sigstore
             dist/nautilus_trader-*.whl.intoto.jsonl
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
+
+  release-cargo-publish-preflight:
+    name: release cargo publish preflight
+    runs-on: ubuntu-latest
+    needs:
+      - cargo-deny
+      - cargo-vet
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            crates.io:443
+            index.crates.io:443
+            static.crates.io:443
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          build-type: "test"
+          free-disk-space: "true"
+          uv-cache-enabled: "false"
+          prek-cache-enabled: "false"
+          capnp-cache-enabled: "false"
+          rust-cache-enabled: "false"
+          rust-cache-save-if: "false"
+
+      - name: Check Cargo crate publish plan
+        run: bash scripts/ci/publish-cargo-crates.sh --check
+
+      - name: Dry-run Cargo crate publishing
+        run: bash scripts/ci/publish-cargo-crates.sh --dry-run
+
+  release-docs-features-preflight:
+    name: release docs/features preflight
+    runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    permissions:
+      contents: read
+    env:
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/release-docs-features-preflight
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: ${{ env.EGRESS_POLICY }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+
+      - name: Checkout repository
+        # https://github.com/actions/checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Common setup
+        uses: ./.github/actions/common-setup
+        with:
+          python-version: "3.13"
+          free-disk-space: "true"
+          rust-cache-enabled: "false"
+
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly
+
+      # https://github.com/taiki-e/install-action
+      - name: Install cargo-hack
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2.81.10
+        with:
+          tool: cargo-hack
+
+      - name: Run docsrs-check
+        run: make docsrs-check
+
+      - name: Run check-features
+        run: make check-features
 
   tag-release:
     needs:
@@ -1130,6 +1232,8 @@ jobs:
       - build-windows
       - cargo-deny
       - cargo-vet
+      - release-cargo-publish-preflight
+      - release-docs-features-preflight
     permissions:
       contents: write # Required for pushing tags and upload release assets
       actions: write # Required for creating releases
@@ -1232,7 +1336,7 @@ jobs:
           name: release-sdist
           path: dist/nautilus_trader-*.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   upload-sdist-release:
     needs:
@@ -1292,6 +1396,7 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             tuf-repo-cdn.sigstore.dev:443
+            rekor.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
             upload.pypi.org:443
@@ -1313,6 +1418,9 @@ jobs:
         with:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
+
+      - name: Check Rekor readiness
+        run: bash ./scripts/ci/check-rekor-ready.bash
 
       - name: Download sdist artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -1355,7 +1463,7 @@ jobs:
             dist/nautilus_trader-*.tar.gz.sigstore
             dist/nautilus_trader-*.tar.gz.intoto.jsonl
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   publish-release-integrity:
     needs:
@@ -1377,6 +1485,7 @@ jobs:
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             tuf-repo-cdn.sigstore.dev:443
+            rekor.sigstore.dev:443
             pypi.org:443
             files.pythonhosted.org:443
             crates.io:443
@@ -1400,14 +1509,17 @@ jobs:
           version: ${{ env.UV_VERSION }}
           enable-cache: false
 
-      - name: Publish release checksums
+      - name: Check Rekor readiness
+        run: bash ./scripts/ci/check-rekor-ready.bash
+
+      - name: Generate release checksums
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
           ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
           ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
-        run: bash ./scripts/ci/publish-release-checksums.sh
+        run: bash ./scripts/ci/publish-release-checksums.sh --generate-only release-assets
 
       - name: Verify published registries
         shell: bash
@@ -1421,6 +1533,15 @@ jobs:
             nautilus-trader-release-verifier
             (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
         run: bash ./scripts/ci/verify-published-registries.bash release-assets
+
+      - name: Publish release checksums
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          ATTESTATION_IDENTITY: ${{ github.server_url }}/${{ github.workflow_ref }}
+          ATTESTATION_ISSUER: https://token.actions.githubusercontent.com
+        run: bash ./scripts/ci/publish-release-checksums.sh --publish-existing release-assets
 
       - name: Upload crates manifest
         env:
@@ -1472,12 +1593,20 @@ jobs:
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            rekor.sigstore.dev:443
 
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
+
+      - name: Verify final release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.tag-release.outputs.tag_name }}
+          GH_RELEASE_EXPECT_DRAFT: "true"
+        run: bash ./scripts/ci/verify-github-release-assets.bash
 
       - name: Check Rekor readiness
         run: bash ./scripts/ci/check-rekor-ready.bash
