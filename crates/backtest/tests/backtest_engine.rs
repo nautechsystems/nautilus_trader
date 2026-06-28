@@ -33,7 +33,7 @@ use nautilus_common::{
     msgbus, nautilus_actor,
     timer::TimeEvent,
 };
-use nautilus_core::UnixNanos;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::models::latency::StaticLatencyModel;
 use nautilus_indicators::{
     average::ema::ExponentialMovingAverage,
@@ -1561,12 +1561,12 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
         let cache = cache_rc.borrow();
         let positions = cache.positions(None, None, None, None, None);
 
-        let mut expected_pnls: Vec<(PositionId, Currency, f64)> = positions
+        let mut expected_pnls: Vec<(PositionId, UnixNanos, Currency, f64)> = positions
             .iter()
             .filter_map(|p| {
                 p.realized_pnl
                     .as_ref()
-                    .map(|m| (p.id, m.currency, m.as_f64()))
+                    .map(|m| (p.id, p.ts_last, m.currency, m.as_f64()))
             })
             .collect();
 
@@ -1578,7 +1578,7 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
         expected_pnls.extend(snapshot_positions.iter().filter_map(|p| {
             p.realized_pnl
                 .as_ref()
-                .map(|m| (p.id, m.currency, m.as_f64()))
+                .map(|m| (p.id, p.ts_last, m.currency, m.as_f64()))
         }));
         let snapshots_realized: f64 = snapshot_positions
             .iter()
@@ -1596,12 +1596,12 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
 
         let expected_currency = expected_pnls
             .first()
-            .map(|(_, currency, _)| *currency)
+            .map(|(_, _, currency, _)| *currency)
             .expect("expected realized PnL history");
         let expected_pnls = expected_pnls
             .into_iter()
-            .filter_map(|(position_id, currency, pnl)| {
-                (currency == expected_currency).then_some((position_id, pnl))
+            .filter_map(|(position_id, ts_event, currency, pnl)| {
+                (currency == expected_currency).then_some((position_id, ts_event, pnl))
             })
             .collect::<Vec<_>>();
 
@@ -1621,16 +1621,26 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
         .recorded_realized_pnls()
         .get(&expected_currency)
     {
-        expected_pnls.retain(|(position_id, _)| {
+        expected_pnls.retain(|(position_id, ts_event, _)| {
+            let key = (canonical_position_id(*position_id), *ts_event);
             !recorded_pnls
                 .iter()
-                .any(|(recorded_position_id, _, _)| recorded_position_id == position_id)
+                .any(|(recorded_position_id, recorded_ts_event, _)| {
+                    (
+                        canonical_position_id(*recorded_position_id),
+                        *recorded_ts_event,
+                    ) == key
+                })
         });
-        expected_pnls.extend(recorded_pnls.iter().map(|(id, _, pnl)| (*id, *pnl)));
+        expected_pnls.extend(
+            recorded_pnls
+                .iter()
+                .map(|(id, ts_event, pnl)| (*id, *ts_event, *pnl)),
+        );
     }
 
     let expected_expectancy =
-        expected_pnls.iter().map(|(_, pnl)| pnl).sum::<f64>() / expected_pnls.len() as f64;
+        expected_pnls.iter().map(|(_, _, pnl)| pnl).sum::<f64>() / expected_pnls.len() as f64;
 
     let bt_result = engine.get_result();
     assert_eq!(
@@ -1660,6 +1670,26 @@ fn test_get_result_includes_snapshot_position_history(crypto_perpetual_ethusdt: 
         (expectancy - expected_expectancy).abs() < 1e-9,
         "expected Expectancy={expected_expectancy} to include snapshot history {snapshots_realized}, found {expectancy}"
     );
+}
+
+fn canonical_position_id(position_id: PositionId) -> PositionId {
+    const UUID4_STRING_LEN: usize = 36;
+
+    let value = position_id.as_str();
+    let Some(separator_index) = value.len().checked_sub(UUID4_STRING_LEN + 1) else {
+        return position_id;
+    };
+
+    if separator_index == 0 || value.as_bytes()[separator_index] != b'-' {
+        return position_id;
+    }
+
+    let suffix = &value[separator_index + 1..];
+    if suffix.parse::<UUID4>().is_ok() {
+        PositionId::new(&value[..separator_index])
+    } else {
+        position_id
+    }
 }
 
 #[rstest]

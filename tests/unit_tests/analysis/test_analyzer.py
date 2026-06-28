@@ -654,11 +654,14 @@ def _create_closed_position(
     ts_closed: str,
     currency=USD,
 ) -> SimpleNamespace:
+    timestamp = pd.Timestamp(ts_closed, tz="UTC").value
+
     return SimpleNamespace(
         id=PositionId(position_id),
         realized_pnl=Money(realized_pnl, currency),
         realized_return=realized_return,
-        ts_closed=pd.Timestamp(ts_closed, tz="UTC").value,
+        ts_closed=timestamp,
+        ts_last=timestamp,
     )
 
 

@@ -17,7 +17,7 @@ use std::{collections::BTreeMap, fmt::Debug, sync::Arc};
 
 use ahash::AHashMap;
 use indexmap::{IndexMap, IndexSet};
-use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_DAY};
+use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     identifiers::PositionId,
@@ -443,13 +443,16 @@ impl PortfolioAnalyzer {
             (Some(realized_pnls), Some(recorded_realized_pnls)) => {
                 let recorded_keys: IndexSet<(PositionId, UnixNanos)> = recorded_realized_pnls
                     .iter()
-                    .map(|(position_id, ts_event, _)| (*position_id, *ts_event))
+                    .map(|(position_id, ts_event, _)| {
+                        (canonical_position_id(*position_id), *ts_event)
+                    })
                     .collect();
                 let mut output: Vec<(PositionId, UnixNanos, f64)> = realized_pnls
                     .iter()
                     .copied()
                     .filter(|(position_id, ts_event, _)| {
-                        !recorded_keys.contains(&(*position_id, *ts_event))
+                        let key = (canonical_position_id(*position_id), *ts_event);
+                        !recorded_keys.contains(&key)
                     })
                     .collect();
                 output.extend(recorded_realized_pnls.iter().copied());
@@ -778,6 +781,26 @@ impl PortfolioAnalyzer {
         }
 
         output
+    }
+}
+
+fn canonical_position_id(position_id: PositionId) -> PositionId {
+    const UUID4_STRING_LEN: usize = 36;
+
+    let value = position_id.as_str();
+    let Some(separator_index) = value.len().checked_sub(UUID4_STRING_LEN + 1) else {
+        return position_id;
+    };
+
+    if separator_index == 0 || value.as_bytes()[separator_index] != b'-' {
+        return position_id;
+    }
+
+    let suffix = &value[separator_index + 1..];
+    if suffix.parse::<UUID4>().is_ok() {
+        PositionId::new(&value[..separator_index])
+    } else {
+        position_id
     }
 }
 
@@ -1198,6 +1221,22 @@ mod tests {
                 (position_id, UnixNanos::from(2), 25.0),
             ]
         );
+    }
+
+    #[rstest]
+    fn test_trade_pnl_records_drops_recorded_snapshot_alias() {
+        let mut analyzer = PortfolioAnalyzer::new();
+        let currency = Currency::USD();
+        let position_id = PositionId::new("pos1");
+        let snapshot_id = PositionId::new(format!("{}-{}", position_id.as_str(), UUID4::new()));
+        let ts_event = UnixNanos::from(1);
+
+        analyzer.add_trade(&snapshot_id, ts_event, &Money::new(10.0, currency));
+        analyzer.record_trade(&position_id, ts_event, &Money::new(10.0, currency));
+
+        let records = analyzer.trade_pnl_records(Some(&currency)).unwrap();
+
+        assert_eq!(records, vec![(position_id, ts_event, 10.0)]);
     }
 
     #[rstest]
