@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
 - Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
+- Fixed Lighter stop-market and market-if-touched order modification rejected for a missing price
 - Fixed Polymarket reconciliation producing out-of-range fill prices
 - Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
 - Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
@@ -44,6 +45,7 @@ Released on TBD (UTC).
 - Optimized `OrderMatchingEngine` no-match GTD and trailing-order paths (Rust)
 - Optimized Databento adapter decode and loader paths (Rust)
 - Optimized `Throttler` hot paths and added Criterion benches (Rust)
+- Upgraded Cython to v3.2.6
 
 ### Documentation Updates
 - Added a Lighter Rust quickstart and get-started guide
