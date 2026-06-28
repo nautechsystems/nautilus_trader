@@ -4,23 +4,30 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added v2 Python visualization (tearsheet) support with a `visualization` extra
+- Added spread quote vega-pricing fallback controls for missing greeks (#4328), thanks @faysou
+- Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
+- Added `with_clock_factory` for Rust live and sandbox nodes (#4331), thanks @folknor
+- Added Betfair cricket match stream data subscriptions (Rust and Python)
 - Added Bybit instrument subscription support via instrument-info polling (#4305), thanks @dxwil
 - Added OKX region support for global, EEA, and US endpoints (#4318), thanks @dxwil
-- Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
 
 ### Breaking Changes
-- **Breaking:** the `event_store` on-disk envelope format changed (bincode replaced by a hardened positional codec). Beta stores written by v1.227-v1.229 are rejected with a clear `Corrupted` error and must be regenerated; there is no migrator.
-- Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
+- Changed `event_store` format; beta v1.227-v1.229 stores must be regenerated (#4330), thanks @folknor
 - Changed `Throttler` rate limit fields to non-zero accessors instead of public fields (Rust)
+- Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
 
 ### Security
+- Removed direct `bincode` use from `event_store` on-disk envelopes (#4330), thanks @folknor
 
 ### Fixes
-- Fixed `Throttler` timer handling to namespace timers by actor and cancel them on teardown (Rust)
+- Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
+- Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
+- Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
+- Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
 
 ### Internal Improvements
 - Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
