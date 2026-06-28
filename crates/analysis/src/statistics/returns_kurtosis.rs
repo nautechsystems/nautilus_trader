@@ -87,7 +87,8 @@ impl PortfolioStatistic for ReturnsKurtosis {
             .values()
             .map(|x| ((x - mean) / std).powi(4))
             .sum::<f64>();
-        let kurtosis = (n_f * (n_f + 1.0)) / ((n_f - 1.0) * (n_f - 2.0) * (n_f - 3.0)) * sum_quartic
+        let kurtosis = (n_f * (n_f + 1.0)) / ((n_f - 1.0) * (n_f - 2.0) * (n_f - 3.0))
+            * sum_quartic
             - 3.0 * (n_f - 1.0).powi(2) / ((n_f - 2.0) * (n_f - 3.0));
 
         Some(kurtosis)
