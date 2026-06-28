@@ -1276,7 +1276,19 @@ def _create_tearsheet_figure(
     go.Figure
         Complete tearsheet figure.
 
+    Raises
+    ------
+    ImportError
+        If plotly is not installed.
+
     """
+    if not PLOTLY_AVAILABLE:
+        msg = (
+            "plotly is required for visualization. "
+            "Install it with: pip install nautilus_trader[visualization]"
+        )
+        raise ImportError(msg)
+
     from nautilus_trader.analysis.themes import get_theme
 
     if config is None:

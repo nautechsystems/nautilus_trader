@@ -236,7 +236,9 @@ jobs:
         working-directory: ${{ env.PACKAGE_DIR }}
         run: |
           uv sync --group test --no-install-package nautilus-trader
-          uv pip install "../dist/"*.whl
+          # Install the built wheel with the visualization extra so plotly/kaleido tests run
+          wheel=$(echo ../dist/*.whl)
+          uv pip install "${wheel}[visualization]"
           # Pin pandas test deps here until v2 runtime deps are settled
           uv pip install --only-binary :all: \
             "numpy==2.4.6" \

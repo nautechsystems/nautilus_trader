@@ -959,3 +959,16 @@ def test_tearsheet_figure_routes_compounding_flag_to_renderer(two_month_returns)
     assert len(heatmaps) == 1
     # Jan (fixed base) == 10%, Feb (fixed base) == 11%
     assert heatmaps[0].z[0] == pytest.approx([10.0, 11.0])
+
+
+def test_create_tearsheet_figure_requires_plotly(monkeypatch, two_month_returns):
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", False)
+
+    with pytest.raises(ImportError, match="plotly is required"):
+        tearsheet._create_tearsheet_figure(
+            stats_returns={},
+            stats_general={},
+            stats_pnls={},
+            returns=two_month_returns,
+            title="X",
+        )
