@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
 - Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
+- Fixed Polymarket reconciliation producing out-of-range fill prices
 - Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
 - Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
 
@@ -45,6 +46,7 @@ Released on TBD (UTC).
 - Standardized the `request_bars` callback pattern for live bar warmup (#4311), thanks @dfjmax
 - Refined Databento dataset configuration docs for schema limits and symbology inference
 - Refined event sourcing marker sidecar docs to match the shipped markers module
+- Refined Polymarket integration guide for Rust config fields and order behavior
 
 ### Deprecations
 
