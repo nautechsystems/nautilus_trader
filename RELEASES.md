@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
 - Fixed Architect AX market data for null ticker prices and order book snapshot requests
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
+- Fixed Binance Futures `TRADING_HALT` contract status handling (Rust and Python) (#4320), thanks @YeeTsai
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
 - Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23

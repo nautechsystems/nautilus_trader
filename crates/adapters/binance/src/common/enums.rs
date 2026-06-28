@@ -585,6 +585,8 @@ impl From<BinanceTradingStatus> for MarketStatusAction {
 pub enum BinanceContractStatus {
     /// Trading is active.
     Trading,
+    /// Trading is halted for an otherwise active contract.
+    TradingHalt,
     /// Pending trading.
     PendingTrading,
     /// Pre-delivering.
@@ -614,6 +616,7 @@ impl From<BinanceContractStatus> for MarketStatusAction {
     fn from(status: BinanceContractStatus) -> Self {
         match status {
             BinanceContractStatus::Trading => Self::Trading,
+            BinanceContractStatus::TradingHalt => Self::Halt,
             BinanceContractStatus::PendingTrading => Self::PreOpen,
             BinanceContractStatus::PreDelivering
             | BinanceContractStatus::PreDelisting
@@ -994,6 +997,16 @@ mod tests {
     fn test_margin_type_unknown_fallback() {
         let value: BinanceMarginType = serde_json::from_str("\"SOMETHING_NEW\"").unwrap();
         assert_eq!(value, BinanceMarginType::Unknown);
+    }
+
+    #[rstest]
+    fn test_contract_status_trading_halt_deserializes_and_maps() {
+        // Binance reports `TRADING_HALT` for a temporarily halted active contract.
+        // It must deserialize to the explicit variant (not the `Unknown` fallback)
+        // and map deliberately to `Halt`.
+        let status: BinanceContractStatus = serde_json::from_str("\"TRADING_HALT\"").unwrap();
+        assert_eq!(status, BinanceContractStatus::TradingHalt);
+        assert_eq!(MarketStatusAction::from(status), MarketStatusAction::Halt);
     }
 
     #[rstest]
