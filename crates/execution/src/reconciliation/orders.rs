@@ -39,7 +39,8 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::{
-    ids::create_inferred_reconciliation_trade_id, positions::is_within_single_unit_tolerance,
+    ids::create_inferred_reconciliation_trade_id,
+    positions::{cap_price_at_instrument_max, is_within_single_unit_tolerance},
 };
 
 /// Generates reconciliation events for a live order status report.
@@ -639,6 +640,7 @@ pub(super) fn create_inferred_fill(
         );
         return None;
     };
+    let last_px = clamp_inferred_fill_price(last_px, instrument);
 
     let position_id = reconciliation_position_id(report, instrument);
     let trade_id = create_inferred_reconciliation_trade_id(
@@ -719,6 +721,7 @@ pub fn create_incremental_inferred_fill(
     };
 
     let last_px = calculate_incremental_fill_price(order, report, instrument)?;
+    let last_px = clamp_inferred_fill_price(last_px, instrument);
 
     let venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
     let position_id = reconciliation_position_id(report, instrument);
@@ -807,6 +810,7 @@ pub fn create_inferred_fill_for_qty(
         );
         return None;
     };
+    let last_px = clamp_inferred_fill_price(last_px, instrument);
 
     let venue_order_id = order.venue_order_id().unwrap_or(report.venue_order_id);
     let position_id = reconciliation_position_id(report, instrument);
@@ -1046,6 +1050,15 @@ fn calculate_incremental_fill_price(
     }
 
     order.price()
+}
+
+/// Caps an inferred fill price at the instrument's maximum price.
+///
+/// Thin `Price` wrapper over [`cap_price_at_instrument_max`]; see that
+/// function for why reconciliation needs to bound synthetic fill prices.
+fn clamp_inferred_fill_price(price: Price, instrument: &InstrumentAny) -> Price {
+    let px = cap_price_at_instrument_max(price.as_decimal(), instrument);
+    Price::from_decimal_dp(px, instrument.price_precision()).unwrap_or(price)
 }
 
 fn reconciliation_position_id(

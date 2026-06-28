@@ -147,6 +147,29 @@ impl GetFundingRatesParams {
     }
 }
 
+/// Parameters for the GET /fills endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/order-management/get-order-fills>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetFillsParams {
+    /// Start timestamp in nanoseconds.
+    pub start_timestamp_ns: i64,
+    /// End timestamp in nanoseconds.
+    pub end_timestamp_ns: i64,
+}
+
+impl GetFillsParams {
+    /// Creates a new [`GetFillsParams`].
+    #[must_use]
+    pub fn new(start_timestamp_ns: i64, end_timestamp_ns: i64) -> Self {
+        Self {
+            start_timestamp_ns,
+            end_timestamp_ns,
+        }
+    }
+}
+
 /// Parameters for the GET /transactions endpoint.
 ///
 /// # References
@@ -326,6 +349,14 @@ mod tests {
         let params = GetFundingRatesParams::new(Ustr::from("GBPUSD-PERP"), 1000000000, 2000000000);
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert!(qs.contains("symbol=GBPUSD-PERP"));
+        assert!(qs.contains("start_timestamp_ns=1000000000"));
+        assert!(qs.contains("end_timestamp_ns=2000000000"));
+    }
+
+    #[rstest]
+    fn test_get_fills_params_serialization() {
+        let params = GetFillsParams::new(1000000000, 2000000000);
+        let qs = serde_urlencoded::to_string(&params).unwrap();
         assert!(qs.contains("start_timestamp_ns=1000000000"));
         assert!(qs.contains("end_timestamp_ns=2000000000"));
     }

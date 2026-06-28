@@ -40,6 +40,11 @@ python = [
 ]
 high-precision = ["nautilus-model/high-precision"]
 
+[package.metadata.docs.rs]
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["high-precision"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 nautilus-common = { workspace = true }
 nautilus-core = { workspace = true }

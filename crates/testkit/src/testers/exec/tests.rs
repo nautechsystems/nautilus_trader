@@ -63,8 +63,8 @@ fn register_exec_tester(tester: &mut ExecTester, cache: Rc<RefCell<Cache>>) {
     let trader_id = TraderId::from("TRADER-001");
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
-        cache.clone(),
         clock.clone(),
+        cache.clone(),
         None,
     )));
 
@@ -1727,6 +1727,36 @@ fn test_maintain_stop_ioc_does_not_resubmit_after_rejection(
 
     let submits = submit_orders(&risk_saver);
     assert_eq!(submits.len(), 1, "IOC stop should submit once");
+    assert_eq!(
+        tester.buy_stop_order.as_ref().unwrap().status(),
+        OrderStatus::Rejected,
+    );
+}
+
+#[rstest]
+fn test_maintain_stop_gtc_does_not_resubmit_after_rejection(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+) {
+    // A rejected GTC stop must not resubmit (would churn the venue)
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = true;
+    config.stop_order_type = OrderType::StopMarket;
+    config.stop_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let buy_id = tester.buy_stop_order.as_ref().unwrap().client_order_id();
+    apply_rejected_in_cache(&cache, buy_id);
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+
+    let submits = submit_orders(&risk_saver);
+    assert_eq!(submits.len(), 1, "rejected GTC stop should not resubmit");
     assert_eq!(
         tester.buy_stop_order.as_ref().unwrap().status(),
         OrderStatus::Rejected,

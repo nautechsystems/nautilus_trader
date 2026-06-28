@@ -572,7 +572,7 @@ fn get_risk_engine(
         max_notional_per_order: AHashMap::new(),
     });
     let clock = clock.unwrap_or(Rc::new(RefCell::new(TestClock::new())));
-    let portfolio = Portfolio::new(cache.clone(), clock.clone(), None);
+    let portfolio = Portfolio::new(clock.clone(), cache.clone(), None);
     RiskEngine::new(config, portfolio, clock, cache)
 }
 

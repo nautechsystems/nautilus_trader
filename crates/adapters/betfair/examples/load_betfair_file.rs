@@ -69,6 +69,7 @@ fn main() -> anyhow::Result<()> {
     let mut sequences = 0u64;
     let mut race_runners = 0u64;
     let mut race_progress = 0u64;
+    let mut cricket_matches = 0u64;
 
     for item in &items {
         match item {
@@ -83,6 +84,7 @@ fn main() -> anyhow::Result<()> {
             BetfairDataItem::SequenceCompleted(_) => sequences += 1,
             BetfairDataItem::RaceRunnerData(_) => race_runners += 1,
             BetfairDataItem::RaceProgress(_) => race_progress += 1,
+            BetfairDataItem::CricketMatch(_) => cricket_matches += 1,
         }
     }
 
@@ -104,6 +106,10 @@ fn main() -> anyhow::Result<()> {
 
     if race_progress > 0 {
         println!("Race progress:     {race_progress}");
+    }
+
+    if cricket_matches > 0 {
+        println!("Cricket matches:   {cricket_matches}");
     }
 
     println!("\n--- Instruments ---");

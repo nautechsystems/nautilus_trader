@@ -3623,8 +3623,8 @@ class IndicatorEventStrategy:
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
 
@@ -3751,8 +3751,8 @@ class IndicatorEventStrategy:
             let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
             let portfolio = Rc::new(RefCell::new(Portfolio::new(
-                cache.clone(),
                 clock.clone(),
+                cache.clone(),
                 None,
             )));
 

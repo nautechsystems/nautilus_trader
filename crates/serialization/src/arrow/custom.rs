@@ -16,8 +16,8 @@
 //! Custom data: registration and dynamic decoding.
 //!
 //! - **Registration:** Call [`ensure_custom_data_registered::<T>()`] once (e.g. before using the
-//!   catalog) for each custom data type `T` produced by the `#[custom_data]` macro. For Python
-//!   bindings, also call [`nautilus_model::data::register_rust_extractor::<T>()`].
+//!   catalog) for each custom data type `T` produced by the `#[custom_data]` macro. When Python
+//!   support is enabled, also call `nautilus_model::data::register_rust_extractor::<T>()`.
 //! - **Decoder:** [`CustomDataDecoder`] provides [`ArrowSchemaProvider`] and
 //!   [`DecodeDataFromRecordBatch`] for Parquet-backed custom data decoded at runtime by type name.
 //!   Types must be registered via [`ensure_custom_data_registered::<T>()`] before use.
@@ -62,7 +62,8 @@ pub trait CustomDataSerialize: CustomDataTrait {
 /// Each distinct type `T` is registered at most once (per process). Safe to call
 /// multiple times for the same `T`.
 ///
-/// For types exposed to Python, also call [`nautilus_model::data::register_rust_extractor::<T>()`].
+/// When Python support is enabled, also call
+/// `nautilus_model::data::register_rust_extractor::<T>()` for types exposed to Python.
 pub fn ensure_custom_data_registered<T>()
 where
     T: CustomDataTrait

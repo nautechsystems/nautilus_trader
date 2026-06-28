@@ -70,13 +70,13 @@ use super::{
         parse_trade_tick,
     },
     query::{
-        GetBookParams, GetCandleParams, GetCandlesParams, GetFundingRatesParams,
+        GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
         GetInstrumentParams, GetOrderStatusParams, GetOrdersParams, GetTickerParams,
         GetTradesParams, GetTransactionsParams,
     },
 };
 use crate::common::{
-    consts::{AX_HTTP_URL, AX_ORDERS_URL},
+    consts::{AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
     parse::{cid_to_client_order_id, client_order_id_to_cid},
@@ -727,8 +727,13 @@ impl AxRawHttpClient {
     /// # Errors
     ///
     /// Returns an error if the request fails or the response cannot be parsed.
-    pub async fn get_fills(&self) -> Result<AxFillsResponse, AxHttpError> {
-        self.send_request::<AxFillsResponse, ()>(Method::GET, "/fills", None, None, true)
+    pub async fn get_fills(
+        &self,
+        start_timestamp_ns: i64,
+        end_timestamp_ns: i64,
+    ) -> Result<AxFillsResponse, AxHttpError> {
+        let params = GetFillsParams::new(start_timestamp_ns, end_timestamp_ns);
+        self.send_request::<AxFillsResponse, _>(Method::GET, "/fills", Some(&params), None, true)
             .await
     }
 
@@ -938,7 +943,8 @@ impl AxRawHttpClient {
         level: Option<i32>,
     ) -> Result<AxBookResponse, AxHttpError> {
         let params = GetBookParams::new(symbol, level);
-        self.send_request::<AxBookResponse, _>(Method::GET, "/book", Some(&params), None, false)
+        // The AX sandbox requires authentication for `/book` despite the public schema
+        self.send_request::<AxBookResponse, _>(Method::GET, "/book", Some(&params), None, true)
             .await
     }
 
@@ -1690,10 +1696,18 @@ impl AxHttpClient {
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        // The AX `/fills` endpoint requires a bounded time range and caps the span at 7 days
+        let max_span_ns = AX_FILLS_MAX_LOOKBACK_DAYS * 24 * 60 * 60 * 1_000_000_000;
+        let end_ns = end.map_or_else(|| self.generate_ts_init().as_i64(), |e| e.as_i64());
+        let floor_ns = end_ns - max_span_ns;
+        let start_ns = start.map_or(floor_ns, |s| s.as_i64().max(floor_ns));
+
         let response = self
             .inner
-            .get_fills()
+            .get_fills(start_ns, end_ns)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 

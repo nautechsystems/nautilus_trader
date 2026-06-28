@@ -56,6 +56,7 @@
 #![deny(rustdoc::broken_intra_doc_links)]
 
 pub mod builder;
+pub mod clock_factory;
 pub mod config;
 pub mod controller;
 pub mod event_store;
@@ -70,6 +71,7 @@ pub mod python;
 
 // Re-exports
 pub use builder::NautilusKernelBuilder;
+pub use clock_factory::ClockFactory;
 pub use config::{NautilusKernelConfig, RotationConfig, StreamingConfig};
 pub use controller::Controller;
 pub use event_store::{EventStoreFactory, KernelEventStore, RegisteredComponents};

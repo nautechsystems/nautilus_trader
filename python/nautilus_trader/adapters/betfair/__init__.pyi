@@ -46,6 +46,7 @@ class BetfairDataConfig:
         stream_conflate_ms: int | None = None,
         subscription_delay_secs: int | None = None,
         subscribe_race_data: bool = False,
+        subscribe_cricket_data: bool = False,
     ) -> None: ...
 
 @typing.final

@@ -4,24 +4,37 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added v2 Python visualization (tearsheet) support with a `visualization` extra
+- Added spread quote vega-pricing fallback controls for missing greeks (#4328), thanks @faysou
+- Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
+- Added `with_clock_factory` for Rust live and sandbox nodes (#4331), thanks @folknor
+- Added Betfair cricket match stream data subscriptions (Rust and Python)
 - Added Bybit instrument subscription support via instrument-info polling (#4305), thanks @dxwil
 - Added OKX region support for global, EEA, and US endpoints (#4318), thanks @dxwil
-- Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
 
 ### Breaking Changes
-- **Breaking:** the `event_store` on-disk envelope format changed (bincode replaced by a hardened positional codec). Beta stores written by v1.227-v1.229 are rejected with a clear `Corrupted` error and must be regenerated; there is no migrator.
-- Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
+- Changed `event_store` format; beta v1.227-v1.229 stores must be regenerated (#4330), thanks @folknor
 - Changed `Throttler` rate limit fields to non-zero accessors instead of public fields (Rust)
+- Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
 
 ### Security
+- Removed direct `bincode` use from `event_store` on-disk envelopes (#4330), thanks @folknor
 
 ### Fixes
-- Fixed `Throttler` timer handling to namespace timers by actor and cancel them on teardown (Rust)
+- Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
+- Fixed Architect AX execution reconciliation for open positions and fills
+- Fixed Architect AX to deny unsupported order types and times in force locally
+- Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
+- Fixed Architect AX market data for null ticker prices and order book snapshot requests
 - Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
-- Fixed Interactive Brokers (Rust) stock contract resolution for non-USD and cross-listed symbols (#4335)
+- Fixed Interactive Brokers (Rust) stock contract resolution for non-USD and cross-listed symbols (#4335), thanks @dfjmax
+- Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
+- Fixed Lighter stop-market and market-if-touched order modification rejected for a missing price
+- Fixed Polymarket reconciliation producing out-of-range fill prices
+- Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
+- Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
 
 ### Internal Improvements
 - Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
@@ -33,12 +46,14 @@ Released on TBD (UTC).
 - Optimized `OrderMatchingEngine` no-match GTD and trailing-order paths (Rust)
 - Optimized Databento adapter decode and loader paths (Rust)
 - Optimized `Throttler` hot paths and added Criterion benches (Rust)
+- Upgraded Cython to v3.2.6
 
 ### Documentation Updates
 - Added a Lighter Rust quickstart and get-started guide
 - Standardized the `request_bars` callback pattern for live bar warmup (#4311), thanks @dfjmax
 - Refined Databento dataset configuration docs for schema limits and symbology inference
 - Refined event sourcing marker sidecar docs to match the shipped markers module
+- Refined Polymarket integration guide for Rust config fields and order behavior
 
 ### Deprecations
 

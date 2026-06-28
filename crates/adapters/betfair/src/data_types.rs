@@ -258,6 +258,28 @@ pub struct BetfairRaceProgress {
     pub ts_init: UnixNanos,
 }
 
+#[custom_data(pyo3)]
+pub struct BetfairCricketMatch {
+    /// Betfair event identifier.
+    pub event_id: String,
+    /// Betfair market identifier.
+    pub market_id: String,
+    /// Fixture metadata (JSON-encoded object). Empty if absent.
+    pub fixture_info: String,
+    /// Home team metadata (JSON-encoded object). Empty if absent.
+    pub home_team: String,
+    /// Away team metadata (JSON-encoded object). Empty if absent.
+    pub away_team: String,
+    /// Match statistics (JSON-encoded object). Empty if absent.
+    pub match_stats: String,
+    /// Match incidents (JSON-encoded object). Empty if absent.
+    pub incident_list_wrapper: String,
+    /// UNIX timestamp (nanoseconds) when the data event occurred.
+    pub ts_event: UnixNanos,
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
+    pub ts_init: UnixNanos,
+}
+
 /// Registers all Betfair custom data types for JSON and Arrow encoding.
 ///
 /// This must be called once before emitting or persisting Betfair custom data.
@@ -270,6 +292,7 @@ pub fn register_betfair_custom_data() {
     nautilus_serialization::ensure_custom_data_registered::<BetfairOrderVoided>();
     nautilus_serialization::ensure_custom_data_registered::<BetfairRaceRunnerData>();
     nautilus_serialization::ensure_custom_data_registered::<BetfairRaceProgress>();
+    nautilus_serialization::ensure_custom_data_registered::<BetfairCricketMatch>();
 }
 
 #[cfg(test)]
@@ -368,6 +391,16 @@ mod tests {
         assert!(field_names.contains(&"progress".to_string()));
         assert!(field_names.contains(&"order".to_string()));
         assert!(field_names.contains(&"jumps".to_string()));
+    }
+
+    #[rstest]
+    fn test_betfair_cricket_match_schema() {
+        let schema = BetfairCricketMatch::get_schema(None);
+        let field_names: Vec<_> = schema.fields().iter().map(|f| f.name().clone()).collect();
+        assert!(field_names.contains(&"event_id".to_string()));
+        assert!(field_names.contains(&"market_id".to_string()));
+        assert!(field_names.contains(&"match_stats".to_string()));
+        assert!(field_names.contains(&"incident_list_wrapper".to_string()));
     }
 
     #[rstest]

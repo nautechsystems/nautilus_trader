@@ -44,11 +44,12 @@ use crate::{
         },
     },
     data_types::{
-        BetfairBspBookDelta, BetfairRaceProgress, BetfairRaceRunnerData, BetfairStartingPrice,
-        BetfairTicker,
+        BetfairBspBookDelta, BetfairCricketMatch, BetfairRaceProgress, BetfairRaceRunnerData,
+        BetfairStartingPrice, BetfairTicker,
     },
     stream::messages::{
-        MarketDefinition, RaceProgressChange, RaceRunnerChange, RunnerChange, UnmatchedOrder,
+        CricketChange, MarketDefinition, RaceProgressChange, RaceRunnerChange, RunnerChange,
+        UnmatchedOrder,
     },
 };
 
@@ -876,17 +877,8 @@ pub fn parse_race_progress(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> BetfairRaceProgress {
-    let order_json = rpc
-        .ord
-        .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_default())
-        .unwrap_or_default();
-
-    let jumps_json = rpc
-        .jumps
-        .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_default())
-        .unwrap_or_default();
+    let order_json = serialize_json_value(rpc.ord.as_ref());
+    let jumps_json = serialize_json_value(rpc.jumps.as_ref());
 
     BetfairRaceProgress::new(
         race_id.to_string(),
@@ -901,6 +893,37 @@ pub fn parse_race_progress(
         ts_event,
         ts_init,
     )
+}
+
+#[must_use]
+pub fn parse_cricket_match(
+    cricket: &CricketChange,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Option<BetfairCricketMatch> {
+    let event_id = cricket.event_id.clone()?;
+    let market_id = cricket.market_id.clone()?;
+
+    Some(BetfairCricketMatch::new(
+        event_id,
+        market_id,
+        serialize_json_value(cricket.fixture_info.as_ref()),
+        serialize_json_value(cricket.home_team.as_ref()),
+        serialize_json_value(cricket.away_team.as_ref()),
+        serialize_json_value(cricket.match_stats.as_ref()),
+        serialize_json_value(cricket.incident_list_wrapper.as_ref()),
+        ts_event,
+        ts_init,
+    ))
+}
+
+fn serialize_json_value<T>(value: Option<&T>) -> String
+where
+    T: serde::Serialize,
+{
+    value
+        .map(|value| serde_json::to_string(value).unwrap_or_default())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -1890,6 +1913,47 @@ mod tests {
         let jumps: Vec<serde_json::Value> = serde_json::from_str(&progress.jumps).unwrap();
         assert_eq!(jumps.len(), 2);
         assert_eq!(jumps[0]["J"], 2);
+    }
+
+    #[rstest]
+    fn test_parse_cricket_match_from_fixture() {
+        let data = load_test_json("stream/ccm_single.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+
+        let StreamMessage::CricketChange(ccm) = msg else {
+            panic!("expected CricketChange");
+        };
+
+        let change = &ccm.cc.as_ref().unwrap()[0];
+        let ts = parse_millis_timestamp(ccm.pt);
+        let cricket = parse_cricket_match(change, ts, ts).unwrap();
+
+        assert_eq!(cricket.event_id, "35741575");
+        assert_eq!(cricket.market_id, "1.259334639");
+        let stats: serde_json::Value = serde_json::from_str(&cricket.match_stats).unwrap();
+        assert_eq!(stats["inningsStats"][0]["inningsRuns"], 100);
+    }
+
+    #[rstest]
+    #[case(None, Some("1.259334639".to_string()))]
+    #[case(Some("35741575".to_string()), None)]
+    fn test_parse_cricket_match_missing_required_id_returns_none(
+        #[case] event_id: Option<String>,
+        #[case] market_id: Option<String>,
+    ) {
+        let change = CricketChange {
+            event_id,
+            market_id,
+            fixture_info: None,
+            home_team: None,
+            away_team: None,
+            match_stats: Some(serde_json::json!({"inningsStats": []})),
+            incident_list_wrapper: None,
+        };
+        let ts = UnixNanos::from(1_000_000_000u64);
+        let result = parse_cricket_match(&change, ts, ts);
+
+        assert!(result.is_none());
     }
 
     #[rstest]

@@ -51,7 +51,8 @@ high-precision = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["arrow", "high-precision", "live"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -110,6 +111,7 @@ harness = false
 [[bench]]
 name = "clients"
 harness = false
+required-features = ["live"]
 
 # Run with `cargo run --example databento-data-tester --package nautilus-databento`.
 [[example]]
