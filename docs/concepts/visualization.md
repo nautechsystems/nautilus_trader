@@ -164,6 +164,33 @@ create_tearsheet(
 The benchmark series is plotted as-is; ensure the index aligns with your strategy's
 return dates for accurate comparison.
 
+### Monthly and yearly returns
+
+The `monthly_returns` and `yearly_returns` charts default to compounded (time-weighted)
+returns: each cell measures the period's gain against the running start-of-period balance,
+and the periods compound to the total return.
+
+Set `compounding=False` to report simple, non-compounding returns measured against fixed
+initial capital. Each cell then measures the period's gain as a percentage of the starting
+capital, so the periods sum to the total return instead of compounding to it. This is the
+nominal rate of return, the convention used for constant-capital strategies that trade fixed
+size and withdraw profits.
+
+```python
+config = TearsheetConfig(
+    charts=[
+        TearsheetMonthlyReturnsChart(compounding=False),
+        TearsheetYearlyReturnsChart(compounding=False),
+    ],
+)
+create_tearsheet(engine=engine, config=config)
+```
+
+The standalone `create_monthly_returns_heatmap()` and `create_yearly_returns()` functions
+accept the same `compounding` argument. For the non-compounding figures to faithfully
+represent constant capital, size positions at a fixed quantity rather than as a fraction of
+current equity; otherwise later periods inflate as the running balance grows.
+
 ## Themes
 
 Themes control the visual styling of charts including colors, fonts, and backgrounds.

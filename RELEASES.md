@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added v2 Python visualization (tearsheet) support with a `visualization` extra
+- Added non-compounding returns option for monthly and yearly tearsheet charts via `compounding`
 - Added spread quote vega-pricing fallback controls for missing greeks (#4328), thanks @faysou
 - Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
 - Added `with_clock_factory` for Rust live and sandbox nodes (#4331), thanks @folknor

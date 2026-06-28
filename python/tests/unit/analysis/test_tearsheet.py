@@ -19,7 +19,9 @@ from nautilus_trader.analysis import TearsheetBarsWithFillsChart
 from nautilus_trader.analysis import TearsheetConfig
 from nautilus_trader.analysis import TearsheetCustomChart
 from nautilus_trader.analysis import TearsheetEquityChart
+from nautilus_trader.analysis import TearsheetMonthlyReturnsChart
 from nautilus_trader.analysis import TearsheetStatsTableChart
+from nautilus_trader.analysis import TearsheetYearlyReturnsChart
 from nautilus_trader.analysis import create_bars_with_fills
 from nautilus_trader.analysis import create_drawdown_chart
 from nautilus_trader.analysis import create_equity_curve
@@ -845,3 +847,115 @@ def test_register_tearsheet_chart_validates_inputs():
 
     with pytest.raises(ValueError, match="must be callable"):
         register_tearsheet_chart("unit_test_bad", "scatter", "X", "not-callable")
+
+
+@pytest.fixture
+def two_month_returns():
+    # Two +10% single-day returns, one per consecutive month: the equity index ends
+    # each month at 1.10 then 1.21, so compounded monthly returns are [10%, 10%] and
+    # simple (fixed-base) monthly returns are [10%, 11%], both totalling 21%.
+    index = pd.to_datetime(["2024-01-31", "2024-02-29"])
+    return pd.Series([0.10, 0.10], index=index)
+
+
+def test_aggregate_period_returns_compounding_uses_running_base(two_month_returns):
+    result = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=True)
+
+    assert result.tolist() == pytest.approx([10.0, 10.0])
+
+
+def test_aggregate_period_returns_simple_uses_fixed_initial_base(two_month_returns):
+    result = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=False)
+
+    assert result.tolist() == pytest.approx([10.0, 11.0])
+
+
+def test_aggregate_period_returns_simple_sums_to_total_return(two_month_returns):
+    total = ((1 + two_month_returns).prod() - 1) * 100  # 21%
+
+    simple = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=False)
+    compounded = tearsheet._aggregate_period_returns(two_month_returns, "ME", compounding=True)
+
+    assert simple.sum() == pytest.approx(total)
+    assert ((1 + compounded / 100).prod() - 1) * 100 == pytest.approx(total)
+
+
+def test_aggregate_period_returns_simple_is_order_independent():
+    # Same two returns as the sorted fixture, but rows out of date order
+    unsorted = pd.Series([0.10, 0.10], index=pd.to_datetime(["2024-02-29", "2024-01-31"]))
+
+    result = tearsheet._aggregate_period_returns(unsorted, "ME", compounding=False)
+
+    assert result.tolist() == pytest.approx([10.0, 11.0])
+
+
+@pytest.mark.parametrize("compounding", [True, False])
+def test_aggregate_period_returns_empty_interior_period_is_zero(compounding):
+    # Jan and Mar have returns, Feb has none (an empty interior month)
+    returns = pd.Series([0.10, 0.10], index=pd.to_datetime(["2024-01-31", "2024-03-31"]))
+
+    result = tearsheet._aggregate_period_returns(returns, "ME", compounding=compounding)
+
+    assert list(result.index.month) == [1, 2, 3]
+    assert result.iloc[1] == pytest.approx(0.0)
+    assert not result.isna().any()
+
+
+def test_aggregate_period_returns_single_period_modes_match():
+    returns = pd.Series([0.10], index=pd.to_datetime(["2024-01-31"]))
+
+    compounded = tearsheet._aggregate_period_returns(returns, "ME", compounding=True)
+    simple = tearsheet._aggregate_period_returns(returns, "ME", compounding=False)
+
+    assert compounded.tolist() == pytest.approx([10.0])
+    assert simple.tolist() == pytest.approx([10.0])
+
+
+def test_monthly_returns_chart_compounding_kwarg():
+    assert TearsheetMonthlyReturnsChart().kwargs() == {"compounding": True}
+    assert TearsheetMonthlyReturnsChart(compounding=False).kwargs() == {"compounding": False}
+
+
+def test_yearly_returns_chart_compounding_kwarg():
+    assert TearsheetYearlyReturnsChart().kwargs() == {"compounding": True}
+    assert TearsheetYearlyReturnsChart(compounding=False).kwargs() == {"compounding": False}
+
+
+def test_create_monthly_returns_heatmap_simple_default_title(two_month_returns):
+    compounded = create_monthly_returns_heatmap(two_month_returns)
+    simple = create_monthly_returns_heatmap(two_month_returns, compounding=False)
+
+    assert compounded.layout.title.text == "Monthly Returns (%)"
+    assert simple.layout.title.text == "Monthly Returns (% of initial capital)"
+
+
+def test_create_yearly_returns_simple_default_title(two_month_returns):
+    compounded = create_yearly_returns(two_month_returns)
+    simple = create_yearly_returns(two_month_returns, compounding=False)
+
+    assert compounded.layout.title.text == "Yearly Returns"
+    assert simple.layout.title.text == "Yearly Returns (% of initial capital)"
+
+
+def test_create_monthly_returns_heatmap_explicit_title_preserved(two_month_returns):
+    fig = create_monthly_returns_heatmap(two_month_returns, compounding=False, title="Custom")
+
+    assert fig.layout.title.text == "Custom"
+
+
+def test_tearsheet_figure_routes_compounding_flag_to_renderer(two_month_returns):
+    config = TearsheetConfig(charts=[TearsheetMonthlyReturnsChart(compounding=False)])
+
+    fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=two_month_returns,
+        title="Routing",
+        config=config,
+    )
+
+    heatmaps = [trace for trace in fig.data if trace.type == "heatmap"]
+    assert len(heatmaps) == 1
+    # Jan (fixed base) == 10%, Feb (fixed base) == 11%
+    assert heatmaps[0].z[0] == pytest.approx([10.0, 11.0])

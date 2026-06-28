@@ -581,6 +581,25 @@ def _calculate_daily_balance_returns(total_balance: pd.Series) -> pd.Series | No
     return account_returns
 
 
+def _aggregate_period_returns(
+    returns: pd.Series,
+    freq: str,
+    compounding: bool = True,
+) -> pd.Series:
+    if compounding:
+        return returns.resample(freq).apply(lambda x: (1 + x).prod() - 1) * 100
+
+    # cumprod is row-order dependent, so sort by time before building the equity index
+    equity = (1 + returns.sort_index()).cumprod()
+    period_end = equity.resample(freq).last().ffill()
+    period_return = period_end.diff()
+
+    # First period has no prior balance; measure it against the initial unit base
+    period_return.iloc[0] = period_end.iloc[0] - 1.0
+
+    return period_return * 100
+
+
 def create_tearsheet_from_stats(
     stats_pnls: dict[str, Any] | dict[str, dict[str, Any]],
     stats_returns: dict[str, Any],
@@ -872,7 +891,8 @@ def create_drawdown_chart(
 def create_monthly_returns_heatmap(
     returns: pd.Series,
     output_path: str | None = None,
-    title: str = "Monthly Returns (%)",
+    title: str | None = None,
+    compounding: bool = True,
 ) -> go.Figure:
     """
     Create an interactive monthly returns heatmap.
@@ -883,8 +903,12 @@ def create_monthly_returns_heatmap(
         Returns series from portfolio analyzer.
     output_path : str, optional
         Path to save HTML plot. If None, plot is not saved.
-    title : str, default "Monthly Returns (%)"
-        Plot title.
+    title : str, optional
+        Plot title. Defaults to a basis-aware title derived from `compounding`.
+    compounding : bool, default True
+        If True, cells compound against the running start-of-month balance. If False,
+        cells are simple returns on fixed initial capital that sum to the total return
+        (the nominal rate of return).
 
     Returns
     -------
@@ -904,6 +928,9 @@ def create_monthly_returns_heatmap(
         )
         raise ImportError(msg)
 
+    if title is None:
+        title = "Monthly Returns (%)" if compounding else "Monthly Returns (% of initial capital)"
+
     if returns.empty:
         # Return empty figure if no data
         fig = go.Figure()
@@ -911,7 +938,7 @@ def create_monthly_returns_heatmap(
         return fig
 
     # Resample to monthly returns
-    monthly = returns.resample("ME").apply(lambda x: (1 + x).prod() - 1) * 100
+    monthly = _aggregate_period_returns(returns, "ME", compounding)
 
     # Pivot to year x month matrix
     monthly_pivot = pd.DataFrame(
@@ -1115,7 +1142,8 @@ def create_rolling_sharpe(
 def create_yearly_returns(
     returns: pd.Series,
     output_path: str | None = None,
-    title: str = "Yearly Returns",
+    title: str | None = None,
+    compounding: bool = True,
 ) -> go.Figure:
     """
     Create an interactive yearly returns bar chart.
@@ -1126,8 +1154,12 @@ def create_yearly_returns(
         Returns series from portfolio analyzer.
     output_path : str, optional
         Path to save HTML plot. If None, plot is not saved.
-    title : str, default "Yearly Returns"
-        Plot title.
+    title : str, optional
+        Plot title. Defaults to a basis-aware title derived from `compounding`.
+    compounding : bool, default True
+        If True, bars compound against the running start-of-year balance. If False,
+        bars are simple returns on fixed initial capital that sum to the total return
+        (the nominal rate of return).
 
     Returns
     -------
@@ -1147,6 +1179,9 @@ def create_yearly_returns(
         )
         raise ImportError(msg)
 
+    if title is None:
+        title = "Yearly Returns" if compounding else "Yearly Returns (% of initial capital)"
+
     if returns.empty:
         # Return empty figure if no data
         fig = go.Figure()
@@ -1154,7 +1189,7 @@ def create_yearly_returns(
         return fig
 
     # Resample to yearly returns
-    yearly = returns.resample("YE").apply(lambda x: (1 + x).prod() - 1) * 100
+    yearly = _aggregate_period_returns(returns, "YE", compounding)
 
     # Determine bar colors (green for positive, red for negative)
     colors = ["#2ca02c" if r >= 0 else "#d62728" for r in yearly.to_numpy()]
@@ -1622,7 +1657,7 @@ def _render_monthly_returns(
     if returns.empty:
         return
 
-    monthly = returns.resample("ME").apply(lambda x: (1 + x).prod() - 1) * 100
+    monthly = _aggregate_period_returns(returns, "ME", kwargs.get("compounding", True))
     monthly_pivot = pd.DataFrame(
         {
             "Year": monthly.index.year,
@@ -1753,7 +1788,7 @@ def _render_yearly_returns(
     if returns.empty:
         return
 
-    yearly = returns.resample("YE").apply(lambda x: (1 + x).prod() - 1) * 100
+    yearly = _aggregate_period_returns(returns, "YE", kwargs.get("compounding", True))
     colors = [
         theme_config["colors"]["positive"] if r >= 0 else theme_config["colors"]["negative"]
         for r in yearly.to_numpy()
