@@ -183,3 +183,57 @@ impl KrakenExecClientConfig {
         format!("{self:?}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::accounts::AccountType;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_client_py_new_sets_transport_backend() {
+        let config = KrakenDataClientConfig::py_new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(TransportBackend::Tungstenite),
+        );
+
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+
+    #[rstest]
+    fn test_exec_client_py_new_sets_transport_backend() {
+        let config = KrakenExecClientConfig::py_new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("KRAKEN-001"),
+            "api-key".to_string(),
+            "api-secret".to_string(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountType::Margin),
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(TransportBackend::Tungstenite),
+        )
+        .expect("config should build");
+
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+}

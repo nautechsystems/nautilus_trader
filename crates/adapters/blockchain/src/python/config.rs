@@ -153,3 +153,31 @@ impl BlockchainDataClientConfig {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::defi::{DexType, chain::chains};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_client_py_new_sets_transport_backend() {
+        let config = BlockchainDataClientConfig::py_new(
+            &chains::ETHEREUM,
+            vec![DexType::UniswapV2],
+            "https://eth-mainnet.example.com".to_string(),
+            None,
+            None,
+            None,
+            true,
+            None,
+            None,
+            None,
+            None,
+            Some(TransportBackend::Tungstenite),
+        );
+
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+}

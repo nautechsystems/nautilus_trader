@@ -167,3 +167,49 @@ impl DeriveExecClientConfig {
         format!("{self:?}")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_client_py_new_sets_transport_backend() {
+        let config = DeriveDataClientConfig::py_new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(TransportBackend::Tungstenite),
+        );
+
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+
+    #[rstest]
+    fn test_exec_client_py_new_sets_transport_backend() {
+        let config = DeriveExecClientConfig::py_new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(TransportBackend::Tungstenite),
+        );
+
+        assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+    }
+}

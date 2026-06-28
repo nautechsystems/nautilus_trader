@@ -273,10 +273,10 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<u64>())
         .transpose()?
         .unwrap_or(default.resolve_poll_max_wait_secs);
-    let transport_backend = getattr_optional(obj, "transport_backend")?
-        .map(|value| value.extract::<TransportBackend>())
-        .transpose()?
-        .unwrap_or(default.transport_backend);
+    let transport_backend = match getattr_optional(obj, "transport_backend")? {
+        Some(value) => value.extract::<TransportBackend>()?,
+        None => default.transport_backend,
+    };
     Ok(PolymarketDataClientConfig {
         instrument_config,
         base_url_http,
