@@ -149,7 +149,7 @@ to read them.
 | `tools.toml`                                 | External CLIs and binaries without a native manifest. |
 
 The external tool pins in `tools.toml` include `prek`, `pip-audit`, `pypi-attestations`,
-`maturin`, `osv-scanner`, and `capnp`.
+`osv-scanner`, and `capnp`.
 
 The Makefile reads these via `scripts/cargo-tool-version.sh`, `scripts/tool-version.sh`, and
 `scripts/uv-version.sh`, so bumping a version in the source file is the only required version

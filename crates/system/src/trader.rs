@@ -25,7 +25,7 @@ use ahash::AHashMap;
 use nautilus_common::{
     actor::{DataActor, DataActorNative, registry::try_get_actor_unchecked},
     cache::Cache,
-    clock::{Clock, TestClock},
+    clock::Clock,
     component::{
         Component, dispose_component, register_component_actor, reset_component, start_component,
         stop_component,
@@ -53,9 +53,12 @@ use nautilus_trading::{
 };
 use ustr::Ustr;
 
-use crate::registration::{
-    base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
-    strategy_registration_id,
+use crate::{
+    clock_factory::ClockFactory,
+    registration::{
+        base_strategy_id, ensure_unique_order_id_tag, strategy_control_endpoint,
+        strategy_registration_id,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,8 +90,8 @@ pub struct Trader {
     pub environment: Environment,
     /// Component state for lifecycle management.
     state: ComponentState,
-    /// System clock for timestamping.
-    clock: Rc<RefCell<dyn Clock>>,
+    /// Clock source for trader timestamps and component clocks.
+    clock_factory: ClockFactory,
     /// System cache for data storage.
     cache: Rc<RefCell<Cache>>,
     /// Portfolio reference for strategy registration.
@@ -126,10 +129,11 @@ impl Trader {
         trader_id: TraderId,
         instance_id: UUID4,
         environment: Environment,
-        clock: Rc<RefCell<dyn Clock>>,
+        clock_factory: ClockFactory,
         cache: Rc<RefCell<Cache>>,
         portfolio: Rc<RefCell<Portfolio>>,
     ) -> Self {
+        let clock = clock_factory.clock();
         let ts_created = clock.borrow().timestamp_ns();
 
         Self {
@@ -137,7 +141,7 @@ impl Trader {
             instance_id,
             environment,
             state: ComponentState::PreInitialized,
-            clock,
+            clock_factory,
             cache,
             portfolio,
             actor_ids: Vec::new(),
@@ -248,24 +252,9 @@ impl Trader {
     /// callback registered on each clock is independent. In backtest mode, the
     /// clocks are also used for deterministic time advancement by the engine.
     pub fn create_component_clock(&mut self, component_id: ComponentId) -> Rc<RefCell<dyn Clock>> {
-        let clock: Rc<RefCell<dyn Clock>> = match self.environment {
-            Environment::Backtest => Rc::new(RefCell::new(TestClock::new())),
-            Environment::Live | Environment::Sandbox => Self::create_live_clock(),
-        };
+        let clock = self.clock_factory.create_component_clock();
         self.clocks.insert(component_id, clock.clone());
         clock
-    }
-
-    #[cfg(feature = "live")]
-    fn create_live_clock() -> Rc<RefCell<dyn Clock>> {
-        Rc::new(RefCell::new(
-            nautilus_common::live::clock::LiveClock::default(), // nautilus-import-ok
-        ))
-    }
-
-    #[cfg(not(feature = "live"))]
-    fn create_live_clock() -> Rc<RefCell<dyn Clock>> {
-        panic!("Live/Sandbox environment requires the 'live' feature to be enabled");
     }
 
     /// Adds an actor to the trader.
@@ -846,6 +835,10 @@ impl Trader {
             msgbus::deregister_any(endpoint.into());
         }
 
+        for clock in self.clocks.values() {
+            clock.borrow_mut().cancel_timers();
+        }
+
         self.actor_ids.clear();
         self.strategy_ids.clear();
         self.strategy_stop_fns.clear();
@@ -866,6 +859,9 @@ impl Trader {
             log::debug!("Disposing strategy {strategy_id}");
             dispose_component(&strategy_id.inner())?;
             let component_id = ComponentId::new(strategy_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
 
             // Remove only this strategy's own msgbus handlers
@@ -902,6 +898,9 @@ impl Trader {
             let _ = stop_component(&actor_id.inner());
             dispose_component(&actor_id.inner())?;
             let component_id = ComponentId::new(actor_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
         }
 
@@ -922,6 +921,9 @@ impl Trader {
             let endpoint: Ustr = format!("{exec_algorithm_id}.execute").into();
             msgbus::deregister_any(endpoint.into());
             let component_id = ComponentId::new(exec_algorithm_id.inner().as_str());
+            if let Some(clock) = self.clocks.get(&component_id) {
+                clock.borrow_mut().cancel_timers();
+            }
             self.clocks.remove(&component_id);
         }
 
@@ -977,6 +979,9 @@ impl Trader {
 
         self.actor_ids.swap_remove(pos);
         let component_id = ComponentId::new(actor_id.inner().as_str());
+        if let Some(clock) = self.clocks.get(&component_id) {
+            clock.borrow_mut().cancel_timers();
+        }
         self.clocks.remove(&component_id);
 
         log::info!("Removed actor {actor_id} from trader {}", self.trader_id);
@@ -1100,6 +1105,9 @@ impl Trader {
         self.strategy_ids.swap_remove(pos);
         self.strategy_stop_fns.remove(strategy_id);
         let component_id = ComponentId::new(strategy_id.inner().as_str());
+        if let Some(clock) = self.clocks.get(&component_id) {
+            clock.borrow_mut().cancel_timers();
+        }
         self.clocks.remove(&component_id);
 
         log::info!(
@@ -1129,7 +1137,8 @@ impl Trader {
         self.start_components()?;
 
         // Transition to running state
-        self.ts_started = Some(self.clock.borrow().timestamp_ns());
+        let clock = self.clock_factory.clock();
+        self.ts_started = Some(clock.borrow().timestamp_ns());
 
         Ok(())
     }
@@ -1137,7 +1146,8 @@ impl Trader {
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.stop_components()?;
 
-        self.ts_stopped = Some(self.clock.borrow().timestamp_ns());
+        let clock = self.clock_factory.clock();
+        self.ts_stopped = Some(clock.borrow().timestamp_ns());
 
         Ok(())
     }
@@ -1205,7 +1215,10 @@ impl Component for Trader {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     use nautilus_common::{
         actor::{
@@ -1239,6 +1252,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::clock_factory::ClockFactory;
 
     // Simple DataActor wrapper for testing
     #[derive(Debug)]
@@ -1306,13 +1320,19 @@ mod tests {
         Rc<RefCell<DataEngine>>,
         Rc<RefCell<RiskEngine>>,
         Rc<RefCell<ExecutionEngine>>,
-        Rc<RefCell<TestClock>>,
+        ClockFactory,
     ) {
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        // Set the clock to a non-zero time for test purposes
-        clock.borrow_mut().set_time(1_000_000_000u64.into());
+        let clock_factory = ClockFactory::test_default();
+        let clock = clock_factory.clock();
+        let mut clock_ref = clock.borrow_mut();
+        let test_clock = clock_ref
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .expect("test default clock must be TestClock");
+        test_clock.set_time(1_000_000_000u64.into());
+        drop(clock_ref);
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
             trader_id,
             instance_id,
@@ -1321,8 +1341,8 @@ mod tests {
         )));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
             cache.clone(),
-            clock.clone() as Rc<RefCell<dyn Clock>>,
             None,
         )));
         let data_engine = Rc::new(RefCell::new(DataEngine::new(
@@ -1335,8 +1355,8 @@ mod tests {
         let risk_cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let risk_clock = Rc::new(RefCell::new(TestClock::new()));
         let risk_portfolio = Portfolio::new(
-            risk_cache.clone(),
             risk_clock.clone() as Rc<RefCell<dyn Clock>>,
+            risk_cache.clone(),
             None,
         );
         let risk_engine = Rc::new(RefCell::new(RiskEngine::new(
@@ -1358,13 +1378,13 @@ mod tests {
             data_engine,
             risk_engine,
             exec_engine,
-            clock,
+            clock_factory,
         )
     }
 
     #[rstest]
     fn test_trader_creation() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1373,7 +1393,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1396,7 +1416,7 @@ mod tests {
 
     #[rstest]
     fn test_trader_component_id() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::from("TRADER-001");
         let instance_id = UUID4::new();
@@ -1405,7 +1425,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1418,7 +1438,7 @@ mod tests {
 
     #[rstest]
     fn test_add_actor_success() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1427,7 +1447,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1444,7 +1464,7 @@ mod tests {
 
     #[rstest]
     fn test_add_duplicate_actor_fails() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1453,7 +1473,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1483,7 +1503,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_success() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1492,7 +1512,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1516,7 +1536,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_preserves_explicit_instrument_strategy_id() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1525,7 +1545,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1556,7 +1576,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_appends_configured_order_id_tag_to_explicit_strategy_id() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1565,7 +1585,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1600,7 +1620,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategies_with_no_order_id_tags_assigns_unique_tags() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1609,7 +1629,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1630,7 +1650,7 @@ mod tests {
 
     #[rstest]
     fn test_prepare_strategy_for_registration_is_idempotent() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1639,7 +1659,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1662,7 +1682,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_with_duplicate_order_id_tag_fails() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1671,7 +1691,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1702,7 +1722,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_id_with_subscriptions_duplicate_order_id_tag_fails() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1711,7 +1731,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1737,7 +1757,7 @@ mod tests {
 
     #[rstest]
     fn test_add_strategy_with_mismatched_strategy_id_and_order_id_tag_appends_tag() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1746,7 +1766,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1767,7 +1787,7 @@ mod tests {
 
     #[rstest]
     fn test_add_exec_algorithm_success() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1776,7 +1796,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1797,7 +1817,7 @@ mod tests {
 
     #[rstest]
     fn test_cannot_add_exec_algorithm_while_running() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1806,7 +1826,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1829,7 +1849,7 @@ mod tests {
 
     #[rstest]
     fn test_component_lifecycle() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1838,7 +1858,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1880,7 +1900,7 @@ mod tests {
 
     #[rstest]
     fn test_trader_component_lifecycle() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1889,7 +1909,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1932,7 +1952,7 @@ mod tests {
 
     #[rstest]
     fn test_market_exit_strategy_fails_when_control_endpoint_missing() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1941,7 +1961,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -1980,7 +2000,7 @@ mod tests {
 
     #[rstest]
     fn test_remove_strategy_deregisters_strategy_endpoint() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -1989,7 +2009,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -2022,7 +2042,7 @@ mod tests {
 
     #[rstest]
     fn test_can_add_components_while_running() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -2031,7 +2051,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -2047,7 +2067,7 @@ mod tests {
 
     #[rstest]
     fn test_cannot_add_components_while_disposed() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -2056,7 +2076,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -2072,7 +2092,7 @@ mod tests {
 
     #[rstest]
     fn test_create_component_clock_backtest_creates_individual_clocks() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -2081,7 +2101,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock.clone(),
+            clock_factory.clone(),
             cache,
             portfolio,
         );
@@ -2090,15 +2110,53 @@ mod tests {
         let component_b = ComponentId::new("ACTOR-B");
         let clock_a = trader.create_component_clock(component_a);
         let clock_b = trader.create_component_clock(component_b);
+        let primary_clock = clock_factory.clock();
 
         // Each component gets its own clock instance
-        assert_ne!(clock_a.as_ptr() as *const _, clock.as_ptr() as *const _);
+        assert_ne!(
+            clock_a.as_ptr() as *const _,
+            primary_clock.as_ptr() as *const _
+        );
         assert_ne!(clock_a.as_ptr() as *const _, clock_b.as_ptr() as *const _);
     }
 
     #[rstest]
+    fn test_create_component_clock_live_uses_factory_with_distinct_instances() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, _clock_factory) =
+            create_trader_components();
+        let calls = Rc::new(Cell::new(0usize));
+        let calls_in_closure = calls.clone();
+        let clock_factory = ClockFactory::new(move || {
+            calls_in_closure.set(calls_in_closure.get() + 1);
+            Rc::new(RefCell::new(TestClock::new())) as Rc<RefCell<dyn Clock>>
+        });
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Sandbox,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+
+        let a = trader.create_component_clock(ComponentId::new("ACTOR-A"));
+        let b = trader.create_component_clock(ComponentId::new("ACTOR-B"));
+
+        assert_eq!(
+            calls.get(),
+            3,
+            "factory invoked for primary clock and each component",
+        );
+        assert!(
+            !Rc::ptr_eq(&a, &b),
+            "each component must get its own clock instance"
+        );
+    }
+
+    #[rstest]
     fn test_clear_strategies_preserves_other_handlers() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -2107,7 +2165,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );
@@ -2154,7 +2212,7 @@ mod tests {
 
     #[rstest]
     fn test_clear_actors_disposes_and_clears_state() {
-        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock) =
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
             create_trader_components();
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
@@ -2163,7 +2221,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock,
+            clock_factory,
             cache,
             portfolio,
         );

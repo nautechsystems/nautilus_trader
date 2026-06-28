@@ -56,6 +56,7 @@ class ExecTesterConfig:
         self,
         strategy_id: model.StrategyId | None = None,
         order_id_tag: str | None = None,
+        use_hyphens_in_client_order_ids: bool | None = None,
         external_order_claims: typing.Sequence[model.InstrumentId] | None = None,
         instrument_id: model.InstrumentId | None = None,
         client_id: model.ClientId | None = None,

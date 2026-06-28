@@ -58,5 +58,8 @@ pub const AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS: f64 = 30.0;
 /// Default lookback for funding rate polling (days).
 pub const AX_FUNDING_RATE_LOOKBACK_DAYS: i64 = 7;
 
+/// Maximum lookback span (days) accepted by the AX `/fills` endpoint.
+pub const AX_FILLS_MAX_LOOKBACK_DAYS: i64 = 7;
+
 // Error message substrings for detecting specific rejection reasons
-pub const AX_POST_ONLY_REJECT: &str = "Order may participate but not initiate in the market";
+pub const AX_POST_ONLY_REJECT: &str = "post-only order would cross the book";

@@ -10,7 +10,7 @@
       "side": "B",
       "symbol": "EURUSD-PERP",
       "timestamp": "2024-01-15T10:30:45Z",
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
+      "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
     },
     {
       "trade_id": "T-01ARZ3NDEKTSV4RRFFQ69G5FBW",
@@ -22,7 +22,7 @@
       "side": "S",
       "symbol": "GBPUSD-PERP",
       "timestamp": "2024-01-15T10:31:12Z",
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
+      "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a"
     }
   ]
 }

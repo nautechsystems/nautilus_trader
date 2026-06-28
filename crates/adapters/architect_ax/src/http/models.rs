@@ -184,8 +184,8 @@ pub struct AxBalancesResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxPosition {
-    /// User account UUID.
-    pub user_id: String,
+    /// Account identifier.
+    pub account_id: Ustr,
     /// Instrument symbol.
     pub symbol: Ustr,
     /// Signed quantity (positive for long, negative for short).
@@ -577,8 +577,8 @@ pub struct AxFill {
     pub symbol: Ustr,
     /// Execution timestamp.
     pub timestamp: DateTime<Utc>,
-    /// User ID.
-    pub user_id: String,
+    /// Account identifier.
+    pub account_id: Ustr,
     /// Realized PnL for this fill.
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub realized_pnl: Option<Decimal>,

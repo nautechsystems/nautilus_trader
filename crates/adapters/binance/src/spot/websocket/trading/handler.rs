@@ -471,7 +471,7 @@ impl BinanceSpotWsTradingHandler {
                             .and_then(|r| r.get("subscriptionId"))
                             .map(|v| v.to_string())
                             .unwrap_or_default();
-                        log::info!("User data stream subscribed: id={subscription_id}");
+                        log::debug!("User data stream subscribed: id={subscription_id}");
                         self.emit(BinanceSpotWsTradingMessage::UserDataSubscribed {
                             subscription_id,
                         });
@@ -679,7 +679,7 @@ impl BinanceSpotWsTradingHandler {
                 Ok(BinanceSpotWsTradingMessage::Authenticated)
             }
             BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
-                log::info!("User data stream subscribed (SBE response)");
+                log::debug!("User data stream subscribed (SBE response)");
                 Ok(BinanceSpotWsTradingMessage::UserDataSubscribed {
                     subscription_id: request_id,
                 })

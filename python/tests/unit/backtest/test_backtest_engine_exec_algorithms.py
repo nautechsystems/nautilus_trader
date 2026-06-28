@@ -141,6 +141,7 @@ def test_add_exec_algorithm_from_config_rejects_duplicate_registration():
 
 
 def test_add_exec_algorithm_from_config_rejects_running_engine():
+    RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id = None
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     config = ImportableExecAlgorithmConfig(
         exec_algorithm_path=(
@@ -158,8 +159,55 @@ def test_add_exec_algorithm_from_config_rejects_running_engine():
         engine.run(streaming=True)
         with pytest.raises(RuntimeError, match="Cannot add execution algorithms to running trader"):
             engine.add_exec_algorithm_from_config(config)
+        # Guard runs before constructing the user class, so the constructor never fires
+        assert RequiredConfigBacktestExecAlgorithm.received_exec_algorithm_id is None
     finally:
         engine.dispose()
+
+
+def test_add_exec_algorithm_from_config_registers_non_forwarding_subclass_under_config_id():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    config = ImportableExecAlgorithmConfig(
+        exec_algorithm_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithm"
+        ),
+        config_path=(
+            "tests.unit.backtest.test_backtest_engine_exec_algorithms:"
+            "RequiredConfigBacktestExecAlgorithmConfig"
+        ),
+        config={"exec_algorithm_id": "BACKTEST-ALGO-NOFORWARD"},
+    )
+    engine.add_exec_algorithm_from_config(config)
+
+    # Subclass omits forwarding config to super().__init__(); __new__ still retains it, so
+    # the dup add collides on the configured id rather than a default.
+    with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-NOFORWARD' is already registered"):
+        engine.add_exec_algorithm_from_config(config)
+
+    engine.dispose()
+
+
+def test_add_exec_algorithm_registers_non_forwarding_instance_under_config_id():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_exec_algorithm(
+        RequiredConfigBacktestExecAlgorithm(
+            RequiredConfigBacktestExecAlgorithmConfig(exec_algorithm_id="BACKTEST-ALGO-INSTANCE"),
+        ),
+    )
+
+    # Subclass omits forwarding config to super().__init__(); __new__ retains it, so the
+    # instance registers under the configured id.
+    with pytest.raises(RuntimeError, match="'BACKTEST-ALGO-INSTANCE' is already registered"):
+        engine.add_exec_algorithm(
+            RequiredConfigBacktestExecAlgorithm(
+                RequiredConfigBacktestExecAlgorithmConfig(
+                    exec_algorithm_id="BACKTEST-ALGO-INSTANCE",
+                ),
+            ),
+        )
+
+    engine.dispose()
 
 
 def test_add_exec_algorithm_from_config_rejects_disposed_engine():

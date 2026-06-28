@@ -29,7 +29,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 use super::{
     ids::{create_synthetic_trade_id, create_synthetic_venue_order_id},
@@ -444,6 +444,34 @@ pub fn check_position_reconciliation(
     false
 }
 
+/// Caps a price at the instrument's maximum price.
+///
+/// Reconciliation derives synthetic prices by dividing a notional by a
+/// quantity; when that quantity is a dust rounding residual the result blows up
+/// far above the instrument's tradeable range. Capping at `max_price` keeps
+/// synthetic reports, and the positions derived from them, within range.
+/// Because the blown-up price always pairs with a dust quantity (the
+/// denominator) the PnL impact is negligible. Only the upper bound is enforced:
+/// the blow-up is always on the high side, so the lower bound is left untouched
+/// and legitimate negative-price and zero-cost fills pass through unchanged. A
+/// missing `max_price` leaves the price unmodified.
+///
+/// The cap is `max_price` floored to the instrument's price precision, so that
+/// rebuilding a `Price` at that precision (which rounds) cannot lift the result
+/// back above `max_price`. For example a 2 dp instrument with `max_price = 0.999`
+/// caps at `0.99`, since `0.999` (or any value in `(0.99, 1.00)`) rebuilt at 2 dp
+/// would round to `1.00`.
+pub(super) fn cap_price_at_instrument_max(px: Decimal, instrument: &InstrumentAny) -> Decimal {
+    let Some(max) = instrument.max_price() else {
+        return px;
+    };
+    let cap = max.as_decimal().round_dp_with_strategy(
+        u32::from(instrument.price_precision()),
+        RoundingStrategy::ToZero,
+    );
+    px.min(cap)
+}
+
 /// Create a synthetic `OrderStatusReport` from a `FillSnapshot`.
 ///
 /// Populates `avg_px` from the fill's price so downstream reconciliation paths
@@ -478,7 +506,7 @@ pub(super) fn create_synthetic_order_report(
         UnixNanos::from(fill.ts_event),
         None, // report_id
     );
-    report.avg_px = Some(fill.px);
+    report.avg_px = Some(cap_price_at_instrument_max(fill.px, instrument));
     Ok(report)
 }
 
@@ -496,7 +524,10 @@ pub(super) fn create_synthetic_fill_report(
 ) -> anyhow::Result<FillReport> {
     let trade_id = create_synthetic_trade_id(fill);
     let qty = Quantity::from_decimal_dp(fill.qty, instrument.size_precision())?;
-    let px = Price::from_decimal_dp(fill.px, instrument.price_precision())?;
+    let px = Price::from_decimal_dp(
+        cap_price_at_instrument_max(fill.px, instrument),
+        instrument.price_precision(),
+    )?;
 
     Ok(FillReport::new(
         account_id,

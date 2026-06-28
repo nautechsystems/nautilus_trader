@@ -421,7 +421,7 @@ fn list_runs_repairs_hard_crashed_run_file_and_recovery_seals_it() {
 fn reader_round_trip_preserves_payload_and_hash() {
     // Walk every entry through the reader and re-validate: the writer-stamped
     // entry_hash must still match a fresh recompute after the round-trip through
-    // bincode + redb + reader iteration.
+    // codec + redb + reader iteration.
     let tmp = TempDir::new().expect("tempdir");
     let drafts: Vec<EntryDraft> = (10_u64..14_u64)
         .map(|ts| EntryDraft {

@@ -367,7 +367,7 @@ mod tests {
     use nautilus_common::{
         actor::data_actor::ImportableActorConfig,
         cache::Cache,
-        clock::{Clock, TestClock},
+        clock::TestClock,
         enums::{ComponentState, Environment},
         msgbus::{MessageBus, set_message_bus},
     };
@@ -381,9 +381,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::messages::{
-        CreateActor, CreateStrategy, RemoveActor, RemoveStrategy, StartActor, StartStrategy,
-        StopActor, StopStrategy,
+    use crate::{
+        clock_factory::ClockFactory,
+        messages::{
+            CreateActor, CreateStrategy, RemoveActor, RemoveStrategy, StartActor, StartStrategy,
+            StopActor, StopStrategy,
+        },
     };
 
     fn start_actor_command(actor_id: ActorId) -> ControllerCommand {
@@ -512,8 +515,15 @@ mod tests {
     fn create_running_controller() -> (Rc<RefCell<Trader>>, ActorId) {
         let trader_id = TraderId::test_default();
         let instance_id = UUID4::new();
-        let clock = Rc::new(RefCell::new(TestClock::new()));
-        clock.borrow_mut().set_time(1_000_000_000u64.into());
+        let clock_factory = ClockFactory::test_default();
+        let clock = clock_factory.clock();
+        let mut clock_ref = clock.borrow_mut();
+        let test_clock = clock_ref
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .expect("test default clock must be TestClock");
+        test_clock.set_time(1_000_000_000u64.into());
+        drop(clock_ref);
 
         let msgbus = Rc::new(RefCell::new(MessageBus::new(
             trader_id,
@@ -525,8 +535,8 @@ mod tests {
 
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
+            clock.clone(),
             cache.clone(),
-            clock.clone() as Rc<RefCell<dyn Clock>>,
             None,
         )));
 
@@ -534,7 +544,7 @@ mod tests {
             trader_id,
             instance_id,
             Environment::Backtest,
-            clock as Rc<RefCell<dyn Clock>>,
+            clock_factory,
             cache,
             portfolio,
         )));

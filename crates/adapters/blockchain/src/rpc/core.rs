@@ -253,7 +253,7 @@ impl CoreBlockchainRpcClient {
         subscription_id: String,
     ) -> Result<(), BlockchainRpcClientError> {
         if let Some(client) = &self.wss_client {
-            log::info!("Unsubscribing to new blocks on chain {}", self.chain.name);
+            log::debug!("Unsubscribing to new blocks on chain {}", self.chain.name);
             let msg = serde_json::json!({
                 "method": "eth_unsubscribe",
                 "id": 1,

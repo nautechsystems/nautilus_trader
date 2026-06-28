@@ -22,7 +22,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bincode::config::{Configuration, standard};
 use redb::{
     CommitError, Database, DatabaseError, Durability, ReadOnlyDatabase, ReadTransaction,
     ReadableDatabase, ReadableTable, StorageError, TableDefinition, TableError, TransactionError,
@@ -31,7 +30,9 @@ use redb::{
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::{
+    codec,
     error::EventStoreError,
+    format,
     manifest::RunStatus,
     markers::{
         DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerManifest,
@@ -47,8 +48,6 @@ const STREAM_DICT_TABLE: TableDefinition<u32, &[u8]> = TableDefinition::new("str
 const MARKER_MANIFEST_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("marker_manifest");
 
 const MANIFEST_KEY: &str = "current";
-
-const BINCODE_CONFIG: Configuration = standard();
 
 /// On-disk [`MarkerBackend`] backed by a per-run [`redb`] marker sidecar file.
 ///
@@ -143,6 +142,7 @@ impl RedbMarkerBackend {
         }
 
         let db = ReadOnlyDatabase::open(&path).map_err(map_database_err)?;
+        format::verify_store_format(&db)?;
         let manifest = Self::read_manifest(&db)?.ok_or_else(|| {
             EventStoreError::Corrupted(format!(
                 "missing marker manifest in run file at {}",
@@ -190,6 +190,7 @@ impl RedbMarkerBackend {
             txn.open_table(MARKER_GAPS_TABLE).map_err(map_table_err)?;
             txn.open_table(STREAM_DICT_TABLE).map_err(map_table_err)?;
         }
+        format::write_store_format(&txn)?;
         insert_marker_manifest(&txn, manifest)?;
         txn.commit().map_err(map_commit_err)?;
         Ok(())
@@ -242,6 +243,7 @@ impl MarkerBackend for RedbMarkerBackend {
         let db = Database::create(&path).map_err(map_database_err)?;
 
         if path_existed {
+            format::verify_store_format(&db)?;
             let on_disk = Self::read_manifest(&db)?.ok_or_else(|| {
                 EventStoreError::Corrupted(format!(
                     "missing marker manifest in existing run file at {}",
@@ -572,14 +574,13 @@ fn insert_marker_manifest(
 }
 
 fn encode_value<T: Serialize>(label: &str, value: &T) -> Result<Vec<u8>, EventStoreError> {
-    bincode::serde::encode_to_vec(value, BINCODE_CONFIG)
+    codec::encode_to_vec(value)
         .map_err(|e| EventStoreError::Backend(format!("encode {label}: {e}")))
 }
 
 fn decode_value<T: DeserializeOwned>(label: &str, bytes: &[u8]) -> Result<T, EventStoreError> {
-    let (value, _) = bincode::serde::decode_from_slice::<T, _>(bytes, BINCODE_CONFIG)
-        .map_err(|e| EventStoreError::Corrupted(format!("decode {label}: {e}")))?;
-    Ok(value)
+    codec::decode_from_slice::<T>(bytes)
+        .map_err(|e| EventStoreError::Corrupted(format!("decode {label}: {e}")))
 }
 
 fn map_storage_err(err: StorageError) -> EventStoreError {
@@ -652,6 +653,7 @@ mod tests {
     use super::RedbMarkerBackend;
     use crate::{
         error::EventStoreError,
+        format,
         manifest::RunStatus,
         markers::{
             DataClass, DataCursorSnapshot, HiFiMarker, MarkerBackend, MarkerGap, MarkerGapReason,
@@ -736,6 +738,80 @@ mod tests {
     #[fixture]
     fn temp_dir() -> TempDir {
         TempDir::new().expect("create temp dir")
+    }
+
+    fn create_pre_codec_marker_file(path: &Path) {
+        let manifest: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new("marker_manifest");
+        let db = redb::Database::create(path).expect("create redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut table = txn.open_table(manifest).expect("open marker manifest");
+            table
+                .insert("current", b"old-format".as_slice())
+                .expect("insert");
+        }
+        txn.commit().expect("commit");
+    }
+
+    fn create_future_marker_file(path: &Path) {
+        let manifest: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new("marker_manifest");
+        let store_format: redb::TableDefinition<&str, u32> =
+            redb::TableDefinition::new("store_format");
+        let db = redb::Database::create(path).expect("create redb");
+        let txn = db.begin_write().expect("begin write");
+        {
+            let mut format_table = txn.open_table(store_format).expect("open store format");
+            format_table
+                .insert("codec", format::STORE_FORMAT_VERSION + 1)
+                .expect("insert format");
+            let mut manifest_table = txn.open_table(manifest).expect("open marker manifest");
+            manifest_table
+                .insert("current", b"future-format".as_slice())
+                .expect("insert manifest");
+        }
+        txn.commit().expect("commit");
+    }
+
+    fn assert_corrupted_regenerated<T: Debug>(result: Result<T, EventStoreError>) {
+        match result {
+            Err(EventStoreError::Corrupted(msg)) => {
+                assert!(msg.contains("regenerated"), "msg was: {msg}");
+            }
+            other => panic!("expected Corrupted regeneration error, was {other:?}"),
+        }
+    }
+
+    fn assert_corrupted<T: Debug>(result: Result<T, EventStoreError>) {
+        match result {
+            Err(EventStoreError::Corrupted(_)) => {}
+            other => panic!("expected Corrupted error, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn open_rejects_marker_store_without_format_marker(temp_dir: TempDir) {
+        let run_id = "1700000000-redb-old-format";
+        let path = marker_path(temp_dir.path(), "trader-001", run_id);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        create_pre_codec_marker_file(&path);
+
+        let mut backend = RedbMarkerBackend::new(&path);
+        assert_corrupted_regenerated(backend.open_run(manifest(run_id)));
+        assert_corrupted_regenerated(RedbMarkerBackend::open_read_only_file(&path));
+    }
+
+    #[rstest]
+    fn open_rejects_marker_store_with_future_format_marker(temp_dir: TempDir) {
+        let run_id = "1700000000-redb-future-format";
+        let path = marker_path(temp_dir.path(), "trader-001", run_id);
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        create_future_marker_file(&path);
+
+        let mut backend = RedbMarkerBackend::new(&path);
+        assert_corrupted(backend.open_run(manifest(run_id)));
+        assert_corrupted(RedbMarkerBackend::open_read_only_file(&path));
     }
 
     #[rstest]

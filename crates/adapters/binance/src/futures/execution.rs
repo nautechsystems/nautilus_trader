@@ -2396,7 +2396,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.spawn_task("cancel_all_orders", async move {
             match http_client.cancel_all_orders(instrument_id).await {
                 Ok(_) => {
-                    log::info!("Cancel all regular orders request accepted for {instrument_id}");
+                    log::debug!("Cancel all regular orders request accepted for {instrument_id}");
                 }
                 Err(e) => {
                     log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
@@ -2405,7 +2405,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match http_client.cancel_all_algo_orders(instrument_id).await {
                 Ok(()) => {
-                    log::info!("Cancel all algo orders request accepted for {instrument_id}");
+                    log::debug!("Cancel all algo orders request accepted for {instrument_id}");
                 }
                 Err(e) => {
                     log::error!("Failed to cancel all algo orders for {instrument_id}: {e}");

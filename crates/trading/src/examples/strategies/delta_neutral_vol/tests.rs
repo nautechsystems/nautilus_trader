@@ -85,8 +85,8 @@ fn register_strategy(strategy: &mut DeltaNeutralVol) {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let portfolio = Rc::new(RefCell::new(Portfolio::new(
-        cache.clone(),
         clock.clone(),
+        cache.clone(),
         None,
     )));
 

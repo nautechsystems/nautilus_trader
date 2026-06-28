@@ -1046,7 +1046,7 @@ mod tests {
     fn test_portfolio_api_empty_reads_return_empty_values() {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let clock = Rc::new(RefCell::new(TestClock::new()));
-        let portfolio = RefCell::new(Portfolio::new(cache, clock, None));
+        let portfolio = RefCell::new(Portfolio::new(clock, cache, None));
         let api = PortfolioApi::new(&portfolio);
         let venue = Venue::from("SIM");
         let account_id = AccountId::from("SIM-001");

@@ -78,6 +78,30 @@ runs:
         docker-images: true
         swap-storage: true
 
+    # Extra unused SDKs beyond jlumbroso; only GitHub-hosted runners are disk-bound
+    - name: Free additional disk space (Linux)
+      if: >-
+        inputs.free-disk-space == 'true'
+        && runner.os == 'Linux'
+        && runner.environment == 'github-hosted'
+      shell: bash
+      run: |
+        echo "=== Disk usage before extra cleanup ==="
+        df -h /
+        for path in \
+          /usr/share/swift \
+          /usr/local/lib/swift \
+          /usr/local/share/powershell \
+          /usr/local/share/boost \
+          /usr/local/share/chromium \
+          /opt/google/chrome \
+          /opt/microsoft \
+          /usr/local/julia*; do
+          sudo rm -rf $path || true
+        done
+        echo "=== Disk usage after extra cleanup ==="
+        df -h /
+
     - name: Free disk space (macOS)
       if: inputs.free-disk-space == 'true' && runner.os == 'macOS'
       shell: bash

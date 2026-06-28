@@ -50,7 +50,7 @@ methods such as `clock()`, `cache()`, `order()`, and `portfolio()` on `self`.
 `DataActorNative` is native-only access to runtime wiring and actor-core state;
 `StrategyNative` exposes borrowed strategy state such as order factory, order
 manager, and portfolio access. Import them only for same-binary performance
-paths or host integration internals.
+paths or internal runtime wiring.
 :::
 
 ## Strategy implementation

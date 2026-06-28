@@ -272,6 +272,7 @@ impl ImportableStrategyConfig {
 pub struct PyStrategyInner {
     core: StrategyCore,
     py_self: Option<Py<PyAny>>,
+    config: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
 }
@@ -281,6 +282,7 @@ impl Debug for PyStrategyInner {
         f.debug_struct(stringify!(PyStrategyInner))
             .field("core", &self.core)
             .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field("config", &self.config.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
             .field("logger", &self.logger)
             .finish()
@@ -1221,6 +1223,7 @@ impl PyStrategy {
         let inner = PyStrategyInner {
             core,
             py_self: None,
+            config: None,
             clock,
             logger,
         };
@@ -1233,6 +1236,15 @@ impl PyStrategy {
     /// Sets the Python instance reference for method dispatch.
     pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
         self.inner_mut().py_self = Some(py_obj);
+    }
+
+    /// Stores the original Python config object passed at construction.
+    ///
+    /// Retained so the constructed instance exposes `.config` (matching v1) and so
+    /// instance-based registration can source strategy ID, order ID tag, and logging
+    /// flags from the same single config object.
+    pub fn set_config(&mut self, config: Option<Py<PyAny>>) {
+        self.inner_mut().config = config;
     }
 
     /// Updates configured external order claim instrument IDs before registration.
@@ -1350,23 +1362,31 @@ impl PyStrategy {
     /// otherwise the strategy falls back to [`StrategyConfig::default()`].
     ///
     /// This permissive signature is required so that Python subclasses can pass
-    /// a **custom** config dataclass to their `__init__`; the Rust
-    /// `add_strategy_from_config` then extracts `strategy_id`, `log_events`, etc.
-    /// via `getattr` and calls the corresponding setters separately.
+    /// a **custom** config dataclass to their `__init__`. The original object is
+    /// retained here in `__new__`, which always receives the constructor arguments,
+    /// so `.config` and registration see the config even when a subclass omits
+    /// forwarding it to `super().__init__()`.
     #[new]
     #[pyo3(signature = (config=None))]
     fn py_new(config: Option<Py<PyAny>>) -> Self {
-        let strategy_config =
-            config.and_then(|obj| Python::attach(|py| obj.extract::<StrategyConfig>(py).ok()));
-        Self::new(strategy_config)
+        let strategy_config = config
+            .as_ref()
+            .and_then(|obj| Python::attach(|py| obj.extract::<StrategyConfig>(py).ok()));
+        let mut strategy = Self::new(strategy_config);
+        strategy.set_config(config);
+        strategy
     }
 
     /// Captures the Python self reference for Rust→Python event dispatch.
     #[pyo3(signature = (config=None))]
-    #[allow(unused_variables, clippy::needless_pass_by_value)]
     fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
-        slf.borrow_mut().set_python_instance(py_self);
+        let mut borrowed = slf.borrow_mut();
+        borrowed.set_python_instance(py_self);
+        // `__new__` retained the config; only a forwarded config overrides it
+        if config.is_some() {
+            borrowed.set_config(config);
+        }
     }
 
     #[getter]
@@ -1379,6 +1399,15 @@ impl PyStrategy {
     #[pyo3(name = "strategy_id")]
     fn py_strategy_id(&self) -> StrategyId {
         StrategyId::from(self.inner().core.actor.actor_id.inner().as_str())
+    }
+
+    #[getter]
+    #[pyo3(name = "config")]
+    fn py_config(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.inner()
+            .config
+            .as_ref()
+            .map(|config| config.clone_ref(py))
     }
 
     #[getter]
@@ -3594,8 +3623,8 @@ class IndicatorEventStrategy:
         let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
 
@@ -3633,6 +3662,30 @@ class IndicatorEventStrategy:
 
             assert!(strategy.hasattr("on_order_event").unwrap());
             assert!(strategy.hasattr("on_position_event").unwrap());
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_strategy_retains_python_config_object() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = py
+                .eval(
+                    c_str!("type('_Cfg', (), {'strategy_id': 'S-RETAIN-001'})()"),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            let strategy = py
+                .get_type::<PyStrategy>()
+                .as_any()
+                .call1((config.clone(),))
+                .unwrap();
+
+            let retained = strategy.getattr("config").unwrap();
+
+            assert!(retained.is(&config));
         });
     }
 
@@ -3698,8 +3751,8 @@ class IndicatorEventStrategy:
             let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
             let cache = Rc::new(RefCell::new(Cache::new(None, None)));
             let portfolio = Rc::new(RefCell::new(Portfolio::new(
-                cache.clone(),
                 clock.clone(),
+                cache.clone(),
                 None,
             )));
 

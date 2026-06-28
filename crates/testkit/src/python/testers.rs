@@ -177,6 +177,7 @@ impl ExecTesterConfig {
     #[pyo3(signature = (
         strategy_id = None,
         order_id_tag = None,
+        use_hyphens_in_client_order_ids = None,
         external_order_claims = None,
         instrument_id = None,
         client_id = None,
@@ -209,6 +210,7 @@ impl ExecTesterConfig {
     fn py_new(
         strategy_id: Option<StrategyId>,
         order_id_tag: Option<String>,
+        use_hyphens_in_client_order_ids: Option<bool>,
         external_order_claims: Option<Vec<InstrumentId>>,
         instrument_id: Option<InstrumentId>,
         client_id: Option<ClientId>,
@@ -243,6 +245,8 @@ impl ExecTesterConfig {
             base: StrategyConfig {
                 strategy_id,
                 order_id_tag,
+                use_hyphens_in_client_order_ids: use_hyphens_in_client_order_ids
+                    .unwrap_or(defaults.base.use_hyphens_in_client_order_ids),
                 external_order_claims,
                 log_events: log_events.unwrap_or(defaults.base.log_events),
                 log_commands: log_commands.unwrap_or(defaults.base.log_commands),

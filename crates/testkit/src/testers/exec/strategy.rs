@@ -26,7 +26,7 @@ use nautilus_common::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce},
+    enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -869,6 +869,13 @@ impl ExecTester {
     fn maintain_stop_buy_orders(&mut self, best_bid: Price, best_ask: Price) {
         self.refresh_tracked_stop_order(OrderSide::Buy);
 
+        // Avoid churn: leave a rejected/denied stop alone (no resubmit or modify)
+        if let Some(order) = self.buy_stop_order.as_ref()
+            && matches!(order.status(), OrderStatus::Rejected | OrderStatus::Denied)
+        {
+            return;
+        }
+
         let Some(instrument) = &self.instrument else {
             return;
         };
@@ -958,6 +965,13 @@ impl ExecTester {
     /// Maintain stop sell orders.
     fn maintain_stop_sell_orders(&mut self, best_bid: Price, best_ask: Price) {
         self.refresh_tracked_stop_order(OrderSide::Sell);
+
+        // Avoid churn: leave a rejected/denied stop alone (no resubmit or modify)
+        if let Some(order) = self.sell_stop_order.as_ref()
+            && matches!(order.status(), OrderStatus::Rejected | OrderStatus::Denied)
+        {
+            return;
+        }
 
         let Some(instrument) = &self.instrument else {
             return;

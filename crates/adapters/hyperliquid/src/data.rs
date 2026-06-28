@@ -602,8 +602,6 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
-
         if subscription.book_type != BookType::L2_MBP {
             anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
         }
@@ -643,8 +641,6 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
-
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
@@ -656,8 +652,6 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        log::debug!("Subscribing to trades: {}", subscription.instrument_id);
-
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
@@ -702,8 +696,6 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Subscribing to bars: {}", subscription.bar_type);
-
         let instrument_id = subscription.bar_type.instrument_id();
         if !self.instruments.contains_key(&instrument_id) {
             anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
@@ -823,8 +815,6 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Unsubscribing from bars: {}", unsubscription.bar_type);
-
         let bar_type = unsubscription.bar_type;
         let ws = self.ws_client.clone();
 

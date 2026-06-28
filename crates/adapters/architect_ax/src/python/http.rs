@@ -444,7 +444,7 @@ impl AxHttpClient {
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let reports = client
-                .request_fill_reports(account_id)
+                .request_fill_reports(account_id, None, None)
                 .await
                 .map_err(to_pyvalue_err)?;
 

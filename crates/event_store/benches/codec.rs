@@ -15,17 +15,23 @@
 
 //! Benchmarks for the on-disk envelope codec.
 //!
-//! Every captured entry is bincode-serialized before the redb commit and bincode-deserialized
-//! on every read. The writer batches up to 100 entries per commit, so per-entry codec cost
-//! multiplies into the commit-latency budget the SPEC's storage benchmark allocates (5 ms p50
-//! at the default batch size). These benches keep that cost visible.
+//! Every captured entry is codec-serialized before the redb commit and codec-deserialized on
+//! every read. The writer batches up to 100 entries per commit, so per-entry codec cost multiplies
+//! into the commit-latency budget the SPEC's storage benchmark allocates (5 ms p50 at the default
+//! batch size). These benches keep that cost visible.
+//!
+//! One-time bincode 2.0.1 baseline captured before removing the dependency with a release-mode
+//! scratch harness on 2026-06-26 (50,000 iterations per operation, payload sizes below):
+//! 256 bytes: bincode 349 B, codec 378 B; encode 126.3 ns vs 178.0 ns; decode 153.5 ns vs 218.3 ns.
+//! 1024 bytes: bincode 1117 B, codec 1146 B; encode 196.2 ns vs 261.9 ns; decode 163.4 ns vs 216.0 ns.
+//! 4096 bytes: bincode 4189 B, codec 4218 B; encode 205.3 ns vs 256.0 ns; decode 201.1 ns vs 250.9 ns.
 
 use std::hint::black_box;
 
 use bytes::Bytes;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_core::UnixNanos;
-use nautilus_event_store::{EventStoreEntry, Headers, Topic, compute_entry_hash};
+use nautilus_event_store::{EventStoreEntry, Headers, Topic, codec, compute_entry_hash};
 use ustr::Ustr;
 
 const PAYLOAD_SIZES: &[usize] = &[256, 1024, 4096];
@@ -59,16 +65,14 @@ fn entry_with_payload(size: usize) -> EventStoreEntry {
 }
 
 fn bench_serialize(c: &mut Criterion) {
-    let mut group = c.benchmark_group("bincode_serialize_entry");
-    let config = bincode::config::standard();
+    let mut group = c.benchmark_group("codec_serialize_entry");
 
     for &size in PAYLOAD_SIZES {
         let entry = entry_with_payload(size);
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &entry, |b, entry| {
             b.iter(|| {
-                let bytes =
-                    bincode::serde::encode_to_vec(black_box(entry), config).expect("serialize");
+                let bytes = codec::encode_to_vec(black_box(entry)).expect("serialize");
                 black_box(bytes)
             });
         });
@@ -78,20 +82,16 @@ fn bench_serialize(c: &mut Criterion) {
 }
 
 fn bench_deserialize(c: &mut Criterion) {
-    let mut group = c.benchmark_group("bincode_deserialize_entry");
-    let config = bincode::config::standard();
+    let mut group = c.benchmark_group("codec_deserialize_entry");
 
     for &size in PAYLOAD_SIZES {
         let entry = entry_with_payload(size);
-        let encoded = bincode::serde::encode_to_vec(&entry, config).expect("serialize");
+        let encoded = codec::encode_to_vec(&entry).expect("serialize");
         group.throughput(Throughput::Bytes(size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &encoded, |b, encoded| {
             b.iter(|| {
-                let (decoded, _) = bincode::serde::decode_from_slice::<EventStoreEntry, _>(
-                    black_box(encoded),
-                    config,
-                )
-                .expect("deserialize");
+                let decoded = codec::decode_from_slice::<EventStoreEntry>(black_box(encoded))
+                    .expect("deserialize");
                 black_box(decoded)
             });
         });

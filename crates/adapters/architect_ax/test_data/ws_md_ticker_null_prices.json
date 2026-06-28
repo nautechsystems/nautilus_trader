@@ -1,0 +1,29 @@
+{
+  "t": "s",
+  "ts": 1782504942,
+  "tn": 487432965,
+  "s": "QQQ-PERP",
+  "p": null,
+  "q": 0,
+  "o": null,
+  "l": null,
+  "h": null,
+  "v": 0,
+  "oi": 0,
+  "i": "OPEN",
+  "m": "716.38",
+  "pl": "635.87",
+  "pu": "777.17",
+  "lsp": "706.52",
+  "lst": 1782504000,
+  "ef": {
+    "symbol": "QQQ-PERP",
+    "status": "unavailable",
+    "reason": "not enough mark price data to estimate funding rate",
+    "funding_rate": null,
+    "funding_amount": null,
+    "benchmark_price": null,
+    "settlement_price": null,
+    "timestamp": "2026-06-27T22:07:15.394910404Z"
+  }
+}

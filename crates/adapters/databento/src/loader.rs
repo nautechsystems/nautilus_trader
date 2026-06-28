@@ -43,7 +43,7 @@ use super::{
 };
 use crate::{
     common::{build_publisher_venue_map, load_publishers},
-    decode::decode_instrument_def_msg,
+    decode::{DatabentoDecodeConfig, decode_instrument_def_msg},
     symbology::MetadataCache,
 };
 
@@ -239,11 +239,12 @@ impl DatabentoDataLoader {
     /// # Errors
     ///
     /// Returns an error if decoding the definition records fails.
-    pub fn read_definition_records(
-        &mut self,
+    pub fn read_definition_records<'a>(
+        &'a mut self,
         filepath: &Path,
         use_exchange_as_venue: bool,
-    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
+        decode_config: Option<&'a DatabentoDecodeConfig>,
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + 'a> {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsg>();
 
@@ -299,7 +300,7 @@ impl DatabentoDataLoader {
                     let instrument_id = InstrumentId::new(symbol, venue);
                     let ts_init = msg.ts_recv.into();
 
-                    decode_instrument_def_msg(rec, instrument_id, Some(ts_init))
+                    decode_instrument_def_msg(rec, instrument_id, Some(ts_init), decode_config)
                 })();
 
                 match result {
@@ -388,11 +389,14 @@ impl DatabentoDataLoader {
         filepath: &Path,
         use_exchange_as_venue: bool,
         skip_on_error: bool,
+        decode_config: Option<&DatabentoDecodeConfig>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         let instruments = if skip_on_error {
             let mut collected = Vec::new();
 
-            for result in self.read_definition_records(filepath, use_exchange_as_venue)? {
+            for result in
+                self.read_definition_records(filepath, use_exchange_as_venue, decode_config)?
+            {
                 match result {
                     Ok(instrument) => collected.push(instrument),
                     Err(e) => log::warn!("Skipping instrument: {e}"),
@@ -400,7 +404,7 @@ impl DatabentoDataLoader {
             }
             collected
         } else {
-            self.read_definition_records(filepath, use_exchange_as_venue)?
+            self.read_definition_records(filepath, use_exchange_as_venue, decode_config)?
                 .collect::<Result<Vec<_>, _>>()?
         };
 
@@ -1029,7 +1033,7 @@ mod tests {
     #[rstest]
     #[case(test_data_path().join("test_data.definition.equity.dbn.zst"))]
     fn test_load_instruments(mut loader: DatabentoDataLoader, #[case] path: PathBuf) {
-        let instruments = loader.load_instruments(&path, false, false).unwrap();
+        let instruments = loader.load_instruments(&path, false, false, None).unwrap();
 
         assert_eq!(instruments.len(), 2);
         // Definition records auto-populate the precision cache
@@ -1047,7 +1051,7 @@ mod tests {
         assert!(loader_without_seed.get_price_precisions().is_empty());
 
         let instruments = loader_without_seed
-            .load_instruments(&path, false, false)
+            .load_instruments(&path, false, false, None)
             .unwrap();
 
         assert_eq!(instruments.len(), 2);

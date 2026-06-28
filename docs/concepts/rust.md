@@ -44,7 +44,7 @@ you choose the right one for your use case.
 | Indicators            | ✓                  | ✓              | ✓                        |
 | Exec algorithms       | TWAP               | TWAP           | TWAP                     |
 | Controller            | ✓                  | -              | -                        |
-| Tearsheets            | ✓                  | -              | -                        |
+| Tearsheets            | ✓                  | -              | ✓                        |
 | Config serialization  | ✓                  | -              | -                        |
 
 ### Adapters
@@ -70,7 +70,7 @@ you choose the right one for your use case.
 ### Choosing a path
 
 - **v1 legacy** is the most complete today. Use it if you need the
-  Controller, tearsheets, Interactive Brokers, or config serialization.
+  Controller, Interactive Brokers, or config serialization.
 - **v2 Rust** gives native performance without a Python runtime. All core
   trading functionality is available. Use it for latency-sensitive
   deployments or teams that prefer a compiled language.
@@ -257,26 +257,23 @@ Use facade methods by default:
 - `portfolio()`
 
 `DataActorNative`, `StrategyNative`, and `ExecutionAlgorithmNative` are for
-native-only access below that facade. This section documents host integration
-and explicit latency-sensitive native Rust code, not the portable authoring
-path.
+native-only access below that facade. This section documents engine, runtime, and explicit
+latency-sensitive native Rust code, not the portable authoring path.
 
 | Authoring path            | Native traits?   | Normal API                          |
 |---------------------------|------------------|-------------------------------------|
 | Native Rust binary        | Only when needed | `Strategy` and `DataActor` facades. |
 | Rust launched from Python | Only when needed | Same as native Rust.                |
 | Python‑authored component | No               | Facades only.                       |
-| Plug‑in‑compatible code   | No               | Facades only.                       |
 
 Native traits expose borrowed core state, `Rc<RefCell<_>>`, and runtime
 references. Use them when native Rust code intentionally accepts those borrow
-rules for an explicit latency-sensitive path or host integration. Engine,
-runtime, registration, PyO3, testkit, and plug-in host code can import
-`DataActorNative`, `StrategyNative`, or `ExecutionAlgorithmNative` when they
-need actor-core, strategy-core, or execution-algorithm-core access. Do not use
-them in ordinary portable actor, strategy, or execution algorithm logic,
-Python-authored components, or plug-in-compatible code, because those types do
-not cross those boundaries.
+rules for an explicit latency-sensitive path. Engine, runtime, registration,
+PyO3, and testkit code can import `DataActorNative`, `StrategyNative`, or
+`ExecutionAlgorithmNative` when they need actor-core, strategy-core, or
+execution-algorithm-core access. Do not use them in ordinary portable actor,
+strategy, or execution algorithm logic or Python-authored components, because
+those types do not cross the Python boundary.
 
 `ExecutionAlgorithmCore` owns a `DataActorCore`, but it does not deref to one.
 Normal execution algorithm logic should use `id()`, `actor_id()`,
@@ -324,7 +321,7 @@ and
 
 ### Running Rust components
 
-Rust strategies and actors can run through three paths. The examples
+Rust strategies and actors can run through two paths. The examples
 below use strategies, but the same pattern applies to bundled actors via
 `add_actor` (pure Rust) and `add_builtin_actor` (from Python).
 
@@ -348,7 +345,7 @@ Pass a type name and config to `add_builtin_strategy` to register a
 built-in example strategy from Python. This path exists to single-source
 the bundled example strategy code across Rust and Python docs, examples,
 and tests. It is not a first-class extension path for adding native
-strategies. For custom native components, use pure Rust or plugin loading.
+strategies. For custom native components, use pure Rust.
 
 ```python
 from nautilus_trader.core.nautilus_pyo3.trading import GridMarketMakerConfig
@@ -384,12 +381,6 @@ Built-in actor configs (via `add_builtin_actor`):
 |----------------------------|-----------------------|
 | `BookImbalanceActorConfig` | `BookImbalanceActor`  |
 | `DataTesterConfig`         | `DataTester`          |
-
-#### Plugin loading
-
-Use `add_plugin` or `LiveNodeConfig.plugins` for Rust components built as
-`cdylib` crates. The plug-in manifest supplies the component kind, so the
-host needs only the library path, manifest type name, and instance config.
 
 ## Backtesting
 

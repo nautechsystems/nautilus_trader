@@ -559,7 +559,7 @@ async fn test_generate_fill_reports_filters() {
                 "side": "B",
                 "symbol": "EURUSD-PERP",
                 "timestamp": "2024-01-15T10:30:45Z",
-                "user_id": "u"
+                "account_id": "u"
             },
             {
                 "trade_id": "T-2",
@@ -571,7 +571,7 @@ async fn test_generate_fill_reports_filters() {
                 "side": "S",
                 "symbol": "XAU-PERP",
                 "timestamp": "2024-01-15T10:31:12Z",
-                "user_id": "u"
+                "account_id": "u"
             },
             {
                 "trade_id": "T-3",
@@ -583,7 +583,7 @@ async fn test_generate_fill_reports_filters() {
                 "side": "B",
                 "symbol": "EURUSD-PERP",
                 "timestamp": "2024-01-15T10:32:00Z",
-                "user_id": "u"
+                "account_id": "u"
             }
         ]
     }));
@@ -652,7 +652,7 @@ async fn test_generate_position_status_reports_filters() {
     *state.positions_payload.lock().await = Some(serde_json::json!({
         "positions": [
             {
-                "user_id": "u",
+                "account_id": "u",
                 "symbol": "EURUSD-PERP",
                 "signed_quantity": 100,
                 "signed_notional": "108400.00",
@@ -660,7 +660,7 @@ async fn test_generate_position_status_reports_filters() {
                 "realized_pnl": "0"
             },
             {
-                "user_id": "u",
+                "account_id": "u",
                 "symbol": "XAU-PERP",
                 "signed_quantity": -5,
                 "signed_notional": "-10000.00",
@@ -668,7 +668,7 @@ async fn test_generate_position_status_reports_filters() {
                 "realized_pnl": "0"
             },
             {
-                "user_id": "u",
+                "account_id": "u",
                 "symbol": "NVDA-PERP",
                 "signed_quantity": 0,
                 "signed_notional": "0",
@@ -1165,7 +1165,7 @@ async fn test_submit_order_denies_gtd_time_in_force() {
         ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
             assert_eq!(denied.client_order_id, client_order_id);
             assert!(
-                denied.reason.as_str().contains("GTD"),
+                denied.reason.as_str().contains("Unsupported time in force"),
                 "reason was: {}",
                 denied.reason
             );

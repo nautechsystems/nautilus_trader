@@ -143,8 +143,7 @@ does not call native handles such as:
 - `portfolio_rc()`
 
 Those native handles expose borrowed runtime state and stay in engine, runtime,
-registration, PyO3, testkit, plug-in host, or explicit latency-sensitive native
-code. The [Rust native traits](../concepts/rust.md#native-traits) section
+registration, PyO3, testkit, or explicit latency-sensitive native code. The [Rust native traits](../concepts/rust.md#native-traits) section
 covers the native-traits applicability matrix and these method tables:
 
 - [`DataActorNative` methods](../concepts/rust.md#dataactornative-methods)

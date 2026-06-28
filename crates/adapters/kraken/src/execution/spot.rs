@@ -1135,7 +1135,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .await
             .context("Failed to subscribe to executions")?;
 
-        log::info!("Spot WebSocket authenticated and subscribed to executions");
+        log::debug!("Spot WebSocket authenticated and subscribed to executions");
 
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -1517,7 +1517,7 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let instrument_id = cmd.instrument_id;
 
         if cmd.order_side == OrderSide::NoOrderSide {
-            log::info!("Canceling all orders: instrument_id={instrument_id} (bulk)");
+            log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
 
             let http = self.http.clone();
 

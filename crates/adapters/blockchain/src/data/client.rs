@@ -369,7 +369,7 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiSubscribeCommand::Blocks(_cmd) => {
-                log::info!("Processing subscribe blocks command");
+                log::debug!("Processing subscribe blocks command");
 
                 // Try RPC client first if available, otherwise use HyperSync
                 if let Some(ref mut rpc) = core_client.rpc_client {
@@ -380,10 +380,10 @@ impl BlockchainDataClient {
                         core_client.hypersync_client.subscribe_blocks();
                         tokio::task::yield_now().await;
                     } else {
-                        log::info!("Successfully subscribed to blocks via RPC");
+                        log::debug!("Successfully subscribed to blocks via RPC");
                     }
                 } else {
-                    log::info!("Subscribing to blocks via HyperSync");
+                    log::debug!("Subscribing to blocks via HyperSync");
                     core_client.hypersync_client.subscribe_blocks();
                     tokio::task::yield_now().await;
                 }
@@ -578,7 +578,7 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiUnsubscribeCommand::Blocks(_cmd) => {
-                log::info!("Processing unsubscribe blocks command");
+                log::debug!("Processing unsubscribe blocks command");
 
                 // TODO: Implement RPC unsubscription when available
                 if core_client.rpc_client.is_some() {
@@ -587,7 +587,7 @@ impl BlockchainDataClient {
 
                 // Use HyperSync client for unsubscription
                 core_client.hypersync_client.unsubscribe_blocks().await;
-                log::info!("Unsubscribed from blocks via HyperSync");
+                log::debug!("Unsubscribed from blocks via HyperSync");
 
                 Ok(())
             }
@@ -635,7 +635,7 @@ impl BlockchainDataClient {
                 Ok(())
             }
             DefiUnsubscribeCommand::PoolSwaps(cmd) => {
-                log::info!("Processing unsubscribe pool swaps command");
+                log::debug!("Processing unsubscribe pool swaps command");
 
                 if let Ok((_, dex)) = cmd.instrument_id.venue.parse_dex() {
                     let pool_address = validate_address(cmd.instrument_id.symbol.as_str())
@@ -739,7 +739,7 @@ impl BlockchainDataClient {
     ) -> anyhow::Result<()> {
         match command {
             DefiRequestCommand::PoolSnapshot(cmd) => {
-                log::info!("Processing pool snapshot request for {}", cmd.instrument_id);
+                log::debug!("Processing pool snapshot request for {}", cmd.instrument_id);
 
                 let pool_address =
                     validate_address(cmd.instrument_id.symbol.as_str()).map_err(|e| {

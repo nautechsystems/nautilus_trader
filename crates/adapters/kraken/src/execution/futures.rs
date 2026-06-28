@@ -638,7 +638,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
             .await
             .context("Failed to subscribe to executions")?;
 
-        log::info!("Futures WebSocket authenticated and subscribed to executions");
+        log::debug!("Futures WebSocket authenticated and subscribed to executions");
 
         self.core.set_connected();
         log::info!("Connected: client_id={}", self.core.client_id);
@@ -992,7 +992,7 @@ impl ExecutionClient for KrakenFuturesExecutionClient {
         let instrument_id = cmd.instrument_id;
 
         if cmd.order_side == OrderSide::NoOrderSide {
-            log::info!("Canceling all orders: instrument_id={instrument_id} (bulk)");
+            log::debug!("Canceling all orders: instrument_id={instrument_id} (bulk)");
 
             let http = self.http.clone();
             let symbol = instrument_id.symbol.to_string();

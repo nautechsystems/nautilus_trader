@@ -51,7 +51,8 @@ high-precision = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["arrow", "examples", "high-precision"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]

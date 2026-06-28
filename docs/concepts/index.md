@@ -137,9 +137,8 @@ between backtesting and live trading.
 
 ## Plugins
 
-The Rust plug-in system loaded by a live node, covering the C-ABI boundary, manifest validation,
-plug-point surfaces (custom data, actors, strategies), host callback routing, configuration, and
-the lifecycle from `dlopen` through adapter registration.
+The `nautilus-plugin` crate: plug-in artifact identity, the manifest contract, and the C-ABI
+boundary types for independently compiled Rust cdylibs.
 
 ## Adapters
 

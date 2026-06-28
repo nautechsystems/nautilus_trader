@@ -155,6 +155,7 @@ class DatabentoDataLoader:
         use_exchange_as_venue: bool = False,
         bars_timestamp_on_close: bool = True,
         skip_on_error: bool = False,
+        expiration_overrides: dict[str, dict[str, str]] | None = None,
     ) -> list[Data]:
         """
         Return a list of data objects decoded from the DBN file at the given `path`.
@@ -189,6 +190,15 @@ class DatabentoDataLoader:
         skip_on_error : bool, default False
             If True, instruments that fail to decode are skipped with a warning log.
             If False (default), any decode error is raised as an exception.
+        expiration_overrides : dict[str, dict[str, str]], optional
+            Per-dataset option expiration time corrections, keyed by dataset (e.g. `OPRA.PILLAR`).
+            Each value maps an underlying symbol to a time (`HH:MM` or `HH:MM:SS`), with the
+            reserved key `default` setting the dataset-wide time. OPRA option definitions arrive
+            with date-level (midnight UTC) precision and are corrected to 16:00 New York time by
+            default; use this to change the default or set per-underlying times. Times are exchange
+            local. Only datasets with a built-in correction rule (currently `OPRA.PILLAR`) can be
+            tuned; an unknown or rule-less dataset raises a `ValueError`. Only used for the
+            `definition` schema.
 
         Returns
         -------
@@ -223,6 +233,7 @@ class DatabentoDataLoader:
                     str(path),
                     use_exchange_as_venue,
                     skip_on_error,
+                    expiration_overrides,
                 )
 
                 if as_legacy_cython:

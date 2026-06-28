@@ -475,7 +475,7 @@ impl ExecutionClient for DeribitExecutionClient {
             anyhow::bail!("subscription confirmation failed: {e}");
         }
 
-        log::info!("Subscribed to user order, trade, and portfolio updates");
+        log::debug!("Subscribed to user order, trade, and portfolio updates");
 
         // Spawn stream handler to dispatch WebSocket messages to the execution engine
         let stream = self.ws_client.stream()?;
@@ -854,7 +854,7 @@ impl ExecutionClient for DeribitExecutionClient {
         let strategy_id = cmd.strategy_id;
         let instrument_id = cmd.instrument_id;
 
-        log::info!("Canceling order: order_id={order_id}, client_order_id={client_order_id}");
+        log::debug!("Canceling order: order_id={order_id}, client_order_id={client_order_id}");
 
         // Spawn async task to send cancel via WebSocket
         self.spawn_task("cancel_order", async move {

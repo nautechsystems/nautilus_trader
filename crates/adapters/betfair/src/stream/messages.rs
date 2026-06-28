@@ -32,7 +32,10 @@ use serde::{Deserialize, Deserializer, Serialize, de::Visitor};
 use ustr::Ustr;
 
 use crate::common::{
-    consts::{STREAM_OP_AUTHENTICATION, STREAM_OP_HEARTBEAT, STREAM_OP_RACE_SUBSCRIPTION},
+    consts::{
+        STREAM_OP_AUTHENTICATION, STREAM_OP_CRICKET_SUBSCRIPTION, STREAM_OP_HEARTBEAT,
+        STREAM_OP_RACE_SUBSCRIPTION,
+    },
     enums::{
         ChangeType, LapseStatusReasonCode, MarketBettingType, MarketDataFilterField, MarketStatus,
         PriceLadderType, RunnerStatus, SegmentType, StatusErrorCode, StreamingOrderStatus,
@@ -61,6 +64,8 @@ pub enum StreamMessage {
     OrderChange(OCM),
     #[serde(rename = "rcm")]
     RaceChange(RCM),
+    #[serde(rename = "ccm")]
+    CricketChange(CCM),
 }
 
 /// Connection confirmation sent on stream connect.
@@ -647,6 +652,24 @@ impl RaceSubscription {
     }
 }
 
+/// Cricket stream subscription request.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CricketSubscription {
+    pub op: String,
+    pub id: Option<u64>,
+}
+
+impl CricketSubscription {
+    #[must_use]
+    pub fn new(id: u64) -> Self {
+        Self {
+            op: STREAM_OP_CRICKET_SUBSCRIPTION.to_string(),
+            id: Some(id),
+        }
+    }
+}
+
 /// Heartbeat request to keep the connection alive.
 #[derive(Debug, Clone, Serialize)]
 pub struct StreamHeartbeat {
@@ -800,6 +823,40 @@ pub struct RaceProgressChange {
     /// Obstacle data for jump races.
     #[serde(rename = "J")]
     pub jumps: Option<Vec<Jump>>,
+}
+
+/// Cricket Change Message (CCM) - live cricket match data.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CCM {
+    /// Subscription identifier.
+    pub id: Option<u64>,
+    /// Publish time (epoch millis).
+    pub pt: u64,
+    /// Clock token (may be integer or string depending on feed state).
+    pub clk: Option<serde_json::Value>,
+    /// Cricket match changes (None on heartbeat).
+    pub cc: Option<Vec<CricketChange>>,
+}
+
+/// Delta update for a single cricket match within a CCM.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CricketChange {
+    /// Betfair event identifier.
+    #[serde(default, deserialize_with = "deserialize_optional_string_lenient")]
+    pub event_id: Option<String>,
+    /// Betfair market identifier.
+    pub market_id: Option<String>,
+    /// Fixture metadata.
+    pub fixture_info: Option<serde_json::Value>,
+    /// Home team metadata.
+    pub home_team: Option<serde_json::Value>,
+    /// Away team metadata.
+    pub away_team: Option<serde_json::Value>,
+    /// Match statistics.
+    pub match_stats: Option<serde_json::Value>,
+    /// Match incidents.
+    pub incident_list_wrapper: Option<serde_json::Value>,
 }
 
 /// Jump obstacle location data.
@@ -1012,6 +1069,22 @@ mod tests {
                 assert_eq!(ids, vec![35467839, 24947967, 299569, 31422647, 41694785]);
             }
             other => panic!("Expected RaceChange, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_stream_decode_ccm_single() {
+        let data = load_test_json("stream/ccm_single.json");
+        let msg = stream_decode(data.as_bytes()).unwrap();
+        match msg {
+            StreamMessage::CricketChange(ccm) => {
+                let cc = ccm.cc.as_ref().unwrap();
+                assert_eq!(cc.len(), 1);
+                assert_eq!(cc[0].event_id.as_deref(), Some("35741575"));
+                assert_eq!(cc[0].market_id.as_deref(), Some("1.259334639"));
+                assert!(cc[0].match_stats.is_some());
+            }
+            other => panic!("Expected CricketChange, was {other:?}"),
         }
     }
 

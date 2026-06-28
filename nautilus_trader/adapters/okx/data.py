@@ -34,6 +34,7 @@ from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.core.nautilus_pyo3 import GreeksConvention
 from nautilus_trader.core.nautilus_pyo3 import OKXEnvironment
 from nautilus_trader.core.nautilus_pyo3 import OKXGreeksType
+from nautilus_trader.core.nautilus_pyo3 import OKXRegion
 from nautilus_trader.data.messages import RequestBars
 from nautilus_trader.data.messages import RequestForwardPrices
 from nautilus_trader.data.messages import RequestFundingRates
@@ -138,6 +139,7 @@ class OKXDataClient(LiveMarketDataClient):
         )
 
         self._environment = config.environment or OKXEnvironment.LIVE
+        self._region = config.region or OKXRegion.GLOBAL
 
         # Configuration
         self._config = config
@@ -145,6 +147,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._log.info(f"{config.instrument_families=}", LogColor.BLUE)
         self._log.info(f"config.contract_types={contract_types}", LogColor.BLUE)
         self._log.info(f"environment={self._environment}", LogColor.BLUE)
+        self._log.info(f"region={self._region}", LogColor.BLUE)
         self._log.info(f"{config.http_timeout_secs=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay_initial_ms=}", LogColor.BLUE)
@@ -161,7 +164,8 @@ class OKXDataClient(LiveMarketDataClient):
 
         # WebSocket API
         self._ws_client = nautilus_pyo3.OKXWebSocketClient(
-            url=config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(self._environment),
+            url=config.base_url_ws
+            or nautilus_pyo3.get_okx_ws_url_public(self._environment, self._region),
             api_key=None,
             api_secret=None,
             api_passphrase=None,
@@ -173,7 +177,10 @@ class OKXDataClient(LiveMarketDataClient):
         self._option_greeks_instrument_ids: set[InstrumentId] = set()
 
         # WebSocket API for business data (bars/candlesticks)
-        _public_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(self._environment)
+        _public_url = config.base_url_ws or nautilus_pyo3.get_okx_ws_url_public(
+            self._environment,
+            self._region,
+        )
         self._ws_business_client = nautilus_pyo3.OKXWebSocketClient(
             url=nautilus_pyo3.derive_okx_ws_url(_public_url, "business"),
             api_key=config.api_key,

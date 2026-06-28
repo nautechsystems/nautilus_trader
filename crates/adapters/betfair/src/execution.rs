@@ -428,7 +428,9 @@ impl BetfairExecutionClient {
                         );
                     }
                 }
-                StreamMessage::MarketChange(_) | StreamMessage::RaceChange(_) => {}
+                StreamMessage::MarketChange(_)
+                | StreamMessage::RaceChange(_)
+                | StreamMessage::CricketChange(_) => {}
             }
         })
     }

@@ -83,8 +83,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_blocks(&mut self, cmd: SubscribeBlocks) -> anyhow::Result<()> {
-        if !self.subscriptions_blocks.contains(&cmd.chain) {
-            self.subscriptions_blocks.insert(cmd.chain);
+        if Self::track_subscribe(&mut self.subscriptions_blocks, cmd.chain, "blocks") {
             self.client.subscribe_blocks(cmd)?;
         }
         Ok(())
@@ -96,8 +95,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_blocks(&mut self, cmd: &UnsubscribeBlocks) -> anyhow::Result<()> {
-        if self.subscriptions_blocks.contains(&cmd.chain) {
-            self.subscriptions_blocks.remove(&cmd.chain);
+        if Self::track_unsubscribe(&mut self.subscriptions_blocks, cmd.chain, "blocks") {
             self.client.unsubscribe_blocks(cmd)?;
         }
         Ok(())
@@ -109,8 +107,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool(&mut self, cmd: SubscribePool) -> anyhow::Result<()> {
-        if !self.subscriptions_pools.contains(&cmd.instrument_id) {
-            self.subscriptions_pools.insert(cmd.instrument_id);
+        if Self::track_subscribe(&mut self.subscriptions_pools, cmd.instrument_id, "pool") {
             self.client.subscribe_pool(cmd)?;
         }
         Ok(())
@@ -122,8 +119,11 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_swaps(&mut self, cmd: SubscribePoolSwaps) -> anyhow::Result<()> {
-        if !self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
-            self.subscriptions_pool_swaps.insert(cmd.instrument_id);
+        if Self::track_subscribe(
+            &mut self.subscriptions_pool_swaps,
+            cmd.instrument_id,
+            "pool swaps",
+        ) {
             self.client.subscribe_pool_swaps(cmd)?;
         }
         Ok(())
@@ -138,12 +138,11 @@ impl DataClientAdapter {
         &mut self,
         cmd: SubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        if !self
-            .subscriptions_pool_liquidity_updates
-            .contains(&cmd.instrument_id)
-        {
-            self.subscriptions_pool_liquidity_updates
-                .insert(cmd.instrument_id);
+        if Self::track_subscribe(
+            &mut self.subscriptions_pool_liquidity_updates,
+            cmd.instrument_id,
+            "pool liquidity updates",
+        ) {
             self.client.subscribe_pool_liquidity_updates(cmd)?;
         }
         Ok(())
@@ -155,12 +154,11 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_fee_collects(&mut self, cmd: SubscribePoolFeeCollects) -> anyhow::Result<()> {
-        if !self
-            .subscriptions_pool_fee_collects
-            .contains(&cmd.instrument_id)
-        {
-            self.subscriptions_pool_fee_collects
-                .insert(cmd.instrument_id);
+        if Self::track_subscribe(
+            &mut self.subscriptions_pool_fee_collects,
+            cmd.instrument_id,
+            "pool fee collects",
+        ) {
             self.client.subscribe_pool_fee_collects(cmd)?;
         }
         Ok(())
@@ -172,8 +170,11 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client subscribe operation fails.
     fn subscribe_pool_flash_events(&mut self, cmd: SubscribePoolFlashEvents) -> anyhow::Result<()> {
-        if !self.subscriptions_pool_flash.contains(&cmd.instrument_id) {
-            self.subscriptions_pool_flash.insert(cmd.instrument_id);
+        if Self::track_subscribe(
+            &mut self.subscriptions_pool_flash,
+            cmd.instrument_id,
+            "pool flash events",
+        ) {
             self.client.subscribe_pool_flash_events(cmd)?;
         }
         Ok(())
@@ -185,8 +186,7 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_pool(&mut self, cmd: &UnsubscribePool) -> anyhow::Result<()> {
-        if self.subscriptions_pools.contains(&cmd.instrument_id) {
-            self.subscriptions_pools.remove(&cmd.instrument_id);
+        if Self::track_unsubscribe(&mut self.subscriptions_pools, cmd.instrument_id, "pool") {
             self.client.unsubscribe_pool(cmd)?;
         }
         Ok(())
@@ -198,8 +198,11 @@ impl DataClientAdapter {
     ///
     /// Returns an error if the underlying client unsubscribe operation fails.
     fn unsubscribe_pool_swaps(&mut self, cmd: &UnsubscribePoolSwaps) -> anyhow::Result<()> {
-        if self.subscriptions_pool_swaps.contains(&cmd.instrument_id) {
-            self.subscriptions_pool_swaps.remove(&cmd.instrument_id);
+        if Self::track_unsubscribe(
+            &mut self.subscriptions_pool_swaps,
+            cmd.instrument_id,
+            "pool swaps",
+        ) {
             self.client.unsubscribe_pool_swaps(cmd)?;
         }
         Ok(())
@@ -214,12 +217,11 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolLiquidityUpdates,
     ) -> anyhow::Result<()> {
-        if self
-            .subscriptions_pool_liquidity_updates
-            .contains(&cmd.instrument_id)
-        {
-            self.subscriptions_pool_liquidity_updates
-                .remove(&cmd.instrument_id);
+        if Self::track_unsubscribe(
+            &mut self.subscriptions_pool_liquidity_updates,
+            cmd.instrument_id,
+            "pool liquidity updates",
+        ) {
             self.client.unsubscribe_pool_liquidity_updates(cmd)?;
         }
         Ok(())
@@ -234,12 +236,11 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolFeeCollects,
     ) -> anyhow::Result<()> {
-        if self
-            .subscriptions_pool_fee_collects
-            .contains(&cmd.instrument_id)
-        {
-            self.subscriptions_pool_fee_collects
-                .remove(&cmd.instrument_id);
+        if Self::track_unsubscribe(
+            &mut self.subscriptions_pool_fee_collects,
+            cmd.instrument_id,
+            "pool fee collects",
+        ) {
             self.client.unsubscribe_pool_fee_collects(cmd)?;
         }
         Ok(())
@@ -254,8 +255,11 @@ impl DataClientAdapter {
         &mut self,
         cmd: &UnsubscribePoolFlashEvents,
     ) -> anyhow::Result<()> {
-        if self.subscriptions_pool_flash.contains(&cmd.instrument_id) {
-            self.subscriptions_pool_flash.remove(&cmd.instrument_id);
+        if Self::track_unsubscribe(
+            &mut self.subscriptions_pool_flash,
+            cmd.instrument_id,
+            "pool flash events",
+        ) {
             self.client.unsubscribe_pool_flash_events(cmd)?;
         }
         Ok(())

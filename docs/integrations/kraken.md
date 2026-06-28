@@ -22,9 +22,9 @@ used together or separately depending on the use case.
 - `KrakenInstrumentProvider`: Instrument parsing and loading functionality.
 - `KrakenDataClient`: Market data feed manager.
 - `KrakenExecutionClient`: Account management and trade execution gateway.
-- `KrakenLiveDataClientFactory`: Factory for Kraken data clients (used by the
+- `KrakenDataClientFactory`: Factory for Kraken data clients (used by the
   trading node builder).
-- `KrakenLiveExecClientFactory`: Factory for Kraken execution clients (used by
+- `KrakenExecutionClientFactory`: Factory for Kraken execution clients (used by
   the trading node builder).
 
 :::note
@@ -60,9 +60,9 @@ Kraken supports two primary product categories:
 | Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
-**Dual-product deployments**: When both `SPOT` and `FUTURES` product types are
-configured, the adapter queries both APIs and merges the account states. This
-gives the execution engine visibility into collateral across both markets.
+**Single product type per client**: Each Kraken data or execution client is
+configured for a single `product_type` (`SPOT` or `FUTURES`); a single client
+does not span both markets.
 :::
 
 ## Bar streaming
@@ -361,14 +361,11 @@ time rather than silently coercing them.
 
 ## Order routing (Spot)
 
-The Rust Spot execution client routes `submit_order`, `modify_order`,
+The Spot execution client routes `submit_order`, `modify_order`,
 `cancel_order`, and `submit_order_list` through Kraken's authenticated
-WebSocket v2 trade channel by default, with REST as the fallback. The Python
-live `KrakenExecutionClient` currently routes all orders via REST regardless
-of the knobs below; WebSocket trade routing is only active when the Rust
-execution client (`KrakenSpotExecutionClient`) is in use, either via the
-Rust factory or by constructing the pyo3-exposed
-`nautilus_trader.core.nautilus_pyo3.kraken.KrakenExecClientConfig` directly.
+WebSocket v2 trade channel by default, falling back to REST when the
+WebSocket is inactive. Set `use_ws_trade=False` on `KrakenExecClientConfig`
+to route all order operations through REST.
 
 ### Order shapes routed via REST
 
@@ -419,17 +416,14 @@ latency (the default `5` is roughly 25x typical) so the timeout only fires
 under genuine network failure.
 :::
 
-### Rust-side configuration knobs
+### WebSocket order-routing options
 
-The Rust `KrakenExecClientConfig` (and its pyo3 wrapper) exposes:
+`KrakenExecClientConfig` exposes:
 
 | Option                    | Default | Description                                                   |
 |---------------------------|---------|---------------------------------------------------------------|
 | `use_ws_trade`            | `True`  | Route orders via WS when the trade channel is active.         |
 | `ws_request_timeout_secs` | `5`     | WS round‑trip timeout before marking command outcome unknown. |
-
-These are not exposed on the Python live `KrakenExecClientConfig` because
-the Python live execution client does not yet honour them.
 
 ## Reconciliation
 
@@ -669,57 +663,48 @@ intervals or reduce `max_requests_per_second` in the adapter config.
 
 ## Configuration
 
-The product types for each client must be specified in the configurations.
+The product type for each client is specified via the `product_type` option.
 
 ### Data client configuration options
 
-| Option                             | Default   | Description                                                        |
-|------------------------------------|-----------|--------------------------------------------------------------------|
-| `api_key`                          | `None`    | API key; loaded from environment variables when omitted.           |
-| `api_secret`                       | `None`    | API secret; loaded from environment variables when omitted.        |
-| `environment`                      | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.     |
-| `product_types`                    | `(SPOT,)` | Product types tuple (e.g., `(KrakenProductType.SPOT,)`).           |
-| `base_url_http_spot`               | `None`    | Override for Kraken Spot REST base URL.                            |
-| `base_url_http_futures`            | `None`    | Override for Kraken Futures REST base URL.                         |
-| `base_url_ws_spot`                 | `None`    | Override for Kraken Spot WebSocket URL.                            |
-| `base_url_ws_futures`              | `None`    | Override for Kraken Futures WebSocket URL.                         |
-| `base_url_ws_l3_spot`              | `None`    | Override for Kraken Spot L3 WebSocket URL.                         |
-| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.              |
-| `update_instruments_interval_mins` | `60`      | Instrument reload interval; `None` disables reloads.               |
-| `max_retries`                      | `None`    | Maximum retry attempts for REST requests.                          |
-| `retry_delay_initial_ms`           | `None`    | Initial delay in milliseconds between retries.                     |
-| `retry_delay_max_ms`               | `None`    | Maximum delay in milliseconds between retries.                     |
-| `http_timeout_secs`                | `None`    | HTTP request timeout in seconds.                                   |
-| `ws_heartbeat_secs`                | `30`      | WebSocket heartbeat interval in seconds.                           |
-| `max_requests_per_second`          | `None`    | Override rate limit; default is 5 req/s.                           |
-| `validate_l3_checksum`             | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.          |
-| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                       |
+| Option                    | Default   | Description                                                    |
+|---------------------------|-----------|----------------------------------------------------------------|
+| `product_type`            | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).            |
+| `environment`             | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures. |
+| `api_key`                 | `None`    | API key; loaded from environment variables when omitted.       |
+| `api_secret`              | `None`    | API secret; loaded from environment variables when omitted.    |
+| `base_url`                | `None`    | Override for the Kraken REST base URL.                         |
+| `ws_public_url`           | `None`    | Override for the public WebSocket URL.                         |
+| `ws_private_url`          | `None`    | Override for the private WebSocket URL.                        |
+| `ws_l3_url`               | `None`    | Override for the Spot L3 WebSocket URL.                        |
+| `validate_l3_checksum`    | `True`    | Validate Kraken Spot L3 checksums and resync on mismatch.      |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.          |
+| `timeout_secs`            | `30`      | HTTP request timeout in seconds.                               |
+| `heartbeat_interval_secs` | `30`      | WebSocket heartbeat interval in seconds.                       |
+| `ws_idle_timeout_ms`      | `10000`   | Idle timeout for the Spot v2 WebSocket; `0` disables.          |
+| `max_requests_per_second` | `None`    | Override rate limit; default is 5 req/s.                       |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                   |
 
 ### Execution client configuration options
 
-| Option                          | Default   | Description                                                            |
-|---------------------------------|-----------|------------------------------------------------------------------------|
-| `api_key`                       | `None`    | API key; loaded from environment variables when omitted.               |
-| `api_secret`                    | `None`    | API secret; loaded from environment variables when omitted.            |
-| `environment`                   | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.         |
-| `product_types`                 | `(SPOT,)` | Product types tuple; Spot can use cash or margin; Futures uses margin. |
-| `base_url_http_spot`            | `None`    | Override for Kraken Spot REST base URL.                                |
-| `base_url_http_futures`         | `None`    | Override for Kraken Futures REST base URL.                             |
-| `base_url_ws_spot`              | `None`    | Override for Kraken Spot WebSocket URL.                                |
-| `base_url_ws_futures`           | `None`    | Override for Kraken Futures WebSocket URL.                             |
-| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                  |
-| `max_retries`                   | `None`    | Maximum retry attempts for order submission/cancel calls.              |
-| `retry_delay_initial_ms`        | `None`    | Initial delay in milliseconds between retries.                         |
-| `retry_delay_max_ms`            | `None`    | Maximum delay in milliseconds between retries.                         |
-| `http_timeout_secs`             | `None`    | HTTP request timeout in seconds.                                       |
-| `ws_heartbeat_secs`             | `30`      | WebSocket heartbeat interval in seconds.                               |
-| `max_requests_per_second`       | `None`    | Override rate limit; default is 5 req/s.                               |
-| `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                   |
-| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.                |
-| `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports.  |
-| `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                 |
-| `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.           |
-| `transport_backend`             | `Sockudo` | WebSocket transport backend.                                           |
+| Option                          | Default   | Description                                                           |
+|---------------------------------|-----------|-----------------------------------------------------------------------|
+| `api_key`                       | required  | Kraken API key.                                                       |
+| `api_secret`                    | required  | Kraken API secret.                                                    |
+| `product_type`                  | `SPOT`    | Product type for this client (`SPOT` or `FUTURES`).                   |
+| `environment`                   | `LIVE`    | Trading environment (`LIVE` or `DEMO`); demo only for Futures.        |
+| `base_url`                      | `None`    | Override for the Kraken REST base URL.                                |
+| `ws_url`                        | `None`    | Override for the Kraken WebSocket URL.                                |
+| `proxy_url`                     | `None`    | Optional proxy URL for HTTP and WebSocket transports.                 |
+| `timeout_secs`                  | `30`      | HTTP request timeout in seconds.                                      |
+| `heartbeat_interval_secs`       | `30`      | WebSocket heartbeat interval in seconds.                              |
+| `max_requests_per_second`       | `None`    | Override rate limit; default is 5 req/s.                              |
+| `spot_account_type`             | `CASH`    | Account type for spot trading; `MARGIN` enables leverage and reports. |
+| `default_leverage`              | `None`    | Default spot margin leverage sent as `"N:1"` when set.                |
+| `use_spot_position_reports`     | `False`   | Report wallet balances as positions; cash mode only.                  |
+| `spot_positions_quote_currency` | `"USDT"`  | Quote currency filter for spot wallet position reports.               |
+| `margin_balance_asset`          | `None`    | Summary asset for `TradeBalance`; `None` defaults to `ZUSD`.          |
+| `transport_backend`             | `Sockudo` | WebSocket transport backend.                                          |
 
 For spot margin, `default_leverage` applies when an order has no per-order leverage
 param. `margin_balance_asset` only changes the `TradeBalance` summary denomination;
@@ -735,7 +720,7 @@ To test with Kraken Futures demo (paper trading):
    - `KRAKEN_FUTURES_DEMO_API_KEY`
    - `KRAKEN_FUTURES_DEMO_API_SECRET`
 3. Configure the adapter with `environment=KrakenEnvironment.DEMO` and
-   `product_types=(KrakenProductType.FUTURES,)`.
+   `product_type=KrakenProductType.FUTURES`.
 
 ```python
 from nautilus_trader.adapters.kraken import KRAKEN
@@ -747,13 +732,13 @@ config = TradingNodeConfig(
     data_clients={
         KRAKEN: {
             "environment": KrakenEnvironment.DEMO,
-            "product_types": (KrakenProductType.FUTURES,),
+            "product_type": KrakenProductType.FUTURES,
         },
     },
     exec_clients={
         KRAKEN: {
             "environment": KrakenEnvironment.DEMO,
-            "product_types": (KrakenProductType.FUTURES,),
+            "product_type": KrakenProductType.FUTURES,
         },
     },
 )
@@ -776,35 +761,13 @@ config = TradingNodeConfig(
     data_clients={
         KRAKEN: {
             "environment": KrakenEnvironment.LIVE,
-            "product_types": (KrakenProductType.SPOT,),
+            "product_type": KrakenProductType.SPOT,
         },
     },
     exec_clients={
         KRAKEN: {
             "environment": KrakenEnvironment.LIVE,
-            "product_types": (KrakenProductType.SPOT,),
-        },
-    },
-)
-```
-
-### Dual-product configuration (Spot + Futures)
-
-When trading both Spot and Futures markets, include both product types:
-
-```python
-config = TradingNodeConfig(
-    ...,  # Omitted
-    data_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.LIVE,
-            "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
-        },
-    },
-    exec_clients={
-        KRAKEN: {
-            "environment": KrakenEnvironment.LIVE,
-            "product_types": (KrakenProductType.SPOT, KrakenProductType.FUTURES),
+            "product_type": KrakenProductType.SPOT,
         },
     },
 )
@@ -814,16 +777,16 @@ Then, create a `TradingNode` and add the client factories:
 
 ```python
 from nautilus_trader.adapters.kraken import KRAKEN
-from nautilus_trader.adapters.kraken import KrakenLiveDataClientFactory
-from nautilus_trader.adapters.kraken import KrakenLiveExecClientFactory
+from nautilus_trader.adapters.kraken import KrakenDataClientFactory
+from nautilus_trader.adapters.kraken import KrakenExecutionClientFactory
 from nautilus_trader.live.node import TradingNode
 
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
 # Register the client factories with the node
-node.add_data_client_factory(KRAKEN, KrakenLiveDataClientFactory)
-node.add_exec_client_factory(KRAKEN, KrakenLiveExecClientFactory)
+node.add_data_client_factory(KRAKEN, KrakenDataClientFactory)
+node.add_exec_client_factory(KRAKEN, KrakenExecutionClientFactory)
 
 # Finally build the node
 node.build()

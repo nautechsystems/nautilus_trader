@@ -1654,7 +1654,7 @@ fn dispatch_ws_trading_message(
             // Individual OrderCanceled events arrive via UDS executionReport
         }
         BinanceSpotWsTradingMessage::UserDataSubscribed { subscription_id } => {
-            log::info!("User data stream subscribed: id={subscription_id}");
+            log::debug!("User data stream subscribed: id={subscription_id}");
             ws_user_data_subscribed.notify_one();
         }
         BinanceSpotWsTradingMessage::ExecutionReport(report) => {

@@ -35,7 +35,7 @@ use nautilus_core::{
 use nautilus_event_store::{
     AppendEntry, EntryDraft, EventStore, EventStoreEntry, EventStoreWriter, HaltCallback,
     HaltReason, Headers, IndexKey, IndexKind, MemoryBackend, RedbBackend, RegisteredComponents,
-    RunManifest, RunStatus, ScanDirection, SubmitError, Topic, WriterConfig,
+    RunManifest, RunStatus, ScanDirection, SubmitError, Topic, WriterConfig, codec,
 };
 use redb::{ReadableDatabase, ReadableTable};
 use rstest::rstest;
@@ -427,11 +427,8 @@ fn writer_seals_manifest_with_max_observed_ts_init() {
         .get("current")
         .expect("get manifest")
         .expect("manifest exists");
-    let (decoded_manifest, _) = bincode::serde::decode_from_slice::<RunManifest, _>(
-        bytes.value(),
-        bincode::config::standard(),
-    )
-    .expect("decode manifest");
+    let decoded_manifest =
+        codec::decode_from_slice::<RunManifest>(bytes.value()).expect("decode manifest");
     assert_eq!(decoded_manifest.status, RunStatus::Ended);
     assert_eq!(decoded_manifest.high_watermark, 4);
     assert_eq!(decoded_manifest.end_ts_init, Some(UnixNanos::from(9_999)));
@@ -595,11 +592,8 @@ fn writer_preserves_payload_and_hash_round_trip() {
         let (k, v) = row.expect("row");
         let seq = k.value();
         let bytes = v.value();
-        let (entry, _) = bincode::serde::decode_from_slice::<
-            nautilus_event_store::EventStoreEntry,
-            _,
-        >(bytes, bincode::config::standard())
-        .expect("decode");
+        let entry = codec::decode_from_slice::<nautilus_event_store::EventStoreEntry>(bytes)
+            .expect("decode");
         assert_eq!(entry.seq, seq);
         assert_eq!(entry.recompute_hash(), entry.entry_hash);
     }
@@ -686,11 +680,8 @@ fn writer_stamps_ts_publish_from_clock_at_submit() {
 
     for row in entries.iter().expect("iter") {
         let (_, v) = row.expect("row");
-        let (entry, _) = bincode::serde::decode_from_slice::<
-            nautilus_event_store::EventStoreEntry,
-            _,
-        >(v.value(), bincode::config::standard())
-        .expect("decode");
+        let entry = codec::decode_from_slice::<nautilus_event_store::EventStoreEntry>(v.value())
+            .expect("decode");
         decoded.push(entry);
     }
 

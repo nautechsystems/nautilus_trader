@@ -360,7 +360,7 @@ impl PolymarketDataClient {
         self.ws_client.connect().await?;
 
         if self.config.subscribe_new_markets {
-            log::info!("Subscribing to new markets...");
+            log::debug!("Subscribing to new markets...");
             self.ws_client.subscribe_market(vec![]).await?;
         }
 

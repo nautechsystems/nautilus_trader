@@ -1122,7 +1122,7 @@ fn handle_instrument_def_msg(
         instrument_id_map,
     )?;
 
-    decode_instrument_def_msg(msg, instrument_id, Some(ts_init))
+    decode_instrument_def_msg(msg, instrument_id, Some(ts_init), None)
 }
 
 fn handle_status_msg(

@@ -166,6 +166,7 @@ impl ImportableActorConfig {
 pub struct PyDataActorInner {
     core: DataActorCore,
     py_self: Option<Py<PyAny>>,
+    config: Option<Py<PyAny>>,
     clock: PyClock,
     logger: PyLogger,
 }
@@ -175,6 +176,7 @@ impl Debug for PyDataActorInner {
         f.debug_struct(stringify!(PyDataActorInner))
             .field("core", &self.core)
             .field("py_self", &self.py_self.as_ref().map(|_| "<Py<PyAny>>"))
+            .field("config", &self.config.as_ref().map(|_| "<Py<PyAny>>"))
             .field("clock", &self.clock)
             .field("logger", &self.logger)
             .finish()
@@ -757,6 +759,7 @@ impl PyDataActor {
         let inner = PyDataActorInner {
             core,
             py_self: None,
+            config: None,
             clock,
             logger,
         };
@@ -774,6 +777,15 @@ impl PyDataActor {
     /// `DataActor` methods and have them called by the Rust system.
     pub fn set_python_instance(&mut self, py_obj: Py<PyAny>) {
         self.inner_mut().py_self = Some(py_obj);
+    }
+
+    /// Stores the original Python config object passed at construction.
+    ///
+    /// Retained so the constructed instance exposes `.config` (matching v1) and so
+    /// instance-based registration can source the actor ID and logging flags from the
+    /// same single config object.
+    pub fn set_config(&mut self, config: Option<Py<PyAny>>) {
+        self.inner_mut().config = config;
     }
 
     /// Updates the `actor_id` in both the core config and the `actor_id` field.
@@ -1097,17 +1109,37 @@ impl DataActor for PyDataActorInner {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyDataActor {
+    /// Creates a new [`PyDataActor`] instance.
+    ///
+    /// Accepts `None` or any Python object. If the object is a [`DataActorConfig`]
+    /// (or can be extracted as one via `from_py_object`), its values are used;
+    /// otherwise the actor falls back to [`DataActorConfig::default()`].
+    ///
+    /// This permissive signature is required so that Python subclasses can pass a
+    /// **custom** config dataclass to their `__init__`. The original object is retained
+    /// here in `__new__`, which always receives the constructor arguments, so `.config`
+    /// and registration see the config even when a subclass omits forwarding it to
+    /// `super().__init__()`.
     #[new]
     #[pyo3(signature = (config=None))]
-    fn py_new(config: Option<DataActorConfig>) -> Self {
-        Self::new(config)
+    fn py_new(config: Option<Py<PyAny>>) -> Self {
+        let actor_config = config
+            .as_ref()
+            .and_then(|obj| Python::attach(|py| obj.extract::<DataActorConfig>(py).ok()));
+        let mut actor = Self::new(actor_config);
+        actor.set_config(config);
+        actor
     }
 
     #[pyo3(signature = (config=None))]
-    #[allow(unused_variables, clippy::needless_pass_by_value)]
-    fn __init__(slf: &Bound<'_, Self>, config: Option<DataActorConfig>) {
+    fn __init__(slf: &Bound<'_, Self>, config: Option<Py<PyAny>>) {
         let py_self: Py<PyAny> = slf.clone().unbind().into_any();
-        slf.borrow_mut().set_python_instance(py_self);
+        let mut borrowed = slf.borrow_mut();
+        borrowed.set_python_instance(py_self);
+        // `__new__` retained the config; only a forwarded config overrides it
+        if config.is_some() {
+            borrowed.set_config(config);
+        }
     }
 
     #[getter]
@@ -1146,6 +1178,15 @@ impl PyDataActor {
     #[pyo3(name = "actor_id")]
     fn py_actor_id(&self) -> ActorId {
         self.inner().core.actor_id
+    }
+
+    #[getter]
+    #[pyo3(name = "config")]
+    fn py_config(&self, py: Python<'_>) -> Option<Py<PyAny>> {
+        self.inner()
+            .config
+            .as_ref()
+            .map(|config| config.clone_ref(py))
     }
 
     #[getter]
@@ -2567,6 +2608,30 @@ mod tests {
     fn test_new_actor_creation() {
         let actor = PyDataActor::new(None);
         assert!(actor.trader_id().is_none());
+    }
+
+    #[rstest]
+    fn test_actor_retains_python_config_object() {
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let config = py
+                .eval(
+                    c_str!("type('_Cfg', (), {'actor_id': 'A-RETAIN-001'})()"),
+                    None,
+                    None,
+                )
+                .unwrap();
+
+            let actor = py
+                .get_type::<PyDataActor>()
+                .as_any()
+                .call1((config.clone(),))
+                .unwrap();
+
+            let retained = actor.getattr("config").unwrap();
+
+            assert!(retained.is(&config));
+        });
     }
 
     #[rstest]

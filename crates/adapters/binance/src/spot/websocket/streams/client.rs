@@ -284,7 +284,7 @@ impl BinanceSpotWebSocketClient {
                 slots.push(new_slot);
                 slots.len()
             };
-            log::info!("Pool slot {} connected: url={}", slot_count - 1, self.url);
+            log::debug!("Pool slot {} connected: url={}", slot_count - 1, self.url);
         }
 
         // Phase 3: assign streams to slots and send commands (brief lock).
