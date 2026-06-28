@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "BinanceBar",
@@ -68,6 +69,7 @@ class BinanceDataClientConfig:
         api_secret: str | None = None,
         spot_market_data_mode: BinanceSpotMarketDataMode | None = None,
         instrument_status_poll_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -96,6 +98,7 @@ class BinanceExecClientConfig:
         treat_expired_as_canceled: bool = False,
         use_trade_lite: bool = False,
         bnfcr_currency: model.Currency | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

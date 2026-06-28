@@ -10,6 +10,7 @@ __all__ = [
     "Quota",
     "SocketClient",
     "SocketConfig",
+    "TransportBackend",
     "WebSocketClient",
     "WebSocketConfig",
     "http_delete",
@@ -173,7 +174,13 @@ class WebSocketConfig:
         reconnect_max_attempts: int | None = None,
         idle_timeout_ms: int | None = None,
         proxy_url: str | None = None,
+        backend: TransportBackend | None = None,
     ) -> None: ...
+
+@typing.final
+class TransportBackend(enum.Enum):
+    TUNGSTENITE = ...
+    SOCKUDO = ...
 
 @typing.final
 class HttpMethod(enum.Enum):

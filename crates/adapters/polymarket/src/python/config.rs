@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
@@ -119,7 +120,7 @@ impl PolymarketDataClientConfig {
     /// and are skipped during serialization; they default to empty/`None` and must be
     /// installed programmatically after deserialization.
     #[new]
-    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_rtds=None))]
+    #[pyo3(signature = (instrument_config=None, base_url_http=None, base_url_ws=None, base_url_gamma=None, base_url_data_api=None, http_timeout_secs=None, ws_timeout_secs=None, ws_max_subscriptions=None, update_instruments_interval_mins=PY_OPTION_U64_MISSING_SENTINEL, subscribe_new_markets=None, auto_load_missing_instruments=None, auto_load_debounce_ms=None, auto_load_max_retries=None, auto_load_retry_delay_initial_secs=None, auto_load_retry_delay_max_secs=None, new_market_fetch_max_concurrency=None, resolve_poll_enabled=None, resolve_poll_interval_secs=None, resolve_poll_grace_secs=None, resolve_poll_max_wait_secs=None, base_url_rtds=None, transport_backend=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         instrument_config: Option<PolymarketInstrumentProviderConfig>,
@@ -143,6 +144,7 @@ impl PolymarketDataClientConfig {
         resolve_poll_grace_secs: Option<u64>,
         resolve_poll_max_wait_secs: Option<u64>,
         base_url_rtds: Option<String>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let default = Self::default();
 
@@ -180,7 +182,7 @@ impl PolymarketDataClientConfig {
                 .unwrap_or(default.resolve_poll_max_wait_secs),
             filters: Vec::new(),
             new_market_filter: None,
-            transport_backend: default.transport_backend,
+            transport_backend: transport_backend.unwrap_or(default.transport_backend),
         }
     }
 
@@ -202,7 +204,7 @@ impl PolymarketExecClientConfig {
     /// derive list.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None))]
+    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None, transport_backend=None))]
     fn py_new(
         trader_id: Option<String>,
         account_id: Option<String>,
@@ -220,6 +222,7 @@ impl PolymarketExecClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         ack_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let default = Self::default();
         Self {
@@ -240,7 +243,7 @@ impl PolymarketExecClientConfig {
                 .unwrap_or(default.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
             ack_timeout_secs: ack_timeout_secs.unwrap_or(default.ack_timeout_secs),
-            transport_backend: default.transport_backend,
+            transport_backend: transport_backend.unwrap_or(default.transport_backend),
         }
     }
 

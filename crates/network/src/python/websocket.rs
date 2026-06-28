@@ -90,6 +90,7 @@ impl WebSocketConfig {
         reconnect_max_attempts=None,
         idle_timeout_ms=None,
         proxy_url=None,
+        backend=None,
     ))]
     fn py_new(
         url: String,
@@ -104,6 +105,7 @@ impl WebSocketConfig {
         reconnect_max_attempts: Option<u32>,
         idle_timeout_ms: Option<u64>,
         proxy_url: Option<String>,
+        backend: Option<TransportBackend>,
     ) -> PyResult<Self> {
         let config = Self {
             url,
@@ -117,7 +119,7 @@ impl WebSocketConfig {
             reconnect_jitter_ms,
             reconnect_max_attempts,
             idle_timeout_ms,
-            backend: TransportBackend::default(),
+            backend: backend.unwrap_or_default(),
             proxy_url,
         };
         config.validate().map_err(to_pyvalue_err)?;
@@ -476,6 +478,7 @@ mod py_new_tests {
             None,
             None,
             None,
+            None,
         );
 
         assert!(result.is_err());
@@ -666,6 +669,7 @@ counter = Counter()
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -749,6 +753,7 @@ counter = Counter()
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
             None,
             None,

@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "OKX",
@@ -67,6 +68,7 @@ class OKXDataClientConfig:
         update_instruments_interval_mins: int | None = None,
         vip_level: OKXVipLevel | None = None,
         load_spreads: bool = False,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -96,6 +98,7 @@ class OKXExecClientConfig:
         retry_delay_max_ms: int | None = None,
         margin_mode: OKXMarginMode | None = None,
         load_spreads: bool = False,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

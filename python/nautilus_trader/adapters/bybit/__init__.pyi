@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "BYBIT_NAUTILUS_BROKER_ID",
@@ -88,6 +89,7 @@ class BybitDataClientConfig:
         recv_window_ms: int | None = None,
         update_instruments_interval_mins: int | None = None,
         instrument_poll_interval_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -116,6 +118,7 @@ class BybitExecClientConfig:
         account_id: model.AccountId | None = None,
         use_spot_position_reports: bool | None = None,
         margin_mode: BybitMarginMode | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

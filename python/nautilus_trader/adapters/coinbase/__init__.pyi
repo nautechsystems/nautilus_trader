@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "COINBASE",
@@ -34,6 +35,7 @@ class CoinbaseDataClientConfig:
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         derivatives_poll_interval_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
     def proxy_url(self) -> str | None: ...
@@ -61,6 +63,7 @@ class CoinbaseExecClientConfig:
         default_margin_type: CoinbaseMarginType | None = None,
         default_leverage: decimal.Decimal | None = None,
         retail_portfolio_id: str | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
     def proxy_url(self) -> str | None: ...

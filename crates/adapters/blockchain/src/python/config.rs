@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::defi::{Chain, DexType};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::config::{BlockchainDataClientConfig, DexPoolFilters};
@@ -42,7 +43,7 @@ impl BlockchainDataClientConfig {
     /// Configuration for blockchain data clients.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None, proxy_url=None))]
+    #[pyo3(signature = (chain, dex_ids, http_rpc_url, rpc_requests_per_second=None, multicall_calls_per_rpc_request=None, wss_rpc_url=None, use_hypersync_for_live_data=true, from_block=None, pool_filters=None, postgres_cache_database_config=None, proxy_url=None, transport_backend=None))]
     fn py_new(
         #[gen_stub(
             override_type(
@@ -73,6 +74,7 @@ impl BlockchainDataClientConfig {
         )]
         postgres_cache_database_config: Option<PostgresConnectOptions>,
         proxy_url: Option<String>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         Self::builder()
             .chain(Arc::new(chain.clone()))
@@ -86,6 +88,7 @@ impl BlockchainDataClientConfig {
             .maybe_pool_filters(pool_filters)
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
             .maybe_proxy_url(proxy_url)
+            .transport_backend(transport_backend.unwrap_or_default())
             .build()
     }
 

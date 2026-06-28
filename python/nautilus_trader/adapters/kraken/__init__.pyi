@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "KrakenApiResult",
@@ -58,6 +59,7 @@ class KrakenDataClientConfig:
         heartbeat_interval_secs: int | None = None,
         ws_idle_timeout_ms: int | None = None,
         max_requests_per_second: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -88,6 +90,7 @@ class KrakenExecClientConfig:
         margin_balance_asset: str | None = None,
         use_ws_trade: bool | None = None,
         ws_request_timeout_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

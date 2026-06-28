@@ -15,6 +15,7 @@
 
 //! Python bindings for Hyperliquid configuration.
 
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -36,6 +37,7 @@ impl HyperliquidDataClientConfig {
         http_timeout_secs = None,
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -47,6 +49,7 @@ impl HyperliquidDataClientConfig {
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -59,7 +62,7 @@ impl HyperliquidDataClientConfig {
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -90,6 +93,7 @@ impl HyperliquidExecClientConfig {
         market_order_slippage_bps = None,
         include_builder_attribution = None,
         ws_post_timeout_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -109,6 +113,7 @@ impl HyperliquidExecClientConfig {
         market_order_slippage_bps: Option<u32>,
         include_builder_attribution: Option<bool>,
         ws_post_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -131,7 +136,7 @@ impl HyperliquidExecClientConfig {
             include_builder_attribution: include_builder_attribution
                 .unwrap_or(defaults.include_builder_attribution),
             ws_post_timeout_secs: ws_post_timeout_secs.unwrap_or(defaults.ws_post_timeout_secs),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             outcome_settlement_poll_secs: defaults.outcome_settlement_poll_secs,
         }
     }
