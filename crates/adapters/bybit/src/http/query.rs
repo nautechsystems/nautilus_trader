@@ -544,34 +544,48 @@ pub struct BybitPlaceOrderParams {
 #[serde(rename_all = "camelCase")]
 pub struct BybitBatchAmendOrderEntry {
     pub symbol: String,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_id: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_iv: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub qty: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tpsl_mode: Option<BybitTpSlMode>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub take_profit: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_loss: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trigger_by: Option<BybitTriggerType>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tp_limit_price: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sl_limit_price: Option<String>,
 }
@@ -607,12 +621,15 @@ pub struct BybitAmendOrderParams {
 #[serde(rename_all = "camelCase")]
 pub struct BybitBatchCancelOrderEntry {
     pub symbol: String,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_id: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option))]
     pub order_link_id: Option<String>,
+    #[builder(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order_filter: Option<BybitOrderFilter>,
 }
@@ -952,4 +969,73 @@ pub struct BybitSubApiKeysParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(setter(strip_option), default)]
     pub cursor: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_amend_entry_builds_with_only_order_id() {
+        let entry = BybitBatchAmendOrderEntryBuilder::default()
+            .symbol("ETHUSDT".to_string())
+            .order_id("12345".to_string())
+            .price(Some("1600.0".to_string()))
+            .build()
+            .expect("amend entry should build with only order_id");
+
+        assert_eq!(entry.order_id.as_deref(), Some("12345"));
+        assert_eq!(entry.order_link_id, None);
+    }
+
+    #[rstest]
+    fn test_amend_entry_builds_with_only_order_link_id() {
+        let entry = BybitBatchAmendOrderEntryBuilder::default()
+            .symbol("ETHUSDT".to_string())
+            .order_link_id("link-1".to_string())
+            .qty(Some("0.02".to_string()))
+            .build()
+            .expect("amend entry should build with only order_link_id");
+
+        assert_eq!(entry.order_link_id.as_deref(), Some("link-1"));
+        assert_eq!(entry.order_id, None);
+    }
+
+    #[rstest]
+    fn test_amend_entry_builds_with_no_identifiers() {
+        let entry = BybitBatchAmendOrderEntryBuilder::default()
+            .symbol("ETHUSDT".to_string())
+            .price(Some("1600.0".to_string()))
+            .build()
+            .expect("amend entry optional identifiers default to None");
+
+        assert_eq!(entry.order_id, None);
+        assert_eq!(entry.order_link_id, None);
+    }
+
+    #[rstest]
+    fn test_cancel_entry_builds_with_only_order_id() {
+        let entry = BybitBatchCancelOrderEntryBuilder::default()
+            .symbol("ETHUSDT".to_string())
+            .order_id("12345".to_string())
+            .build()
+            .expect("cancel entry should build with only order_id");
+
+        assert_eq!(entry.order_id.as_deref(), Some("12345"));
+        assert_eq!(entry.order_link_id, None);
+    }
+
+    #[rstest]
+    fn test_cancel_entry_builds_with_only_order_link_id() {
+        let entry = BybitBatchCancelOrderEntryBuilder::default()
+            .symbol("ETHUSDT".to_string())
+            .order_link_id("link-1".to_string())
+            .build()
+            .expect("cancel entry should build with only order_link_id");
+
+        assert_eq!(entry.order_link_id.as_deref(), Some("link-1"));
+        assert_eq!(entry.order_id, None);
+    }
 }

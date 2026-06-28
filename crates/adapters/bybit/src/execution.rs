@@ -530,12 +530,25 @@ impl BybitExecutionClient {
 }
 
 fn submit_rejection_reason(error: &anyhow::Error) -> Option<&str> {
-    error.chain().find_map(|cause| {
-        let BybitSubmitOrderError::Rejected { reason } = cause.downcast_ref()? else {
-            return None;
-        };
-        Some(reason.as_str())
-    })
+    for cause in error.chain() {
+        if let Some(submit_error) = cause.downcast_ref::<BybitSubmitOrderError>() {
+            return match submit_error {
+                BybitSubmitOrderError::Rejected { reason } => Some(reason.as_str()),
+                BybitSubmitOrderError::MissingOrderId
+                | BybitSubmitOrderError::PostSubmitLookup { .. } => None,
+            };
+        }
+
+        if let Some(BybitHttpError::BybitError {
+            error_code,
+            message,
+        }) = cause.downcast_ref()
+            && !is_bybit_ambiguous_order_error_code(i64::from(*error_code))
+        {
+            return Some(message.as_str());
+        }
+    }
+    None
 }
 
 #[async_trait(?Send)]
@@ -2823,7 +2836,10 @@ mod tests {
     #[rstest]
     fn test_submit_rejection_reason_ignores_post_submit_lookup_failure() {
         let err = anyhow::Error::from(BybitSubmitOrderError::PostSubmitLookup {
-            source: anyhow::anyhow!("No order returned after submission"),
+            source: anyhow::Error::from(BybitHttpError::BybitError {
+                error_code: 110017,
+                message: "current position is zero, cannot fix reduce-only order qty".to_string(),
+            }),
         })
         .context("Submit order failed");
 
@@ -2833,6 +2849,29 @@ mod tests {
     #[rstest]
     fn test_submit_rejection_reason_ignores_missing_order_id() {
         let err = anyhow::Error::from(BybitSubmitOrderError::MissingOrderId);
+
+        assert_eq!(submit_rejection_reason(&err), None);
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_matches_venue_http_error() {
+        let err = anyhow::Error::from(BybitHttpError::BybitError {
+            error_code: 110017,
+            message: "current position is zero, cannot fix reduce-only order qty".to_string(),
+        });
+
+        assert_eq!(
+            submit_rejection_reason(&err),
+            Some("current position is zero, cannot fix reduce-only order qty"),
+        );
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_ignores_ambiguous_http_error() {
+        let err = anyhow::Error::from(BybitHttpError::BybitError {
+            error_code: 10016,
+            message: "rate limit exceeded".to_string(),
+        });
 
         assert_eq!(submit_rejection_reason(&err), None);
     }
