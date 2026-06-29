@@ -1413,6 +1413,12 @@ impl ExecutionManager {
         self.order_local_activity_ns.shift_remove(client_order_id);
     }
 
+    /// Returns any external order claim for the given instrument ID.
+    #[must_use]
+    pub fn get_external_order_claim(&self, instrument_id: &InstrumentId) -> Option<StrategyId> {
+        self.external_order_claims.get(instrument_id).copied()
+    }
+
     /// Claims external orders for a specific strategy and instrument.
     ///
     /// # Errors
