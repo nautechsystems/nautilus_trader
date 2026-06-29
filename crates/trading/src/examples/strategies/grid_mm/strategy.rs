@@ -143,6 +143,32 @@ nautilus_strategy!(GridMarketMaker, {
         // GTD expiry means the grid is gone; reset so re-quoting is not suppressed
         self.last_quoted_mid = None;
     }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        // Only discard once fully filled; partial fills must keep the ID so a
+        // subsequent self-cancel is not misclassified as external.
+        let closed = {
+            let cache = self.cache();
+            cache
+                .order(&event.client_order_id)
+                .is_some_and(|o| o.is_closed())
+        };
+
+        if closed {
+            self.pending_self_cancels.remove(&event.client_order_id);
+        }
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        if self.pending_self_cancels.remove(&event.client_order_id) {
+            return;
+        }
+
+        if self.config.on_cancel_resubmit {
+            // Reset so the next incoming quote triggers a full grid resubmission
+            self.last_quoted_mid = None;
+        }
+    }
 });
 
 impl Debug for GridMarketMaker {
@@ -319,34 +345,6 @@ impl DataActor for GridMarketMaker {
         }
 
         self.last_quoted_mid = Some(mid);
-        Ok(())
-    }
-
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        // Only discard once fully filled; partial fills must keep the ID so a
-        // subsequent self-cancel is not misclassified as external.
-        let closed = {
-            let cache = self.cache();
-            cache
-                .order(&event.client_order_id)
-                .is_some_and(|o| o.is_closed())
-        };
-
-        if closed {
-            self.pending_self_cancels.remove(&event.client_order_id);
-        }
-        Ok(())
-    }
-
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        if self.pending_self_cancels.remove(&event.client_order_id) {
-            return Ok(());
-        }
-
-        if self.config.on_cancel_resubmit {
-            // Reset so the next incoming quote triggers a full grid resubmission
-            self.last_quoted_mid = None;
-        }
         Ok(())
     }
 

@@ -185,8 +185,6 @@ Different data operations map to these handlers:
 | `subscribe_instrument_close()`       | Real‑time  | `on_instrument_close()`  | Live instrument close updates.                    |
 | `subscribe_option_greeks()`          | Real‑time  | `on_option_greeks()`     | Live option greeks updates.                       |
 | `subscribe_option_chain()`           | Real‑time  | `on_option_chain()`      | Live option chain slice snapshots.                |
-| `subscribe_order_fills()`            | Real‑time  | `on_order_filled()`      | Live order fill events for an instrument.         |
-| `subscribe_order_cancels()`          | Real‑time  | `on_order_canceled()`    | Live order cancel events for an instrument.       |
 | `request_data()`                     | Historical | `on_historical_data()`   | Historical data processing.                       |
 | `request_order_book_deltas()`        | Historical | `on_historical_data()`   | Historical order book deltas.                     |
 | `request_order_book_depth()`         | Historical | `on_historical_data()`   | Historical order book depth.                      |
@@ -268,20 +266,31 @@ If you're not seeing data in `on_bar()` but see log messages about receiving bar
 as the data might be coming from a request rather than a subscription.
 :::
 
-## Order fill subscriptions
+## Order event subscriptions
 
-Actors can subscribe to order fill events for specific instruments using `subscribe_order_fills()`.
-This is useful for monitoring trading activity, fill analysis, or tracking execution quality.
+Actors that need order lifecycle events can subscribe directly to the message bus. Use this
+for monitoring fills, cancels, or all order events for a strategy without adding dedicated
+Actor callback methods.
 
-When subscribed, the handler `on_order_filled()` receives all fills for the specified instrument,
-regardless of which strategy or component generated the original order.
+Subscribe in `on_start()` and unsubscribe in `on_stop()` using the same handler. This
+keeps direct message bus subscriptions aligned with the actor lifecycle.
 
-### Example
+Common order event topics:
+
+| Topic pattern                           | Receives                                 |
+|-----------------------------------------|------------------------------------------|
+| `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
+| `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
+| `events.order.{strategy_id}`            | All order events routed to one strategy. |
+| `events.order.*`                        | All strategy‑routed order events.        |
+
+### Instrument fill and cancel events
 
 ```python
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderFilled
 
 
@@ -296,11 +305,28 @@ class FillMonitorActor(Actor):
         self.total_volume = 0.0
 
     def on_start(self) -> None:
-        # Subscribe to all fills for the instrument
-        self.subscribe_order_fills(self.config.instrument_id)
+        instrument_id = self.config.instrument_id
+        self.msgbus.subscribe(
+            topic=f"events.order_filled.{instrument_id}",
+            handler=self._on_order_filled,
+        )
+        self.msgbus.subscribe(
+            topic=f"events.order_canceled.{instrument_id}",
+            handler=self._on_order_canceled,
+        )
 
-    def on_order_filled(self, event: OrderFilled) -> None:
-        # Handle order fill events
+    def on_stop(self) -> None:
+        instrument_id = self.config.instrument_id
+        self.msgbus.unsubscribe(
+            topic=f"events.order_filled.{instrument_id}",
+            handler=self._on_order_filled,
+        )
+        self.msgbus.unsubscribe(
+            topic=f"events.order_canceled.{instrument_id}",
+            handler=self._on_order_canceled,
+        )
+
+    def _on_order_filled(self, event: OrderFilled) -> None:
         self.fill_count += 1
         self.total_volume += float(event.last_qty)
 
@@ -309,63 +335,53 @@ class FillMonitorActor(Actor):
             f"Total fills: {self.fill_count}, Volume: {self.total_volume}"
         )
 
-    def on_stop(self) -> None:
-        # Unsubscribe from fills
-        self.unsubscribe_order_fills(self.config.instrument_id)
+    def _on_order_canceled(self, event: OrderCanceled) -> None:
+        self.log.info(f"Cancel received: {event.client_order_id}")
 ```
 
-:::note
-Order fill subscriptions use the message bus only and do not involve the data engine.
-The `on_order_filled()` handler receives events only while the actor is running.
-:::
-
-## Order cancel subscriptions
-
-Actors can subscribe to order cancel events for specific instruments using `subscribe_order_cancels()`.
-This is useful for monitoring cancellations or tracking order lifecycle events.
-
-When subscribed, the handler `on_order_canceled()` receives all cancels for the specified instrument,
-regardless of which strategy or component generated the original order.
-
-### Example
+### Strategy order lifecycle events
 
 ```python
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
-from nautilus_trader.model import InstrumentId
-from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model import StrategyId
+from nautilus_trader.model.events import OrderEvent
 
 
 class MyActorConfig(ActorConfig):
-    instrument_id: InstrumentId  # example value: "ETHUSDT-PERP.BINANCE"
+    strategy_id: StrategyId  # example value: "EMA-CROSS-001"
 
 
-class CancelMonitorActor(Actor):
+class StrategyOrderMonitorActor(Actor):
     def __init__(self, config: MyActorConfig) -> None:
         super().__init__(config)
-        self.cancel_count = 0
+        self.order_event_count = 0
 
     def on_start(self) -> None:
-        # Subscribe to all cancels for the instrument
-        self.subscribe_order_cancels(self.config.instrument_id)
-
-    def on_order_canceled(self, event: OrderCanceled) -> None:
-        # Handle order cancel events
-        self.cancel_count += 1
-
-        self.log.info(
-            f"Cancel received: {event.client_order_id}, "
-            f"Total cancels: {self.cancel_count}"
+        self._order_topic = f"events.order.{self.config.strategy_id}"
+        self.msgbus.subscribe(
+            topic=self._order_topic,
+            handler=self._on_strategy_order_event,
         )
 
     def on_stop(self) -> None:
-        # Unsubscribe from cancels
-        self.unsubscribe_order_cancels(self.config.instrument_id)
+        self.msgbus.unsubscribe(
+            topic=self._order_topic,
+            handler=self._on_strategy_order_event,
+        )
+
+    def _on_strategy_order_event(self, event: OrderEvent) -> None:
+        self.order_event_count += 1
+
+        self.log.info(
+            f"Order event received: {type(event).__name__}, "
+            f"Total events: {self.order_event_count}"
+        )
 ```
 
 :::note
-Order cancel subscriptions use the message bus only and do not involve the data engine.
-The `on_order_canceled()` handler receives events only while the actor is running.
+Direct message bus subscriptions do not send data engine commands. They receive messages
+published on matching topics until you unsubscribe the handler.
 :::
 
 ## Related guides

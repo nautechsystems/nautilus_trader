@@ -472,7 +472,6 @@ BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
 )
 BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
 BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
-ORDER_SUBSCRIPTION_PARAMETERS = ("instrument_id",)
 OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "series_id",
     "strike_range",
@@ -551,8 +550,6 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -568,8 +565,6 @@ DATA_SURFACE_SIGNATURES = [
     ("unsubscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_option_chain", OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
-    ("unsubscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("request_data", DATA_REQUEST_PARAMETERS),
     ("request_instrument", INSTRUMENT_REQUEST_PARAMETERS),
     ("request_instruments", VENUE_REQUEST_PARAMETERS),
@@ -580,6 +575,12 @@ DATA_SURFACE_SIGNATURES = [
     ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_bars", BAR_REQUEST_PARAMETERS),
+]
+REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS = [
+    "subscribe_order_fills",
+    "subscribe_order_cancels",
+    "unsubscribe_order_fills",
+    "unsubscribe_order_cancels",
 ]
 EXECUTION_SIGNATURES = [
     ("submit_order", SUBMIT_ORDER_PARAMETERS),
@@ -701,6 +702,13 @@ def test_strategy_data_surface_methods_expose_expected_signatures(method_name, p
     signature = inspect.signature(getattr(strategy, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS)
+def test_strategy_order_event_subscription_methods_are_not_exposed(method_name):
+    strategy = Strategy()
+
+    assert not hasattr(strategy, method_name)
 
 
 @pytest.mark.parametrize(("method_name", "parameter_names"), CALLBACK_SIGNATURES)

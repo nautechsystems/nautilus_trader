@@ -219,17 +219,18 @@ Beyond strategy handlers, actors can subscribe to specific event streams for
 instruments they do not trade. These subscriptions use the `MessageBus`
 directly and do not involve the `DataEngine`.
 
-| Method                       | Handler               | Receives                       |
-|------------------------------|-----------------------|--------------------------------|
-| `subscribe_order_fills()`    | `on_order_filled()`   | All fills for an instrument.   |
-| `subscribe_order_cancels()`  | `on_order_canceled()` | All cancels for an instrument. |
+| Topic pattern                           | Receives                                 |
+|-----------------------------------------|------------------------------------------|
+| `events.order_filled.{instrument_id}`   | Fill events for one instrument.          |
+| `events.order_canceled.{instrument_id}` | Cancel events for one instrument.        |
+| `events.order.{strategy_id}`            | All order events routed to one strategy. |
+| `events.order.*`                        | All strategy‑routed order events.        |
 
 These are useful for monitoring actors that track execution quality or fill
 rates across strategies without participating in order management.
 
 For details and examples, see
-[Order fill subscriptions](actors.md#order-fill-subscriptions) and
-[Order cancel subscriptions](actors.md#order-cancel-subscriptions).
+[Order event subscriptions](actors.md#order-event-subscriptions).
 
 ## Related guides
 

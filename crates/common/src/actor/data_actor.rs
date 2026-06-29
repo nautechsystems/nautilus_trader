@@ -39,7 +39,6 @@ use nautilus_model::{
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
     },
     enums::BookType,
-    events::order::{any::OrderEventAny, canceled::OrderCanceled, filled::OrderFilled},
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, OptionSeriesId, TraderId, Venue},
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -90,8 +89,8 @@ use crate::{
             get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
             get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
             get_instrument_topic, get_instruments_pattern, get_mark_price_topic,
-            get_option_chain_topic, get_option_greeks_topic, get_order_canceled_topic,
-            get_order_filled_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_option_chain_topic, get_option_greeks_topic, get_quotes_topic, get_signal_pattern,
+            get_trades_topic,
         },
     },
     signal::Signal,
@@ -529,26 +528,6 @@ pub trait DataActor: Component {
     /// Returns an error if handling the instrument close update fails.
     #[allow(unused_variables)]
     fn on_instrument_close(&mut self, update: &InstrumentClose) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    /// Actions to be performed when receiving an order filled event.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if handling the order filled event fails.
-    #[allow(unused_variables)]
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    /// Actions to be performed when receiving an order canceled event.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if handling the order canceled event fails.
-    #[allow(unused_variables)]
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -1049,54 +1028,6 @@ pub trait DataActor: Component {
         }
 
         if let Err(e) = self.on_instrument_close(close) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received order filled event.
-    fn handle_order_filled(&mut self, event: &OrderFilled)
-    where
-        Self: DataActorNative,
-    {
-        log_received(&event);
-
-        // Check for double-handling: if the event's strategy_id matches this actor's id,
-        // it means a Strategy is receiving its own fill event through both automatic
-        // subscription and manual subscribe_order_fills, so skip the manual handler.
-        if event.strategy_id.inner() == self.core().actor_id().inner() {
-            return;
-        }
-
-        if self.not_running() {
-            log_not_running(&event);
-            return;
-        }
-
-        if let Err(e) = self.on_order_filled(event) {
-            log_error(&e);
-        }
-    }
-
-    /// Handles a received order canceled event.
-    fn handle_order_canceled(&mut self, event: &OrderCanceled)
-    where
-        Self: DataActorNative,
-    {
-        log_received(&event);
-
-        // Check for double-handling: if the event's strategy_id matches this actor's id,
-        // it means a Strategy is receiving its own cancel event through both automatic
-        // subscription and manual subscribe_order_cancels, so skip the manual handler.
-        if event.strategy_id.inner() == self.core().actor_id().inner() {
-            return;
-        }
-
-        if self.not_running() {
-            log_not_running(&event);
-            return;
-        }
-
-        if let Err(e) = self.on_order_canceled(event) {
             log_error(&e);
         }
     }
@@ -1795,42 +1726,6 @@ pub trait DataActor: Component {
         );
     }
 
-    /// Subscribe to [`OrderFilled`] events for the `instrument_id`.
-    fn subscribe_order_fills(&mut self, instrument_id: InstrumentId)
-    where
-        Self: DataActorNative,
-        Self: 'static + Debug + Sized,
-    {
-        let actor_id = self.core().actor_id().inner();
-        let topic = get_order_filled_topic(instrument_id);
-
-        let handler = TypedHandler::from(move |event: &OrderEventAny| {
-            if let OrderEventAny::Filled(filled) = event {
-                get_actor_unchecked::<Self>(&actor_id).handle_order_filled(filled);
-            }
-        });
-
-        DataActorCore::subscribe_order_fills(self.core_mut(), topic, handler);
-    }
-
-    /// Subscribe to [`OrderCanceled`] events for the `instrument_id`.
-    fn subscribe_order_cancels(&mut self, instrument_id: InstrumentId)
-    where
-        Self: DataActorNative,
-        Self: 'static + Debug + Sized,
-    {
-        let actor_id = self.core().actor_id().inner();
-        let topic = get_order_canceled_topic(instrument_id);
-
-        let handler = TypedHandler::from(move |event: &OrderEventAny| {
-            if let OrderEventAny::Canceled(canceled) = event {
-                get_actor_unchecked::<Self>(&actor_id).handle_order_canceled(canceled);
-            }
-        });
-
-        DataActorCore::subscribe_order_cancels(self.core_mut(), topic, handler);
-    }
-
     #[cfg(feature = "defi")]
     /// Subscribe to streaming [`Block`] data for the `chain`.
     fn subscribe_blocks(
@@ -2207,24 +2102,6 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_option_chain(self.core_mut(), series_id, client_id);
-    }
-
-    /// Unsubscribe from [`OrderFilled`] events for the `instrument_id`.
-    fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId)
-    where
-        Self: DataActorNative,
-        Self: 'static + Debug + Sized,
-    {
-        DataActorCore::unsubscribe_order_fills(self.core_mut(), instrument_id);
-    }
-
-    /// Unsubscribe from [`OrderCanceled`] events for the `instrument_id`.
-    fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId)
-    where
-        Self: DataActorNative,
-        Self: 'static + Debug + Sized,
-    {
-        DataActorCore::unsubscribe_order_cancels(self.core_mut(), instrument_id);
     }
 
     #[cfg(feature = "defi")]
@@ -2795,7 +2672,6 @@ pub struct DataActorCore {
     funding_rate_handlers: AHashMap<MStr<Topic>, TypedHandler<FundingRateUpdate>>,
     option_greeks_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionGreeks>>,
     option_chain_handlers: AHashMap<MStr<Topic>, TypedHandler<OptionChainSlice>>,
-    order_event_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderEventAny>>,
     #[cfg(feature = "defi")]
     block_handlers: AHashMap<MStr<Topic>, TypedHandler<Block>>,
     #[cfg(feature = "defi")]
@@ -2924,29 +2800,6 @@ impl DataActorCore {
     pub(crate) fn remove_bar_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.bar_handlers.remove(&topic) {
             msgbus::unsubscribe_bars(topic.into(), &handler);
-        }
-    }
-
-    pub(crate) fn add_order_event_subscription(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: TypedHandler<OrderEventAny>,
-    ) {
-        if self.order_event_handlers.contains_key(&topic) {
-            log::warn!(
-                "Actor {} attempted duplicate order event subscription to '{topic}'",
-                self.actor_id
-            );
-            return;
-        }
-        self.order_event_handlers.insert(topic, handler.clone());
-        msgbus::subscribe_order_events(topic.into(), handler, None);
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn remove_order_event_subscription(&mut self, topic: MStr<Topic>) {
-        if let Some(handler) = self.order_event_handlers.remove(&topic) {
-            msgbus::unsubscribe_order_events(topic.into(), &handler);
         }
     }
 
@@ -3358,7 +3211,6 @@ impl DataActorCore {
             funding_rate_handlers: AHashMap::new(),
             option_greeks_handlers: AHashMap::new(),
             option_chain_handlers: AHashMap::new(),
-            order_event_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
             block_handlers: AHashMap::new(),
             #[cfg(feature = "defi")]
@@ -4164,26 +4016,6 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
-    /// Helper method for registering order fills subscriptions from the trait.
-    pub fn subscribe_order_fills(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: TypedHandler<OrderEventAny>,
-    ) {
-        self.check_registered();
-        self.add_order_event_subscription(topic, handler);
-    }
-
-    /// Helper method for registering order cancels subscriptions from the trait.
-    pub fn subscribe_order_cancels(
-        &mut self,
-        topic: MStr<Topic>,
-        handler: TypedHandler<OrderEventAny>,
-    ) {
-        self.check_registered();
-        self.add_order_event_subscription(topic, handler);
-    }
-
     /// Helper method for unsubscribing from data.
     pub fn unsubscribe_data(
         &mut self,
@@ -4582,22 +4414,6 @@ impl DataActorCore {
         ));
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
-    }
-
-    /// Helper method for unsubscribing from order fills.
-    pub fn unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
-        self.check_registered();
-
-        let topic = get_order_filled_topic(instrument_id);
-        self.remove_order_event_subscription(topic);
-    }
-
-    /// Helper method for unsubscribing from order cancels.
-    pub fn unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
-        self.check_registered();
-
-        let topic = get_order_canceled_topic(instrument_id);
-        self.remove_order_event_subscription(topic);
     }
 
     /// Helper method for requesting data.

@@ -944,6 +944,14 @@ impl Strategy for PyStrategyInner {
         let _ = self.dispatch_on_order_updated(&event);
     }
 
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        let _ = self.dispatch_on_order_canceled(*event);
+    }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        let _ = self.dispatch_on_order_filled(event);
+    }
+
     fn on_position_opened(&mut self, event: PositionOpened) {
         let _ = self.dispatch_on_position_opened(event);
     }
@@ -1143,16 +1151,6 @@ impl DataActor for PyStrategyInner {
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_index_prices(index_prices.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_index_prices failed: {e}"))
-    }
-
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        self.dispatch_on_order_filled(event)
-            .map_err(|e| anyhow::anyhow!("Python on_order_filled failed: {e}"))
-    }
-
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        self.dispatch_on_order_canceled(*event)
-            .map_err(|e| anyhow::anyhow!("Python on_order_canceled failed: {e}"))
     }
 }
 
@@ -2422,18 +2420,6 @@ impl PyStrategy {
         Ok(())
     }
 
-    #[pyo3(name = "subscribe_order_fills")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) {
-        DataActor::subscribe_order_fills(self.inner_mut(), instrument_id);
-    }
-
-    #[pyo3(name = "subscribe_order_cancels")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
-        DataActor::subscribe_order_cancels(self.inner_mut(), instrument_id);
-    }
-
     #[pyo3(name = "unsubscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_unsubscribe_data(
@@ -2724,18 +2710,6 @@ impl PyStrategy {
         client_id: Option<ClientId>,
     ) {
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
-    }
-
-    #[pyo3(name = "unsubscribe_order_fills")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
-        DataActor::unsubscribe_order_fills(self.inner_mut(), instrument_id);
-    }
-
-    #[pyo3(name = "unsubscribe_order_cancels")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
-        DataActor::unsubscribe_order_cancels(self.inner_mut(), instrument_id);
     }
 
     #[pyo3(name = "request_data")]
@@ -4412,11 +4386,13 @@ class IndicatorEventStrategy:
                 }
                 "on_order_canceled" => {
                     let event = OrderCanceled::default();
-                    DataActor::on_order_canceled(rust_strategy.inner_mut(), &event)
+                    Strategy::on_order_canceled(rust_strategy.inner_mut(), &event);
+                    Ok(())
                 }
                 "on_order_filled" => {
                     let event = OrderFilledSpec::builder().build();
-                    DataActor::on_order_filled(rust_strategy.inner_mut(), &event)
+                    Strategy::on_order_filled(rust_strategy.inner_mut(), &event);
+                    Ok(())
                 }
                 _ => unreachable!("unhandled order callback case: {method_name}"),
             });

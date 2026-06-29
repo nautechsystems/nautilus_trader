@@ -39,10 +39,11 @@ use nautilus_core::{Params, UUID4};
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, PositionSide, TimeInForce, TriggerType},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderEventAny,
-        OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -1352,9 +1353,7 @@ pub trait Strategy: DataActor {
             OrderEventAny::Submitted(e) => self.on_order_submitted(*e),
             OrderEventAny::Rejected(e) => self.on_order_rejected(*e),
             OrderEventAny::Accepted(e) => self.on_order_accepted(*e),
-            OrderEventAny::Canceled(e) => {
-                let _ = DataActor::on_order_canceled(self, e);
-            }
+            OrderEventAny::Canceled(e) => self.on_order_canceled(e),
             OrderEventAny::Expired(e) => self.on_order_expired(*e),
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
@@ -1362,9 +1361,7 @@ pub trait Strategy: DataActor {
             OrderEventAny::ModifyRejected(e) => self.on_order_modify_rejected(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
-            OrderEventAny::Filled(e) => {
-                let _ = DataActor::on_order_filled(self, e);
-            }
+            OrderEventAny::Filled(e) => self.on_order_filled(e),
         }
         self.on_order_event(event);
     }
@@ -1537,7 +1534,17 @@ pub trait Strategy: DataActor {
     #[allow(unused_variables)]
     fn on_order_updated(&mut self, event: OrderUpdated) {}
 
-    // Note: on_order_filled is inherited from DataActor trait
+    /// Called when an order is canceled.
+    ///
+    /// Override this method to implement custom logic when an order is canceled.
+    #[allow(unused_variables)]
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {}
+
+    /// Called when an order is filled.
+    ///
+    /// Override this method to implement custom logic when an order is filled.
+    #[allow(unused_variables)]
+    fn on_order_filled(&mut self, event: &OrderFilled) {}
 
     /// Called when a position is opened.
     ///
@@ -2242,7 +2249,10 @@ mod tests {
         enums::{
             LiquiditySide, OrderSide, OrderStatus, OrderType, PositionAdjustmentType, PositionSide,
         },
-        events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted},
+        events::{
+            OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
+            order::spec::OrderFilledSpec,
+        },
         identifiers::{
             AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
             StrategyId, TradeId, TraderId, VenueOrderId,
@@ -2331,19 +2341,17 @@ mod tests {
         }
     }
 
-    impl DataActor for TestStrategy {
-        fn on_order_canceled(&mut self, _event: &OrderCanceled) -> anyhow::Result<()> {
-            self.on_order_canceled_called = true;
-            Ok(())
-        }
-
-        fn on_order_filled(&mut self, _event: &OrderFilled) -> anyhow::Result<()> {
-            self.on_order_filled_called = true;
-            Ok(())
-        }
-    }
+    impl DataActor for TestStrategy {}
 
     nautilus_strategy!(TestStrategy, {
+        fn on_order_canceled(&mut self, _event: &OrderCanceled) {
+            self.on_order_canceled_called = true;
+        }
+
+        fn on_order_filled(&mut self, _event: &OrderFilled) {
+            self.on_order_filled_called = true;
+        }
+
         fn on_order_rejected(&mut self, _event: OrderRejected) {
             self.on_order_rejected_called = true;
         }
@@ -2841,7 +2849,7 @@ mod tests {
         strategy.on_order_released(OrderReleased::default());
         strategy.on_order_submitted(OrderSubmitted::default());
         strategy.on_order_rejected(OrderRejected::default());
-        let _ = DataActor::on_order_canceled(&mut strategy, &OrderCanceled::default());
+        strategy.on_order_canceled(&OrderCanceled::default());
         strategy.on_order_expired(OrderExpired::default());
         strategy.on_order_triggered(OrderTriggered::default());
         strategy.on_order_pending_update(OrderPendingUpdate::default());
@@ -2849,6 +2857,7 @@ mod tests {
         strategy.on_order_modify_rejected(OrderModifyRejected::default());
         strategy.on_order_cancel_rejected(OrderCancelRejected::default());
         strategy.on_order_updated(OrderUpdated::default());
+        strategy.on_order_filled(&OrderFilledSpec::builder().build());
         strategy.on_position_event(make_position_opened());
     }
 

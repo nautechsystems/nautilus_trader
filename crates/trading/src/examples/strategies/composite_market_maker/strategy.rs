@@ -197,6 +197,30 @@ nautilus_strategy!(CompositeMarketMaker, {
         self.last_quoted_anchor = None;
         self.last_quoted_residual = None;
     }
+
+    fn on_order_filled(&mut self, event: &OrderFilled) {
+        let closed = {
+            let cache = self.cache();
+            cache
+                .order(&event.client_order_id)
+                .is_some_and(|o| o.is_closed())
+        };
+
+        if closed {
+            self.pending_self_cancels.remove(&event.client_order_id);
+        }
+    }
+
+    fn on_order_canceled(&mut self, event: &OrderCanceled) {
+        if self.pending_self_cancels.remove(&event.client_order_id) {
+            return;
+        }
+
+        if self.config.on_cancel_resubmit {
+            self.last_quoted_anchor = None;
+            self.last_quoted_residual = None;
+        }
+    }
 });
 
 impl Debug for CompositeMarketMaker {
@@ -395,32 +419,6 @@ impl DataActor for CompositeMarketMaker {
 
         self.last_quoted_anchor = Some(anchor);
         self.last_quoted_residual = Some(signal_residual);
-        Ok(())
-    }
-
-    fn on_order_filled(&mut self, event: &OrderFilled) -> anyhow::Result<()> {
-        let closed = {
-            let cache = self.cache();
-            cache
-                .order(&event.client_order_id)
-                .is_some_and(|o| o.is_closed())
-        };
-
-        if closed {
-            self.pending_self_cancels.remove(&event.client_order_id);
-        }
-        Ok(())
-    }
-
-    fn on_order_canceled(&mut self, event: &OrderCanceled) -> anyhow::Result<()> {
-        if self.pending_self_cancels.remove(&event.client_order_id) {
-            return Ok(());
-        }
-
-        if self.config.on_cancel_resubmit {
-            self.last_quoted_anchor = None;
-            self.last_quoted_residual = None;
-        }
         Ok(())
     }
 
