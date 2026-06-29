@@ -36,9 +36,9 @@ from nautilus_trader.analysis import RiskReturnRatio
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis import SortinoRatio
 from nautilus_trader.analysis import WinRate
-from nautilus_trader.model.identifiers import PositionId
-from nautilus_trader.model.objects import Currency
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import PositionId
 
 
 NO_ARG_STATISTICS = [
@@ -187,12 +187,12 @@ def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias():
     position_id = PositionId("P-1")
     snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
 
-    analyzer.add_trade(snapshot_id, Money(10.0, usd), ts_event=1)
-    analyzer.record_trade(position_id, Money(10.0, usd), ts_event=1)
+    analyzer.add_trade(snapshot_id, 1, Money(10.0, usd))
+    analyzer.record_trade(position_id, 1, Money(10.0, usd))
 
     pnls = analyzer.realized_pnls(usd)
 
-    assert pnls.to_dict() == {position_id.value: 10.0}
+    assert pnls == [(position_id.value, 1, 10.0)]
 
 
 def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_timestamp():
@@ -201,12 +201,12 @@ def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_
     position_id = PositionId("P-1")
     snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
 
-    analyzer.add_trade(snapshot_id, Money(10.0, usd))
-    analyzer.record_trade(position_id, Money(10.0, usd))
+    analyzer.add_trade(snapshot_id, 0, Money(10.0, usd))
+    analyzer.record_trade(position_id, 0, Money(10.0, usd))
 
     pnls = analyzer.realized_pnls(usd)
 
-    assert pnls.to_dict() == {position_id.value: 10.0}
+    assert pnls == [(position_id.value, 0, 10.0)]
 
 
 def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle():
@@ -215,9 +215,9 @@ def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle():
     position_id = PositionId("P-1")
     snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
 
-    analyzer.add_trade(snapshot_id, Money(10.0, usd), ts_event=1)
-    analyzer.record_trade(position_id, Money(25.0, usd), ts_event=2)
+    analyzer.add_trade(snapshot_id, 1, Money(10.0, usd))
+    analyzer.record_trade(position_id, 2, Money(25.0, usd))
 
     pnls = analyzer.realized_pnls(usd)
 
-    assert list(pnls.items()) == [(snapshot_id.value, 10.0), (position_id.value, 25.0)]
+    assert pnls == [(snapshot_id.value, 1, 10.0), (position_id.value, 2, 25.0)]
