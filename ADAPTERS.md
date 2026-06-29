@@ -120,13 +120,17 @@ listing criteria or misrepresents its relationship to NautilusTrader.
 
 Community adapters are externally maintained and are not supported by NautilusTrader maintainers.
 
-| Project                                                 | Description                                | Maintainer |
-|---------------------------------------------------------|--------------------------------------------|------------|
-| [mt5-connect](https://github.com/aulekator/mt5-connect) | Unofficial community MetaTrader 5 adapter. | aulekator  |
+| Project                                      | Description                                 | Maintainer   |
+|----------------------------------------------|---------------------------------------------|--------------|
+| [mt5-connect][mt5-connect]                   | MetaTrader 5 adapter.                       | aulekator    |
+| [sinopac-nt-community][sinopac-nt-community] | SinoPac Securities Taiwan markets adapter.  | Martingale42 |
+
+[mt5-connect]: https://github.com/aulekator/mt5-connect
+[sinopac-nt-community]: https://github.com/Martingale42/sinopac-nt-community
 
 ## Updates
 
 This document may be updated from time to time. Changes are tracked through the
 repository's version control history.
 
-Last updated: 2026-04-25
+Last updated: 2026-06-29
