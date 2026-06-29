@@ -347,7 +347,6 @@ impl PolymarketRtdsFeed {
             .lock()
             .expect("RTDS live_subscriptions mutex poisoned")
             .clear();
-
         drop(_guard);
 
         if let Some(handle) = message_handle {
@@ -585,17 +584,13 @@ impl PolymarketRtdsFeed {
         let mut snapshot = AHashMap::new();
 
         for entry in &self.inner.subscriptions {
-            if topic_uses_topic_level_wire_subscription(entry.wire.topic) {
-                snapshot
-                    .entry(entry.wire.topic.to_string())
-                    .or_insert_with(|| RtdsWireSubscription {
-                        topic: entry.wire.topic,
-                        msg_type: entry.wire.msg_type,
-                        filters: None,
-                    });
-            } else {
-                snapshot.insert(entry.key().clone(), entry.wire.clone());
-            }
+            snapshot
+                .entry(entry.wire.topic.to_string())
+                .or_insert_with(|| RtdsWireSubscription {
+                    topic: entry.wire.topic,
+                    msg_type: entry.wire.msg_type,
+                    filters: None,
+                });
         }
 
         snapshot
@@ -655,16 +650,17 @@ impl PolymarketRtdsFeed {
             self.send_wire_request(ws, "subscribe", subscribe).await?;
         }
 
-        let mut live = self
-            .inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned");
-        live.retain(|key, _| desired.contains_key(key));
-        for (key, wire) in desired {
-            live.insert(key, wire);
+        {
+            let mut live = self
+                .inner
+                .live_subscriptions
+                .lock()
+                .expect("RTDS live_subscriptions mutex poisoned");
+            live.retain(|key, _| desired.contains_key(key));
+            for (key, wire) in desired {
+                live.insert(key, wire);
+            }
         }
-
         Ok(())
     }
 
@@ -1046,9 +1042,6 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::CryptoPrices.as_str(),
                     msg_type: "update",
-                    // The current RTDS backend reliably supports unfiltered topic-level
-                    // crypto subscriptions; we keep logical subscriptions per symbol and
-                    // filter locally on emit.
                     filters: None,
                 },
             }),
@@ -1057,9 +1050,6 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::EquityPrices.as_str(),
                     msg_type: "update",
-                    // The live RTDS backend also starves later per-symbol equity
-                    // subscriptions, so we keep logical subscriptions per symbol and
-                    // aggregate transport state at the topic boundary.
                     filters: None,
                 },
             }),
@@ -1070,10 +1060,6 @@ impl ParsedSubscription {
 
 fn tracked_key(topic: &str, symbol_lower: &str) -> String {
     format!("{topic}:{symbol_lower}")
-}
-
-fn topic_uses_topic_level_wire_subscription(topic: &str) -> bool {
-    matches!(topic, "crypto_prices" | "equity_prices")
 }
 
 fn price_from_json_number(field: &str, number: &Number) -> anyhow::Result<Price> {
@@ -1166,6 +1152,39 @@ mod tests {
     #[derive(Clone, Default)]
     struct TestServerState {
         received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+        connection_count: Arc<tokio::sync::Mutex<usize>>,
+        control_txs:
+            Arc<tokio::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<TestServerCommand>>>>,
+    }
+
+    #[derive(Debug)]
+    enum TestServerCommand {
+        SendText(String),
+        Close,
+    }
+
+    impl TestServerState {
+        async fn clear_received_payloads(&self) {
+            self.received_payloads.lock().await.clear();
+        }
+
+        async fn connection_count(&self) -> usize {
+            *self.connection_count.lock().await
+        }
+
+        async fn send_text_to_all(&self, text: String) {
+            let senders = self.control_txs.lock().await.clone();
+            for tx in senders {
+                let _ = tx.send(TestServerCommand::SendText(text.clone()));
+            }
+        }
+
+        async fn close_all_connections(&self) {
+            let senders = self.control_txs.lock().await.clone();
+            for tx in senders {
+                let _ = tx.send(TestServerCommand::Close);
+            }
+        }
     }
 
     async fn handle_rtds_upgrade(
@@ -1176,7 +1195,32 @@ mod tests {
     }
 
     async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
-        while let Some(result) = socket.next().await {
+        *state.connection_count.lock().await += 1;
+
+        let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel();
+        state.control_txs.lock().await.push(control_tx);
+
+        loop {
+            let result = tokio::select! {
+                command = control_rx.recv() => {
+                    match command {
+                        Some(TestServerCommand::SendText(text)) => {
+                            if socket.send(AxumWsMessage::Text(text.into())).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Some(TestServerCommand::Close) => {
+                            let _ = socket.send(AxumWsMessage::Close(None)).await;
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+                result = socket.next() => result
+            };
+
+            let Some(result) = result else { break };
             let Ok(message) = result else { break };
 
             match message {
@@ -1195,6 +1239,43 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    fn build_crypto_update(
+        symbol: &str,
+        value: &str,
+        price_timestamp_ms: u64,
+        message_timestamp_ms: u64,
+    ) -> String {
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse crypto update fixture");
+        update["payload"]["symbol"] = json!(symbol);
+        update["payload"]["value"] =
+            serde_json::from_str(value).expect("crypto update value should be a JSON number");
+        update["payload"]["timestamp"] = json!(price_timestamp_ms);
+        update["timestamp"] = json!(message_timestamp_ms);
+        update.to_string()
+    }
+
+    fn collect_crypto_symbols(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        expected_count: usize,
+    ) -> Vec<String> {
+        let mut symbols = Vec::with_capacity(expected_count);
+        for _ in 0..expected_count {
+            let event = rx.try_recv().expect("custom data event");
+            let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoPrice>()
+                .expect("PolymarketRtdsCryptoPrice");
+            symbols.push(payload.symbol.clone());
+        }
+        symbols.sort_unstable();
+        symbols
     }
 
     async fn start_rtds_server(state: TestServerState) -> SocketAddr {
@@ -1305,6 +1386,42 @@ mod tests {
         assert_eq!(payload.value, Price::from("61035.86"));
         assert_eq!(payload.price_timestamp_ms, 1780730269000);
         assert_eq!(payload.message_timestamp_ms, 1780730269142);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_price_update_emits_custom_data_for_new_symbol_on_shared_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("btcusdt"))
+            .expect("track BTC");
+        let eth_data_type = crypto_data_type("ethusdt");
+        feed.track_subscribe(eth_data_type.clone())
+            .expect("track ETH");
+
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
+        update["payload"]["symbol"] = json!("ethusdt");
+        update["payload"]["value"] = json!(2450.11);
+        update["payload"]["timestamp"] = json!(1780730270000_u64);
+        update["timestamp"] = json!(1780730270142_u64);
+
+        feed.handle_text_for_test(&update.to_string());
+
+        let event = rx.try_recv().expect("ETH custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoPrice>()
+            .expect("PolymarketRtdsCryptoPrice");
+
+        assert_eq!(custom.data_type, eth_data_type);
+        assert_eq!(payload.symbol, "ethusdt");
+        assert_eq!(payload.value, Price::from("2450.11"));
+        assert_eq!(payload.price_timestamp_ms, 1780730270000);
+        assert_eq!(payload.message_timestamp_ms, 1780730270142);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1419,6 +1536,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_handle_equity_price_update_emits_custom_data_for_new_symbol_on_shared_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(equity_data_type("AAPL"))
+            .expect("track AAPL");
+        let msft_data_type = equity_data_type("MSFT");
+        feed.track_subscribe(msft_data_type.clone())
+            .expect("track MSFT");
+
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_EQUITY_UPDATE_FIXTURE).expect("parse fixture");
+        update["payload"]["symbol"] = json!("msft");
+        update["payload"]["value"] = json!(432.15);
+        update["payload"]["full_accuracy_value"] = json!("432.1537");
+        update["payload"]["timestamp"] = json!(1711382401000_u64);
+        update["payload"]["received_at"] = json!(1711382401007_u64);
+        update["timestamp"] = json!(1711382401020_u64);
+
+        feed.handle_text_for_test(&update.to_string());
+
+        let event = rx.try_recv().expect("MSFT custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsEquityPrice>()
+            .expect("PolymarketRtdsEquityPrice");
+
+        assert_eq!(custom.data_type, msft_data_type);
+        assert_eq!(payload.symbol, "msft");
+        assert_eq!(payload.value, Price::from("432.15"));
+        assert_eq!(payload.full_accuracy_value, Price::from("432.1537"));
+        assert_eq!(payload.price_timestamp_ms, 1711382401000);
+        assert_eq!(payload.message_timestamp_ms, 1711382401020);
+        assert_eq!(payload.received_at_ms, Some(1711382401007));
+        assert!(!payload.is_carried_forward);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_equity_price_subscribe_emits_snapshot_custom_data() {
         let (feed, mut rx) = make_feed();
         let data_type = equity_data_type("AAPL");
@@ -1525,6 +1683,7 @@ mod tests {
                 .expect("track ETH")
         );
         feed.reconcile_once(false).await.expect("reconcile live");
+
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert!(
@@ -1566,6 +1725,7 @@ mod tests {
                 .expect("track MSFT")
         );
         feed.reconcile_once(false).await.expect("reconcile live");
+
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert!(
@@ -1865,33 +2025,30 @@ mod tests {
         loop_handle.await.expect("join RTDS loop");
 
         let payloads = state.received_payloads.lock().await.clone();
-        let replay = payloads.last().expect("replay payload");
+        let replay = payloads
+            .iter()
+            .find(|payload| {
+                payload["action"].as_str() == Some("subscribe")
+                    && payload["subscriptions"]
+                        .as_array()
+                        .is_some_and(|subscriptions| {
+                            subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPrices.as_str())
+                                    && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::EquityPrices.as_str())
+                                    && subscription["filters"].is_null()
+                            })
+                        })
+            })
+            .expect("topic-level replay payload");
+
         let subscriptions = replay["subscriptions"]
             .as_array()
             .expect("subscriptions array");
-
-        assert_eq!(replay["action"].as_str(), Some("subscribe"));
         assert_eq!(subscriptions.len(), 2);
-
-        let mut topics: Vec<_> = subscriptions
-            .iter()
-            .map(|subscription| {
-                (
-                    subscription["topic"].as_str().expect("topic"),
-                    subscription["filters"].is_null(),
-                )
-            })
-            .collect();
-        topics.sort_unstable_by_key(|(topic, _)| *topic);
-
-        assert_eq!(
-            topics,
-            vec![
-                (RtdsTopic::CryptoPrices.as_str(), true),
-                (RtdsTopic::EquityPrices.as_str(), true),
-            ],
-            "reconnect replay should keep both RTDS topics at topic-level subscriptions",
-        );
     }
 
     #[rstest]
@@ -1949,6 +2106,185 @@ mod tests {
         let payloads = state.received_payloads.lock().await.clone();
         let replay = payloads.last().expect("recovery payload");
         assert_eq!(replay["action"].as_str(), Some("subscribe"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_reconnects_and_resumes_multi_symbol_updates() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.track_subscribe(crypto_data_type("ETHUSDT"))
+            .expect("track ETH");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 1
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61035.86",
+                1780730269000,
+                1780730269142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2450.11",
+                1780730270000,
+                1780730270142,
+            ))
+            .await;
+
+        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 2),
+            vec!["btcusdt".to_string(), "ethusdt".to_string()],
+            "both retained symbols should emit before disconnect",
+        );
+
+        state.clear_received_payloads().await;
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 2
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61040.12",
+                1780730271000,
+                1780730271142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2455.55",
+                1780730272000,
+                1780730272142,
+            ))
+            .await;
+
+        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 2),
+            vec!["btcusdt".to_string(), "ethusdt".to_string()],
+            "both retained symbols should resume after server-side reconnect",
+        );
+
+        feed.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_does_not_restore_unsubscribed_symbol() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let btc = crypto_data_type("BTCUSDT");
+        let eth = crypto_data_type("ETHUSDT");
+        feed.track_subscribe(btc.clone()).expect("track BTC");
+        feed.track_subscribe(eth.clone()).expect("track ETH");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 1
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(feed.track_unsubscribe(&eth).expect("unsubscribe ETH"));
+        feed.reconcile_once(false)
+            .await
+            .expect("reconcile after unsubscribe");
+
+        state.clear_received_payloads().await;
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 2
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61050.01",
+                1780730273000,
+                1780730273142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2460.01",
+                1780730274000,
+                1780730274142,
+            ))
+            .await;
+
+        wait_until_async(|| async { !rx.is_empty() }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 1),
+            vec!["btcusdt".to_string()],
+            "reconnect should restore only still-retained symbols",
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "ETH should not be replayed after unsubscribe"
+        );
+
+        feed.disconnect().await;
     }
 
     #[rstest]
