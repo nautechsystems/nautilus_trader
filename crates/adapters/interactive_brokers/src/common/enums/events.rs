@@ -22,6 +22,12 @@
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbPlaceOrderEvent {
     OrderStatus,
     OpenOrder,
@@ -37,6 +43,12 @@ pub enum IbPlaceOrderEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbOrderUpdateEvent {
@@ -56,6 +68,12 @@ pub enum IbOrderUpdateEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbCancelOrderEvent {
     OrderStatus,
     Notice,
@@ -68,6 +86,12 @@ pub enum IbCancelOrderEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbOrdersEvent {
@@ -85,6 +109,12 @@ pub enum IbOrdersEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbExecutionsEvent {
     ExecutionData,
     CommissionReport,
@@ -98,6 +128,12 @@ pub enum IbExecutionsEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbExerciseOptionsEvent {
@@ -115,6 +151,12 @@ pub enum IbExerciseOptionsEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbHistoricalBarUpdateEvent {
     Historical,
     Update,
@@ -130,6 +172,12 @@ pub enum IbHistoricalBarUpdateEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbMarketDepthEvent {
     MarketDepth,
     MarketDepthL2,
@@ -143,6 +191,12 @@ pub enum IbMarketDepthEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbTickEvent {
@@ -167,6 +221,12 @@ pub enum IbTickEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbAccountSummaryEvent {
     Summary,
     End,
@@ -179,6 +239,12 @@ pub enum IbAccountSummaryEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbPositionUpdateEvent {
@@ -195,6 +261,12 @@ pub enum IbPositionUpdateEvent {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbPositionUpdateMultiEvent {
     Position,
     PositionEnd,
@@ -207,6 +279,12 @@ pub enum IbPositionUpdateMultiEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbAccountUpdateEvent {
@@ -223,6 +301,12 @@ pub enum IbAccountUpdateEvent {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbAccountUpdateMultiEvent {

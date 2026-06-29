@@ -24,6 +24,12 @@ use std::{fmt::Display, str::FromStr};
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbHistoricalTickType {
     /// Historical trade ticks.
     Trades,
@@ -69,6 +75,12 @@ impl Display for IbHistoricalTickType {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbTradingHours {
     /// Regular trading hours only.
     Regular,
@@ -110,6 +122,12 @@ impl From<bool> for IbTradingHours {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbHistoricalBarSize {
@@ -181,6 +199,12 @@ impl Display for IbHistoricalBarSize {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbHistoricalWhatToShow {
     Trades,
     Midpoint,
@@ -249,6 +273,12 @@ impl Display for IbHistoricalWhatToShow {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbRealtimeBarSize {
     Sec5,
 }
@@ -278,6 +308,12 @@ impl Display for IbRealtimeBarSize {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbRealtimeWhatToShow {
@@ -324,6 +360,12 @@ impl Display for IbRealtimeWhatToShow {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbTickType {

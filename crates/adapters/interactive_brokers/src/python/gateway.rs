@@ -29,6 +29,7 @@ use crate::gateway::dockerized::{ContainerStatus, DockerizedIBGateway};
 
 #[cfg(feature = "gateway")]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl ContainerStatus {
     #[classattr]
     const NO_CONTAINER: Self = Self::NoContainer;
@@ -54,6 +55,7 @@ impl ContainerStatus {
 
 #[cfg(feature = "gateway")]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DockerizedIBGateway {
     #[new]
     fn py_new(config: DockerizedIBGatewayConfig) -> PyResult<Self> {

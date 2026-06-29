@@ -34,6 +34,10 @@ macro_rules! define_ib_i32_enum {
                 from_py_object
             )
         )]
+        #[cfg_attr(
+            feature = "python",
+            pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.interactive_brokers")
+        )]
         pub enum $name {
             $($(#[$variant_meta])* $variant),+
         }
@@ -199,6 +203,12 @@ define_ib_i32_enum! {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbRule80A {
     Individual,
     Agency,
@@ -242,6 +252,12 @@ impl Display for IbRule80A {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbOrderOpenClose {
     Open,
     Close,
@@ -269,6 +285,12 @@ impl Display for IbOrderOpenClose {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbTwapStrategyType {
@@ -304,6 +326,12 @@ impl Display for IbTwapStrategyType {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbRiskAversion {
     GetDone,
     Aggressive,
@@ -337,6 +365,12 @@ impl Display for IbRiskAversion {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub enum IbLegAction {
     Buy,
     Sell,
@@ -364,6 +398,12 @@ impl Display for IbLegAction {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbFundDistributionPolicyIndicator {
@@ -395,6 +435,12 @@ impl Display for IbFundDistributionPolicyIndicator {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbFundAssetType {
@@ -439,6 +485,12 @@ impl Display for IbFundAssetType {
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub enum IbBondIdentifierKind {
