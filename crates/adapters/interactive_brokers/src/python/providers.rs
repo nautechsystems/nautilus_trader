@@ -26,6 +26,7 @@ use crate::{
 
 #[cfg(feature = "python")]
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersInstrumentProvider {
     #[new]
     fn py_new(config: crate::config::InteractiveBrokersInstrumentProviderConfig) -> Self {

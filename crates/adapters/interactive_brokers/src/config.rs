@@ -31,6 +31,12 @@ use crate::common::consts::{DEFAULT_CLIENT_ID, DEFAULT_HOST, DEFAULT_PORT};
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 #[derive(Default)]
 pub enum MarketDataType {
     /// Live market data
@@ -64,6 +70,12 @@ impl From<MarketDataType> for ibapi::market_data::MarketDataType {
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         subclass,
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub struct InteractiveBrokersDataClientConfig {
@@ -121,6 +133,12 @@ impl Default for InteractiveBrokersDataClientConfig {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub struct InteractiveBrokersExecClientConfig {
     /// Host for IB Gateway/TWS.
     #[builder(default = DEFAULT_HOST.to_string())]
@@ -165,6 +183,12 @@ impl Default for InteractiveBrokersExecClientConfig {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 #[derive(Default)]
 pub enum SymbologyMethod {
     /// Simplified symbology: clean, readable symbols (e.g., "EUR/USD", "ESM23")
@@ -185,6 +209,12 @@ pub enum SymbologyMethod {
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         subclass,
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub struct InteractiveBrokersInstrumentProviderConfig {
@@ -240,6 +270,12 @@ impl Default for InteractiveBrokersInstrumentProviderConfig {
         from_py_object
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 #[derive(Default)]
 pub enum TradingMode {
     /// Paper trading mode.
@@ -263,6 +299,12 @@ pub enum TradingMode {
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
         subclass,
         from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
     )
 )]
 pub struct DockerizedIBGatewayConfig {

@@ -6226,6 +6226,7 @@ dependencies = [
  "nautilus-trading",
  "pyo3",
  "pyo3-async-runtimes",
+ "pyo3-stub-gen",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",

@@ -122,6 +122,12 @@ use crate::{
         unsendable
     )
 )]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
 pub struct InteractiveBrokersExecutionClient {
     /// Core execution client functionality.
     core: ExecutionClientCore,
