@@ -26,6 +26,7 @@ pub mod loser_avg;
 pub mod loser_max;
 pub mod loser_min;
 pub mod max_drawdown;
+pub mod omega_ratio;
 pub mod profit_factor;
 pub mod returns_avg;
 pub mod returns_avg_loss;
