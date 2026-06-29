@@ -4170,8 +4170,8 @@ impl DataActorCore {
 
         let command = SubscribeCommand::BorrowRates(SubscribeBorrowRates {
             currency,
+            venue,
             client_id,
-            venue: Some(venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
@@ -4630,8 +4630,8 @@ impl DataActorCore {
 
         let command = UnsubscribeCommand::BorrowRates(UnsubscribeBorrowRates {
             currency,
+            venue,
             client_id,
-            venue: Some(venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,

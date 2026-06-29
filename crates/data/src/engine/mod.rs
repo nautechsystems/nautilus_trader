@@ -1159,6 +1159,10 @@ impl DataEngine {
                 let topic = switchboard::get_funding_rate_topic(c.instrument_id);
                 msgbus::exact_subscriber_count_funding_rates(topic) > 0
             }
+            UnsubscribeCommand::BorrowRates(c) => {
+                let topic = switchboard::get_borrow_rate_topic(c.currency, c.venue);
+                msgbus::exact_subscriber_count_borrow_rates(topic) > 0
+            }
             UnsubscribeCommand::OptionGreeks(c) => {
                 let topic = switchboard::get_option_greeks_topic(c.instrument_id);
                 msgbus::exact_subscriber_count_option_greeks(topic) > 0

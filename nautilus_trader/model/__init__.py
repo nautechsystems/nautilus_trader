@@ -31,6 +31,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import BorrowRate
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
@@ -100,6 +101,7 @@ __all__ = [
     "BarType",
     "BookLevel",
     "BookOrder",
+    "BorrowRate",
     "ClientId",
     "ClientOrderId",
     "ComponentId",

@@ -475,8 +475,8 @@ impl SubscribeFundingRates {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SubscribeBorrowRates {
     pub currency: Currency,
+    pub venue: Venue,
     pub client_id: Option<ClientId>,
-    pub venue: Option<Venue>,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
     pub correlation_id: Option<UUID4>,
@@ -487,18 +487,17 @@ impl SubscribeBorrowRates {
     /// Creates a new [`SubscribeBorrowRates`] instance.
     pub fn new(
         currency: Currency,
+        venue: Venue,
         client_id: Option<ClientId>,
-        venue: Option<Venue>,
         command_id: UUID4,
         ts_init: UnixNanos,
         correlation_id: Option<UUID4>,
         params: Option<Params>,
     ) -> Self {
-        check_client_id_or_venue(&client_id, &venue);
         Self {
             currency,
-            client_id,
             venue,
+            client_id,
             command_id,
             ts_init,
             correlation_id,

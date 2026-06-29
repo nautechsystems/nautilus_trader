@@ -45,11 +45,12 @@ use nautilus_common::{
         RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
         RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
+        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeBorrowRates, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeBorrowRates,
         UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
         UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
@@ -85,9 +86,10 @@ use nautilus_model::defi::{
 use nautilus_model::enums::{BookAction, OrderSide};
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
-        IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, BorrowRate, CustomData, DEPTH10_LEN, Data, DataType,
+        FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick,
+        TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -8241,6 +8243,61 @@ fn test_unsubscribe_funding_rates_ignores_wildcard_observers(
     data_engine.execute(unsub_cmd.clone());
 
     assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_unsubscribe_borrow_rates_keeps_client_with_remaining_exact_subscriber(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let currency = Currency::USD();
+    let topic = switchboard::get_borrow_rate_topic(currency, venue);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BorrowRates(SubscribeBorrowRates::new(
+        currency,
+        venue,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    let (second_handler, _second_saver) =
+        get_typed_message_saving_handler::<BorrowRate>(Some(Ustr::from("second-borrow-actor")));
+    msgbus::subscribe_borrow_rates(topic.into(), second_handler, None);
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::BorrowRates(
+        UnsubscribeBorrowRates::new(
+            currency,
+            venue,
+            Some(client_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd);
+
+    assert!(msgbus::exact_subscriber_count_borrow_rates(topic) > 0);
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
 }
 
 #[rstest]
