@@ -19,6 +19,7 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType},
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
+    types::Currency,
 };
 use serde::{Deserialize, Serialize};
 
@@ -436,6 +437,40 @@ impl UnsubscribeFundingRates {
             instrument_id,
             client_id,
             venue,
+            command_id,
+            ts_init,
+            correlation_id,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnsubscribeBorrowRates {
+    pub currency: Currency,
+    pub venue: Venue,
+    pub client_id: Option<ClientId>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
+    pub params: Option<Params>,
+}
+
+impl UnsubscribeBorrowRates {
+    /// Creates a new [`UnsubscribeBorrowRates`] instance.
+    pub fn new(
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            currency,
+            venue,
+            client_id,
             command_id,
             ts_init,
             correlation_id,

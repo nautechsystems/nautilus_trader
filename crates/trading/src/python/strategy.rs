@@ -54,8 +54,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+        Bar, BarType, BorrowRate, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
+        InstrumentStatus, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -79,7 +79,7 @@ use nautilus_model::{
         data::option_chain::PyStrikeRange, events::order::order_event_to_pyobject,
         instruments::instrument_any_to_pyobject, orders::pyobject_to_order_any,
     },
-    types::{Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{
@@ -702,6 +702,15 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_borrow_rate(&mut self, borrow_rate: BorrowRate) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_borrow_rate", (borrow_rate.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -1075,6 +1084,11 @@ impl DataActor for PyStrategyInner {
     fn on_funding_rate(&mut self, funding_rate: &FundingRateUpdate) -> anyhow::Result<()> {
         self.dispatch_on_funding_rate(*funding_rate)
             .map_err(|e| anyhow::anyhow!("Python on_funding_rate failed: {e}"))
+    }
+
+    fn on_borrow_rate(&mut self, borrow_rate: &BorrowRate) -> anyhow::Result<()> {
+        self.dispatch_on_borrow_rate(*borrow_rate)
+            .map_err(|e| anyhow::anyhow!("Python on_borrow_rate failed: {e}"))
     }
 
     fn on_instrument_status(&mut self, data: &InstrumentStatus) -> anyhow::Result<()> {
@@ -1960,6 +1974,10 @@ impl PyStrategy {
     fn py_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_borrow_rate")]
+    fn py_on_borrow_rate(&mut self, borrow_rate: BorrowRate) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_instrument_status")]
     fn py_on_instrument_status(&mut self, status: InstrumentStatus) {}
 
@@ -2332,6 +2350,25 @@ impl PyStrategy {
         Ok(())
     }
 
+    #[pyo3(name = "subscribe_borrow_rates")]
+    #[pyo3(signature = (currency, venue, client_id=None, params=None))]
+    fn py_subscribe_borrow_rates(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        DataActor::subscribe_borrow_rates(self.inner_mut(), currency, venue, client_id, params_map);
+        Ok(())
+    }
+
     #[pyo3(name = "subscribe_option_greeks")]
     #[pyo3(signature = (instrument_id, client_id=None, params=None))]
     fn py_subscribe_option_greeks(
@@ -2641,6 +2678,31 @@ impl PyStrategy {
         DataActor::unsubscribe_funding_rates(
             self.inner_mut(),
             instrument_id,
+            client_id,
+            params_map,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_borrow_rates")]
+    #[pyo3(signature = (currency, venue, client_id=None, params=None))]
+    fn py_unsubscribe_borrow_rates(
+        &mut self,
+        currency: Currency,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        DataActor::unsubscribe_borrow_rates(
+            self.inner_mut(),
+            currency,
+            venue,
             client_id,
             params_map,
         );

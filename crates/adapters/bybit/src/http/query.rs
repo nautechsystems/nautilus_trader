@@ -224,6 +224,21 @@ pub struct BybitFeeRateParams {
     pub base_coin: Option<String>,
 }
 
+/// Query parameters for `GET /v5/account/collateral-info`.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/collateral-info>
+#[derive(Clone, Debug, Deserialize, Serialize, Default, Builder)]
+#[serde(rename_all = "camelCase")]
+#[builder(default)]
+#[builder(setter(into))]
+pub struct BybitCollateralInfoParams {
+    /// Asset currency for collateral inquiry (uppercase only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(setter(strip_option))]
+    pub currency: Option<String>,
+}
+
 /// Query parameters for `GET /v5/account/wallet-balance`.
 ///
 /// # References

@@ -48,9 +48,9 @@ use nautilus_model::defi::DefiData;
 use nautilus_model::{
     accounts::margin_model::{LeveragedMarginModel, MarginModelAny, StandardMarginModel},
     data::{
-        Bar, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDeltas_API,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        Bar, BorrowRate, Data, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas,
+        OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
@@ -1806,6 +1806,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
         return Ok(Data::FundingRateUpdate(funding_rate));
     }
 
+    if let Ok(borrow_rate) = obj.extract::<BorrowRate>() {
+        return Ok(Data::BorrowRate(borrow_rate));
+    }
+
     if let Ok(greeks) = obj.extract::<OptionGreeks>() {
         return Ok(Data::OptionGreeks(greeks));
     }
@@ -1850,6 +1854,10 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 
     if let Ok(funding_rate) = FundingRateUpdate::from_pyobject(obj) {
         return Ok(Data::FundingRateUpdate(funding_rate));
+    }
+
+    if let Ok(borrow_rate) = BorrowRate::from_pyobject(obj) {
+        return Ok(Data::BorrowRate(borrow_rate));
     }
 
     if let Ok(greeks) = OptionGreeks::from_pyobject(obj) {
