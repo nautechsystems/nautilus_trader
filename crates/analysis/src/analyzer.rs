@@ -32,12 +32,12 @@ use crate::{
     statistic::PortfolioStatistic,
     statistics::{
         expectancy::Expectancy, long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser,
-        loser_min::MinLoser, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
-        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
-        returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
-        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        loser_min::MinLoser, omega_ratio::OmegaRatio, profit_factor::ProfitFactor,
+        returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
+        returns_avg_win::ReturnsAverageWin, returns_kurtosis::ReturnsKurtosis,
+        returns_skewness::ReturnsSkewness, returns_volatility::ReturnsVolatility,
+        risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -94,6 +94,7 @@ impl Default for PortfolioAnalyzer {
         analyzer.register_statistic(Arc::new(ReturnsAverageWin {}));
         analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
         analyzer.register_statistic(Arc::new(SortinoRatio::new(None)));
+        analyzer.register_statistic(Arc::new(OmegaRatio::new(None)));
         analyzer.register_statistic(Arc::new(ProfitFactor {}));
         analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
         analyzer.register_statistic(Arc::new(LongRatio::new(None)));
