@@ -53,6 +53,7 @@ pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::statistics::sharpe_ratio::SharpeRatio>()?;
     m.add_class::<crate::statistics::sortino_ratio::SortinoRatio>()?;
     m.add_class::<crate::statistics::tail_ratio::TailRatio>()?;
+    m.add_class::<crate::statistics::ulcer_index::UlcerIndex>()?;
 
     // Statistics - PnL-based
     m.add_class::<crate::statistics::expectancy::Expectancy>()?;
