@@ -92,8 +92,7 @@ use crate::{
             get_funding_rate_topic, get_index_price_topic, get_instrument_close_topic,
             get_instrument_status_topic, get_instrument_topic, get_instruments_pattern,
             get_mark_price_topic, get_option_chain_topic, get_option_greeks_topic,
-            get_quotes_topic, get_signal_pattern,
-            get_trades_topic,
+            get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -4022,8 +4021,8 @@ impl DataActorCore {
 
         let command = SubscribeCommand::BorrowRates(SubscribeBorrowRates {
             currency,
+            venue,
             client_id,
-            venue: Some(venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,
@@ -4462,8 +4461,8 @@ impl DataActorCore {
 
         let command = UnsubscribeCommand::BorrowRates(UnsubscribeBorrowRates {
             currency,
+            venue,
             client_id,
-            venue: Some(venue),
             command_id: UUID4::new(),
             ts_init: self.timestamp_ns(),
             correlation_id: None,

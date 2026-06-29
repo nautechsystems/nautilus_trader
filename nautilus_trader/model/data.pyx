@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import BorrowRate
 
 from cpython.datetime cimport timedelta
 from cpython.mem cimport PyMem_Free
