@@ -31,14 +31,15 @@ use crate::{
     analyzer::{PortfolioAnalyzer, Statistic},
     statistics::{
         alpha::Alpha, beta_ratio::BetaRatio, expectancy::Expectancy,
-        information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
-        loser_max::MaxLoser, loser_min::MinLoser, profit_factor::ProfitFactor,
-        returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
-        returns_avg_win::ReturnsAverageWin, returns_kurtosis::ReturnsKurtosis,
-        returns_skewness::ReturnsSkewness, returns_volatility::ReturnsVolatility,
-        risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
-        tracking_error::TrackingError, treynor_ratio::TreynorRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        expected_shortfall::ExpectedShortfall, information_ratio::InformationRatio,
+        long_ratio::LongRatio, loser_avg::AvgLoser, loser_max::MaxLoser, loser_min::MinLoser,
+        omega_ratio::OmegaRatio, profit_factor::ProfitFactor, returns_avg::ReturnsAverage,
+        returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
+        returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
+        returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
+        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tracking_error::TrackingError,
+        treynor_ratio::TreynorRatio, ulcer_index::UlcerIndex, value_at_risk::ValueAtRisk,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -252,6 +253,22 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<ReturnsKurtosis>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "UlcerIndex" => {
+                let stat = statistic.extract::<UlcerIndex>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "OmegaRatio" => {
+                let stat = statistic.extract::<OmegaRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "ValueAtRisk" => {
+                let stat = statistic.extract::<ValueAtRisk>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "ExpectedShortfall" => {
+                let stat = statistic.extract::<ExpectedShortfall>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -367,6 +384,22 @@ impl PortfolioAnalyzer {
             }
             "ReturnsKurtosis" => {
                 let stat = statistic.extract::<ReturnsKurtosis>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "UlcerIndex" => {
+                let stat = statistic.extract::<UlcerIndex>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "OmegaRatio" => {
+                let stat = statistic.extract::<OmegaRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "ValueAtRisk" => {
+                let stat = statistic.extract::<ValueAtRisk>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "ExpectedShortfall" => {
+                let stat = statistic.extract::<ExpectedShortfall>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {

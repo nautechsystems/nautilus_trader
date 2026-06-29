@@ -20,12 +20,14 @@ from nautilus_trader.analysis import AvgLoser
 from nautilus_trader.analysis import AvgWinner
 from nautilus_trader.analysis import CalmarRatio
 from nautilus_trader.analysis import Expectancy
+from nautilus_trader.analysis import ExpectedShortfall
 from nautilus_trader.analysis import LongRatio
 from nautilus_trader.analysis import MaxDrawdown
 from nautilus_trader.analysis import MaxLoser
 from nautilus_trader.analysis import MaxWinner
 from nautilus_trader.analysis import MinLoser
 from nautilus_trader.analysis import MinWinner
+from nautilus_trader.analysis import OmegaRatio
 from nautilus_trader.analysis import PortfolioAnalyzer
 from nautilus_trader.analysis import ProfitFactor
 from nautilus_trader.analysis import ReturnsAverage
@@ -37,6 +39,8 @@ from nautilus_trader.analysis import ReturnsVolatility
 from nautilus_trader.analysis import RiskReturnRatio
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis import SortinoRatio
+from nautilus_trader.analysis import UlcerIndex
+from nautilus_trader.analysis import ValueAtRisk
 from nautilus_trader.analysis import WinRate
 from nautilus_trader.model import Currency
 from nautilus_trader.model import Money
@@ -60,6 +64,7 @@ NO_ARG_STATISTICS = [
     (ReturnsKurtosis, "Returns Kurtosis"),
     (ReturnsSkewness, "Returns Skewness"),
     (RiskReturnRatio, "Risk Return Ratio"),
+    (UlcerIndex, "Ulcer Index"),
     (WinRate, "Win Rate"),
 ]
 
@@ -69,6 +74,13 @@ PERIOD_STATISTICS = [
     (ReturnsVolatility, "Returns Volatility"),
     (SharpeRatio, "Sharpe Ratio"),
     (SortinoRatio, "Sortino Ratio"),
+]
+
+# Statistics carrying a single float parameter (threshold / confidence).
+THRESHOLD_STATISTICS = [
+    (OmegaRatio, "Omega Ratio"),
+    (ValueAtRisk, "Value at Risk"),
+    (ExpectedShortfall, "Expected Shortfall"),
 ]
 
 
@@ -93,9 +105,16 @@ def test_period_statistic_custom_period(cls, expected_prefix):
     assert "30" in stat.name
 
 
+@pytest.mark.parametrize(("cls", "expected_prefix"), THRESHOLD_STATISTICS)
+def test_threshold_statistic_default_construction_and_name(cls, expected_prefix):
+    stat = cls()
+
+    assert stat.name.startswith(expected_prefix)
+
+
 @pytest.mark.parametrize(
     ("cls", "_expected_prefix"),
-    NO_ARG_STATISTICS + PERIOD_STATISTICS,
+    NO_ARG_STATISTICS + PERIOD_STATISTICS + THRESHOLD_STATISTICS,
 )
 def test_pyo3_statistic_exposes_full_calculate_surface(cls, _expected_prefix):
     stat = cls()
@@ -138,6 +157,20 @@ def test_portfolio_analyzer_register_and_deregister_statistic():
 
 @pytest.mark.parametrize("stat", [ReturnsSkewness(), ReturnsKurtosis()])
 def test_portfolio_analyzer_registers_distribution_statistics(stat):
+    analyzer = PortfolioAnalyzer()
+
+    analyzer.register_statistic(stat)
+    assert analyzer.statistic(stat.name) is not None
+
+    analyzer.deregister_statistic(stat)
+    assert analyzer.statistic(stat.name) is None
+
+
+@pytest.mark.parametrize(
+    "stat",
+    [UlcerIndex(), OmegaRatio(), ValueAtRisk(), ExpectedShortfall()],
+)
+def test_portfolio_analyzer_registers_risk_statistics(stat):
     analyzer = PortfolioAnalyzer()
 
     analyzer.register_statistic(stat)
