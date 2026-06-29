@@ -6,6 +6,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
@@ -81,6 +82,7 @@ class HyperliquidDataClientConfig:
         http_timeout_secs: int | None = None,
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -108,6 +110,7 @@ class HyperliquidExecClientConfig:
         market_order_slippage_bps: int | None = None,
         include_builder_attribution: bool | None = None,
         ws_post_timeout_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

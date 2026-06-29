@@ -10,6 +10,7 @@ __all__ = [
     "Quota",
     "SocketClient",
     "SocketConfig",
+    "TransportBackend",
     "WebSocketClient",
     "WebSocketConfig",
     "http_delete",
@@ -173,6 +174,7 @@ class WebSocketConfig:
         reconnect_max_attempts: int | None = None,
         idle_timeout_ms: int | None = None,
         proxy_url: str | None = None,
+        backend: TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -184,6 +186,11 @@ class HttpMethod(enum.Enum):
     PATCH = ...
 
     def __hash__(self) -> int: ...
+
+@typing.final
+class TransportBackend(enum.Enum):
+    TUNGSTENITE = ...
+    SOCKUDO = ...
 
 def http_delete(
     url: str,

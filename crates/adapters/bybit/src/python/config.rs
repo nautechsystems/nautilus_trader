@@ -16,6 +16,7 @@
 //! Python bindings for Bybit configuration.
 
 use nautilus_model::identifiers::AccountId;
+use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
@@ -44,7 +45,8 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs = None,
         recv_window_ms = None,
         update_instruments_interval_mins = None,
-        instrument_poll_interval_secs = None,
+        instrument_status_poll_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -63,7 +65,8 @@ impl BybitDataClientConfig {
         heartbeat_interval_secs: Option<u64>,
         recv_window_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
-        instrument_poll_interval_secs: Option<u64>,
+        instrument_status_poll_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -85,9 +88,9 @@ impl BybitDataClientConfig {
             recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .or(defaults.update_instruments_interval_mins),
-            instrument_poll_interval_secs: instrument_poll_interval_secs
+            instrument_poll_interval_secs: instrument_status_poll_secs
                 .or(defaults.instrument_poll_interval_secs),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -119,6 +122,7 @@ impl BybitExecClientConfig {
         account_id = None,
         use_spot_position_reports = None,
         margin_mode = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -139,6 +143,7 @@ impl BybitExecClientConfig {
         account_id: Option<AccountId>,
         use_spot_position_reports: Option<bool>,
         margin_mode: Option<BybitMarginMode>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -164,7 +169,7 @@ impl BybitExecClientConfig {
             futures_leverages: None,
             position_mode: None,
             margin_mode,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 

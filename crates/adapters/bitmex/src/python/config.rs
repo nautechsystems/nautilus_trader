@@ -16,6 +16,7 @@
 //! Python bindings for BitMEX configuration.
 
 use nautilus_model::identifiers::AccountId;
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -45,6 +46,7 @@ impl BitmexDataClientConfig {
         environment = None,
         max_requests_per_second = None,
         max_requests_per_minute = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -64,6 +66,7 @@ impl BitmexDataClientConfig {
         environment: Option<BitmexEnvironment>,
         max_requests_per_second: Option<u32>,
         max_requests_per_minute: Option<u32>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -86,7 +89,7 @@ impl BitmexDataClientConfig {
                 .unwrap_or(defaults.max_requests_per_second),
             max_requests_per_minute: max_requests_per_minute
                 .unwrap_or(defaults.max_requests_per_minute),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -122,6 +125,7 @@ impl BitmexExecClientConfig {
         submitter_proxy_urls = None,
         canceller_proxy_urls = None,
         deadmans_switch_timeout_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -146,6 +150,7 @@ impl BitmexExecClientConfig {
         submitter_proxy_urls: Option<Vec<String>>,
         canceller_proxy_urls: Option<Vec<String>>,
         deadmans_switch_timeout_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -174,7 +179,7 @@ impl BitmexExecClientConfig {
             submitter_proxy_urls,
             canceller_proxy_urls,
             deadmans_switch_timeout_secs,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 

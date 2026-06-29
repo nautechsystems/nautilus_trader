@@ -6,6 +6,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "AxCancelReason",
@@ -45,6 +46,7 @@ class AxDataClientConfig:
         recv_window_ms: int | None = None,
         update_instruments_interval_mins: int | None = None,
         funding_rate_poll_interval_mins: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -67,6 +69,7 @@ class AxExecClientConfig:
         heartbeat_interval_secs: int | None = None,
         recv_window_ms: int | None = None,
         cancel_on_disconnect: bool | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

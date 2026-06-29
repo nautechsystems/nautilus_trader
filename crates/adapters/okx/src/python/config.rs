@@ -16,6 +16,7 @@
 //! Python bindings for OKX configuration.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -46,6 +47,7 @@ impl OKXDataClientConfig {
         update_instruments_interval_mins = None,
         vip_level = None,
         load_spreads = false,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -66,6 +68,7 @@ impl OKXDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         vip_level: Option<OKXVipLevel>,
         load_spreads: bool,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -90,7 +93,7 @@ impl OKXDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             vip_level,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -123,6 +126,7 @@ impl OKXExecClientConfig {
         retry_delay_max_ms = None,
         margin_mode = None,
         load_spreads = false,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -144,6 +148,7 @@ impl OKXExecClientConfig {
         retry_delay_max_ms: Option<u64>,
         margin_mode: Option<OKXMarginMode>,
         load_spreads: bool,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -171,7 +176,7 @@ impl OKXExecClientConfig {
             margin_mode,
             load_spreads,
             use_spot_margin: defaults.use_spot_margin,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -190,7 +195,7 @@ mod tests {
     fn test_data_config_py_new_load_spreads() {
         let config = OKXDataClientConfig::py_new(
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, true,
+            None, None, true, None,
         );
 
         assert!(config.load_spreads);
@@ -217,6 +222,7 @@ mod tests {
             None,
             None,
             true,
+            None,
         );
 
         assert!(config.load_spreads);

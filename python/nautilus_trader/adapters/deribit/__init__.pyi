@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "DeribitCurrency",
@@ -40,6 +41,7 @@ class DeribitDataClientConfig:
         heartbeat_interval_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         auto_load_missing_instruments: bool | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -64,6 +66,7 @@ class DeribitExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

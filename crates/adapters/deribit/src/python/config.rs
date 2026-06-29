@@ -16,6 +16,7 @@
 //! Python bindings for Deribit configuration.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
 use crate::{
@@ -44,6 +45,7 @@ impl DeribitDataClientConfig {
         heartbeat_interval_secs = None,
         update_instruments_interval_mins = None,
         auto_load_missing_instruments = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -61,6 +63,7 @@ impl DeribitDataClientConfig {
         heartbeat_interval_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         auto_load_missing_instruments: Option<bool>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -82,7 +85,7 @@ impl DeribitDataClientConfig {
                 .unwrap_or(defaults.update_instruments_interval_mins),
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(defaults.auto_load_missing_instruments),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -110,6 +113,7 @@ impl DeribitExecClientConfig {
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -126,6 +130,7 @@ impl DeribitExecClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -143,7 +148,7 @@ impl DeribitExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
