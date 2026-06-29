@@ -37,8 +37,8 @@ use crate::{
         returns_avg_win::ReturnsAverageWin, returns_kurtosis::ReturnsKurtosis,
         returns_skewness::ReturnsSkewness, returns_volatility::ReturnsVolatility,
         risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
-        tracking_error::TrackingError, treynor_ratio::TreynorRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        tail_ratio::TailRatio, tracking_error::TrackingError, treynor_ratio::TreynorRatio,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -252,6 +252,10 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<ReturnsKurtosis>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "TailRatio" => {
+                let stat = statistic.extract::<TailRatio>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -367,6 +371,10 @@ impl PortfolioAnalyzer {
             }
             "ReturnsKurtosis" => {
                 let stat = statistic.extract::<ReturnsKurtosis>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "TailRatio" => {
+                let stat = statistic.extract::<TailRatio>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {
