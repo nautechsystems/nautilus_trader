@@ -47,7 +47,6 @@ from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPri
 from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.core import nautilus_pyo3
-from nautilus_trader.core.nautilus_pyo3.model import register_custom_data_class
 from nautilus_trader.serialization import register_serializable_type
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
@@ -79,7 +78,6 @@ BinanceFuturesOpenInterestHist = _binance_mod.BinanceFuturesOpenInterestHist
 
 
 def _register_binance_rust_query_type(data_cls: type) -> None:
-    register_custom_data_class(data_cls)
     register_rust_custom_type(data_cls.__name__, data_cls)
 
 

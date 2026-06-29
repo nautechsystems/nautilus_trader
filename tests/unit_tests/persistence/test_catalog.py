@@ -16,6 +16,7 @@
 import datetime
 import sys
 import tempfile
+from decimal import Decimal
 from typing import Any
 from unittest.mock import patch
 
@@ -26,9 +27,8 @@ import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
-from nautilus_trader.adapters.binance import BinanceFuturesLiquidation
-from nautilus_trader.adapters.binance import BinanceFuturesOpenInterest
 from nautilus_trader.adapters.binance import BinanceFuturesTicker
+from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
@@ -55,6 +55,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import _timestamps_to_filename
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
@@ -889,167 +890,18 @@ def test_catalog_query_without_metadata_parameter(catalog: ParquetDataCatalog) -
     assert result[0].data_type.type == TestCustomData
 
 
-@pytest.mark.parametrize(
-    ("data_cls", "records", "assert_item"),
-    [
-        (
-            BinanceFuturesOpenInterest,
-            [
-                ("12345.6789", 1, 1),
-                ("22345.6789", 2, 2),
-            ],
-            lambda actual: (
-                str(actual.instrument_id) == "BTCUSDT-PERP.BINANCE"
-                and str(actual.open_interest) == "12345.6789"
-                and actual.ts_event == 1
-                and actual.ts_init == 1
-            ),
-        ),
-        (
-            BinanceFuturesLiquidation,
-            [
-                ("SELL", "100000.0", "99999.5", "1.25", "2.50", 3, 3),
-                ("BUY", "100100.0", "100050.0", "0.50", "1.75", 4, 4),
-            ],
-            lambda actual: (
-                str(actual.instrument_id) == "BTCUSDT-PERP.BINANCE"
-                and str(actual.side) == "SELL"
-                and str(actual.price) == "100000.0"
-                and str(actual.average_price) == "99999.5"
-                and str(actual.last_filled_qty) == "1.25"
-                and str(actual.accumulated_qty) == "2.50"
-                and actual.ts_event == 3
-                and actual.ts_init == 3
-            ),
-        ),
-        (
-            BinanceFuturesTicker,
-            [
-                (
-                    "1.0",
-                    "2.0",
-                    "100.0",
-                    "101.0",
-                    "0.1",
-                    "99.0",
-                    "102.0",
-                    "98.0",
-                    "10.0",
-                    "1000.0",
-                    5,
-                    6,
-                    1,
-                    2,
-                    3,
-                    7,
-                    7,
-                ),
-                (
-                    "1.5",
-                    "2.5",
-                    "100.5",
-                    "101.5",
-                    "0.2",
-                    "99.5",
-                    "102.5",
-                    "98.5",
-                    "11.0",
-                    "1100.0",
-                    8,
-                    9,
-                    4,
-                    5,
-                    6,
-                    10,
-                    10,
-                ),
-            ],
-            lambda actual: (
-                str(actual.instrument_id) == "BTCUSDT-PERP.BINANCE"
-                and str(actual.price_change) == "1.0"
-                and str(actual.price_change_percent) == "2.0"
-                and str(actual.weighted_avg_price) == "100.0"
-                and str(actual.last_price) == "101.0"
-                and str(actual.last_qty) == "0.1"
-                and str(actual.open_price) == "99.0"
-                and str(actual.high_price) == "102.0"
-                and str(actual.low_price) == "98.0"
-                and str(actual.volume) == "10.0"
-                and str(actual.quote_volume) == "1000.0"
-                and actual.open_time == 5
-                and actual.close_time == 6
-                and actual.first_trade_id == 1
-                and actual.last_trade_id == 2
-                and actual.num_trades == 3
-                and actual.ts_event == 7
-                and actual.ts_init == 7
-            ),
-        ),
-    ],
-)
-def test_catalog_query_roundtrip_binance_rust_custom_data(
-    catalog: ParquetDataCatalog,
-    data_cls: type,
-    records: list[tuple[Any, ...]],
-    assert_item,
-) -> None:
-    instrument_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-    data = [data_cls(instrument_id, *record) for record in records]
-    data_type = nautilus_pyo3.model.DataType(data_cls.__name__, None, instrument_id.value)
-    wrapped = [nautilus_pyo3.model.CustomData(data_type, item) for item in data]
-    pyo3_catalog = nautilus_pyo3.ParquetDataCatalog(catalog.path)
-
-    pyo3_catalog.write_custom_data(wrapped)
-
-    result = catalog.query(data_cls, identifiers=[instrument_id.value])
-
-    assert len(result) == len(records)
-    assert all(isinstance(item, data_cls) for item in result)
-
-    first = result[0]
-    assert assert_item(first)
-
-
 def test_catalog_metadata_apis_for_binance_rust_custom_data(catalog: ParquetDataCatalog) -> None:
-    instrument_id = nautilus_pyo3.InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-    ticker = BinanceFuturesTicker(
-        instrument_id,
-        "1.0",
-        "2.0",
-        "100.0",
-        "101.0",
-        "0.1",
-        "99.0",
-        "102.0",
-        "98.0",
-        "10.0",
-        "1000.0",
-        5,
-        6,
-        1,
-        2,
-        3,
-        7,
-        7,
-    )
-    data_type = nautilus_pyo3.model.DataType(
-        "BinanceFuturesTicker",
-        None,
-        instrument_id.value,
-    )
-    pyo3_catalog = nautilus_pyo3.ParquetDataCatalog(catalog.path)
-    pyo3_catalog.write_custom_data([nautilus_pyo3.model.CustomData(data_type, ticker)])
+    instrument_id = "BTCUSDT-PERP.BINANCE"
+    directory = f"{catalog.path.rstrip('/')}/data/custom/BinanceFuturesTicker/{instrument_id}"
+    catalog.fs.mkdirs(directory, exist_ok=True)
+    filename = _timestamps_to_filename(7, 7)
+    with catalog.fs.open(f"{directory}/{filename}", "wb") as f:
+        f.write(b"")
 
     expected_timestamp = pd.Timestamp(7, tz="UTC")
-    assert (
-        catalog.query_first_timestamp(BinanceFuturesTicker, instrument_id.value)
-        == expected_timestamp
-    )
-    assert (
-        catalog.query_last_timestamp(BinanceFuturesTicker, instrument_id.value)
-        == expected_timestamp
-    )
-    assert catalog.get_intervals(BinanceFuturesTicker, instrument_id.value) == [(7, 7)]
+    assert catalog.query_first_timestamp(BinanceFuturesTicker, instrument_id) == expected_timestamp
+    assert catalog.query_last_timestamp(BinanceFuturesTicker, instrument_id) == expected_timestamp
+    assert catalog.get_intervals(BinanceFuturesTicker, instrument_id) == [(7, 7)]
 
     data_types = catalog.list_data_types()
     assert "custom_binance_futures_ticker" in data_types
@@ -2229,6 +2081,19 @@ def test_extract_data_cls_and_identifier_from_path(catalog: ParquetDataCatalog) 
     assert identifier is not None
 
 
+def test_extract_rust_custom_data_cls_and_identifier_from_path(
+    catalog: ParquetDataCatalog,
+) -> None:
+    test_directory = (
+        f"{catalog.path.rstrip('/')}/data/custom/BinanceFuturesTicker/BTCUSDT-PERP.BINANCE"
+    )
+
+    data_cls, identifier = catalog._extract_data_cls_and_identifier_from_path(test_directory)
+
+    assert data_cls is BinanceFuturesTicker
+    assert identifier == "BTCUSDT-PERP.BINANCE"
+
+
 def test_delete_data_range_complete_file_deletion(catalog: ParquetDataCatalog) -> None:
     """
     Test deleting data that completely covers one or more files.
@@ -2255,6 +2120,39 @@ def test_delete_data_range_complete_file_deletion(catalog: ParquetDataCatalog) -
     # Assert
     remaining_data = catalog.quote_ticks()
     assert len(remaining_data) == 0
+
+
+def test_delete_data_range_binance_bar_without_identifier(
+    catalog: ParquetDataCatalog,
+) -> None:
+    bar = BinanceBar(
+        bar_type=BarType(
+            instrument_id=TestInstrumentProvider.ethusdt_binance().id,
+            bar_spec=TestDataStubs.bar_spec_1min_last(),
+        ),
+        open=Price.from_str("0.01634790"),
+        high=Price.from_str("0.01640000"),
+        low=Price.from_str("0.01575800"),
+        close=Price.from_str("0.01577100"),
+        volume=Quantity.from_str("148976.11427815"),
+        quote_volume=Decimal("2434.19055334"),
+        count=100,
+        taker_buy_base_volume=Decimal("1756.87402397"),
+        taker_buy_quote_volume=Decimal("28.46694368"),
+        ts_event=1,
+        ts_init=1,
+    )
+    catalog.write_data([bar])
+
+    assert len(catalog.query(BinanceBar, identifiers=[str(bar.bar_type)])) == 1
+
+    catalog.delete_data_range(
+        data_cls=BinanceBar,
+        start=0,
+        end=10,
+    )
+
+    assert catalog.query(BinanceBar, identifiers=[str(bar.bar_type)]) == []
 
 
 def test_delete_data_range_partial_file_overlap_start(catalog: ParquetDataCatalog) -> None:

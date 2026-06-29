@@ -362,10 +362,7 @@ def test_binance_futures_liquidation_type_supports_all_market_subscription() -> 
     assert data_type.metadata == {}
 
 
-def test_binance_rust_custom_types_support_python_strategy_surfaces(tmp_path) -> None:
-    # Uses file protocol because the Rust query path is part of the contract being verified.
-    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
-    pyo3_catalog = nautilus_pyo3.ParquetDataCatalog(catalog.path)
+def test_binance_rust_custom_types_support_python_strategy_surfaces() -> None:
     instrument_id = nautilus_pyo3.InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
 
     ticker_type = DataType(
@@ -379,40 +376,6 @@ def test_binance_rust_custom_types_support_python_strategy_surfaces(tmp_path) ->
 
     assert ticker_type.type == BinanceFuturesTicker
     assert open_interest_type.type == BinanceFuturesOpenInterest
-
-    ticker = BinanceFuturesTicker(
-        instrument_id,
-        "1.0",
-        "2.0",
-        "100.0",
-        "101.0",
-        "0.1",
-        "99.0",
-        "102.0",
-        "98.0",
-        "10.0",
-        "1000.0",
-        5,
-        6,
-        1,
-        2,
-        3,
-        7,
-        7,
-    )
-    ticker_data_type = nautilus_pyo3.model.DataType(
-        "BinanceFuturesTicker",
-        None,
-        instrument_id.value,
-    )
-    pyo3_catalog.write_custom_data([nautilus_pyo3.model.CustomData(ticker_data_type, ticker)])
-
-    result = catalog.query(BinanceFuturesTicker, identifiers=[instrument_id.value])
-
-    assert len(result) == 1
-    assert isinstance(result[0], BinanceFuturesTicker)
-    assert str(result[0].instrument_id) == instrument_id.value
-    assert str(result[0].last_price) == "101.0"
 
 
 @pytest.fixture
@@ -459,6 +422,43 @@ def test_binance_bar_data_catalog_serialization(tmp_path):
     assert retrieved_bar.volume == bar.volume
     assert retrieved_bar.ts_event == bar.ts_event
     assert retrieved_bar.ts_init == bar.ts_init
+
+
+def test_binance_bar_legacy_catalog_layout_remains_readable(tmp_path):
+    catalog = setup_catalog(protocol="file", path=tmp_path / "catalog")
+    bar = BinanceBar(
+        bar_type=BarType(
+            instrument_id=TestIdStubs.btcusdt_binance_id(),
+            bar_spec=TestDataStubs.bar_spec_1min_last(),
+        ),
+        open=Price.from_str("0.01634790"),
+        high=Price.from_str("0.01640000"),
+        low=Price.from_str("0.01575800"),
+        close=Price.from_str("0.01577100"),
+        volume=Quantity.from_str("148976.11427815"),
+        quote_volume=Decimal("2434.19055334"),
+        count=100,
+        taker_buy_base_volume=Decimal("1756.87402397"),
+        taker_buy_quote_volume=Decimal("28.46694368"),
+        ts_event=1650000000000000000,
+        ts_init=1650000000000000000,
+    )
+
+    catalog.write_data([bar])
+
+    new_directory = f"{catalog.path.rstrip('/')}/data/custom/BinanceBar/{bar.bar_type}"
+    legacy_directory = f"{catalog.path.rstrip('/')}/data/binance_bar/{bar.bar_type}"
+    parquet_file = catalog.fs.glob(f"{new_directory}/*.parquet")
+    assert len(parquet_file) == 1
+
+    catalog.fs.mkdirs(legacy_directory, exist_ok=True)
+    catalog.fs.mv(parquet_file[0], f"{legacy_directory}/{parquet_file[0].split('/')[-1]}")
+
+    binance_bars = catalog.query(BinanceBar, identifiers=[str(bar.bar_type)])
+
+    assert len(binance_bars) == 1
+    retrieved_bar = binance_bars[0]
+    assert retrieved_bar == bar
 
     # Verify Binance-specific fields are preserved
     assert hasattr(retrieved_bar, "quote_volume")

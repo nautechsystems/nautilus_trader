@@ -1289,11 +1289,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         else:
             relative_path = directory
 
-        # Expected format: "data/{data_type_filename}/{identifier}" or "data/{data_type_filename}"
+        # Expected formats:
+        # - "data/{data_type_filename}/{identifier}" or "data/{data_type_filename}"
+        # - "data/custom/{type_name}/{identifier}" or "data/custom/{type_name}"
         path_parts = relative_path.split("/")
 
         if len(path_parts) < 2 or path_parts[0] != "data":
             return None, None
+
+        if path_parts[1] == "custom":
+            if len(path_parts) < 3:
+                return None, None
+
+            data_cls = _RUST_CUSTOM_TYPE_REGISTRY.get(path_parts[2])
+            identifier = path_parts[3] if len(path_parts) > 3 else None
+            return data_cls, identifier
 
         data_type_filename = path_parts[1]
         identifier = path_parts[2] if len(path_parts) > 2 else None
@@ -1342,25 +1352,22 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         # Handle identifier=None by deleting from all identifiers for this data class
         if identifier is None:
-            # Find all directories for this data class
             leaf_directories = self._find_leaf_data_directories()
-            data_cls_name = class_to_filename(data_cls)
 
             for directory in leaf_directories:
-                # Check if this directory is for the specified data class
-                if f"/data/{data_cls_name}/" in directory:
-                    # Extract the identifier from the directory path
-                    parts = directory.split("/")
+                dir_data_cls, dir_identifier = self._extract_data_cls_and_identifier_from_path(
+                    directory,
+                )
 
-                    if len(parts) >= 3 and parts[-2] == data_cls_name:
-                        dir_identifier = parts[-1]
-                        # Recursively call delete for this specific identifier
-                        self.delete_data_range(
-                            data_cls=data_cls,
-                            identifier=dir_identifier,
-                            start=start,
-                            end=end,
-                        )
+                if dir_data_cls != data_cls or dir_identifier is None:
+                    continue
+
+                self.delete_data_range(
+                    data_cls=data_cls,
+                    identifier=dir_identifier,
+                    start=start,
+                    end=end,
+                )
             return
 
         # Use get_intervals for cleaner implementation
@@ -2230,17 +2237,12 @@ class ParquetDataCatalog(BaseDataCatalog):
             List of file paths matching the data class.
 
         """
-        base_path = self.path.rstrip("/")
+        file_paths: list[str] = []
 
-        if self._is_rust_custom_data(data_cls):
-            glob_path = f"{base_path}/data/custom/{data_cls.__name__}/**/*.parquet"
-        else:
-            file_prefix = class_to_filename(data_cls)
-            glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
+        for directory in self._get_candidate_data_directories(data_cls):
+            file_paths.extend(self.fs.glob(f"{directory}/**/*.parquet"))
 
-        file_paths: list[str] = self.fs.glob(glob_path)
-
-        return file_paths
+        return sorted(set(file_paths))
 
     def query_first_timestamp(
         self,
@@ -2354,20 +2356,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         - Used internally by methods like `get_missing_intervals_for_request` and `_query_last_timestamp`.
 
         """
-        directory = self._make_path(data_cls, identifier)
-        intervals = self._get_directory_intervals(directory)
+        intervals = []
+
+        for file_path in self._get_file_paths(data_cls, identifier):
+            interval = _parse_filename_timestamps(file_path)
+            if interval:
+                intervals.append(interval)
 
         if identifier is None:
-            # The standard layout partitions data into per-identifier subdirectories
-            # (e.g. `<data>/<type>/<instrument_id>/<ts_range>.parquet`). Aggregate
-            # intervals across every subdirectory, then merge overlaps so callers
-            # receive a disjoint sorted union (relied on by `query_last_timestamp`
-            # and `consolidate_data_by_period`).
-            for sub_dir in self.fs.glob(os.path.join(directory, "*")):
-                if not self.fs.isdir(sub_dir):
-                    continue
-                intervals.extend(self._get_directory_intervals(sub_dir))
-
             interval_set = _get_integer_interval_set(intervals)
             intervals = [
                 (
@@ -2376,6 +2372,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 )
                 for interval in interval_set
             ]
+        else:
+            intervals.sort(key=lambda x: x[0])
 
         return intervals
 
@@ -2412,6 +2410,36 @@ class ParquetDataCatalog(BaseDataCatalog):
             directory += f"/{urisafe_identifier(identifier)}"
 
         return directory
+
+    def _get_candidate_data_directories(
+        self,
+        data_cls: type[Data],
+        identifier: str | None = None,
+    ) -> list[str]:
+        directories = [self._make_path(data_cls, identifier)]
+
+        if self._is_rust_custom_data(data_cls):
+            legacy_directory = f"{self.path.rstrip('/')}/data/{class_to_filename(data_cls)}"
+            if identifier is not None:
+                legacy_directory += f"/{urisafe_identifier(identifier)}"
+
+            if legacy_directory not in directories:
+                directories.append(legacy_directory)
+
+        return directories
+
+    def _get_file_paths(
+        self,
+        data_cls: type[Data],
+        identifier: str | None = None,
+    ) -> list[str]:
+        file_paths: list[str] = []
+
+        for directory in self._get_candidate_data_directories(data_cls, identifier):
+            glob_path = os.path.join(directory, "**", "*.parquet")
+            file_paths.extend(self.fs.glob(glob_path))
+
+        return sorted(set(file_paths))
 
     # -- OVERLOADED BASE METHODS ------------------------------------------------------------------
 
