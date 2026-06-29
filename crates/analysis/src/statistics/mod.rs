@@ -38,6 +38,7 @@ pub mod sharpe_ratio;
 pub mod sortino_ratio;
 pub mod tracking_error;
 pub mod treynor_ratio;
+pub mod ulcer_index;
 pub mod win_rate;
 pub mod winner_avg;
 pub mod winner_max;

@@ -77,6 +77,7 @@ __all__ = [
     "SortinoRatio",
     "TrackingError",
     "TreynorRatio",
+    "UlcerIndex",
     "WinRate",
 ]
 
@@ -435,6 +436,17 @@ class TreynorRatio:
     def calculate_from_returns_with_benchmark(
         self, returns: typing.Mapping[int, float], benchmark: typing.Mapping[int, float]
     ) -> float | None: ...
+
+@typing.final
+class UlcerIndex:
+    def __init__(self) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns(self, raw_returns: typing.Mapping[int, float]) -> float | None: ...
+    def calculate_from_realized_pnls(
+        self, _realized_pnls: typing.Sequence[float]
+    ) -> float | None: ...
+    def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
 
 @typing.final
 class WinRate:
