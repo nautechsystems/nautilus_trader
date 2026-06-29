@@ -90,6 +90,7 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
         pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
         new_market_inflight_keys: client.new_market_inflight_keys.clone(),
         new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
+        rtds_feed: client.rtds_feed.clone(),
         subscribe_new_markets: client.config.subscribe_new_markets,
         new_market_filter: client.config.new_market_filter.clone(),
         cancellation_token: client.cancellation_token.clone(),

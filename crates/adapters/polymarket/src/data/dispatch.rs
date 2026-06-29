@@ -50,6 +50,7 @@ use crate::{
         parse::rebuild_instrument_with_tick_size, query::GetGammaMarketsParams,
     },
     resolve::{ResolveContext, ResolveWatchEntry, apply_condition_resolution},
+    rtds::PolymarketRtdsFeed,
     websocket::{
         messages::{MarketWsMessage, PolymarketNewMarket, PolymarketQuotes, PolymarketWsMessage},
         parse::{
@@ -94,6 +95,7 @@ pub(super) struct WsMessageContext {
     pub(super) pending_snapshot_after_tick_change: Arc<AtomicSet<InstrumentId>>,
     pub(super) new_market_inflight_keys: Arc<DashMap<String, ()>>,
     pub(super) new_market_fetch_semaphore: Arc<tokio::sync::Semaphore>,
+    pub(super) rtds_feed: PolymarketRtdsFeed,
     pub(super) subscribe_new_markets: bool,
     pub(super) new_market_filter: Option<Arc<dyn InstrumentFilter>>,
     pub(super) cancellation_token: CancellationToken,
@@ -146,6 +148,18 @@ pub(super) fn handle_ws_message(message: PolymarketWsMessage, ctx: &WsMessageCon
         }
         PolymarketWsMessage::Reconnected => {
             log::info!("Polymarket WS reconnected");
+            if ctx.cancellation_token.is_cancelled() {
+                log::debug!("Skipping RTDS recovery because data client is cancelling");
+                return;
+            }
+
+            if !ctx.rtds_feed.needs_connection_recovery() {
+                log::debug!("Skipping RTDS recovery because RTDS connection is still healthy");
+                return;
+            }
+
+            ctx.rtds_feed
+                .request_reconcile(crate::rtds::ReconcileReason::EnsureConnected);
         }
     }
 }
@@ -678,12 +692,16 @@ mod tests {
     use ahash::AHashMap;
     use axum::{
         Router,
-        extract::{Path, RawQuery, State},
+        extract::{
+            Path, RawQuery, State,
+            ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
+        },
         http::StatusCode,
         response::Json,
         routing::get,
     };
     use chrono::{Duration as ChronoDuration, Utc};
+    use futures_util::StreamExt;
     use nautilus_common::{
         clients::DataClient,
         live::runner::replace_data_event_sender,
@@ -738,6 +756,59 @@ mod tests {
 
     fn is_resolve_response(event: &DataEvent) -> bool {
         matches!(event, DataEvent::Response(DataResponse::Data(_)))
+    }
+
+    #[derive(Clone, Default)]
+    struct RtdsTestServerState {
+        received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    }
+
+    async fn handle_rtds_upgrade(
+        ws: WebSocketUpgrade,
+        State(state): State<RtdsTestServerState>,
+    ) -> axum::response::Response {
+        ws.on_upgrade(move |socket| handle_rtds_socket(socket, state))
+    }
+
+    async fn handle_rtds_socket(mut socket: WebSocket, state: RtdsTestServerState) {
+        while let Some(result) = socket.next().await {
+            let Ok(message) = result else { break };
+
+            match message {
+                AxumWsMessage::Text(text) => {
+                    let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
+                    };
+                    state.received_payloads.lock().await.push(payload);
+                }
+                AxumWsMessage::Ping(data) => {
+                    if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
+                        break;
+                    }
+                }
+                AxumWsMessage::Close(_) => break,
+                _ => {}
+            }
+        }
+    }
+
+    async fn start_rtds_test_server(state: RtdsTestServerState) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind RTDS test server");
+        let addr = listener.local_addr().expect("local_addr");
+        let router = Router::new()
+            .route("/rtds", get(handle_rtds_upgrade))
+            .with_state(state);
+
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("RTDS test server failed");
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        addr
     }
 
     fn count_instrument_close_events(events: &[DataEvent]) -> usize {
@@ -826,7 +897,7 @@ mod tests {
 
         let ctx = WsMessageContext {
             clock: get_atomic_clock_realtime(),
-            data_sender: data_tx,
+            data_sender: data_tx.clone(),
             token_meta: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             gamma_client,
@@ -844,6 +915,12 @@ mod tests {
             new_market_fetch_semaphore: Arc::new(tokio::sync::Semaphore::new(
                 PolymarketDataClientConfig::default().new_market_fetch_max_concurrency,
             )),
+            rtds_feed: crate::rtds::PolymarketRtdsFeed::new(
+                "ws://localhost/rtds".to_string(),
+                TransportBackend::default(),
+                get_atomic_clock_realtime(),
+                data_tx,
+            ),
             subscribe_new_markets: false,
             new_market_filter: None,
             cancellation_token: CancellationToken::new(),
@@ -972,6 +1049,7 @@ mod tests {
             pending_snapshot_after_tick_change: client.pending_snapshot_after_tick_change.clone(),
             new_market_inflight_keys: client.new_market_inflight_keys.clone(),
             new_market_fetch_semaphore: client.new_market_fetch_semaphore.clone(),
+            rtds_feed: client.rtds_feed.clone(),
             subscribe_new_markets: client.config.subscribe_new_markets,
             new_market_filter: client.config.new_market_filter.clone(),
             cancellation_token: client.cancellation_token.clone(),
@@ -1451,6 +1529,123 @@ mod tests {
             state.max_inflight_requests.load(Ordering::SeqCst) <= 1,
             "fetch concurrency exceeded configured cap during cancellation path"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_reconnected_does_not_replay_rtds_when_rtds_is_healthy() {
+        let state = RtdsTestServerState::default();
+        let addr = start_rtds_test_server(state.clone()).await;
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            ctx.clock,
+            ctx.data_sender.clone(),
+        );
+        ctx.rtds_feed
+            .track_subscribe(DataType::new(
+                "PolymarketRtdsCryptoPrice",
+                Some({
+                    let mut metadata = Params::new();
+                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata
+                }),
+                None,
+            ))
+            .expect("track RTDS subscribe");
+        ctx.rtds_feed.connect().await.expect("connect RTDS feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+        state.received_payloads.lock().await.clear();
+
+        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "healthy RTDS connection should not replay subscriptions on main WS reconnect",
+        );
+        ctx.rtds_feed.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_reconnected_recovers_rtds_when_retained_subscriptions_are_missing() {
+        let state = RtdsTestServerState::default();
+        let addr = start_rtds_test_server(state.clone()).await;
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            ctx.clock,
+            ctx.data_sender.clone(),
+        );
+        ctx.rtds_feed
+            .track_subscribe(DataType::new(
+                "PolymarketRtdsCryptoPrice",
+                Some({
+                    let mut metadata = Params::new();
+                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata
+                }),
+                None,
+            ))
+            .expect("track RTDS subscribe");
+
+        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let replay = payloads.last().expect("recovery payload");
+        assert_eq!(replay["action"].as_str(), Some("subscribe"));
+        ctx.rtds_feed.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn handle_reconnected_does_not_trigger_rtds_recovery_after_cancellation() {
+        let state = RtdsTestServerState::default();
+        let addr = start_rtds_test_server(state.clone()).await;
+        let (mut ctx, _data_rx) = make_ws_ctx();
+        ctx.rtds_feed = crate::rtds::PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            ctx.clock,
+            ctx.data_sender.clone(),
+        );
+        ctx.rtds_feed
+            .track_subscribe(DataType::new(
+                "PolymarketRtdsCryptoPrice",
+                Some({
+                    let mut metadata = Params::new();
+                    metadata.insert("symbol".to_string(), Value::String("BTCUSDT".to_string()));
+                    metadata
+                }),
+                None,
+            ))
+            .expect("track RTDS subscribe");
+
+        ctx.cancellation_token.cancel();
+        handle_ws_message(PolymarketWsMessage::Reconnected, &ctx);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(state.received_payloads.lock().await.is_empty());
     }
 
     #[rstest]
