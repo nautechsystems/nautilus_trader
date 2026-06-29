@@ -400,7 +400,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed.schedule_sync();
+        self.rtds_feed
+            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
 
         Ok(())
     }
@@ -532,7 +533,8 @@ impl DataClient for PolymarketDataClient {
             return Ok(());
         }
 
-        self.rtds_feed.schedule_sync();
+        self.rtds_feed
+            .request_reconcile(crate::rtds::ReconcileReason::DesiredChanged);
 
         Ok(())
     }
