@@ -1,6 +1,6 @@
 # NautilusTrader 1.230.0 Beta
 
-Released on TBD (UTC).
+Released on 29th June 2026 (UTC).
 
 ### Enhancements
 - Added v2 Python visualization (tearsheet) support with a `visualization` extra
@@ -18,12 +18,16 @@ Released on TBD (UTC).
 - Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
 
 ### Security
+- Fixed unbounded HTTP response buffering that could exhaust memory (#4332), thanks @AlaeddineMessadi
 - Removed direct `bincode` use from `event_store` on-disk envelopes (#4330), thanks @folknor
 
 ### Fixes
 - Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
 - Fixed Strategy order-list cache visibility for live handlers (Rust)
 - Fixed Rust strategy `oms_type` registration for custom HEDGING position IDs (#4327), thanks for reporting @dxwil
+- Fixed duplicate realized PnLs in post-run analysis (#4344), thanks for reporting @a1zb2yc3z
+- Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
+- Fixed `VerticalHorizontalFilter` and `OnBalanceVolume` period windows (#4333), thanks @Martingale42
 - Fixed Architect AX execution reconciliation for open positions and fills
 - Fixed Architect AX to deny unsupported order types and times in force locally
 - Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
@@ -33,12 +37,11 @@ Released on TBD (UTC).
 - Fixed Bybit submit rejection classification and batch amend/cancel request builders (Rust)
 - Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
 - Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
-- Fixed Interactive Brokers (Rust) stock contract resolution for non-USD and cross-listed symbols (#4335), thanks @dfjmax
+- Fixed Interactive Brokers stock contract resolution for non-USD and cross-listed symbols (#4337), thanks @dfjmax
 - Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
 - Fixed Lighter stop-market and market-if-touched order modification rejected for a missing price
 - Fixed Polymarket reconciliation producing out-of-range fill prices
 - Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
-- Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
 
 ### Internal Improvements
 - Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
@@ -58,8 +61,6 @@ Released on TBD (UTC).
 - Refined Databento dataset configuration docs for schema limits and symbology inference
 - Refined event sourcing marker sidecar docs to match the shipped markers module
 - Refined Polymarket integration guide for Rust config fields and order behavior
-
-### Deprecations
 
 ---
 
