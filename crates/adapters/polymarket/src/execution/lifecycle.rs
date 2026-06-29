@@ -235,7 +235,7 @@ impl PolymarketExecutionClient {
                                 )
                                 .await
                                 {
-                                    Ok(()) => log::info!(
+                                    Ok(()) => log::debug!(
                                         "Account state refreshed after finalized trade for {account_id}"
                                     ),
                                     Err(e) => log::warn!(
@@ -296,7 +296,7 @@ impl PolymarketExecutionClient {
             self.upsert_execution_lookup(inst);
         }
 
-        log::info!("Loaded {} instruments from cache", instruments.len());
+        log::debug!("Loaded {} instruments from cache", instruments.len());
     }
 
     pub(super) fn start_client(&mut self) {

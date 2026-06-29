@@ -258,7 +258,7 @@ impl CoinbaseWebSocketClient {
         *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
         self.connection_mode.store(client.connection_mode_atomic());
-        log::info!("Coinbase WebSocket connected: {}", self.url);
+        log::debug!("Coinbase WebSocket connected: {}", self.url);
 
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             anyhow::bail!("Failed to send SetClient command: {e}");
@@ -330,7 +330,7 @@ impl CoinbaseWebSocketClient {
                         }
                     }
                     None => {
-                        log::info!("Feed handler stopped");
+                        log::debug!("Feed handler stopped");
                         break;
                     }
                 }

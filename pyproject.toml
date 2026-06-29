@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.229.0"
+version = "1.230.0"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -47,7 +47,7 @@ requires = [
   "setuptools>=82",
   "poetry-core==2.3.1", # Pinned to 2.3.1 for stability
   "numpy>=1.26.4",
-  "cython==3.2.5", # Pinned to 3.2.5 for stability
+  "cython==3.2.6", # Pinned to 3.2.6 for stability
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -90,7 +90,7 @@ visualization = [
 
 [dependency-groups]
 dev = [
-  "cython==3.2.5", # Pinned to 3.2.5 for stability
+  "cython==3.2.6", # Pinned to 3.2.6 for stability
   "jupytext>=1.19.3,<2.0.0",
   "setuptools>=82",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
@@ -101,7 +101,7 @@ dev = [
 ]
 test = [
   "aiohttp==3.14.1,<4.0.0",
-  "coverage>=7.14.1,<8.0.0",
+  "coverage>=7.14.2,<8.0.0",
   "pytest>=7.4.4,<8.0.0", # Intentionally held at 7.x
   "pytest-aiohttp>=1.1.1,<2.0.0",
   "pytest-asyncio==0.23.8", # Pinned to 0.23.8 for stability
@@ -121,7 +121,7 @@ docs = [
 ]
 
 [tool.uv]
-required-version = "==0.11.23"
+required-version = "==0.11.25"
 exclude-newer = "3 days"
 # Block sdist builds for every third-party package in uv.lock so unexpected loss
 # of wheel publishing fails `uv lock` instead of silently building from source.

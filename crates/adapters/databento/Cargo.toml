@@ -51,7 +51,8 @@ high-precision = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["arrow", "high-precision", "live"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -68,6 +69,8 @@ nautilus-system = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
 databento = { workspace = true }
 fallible-streaming-iterator = { workspace = true }
 indexmap = { workspace = true }
@@ -89,10 +92,28 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-testkit = { workspace = true }
+
+criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
+# Canonical data-path benches; see crates/adapters/databento/benches/BENCHMARKS.md for context
+[[bench]]
+name = "data"
+harness = false
+
+[[bench]]
+name = "micros"
+harness = false
+
+[[bench]]
+name = "clients"
+harness = false
+required-features = ["live"]
+
+# Run with `cargo run --example databento-data-tester --package nautilus-databento`.
 [[example]]
 name = "databento-data-tester"
 path = "examples/node_data_tester.rs"

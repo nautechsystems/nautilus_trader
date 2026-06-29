@@ -188,7 +188,7 @@ impl TransactionManager {
             return Ok(());
         }
 
-        log::info!(
+        log::debug!(
             "Detected permissioned key setup: signing with {} for main account {}",
             signing_address,
             self.wallet_address
@@ -231,7 +231,7 @@ impl TransactionManager {
         for auth in &authenticators {
             if Self::authenticator_matches_pubkey(auth, &signing_pubkey_b64) {
                 matching_ids.push(auth.id);
-                log::info!("Found matching authenticator: id={}", auth.id);
+                log::debug!("Found matching authenticator: id={}", auth.id);
             }
         }
 
@@ -250,7 +250,7 @@ impl TransactionManager {
             let mut ids = self.authenticator_ids.write().expect("RwLock poisoned");
             *ids = matching_ids.clone();
         }
-        log::info!("Resolved authenticator IDs: {matching_ids:?}");
+        log::debug!("Resolved authenticator IDs: {matching_ids:?}");
 
         Ok(())
     }
@@ -435,7 +435,7 @@ impl TransactionManager {
 
         let chain_seq = base_account.sequence;
         self.sequence_number.store(chain_seq, Ordering::SeqCst);
-        log::info!("Resynced sequence from chain: {chain_seq}");
+        log::debug!("Resynced sequence from chain: {chain_seq}");
         Ok(())
     }
 

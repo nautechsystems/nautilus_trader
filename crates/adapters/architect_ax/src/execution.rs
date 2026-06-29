@@ -63,7 +63,7 @@ use crate::{
             AX_VENUE,
         },
         credential::Credential,
-        enums::AxOrderSide,
+        enums::{AxOrderSide, AxTimeInForce},
         parse::{ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, quantity_to_contracts},
     },
     config::AxExecClientConfig,
@@ -259,7 +259,7 @@ impl AxExecutionClient {
                     })?;
 
                     let price = Price::from(limit_price_decimal.to_string().as_str());
-                    log::info!("Market order take-through price: {price} for {instrument_id}",);
+                    log::debug!("Market order take-through price: {price} for {instrument_id}",);
                     Some(price)
                 } else {
                     limit_price
@@ -424,7 +424,7 @@ impl ExecutionClient for AxExecutionClient {
             if instruments.is_empty() {
                 log::warn!("No instruments returned from AX");
             } else {
-                log::info!("Loaded {} instruments", instruments.len());
+                log::debug!("Loaded {} instruments", instruments.len());
                 self.http_client.cache_instruments(&instruments);
                 self.ws_orders.cache_instruments(&instruments);
             }
@@ -433,7 +433,7 @@ impl ExecutionClient for AxExecutionClient {
 
         let token = self.authenticate().await?;
         self.ws_orders.connect(&token).await?;
-        log::info!("Connected to orders WebSocket");
+        log::debug!("Connected to orders WebSocket");
 
         let should_spawn = match &self.ws_stream_handle {
             None => true,
@@ -471,7 +471,7 @@ impl ExecutionClient for AxExecutionClient {
             .context("failed to request AX account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -690,7 +690,7 @@ impl ExecutionClient for AxExecutionClient {
                         entry.venue_order_id = Some(new_venue_order_id);
                         entry.pending_trigger_price = trigger_price;
                     }
-                    log::info!("Order replaced: old={} new={}", request.oid, resp.oid);
+                    log::debug!("Order replaced: old={} new={}", request.oid, resp.oid);
                 }
                 // No replace failure is an unambiguous rejection (see
                 // `classify_ax_http_failure`); leave the order pending.
@@ -742,7 +742,7 @@ impl ExecutionClient for AxExecutionClient {
         self.spawn_task("cancel_all_orders", async move {
             match http_client.cancel_all_orders(instrument_id).await {
                 Ok(()) => {
-                    log::info!("Canceled all orders for {instrument_id}");
+                    log::debug!("Canceled all orders for {instrument_id}");
 
                     // AX does not push WS cancel confirmations for HTTP-initiated
                     // cancels, so emit OrderCanceled events locally and clean up
@@ -860,7 +860,7 @@ impl ExecutionClient for AxExecutionClient {
     ) -> anyhow::Result<Vec<FillReport>> {
         let mut reports = self
             .http_client
-            .request_fill_reports(self.core.account_id)
+            .request_fill_reports(self.core.account_id, cmd.start, cmd.end)
             .await?;
 
         if let Some(instrument_id) = cmd.instrument_id {
@@ -1109,13 +1109,25 @@ fn dispatch_order_event(
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
         AxWsOrderEvent::Expired(msg) => {
-            if let Some(event) =
+            // AX reports an unfilled IOC/FOK as EXPIRED; Nautilus models those as canceled
+            let as_canceled = matches!(msg.o.tif, AxTimeInForce::Ioc | AxTimeInForce::Fok);
+            let event = if as_canceled {
+                create_order_canceled(&msg.o, msg.ts, msg.tn, caches, account_id, clock)
+                    .map(OrderEventAny::Canceled)
+            } else {
                 create_order_expired(&msg.o, msg.ts, msg.tn, caches, account_id, clock)
-            {
-                emitter.send_order_event(OrderEventAny::Expired(event));
+                    .map(OrderEventAny::Expired)
+            };
+
+            if let Some(event) = event {
+                emitter.send_order_event(event);
             } else if let Some(report) = create_order_status_report(
                 &msg.o,
-                OrderStatus::Expired,
+                if as_canceled {
+                    OrderStatus::Canceled
+                } else {
+                    OrderStatus::Expired
+                },
                 msg.ts,
                 msg.tn,
                 caches,
@@ -1624,18 +1636,23 @@ fn create_fill_report(
 }
 
 fn validate_order_for_ax_submit(order: &OrderAny) -> anyhow::Result<()> {
-    if !matches!(
-        order.order_type(),
-        OrderType::Market | OrderType::Limit | OrderType::StopLimit
-    ) {
+    // AX has no venue-native stop/conditional orders
+    if !matches!(order.order_type(), OrderType::Market | OrderType::Limit) {
         anyhow::bail!(
-            "Unsupported order type: {:?}, AX supports MARKET, LIMIT and STOP_LIMIT",
+            "Unsupported order type: {:?}, AX supports MARKET and LIMIT",
             order.order_type(),
         );
     }
 
-    if order.time_in_force() == TimeInForce::Gtd {
-        anyhow::bail!("Unsupported time in force: GTD, AX supports GTC, IOC, FOK, and DAY");
+    // AX accepts only GTC, IOC and DAY; deny others locally to avoid an opaque venue error
+    if !matches!(
+        order.time_in_force(),
+        TimeInForce::Gtc | TimeInForce::Ioc | TimeInForce::Day
+    ) {
+        anyhow::bail!(
+            "Unsupported time in force: {:?}, AX supports GTC, IOC and DAY",
+            order.time_in_force(),
+        );
     }
 
     AxOrderSide::try_from(order.order_side())
@@ -1687,6 +1704,7 @@ mod tests {
     use std::sync::Arc;
 
     use dashmap::DashMap;
+    use nautilus_common::messages::ExecutionEvent;
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -1703,7 +1721,7 @@ mod tests {
         common::enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
         http::error::AxBuildError,
         websocket::{
-            messages::{AxWsTradeExecution, OrderMetadata},
+            messages::{AxWsOrderExpired, AxWsTradeExecution, OrderMetadata},
             orders::OrdersCaches,
         },
     };
@@ -2025,6 +2043,57 @@ mod tests {
     }
 
     #[rstest]
+    #[case(AxTimeInForce::Ioc, true)]
+    #[case(AxTimeInForce::Fok, true)]
+    #[case(AxTimeInForce::Day, false)]
+    #[case(AxTimeInForce::Gtc, false)]
+    fn test_dispatch_expired_maps_ioc_fok_to_canceled(
+        #[case] tif: AxTimeInForce,
+        #[case] expect_canceled: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let account_id = AccountId::from("AX-001");
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TESTER-001"),
+            account_id,
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(tx);
+
+        let caches = test_caches();
+        let client_order_id = ClientOrderId::from("O-EXP");
+        let instrument_id = InstrumentId::from("BTC-PERP.AX");
+        caches.orders_metadata.insert(
+            client_order_id,
+            test_metadata(client_order_id, instrument_id),
+        );
+        caches
+            .venue_to_client_id
+            .insert(VenueOrderId::new("OID-EXP"), client_order_id);
+
+        let mut order = test_ws_order("OID-EXP", dec!(100.00), 10);
+        order.tif = tif;
+        let event = AxWsOrderEvent::Expired(AxWsOrderExpired {
+            ts: 1609459200,
+            tn: 0,
+            eid: "E-EXP".to_string(),
+            o: order,
+        });
+
+        let instruments: AtomicMap<Ustr, InstrumentAny> = AtomicMap::new();
+        dispatch_order_event(event, &emitter, &caches, account_id, &instruments, clock);
+
+        match rx.try_recv().expect("an order event should be emitted") {
+            ExecutionEvent::Order(OrderEventAny::Canceled(_)) => assert!(expect_canceled),
+            ExecutionEvent::Order(OrderEventAny::Expired(_)) => assert!(!expect_canceled),
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[rstest]
     fn test_create_order_rejected_sets_due_post_only_when_reason_matches() {
         let caches = test_caches();
         let clock = get_atomic_clock_realtime();
@@ -2041,7 +2110,8 @@ mod tests {
             .insert(VenueOrderId::new("OID-REJ"), client_order_id);
 
         let order = test_ws_order("OID-REJ", dec!(100.00), 10);
-        let reason = AX_POST_ONLY_REJECT;
+        // Use the literal venue reason text so this guards the AX_POST_ONLY_REJECT constant
+        let reason = "post-only order would cross the book";
         let event =
             create_order_rejected(&order, reason, 1609459200, 0, &caches, account_id, clock)
                 .expect("should produce OrderRejected");
@@ -2214,7 +2284,37 @@ mod tests {
 
         let err = validate_order_for_ax_submit(&order).unwrap_err();
 
-        assert!(err.to_string().contains("GTD"));
+        assert!(err.to_string().contains("Unsupported time in force"));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_denies_stop_limit_order() {
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .price(Price::from("1.11"))
+            .trigger_price(Price::from("1.10"))
+            .build();
+
+        let err = validate_order_for_ax_submit(&order).unwrap_err();
+
+        assert!(err.to_string().contains("Unsupported order type"));
+    }
+
+    #[rstest]
+    fn test_validate_order_for_ax_submit_denies_fok_time_in_force() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10"))
+            .price(Price::from("1.10"))
+            .time_in_force(TimeInForce::Fok)
+            .build();
+
+        let err = validate_order_for_ax_submit(&order).unwrap_err();
+
+        assert!(err.to_string().contains("Unsupported time in force"));
     }
 
     #[rstest]

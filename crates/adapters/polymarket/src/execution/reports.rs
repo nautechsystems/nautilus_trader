@@ -103,12 +103,12 @@ impl PolymarketExecutionClient {
 
         if order_fills.is_empty() {
             let Some(cached) = cached.as_ref() else {
-                log::info!(
+                log::debug!(
                     "Order {venue_order_id} not active at venue, no trades found, and no cached order; nothing to recover"
                 );
                 return Ok(None);
             };
-            log::info!(
+            log::debug!(
                 "Order {venue_order_id} not active at venue and no trades found; recovering as Canceled"
             );
             let mut report = OrderStatusReport::new(
@@ -133,7 +133,7 @@ impl PolymarketExecutionClient {
         }
 
         let Some(quantity) = cached_quantity else {
-            log::info!(
+            log::debug!(
                 "Order {venue_order_id} has trades but no cached order; deferring to engine"
             );
             return Ok(None);
@@ -158,7 +158,7 @@ impl PolymarketExecutionClient {
         };
         let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
 
-        log::info!(
+        log::debug!(
             "Recovered {} status for {venue_order_id} from {} trade(s) (filled_qty={filled_qty}, quantity={quantity})",
             if order_status == OrderStatus::Filled {
                 "Filled"
@@ -431,7 +431,7 @@ pub(super) async fn fetch_and_emit_account_state(
         .context("failed to parse balance allowance")?;
 
     let ts_event = clock.get_time_ns();
-    log::info!(
+    log::debug!(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );

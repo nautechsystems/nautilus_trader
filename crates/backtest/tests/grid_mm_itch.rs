@@ -49,7 +49,7 @@ fn create_engine(instrument: &InstrumentAny) -> BacktestEngine {
     let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
     let config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
-            max_order_submit: unlimited.clone(),
+            max_order_submit: unlimited,
             max_order_modify: unlimited,
             ..Default::default()
         }),

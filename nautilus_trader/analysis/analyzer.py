@@ -16,6 +16,8 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from uuid import RFC_4122
+from uuid import UUID
 
 import pandas as pd
 from numpy import float64
@@ -47,7 +49,9 @@ class PortfolioAnalyzer:
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
         self._realized_pnls: dict[Currency, pd.Series] = {}
+        self._realized_pnl_timestamps: dict[Currency, pd.Series] = {}
         self._recorded_realized_pnls: dict[Currency, pd.Series] = {}
+        self._recorded_realized_pnl_timestamps: dict[Currency, pd.Series] = {}
         self._position_returns: pd.Series = self._empty_returns()
         self._portfolio_returns: pd.Series = self._empty_returns()
         self._returns: pd.Series = self._empty_returns()
@@ -89,7 +93,9 @@ class PortfolioAnalyzer:
         self._account_balances = {}
         self._positions = []
         self._realized_pnls = {}
+        self._realized_pnl_timestamps = {}
         self._recorded_realized_pnls = {}
+        self._recorded_realized_pnl_timestamps = {}
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
@@ -176,6 +182,7 @@ class PortfolioAnalyzer:
         self._account_balances = account.balances_total()
         self._positions = []
         self._realized_pnls = {}
+        self._realized_pnl_timestamps = {}
         self._position_returns = self._empty_returns()
         self._portfolio_returns = self._empty_returns()
         self._returns = self._empty_returns()
@@ -201,7 +208,7 @@ class PortfolioAnalyzer:
             if position.realized_pnl is None:
                 continue  # Skip empty shell positions
 
-            self.add_trade(position.id, position.realized_pnl)
+            self.add_trade(position.id, position.realized_pnl, position.ts_last)
 
             if position.ts_closed > 0:
                 self.add_position_return(
@@ -209,7 +216,12 @@ class PortfolioAnalyzer:
                     position.realized_return,
                 )
 
-    def add_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
+    def add_trade(
+        self,
+        position_id: PositionId,
+        realized_pnl: Money,
+        ts_event: int | None = None,
+    ) -> None:
         """
         Add trade data to the analyzer.
 
@@ -219,14 +231,24 @@ class PortfolioAnalyzer:
             The position ID for the trade.
         realized_pnl : Money
             The realized PnL for the trade.
+        ts_event : int, optional
+            The event timestamp for the realized PnL.
 
         """
-        currency = realized_pnl.currency
-        realized_pnls = self._realized_pnls.get(currency, pd.Series(dtype=float64))
-        realized_pnls.loc[position_id.value] = realized_pnl.as_double()
-        self._realized_pnls[currency] = realized_pnls
+        self._append_pnl_record(
+            pnls=self._realized_pnls,
+            timestamps=self._realized_pnl_timestamps,
+            position_id=position_id,
+            realized_pnl=realized_pnl,
+            ts_event=ts_event,
+        )
 
-    def record_trade(self, position_id: PositionId, realized_pnl: Money) -> None:
+    def record_trade(
+        self,
+        position_id: PositionId,
+        realized_pnl: Money,
+        ts_event: int | None = None,
+    ) -> None:
         """
         Record realized PnL observed during portfolio processing.
 
@@ -236,19 +258,48 @@ class PortfolioAnalyzer:
             The position ID for the trade.
         realized_pnl : Money
             The realized PnL for the trade.
+        ts_event : int, optional
+            The event timestamp for the realized PnL.
 
         """
+        self._append_pnl_record(
+            pnls=self._recorded_realized_pnls,
+            timestamps=self._recorded_realized_pnl_timestamps,
+            position_id=position_id,
+            realized_pnl=realized_pnl,
+            ts_event=ts_event,
+        )
+
+    def _append_pnl_record(
+        self,
+        pnls: dict[Currency, pd.Series],
+        timestamps: dict[Currency, pd.Series],
+        position_id: PositionId,
+        realized_pnl: Money,
+        ts_event: int | None,
+    ) -> None:
         currency = realized_pnl.currency
         trade_pnl = pd.Series(
             [realized_pnl.as_double()],
             index=[position_id.value],
             dtype=float64,
         )
-        realized_pnls = self._recorded_realized_pnls.get(currency)
-        realized_pnls = (
-            trade_pnl if realized_pnls is None else pd.concat([realized_pnls, trade_pnl])
+        existing_pnls = pnls.get(currency)
+        pnls[currency] = (
+            trade_pnl if existing_pnls is None else pd.concat([existing_pnls, trade_pnl])
         )
-        self._recorded_realized_pnls[currency] = realized_pnls
+
+        trade_timestamp = pd.Series(
+            [int(ts_event) if ts_event is not None else None],
+            index=[position_id.value],
+            dtype=object,
+        )
+        existing_timestamps = timestamps.get(currency)
+        timestamps[currency] = (
+            trade_timestamp
+            if existing_timestamps is None
+            else pd.concat([existing_timestamps, trade_timestamp])
+        )
 
     def add_position_return(self, timestamp: datetime, value: float) -> None:
         """
@@ -316,6 +367,8 @@ class PortfolioAnalyzer:
 
         realized_pnls = self._realized_pnls.get(currency)
         recorded_realized_pnls = self._recorded_realized_pnls.get(currency)
+        realized_timestamps = self._realized_pnl_timestamps.get(currency)
+        recorded_timestamps = self._recorded_realized_pnl_timestamps.get(currency)
 
         if realized_pnls is None:
             return recorded_realized_pnls
@@ -323,11 +376,76 @@ class PortfolioAnalyzer:
         if recorded_realized_pnls is None:
             return realized_pnls
 
-        output = realized_pnls.drop(
-            recorded_realized_pnls.index.unique(),
-            errors="ignore",
-        )
+        recorded_keys = self._pnl_record_keys(recorded_realized_pnls, recorded_timestamps)
+        timestamps = self._timestamp_values(realized_pnls, realized_timestamps)
+        unrecorded = []
+
+        for position_id, ts_event in zip(realized_pnls.index, timestamps, strict=True):
+            unrecorded.append(
+                not self._pnl_recorded(
+                    position_id=position_id,
+                    ts_event=ts_event,
+                    recorded_keys=recorded_keys,
+                ),
+            )
+
+        output = realized_pnls.loc[unrecorded]
         return pd.concat([output, recorded_realized_pnls])
+
+    @classmethod
+    def _pnl_record_keys(
+        cls,
+        records: pd.Series,
+        timestamps: pd.Series | None,
+    ) -> set[tuple[str, int | None]]:
+        return {
+            (cls._canonical_position_id_value(position_id), ts_event)
+            for position_id, ts_event in zip(
+                records.index,
+                cls._timestamp_values(records, timestamps),
+                strict=True,
+            )
+        }
+
+    @classmethod
+    def _pnl_recorded(
+        cls,
+        position_id: str,
+        ts_event: int | None,
+        recorded_keys: set[tuple[str, int | None]],
+    ) -> bool:
+        canonical_position_id = cls._canonical_position_id_value(position_id)
+        if ts_event is None:
+            return any(recorded_id == canonical_position_id for recorded_id, _ in recorded_keys)
+
+        return (canonical_position_id, ts_event) in recorded_keys or (
+            canonical_position_id,
+            None,
+        ) in recorded_keys
+
+    @staticmethod
+    def _timestamp_values(records: pd.Series, timestamps: pd.Series | None) -> list[int | None]:
+        if timestamps is None or len(timestamps) != len(records):
+            return [None] * len(records)
+
+        return [int(timestamp) if timestamp is not None else None for timestamp in timestamps]
+
+    @staticmethod
+    def _canonical_position_id_value(position_id: str) -> str:
+        uuid4_string_len = 36
+        separator_index = len(position_id) - uuid4_string_len - 1
+        if separator_index < 1 or position_id[separator_index] != "-":
+            return position_id
+
+        try:
+            parsed_uuid = UUID(position_id[separator_index + 1 :])
+        except ValueError:
+            return position_id
+
+        if parsed_uuid.version == 4 and parsed_uuid.variant == RFC_4122:
+            return position_id[:separator_index]
+
+        return position_id
 
     def total_pnl(
         self,

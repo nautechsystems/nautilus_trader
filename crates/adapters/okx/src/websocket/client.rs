@@ -908,7 +908,7 @@ impl OKXWebSocketClient {
             .await
         {
             Ok(()) => {
-                log::info!("WebSocket authenticated");
+                log::debug!("WebSocket authenticated");
                 Ok(())
             }
             Err(e) => {

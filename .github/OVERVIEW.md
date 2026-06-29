@@ -24,10 +24,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 - **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
   wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
-  release attestations, registry verification, release checksum publication, and final GitHub
-  release publication and attestation verification. Uses Depot 8-core runners for Linux and Windows
-  builds. Includes a plan step that skips builds on docs-only changes and skips Rust tests on
-  Python-only changes.
+  release preflights, release attestations, registry verification, release checksum publication,
+  final release asset verification, and final GitHub release publication and attestation
+  verification. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that
+  skips builds on docs-only changes and skips Rust tests on Python-only changes.
 - **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux builds on the self-hosted `build-v2` pool.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
@@ -108,17 +108,18 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   OIDC trusted publishing. The trusted publisher on crates.io must be configured per crate for
   repo `nautechsystems/nautilus_trader`, workflow `build.yml`, and environment `release`; the
   job uses a short-lived token from `rust-lang/crates-io-auth-action` and no long-lived cargo token.
-- **Post-publish verification**: `publish-release-integrity` verifies PyPI files against
-  `dist-manifest.json`, verifies PyPI provenance publisher metadata, and verifies crates.io entries
-  were trusted-published by this repository. These verifier calls retry transient
-  Sigstore/Rekor/TUF lag, while provenance and identity mismatches fail fast. The job records
-  whether each crate matches the release commit, was already published, or matched an explicit
-  `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry for emergency token-publish
-  recovery. Manual entries are recorded in `crates-manifest.json` with
+- **Post-publish verification**: `publish-release-integrity` generates the release manifest, then
+  verifies PyPI files against `dist-manifest.json`, verifies PyPI provenance publisher metadata, and
+  verifies crates.io entries were trusted-published by this repository before attaching checksum
+  assets to the draft release. These verifier calls retry transient Sigstore/Rekor/TUF lag, while
+  provenance and identity mismatches fail fast. The job records whether each crate matches the
+  release commit, was already published, or matched an explicit
+  `CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS` `crate@version` entry for emergency token-publish recovery.
+  Manual entries are recorded in `crates-manifest.json` with
   `release_status: "manual_token_publish"`. Malformed or unused exception entries fail the job. The
   job uploads `crates-manifest.json`, attaches attestation siblings, and cleans up release workflow
-  artifacts. `publish-github-release` then publishes the draft release and verifies GitHub's
-  release attestation.
+  artifacts. `publish-github-release` verifies the final draft asset set, publishes the draft
+  release, and verifies GitHub's release attestation.
 - **Caching**: Rust target directory cache (`Swatinem/rust-cache`), prek hook environments, and test
   data caches speed up workflows while preserving hermetic builds. Rust cache saves are restricted
   to push events to prevent PR cache pollution.

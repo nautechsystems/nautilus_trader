@@ -534,7 +534,7 @@ As of the current state of this repository:
 
 ## Further reading
 
-- `.pre-commit-hooks/check_dst_conventions.sh` defines the five enforcement rules in full and
+- `.pre-commit-hooks/check_dst_conventions.sh` defines the six enforcement rules in full and
   documents the `// dst-ok` marker convention.
 - External references: the [FoundationDB testing
   philosophy](https://apple.github.io/foundationdb/testing.html), the [TigerBeetle simulation

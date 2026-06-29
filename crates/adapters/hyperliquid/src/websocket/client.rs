@@ -250,7 +250,7 @@ impl HyperliquidWebSocketClient {
         self.out_rx = Some(out_rx);
 
         self.connection_mode.store(client.connection_mode_atomic());
-        log::info!("Hyperliquid WebSocket connected: {}", self.url);
+        log::debug!("Hyperliquid WebSocket connected: {}", self.url);
 
         // Send SetClient command immediately
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
@@ -390,7 +390,7 @@ impl HyperliquidWebSocketClient {
 
     /// Disconnects the WebSocket connection.
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {
-        log::info!("Disconnecting Hyperliquid WebSocket");
+        log::debug!("Disconnecting Hyperliquid WebSocket");
         self.signal.store(true, Ordering::Relaxed);
 
         if let Err(e) = self.cmd_tx.read().await.send(HandlerCommand::Disconnect) {
@@ -975,7 +975,7 @@ impl HyperliquidWebSocketClient {
         }
         let count = map.len();
         self.instruments.store(map);
-        log::info!("Hyperliquid instrument cache initialized with {count} instruments");
+        log::debug!("Hyperliquid instrument cache initialized with {count} instruments");
     }
 
     /// Caches a single instrument.

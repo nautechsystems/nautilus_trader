@@ -51,7 +51,8 @@ ignored = [
 ] # Optional dep activated only via the python feature
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = ["examples"]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]

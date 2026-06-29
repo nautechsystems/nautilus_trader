@@ -165,6 +165,12 @@ impl PluginManifest {
     pub fn validate(&self) -> Result<(), PluginManifestValidationErrors> {
         let mut errors = PluginManifestValidationErrors::default();
 
+        if self.abi_version != NAUTILUS_PLUGIN_ABI_VERSION {
+            errors.push(format!(
+                "abi_version {} does not match supported ABI {}",
+                self.abi_version, NAUTILUS_PLUGIN_ABI_VERSION
+            ));
+        }
         validate_required_str("plugin_name", self.plugin_name, &mut errors);
         validate_optional_str("plugin_vendor", self.plugin_vendor, &mut errors);
         validate_required_str("plugin_version", self.plugin_version, &mut errors);
@@ -256,6 +262,8 @@ fn validate_optional_str<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::ptr;
+
     use rstest::rstest;
 
     use super::*;
@@ -291,6 +299,24 @@ mod tests {
     }
 
     #[rstest]
+    fn validate_rejects_mismatched_abi() {
+        let manifest = PluginManifest {
+            abi_version: NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1),
+            ..valid_manifest()
+        };
+
+        let errors = manifest.validate().unwrap_err();
+        assert_eq!(
+            errors.messages(),
+            &[format!(
+                "abi_version {} does not match supported ABI {}",
+                NAUTILUS_PLUGIN_ABI_VERSION.wrapping_add(1),
+                NAUTILUS_PLUGIN_ABI_VERSION
+            )]
+        );
+    }
+
+    #[rstest]
     fn validate_rejects_missing_name() {
         let manifest = PluginManifest {
             plugin_name: BorrowedStr::empty(),
@@ -319,6 +345,107 @@ mod tests {
                 PLUGIN_BUILD_ID_VERSION.wrapping_add(1),
                 PLUGIN_BUILD_ID_VERSION
             )]
+        );
+    }
+
+    #[rstest]
+    fn validate_rejects_null_pointer_with_nonzero_length() {
+        let mut plugin_name = BorrowedStr::from_str("x");
+        plugin_name.ptr = ptr::null();
+        plugin_name.len = 1;
+        let manifest = PluginManifest {
+            plugin_name,
+            ..valid_manifest()
+        };
+
+        let errors = manifest.validate().unwrap_err();
+        assert_eq!(
+            errors.messages(),
+            &["plugin_name has null pointer with non-zero length 1"]
+        );
+    }
+
+    #[rstest]
+    fn validate_rejects_invalid_utf8() {
+        static INVALID_UTF8: [u8; 1] = [0xFF];
+        let mut plugin_name = BorrowedStr::empty();
+        plugin_name.ptr = INVALID_UTF8.as_ptr();
+        plugin_name.len = INVALID_UTF8.len();
+        let manifest = PluginManifest {
+            plugin_name,
+            ..valid_manifest()
+        };
+
+        let errors = manifest.validate().unwrap_err();
+        assert!(errors.messages()[0].starts_with("plugin_name is not valid UTF-8:"));
+    }
+
+    #[rstest]
+    fn validate_rejects_mismatched_precision_mode() {
+        let wrong_precision_mode = match compiled_precision_mode() {
+            "standard" => "high-precision",
+            _ => "standard",
+        };
+        let manifest = PluginManifest {
+            build_id: PluginBuildId {
+                precision_mode: BorrowedStr::from_str(wrong_precision_mode),
+                ..PluginBuildId::current()
+            },
+            ..valid_manifest()
+        };
+
+        let errors = manifest.validate().unwrap_err();
+        assert_eq!(
+            errors.messages(),
+            &[format!(
+                "build_id.precision_mode '{wrong_precision_mode}' does not match host precision mode '{}'",
+                compiled_precision_mode()
+            )]
+        );
+    }
+
+    #[rstest]
+    fn validate_rejects_mismatched_fixed_precision() {
+        let manifest = PluginManifest {
+            build_id: PluginBuildId {
+                fixed_precision: FIXED_PRECISION.wrapping_add(1),
+                ..PluginBuildId::current()
+            },
+            ..valid_manifest()
+        };
+
+        let errors = manifest.validate().unwrap_err();
+        assert_eq!(
+            errors.messages(),
+            &[format!(
+                "build_id.fixed_precision {} does not match host fixed precision {}",
+                FIXED_PRECISION.wrapping_add(1),
+                FIXED_PRECISION
+            )]
+        );
+    }
+
+    #[rstest]
+    fn validation_errors_display_joins_messages() {
+        let mut errors = PluginManifestValidationErrors::default();
+        assert!(errors.is_empty());
+        errors.push("first");
+        errors.push("second");
+
+        assert!(!errors.is_empty());
+        assert_eq!(errors.to_string(), "first; second");
+    }
+
+    #[rstest]
+    fn current_build_id_matches_compiled_precision() {
+        let build_id = PluginBuildId::current();
+
+        assert_eq!(build_id.schema_version, PLUGIN_BUILD_ID_VERSION);
+        assert_eq!(build_id.fixed_precision, FIXED_PRECISION);
+        // SAFETY: build ID strings are process-lifetime static strings.
+        assert_eq!(
+            unsafe { build_id.precision_mode.as_str() },
+            compiled_precision_mode()
         );
     }
 }

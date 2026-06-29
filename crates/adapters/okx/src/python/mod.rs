@@ -130,6 +130,7 @@ pub fn okx(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::common::enums::OKXPositionMode>()?;
     m.add_class::<crate::common::enums::OKXVipLevel>()?;
     m.add_class::<crate::common::enums::OKXEnvironment>()?;
+    m.add_class::<crate::common::enums::OKXRegion>()?;
     m.add_class::<crate::common::urls::OKXEndpointType>()?;
     m.add_class::<OKXDataClientConfig>()?;
     m.add_class::<OKXExecClientConfig>()?;

@@ -254,7 +254,7 @@ impl TardisHttpClient {
         let mut nautilus_instruments: Vec<InstrumentAny> = Vec::new();
 
         for exchange in exchanges {
-            log::info!("Fetching instruments for {exchange}");
+            log::debug!("Fetching instruments for {exchange}");
 
             let instruments_info = match self.instruments_info(*exchange, None, None).await {
                 Ok(info) => info,
@@ -264,7 +264,7 @@ impl TardisHttpClient {
                 }
             };
 
-            log::info!(
+            log::debug!(
                 "Received {} instruments for {exchange}",
                 instruments_info.len()
             );

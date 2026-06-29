@@ -391,7 +391,7 @@ fn create_test_config(addr: SocketAddr) -> BybitDataClientConfig {
         heartbeat_interval_secs: 5,
         recv_window_ms: 5000,
         update_instruments_interval_mins: None,
-        instrument_status_poll_secs: None,
+        instrument_poll_interval_secs: None,
         transport_backend: Default::default(),
     }
 }

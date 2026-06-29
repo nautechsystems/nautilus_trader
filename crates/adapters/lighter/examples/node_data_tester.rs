@@ -58,10 +58,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         AggregationSource::External,
     )];
 
-    let lighter_config = LighterDataClientConfig {
-        environment: LIGHTER_ENVIRONMENT,
-        ..Default::default()
-    };
+    let lighter_config = LighterDataClientConfig::builder()
+        .environment(LIGHTER_ENVIRONMENT)
+        .build();
 
     let client_factory = LighterDataClientFactory::new();
     let client_id = ClientId::new(CLIENT_ID);

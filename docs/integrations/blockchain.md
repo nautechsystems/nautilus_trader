@@ -80,10 +80,10 @@ cache database path.
 Set the HyperSync token and RPC URLs outside the repository. Do not commit `.env` files containing
 secrets.
 
-```fish
-set -x ENVIO_API_TOKEN "<envio-token>"
-set -x RPC_HTTP_URL "https://your-rpc.example"
-set -x RPC_WSS_URL "wss://your-rpc.example"
+```bash
+export ENVIO_API_TOKEN="<envio-token>"
+export RPC_HTTP_URL="https://your-rpc.example"
+export RPC_WSS_URL="wss://your-rpc.example"
 ```
 
 For local `.env` usage:
@@ -132,7 +132,7 @@ For other chains or archive access, use a directory such as [chainlist.org](http
 
 The development compose file starts Postgres, Redis, and pgAdmin.
 
-```fish
+```bash
 make start-services
 make init-db
 ```
@@ -142,7 +142,7 @@ The default Postgres service listens on `127.0.0.1:5432` with database `nautilus
 
 Check that the schema exists:
 
-```fish
+```bash
 docker exec nautilus-database psql -U nautilus -d nautilus -Atc \
     "select count(*) from information_schema.tables where table_schema='public'"
 ```
@@ -260,7 +260,7 @@ target block before syncing pool events. If no usable snapshot exists, or the on
 empty creation-block snapshot with no positions or ticks, it returns `needs_bootstrap` and skips the
 creation-to-target bootstrap for that pool.
 
-```fish
+```bash
 nautilus blockchain analyze-pools \
     --chain ethereum \
     --dex UniswapV3 \
@@ -381,7 +381,7 @@ structural state (tick, liquidity, ticks, positions) still validates to `on_chai
 
 ### HyperSync authentication
 
-```fish
+```bash
 curl -fsS --max-time 15 \
     -H "Authorization: Bearer $ENVIO_API_TOKEN" \
     https://1.hypersync.xyz/height
@@ -391,12 +391,8 @@ Expected result: JSON with a numeric `height`.
 
 ### Small HyperSync query
 
-```fish
-set query (string join '' \
-    '{"from_block":25170900,' \
-    '"to_block":25170901,' \
-    '"include_all_blocks":true,' \
-    '"field_selection":{"block":["number","timestamp","hash"]}}')
+```bash
+query='{"from_block":25170900,"to_block":25170901,"include_all_blocks":true,"field_selection":{"block":["number","timestamp","hash"]}}'
 
 curl -sS --max-time 30 \
     -H "Authorization: Bearer $ENVIO_API_TOKEN" \
@@ -411,7 +407,7 @@ Expected result: HTTP `200` with a non-zero response size.
 
 ### Adapter compile check
 
-```fish
+```bash
 cargo check -p nautilus-blockchain --features hypersync
 ```
 
@@ -421,7 +417,7 @@ This ignored test uses real HyperSync replay for the Ethereum WETH/USDT Uniswap 
 deliberately invalid local HTTP RPC URL. It verifies that final RPC hydration failure returns an
 error instead of allowing a stale snapshot through the construction path.
 
-```fish
+```bash
 cargo test -p nautilus-blockchain --features hypersync \
     live_hypersync_bootstrap_fails_closed_when_rpc_hydration_fails \
     -- --ignored --nocapture
@@ -532,7 +528,7 @@ about 935 pools).
 Discover pools first (cheap: `PoolCreated` is sparse, token metadata batches through Multicall3),
 then analyze specific pools:
 
-```fish
+```bash
 ./target/debug/nautilus blockchain sync-dex --chain arbitrum --dex PancakeSwapV3 \
     --rpc-url https://arb1.arbitrum.io/rpc \
     --host 127.0.0.1 --port 5432 --username nautilus --password pass --database nautilus

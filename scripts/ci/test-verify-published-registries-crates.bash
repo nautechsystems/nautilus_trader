@@ -63,6 +63,36 @@ set -euo pipefail
 
 mode="${PYPI_VERIFY_MOCK_MODE:-success}"
 count=1
+provenance_file=""
+runs_pypi_attestations=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    pypi-attestations)
+      runs_pypi_attestations=1
+      shift
+      ;;
+    --provenance-file)
+      provenance_file="${2:-}"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [[ "$runs_pypi_attestations" -eq 1 &&
+  "${PYPI_VERIFY_REQUIRE_PROVENANCE_FILE:-1}" == "1" ]]; then
+  if [[ -z "$provenance_file" ]]; then
+    echo "pypi-attestations verify was not passed --provenance-file" >&2
+    exit 2
+  fi
+  if [[ ! -s "$provenance_file" ]]; then
+    echo "pypi-attestations verify received a missing provenance file" >&2
+    exit 2
+  fi
+fi
 
 if [[ -n "${PYPI_VERIFY_ATTEMPT_FILE:-}" ]]; then
   count=0
@@ -184,8 +214,13 @@ JSON
   https://example.invalid/nautilus_trader-1.2.3.tar.gz)
     cp "$PYTHON_ARTIFACT_FILE" "$output"
     ;;
-  https://pypi.org/integrity/nautilus_trader/1.2.3/nautilus_trader-1.2.3.tar.gz/provenance)
-    record_attempt pypi-provenance > /dev/null
+  https://pypi.org/integrity/nautilus_trader/1.2.3/nautilus_trader-1.2.3.tar.gz/provenance*)
+    pypi_provenance_attempt="$(record_attempt pypi-provenance)"
+    if [[ "$pypi_provenance_attempt" -le "${PYPI_PROVENANCE_404_ATTEMPTS:-0}" ]]; then
+      echo "curl: (22) The requested URL returned error: 404" >&2
+      exit 22
+    fi
+
     if [[ "${PYPI_PROVENANCE_MISMATCH:-0}" == "1" ]]; then
       cat > "$output" <<'JSON'
 {"attestation_bundles":[{"publisher":{"kind":"GitHub","repository":"wrong/repo","workflow":"release.yml","environment":"staging"}}]}
@@ -321,10 +356,14 @@ run_pypi_transient_case() {
     PYPI_VERIFY_MOCK_MODE="$mode" \
     PYPI_VERIFY_ATTEMPT_FILE="$attempt_file" \
     PYPI_ATTESTATION_VERIFY_ATTEMPTS=4 \
+    CURL_ATTEMPT_NAMESPACE="$mode" \
     > "$output" 2>&1
 
   if [[ "$(cat "$attempt_file")" != "$expected_attempts" ]]; then
     fail "${mode} PyPI verifier case used the wrong attempt count."
+  fi
+  if [[ "$(curl_attempt_count "$mode" pypi-provenance)" != "$expected_attempts" ]]; then
+    fail "${mode} PyPI verifier case did not refetch provenance on each attempt."
   fi
   if ! grep -q "$success_text" "$output"; then
     fail "${mode} PyPI verifier case did not print the verifier success output."
@@ -350,6 +389,30 @@ run_pypi_transient_case \
   transient-tuf \
   2 \
   "PyPI attestation TUF verification succeeded."
+
+pypi_provenance_404_assets="${work_dir}/release-pypi-provenance-404"
+write_dist_manifest "$pypi_provenance_404_assets"
+pypi_provenance_404_attempts="${work_dir}/pypi-provenance-404-uv-attempts.txt"
+pypi_provenance_404_output="${work_dir}/pypi-provenance-404-output.txt"
+run_verifier \
+  "$pypi_provenance_404_assets" \
+  CRATE_PUBLISHER_MODE=trusted \
+  PYPI_PROVENANCE_404_ATTEMPTS=2 \
+  PYPI_VERIFY_ATTEMPT_FILE="$pypi_provenance_404_attempts" \
+  PYPI_ATTESTATION_VERIFY_ATTEMPTS=4 \
+  CURL_ATTEMPT_NAMESPACE=pypi-provenance-404 \
+  > "$pypi_provenance_404_output" 2>&1
+
+if [[ "$(curl_attempt_count pypi-provenance-404 pypi-provenance)" != "3" ]]; then
+  fail "PyPI provenance 404 case should succeed on the third provenance fetch."
+fi
+if [[ "$(cat "$pypi_provenance_404_attempts")" != "1" ]]; then
+  fail "PyPI provenance 404 case should run pypi-attestations verify once."
+fi
+if ! grep -q "retryable verification error" "$pypi_provenance_404_output"; then
+  fail "PyPI provenance 404 case did not report a retryable verification error."
+fi
+assert_current_release_crates_manifest "$pypi_provenance_404_assets"
 
 pypi_provenance_mismatch_assets="${work_dir}/release-pypi-provenance-mismatch"
 write_dist_manifest "$pypi_provenance_mismatch_assets"

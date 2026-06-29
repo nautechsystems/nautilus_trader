@@ -177,7 +177,7 @@ impl InteractiveBrokersExecutionClient {
             )))
             .map_err(|e| anyhow::anyhow!("Failed to send order accepted event: {e}"))?;
 
-        tracing::info!(
+        tracing::debug!(
             "Submitted order {} as IB order ID {}",
             cmd.order_init.client_order_id,
             ib_order_id
@@ -232,7 +232,7 @@ impl InteractiveBrokersExecutionClient {
                 .await
                 .context("Failed to submit modified order")?;
 
-            tracing::info!(
+            tracing::debug!(
                 "Modified order {} (IB order ID: {})",
                 cmd.client_order_id,
                 ib_order_id
@@ -362,7 +362,7 @@ impl InteractiveBrokersExecutionClient {
                         .await
                         .context("Failed to submit modified open order")?;
 
-                    tracing::info!(
+                    tracing::debug!(
                         "Modified open order {} (IB order ID: {}) after cache miss",
                         cmd.client_order_id,
                         ib_order_id
@@ -526,7 +526,7 @@ impl InteractiveBrokersExecutionClient {
                 )))
                 .map_err(|e| anyhow::anyhow!("Failed to send order accepted event: {e}"))?;
 
-            tracing::info!(
+            tracing::debug!(
                 "Submitted order {} from list as IB order ID {}",
                 order.client_order_id(),
                 ib_order_id,

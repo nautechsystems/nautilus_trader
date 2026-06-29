@@ -14,7 +14,7 @@ and system-level factories for creating components:
 
 - `NautilusKernel` - Core system orchestrator managing engines and components.
 - `NautilusKernelConfig` - Configuration for kernel initialization.
-- System builders and factories for component creation.
+- System builders and factories for component creation, including caller-supplied clock construction for live/sandbox systems.
 
 ## NautilusTrader
 

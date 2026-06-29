@@ -36,6 +36,9 @@ from nautilus_trader.analysis import RiskReturnRatio
 from nautilus_trader.analysis import SharpeRatio
 from nautilus_trader.analysis import SortinoRatio
 from nautilus_trader.analysis import WinRate
+from nautilus_trader.model import Currency
+from nautilus_trader.model import Money
+from nautilus_trader.model import PositionId
 
 
 NO_ARG_STATISTICS = [
@@ -176,3 +179,45 @@ def test_portfolio_analyzer_formatted_stats_empty():
     assert analyzer.get_stats_position_returns_formatted() == []
     assert analyzer.get_stats_portfolio_returns_formatted() == []
     assert analyzer.get_stats_general_formatted() == []
+
+
+def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias():
+    analyzer = PortfolioAnalyzer()
+    usd = Currency.from_str("USD")
+    position_id = PositionId("P-1")
+    snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
+
+    analyzer.add_trade(snapshot_id, 1, Money(10.0, usd))
+    analyzer.record_trade(position_id, 1, Money(10.0, usd))
+
+    pnls = analyzer.realized_pnls(usd)
+
+    assert pnls == [(position_id.value, 1, 10.0)]
+
+
+def test_portfolio_analyzer_realized_pnls_drops_recorded_snapshot_alias_without_timestamp():
+    analyzer = PortfolioAnalyzer()
+    usd = Currency.from_str("USD")
+    position_id = PositionId("P-1")
+    snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
+
+    analyzer.add_trade(snapshot_id, 0, Money(10.0, usd))
+    analyzer.record_trade(position_id, 0, Money(10.0, usd))
+
+    pnls = analyzer.realized_pnls(usd)
+
+    assert pnls == [(position_id.value, 0, 10.0)]
+
+
+def test_portfolio_analyzer_realized_pnls_keeps_unrecorded_snapshot_cycle():
+    analyzer = PortfolioAnalyzer()
+    usd = Currency.from_str("USD")
+    position_id = PositionId("P-1")
+    snapshot_id = PositionId(f"{position_id.value}-00000000-0000-4000-8000-000000000001")
+
+    analyzer.add_trade(snapshot_id, 1, Money(10.0, usd))
+    analyzer.record_trade(position_id, 2, Money(25.0, usd))
+
+    pnls = analyzer.realized_pnls(usd)
+
+    assert pnls == [(snapshot_id.value, 1, 10.0), (position_id.value, 2, 25.0)]

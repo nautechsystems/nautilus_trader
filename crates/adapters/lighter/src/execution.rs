@@ -41,7 +41,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     enums::LogColor,
     live::{runner::get_exec_event_sender, runtime::get_runtime},
-    log_info,
+    log_debug,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -64,7 +64,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Price, Quantity},
+    types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
@@ -424,7 +424,7 @@ impl LighterExecutionClient {
         let (active_rest, cross_check) =
             tier_quota_report(tier, self.config.rest_quota_per_min, standard_rest);
 
-        log_info!(
+        log_debug!(
             "Lighter execution account {account_index} reported tier {tier} \
              (account_type={code}); active REST quota {active_rest} req/min",
             color = LogColor::Blue
@@ -439,7 +439,7 @@ impl LighterExecutionClient {
                 );
             }
             Some(TierCrossCheck::RaiseHint { documented }) => {
-                log_info!(
+                log_debug!(
                     "Lighter {tier} tier permits up to {documented} REST req/min; set \
                      rest_quota_per_min (and register the caller IP with Lighter) to use it",
                     color = LogColor::Blue
@@ -925,7 +925,7 @@ impl LighterExecutionClient {
                                                 credential.api_key_index(),
                                                 response.nonce,
                                             );
-                                            log::info!(
+                                            log::debug!(
                                                 "Hard-refreshed Lighter nonce after invalid-nonce \
                                                  rejection: account_index={}, next_nonce={}",
                                                 credential.account_index(),
@@ -1136,7 +1136,7 @@ impl LighterExecutionClient {
                         api_key_index,
                         response.nonce,
                     );
-                    log::info!(
+                    log::debug!(
                         "Resynced Lighter nonce baseline after skip-window exhaustion: \
                          account_index={account_index}, api_key_index={api_key_index}, \
                          next_nonce={}",
@@ -1688,20 +1688,39 @@ impl LighterExecutionClient {
             .clone();
 
         let new_qty = cmd.quantity.unwrap_or(order.quantity());
-        let new_price = cmd.price.or(order.price()).ok_or_else(|| {
-            anyhow::anyhow!("modify_order requires a price (none on order or command)")
-        })?;
-        let new_trigger = cmd
-            .trigger_price
-            .or(order.trigger_price())
-            .unwrap_or(Price::from_raw(0, instrument.price_precision()));
+        let price_precision = instrument.price_precision();
+        let new_trigger = cmd.trigger_price.or(order.trigger_price());
+
+        // Market-style stops carry no limit price; Lighter still needs a worst-
+        // acceptable `price` cap, derived from the trigger and slippage like submit.
+        let price_ticks = match order.order_type() {
+            OrderType::StopMarket | OrderType::MarketIfTouched => {
+                let trigger = new_trigger.ok_or_else(|| {
+                    anyhow::anyhow!("{:?} orders require a trigger_price", order.order_type())
+                })?;
+                let is_buy = matches!(order.order_side(), OrderSide::Buy);
+                let slippage_bps = self.resolve_slippage_bps(cmd.params.as_ref());
+
+                derive_market_order_price_ticks(
+                    trigger.as_decimal(),
+                    is_buy,
+                    price_precision,
+                    slippage_bps,
+                )?
+            }
+            _ => {
+                let new_price = cmd.price.or(order.price()).ok_or_else(|| {
+                    anyhow::anyhow!("modify_order requires a price (none on order or command)")
+                })?;
+
+                price_to_ticks(&new_price, price_precision)?
+            }
+        };
 
         let base_amount = quantity_to_ticks(&new_qty, instrument.size_precision())?;
-        let price_ticks = price_to_ticks(&new_price, instrument.price_precision())?;
-        let trigger_price_ticks = if new_trigger.raw == 0 {
-            0
-        } else {
-            price_to_ticks(&new_trigger, instrument.price_precision())?
+        let trigger_price_ticks = match new_trigger {
+            Some(trigger) if trigger.raw != 0 => price_to_ticks(&trigger, price_precision)?,
+            _ => 0,
         };
 
         let ReservedTxContext {
@@ -1711,6 +1730,7 @@ impl LighterExecutionClient {
 
         let captured_nonce = context.nonce;
         let captured_api_key_index = context.api_key_index;
+
         let mut rollback_guard =
             TxDispatchGuard::new(self.dispatch.clone(), credential, None, captured_nonce);
         let tx = ModifyOrderTxInfo {
@@ -2716,7 +2736,7 @@ async fn resync_nonce_after_invalid_nonce(
                 credential.api_key_index(),
                 response.nonce,
             );
-            log::info!(
+            log::debug!(
                 "Hard-refreshed Lighter nonce after invalid-nonce batch rejection: \
                  account_index={}, next_nonce={}",
                 credential.account_index(),
@@ -4545,7 +4565,7 @@ mod tests {
         },
         instruments::CryptoPerpetual,
         orders::{LimitOrder, OrderList},
-        types::{Currency, Money},
+        types::{Currency, Money, Price},
     };
     use rstest::rstest;
 
@@ -6609,6 +6629,73 @@ mod tests {
                 .is_err(),
             "prepare failure must emit exactly one modify rejection",
         );
+    }
+
+    #[tokio::test]
+    async fn modify_stop_market_derives_price_from_trigger_without_explicit_price() {
+        // A trigger-only STOP_MARKET carries no limit price; modifying its trigger
+        // must derive the wire cap from the trigger rather than trip the price
+        // guard. Prepare succeeds, so the only failure here is the test harness's
+        // missing WS send handler.
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let mut factory = test_order_factory();
+        let order = factory.stop_market(
+            instrument_id,
+            OrderSide::Sell,
+            Quantity::from("0.1000"),
+            Price::from("2300.00"), // trigger
+            None,
+            Some(TimeInForce::Gtc),
+            None,
+            Some(false),
+            Some(false),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(ClientOrderId::from("O-MODIFY-STOP-MARKET")),
+        );
+        let client_order_id = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("123");
+        cache_order(&cache, order);
+
+        let command = ModifyOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            None,
+            None,
+            Some(Price::from("2310.00")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(command).unwrap();
+
+        let rejected = recv_order_event(&mut rx).await;
+        match rejected {
+            OrderEventAny::ModifyRejected(event) => {
+                assert!(
+                    !event.reason.as_str().contains("requires a price"),
+                    "trigger-only stop modify must not trip the price guard, was: {}",
+                    event.reason,
+                );
+                assert!(
+                    event.reason.as_str().contains("dispatch failed"),
+                    "expected send-stage failure after a successful prepare, was: {}",
+                    event.reason,
+                );
+            }
+            event => panic!("expected modify rejected event, was {event:?}"),
+        }
+        assert_nonce_reusable(&client.dispatch);
     }
 
     #[tokio::test]

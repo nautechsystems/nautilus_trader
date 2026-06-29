@@ -55,7 +55,7 @@ instances into a consensus log.
 
 Verify a sealed run file:
 
-```fish
+```bash
 cargo run -p nautilus-event-store --bin verify -- /path/to/run.redb
 ```
 

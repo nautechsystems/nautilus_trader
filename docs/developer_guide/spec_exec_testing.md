@@ -59,8 +59,17 @@ node.add_strategy_from_config(importable_strategy_config)
 
 ```rust
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
+use nautilus_trading::strategy::StrategyConfig;
 
-let tester_config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, order_qty);
+let tester_config = ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(order_qty)
+    .build()?;
 let tester = ExecTester::new(tester_config);
 node.add_strategy(tester)?;
 node.run().await?;
@@ -89,11 +98,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, dec!(0.001))
-    .with_open_position_on_start_qty(Some(dec!(0.001)))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-    .with_use_post_only(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.001"))
+    .open_position_on_start_qty(dec!(0.001))
+    .enable_limit_buys(true)
+    .enable_limit_sells(true)
+    .use_post_only(true)
+    .build()?
 ```
 
 **Expected behavior:**
@@ -158,10 +175,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E02: Market SELL - submit and fill
@@ -189,10 +214,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(-1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(-1, 2))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E03: Market order with IOC TIF
@@ -221,11 +254,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false);
-config.open_position_time_in_force = TimeInForce::Ioc;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .open_position_time_in_force(TimeInForce::Ioc)
+    .build()?
 ```
 
 ### TC-E04: Market order with FOK TIF
@@ -259,11 +300,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false);
-config.open_position_time_in_force = TimeInForce::Fok;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .open_position_time_in_force(TimeInForce::Fok)
+    .build()?
 ```
 
 ### TC-E05: Market order with quote quantity
@@ -292,11 +341,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("100"))
-    .with_open_position_on_start(Some(Decimal::from(100)))
-    .with_use_quote_quantity(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("100"))
+    .open_position_on_start_qty(Decimal::from(100))
+    .use_quote_quantity(true)
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E06: Close position via market order on stop
@@ -331,11 +388,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_close_positions_on_stop(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .close_positions_on_stop(true)
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ---
@@ -387,9 +452,17 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E11: Limit SELL GTC - submit and accept
@@ -416,9 +489,17 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(true)
+    .build()?
 ```
 
 ### TC-E12: Limit BUY and SELL pair
@@ -445,9 +526,17 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(true)
+    .build()?
 ```
 
 ### TC-E13: Limit IOC aggressive fill
@@ -529,10 +618,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.order_expire_time_delta_mins = Some(60);
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .order_expire_time_delta_mins(60)
+    .build()?
 ```
 
 ### TC-E18: Limit GTD expiry
@@ -621,12 +718,20 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(true)
-    .with_enable_stop_sells(false)
-    .with_stop_order_type(OrderType::StopMarket)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .enable_stop_buys(true)
+    .enable_stop_sells(false)
+    .stop_order_type(OrderType::StopMarket)
+    .build()?
 ```
 
 ### TC-E21: StopMarket SELL
@@ -656,12 +761,20 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(false)
-    .with_enable_stop_sells(true)
-    .with_stop_order_type(OrderType::StopMarket)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .enable_stop_buys(false)
+    .enable_stop_sells(true)
+    .stop_order_type(OrderType::StopMarket)
+    .build()?
 ```
 
 ### TC-E22: StopLimit BUY
@@ -696,13 +809,21 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(true)
-    .with_enable_stop_sells(false)
-    .with_stop_order_type(OrderType::StopLimit);
-config.stop_limit_offset_ticks = Some(50);
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .enable_stop_buys(true)
+    .enable_stop_sells(false)
+    .stop_order_type(OrderType::StopLimit)
+    .stop_limit_offset_ticks(50)
+    .build()?
 ```
 
 ### TC-E23: StopLimit SELL
@@ -733,13 +854,21 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
-    .with_enable_stop_buys(false)
-    .with_enable_stop_sells(true)
-    .with_stop_order_type(OrderType::StopLimit);
-config.stop_limit_offset_ticks = Some(50);
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .enable_stop_buys(false)
+    .enable_stop_sells(true)
+    .stop_order_type(OrderType::StopLimit)
+    .stop_limit_offset_ticks(50)
+    .build()?
 ```
 
 ### TC-E24: MarketIfTouched BUY
@@ -830,10 +959,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.modify_orders_to_maintain_tob_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .modify_orders_to_maintain_tob_offset(true)
+    .build()?
 ```
 
 ### TC-E31: Modify limit SELL price
@@ -861,10 +998,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true);
-config.modify_orders_to_maintain_tob_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(true)
+    .modify_orders_to_maintain_tob_offset(true)
+    .build()?
 ```
 
 ### TC-E32: Cancel-replace limit BUY
@@ -897,10 +1042,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.cancel_replace_orders_to_maintain_tob_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .cancel_replace_orders_to_maintain_tob_offset(true)
+    .build()?
 ```
 
 ### TC-E33: Cancel-replace limit SELL
@@ -928,10 +1081,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(true);
-config.cancel_replace_orders_to_maintain_tob_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(false)
+    .enable_limit_sells(true)
+    .cancel_replace_orders_to_maintain_tob_offset(true)
+    .build()?
 ```
 
 ### TC-E34: Modify stop trigger price
@@ -963,9 +1124,17 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_stop_buys(true);
-config.modify_stop_orders_to_maintain_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_stop_buys(true)
+    .modify_stop_orders_to_maintain_offset(true)
+    .build()?
 ```
 
 ### TC-E35: Cancel-replace stop order
@@ -998,9 +1167,17 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_stop_buys(true);
-config.cancel_replace_stop_orders_to_maintain_offset = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_stop_buys(true)
+    .cancel_replace_stop_orders_to_maintain_offset(true)
+    .build()?
 ```
 
 ### TC-E36: Modify rejected
@@ -1062,10 +1239,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_cancel_orders_on_stop(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .cancel_orders_on_stop(true)
+    .build()?
 ```
 
 ### TC-E41: Cancel all on stop
@@ -1093,10 +1278,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-    .with_cancel_orders_on_stop(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(true)
+    .cancel_orders_on_stop(true)
+    .build()?
 ```
 
 ### TC-E42: Individual cancels on stop
@@ -1124,10 +1317,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true);
-config.use_individual_cancels_on_stop = true;
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(true)
+    .use_individual_cancels_on_stop(true)
+    .build()?
 ```
 
 ### TC-E43: Batch cancel on stop
@@ -1155,10 +1356,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(true)
-    .with_use_batch_cancel_on_stop(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(true)
+    .use_batch_cancel_on_stop(true)
+    .build()?
 ```
 
 ### TC-E44: Cancel already-canceled order
@@ -1216,12 +1425,20 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_brackets(true)
-    .with_bracket_entry_order_type(OrderType::Limit)
-    .with_bracket_offset_ticks(500)
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_brackets(true)
+    .bracket_entry_order_type(OrderType::Limit)
+    .bracket_offset_ticks(500)
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E51: Bracket SELL
@@ -1297,10 +1514,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_use_post_only(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .use_post_only(true)
+    .build()?
 ```
 
 ### TC-E61: ReduceOnly on close
@@ -1330,12 +1555,20 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_reduce_only_on_stop(true)
-    .with_close_positions_on_stop(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .reduce_only_on_stop(true)
+    .close_positions_on_stop(true)
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E62: Display quantity (iceberg)
@@ -1363,10 +1596,18 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-let mut config = ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("1.0"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false);
-config.order_display_qty = Some(Quantity::from("0.1"));
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("1.0"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .order_display_qty(Quantity::from("0.1"))
+    .build()?
 ```
 
 ### TC-E63: Custom order params
@@ -1465,11 +1706,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_enable_limit_buys(true)
-    .with_enable_limit_sells(false)
-    .with_use_post_only(true)
-    .with_test_reject_post_only(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .enable_limit_buys(true)
+    .enable_limit_sells(false)
+    .use_post_only(true)
+    .test_reject_post_only(true)
+    .build()?
 ```
 
 ### TC-E71: ReduceOnly rejection
@@ -1504,11 +1753,19 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
-    .with_test_reject_reduce_only(true)
-    .with_enable_limit_buys(false)
-    .with_enable_limit_sells(false)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .test_reject_reduce_only(true)
+    .enable_limit_buys(false)
+    .enable_limit_sells(false)
+    .build()?
 ```
 
 ### TC-E72: Unsupported order type
@@ -1582,8 +1839,16 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_open_position_on_start(Some(Decimal::new(1, 2)))
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .open_position_on_start_qty(Decimal::new(1, 2))
+    .build()?
 ```
 
 ### TC-E81: Cancel orders on stop
@@ -1629,8 +1894,16 @@ ExecTesterConfig(
 **Rust config:**
 
 ```rust
-ExecTesterConfig::new(strategy_id, instrument_id, client_id, Quantity::from("0.01"))
-    .with_can_unsubscribe(true)
+ExecTesterConfig::builder()
+    .base(StrategyConfig {
+        strategy_id: Some(strategy_id),
+        ..Default::default()
+    })
+    .instrument_id(instrument_id)
+    .client_id(client_id)
+    .order_qty(Quantity::from("0.01"))
+    .can_unsubscribe(true)
+    .build()?
 ```
 
 ### TC-E84: Reconcile open orders

@@ -395,7 +395,7 @@ impl InteractiveBrokersExecutionClient {
                                     anyhow::anyhow!("Failed to send order accepted event: {e}")
                                 })?;
 
-                            tracing::info!(
+                            tracing::debug!(
                                 "Order {} accepted (IB openOrder status: {})",
                                 client_order_id,
                                 status_str
@@ -601,7 +601,7 @@ impl InteractiveBrokersExecutionClient {
                         .send(ExecutionEvent::Order(OrderEventAny::Accepted(event)))
                         .map_err(|e| anyhow::anyhow!("Failed to send order accepted event: {e}"))?;
 
-                    tracing::info!(
+                    tracing::debug!(
                         "Order {} accepted (IB status: {})",
                         client_order_id,
                         status_str
@@ -648,7 +648,7 @@ impl InteractiveBrokersExecutionClient {
                 exec_sender
                     .send(ExecutionEvent::Order(OrderEventAny::Canceled(event)))
                     .map_err(|e| anyhow::anyhow!("Failed to send order canceled event: {e}"))?;
-                tracing::info!("Order {} canceled", client_order_id);
+                tracing::debug!("Order {} canceled", client_order_id);
             }
             Some(IbOrderStatus::PendingCancel) => {
                 Self::emit_order_pending_cancel(
@@ -662,7 +662,7 @@ impl InteractiveBrokersExecutionClient {
                     ts_init,
                     account_id,
                 )?;
-                tracing::info!("Order {} pending cancel", client_order_id);
+                tracing::debug!("Order {} pending cancel", client_order_id);
             }
             _ => {
                 tracing::debug!(
@@ -1158,7 +1158,7 @@ impl InteractiveBrokersExecutionClient {
             .send(ExecutionEvent::Order(OrderEventAny::Rejected(event)))
             .map_err(|e| anyhow::anyhow!("Failed to send order rejected event: {e}"))?;
 
-        tracing::info!(
+        tracing::debug!(
             "What-if analysis completed for order {}: margin change={:?}, commission={:?}",
             client_order_id,
             order_data
@@ -1458,7 +1458,7 @@ impl InteractiveBrokersExecutionClient {
             fill_report,
         ))))?;
 
-        tracing::info!(
+        tracing::debug!(
             "Generated leg fill: instrument_id={}, client_order_id={}, quantity={}, price={}",
             leg_instrument_id,
             leg_client_order_id,

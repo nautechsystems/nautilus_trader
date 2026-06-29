@@ -187,7 +187,7 @@ impl KrakenSpotDataClient {
 
         self.http.cache_instruments(&instruments);
 
-        log::info!(
+        log::debug!(
             "Loaded instruments: client_id={}, count={}",
             self.client_id,
             instruments.len()
@@ -265,7 +265,6 @@ impl KrakenSpotDataClient {
             "subscribe l3 book",
         );
 
-        log::info!("Subscribed to L3 book: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -640,7 +639,7 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Spot data client: {}", self.client_id);
+        log::debug!("Disposing Spot data client: {}", self.client_id);
         self.stop()
     }
 
@@ -747,7 +746,6 @@ impl DataClient for KrakenSpotDataClient {
             "subscribe book",
         );
 
-        log::info!("Subscribed to book: instrument_id={instrument_id}, depth={depth:?}");
         Ok(())
     }
 
@@ -764,7 +762,6 @@ impl DataClient for KrakenSpotDataClient {
             "subscribe quotes",
         );
 
-        log::info!("Subscribed to quotes: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -781,7 +778,6 @@ impl DataClient for KrakenSpotDataClient {
             "subscribe trades",
         );
 
-        log::info!("Subscribed to trades: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -824,7 +820,6 @@ impl DataClient for KrakenSpotDataClient {
             "subscribe bars",
         );
 
-        log::info!("Subscribed to bars: bar_type={bar_type}");
         Ok(())
     }
 
@@ -832,7 +827,7 @@ impl DataClient for KrakenSpotDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::info!(
+        log::debug!(
             "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
             cmd.instrument_id,
         );
@@ -854,7 +849,6 @@ impl DataClient for KrakenSpotDataClient {
                             .unsubscribe_book_l3(symbol_ustr)
                             .await
                             .map_err(|e| anyhow::anyhow!("{e}"))?;
-                        log::info!("Unsubscribed from L3 book: instrument_id={instrument_id}");
                         Ok(())
                     },
                     "unsubscribe l3 book",
@@ -873,7 +867,6 @@ impl DataClient for KrakenSpotDataClient {
             "unsubscribe book",
         );
 
-        log::info!("Unsubscribed from book: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -890,7 +883,6 @@ impl DataClient for KrakenSpotDataClient {
             "unsubscribe quotes",
         );
 
-        log::info!("Unsubscribed from quotes: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -907,7 +899,6 @@ impl DataClient for KrakenSpotDataClient {
             "unsubscribe trades",
         );
 
-        log::info!("Unsubscribed from trades: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -932,7 +923,6 @@ impl DataClient for KrakenSpotDataClient {
             "unsubscribe bars",
         );
 
-        log::info!("Unsubscribed from bars: bar_type={bar_type}");
         Ok(())
     }
 

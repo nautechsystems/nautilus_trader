@@ -50,7 +50,7 @@ methods such as `clock()`, `cache()`, `order()`, and `portfolio()` on `self`.
 `DataActorNative` is native-only access to runtime wiring and actor-core state;
 `StrategyNative` exposes borrowed strategy state such as order factory, order
 manager, and portfolio access. Import them only for same-binary performance
-paths or host integration internals.
+paths or internal runtime wiring.
 :::
 
 ## Strategy implementation
@@ -241,13 +241,17 @@ def on_start(self) -> None:
     self.register_indicator_for_bars(self.bar_type, self.fast_ema)
     self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
-    # Get historical data
-    self.request_bars(self.bar_type)
-
-    # Subscribe to live data
-    self.subscribe_bars(self.bar_type)
+    # Get historical data and subscribe to live data
+    self.request_bars(
+        self.bar_type,
+        callback=lambda _: self.subscribe_bars(self.bar_type),
+    )
     self.subscribe_quote_ticks(self.instrument_id)
 ```
+
+Live bars are subscribed via the `request_bars()` `callback` so the stream starts only
+once history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe)
+for why this matters under `validate_data_sequence=True`.
 
 ### Clock and timers
 

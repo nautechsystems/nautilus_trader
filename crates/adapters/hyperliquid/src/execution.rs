@@ -246,7 +246,7 @@ impl HyperliquidExecutionClient {
                 "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
             );
         } else {
-            log::info!("Initialized {} instruments", instruments.len());
+            log::debug!("Initialized {} instruments", instruments.len());
 
             for instrument in &instruments {
                 self.http_client.cache_instrument(instrument);
@@ -281,7 +281,7 @@ impl HyperliquidExecutionClient {
         self.emitter
             .emit_account_state(balances, margins, true, ts_event);
 
-        log::info!("Account state updated successfully");
+        log::debug!("Account state updated successfully");
         Ok(())
     }
 
@@ -361,7 +361,7 @@ impl HyperliquidExecutionClient {
     fn start_outcome_settlement_poll(&self) -> anyhow::Result<()> {
         let poll_secs = self.config.outcome_settlement_poll_secs;
         if poll_secs == 0 {
-            log::info!("Outcome settlement polling disabled by config");
+            log::debug!("Outcome settlement polling disabled by config");
             return Ok(());
         }
 
@@ -419,7 +419,7 @@ impl HyperliquidExecutionClient {
                 };
 
                 for fill in fills {
-                    log::info!(
+                    log::debug!(
                         "Dispatching outcome settlement fill: instrument={}, price={}, qty={}",
                         fill.instrument_id,
                         fill.last_px,
@@ -607,7 +607,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Submitting order: id={}, type={:?}, side={:?}, price={}, size={}, kind={:?}",
             order.client_order_id(),
             order.order_type(),
@@ -661,7 +661,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             let ts = clock.get_time_ns();
                             rejection_route.emit_once(&order, &inner_error, ts, &cloid_hex);
                         } else {
-                            log::info!("Order submitted successfully: {response:?}");
+                            log::debug!("Order submitted successfully: {response:?}");
                         }
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -749,7 +749,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         let grouping = determine_order_list_grouping(&valid_orders);
-        log::info!("Order list grouping: {grouping:?}");
+        log::debug!("Order list grouping: {grouping:?}");
 
         for (order, request) in valid_orders.iter().zip(hyperliquid_orders.iter()) {
             let cloid = request.cloid.expect("order conversion must set a CLOID");
@@ -817,7 +817,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                     rejection_route.emit_once(order, error_msg, ts, cloid_hex);
                                 }
                             } else {
-                                log::info!("Order list submitted successfully: {response:?}");
+                                log::debug!("Order list submitted successfully: {response:?}");
                             }
                         } else if inner_errors.iter().any(|e| e.is_some()) {
                             let ts = clock.get_time_ns();
@@ -836,7 +836,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 }
                             }
                         } else {
-                            log::info!("Order list submitted successfully: {response:?}");
+                            log::debug!("Order list submitted successfully: {response:?}");
                         }
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -1045,7 +1045,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                             log::warn!("Order modification rejected by exchange: {inner_error}");
                             dispatch_state.clear_pending_modify(&client_order_id);
                         } else {
-                            log::info!("Order modified successfully: {response:?}");
+                            log::debug!("Order modified successfully: {response:?}");
                         }
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -1134,7 +1134,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                                 clock.get_time_ns(),
                             );
                         } else {
-                            log::info!("Order cancelled successfully: {response:?}");
+                            log::debug!("Order cancelled successfully: {response:?}");
                         }
                     } else {
                         let error_msg = extract_error_message(&response);
@@ -1738,7 +1738,7 @@ impl HyperliquidExecutionClient {
         ws_client
             .subscribe_user_events(&subscription_address)
             .await?;
-        log::info!("Subscribed to Hyperliquid execution updates for {subscription_address}");
+        log::debug!("Subscribed to Hyperliquid execution updates for {subscription_address}");
 
         // Transfer task handle to original so disconnect() can await it
         if let Some(handle) = ws_client.take_task_handle() {
@@ -1816,7 +1816,7 @@ impl HyperliquidExecutionClient {
         });
 
         *self.ws_stream_handle.lock().expect(MUTEX_POISONED) = Some(handle);
-        log::info!("Hyperliquid WebSocket execution stream started");
+        log::debug!("Hyperliquid WebSocket execution stream started");
         Ok(())
     }
 }
@@ -1979,7 +1979,7 @@ async fn submit_cancel_action(
                 let ts = clock.get_time_ns();
 
                 if inner_errors.is_empty() {
-                    log::info!("{label} submitted successfully: {response:?}");
+                    log::debug!("{label} submitted successfully: {response:?}");
                 } else if let Some(reason) = cancel_status_count_mismatch_reason(
                     label,
                     sent_entries.len(),
@@ -2309,7 +2309,7 @@ fn spawn_corrective_reduce(
 
         let keep_marker = match ws_client.post_action_exec(&http_client, &action).await {
             Ok(resp) if resp.is_ok() && extract_inner_error(&resp).is_none() => {
-                log::info!("Corrective reduce acknowledged for {client_order_id} on oid {oid}");
+                log::debug!("Corrective reduce acknowledged for {client_order_id} on oid {oid}");
                 true
             }
             Ok(resp) => {

@@ -1195,7 +1195,7 @@ fn handle_markets_trading_data(
                 seen_tickers.insert(ticker_ustr);
             } else if is_active {
                 seen_tickers.insert(ticker_ustr);
-                log::info!("New instrument discovered via WebSocket: {ticker}");
+                log::debug!("New instrument discovered via WebSocket: {ticker}");
                 Python::attach(|py| {
                     let dict = PyDict::new(py);
                     let _ = dict.set_item("type", "new_instrument_discovered");

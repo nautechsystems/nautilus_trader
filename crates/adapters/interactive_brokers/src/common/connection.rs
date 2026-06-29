@@ -103,7 +103,7 @@ impl ConnectionManager {
                 anyhow::bail!("Failed to connect after {} attempts", self.max_attempts);
             }
 
-            tracing::info!(
+            tracing::debug!(
                 "Connection attempt {} to {}:{} (client_id: {})",
                 attempt,
                 self.host,
@@ -268,7 +268,7 @@ impl ConnectionWatchdog {
         is_running.store(true, Ordering::Relaxed);
 
         get_runtime().spawn(async move {
-            tracing::info!("Connection watchdog started");
+            tracing::debug!("Connection watchdog started");
 
             while is_running.load(Ordering::Relaxed) {
                 tokio::time::sleep(check_interval).await;
@@ -298,7 +298,7 @@ impl ConnectionWatchdog {
                 }
             }
 
-            tracing::info!("Connection watchdog stopped");
+            tracing::debug!("Connection watchdog stopped");
         })
     }
 

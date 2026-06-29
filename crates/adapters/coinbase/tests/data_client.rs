@@ -1130,9 +1130,10 @@ async fn test_data_client_reconnect_resumes_derivatives_polls() {
 
     let mut config = create_deriv_data_client_config(addr);
 
-    // The poll task fires once immediately. A long interval prevents a
-    // second pre-disconnect poll from racing the reconnect assertion.
-    config.derivatives_poll_interval_secs = 60;
+    // Short interval so the resumed poll retries within the wait window;
+    // with no REST retries a single failed immediate poll would otherwise
+    // stall a full interval.
+    config.derivatives_poll_interval_secs = 1;
     let mut client = CoinbaseDataClient::new(*COINBASE_CLIENT_ID, config).unwrap();
     client.connect().await.unwrap();
 

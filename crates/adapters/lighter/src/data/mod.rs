@@ -811,7 +811,6 @@ impl DataClient for LighterDataClient {
         subscription: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let instrument_id = subscription.instrument_id;
-        log::debug!("Subscribing to instrument status: {instrument_id}");
 
         self.instrument_status_subscriptions.insert(instrument_id);
         if self.emit_cached_instrument_status(instrument_id) {
@@ -861,8 +860,6 @@ impl DataClient for LighterDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book deltas: {}", subscription.instrument_id);
-
         validate_book_deltas_subscription(subscription.book_type)?;
 
         let ws = self.ws_client.clone();
@@ -898,8 +895,6 @@ impl DataClient for LighterDataClient {
     }
 
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!("Subscribing to quotes: {}", subscription.instrument_id);
-
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
@@ -913,8 +908,6 @@ impl DataClient for LighterDataClient {
     }
 
     fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        log::debug!("Subscribing to trades: {}", subscription.instrument_id);
-
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
 
@@ -929,7 +922,6 @@ impl DataClient for LighterDataClient {
 
     fn subscribe_mark_prices(&mut self, subscription: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = subscription.instrument_id;
-        log::debug!("Subscribing to mark prices: {instrument_id}");
 
         let channel = self.perp_market_stats_channel(instrument_id, "mark price")?;
         self.activate_market_stats_subscription(
@@ -944,7 +936,6 @@ impl DataClient for LighterDataClient {
 
     fn subscribe_index_prices(&mut self, subscription: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = subscription.instrument_id;
-        log::debug!("Subscribing to index prices: {instrument_id}");
 
         let channel = self.index_market_stats_channel(instrument_id)?;
         self.activate_market_stats_subscription(
@@ -962,7 +953,6 @@ impl DataClient for LighterDataClient {
         subscription: SubscribeFundingRates,
     ) -> anyhow::Result<()> {
         let instrument_id = subscription.instrument_id;
-        log::debug!("Subscribing to funding rates: {instrument_id}");
 
         let channel = self.perp_market_stats_channel(instrument_id, "funding rate")?;
         self.activate_market_stats_subscription(
@@ -977,7 +967,6 @@ impl DataClient for LighterDataClient {
 
     fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
         let bar_type = subscription.bar_type;
-        log::debug!("Subscribing to bars: {bar_type}");
 
         let resolution = LighterCandleResolution::try_from(&bar_type)?;
         anyhow::ensure!(
@@ -1083,7 +1072,6 @@ impl DataClient for LighterDataClient {
         unsubscription: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
         let instrument_id = unsubscription.instrument_id;
-        log::debug!("Unsubscribing from instrument status: {instrument_id}");
 
         self.instrument_status_subscriptions.remove(&instrument_id);
 
@@ -1095,7 +1083,6 @@ impl DataClient for LighterDataClient {
         unsubscription: &UnsubscribeMarkPrices,
     ) -> anyhow::Result<()> {
         let instrument_id = unsubscription.instrument_id;
-        log::debug!("Unsubscribing from mark prices: {instrument_id}");
 
         self.deactivate_market_stats_subscription(
             instrument_id,
@@ -1111,7 +1098,6 @@ impl DataClient for LighterDataClient {
         unsubscription: &UnsubscribeIndexPrices,
     ) -> anyhow::Result<()> {
         let instrument_id = unsubscription.instrument_id;
-        log::debug!("Unsubscribing from index prices: {instrument_id}");
 
         self.deactivate_market_stats_subscription(
             instrument_id,
@@ -1127,7 +1113,6 @@ impl DataClient for LighterDataClient {
         unsubscription: &UnsubscribeFundingRates,
     ) -> anyhow::Result<()> {
         let instrument_id = unsubscription.instrument_id;
-        log::debug!("Unsubscribing from funding rates: {instrument_id}");
 
         self.deactivate_market_stats_subscription(
             instrument_id,
@@ -1140,7 +1125,6 @@ impl DataClient for LighterDataClient {
 
     fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
         let bar_type = unsubscription.bar_type;
-        log::debug!("Unsubscribing from bars: {bar_type}");
 
         let resolution = match LighterCandleResolution::try_from(&bar_type) {
             Ok(resolution) => resolution,

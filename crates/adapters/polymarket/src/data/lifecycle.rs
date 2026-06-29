@@ -234,7 +234,7 @@ impl PolymarketDataClient {
                         if !selection.condition_ids.is_empty()
                             || !selection.pause_condition_ids.is_empty()
                         {
-                            log::info!(
+                            log::debug!(
                                 "Polymarket resolve poll selected={} watched_conditions={} watched_instruments={} skipped_not_expired={} timed_out={} paused={} min_ready_in_secs={:?}",
                                 selection.condition_ids.len(),
                                 watched_conditions,
@@ -350,9 +350,9 @@ impl PolymarketDataClient {
 
         log::info!("Connecting Polymarket data client");
 
-        log::info!("Bootstrapping instruments from Gamma API...");
+        log::debug!("Bootstrapping instruments from Gamma API...");
         self.bootstrap_instruments().await?;
-        log::info!(
+        log::debug!(
             "Bootstrap complete, {} instruments loaded",
             self.instruments.load().len(),
         );
@@ -360,7 +360,7 @@ impl PolymarketDataClient {
         self.ws_client.connect().await?;
 
         if self.config.subscribe_new_markets {
-            log::info!("Subscribing to new markets...");
+            log::debug!("Subscribing to new markets...");
             self.ws_client.subscribe_market(vec![]).await?;
         }
 

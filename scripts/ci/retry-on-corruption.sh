@@ -3,8 +3,9 @@ set -uo pipefail
 
 # Retry a command up to MAX_RETRIES times if the failure matches known macOS
 # runner filesystem corruption patterns (null bytes in Python sources, corrupt
-# build-script binaries). On a corruption match the script purges the Cargo
-# target dir and UV build cache before retrying.
+# build-script binaries, invalid archives, and bad cached files). On a
+# corruption match the script purges the Cargo target dir and UV build cache
+# before retrying.
 #
 # Usage: retry-on-corruption.sh <command> [args...]
 
@@ -13,7 +14,12 @@ MAX_RETRIES=3
 CORRUPTION_PATTERNS=(
   "cannot contain null bytes"
   "cannot execute binary file"
+  "Failed to clone"
+  "Illegal byte sequence"
   "Metadata field Name not found"
+  "archive member invalid control bits"
+  "slice is not valid mach-o file"
+  "unknown file type in"
 )
 
 log_file="$(mktemp)"

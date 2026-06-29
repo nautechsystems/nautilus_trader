@@ -107,7 +107,7 @@ impl OKXExecutionClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             config.api_passphrase.clone(),
-            config.base_url_http.clone(),
+            Some(config.http_base_url()),
             config.http_timeout_secs,
             config.max_retries,
             config.retry_delay_initial_ms,
@@ -1042,7 +1042,7 @@ impl ExecutionClient for OKXExecutionClient {
                         continue;
                     }
 
-                    log::info!(
+                    log::debug!(
                         "Loaded {} {instrument_type:?} instruments",
                         instruments.len()
                     );
@@ -1069,7 +1069,7 @@ impl ExecutionClient for OKXExecutionClient {
                             continue;
                         }
 
-                        log::info!(
+                        log::debug!(
                             "Loaded {} {instrument_type:?} instruments for family {family}",
                             instruments.len()
                         );
@@ -1172,11 +1172,11 @@ impl ExecutionClient for OKXExecutionClient {
         }
 
         for inst_type in &instrument_types {
-            log::info!("Subscribing to orders channel for {inst_type:?}");
+            log::debug!("Subscribing to orders channel for {inst_type:?}");
             self.ws_private.subscribe_orders(*inst_type).await?;
 
             if self.config.use_fills_channel {
-                log::info!("Subscribing to fills channel for {inst_type:?}");
+                log::debug!("Subscribing to fills channel for {inst_type:?}");
                 if let Err(e) = self.ws_private.subscribe_fills(*inst_type).await {
                     log::warn!("Failed to subscribe to fills channel ({inst_type:?}): {e}");
                 }
@@ -1186,7 +1186,7 @@ impl ExecutionClient for OKXExecutionClient {
         self.ws_private.subscribe_account().await?;
 
         if self.config.load_spreads {
-            log::info!("Subscribing to Nitro spread orders channel");
+            log::debug!("Subscribing to Nitro spread orders channel");
             self.ws_business.subscribe_spread_orders().await?;
         }
 
@@ -1205,7 +1205,7 @@ impl ExecutionClient for OKXExecutionClient {
             .context("failed to request OKX account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -1419,7 +1419,7 @@ impl ExecutionClient for OKXExecutionClient {
                 ws_private.cache_inst_id_codes(all_inst_id_codes.clone());
                 ws_business.cache_instruments(&all_instruments);
                 ws_business.cache_inst_id_codes(all_inst_id_codes);
-                log::info!("Instruments initialized");
+                log::debug!("Instruments initialized");
             }
         });
 

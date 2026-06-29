@@ -313,7 +313,7 @@ impl DockerizedIBGateway {
     ///
     /// Returns an error if container creation or startup fails.
     pub async fn start(&mut self, wait: Option<u64>) -> anyhow::Result<()> {
-        tracing::info!("Ensuring gateway is running");
+        tracing::debug!("Ensuring gateway is running");
 
         let status = self.container_status().await?;
 
@@ -333,7 +333,7 @@ impl DockerizedIBGateway {
                 self.stop().await?;
             }
             ContainerStatus::Ready | ContainerStatus::ContainerStarting => {
-                tracing::info!("Status {:?}, using existing container", status);
+                tracing::debug!("Status {:?}, using existing container", status);
                 return Ok(());
             }
             _ => {}
@@ -420,7 +420,7 @@ impl DockerizedIBGateway {
             .await
             .context("Failed to start container")?;
 
-        tracing::info!(
+        tracing::debug!(
             "Container `{}` starting, waiting for ready",
             self.container_name
         );
@@ -431,7 +431,7 @@ impl DockerizedIBGateway {
 
         while waited < wait_time {
             if self.is_logged_in(&container_id).await.unwrap_or(false) {
-                tracing::info!(
+                tracing::debug!(
                     "Gateway `{}` ready. VNC port is {:?}",
                     self.container_name,
                     self.config.vnc_port
@@ -519,7 +519,7 @@ impl DockerizedIBGateway {
                     .await
                     .context("Failed to remove container")?;
 
-                tracing::info!("Stopped and removed container `{}`", self.container_name);
+                tracing::debug!("Stopped and removed container `{}`", self.container_name);
             }
         }
 

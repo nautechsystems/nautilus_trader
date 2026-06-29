@@ -17,6 +17,7 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
+use chrono::NaiveTime;
 use databento::dbn;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
@@ -37,6 +38,7 @@ use pyo3::{
 use ustr::Ustr;
 
 use crate::{
+    decode::DatabentoDecodeConfig,
     loader::DatabentoDataLoader,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
@@ -150,16 +152,23 @@ impl DatabentoDataLoader {
     /// When `skip_on_error` is true, instruments that fail to decode are logged
     /// as warnings and skipped. When false (default), any decode error is propagated.
     #[pyo3(name = "load_instruments")]
-    #[pyo3(signature = (filepath, use_exchange_as_venue, skip_on_error=false))]
+    #[pyo3(signature = (filepath, use_exchange_as_venue, skip_on_error=false, expiration_overrides=None))]
     fn py_load_instruments(
         &mut self,
         py: Python,
         filepath: PathBuf,
         use_exchange_as_venue: bool,
         skip_on_error: bool,
+        expiration_overrides: Option<HashMap<String, HashMap<String, String>>>,
     ) -> PyResult<Py<PyAny>> {
+        let decode_config = build_decode_config(expiration_overrides)?;
         let iter = self
-            .load_instruments(&filepath, use_exchange_as_venue, skip_on_error)
+            .load_instruments(
+                &filepath,
+                use_exchange_as_venue,
+                skip_on_error,
+                decode_config.as_ref(),
+            )
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
@@ -609,4 +618,128 @@ fn exhaust_data_iter_to_pycapsule(
     // TODO: Improve error domain. Replace anyhow errors with nautilus
     // errors to unify pyo3 and anyhow errors.
     Ok(capsule.into_py_any_unwrap(py))
+}
+
+// Returns `None` when no overrides are supplied, so the loader applies its built-in defaults
+fn build_decode_config(
+    expiration_overrides: Option<HashMap<String, HashMap<String, String>>>,
+) -> PyResult<Option<DatabentoDecodeConfig>> {
+    expiration_overrides
+        .map(|overrides| decode_config_from_overrides(overrides).map_err(to_pyvalue_err))
+        .transpose()
+}
+
+// Builds a decode config from a dataset -> (underlying -> wall-clock time) mapping. The reserved
+// underlying key "default" sets a dataset's default time; other keys are per-underlying overrides.
+fn decode_config_from_overrides(
+    overrides: HashMap<String, HashMap<String, String>>,
+) -> Result<DatabentoDecodeConfig, String> {
+    let mut config = DatabentoDecodeConfig::default();
+
+    for (dataset_name, times) in overrides {
+        let dataset = dataset_name
+            .parse::<dbn::Dataset>()
+            .map_err(|_| format!("Unknown dataset '{dataset_name}'"))?;
+        let rule = config
+            .option_expiration
+            .get_mut(&dataset)
+            .ok_or_else(|| format!("No expiration correction rule for dataset '{dataset_name}'"))?;
+
+        for (underlying, value) in times {
+            let time = parse_expiration_time(&value)?;
+            if underlying == "default" {
+                rule.default_time = time;
+            } else {
+                rule.overrides.insert(Ustr::from(&underlying), time);
+            }
+        }
+    }
+
+    Ok(config)
+}
+
+// Parses a `HH:MM` or `HH:MM:SS` wall-clock time
+fn parse_expiration_time(value: &str) -> Result<NaiveTime, String> {
+    NaiveTime::parse_from_str(value, "%H:%M:%S")
+        .or_else(|_| NaiveTime::parse_from_str(value, "%H:%M"))
+        .map_err(|_| format!("Invalid expiration time '{value}', expected 'HH:MM' or 'HH:MM:SS'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use chrono::NaiveTime;
+    use databento::dbn;
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::decode_config_from_overrides;
+
+    fn overrides(
+        dataset: &str,
+        entries: &[(&str, &str)],
+    ) -> HashMap<String, HashMap<String, String>> {
+        let inner = entries
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        HashMap::from([(dataset.to_string(), inner)])
+    }
+
+    #[rstest]
+    fn test_default_key_sets_dataset_default_time() {
+        let config =
+            decode_config_from_overrides(overrides("OPRA.PILLAR", &[("default", "15:30")]))
+                .unwrap();
+        let rule = config
+            .option_expiration
+            .get(&dbn::Dataset::OpraPillar)
+            .unwrap();
+        assert_eq!(
+            rule.default_time,
+            NaiveTime::from_hms_opt(15, 30, 0).unwrap()
+        );
+        assert!(rule.overrides.is_empty());
+    }
+
+    #[rstest]
+    fn test_underlying_key_sets_override_and_keeps_default() {
+        let config =
+            decode_config_from_overrides(overrides("OPRA.PILLAR", &[("SPX", "09:30:00")])).unwrap();
+        let rule = config
+            .option_expiration
+            .get(&dbn::Dataset::OpraPillar)
+            .unwrap();
+        assert_eq!(
+            rule.overrides.get(&Ustr::from("SPX")).copied(),
+            Some(NaiveTime::from_hms_opt(9, 30, 0).unwrap())
+        );
+        assert_eq!(
+            rule.default_time,
+            NaiveTime::from_hms_opt(16, 0, 0).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_unknown_dataset_errors() {
+        let err = decode_config_from_overrides(overrides("NOT.ADATASET", &[("default", "16:00")]))
+            .unwrap_err();
+        assert!(err.contains("Unknown dataset"), "was: {err}");
+    }
+
+    #[rstest]
+    fn test_dataset_without_rule_errors() {
+        // GLBX is a valid dataset but has no built-in expiration rule, so it cannot be tuned
+        let err = decode_config_from_overrides(overrides("GLBX.MDP3", &[("default", "16:00")]))
+            .unwrap_err();
+        assert!(err.contains("No expiration correction rule"), "was: {err}");
+    }
+
+    #[rstest]
+    fn test_invalid_time_errors() {
+        let err = decode_config_from_overrides(overrides("OPRA.PILLAR", &[("default", "nope")]))
+            .unwrap_err();
+        assert!(err.contains("Invalid expiration time"), "was: {err}");
+    }
 }

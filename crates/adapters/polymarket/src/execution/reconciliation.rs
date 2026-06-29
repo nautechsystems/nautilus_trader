@@ -311,7 +311,7 @@ pub(crate) async fn generate_mass_status(
         fill_reports.retain(|r| r.ts_event >= cutoff);
         let fills_removed = fills_before - fill_reports.len();
 
-        log::info!(
+        log::debug!(
             "Lookback filter ({}min): orders {}->{} (removed {}), fills {}->{} (removed {})",
             mins,
             orders_before,

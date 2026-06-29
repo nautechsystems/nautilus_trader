@@ -45,7 +45,7 @@ impl InteractiveBrokersExecutionClient {
             return Ok(());
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Preloading {} cached Interactive Brokers spread instrument(s) before reconciliation",
             spread_ids.len()
         );

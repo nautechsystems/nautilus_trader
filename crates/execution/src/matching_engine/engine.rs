@@ -110,6 +110,7 @@ pub struct OrderMatchingEngine {
     execution_bar_deltas: IndexMap<BarType, TimeDelta>,
     account_ids: IndexMap<TraderId, AccountId>,
     cached_filled_qty: IndexMap<ClientOrderId, Quantity>,
+    post_match_order_ids: IndexSet<ClientOrderId>,
     ids_generator: IdsGenerator,
     last_trade_size: Option<Quantity>,
     bid_consumption: IndexMap<PriceRaw, (QuantityRaw, QuantityRaw)>,
@@ -194,6 +195,7 @@ impl OrderMatchingEngine {
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
             cached_filled_qty: IndexMap::new(),
+            post_match_order_ids: IndexSet::new(),
             ids_generator,
             last_trade_size: None,
             bid_consumption: IndexMap::new(),
@@ -247,6 +249,7 @@ impl OrderMatchingEngine {
         self.execution_bar_deltas.clear();
         self.account_ids.clear();
         self.cached_filled_qty.clear();
+        self.post_match_order_ids.clear();
         self.core.reset();
         self.target_bid = None;
         self.target_ask = None;
@@ -1089,7 +1092,7 @@ impl OrderMatchingEngine {
                 );
                 self.cancel_order(&order, None);
             } else {
-                let _ = self.core.delete_order(client_order_id);
+                self.delete_core_order(client_order_id);
                 self.cached_filled_qty.swap_remove(&client_order_id);
             }
         }
@@ -3301,7 +3304,7 @@ impl OrderMatchingEngine {
     // `iterate_bids/asks` does not produce a spurious fill action.
     fn purge_stale_core_entry(&mut self, client_order_id: ClientOrderId) {
         if self.core.order_exists(client_order_id) {
-            let _ = self.core.delete_order(client_order_id);
+            self.delete_core_order(client_order_id);
         }
         self.cached_filled_qty.swap_remove(&client_order_id);
     }
@@ -3316,7 +3319,7 @@ impl OrderMatchingEngine {
         // Gate on `is_closed`, not `is_open`: cache may transiently hold the
         // order in `Submitted` (process_limit_order accepts before cache add)
         if order.is_closed() {
-            let _ = self.core.delete_order(client_order_id);
+            self.delete_core_order(client_order_id);
             return Some(order);
         }
 
@@ -3329,10 +3332,12 @@ impl OrderMatchingEngine {
             .is_some_and(|existing| *existing == new_match_info);
 
         if unchanged {
+            self.track_post_match_order(&order);
             return Some(order);
         }
 
-        let _ = self.core.delete_order(client_order_id);
+        self.delete_core_order(client_order_id);
+        self.track_post_match_order(&order);
         self.core.add_order(new_match_info);
         Some(order)
     }
@@ -3825,10 +3830,14 @@ impl OrderMatchingEngine {
             }
         }
 
+        let mut matched_order = false;
+
         if self.market_status == MarketStatus::Open {
             // Process bid actions before snapshotting asks so cross-side
             // contingencies (OCO/OUO) mutate state between sides
             for action in self.core.iterate_bids() {
+                matched_order = true;
+
                 match action {
                     MatchAction::FillLimit(id) => self.fill_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
@@ -3836,6 +3845,8 @@ impl OrderMatchingEngine {
             }
 
             for action in self.core.iterate_asks() {
+                matched_order = true;
+
                 match action {
                     MatchAction::FillLimit(id) => self.fill_limit_order(id),
                     MatchAction::TriggerStop(id) => self.trigger_stop_order(id),
@@ -3843,49 +3854,65 @@ impl OrderMatchingEngine {
             }
         }
 
-        let order_ids: Vec<ClientOrderId> =
-            self.core.iter_orders().map(|m| m.client_order_id).collect();
+        let order_ids: Vec<ClientOrderId> = if matched_order {
+            self.core.iter_orders().map(|m| m.client_order_id).collect()
+        } else if self.post_match_order_ids.is_empty() {
+            Vec::new()
+        } else {
+            self.core
+                .iter_orders()
+                .filter_map(|order| {
+                    self.post_match_order_ids
+                        .contains(&order.client_order_id)
+                        .then_some(order.client_order_id)
+                })
+                .collect()
+        };
+        let support_gtd_orders = self.config.support_gtd_orders;
 
         for client_order_id in order_ids {
-            let order = match self
-                .cache
-                .borrow()
-                .order(&client_order_id)
-                .map(|o| o.clone())
-            {
-                Some(order) => order,
-                None => continue,
+            let (action, keep_tracking) = {
+                let cache = self.cache.borrow();
+                let Some(order) = cache.order(&client_order_id) else {
+                    self.post_match_order_ids.swap_remove(&client_order_id);
+                    continue;
+                };
+
+                (
+                    post_match_order_action(&order, support_gtd_orders, timestamp_ns, |order| {
+                        order.clone()
+                    }),
+                    Self::requires_post_match_maintenance(&order),
+                )
             };
 
-            if order.is_closed() {
-                let _ = self.core.delete_order(client_order_id);
-                self.cached_filled_qty.swap_remove(&client_order_id);
-                continue;
-            }
-
-            if self.config.support_gtd_orders
-                && let Some(expire_ns) = order.expire_time()
-                && timestamp_ns >= expire_ns
-            {
-                let _ = self.core.delete_order(client_order_id);
-                self.cached_filled_qty.swap_remove(&client_order_id);
-                self.expire_order(&order);
-                continue;
-            }
-
-            if matches!(
-                order.order_type(),
-                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
-            ) {
-                let mut any = order;
-                if self.maybe_activate_trailing_stop(
-                    &mut any,
-                    self.core.bid,
-                    self.core.ask,
-                    self.core.last,
-                ) {
-                    self.update_trailing_stop_order(&any);
-                    self.resync_core_entry(client_order_id);
+            match action {
+                PostMatchOrderAction::RemoveClosed => {
+                    self.delete_core_order(client_order_id);
+                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    continue;
+                }
+                PostMatchOrderAction::Expire(order) => {
+                    self.delete_core_order(client_order_id);
+                    self.cached_filled_qty.swap_remove(&client_order_id);
+                    self.expire_order(&order);
+                    continue;
+                }
+                PostMatchOrderAction::UpdateTrailing(mut order) => {
+                    if self.maybe_activate_trailing_stop(
+                        &mut order,
+                        self.core.bid,
+                        self.core.ask,
+                        self.core.last,
+                    ) {
+                        self.update_trailing_stop_order(&order);
+                        self.resync_core_entry(client_order_id);
+                    }
+                }
+                PostMatchOrderAction::NoMaintenance => {
+                    if !keep_tracking {
+                        self.post_match_order_ids.swap_remove(&client_order_id);
+                    }
                 }
             }
 
@@ -5012,7 +5039,7 @@ impl OrderMatchingEngine {
 
         if order.is_closed() || fully_filled {
             if self.core.order_exists(order.client_order_id()) {
-                let _ = self.core.delete_order(order.client_order_id());
+                self.delete_core_order(order.client_order_id());
             }
             // MarketToLimit reads `cached_filled_qty` in its caller to compute leaves;
             // its own cleanup happens there after the read.
@@ -5541,7 +5568,25 @@ impl OrderMatchingEngine {
         }
 
         let match_info = Self::matching_core_entry(order);
+        self.track_post_match_order(order);
         self.core.add_order(match_info);
+    }
+
+    fn track_post_match_order(&mut self, order: &OrderAny) {
+        self.post_match_order_ids.insert(order.client_order_id());
+    }
+
+    fn delete_core_order(&mut self, client_order_id: ClientOrderId) {
+        self.post_match_order_ids.swap_remove(&client_order_id);
+        let _ = self.core.delete_order(client_order_id);
+    }
+
+    fn requires_post_match_maintenance(order: &OrderAny) -> bool {
+        order.expire_time().is_some()
+            || matches!(
+                order.order_type(),
+                OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+            )
     }
 
     fn matching_core_entry(order: &OrderAny) -> RestingOrder {
@@ -5593,7 +5638,7 @@ impl OrderMatchingEngine {
 
         // Check if order exists in OrderMatching core, and delete it if it does
         if self.core.order_exists(order.client_order_id()) {
-            let _ = self.core.delete_order(order.client_order_id());
+            self.delete_core_order(order.client_order_id());
         }
         self.cached_filled_qty.swap_remove(&order.client_order_id());
 
@@ -5884,7 +5929,7 @@ impl OrderMatchingEngine {
             .is_limit_matched(order.order_side_specified(), price)
         {
             if order.is_post_only() {
-                let _ = self.core.delete_order(client_order_id);
+                self.delete_core_order(client_order_id);
                 self.cached_filled_qty.swap_remove(&client_order_id);
                 let event = self.create_order_rejected(
                     &order,
@@ -6288,6 +6333,41 @@ enum ModifyOutcome {
     Rejected,
 }
 
+#[derive(Debug)]
+enum PostMatchOrderAction {
+    RemoveClosed,
+    Expire(OrderAny),
+    UpdateTrailing(OrderAny),
+    NoMaintenance,
+}
+
+fn post_match_order_action<F>(
+    order: &OrderAny,
+    support_gtd_orders: bool,
+    timestamp_ns: UnixNanos,
+    clone_order: F,
+) -> PostMatchOrderAction
+where
+    F: FnOnce(&OrderAny) -> OrderAny,
+{
+    if order.is_closed() {
+        PostMatchOrderAction::RemoveClosed
+    } else if support_gtd_orders
+        && order
+            .expire_time()
+            .is_some_and(|expire_ns| timestamp_ns >= expire_ns)
+    {
+        PostMatchOrderAction::Expire(clone_order(order))
+    } else if matches!(
+        order.order_type(),
+        OrderType::TrailingStopMarket | OrderType::TrailingStopLimit
+    ) {
+        PostMatchOrderAction::UpdateTrailing(clone_order(order))
+    } else {
+        PostMatchOrderAction::NoMaintenance
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct BarTickSizes {
     open: Quantity,
@@ -6367,21 +6447,24 @@ mod tests {
         data::{
             DEPTH10_LEN, OrderBookDepth10, QuoteTick, option_chain::OptionGreeks, order::BookOrder,
         },
-        enums::{AccountType, BookType, LiquiditySide, OmsType, OrderSide, OrderType},
+        enums::{
+            AccountType, BookType, LiquiditySide, OmsType, OrderSide, OrderType, TimeInForce,
+            TrailingOffsetType, TriggerType,
+        },
         events::OrderEventAny,
-        identifiers::AccountId,
+        identifiers::{AccountId, ClientOrderId, VenueOrderId},
         instruments::{
             Instrument, InstrumentAny,
             stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt},
         },
         orderbook::OrderBook,
-        orders::{Order, OrderAny, OrderTestBuilder},
+        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
-    use super::{BarTickSizes, OrderMatchingEngine};
+    use super::{BarTickSizes, OrderMatchingEngine, PostMatchOrderAction, post_match_order_action};
     use crate::models::{
         fee::{FeeModel, FeeModelAny, FeeModelHandle},
         fill::{FillModel, FillModelHandle},
@@ -6412,6 +6495,127 @@ mod tests {
                 volume.raw - total_raw,
             );
         }
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_does_not_clone_no_maintenance_order() {
+        let order = post_match_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        assert!(matches!(action, PostMatchOrderAction::NoMaintenance));
+        assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_does_not_clone_closed_order() {
+        let order = post_match_closed_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        assert!(matches!(action, PostMatchOrderAction::RemoveClosed));
+        assert_eq!(clone_count.get(), 0);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_clones_expired_gtd_order_once() {
+        let order = post_match_gtd_limit_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(10_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        let PostMatchOrderAction::Expire(cloned) = action else {
+            panic!("Expected expired action, was {action:?}");
+        };
+        assert_eq!(cloned.client_order_id(), order.client_order_id());
+        assert_eq!(clone_count.get(), 1);
+    }
+
+    #[rstest]
+    fn test_post_match_order_action_clones_trailing_order_once() {
+        let order = post_match_trailing_stop_order();
+        let clone_count = Cell::new(0);
+
+        let action = post_match_order_action(&order, true, UnixNanos::from(1_u64), |order| {
+            clone_count.set(clone_count.get() + 1);
+            order.clone()
+        });
+
+        let PostMatchOrderAction::UpdateTrailing(cloned) = action else {
+            panic!("Expected trailing update action, was {action:?}");
+        };
+        assert_eq!(cloned.client_order_id(), order.client_order_id());
+        assert_eq!(clone_count.get(), 1);
+    }
+
+    fn post_match_limit_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1500.00"))
+            .quantity(Quantity::from("1.000"))
+            .client_order_id(ClientOrderId::from("POST-MATCH-LIMIT"))
+            .submit(true)
+            .build()
+    }
+
+    fn post_match_closed_limit_order() -> OrderAny {
+        let account_id = AccountId::from("SIM-001");
+        let venue_order_id = VenueOrderId::from("V-001");
+        let mut order = post_match_limit_order();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                account_id,
+                venue_order_id,
+            ))
+            .unwrap();
+        order
+            .apply(TestOrderEventStubs::canceled(
+                &order,
+                account_id,
+                Some(venue_order_id),
+            ))
+            .unwrap();
+        order
+    }
+
+    fn post_match_gtd_limit_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .price(Price::from("1500.00"))
+            .quantity(Quantity::from("1.000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(10_u64))
+            .client_order_id(ClientOrderId::from("POST-MATCH-GTD"))
+            .submit(true)
+            .build()
+    }
+
+    fn post_match_trailing_stop_order() -> OrderAny {
+        OrderTestBuilder::new(OrderType::TrailingStopMarket)
+            .instrument_id(crypto_perpetual_ethusdt().id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .trigger_price(Price::from("1510.00"))
+            .trigger_type(TriggerType::BidAsk)
+            .trailing_offset(Decimal::new(5, 0))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .client_order_id(ClientOrderId::from("POST-MATCH-TRAIL"))
+            .submit(true)
+            .build()
     }
 
     #[rstest]

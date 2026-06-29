@@ -197,7 +197,7 @@ pub(crate) fn dispatch_ws_trading_message(
             );
         }
         BinanceFuturesWsTradingMessage::Connected => {
-            log::info!("WS trading API connected");
+            log::debug!("WS trading API connected");
         }
         BinanceFuturesWsTradingMessage::Reconnected => {
             log::info!("WS trading API reconnected");

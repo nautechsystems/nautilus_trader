@@ -1569,7 +1569,7 @@ impl BinanceSpotHttpClient {
         // Cache instruments for use by other domain methods
         self.cache_instruments(instruments.clone());
 
-        log::info!("Loaded spot instruments: count={}", instruments.len());
+        log::debug!("Loaded spot instruments: count={}", instruments.len());
         Ok(instruments)
     }
 

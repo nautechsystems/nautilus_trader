@@ -39,7 +39,9 @@ use nautilus_common::{
     cache::{Cache, CacheSnapshotRef, PositionRef},
     clients::ExecutionClient,
     clock::Clock,
+    enums::LogColor,
     generators::position_id::PositionIdGenerator,
+    log_info,
     logging::{CMD, EVT, RECV, SEND},
     messages::{
         ExecutionReport,
@@ -62,7 +64,7 @@ use nautilus_core::{
 use nautilus_model::{
     accounts::Account,
     enums::{
-        ContingencyType, OmsType, OrderStatus, OrderType, PositionSide, TimeInForce,
+        ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         TrailingOffsetType,
     },
     events::{
@@ -2153,6 +2155,8 @@ impl ExecutionEngine {
             own_book.add(order.to_own_book_order());
         }
 
+        log_info!("Submit {order}", color = LogColor::Blue);
+
         if let Err(e) = client.submit_order(cmd) {
             self.deny_order(
                 &order,
@@ -2295,6 +2299,8 @@ impl ExecutionEngine {
             }
         }
 
+        log_info!("Submit {}", cmd.order_list, color = LogColor::Blue);
+
         if let Err(e) = client.submit_order_list(cmd) {
             log::error!("Error submitting order list to client: {e}");
             let reason = OrderDeniedReason::SubmitFailed {
@@ -2343,6 +2349,16 @@ impl ExecutionEngine {
     }
 
     fn handle_modify_order(&self, client: &dyn ExecutionClient, cmd: ModifyOrder) {
+        let venue_str = cmd
+            .venue_order_id
+            .map_or_else(String::new, |venue_order_id| format!(" {venue_order_id}"));
+
+        log_info!(
+            "Modify {}{venue_str}",
+            cmd.client_order_id,
+            color = LogColor::Blue
+        );
+
         if let Err(e) = client.modify_order(cmd) {
             log::error!("Error modifying order: {e}");
         }
@@ -2355,30 +2371,62 @@ impl ExecutionEngine {
     }
 
     fn handle_cancel_order(&self, client: &dyn ExecutionClient, cmd: CancelOrder) {
+        let venue_str = cmd
+            .venue_order_id
+            .map_or_else(String::new, |venue_order_id| format!(" {venue_order_id}"));
+
+        log_info!(
+            "Cancel {}{venue_str}",
+            cmd.client_order_id,
+            color = LogColor::Blue
+        );
+
         if let Err(e) = client.cancel_order(cmd) {
             log::error!("Error canceling order: {e}");
         }
     }
 
     fn handle_cancel_all_orders(&self, client: &dyn ExecutionClient, cmd: CancelAllOrders) {
+        let side_str = match cmd.order_side {
+            OrderSide::NoOrderSide => " ".to_string(),
+            order_side => format!(" {order_side} "),
+        };
+
+        log_info!("Cancel all{side_str}orders", color = LogColor::Blue);
+
         if let Err(e) = client.cancel_all_orders(cmd) {
             log::error!("Error canceling all orders: {e}");
         }
     }
 
     fn handle_batch_cancel_orders(&self, client: &dyn ExecutionClient, cmd: BatchCancelOrders) {
+        let client_order_ids: Vec<ClientOrderId> = cmd
+            .cancels
+            .iter()
+            .map(|cancel| cancel.client_order_id)
+            .collect();
+
+        log_info!(
+            "Batch cancel orders {client_order_ids:?}",
+            color = LogColor::Blue
+        );
+
         if let Err(e) = client.batch_cancel_orders(cmd) {
             log::error!("Error batch canceling orders: {e}");
         }
     }
 
     fn handle_query_account(&self, client: &dyn ExecutionClient, cmd: QueryAccount) {
+        log_info!("Query {}", cmd.account_id, color = LogColor::Blue);
+
         if let Err(e) = client.query_account(cmd) {
             log::warn!("Error querying account: {e}");
         }
     }
 
     fn handle_query_order(&self, client: &dyn ExecutionClient, cmd: QueryOrder) {
+        log_info!("Query {}", cmd.client_order_id, color = LogColor::Blue);
+
         if let Err(e) = client.query_order(cmd) {
             log::warn!("Error querying order: {e}");
         }

@@ -153,7 +153,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
         let slot = self.create_connection().await?;
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
-        log::info!(
+        log::debug!(
             "Connected to Binance Spot public JSON stream pool: url={}",
             self.url
         );
@@ -184,7 +184,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
         *self.out_tx.lock().expect("out_tx lock poisoned") = None;
         *self.out_rx.lock().expect("out_rx lock poisoned") = None;
 
-        log::info!("Disconnected from Binance Spot public JSON stream pool");
+        log::debug!("Disconnected from Binance Spot public JSON stream pool");
         Ok(())
     }
 
@@ -229,7 +229,7 @@ impl BinanceSpotPublicJsonWebSocketClient {
                 slots.push(new_slot);
                 slots.len()
             };
-            log::info!(
+            log::debug!(
                 "Spot JSON pool slot {} connected: url={}",
                 slot_count - 1,
                 self.url

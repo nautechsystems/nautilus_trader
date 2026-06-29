@@ -155,7 +155,7 @@ impl BinanceFuturesWsTradingHandler {
                     if let Message::Text(ref text) = msg
                         && text.as_str() == RECONNECTED
                     {
-                        log::info!("Handler received reconnection signal");
+                        log::debug!("Handler received reconnection signal");
                         self.fail_pending_requests();
                         self.emit(BinanceFuturesWsTradingMessage::Reconnected);
                         continue;

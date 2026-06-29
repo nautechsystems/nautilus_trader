@@ -33,9 +33,9 @@ use nautilus_model::{
         MarkPriceUpdate, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, AssetClass, BookType, ContingencyType, InstrumentClass,
-        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionSide, PriceType, TimeInForce, TriggerType,
+        AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
+        InstrumentClass, LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide,
+        OrderStatus, OrderType, PositionSide, PriceType, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEmulated, OrderEventAny, OrderFilled,
@@ -69,12 +69,12 @@ use ustr::Ustr;
 
 use crate::{
     cache::{
-        ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheConfig, CacheView,
-        CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError, ORDER_BOOK_NOT_FOUND,
-        ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND, OrderBookLookupError,
-        OrderListLookupError, OrderLookupError, OrderRef, OwnOrderBookLookupError,
-        POSITION_NOT_FOUND, PositionLookupError, SYNTHETIC_INSTRUMENT_NOT_FOUND,
-        SyntheticInstrumentLookupError,
+        ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheApi, CacheConfig,
+        CacheView, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
+        ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND,
+        OrderBookLookupError, OrderListLookupError, OrderLookupError, OrderRef,
+        OwnOrderBookLookupError, POSITION_NOT_FOUND, PositionLookupError,
+        SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError,
         database::{CacheDatabaseAdapter, CacheMap},
     },
     signal::Signal,
@@ -230,6 +230,200 @@ fn test_cache_view_borrow_panics_when_mutably_borrowed() {
     let _mutable_borrow = cache.borrow_mut();
 
     let _borrowed = view.borrow();
+}
+
+#[rstest]
+fn test_cache_api_empty_read_surface_returns_empty(cache: Cache) {
+    let cell = RefCell::new(cache);
+    let api = CacheApi::new(&cell);
+    let venue = Venue::from("SIM");
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-BID-EXTERNAL");
+    let client_order_id = ClientOrderId::from("O-MISSING");
+    let venue_order_id = VenueOrderId::from("V-MISSING");
+    let account_id = AccountId::from("SIM-001");
+    let order_list_id = OrderListId::new("OL-MISSING");
+    let position_id = PositionId::new("P-MISSING");
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let empty_order_ids: Vec<ClientOrderId> = Vec::new();
+    let position = snapshot_test_position();
+
+    assert!(
+        api.instruments_by_parent(&venue, &Ustr::from("AUD"), InstrumentClass::Spot)
+            .is_empty()
+    );
+    assert!(api.try_synthetic(&instrument_id).is_err());
+    assert!(
+        api.bar_types(None, None, AggregationSource::External)
+            .is_empty()
+    );
+    assert!(api.try_order_book(&instrument_id).is_err());
+    assert!(api.yield_curve("USD").is_none());
+    assert!(api.try_own_order_book(&instrument_id).is_err());
+    assert!(api.accounts(&account_id).is_empty());
+    assert!(api.accounts_all().is_empty());
+    assert!(!api.is_order_pending_cancel_local(&client_order_id));
+    assert!(api.orders(None, None, None, None, None).is_empty());
+    assert!(api.orders_for_ids(&empty_order_ids, &"empty").is_empty());
+    assert!(api.orders_closed(None, None, None, None, None).is_empty());
+    assert!(api.orders_for_position(&position_id).is_empty());
+    assert!(
+        api.orders_for_exec_algorithm(&exec_algorithm_id, None, None, None, None, None)
+            .is_empty()
+    );
+    assert!(api.orders_for_exec_spawn(&client_order_id).is_empty());
+    assert_eq!(api.exec_spawn_total_quantity(&client_order_id, false), None);
+    assert_eq!(
+        api.exec_spawn_total_filled_qty(&client_order_id, false),
+        None
+    );
+    assert_eq!(
+        api.exec_spawn_total_leaves_qty(&client_order_id, false),
+        None
+    );
+    assert_eq!(api.orders_closed_count(None, None, None, None, None), 0);
+    assert_eq!(
+        api.orders_active_local_count(None, None, None, None, None),
+        0
+    );
+    assert_eq!(api.orders_emulated_count(None, None, None, None, None), 0);
+    assert_eq!(api.orders_total_count(None, None, None, None, None), 0);
+    assert!(!api.has_orders_closed(None, None, None, None, None));
+    assert!(!api.has_orders(None, None, None, None, None));
+    assert!(api.try_order_list(&order_list_id).is_err());
+    assert!(!api.order_list_exists(&order_list_id));
+    assert!(api.try_position(&position_id).is_err());
+    assert!(!api.is_position_closed(&position_id));
+    assert!(api.positions(None, None, None, None, None).is_empty());
+    assert!(
+        api.positions_closed(None, None, None, None, None)
+            .is_empty()
+    );
+    assert_eq!(api.positions_closed_count(None, None, None, None, None), 0);
+    assert_eq!(api.positions_total_count(None, None, None, None, None), 0);
+    assert!(!api.has_positions_closed(None, None, None, None, None));
+    assert!(!api.has_positions(None, None, None, None, None));
+    assert_eq!(api.calculate_unrealized_pnl(&position), None);
+    assert_eq!(api.oms_type(&position_id), None);
+    assert_eq!(api.position_snapshot_bytes(&position_id), None);
+    assert_eq!(api.position_snapshot_count(&position_id), 0);
+    assert!(api.position_snapshots(Some(&position_id), None).is_empty());
+    assert!(api.position_snapshots_from(&position_id, 0).is_empty());
+    assert!(api.position_snapshot_ids(&instrument_id).is_empty());
+    assert_eq!(api.strategy_id_for_order(&client_order_id), None);
+    assert_eq!(api.strategy_id_for_position(&position_id), None);
+    assert_eq!(api.get("missing").unwrap(), None);
+
+    assert_eq!(api.client_order_id(&venue_order_id), None);
+    assert_eq!(api.quote_at_index(&instrument_id, 0), None);
+    assert_eq!(api.trade_at_index(&instrument_id, 0), None);
+    assert_eq!(api.bar_at_index(&bar_type, 0), None);
+}
+
+#[rstest]
+fn test_cache_api_returns_owned_snapshots_for_populated_queries(mut cache: Cache) {
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let strategy_id = StrategyId::from("S-API");
+    let exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let spawn_id = ClientOrderId::from("O-SPAWN");
+    let client_order_id = ClientOrderId::from("O-API-1");
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from("2"))
+        .client_order_id(client_order_id)
+        .strategy_id(strategy_id)
+        .exec_algorithm_id(exec_algorithm_id)
+        .exec_spawn_id(spawn_id);
+    let order = builder.build();
+    let order_list = OrderList::new(
+        OrderListId::new("OL-API-1"),
+        instrument_id,
+        strategy_id,
+        vec![client_order_id],
+        UnixNanos::from(0),
+    );
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let general_value = Bytes::from_static(b"value");
+
+    cache.add("key", general_value.clone()).unwrap();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    cache.add_order_list(order_list.clone()).unwrap();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+
+    let cell = RefCell::new(cache);
+    let api = CacheApi::new(&cell);
+
+    assert_eq!(api.order(&client_order_id), Some(order.clone()));
+    assert_eq!(api.try_order(&client_order_id).unwrap(), order);
+    assert_eq!(
+        api.orders(None, None, None, None, None),
+        vec![order.clone()]
+    );
+    assert_eq!(
+        api.orders_for_ids(&[client_order_id], &"api"),
+        vec![order.clone()]
+    );
+    assert_eq!(
+        api.orders_active_local(None, None, None, None, None),
+        vec![order.clone()]
+    );
+    assert_eq!(
+        api.orders_for_exec_algorithm(&exec_algorithm_id, None, None, None, None, None),
+        vec![order.clone()]
+    );
+    assert_eq!(api.orders_for_exec_spawn(&spawn_id), vec![order]);
+    assert_eq!(
+        api.exec_spawn_total_quantity(&spawn_id, false),
+        Some(Quantity::from("2"))
+    );
+    assert_eq!(
+        api.exec_spawn_total_filled_qty(&spawn_id, false),
+        Some(Quantity::from("0"))
+    );
+    assert_eq!(
+        api.exec_spawn_total_leaves_qty(&spawn_id, false),
+        Some(Quantity::from("2"))
+    );
+    assert_eq!(api.orders_total_count(None, None, None, None, None), 1);
+    assert_eq!(
+        api.orders_active_local_count(None, None, None, None, None),
+        1
+    );
+    assert!(api.has_orders(None, None, None, None, None));
+    assert_eq!(
+        api.strategy_id_for_order(&client_order_id),
+        Some(strategy_id)
+    );
+
+    assert_eq!(api.order_list(&order_list.id), Some(order_list.clone()));
+    assert_eq!(
+        api.try_order_list(&order_list.id).unwrap(),
+        order_list.clone()
+    );
+    assert!(api.order_list_exists(&order_list.id));
+
+    assert_eq!(api.position(&position_id), Some(position.clone()));
+    assert_eq!(api.try_position(&position_id).unwrap(), position.clone());
+    assert_eq!(
+        api.positions(None, None, None, None, None),
+        vec![position.clone()]
+    );
+    assert_eq!(
+        api.positions_open(None, None, None, None, None),
+        vec![position.clone()]
+    );
+    assert_eq!(api.positions_total_count(None, None, None, None, None), 1);
+    assert!(api.has_positions(None, None, None, None, None));
+    assert_eq!(api.oms_type(&position_id), Some(OmsType::Netting));
+    assert_eq!(
+        api.strategy_id_for_position(&position_id),
+        Some(position.strategy_id)
+    );
+    assert_eq!(api.get("key").unwrap(), Some(general_value));
 }
 
 #[rstest]

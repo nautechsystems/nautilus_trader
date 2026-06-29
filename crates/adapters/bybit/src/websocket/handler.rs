@@ -200,7 +200,7 @@ impl BybitWsFeedHandler {
 
                             if is_success {
                                 self.auth_tracker.succeed();
-                                log::info!("WebSocket authenticated");
+                                log::debug!("WebSocket authenticated");
                             } else {
                                 let error_msg = auth_response
                                     .ret_msg
@@ -365,7 +365,7 @@ impl BybitWsFeedHandler {
         match msg {
             Message::Text(text) => {
                 if text == nautilus_network::RECONNECTED {
-                    log::info!("Received WebSocket reconnected signal");
+                    log::debug!("Received WebSocket reconnected signal");
                     return Some(BybitWsFrame::Reconnected);
                 }
 

@@ -33,8 +33,8 @@ use super::{
     config::BetfairStreamConfig,
     error::BetfairStreamError,
     messages::{
-        Authentication, MarketDataFilter, MarketSubscription, OrderFilter, OrderSubscription,
-        RaceSubscription, StreamMarketFilter, StreamMessage, stream_decode,
+        Authentication, CricketSubscription, MarketDataFilter, MarketSubscription, OrderFilter,
+        OrderSubscription, RaceSubscription, StreamMarketFilter, StreamMessage, stream_decode,
     },
 };
 use crate::common::{
@@ -401,13 +401,63 @@ impl BetfairRaceStreamClient {
         config: BetfairStreamConfig,
         race_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
     ) -> Result<Self, BetfairStreamError> {
+        let race_sub = RaceSubscription::new(1);
+        let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub)?);
+        let subscription = AuxiliaryStreamSubscription {
+            bytes: race_sub_bytes,
+            label: "race",
+            fatal_hint: "check TPD entitlement on your Betfair app key",
+            fatal_tx: race_fatal_tx,
+        };
+        Self::connect_with_subscription(credential, session_token, handler, config, subscription)
+            .await
+    }
+
+    /// Connects to the Betfair sports data stream and subscribes to cricket.
+    ///
+    /// The `cricket_fatal_tx` channel receives a signal when the server returns
+    /// a fatal status error.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails or the initial send fails.
+    pub async fn connect_cricket(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: TcpMessageHandler,
+        config: BetfairStreamConfig,
+        cricket_fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+    ) -> Result<Self, BetfairStreamError> {
+        let cricket_sub = CricketSubscription::new(1);
+        let cricket_sub_bytes = Bytes::from(serde_json::to_vec(&cricket_sub)?);
+        let subscription = AuxiliaryStreamSubscription {
+            bytes: cricket_sub_bytes,
+            label: "cricket",
+            fatal_hint: "check cricket data entitlement on your Betfair app key",
+            fatal_tx: cricket_fatal_tx,
+        };
+        Self::connect_with_subscription(credential, session_token, handler, config, subscription)
+            .await
+    }
+
+    async fn connect_with_subscription(
+        credential: &BetfairCredential,
+        session_token: String,
+        handler: TcpMessageHandler,
+        config: BetfairStreamConfig,
+        subscription: AuxiliaryStreamSubscription,
+    ) -> Result<Self, BetfairStreamError> {
+        let AuxiliaryStreamSubscription {
+            bytes: sub_bytes,
+            label,
+            fatal_hint,
+            fatal_tx,
+        } = subscription;
+
         let auth = Authentication::new(credential.app_key().to_string(), session_token);
         let auth_bytes_vec = serde_json::to_vec(&auth)?;
         let auth_bytes = Bytes::from(auth_bytes_vec.clone());
         let (auth_bytes_tx, auth_bytes_rx) = watch::channel(auth_bytes.clone());
-
-        let race_sub = RaceSubscription::new(1);
-        let race_sub_bytes = Bytes::from(serde_json::to_vec(&race_sub)?);
 
         let mode = if config.use_tls {
             Mode::Tls
@@ -424,24 +474,23 @@ impl BetfairRaceStreamClient {
                     && code.is_race_stream_fatal()
                 {
                     log::error!(
-                        "Betfair race stream fatal error: {:?} - {:?} \
-                         (check TPD entitlement on your Betfair app key)",
+                        "Betfair {label} stream fatal error: {:?} - {:?} ({fatal_hint})",
                         status.error_code,
                         status.error_message,
                     );
-                    let _ = race_fatal_tx.send(());
+                    let _ = fatal_tx.send(());
                     return;
                 }
 
                 if status.connection_closed {
                     log::warn!(
-                        "Betfair race stream closed: {:?} - {:?}",
+                        "Betfair {label} stream closed: {:?} - {:?}",
                         status.error_code,
                         status.error_message,
                     );
                 } else if status.error_code.is_some() {
                     log::warn!(
-                        "Betfair race stream status: {:?} - {:?}",
+                        "Betfair {label} stream status: {:?} - {:?}",
                         status.error_code,
                         status.error_message,
                     );
@@ -451,7 +500,7 @@ impl BetfairRaceStreamClient {
         });
 
         let auth_bytes_reconnect = auth_bytes_rx;
-        let sub_reconnect = race_sub_bytes.clone();
+        let sub_reconnect = sub_bytes.clone();
         let shared_tx_reconnect = Arc::clone(&shared_tx);
         let post_reconnection: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
             let Some(tx) = shared_tx_reconnect.get() else {
@@ -492,10 +541,10 @@ impl BetfairRaceStreamClient {
 
         let _ = shared_tx.set(socket.writer_tx.clone());
 
-        let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + race_sub_bytes.len());
+        let mut combined = Vec::with_capacity(auth_bytes_vec.len() + 2 + sub_bytes.len());
         combined.extend_from_slice(&auth_bytes_vec);
         combined.extend_from_slice(b"\r\n");
-        combined.extend_from_slice(&race_sub_bytes);
+        combined.extend_from_slice(&sub_bytes);
         socket
             .send_bytes(combined)
             .await
@@ -530,13 +579,20 @@ impl BetfairRaceStreamClient {
     }
 }
 
+struct AuxiliaryStreamSubscription {
+    bytes: Bytes,
+    label: &'static str,
+    fatal_hint: &'static str,
+    fatal_tx: tokio::sync::mpsc::UnboundedSender<()>,
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
     use super::*;
     use crate::stream::messages::{
-        Authentication, MarketDataFilter, RaceSubscription, StreamMarketFilter,
+        Authentication, CricketSubscription, MarketDataFilter, RaceSubscription, StreamMarketFilter,
     };
 
     #[rstest]
@@ -760,6 +816,14 @@ mod tests {
         let sub = RaceSubscription::new(42);
         let json = serde_json::to_string(&sub).unwrap();
         assert!(json.contains("\"op\":\"raceSubscription\""));
+        assert!(json.contains("\"id\":42"));
+    }
+
+    #[rstest]
+    fn test_cricket_subscription_serialization() {
+        let sub = CricketSubscription::new(42);
+        let json = serde_json::to_string(&sub).unwrap();
+        assert!(json.contains("\"op\":\"cricketSubscription\""));
         assert!(json.contains("\"id\":42"));
     }
 

@@ -7855,6 +7855,7 @@ class DatabentoDataLoader:
         filepath: str,
         use_exchange_as_venue: bool,
         skip_on_error: bool = False,
+        expiration_overrides: dict[str, dict[str, str]] | None = None,
     ) -> list[Instrument]: ...
     def load_order_book_deltas(
         self,
@@ -8612,6 +8613,11 @@ class OKXEnvironment(Enum):
     LIVE = "LIVE"
     DEMO = "DEMO"
 
+class OKXRegion(Enum):
+    GLOBAL = "GLOBAL"
+    EEA = "EEA"
+    US = "US"
+
 class OKXHttpClient:
     def __init__(
         self,
@@ -9004,10 +9010,12 @@ class OKXEndpointType(Enum):
     Private = "Private"
     Business = "Business"
 
-def get_okx_http_base_url() -> str: ...
-def get_okx_ws_url_public(environment: OKXEnvironment) -> str: ...
-def get_okx_ws_url_private(environment: OKXEnvironment) -> str: ...
-def get_okx_ws_url_business(environment: OKXEnvironment) -> str: ...
+def get_okx_http_base_url(region: OKXRegion | None = None) -> str: ...
+def get_okx_ws_url_public(environment: OKXEnvironment, region: OKXRegion | None = None) -> str: ...
+def get_okx_ws_url_private(environment: OKXEnvironment, region: OKXRegion | None = None) -> str: ...
+def get_okx_ws_url_business(
+    environment: OKXEnvironment, region: OKXRegion | None = None
+) -> str: ...
 def derive_okx_ws_url(base_url: str, channel: str) -> str: ...
 def okx_requires_authentication(endpoint_type: OKXEndpointType) -> bool: ...
 

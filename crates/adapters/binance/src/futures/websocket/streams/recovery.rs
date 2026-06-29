@@ -95,12 +95,12 @@ pub(crate) async fn build_and_connect_user_stream(
     )
     .context("failed to construct Binance Futures private WebSocket client")?;
 
-    log::info!("Connecting to Binance Futures user data stream...");
+    log::debug!("Connecting to Binance Futures user data stream...");
     ws_client.connect().await.map_err(|e| {
         log::error!("Binance Futures private WebSocket connection failed: {e:?}");
         anyhow::anyhow!("failed to connect Binance Futures private WebSocket: {e}")
     })?;
-    log::info!("Connected to Binance Futures user data stream");
+    log::debug!("Connected to Binance Futures user data stream");
 
     Ok(ws_client)
 }

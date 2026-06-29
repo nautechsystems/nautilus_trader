@@ -17,6 +17,7 @@
 
 use std::{fmt::Debug, fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc};
 
+use ahash::AHashMap;
 use databento::{
     dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
@@ -109,6 +110,56 @@ impl DatabentoHistoricalClient {
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build client: {e}"))?;
 
+        Self::from_client(
+            credential,
+            publishers_filepath,
+            clock,
+            use_exchange_as_venue,
+            client,
+        )
+    }
+
+    /// Creates a new [`DatabentoHistoricalClient`] instance with a custom API base URL.
+    ///
+    /// This is intended for tests, benchmarks, and controlled deployments that route
+    /// Databento Historical API requests through a proxy.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if client creation, URL parsing, or publisher loading fails.
+    pub fn new_with_base_url(
+        credential: Credential,
+        publishers_filepath: PathBuf,
+        clock: &'static AtomicTime,
+        use_exchange_as_venue: bool,
+        base_url: &str,
+    ) -> anyhow::Result<Self> {
+        let client = databento::HistoricalClient::builder()
+            .user_agent_extension(NAUTILUS_USER_AGENT.into())
+            .base_url(base_url.parse().map_err(|e| {
+                anyhow::anyhow!("Failed to parse Databento Historical API base URL: {e}")
+            })?)
+            .key(credential.api_key())
+            .map_err(|e| anyhow::anyhow!("Failed to create client builder: {e}"))?
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build client: {e}"))?;
+
+        Self::from_client(
+            credential,
+            publishers_filepath,
+            clock,
+            use_exchange_as_venue,
+            client,
+        )
+    }
+
+    fn from_client(
+        credential: Credential,
+        publishers_filepath: PathBuf,
+        clock: &'static AtomicTime,
+        use_exchange_as_venue: bool,
+        client: databento::HistoricalClient,
+    ) -> anyhow::Result<Self> {
         let file_content = fs::read_to_string(publishers_filepath)?;
         let publishers_vec: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
@@ -135,6 +186,12 @@ impl DatabentoHistoricalClient {
     /// returned by [`Self::get_range_instruments`] are inserted automatically.
     pub fn set_price_precision(&self, symbol: Symbol, price_precision: u8) {
         self.price_precisions.insert(symbol, price_precision);
+    }
+
+    /// Returns a cached `price_precision` for the given `symbol`.
+    #[must_use]
+    pub fn price_precision(&self, symbol: Symbol) -> Option<u8> {
+        self.price_precisions.load().get(&symbol).copied()
     }
 
     /// Resolves a price precision for the given `instrument_id`.
@@ -166,6 +223,25 @@ impl DatabentoHistoricalClient {
                      or fetch the instrument definitions first via `get_range_instruments`"
                 )
             })
+    }
+
+    fn resolve_cached_price_precision(
+        &self,
+        instrument_id: &InstrumentId,
+        price_precision: Option<u8>,
+        precision_cache: &mut AHashMap<InstrumentId, u8>,
+    ) -> anyhow::Result<u8> {
+        if let Some(precision) = price_precision {
+            return Ok(precision);
+        }
+
+        if let Some(precision) = precision_cache.get(instrument_id) {
+            return Ok(*precision);
+        }
+
+        let precision = self.resolve_price_precision(instrument_id, None)?;
+        precision_cache.insert(*instrument_id, precision);
+        Ok(precision)
     }
 
     /// Gets the date range for a specific dataset.
@@ -246,7 +322,7 @@ impl DatabentoHistoricalClient {
                 instrument_id.venue = venue;
             }
 
-            match decode_instrument_def_msg(msg, instrument_id, None) {
+            match decode_instrument_def_msg(msg, instrument_id, None, None) {
                 Ok(Some(instrument)) => instruments.push(instrument),
                 Ok(None) => {} // Decoder logged a warning for the unsupported class
                 Err(e) => anyhow::bail!("Failed to decode instrument {instrument_id}: {e}"),
@@ -318,6 +394,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<QuoteTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -328,8 +405,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, _) = decode_record(
                 &record,
@@ -437,6 +517,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<OrderBookDepth10> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -447,8 +528,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
                 let depth = decode_mbp10_msg(msg, instrument_id, price_precision, None)?;
@@ -505,6 +589,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<OrderBookDelta> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -515,8 +600,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(msg) = record.get::<dbn::MboMsg>() {
                 let (delta, _trade) =
@@ -591,6 +679,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<TradeTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
@@ -601,8 +690,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, data2) =
                 decode_record(&record, instrument_id, price_precision, None, true, true)?;
@@ -702,6 +794,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<Bar> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::OhlcvMsg>().await? {
@@ -713,8 +806,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let (data, _) = decode_record(
                 &record,
@@ -776,6 +872,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<DatabentoImbalance> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::ImbalanceMsg>().await? {
@@ -787,8 +884,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             let imbalance = decode_imbalance_msg(msg, instrument_id, price_precision, None)?;
             result.push(imbalance);
@@ -837,6 +937,7 @@ impl DatabentoHistoricalClient {
 
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
+        let mut precision_cache = AHashMap::new();
         let mut result: Vec<DatabentoStatistics> = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::StatMsg>().await? {
@@ -854,8 +955,11 @@ impl DatabentoHistoricalClient {
                 &self.publisher_venue_map,
                 &sym_map,
             )?;
-            let price_precision =
-                self.resolve_price_precision(&instrument_id, price_precision_arg)?;
+            let price_precision = self.resolve_cached_price_precision(
+                &instrument_id,
+                price_precision_arg,
+                &mut precision_cache,
+            )?;
 
             if let Some(statistics) =
                 decode_statistics_msg(msg, instrument_id, price_precision, None)?
@@ -969,12 +1073,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_new_with_base_url_rejects_invalid_url() {
+        let err = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            "://invalid",
+        )
+        .expect_err("expected invalid base URL to fail");
+        let err_msg = format!("{err}");
+
+        assert!(
+            err_msg.contains("Failed to parse Databento Historical API base URL"),
+            "unexpected error message: {err_msg}",
+        );
+    }
+
+    #[rstest]
     fn test_set_price_precision_inserts_into_cache(historical_client: DatabentoHistoricalClient) {
         let symbol = Symbol::from("ESM4");
+
+        assert_eq!(historical_client.price_precision(symbol), None);
+
         historical_client.set_price_precision(symbol, 2);
 
-        let precisions = historical_client.price_precisions.load();
-        assert_eq!(precisions.get(&symbol), Some(&2));
+        assert_eq!(historical_client.price_precision(symbol), Some(2));
     }
 
     #[rstest]

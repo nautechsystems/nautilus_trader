@@ -87,7 +87,7 @@ class BybitDataClientConfig:
         heartbeat_interval_secs: int | None = None,
         recv_window_ms: int | None = None,
         update_instruments_interval_mins: int | None = None,
-        instrument_status_poll_secs: int | None = None,
+        instrument_poll_interval_secs: int | None = None,
     ) -> None: ...
 
 @typing.final

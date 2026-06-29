@@ -27,17 +27,11 @@ use rust_decimal::Decimal;
 use crate::engine::config::RiskEngineConfig;
 
 fn format_rate_limit(rate: &RateLimit) -> String {
-    let total_secs = rate.interval_ns.get() / NANOSECONDS_IN_SECOND;
+    let total_secs = rate.interval_ns() / NANOSECONDS_IN_SECOND;
     let hours = total_secs / 3_600;
     let minutes = (total_secs % 3_600) / 60;
     let seconds = total_secs % 60;
-    format!(
-        "{}/{:02}:{:02}:{:02}",
-        rate.limit.get(),
-        hours,
-        minutes,
-        seconds
-    )
+    format!("{}/{hours:02}:{minutes:02}:{seconds:02}", rate.limit())
 }
 
 fn parse_rate_limit(name: &str, value: &str) -> PyResult<RateLimit> {

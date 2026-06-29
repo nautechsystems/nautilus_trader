@@ -484,7 +484,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // we rebuild the client outright to guarantee clean cmd_tx/out_rx
         // pairs and a fresh signal.
         if self.ws_user.is_active() || self.ws_user.is_reconnecting() {
-            log::info!("Tearing down stale user WS before reconnect");
+            log::debug!("Tearing down stale user WS before reconnect");
             self.ws_user.disconnect().await;
             // Abort any prior consumer task; the rebuilt ws_user gets a fresh
             // out_rx so the previous task is otherwise leaked.
@@ -534,7 +534,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
             if instruments.is_empty() {
                 log::warn!("Coinbase instrument bootstrap returned no {product_kind} instruments");
             } else {
-                log::info!(
+                log::debug!(
                     "Coinbase exec client loaded {} {product_kind} instruments",
                     instruments.len()
                 );
@@ -650,7 +650,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         };
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );

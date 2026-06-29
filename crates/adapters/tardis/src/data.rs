@@ -410,9 +410,9 @@ impl TardisDataClient {
                 }
                 Some(Ok(tungstenite::Message::Close(frame))) => {
                     if let Some(frame) = frame {
-                        log::info!("WebSocket closed: {} {}", frame.code, frame.reason);
+                        log::debug!("WebSocket closed: {} {}", frame.code, frame.reason);
                     } else {
-                        log::info!("WebSocket closed");
+                        log::debug!("WebSocket closed");
                     }
                     return true;
                 }
@@ -422,7 +422,7 @@ impl TardisDataClient {
                     return true;
                 }
                 None => {
-                    log::info!("Stream ended");
+                    log::debug!("Stream ended");
                     return true;
                 }
             }
@@ -479,33 +479,27 @@ impl DataClient for TardisDataClient {
         !self.is_connected()
     }
 
-    fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        log::info!("Subscribed mark prices for {}", cmd.instrument_id);
+    fn subscribe_mark_prices(&mut self, _cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        log::info!("Subscribed index prices for {}", cmd.instrument_id);
+    fn subscribe_index_prices(&mut self, _cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        log::info!("Subscribed funding rates for {}", cmd.instrument_id);
+    fn subscribe_funding_rates(&mut self, _cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        log::info!("Unsubscribed mark prices for {}", cmd.instrument_id);
+    fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        log::info!("Unsubscribed index prices for {}", cmd.instrument_id);
+    fn unsubscribe_index_prices(&mut self, _cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        log::info!("Unsubscribed funding rates for {}", cmd.instrument_id);
+    fn unsubscribe_funding_rates(&mut self, _cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         Ok(())
     }
 

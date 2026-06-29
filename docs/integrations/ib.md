@@ -1634,6 +1634,10 @@ if __name__ == "__main__":
         node.dispose()
 ```
 
+When `validate_data_sequence=True`, subscribe to live bars via the `request_bars()`
+`callback` so the stream starts only after history has loaded; see
+[Working with bars: request vs. subscribe](../concepts/data.md#working-with-bars-request-vs-subscribe).
+
 ## Live trading with Dockerized gateway
 
 ```python

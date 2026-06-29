@@ -179,7 +179,12 @@ pub trait Strategy: DataActor {
 
         {
             let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
+            let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
+                anyhow::anyhow!(
+                    "Cannot submit order {}: cache is currently borrowed",
+                    order.client_order_id()
+                )
+            })?;
             cache.add_order(order.clone(), position_id, client_id, true)?;
         }
 
@@ -288,7 +293,13 @@ pub trait Strategy: DataActor {
 
         {
             let cache_rc = core.cache_rc();
-            let cache = cache_rc.borrow();
+            let mut cache = cache_rc.try_borrow_mut().map_err(|_| {
+                anyhow::anyhow!(
+                    "Cannot submit order list {}: cache is currently borrowed",
+                    order_list.id
+                )
+            })?;
+
             if cache.order_list_exists(&order_list.id) {
                 anyhow::bail!("OrderList denied: duplicate {}", order_list.id);
             }
@@ -301,21 +312,14 @@ pub trait Strategy: DataActor {
                     );
                 }
             }
-        }
 
-        {
-            let cache_rc = core.cache_rc();
-            let mut cache = cache_rc.borrow_mut();
             cache.add_order_list(order_list.clone())?;
+            for order in &orders {
+                cache.add_order(order.clone(), position_id, client_id, true)?;
+            }
         }
 
         for order in &orders {
-            {
-                let cache_rc = core.cache_rc();
-                let mut cache = cache_rc.borrow_mut();
-                cache.add_order(order.clone(), position_id, client_id, true)?;
-            }
-
             publish_order_initialized(order);
         }
 
@@ -2387,8 +2391,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
 
@@ -2996,6 +3000,30 @@ mod tests {
     }
 
     #[rstest]
+    fn test_submit_order_returns_error_when_cache_already_borrowed() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order = make_initialized_market_order("O-20250208-BORROWED-001");
+        let cache_rc = strategy.core.cache_rc();
+        let _cache = cache_rc.borrow();
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            strategy.submit_order(order, None, None, None)
+        }));
+
+        let err = result
+            .expect("submit_order should not panic")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "Cannot submit order O-20250208-BORROWED-001: cache is currently borrowed"
+        );
+    }
+
+    #[rstest]
     fn test_submit_order_list_publishes_order_initialized_after_cache_insert_before_send() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
@@ -3024,7 +3052,15 @@ mod tests {
                 move |event: &OrderEventAny| {
                     match event {
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
-                            assert!(cache_rc.borrow().order_exists(&client_order_id1));
+                            let cache = cache_rc.borrow();
+                            assert!(cache.order_exists(&client_order_id1));
+                            assert!(cache.order_exists(&client_order_id2));
+                            assert!(cache.order_list_exists(&order_list_id));
+                            let order_list = cache.order_list(&order_list_id).unwrap();
+                            assert_eq!(
+                                order_list.client_order_ids.as_slice(),
+                                &[client_order_id1, client_order_id2]
+                            );
                             timeline.borrow_mut().push("init1");
                         }
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
@@ -3075,6 +3111,39 @@ mod tests {
     }
 
     #[rstest]
+    fn test_submit_order_list_returns_error_when_cache_already_borrowed() {
+        let mut strategy = create_test_strategy();
+        register_strategy(&mut strategy);
+
+        let order_list_id = OrderListId::from("OL-20250208-BORROWED");
+        let mut orders = vec![
+            make_initialized_market_order("O-20250208-LIST-BORROWED-001"),
+            make_initialized_market_order("O-20250208-LIST-BORROWED-002"),
+        ];
+
+        for order in &mut orders {
+            order.set_order_list_id(order_list_id);
+        }
+
+        let cache_rc = strategy.core.cache_rc();
+        let _cache = cache_rc.borrow();
+
+        let result = catch_unwind(AssertUnwindSafe(|| {
+            strategy.submit_order_list(orders, None, None, None)
+        }));
+
+        let err = result
+            .expect("submit_order_list should not panic")
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            err,
+            "Cannot submit order list OL-20250208-BORROWED: cache is currently borrowed"
+        );
+    }
+
+    #[rstest]
     fn test_submit_order_list_create_list_branch_publishes_init_after_cache_insert() {
         let mut strategy = create_test_strategy();
         register_strategy(&mut strategy);
@@ -3098,7 +3167,17 @@ mod tests {
                 move |event: &OrderEventAny| {
                     match event {
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id1 => {
-                            assert!(cache_rc.borrow().order_exists(&client_order_id1));
+                            let cache = cache_rc.borrow();
+                            let cached_order1 = cache.order(&client_order_id1).unwrap();
+                            let cached_order2 = cache.order(&client_order_id2).unwrap();
+                            let order_list_id = cached_order1.order_list_id().unwrap();
+                            assert_eq!(cached_order2.order_list_id(), Some(order_list_id));
+                            assert!(cache.order_list_exists(&order_list_id));
+                            let order_list = cache.order_list(&order_list_id).unwrap();
+                            assert_eq!(
+                                order_list.client_order_ids.as_slice(),
+                                &[client_order_id1, client_order_id2]
+                            );
                             timeline.borrow_mut().push("init1");
                         }
                         OrderEventAny::Initialized(e) if e.client_order_id == client_order_id2 => {
@@ -4017,8 +4096,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
         strategy
@@ -4046,8 +4125,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
         strategy
@@ -4095,8 +4174,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
         strategy
@@ -4226,8 +4305,8 @@ mod tests {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
         strategy
@@ -4310,8 +4389,8 @@ mod tests {
             .register_default_handler(TimeEventCallback::from(|_event: TimeEvent| {}));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let portfolio = Rc::new(RefCell::new(Portfolio::new(
-            cache.clone(),
             clock.clone(),
+            cache.clone(),
             None,
         )));
         strategy

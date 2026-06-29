@@ -89,7 +89,7 @@ macro_rules! __nautilus_plugin_impl {
                     if host.is_null() {
                         return ::core::ptr::null::<$crate::manifest::PluginManifest>();
                     }
-                    &*MANIFEST as *const _
+                    &raw const *MANIFEST
                 });
 
                 match result {
@@ -105,4 +105,60 @@ macro_rules! __nautilus_plugin_impl {
 
     (@opt) => { "" };
     (@opt $vendor:expr) => { $vendor };
+}
+
+#[cfg(test)]
+#[allow(unreachable_pub)]
+mod tests {
+    use core::{ptr, ptr::NonNull};
+
+    use rstest::rstest;
+
+    use crate::{NAUTILUS_PLUGIN_ABI_VERSION, host::HostVTable, manifest::PluginManifest};
+
+    crate::nautilus_plugin! {
+        name: "macro-test-plugin",
+        vendor: "Nautech",
+        version: "1.2.3",
+    }
+
+    unsafe extern "C" {
+        fn nautilus_plugin_init(host: *const HostVTable) -> *const PluginManifest;
+    }
+
+    #[rstest]
+    fn optional_vendor_defaults_to_empty() {
+        assert_eq!(crate::__nautilus_plugin_impl!(@opt), "");
+    }
+
+    #[rstest]
+    fn plugin_init_returns_null_for_null_host() {
+        // SAFETY: the generated init thunk accepts null and returns null without dereferencing it.
+        let manifest = unsafe { nautilus_plugin_init(ptr::null()) };
+
+        assert!(manifest.is_null());
+    }
+
+    #[rstest]
+    fn plugin_init_returns_manifest_for_non_null_host() {
+        let host = NonNull::<HostVTable>::dangling().as_ptr();
+
+        // SAFETY: the generated init thunk only checks the host pointer for null.
+        let manifest = unsafe { nautilus_plugin_init(host) };
+
+        assert!(!manifest.is_null());
+        // SAFETY: the generated manifest is static for the process lifetime.
+        let manifest = unsafe { &*manifest };
+        assert_eq!(manifest.abi_version, NAUTILUS_PLUGIN_ABI_VERSION);
+        // SAFETY: manifest strings are process-lifetime static strings.
+        assert_eq!(
+            unsafe { manifest.plugin_name.as_str() },
+            "macro-test-plugin"
+        );
+        // SAFETY: manifest strings are process-lifetime static strings.
+        assert_eq!(unsafe { manifest.plugin_vendor.as_str() }, "Nautech");
+        // SAFETY: manifest strings are process-lifetime static strings.
+        assert_eq!(unsafe { manifest.plugin_version.as_str() }, "1.2.3");
+        manifest.validate().unwrap();
+    }
 }

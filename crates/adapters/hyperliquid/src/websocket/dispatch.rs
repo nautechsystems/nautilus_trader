@@ -999,7 +999,7 @@ fn maybe_queue_corrective_reduce(
         state.stash_modify_request(client_order_id, corrective.clone());
         state.queue_corrective(client_order_id, new_oid, corrective);
 
-        log::info!(
+        log::warn!(
             "Cancel-replace left {client_order_id} oversized on {venue_order_id} \
              (sent {sent_size}, remaining {remaining}); queuing corrective reduce",
         );

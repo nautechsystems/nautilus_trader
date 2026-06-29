@@ -309,7 +309,7 @@ impl BybitExecutionClient {
         match result {
             Ok(_) => log::info!("Set leverage for {symbol_str} to {leverage}"),
             Err(e) if Self::is_unchanged_error(&e, "110043") => {
-                log::info!("Leverage already set for {symbol_str} to {leverage}");
+                log::debug!("Leverage already set for {symbol_str} to {leverage}");
             }
             Err(e) => log::error!("Failed to set leverage for {symbol_str}: {e}"),
         }
@@ -342,7 +342,7 @@ impl BybitExecutionClient {
         match result {
             Ok(_) => log::info!("Set symbol `{symbol_str}` position mode to `{mode:?}`"),
             Err(e) if Self::is_unchanged_error(&e, "110025") => {
-                log::info!("Symbol `{symbol_str}` position mode already set to `{mode:?}`");
+                log::debug!("Symbol `{symbol_str}` position mode already set to `{mode:?}`");
             }
             Err(e) => log::error!("Failed to set position mode for {symbol_str}: {e}"),
         }
@@ -361,7 +361,7 @@ impl BybitExecutionClient {
                 Ok(())
             }
             Err(e) if Self::is_unchanged_error(&e, "") => {
-                log::info!("Margin mode already set to {margin_mode:?}");
+                log::debug!("Margin mode already set to {margin_mode:?}");
                 Ok(())
             }
             Err(e) if Self::is_low_margin_error(&e) => {
@@ -530,12 +530,25 @@ impl BybitExecutionClient {
 }
 
 fn submit_rejection_reason(error: &anyhow::Error) -> Option<&str> {
-    error.chain().find_map(|cause| {
-        let BybitSubmitOrderError::Rejected { reason } = cause.downcast_ref()? else {
-            return None;
-        };
-        Some(reason.as_str())
-    })
+    for cause in error.chain() {
+        if let Some(submit_error) = cause.downcast_ref::<BybitSubmitOrderError>() {
+            return match submit_error {
+                BybitSubmitOrderError::Rejected { reason } => Some(reason.as_str()),
+                BybitSubmitOrderError::MissingOrderId
+                | BybitSubmitOrderError::PostSubmitLookup { .. } => None,
+            };
+        }
+
+        if let Some(BybitHttpError::BybitError {
+            error_code,
+            message,
+        }) = cause.downcast_ref()
+            && !is_bybit_ambiguous_order_error_code(i64::from(*error_code))
+        {
+            return Some(message.as_str());
+        }
+    }
+    None
 }
 
 #[async_trait(?Send)]
@@ -591,7 +604,7 @@ impl ExecutionClient for BybitExecutionClient {
                     continue;
                 }
 
-                log::info!("Loaded {} {product_type:?} instruments", instruments.len());
+                log::debug!("Loaded {} {product_type:?} instruments", instruments.len());
 
                 self.http_client.cache_instruments(&instruments);
                 all_instruments.extend(instruments);
@@ -612,7 +625,7 @@ impl ExecutionClient for BybitExecutionClient {
 
         self.ws_private.connect().await?;
         self.ws_private.wait_until_active(10.0).await?;
-        log::info!("Connected to private WebSocket");
+        log::debug!("Connected to private WebSocket");
 
         if self.ws_private_stream_handle.is_none() {
             let stream = self.ws_private.stream();
@@ -644,7 +657,7 @@ impl ExecutionClient for BybitExecutionClient {
         } else {
             self.ws_trade.connect().await?;
             self.ws_trade.wait_until_active(10.0).await?;
-            log::info!("Connected to trade WebSocket");
+            log::debug!("Connected to trade WebSocket");
 
             if self.ws_trade_stream_handle.is_none() {
                 let stream = self.ws_trade.stream();
@@ -685,7 +698,7 @@ impl ExecutionClient for BybitExecutionClient {
             .context("failed to request Bybit account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s)",
                 account_state.balances.len()
             );
@@ -820,7 +833,7 @@ impl ExecutionClient for BybitExecutionClient {
                     "Instrument bootstrap yielded no instruments; WebSocket submissions may fail"
                 );
             } else {
-                log::info!("Instruments initialized: count={}", all_instruments.len());
+                log::debug!("Instruments initialized: count={}", all_instruments.len());
             }
         });
 
@@ -2823,7 +2836,10 @@ mod tests {
     #[rstest]
     fn test_submit_rejection_reason_ignores_post_submit_lookup_failure() {
         let err = anyhow::Error::from(BybitSubmitOrderError::PostSubmitLookup {
-            source: anyhow::anyhow!("No order returned after submission"),
+            source: anyhow::Error::from(BybitHttpError::BybitError {
+                error_code: 110017,
+                message: "current position is zero, cannot fix reduce-only order qty".to_string(),
+            }),
         })
         .context("Submit order failed");
 
@@ -2833,6 +2849,29 @@ mod tests {
     #[rstest]
     fn test_submit_rejection_reason_ignores_missing_order_id() {
         let err = anyhow::Error::from(BybitSubmitOrderError::MissingOrderId);
+
+        assert_eq!(submit_rejection_reason(&err), None);
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_matches_venue_http_error() {
+        let err = anyhow::Error::from(BybitHttpError::BybitError {
+            error_code: 110017,
+            message: "current position is zero, cannot fix reduce-only order qty".to_string(),
+        });
+
+        assert_eq!(
+            submit_rejection_reason(&err),
+            Some("current position is zero, cannot fix reduce-only order qty"),
+        );
+    }
+
+    #[rstest]
+    fn test_submit_rejection_reason_ignores_ambiguous_http_error() {
+        let err = anyhow::Error::from(BybitHttpError::BybitError {
+            error_code: 10016,
+            message: "rate limit exceeded".to_string(),
+        });
 
         assert_eq!(submit_rejection_reason(&err), None);
     }

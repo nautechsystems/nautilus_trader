@@ -100,6 +100,7 @@ def main() -> None:
         "ExecTester",
         ExecTesterConfig(
             strategy_id=StrategyId.from_str("EXEC_TESTER-001"),
+            use_hyphens_in_client_order_ids=False,  # OKX requires alphanumeric clOrdId
             instrument_id=instrument_id,
             client_id=ClientId.from_str(OKX),
             external_order_claims=[instrument_id],

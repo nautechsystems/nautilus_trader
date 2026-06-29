@@ -271,7 +271,7 @@ impl DydxDataClient {
             return Ok(instruments);
         }
 
-        log::info!("Loaded {} instruments into shared cache", instruments.len());
+        log::debug!("Loaded {} instruments into shared cache", instruments.len());
 
         self.ws_client.cache_instruments(instruments.clone());
 
@@ -515,14 +515,14 @@ impl DataClient for DydxDataClient {
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_mark_price_subs.insert(instrument_id);
-        log::info!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to mark prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_index_price_subs.insert(instrument_id);
-        log::info!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to index prices for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
@@ -555,7 +555,7 @@ impl DataClient for DydxDataClient {
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_funding_rate_subs.insert(instrument_id);
-        log::info!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to funding rates for {instrument_id} (via v4_markets channel)");
         Ok(())
     }
 
@@ -565,7 +565,7 @@ impl DataClient for DydxDataClient {
     ) -> anyhow::Result<()> {
         let instrument_id = cmd.instrument_id;
         self.active_instrument_status_subs.insert(instrument_id);
-        log::info!("Subscribed to instrument status for {instrument_id} (via v4_markets channel)");
+        log::debug!("Subscribed to instrument status for {instrument_id} (via v4_markets channel)");
 
         // Replay last known status (initial snapshot arrives before subscription)
         if let Some(status) = self.last_instrument_statuses.get(&instrument_id)
@@ -648,13 +648,13 @@ impl DataClient for DydxDataClient {
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
         self.active_mark_price_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from mark prices for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from mark prices for {}", cmd.instrument_id);
         Ok(())
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
         self.active_index_price_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from index prices for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from index prices for {}", cmd.instrument_id);
         Ok(())
     }
 
@@ -686,7 +686,7 @@ impl DataClient for DydxDataClient {
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
         self.active_funding_rate_subs.remove(&cmd.instrument_id);
-        log::info!("Unsubscribed from funding rates for {}", cmd.instrument_id);
+        log::debug!("Unsubscribed from funding rates for {}", cmd.instrument_id);
         Ok(())
     }
 
@@ -696,7 +696,7 @@ impl DataClient for DydxDataClient {
     ) -> anyhow::Result<()> {
         self.active_instrument_status_subs
             .remove(&cmd.instrument_id);
-        log::info!(
+        log::debug!(
             "Unsubscribed from instrument status for {}",
             cmd.instrument_id
         );
@@ -785,7 +785,7 @@ impl DataClient for DydxDataClient {
         get_runtime().spawn(async move {
             match http.request_instruments(None, None, None).await {
                 Ok(instruments) => {
-                    log::info!("Fetched {} instruments from dYdX", instruments.len());
+                    log::debug!("Fetched {} instruments from dYdX", instruments.len());
 
                     for instrument in &instruments {
                         instrument_cache.insert_instrument_only(instrument.clone());
@@ -1480,7 +1480,7 @@ impl DydxDataClient {
     }
 
     fn handle_new_instrument_discovered(ticker: &str, ctx: &WsMessageContext) {
-        log::info!("New instrument discovered via WebSocket: {ticker}");
+        log::debug!("New instrument discovered via WebSocket: {ticker}");
 
         let http_client = ctx.http_client.clone();
         let ws_client = ctx.ws_client.clone();
@@ -1494,7 +1494,7 @@ impl DydxDataClient {
                     if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
                         log::error!("Failed to emit new instrument: {e}");
                     }
-                    log::info!("Fetched and cached new instrument: {ticker}");
+                    log::debug!("Fetched and cached new instrument: {ticker}");
                 }
                 Ok(None) => {
                     log::warn!("New instrument {ticker} not found or inactive");

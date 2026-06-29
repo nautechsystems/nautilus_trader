@@ -94,7 +94,7 @@ pub fn decode_statistics_msg(
         stat_type,
         update_action,
         decode_optional_price(msg.price, price_precision),
-        decode_optional_quantity(msg.quantity),
+        decode_optional_quantity(msg.quantity)?,
         msg.channel_id,
         msg.stat_flags,
         msg.sequence,

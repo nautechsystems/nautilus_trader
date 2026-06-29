@@ -8,34 +8,72 @@ Examples include prediction market outcomes and binary event contracts.
 
 ## Fields
 
-| Field              | Rust type          | Python type       | Required/default | Notes                                   |
-|--------------------|--------------------|-------------------|------------------|-----------------------------------------|
-| `instrument_id`    | `InstrumentId`     | `InstrumentId`    | Required         | Stored as `id` in Rust.                 |
-| `raw_symbol`       | `Symbol`           | `Symbol`          | Required         | Native venue symbol.                    |
-| `asset_class`      | `AssetClass`       | `AssetClass`      | Required         | Asset class of the outcome market.      |
-| `currency`         | `Currency`         | `Currency`        | Required         | Quote and settlement currency.          |
-| `activation_ns`    | `UnixNanos`        | `int`             | Required         | Contract activation timestamp.          |
-| `expiration_ns`    | `UnixNanos`        | `int`             | Required         | Contract expiration timestamp.          |
-| `price_precision`  | `u8`               | `int`             | Required         | Decimal places allowed for prices.      |
-| `size_precision`   | `u8`               | `int`             | Required         | Decimal places allowed for order sizes. |
-| `price_increment`  | `Price`            | `Price`           | Required         | Smallest valid price step.              |
-| `size_increment`   | `Quantity`         | `Quantity`        | Required         | Smallest valid size step.               |
-| `outcome`          | `Option<Ustr>`     | `str \| None`      | `None`           | Outcome label when the venue provides it. |
-| `description`      | `Option<Ustr>`     | `str \| None`      | `None`           | Human‑readable market description.      |
-| `max_quantity`     | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                 |
-| `min_quantity`     | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                 |
-| `max_notional`     | `Option<Money>`    | N/A               | Rust only        | Maximum order notional value.           |
-| `min_notional`     | `Option<Money>`    | N/A               | Rust only        | Minimum order notional value.           |
-| `max_price`        | `Option<Price>`    | N/A               | Rust only        | Maximum valid quote or order price.     |
-| `min_price`        | `Option<Price>`    | N/A               | Rust only        | Minimum valid quote or order price.     |
-| `margin_init`      | `Option<Decimal>`  | N/A               | Rust only        | Initial margin rate.                    |
-| `margin_maint`     | `Option<Decimal>`  | N/A               | Rust only        | Maintenance margin rate.                |
-| `maker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate. |
-| `taker_fee`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate. |
-| `tick_scheme_name` | N/A                | `str \| None`      | `None`           | Registered variable tick scheme name.   |
-| `info`             | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                       |
-| `ts_event`         | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.         |
-| `ts_init`          | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds. |
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field             | Type               | Required/default | Notes                                     |
+|-------------------|--------------------|------------------|-------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         | Stored as `id` in Rust.                   |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                      |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the outcome market.        |
+| `currency`        | `Currency`         | Required         | Quote and settlement currency.            |
+| `activation_ns`   | `UnixNanos`        | Required         | Contract activation timestamp.            |
+| `expiration_ns`   | `UnixNanos`        | Required         | Contract expiration timestamp.            |
+| `price_precision` | `u8`               | Required         | Decimal places allowed for prices.        |
+| `size_precision`  | `u8`               | Required         | Decimal places allowed for order sizes.   |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.                |
+| `size_increment`  | `Quantity`         | Required         | Smallest valid size step.                 |
+| `outcome`         | `Option<Ustr>`     | `None`           | Outcome label when the venue provides it. |
+| `description`     | `Option<Ustr>`     | `None`           | Human‑readable market description.        |
+| `max_quantity`    | `Option<Quantity>` | `None`           | Maximum order quantity.                   |
+| `min_quantity`    | `Option<Quantity>` | `None`           | Minimum order quantity.                   |
+| `max_notional`    | `Option<Money>`    | `None`           | Maximum order notional value.             |
+| `min_notional`    | `Option<Money>`    | `None`           | Minimum order notional value.             |
+| `max_price`       | `Option<Price>`    | `None`           | Maximum valid quote or order price.       |
+| `min_price`       | `Option<Price>`    | `None`           | Minimum valid quote or order price.       |
+| `margin_init`     | `Option<Decimal>`  | `0`              | Initial margin rate.                      |
+| `margin_maint`    | `Option<Decimal>`  | `0`              | Maintenance margin rate.                  |
+| `maker_fee`       | `Option<Decimal>`  | `0`              | Maker fee rate. Negative values rebate.   |
+| `taker_fee`       | `Option<Decimal>`  | `0`              | Taker fee rate. Negative values rebate.   |
+| `tick_scheme`     | `Option<Ustr>`     | `None`           | Registered variable tick scheme name.     |
+| `info`            | `Option<Params>`   | `None`           | Adapter metadata.                         |
+| `ts_event`        | `UnixNanos`        | Required         | Event timestamp in nanoseconds.           |
+| `ts_init`         | `UnixNanos`        | Required         | Initialization timestamp in nanoseconds.  |
+
+</Tab>
+<Tab value="Python">
+
+| Field             | Type               | Required/default | Notes                                     |
+|-------------------|--------------------|------------------|-------------------------------------------|
+| `instrument_id`   | `InstrumentId`     | Required         |                                           |
+| `raw_symbol`      | `Symbol`           | Required         | Native venue symbol.                      |
+| `asset_class`     | `AssetClass`       | Required         | Asset class of the outcome market.        |
+| `currency`        | `Currency`         | Required         | Quote and settlement currency.            |
+| `activation_ns`   | `int`              | Required         | Contract activation timestamp.            |
+| `expiration_ns`   | `int`              | Required         | Contract expiration timestamp.            |
+| `price_precision` | `int`              | Required         | Decimal places allowed for prices.        |
+| `size_precision`  | `int`              | Required         | Decimal places allowed for order sizes.   |
+| `price_increment` | `Price`            | Required         | Smallest valid price step.                |
+| `size_increment`  | `Quantity`         | Required         | Smallest valid size step.                 |
+| `outcome`         | `str \| None`      | `None`           | Outcome label when the venue provides it. |
+| `description`     | `str \| None`      | `None`           | Human‑readable market description.        |
+| `max_quantity`    | `Quantity \| None` | `None`           | Maximum order quantity.                   |
+| `min_quantity`    | `Quantity \| None` | `None`           | Minimum order quantity.                   |
+| `max_notional`    | `Money \| None`    | `None`           | Maximum order notional value.             |
+| `min_notional`    | `Money \| None`    | `None`           | Minimum order notional value.             |
+| `max_price`       | `Price \| None`    | `None`           | Maximum valid quote or order price.       |
+| `min_price`       | `Price \| None`    | `None`           | Minimum valid quote or order price.       |
+| `margin_init`     | `Decimal \| None`  | `0`              | Initial margin rate.                      |
+| `margin_maint`    | `Decimal \| None`  | `0`              | Maintenance margin rate.                  |
+| `maker_fee`       | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.   |
+| `taker_fee`       | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.   |
+| `tick_scheme`     | `str \| None`      | `None`           | Registered variable tick scheme name.     |
+| `info`            | `dict \| None`     | `None`           | Adapter metadata.                         |
+| `ts_event`        | `int`              | Required         | Event timestamp in nanoseconds.           |
+| `ts_init`         | `int`              | Required         | Initialization timestamp in nanoseconds.  |
+
+</Tab>
+</Tabs>
 
 *Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
@@ -93,14 +131,14 @@ from decimal import Decimal
 
 import pandas as pd
 
-from nautilus_trader.model.currencies import USDC
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import BinaryOption
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import BinaryOption
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import Venue
 
 raw_symbol = Symbol(
     "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
@@ -109,16 +147,16 @@ price_increment = Price.from_str("0.001")
 size_increment = Quantity.from_str("0.01")
 
 yes_outcome = BinaryOption(
-    instrument_id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
+    instrument_id=InstrumentId(raw_symbol, Venue("POLYMARKET")),
     raw_symbol=raw_symbol,
     asset_class=AssetClass.ALTERNATIVE,
-    currency=USDC,
+    currency=Currency.from_str("USDC"),
+    activation_ns=0,
+    expiration_ns=pd.Timestamp("2024-01-01", tz="UTC").value,
     price_precision=price_increment.precision,
     size_precision=size_increment.precision,
     price_increment=price_increment,
     size_increment=size_increment,
-    activation_ns=0,
-    expiration_ns=pd.Timestamp("2024-01-01", tz="UTC").value,
     min_quantity=Quantity.from_int(5),
     maker_fee=Decimal(0),
     taker_fee=Decimal(0),

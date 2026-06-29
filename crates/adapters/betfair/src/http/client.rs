@@ -228,7 +228,7 @@ impl BetfairHttpClient {
         let resp: LoginResponse = serde_json::from_slice(&resp_bytes)?;
 
         if resp.status == LoginStatus::Success {
-            log::info!("Betfair login successful");
+            log::debug!("Betfair login successful");
             *self.session_token.write().await = Some(resp.token);
             Ok(())
         } else {

@@ -206,6 +206,10 @@ cdef class SpreadQuoteAggregator:
     cdef readonly object _ask_sizes
     cdef readonly Instrument _spread_instrument
     cdef readonly bint _is_futures_spread
+    cdef readonly bint _disable_vega_pricing
+    cdef readonly bint _vega_pricing_temporarily_disabled
+    cdef readonly int _vega_pricing_timeout_seconds
+    cdef readonly str _vega_pricing_timeout_timer_name
     cdef readonly bint _has_update
 
     # Component tracking
@@ -217,6 +221,9 @@ cdef class SpreadQuoteAggregator:
 
     # Historical mode support (similar to TimeBarAggregator)
     cdef list _historical_events
+
+    cdef void _clear_vega_pricing_timeout(self, TimeEvent event)
+    cdef void _start_vega_pricing_timeout(self)
 
     cpdef void start_timer(self)
     cpdef void stop_timer(self)

@@ -1,3 +1,69 @@
+# NautilusTrader 1.230.0 Beta
+
+Released on 29th June 2026 (UTC).
+
+### Enhancements
+- Added v2 Python visualization (tearsheet) support with a `visualization` extra
+- Added non-compounding returns option for monthly and yearly tearsheet charts via `compounding`
+- Added spread quote vega-pricing fallback controls for missing greeks (#4328), thanks @faysou
+- Added Unix SIGTERM handling to the v2 `LiveNode` shutdown path (Rust)
+- Added `with_clock_factory` for Rust live and sandbox nodes (#4331), thanks @folknor
+- Added Betfair cricket match stream data subscriptions (Rust and Python)
+- Added Bybit instrument subscription support via instrument-info polling (#4305), thanks @dxwil
+- Added OKX region support for global, EEA, and US endpoints (#4318), thanks @dxwil
+
+### Breaking Changes
+- Changed `event_store` format; beta v1.227-v1.229 stores must be regenerated (#4330), thanks @folknor
+- Changed `Throttler` rate limit fields to non-zero accessors instead of public fields (Rust)
+- Renamed Bybit data config `instrument_status_poll_secs` to `instrument_poll_interval_secs`
+
+### Security
+- Fixed unbounded HTTP response buffering that could exhaust memory (#4332), thanks @AlaeddineMessadi
+- Removed direct `bincode` use from `event_store` on-disk envelopes (#4330), thanks @folknor
+
+### Fixes
+- Fixed `LiveTimer` tasks leaking after clock drop or component teardown (#4322), thanks @filipmacek
+- Fixed Strategy order-list cache visibility for live handlers (Rust)
+- Fixed Rust strategy `oms_type` registration for custom HEDGING position IDs (#4327), thanks for reporting @dxwil
+- Fixed duplicate realized PnLs in post-run analysis (#4344), thanks for reporting @a1zb2yc3z
+- Fixed `RateOfChange` period window and log calculation (#4326), thanks @Martingale42
+- Fixed `VerticalHorizontalFilter` and `OnBalanceVolume` period windows (#4333), thanks @Martingale42
+- Fixed Architect AX execution reconciliation for open positions and fills
+- Fixed Architect AX to deny unsupported order types and times in force locally
+- Fixed Architect AX to report unfilled IOC/FOK orders as canceled and flag post-only rejections
+- Fixed Architect AX market data for null ticker prices and order book snapshot requests
+- Fixed Databento adapter historical request edge cases and live state cleanup (Rust and Python)
+- Fixed Binance Futures `TRADING_HALT` contract status handling (Rust and Python) (#4320), thanks @YeeTsai
+- Fixed Bybit submit rejection classification and batch amend/cancel request builders (Rust)
+- Fixed Databento OPRA option expirations stamped at midnight UTC (#4321), thanks for reporting @pjlegato
+- Fixed Hyperliquid fill report decoding for new venue fill directions (#4325), thanks for reporting @magnified103
+- Fixed Interactive Brokers stock contract resolution for non-USD and cross-listed symbols (#4337), thanks @dfjmax
+- Fixed Interactive Brokers crypto quote-quantity SELL order sizing (#4309), thanks @bebop23
+- Fixed Lighter stop-market and market-if-touched order modification rejected for a missing price
+- Fixed Polymarket reconciliation producing out-of-range fill prices
+- Fixed Polymarket RTDS duplicate snapshot replay and incremental batching (#4319), thanks @graceyangfan
+
+### Internal Improvements
+- Expanded API facade surface coverage for Cache, Clock, Order, and Portfolio reads (Rust)
+- Hardened plugin ABI surface to reject manifest ABI mismatches (Rust)
+- Hardened CI release provenance checks with provenance refetch and transient 404 retries
+- Improved default Rust builds to avoid abandoned `proc-macro-error2` (#4315), thanks for reporting @folknor
+- Standardized data subscription logging with a single canonical confirmation and reduced adapter log noise (Rust)
+- Optimized `OrderMatchingEngine` post-match actions to avoid cloning resting orders (Rust)
+- Optimized `OrderMatchingEngine` no-match GTD and trailing-order paths (Rust)
+- Optimized Databento adapter decode and loader paths (Rust)
+- Optimized `Throttler` hot paths and added Criterion benches (Rust)
+- Upgraded Cython to v3.2.6
+
+### Documentation Updates
+- Added a Lighter Rust quickstart and get-started guide
+- Standardized the `request_bars` callback pattern for live bar warmup (#4311), thanks @dfjmax
+- Refined Databento dataset configuration docs for schema limits and symbology inference
+- Refined event sourcing marker sidecar docs to match the shipped markers module
+- Refined Polymarket integration guide for Rust config fields and order behavior
+
+---
+
 # NautilusTrader 1.229.0 Beta
 
 Released on 25th June 2026 (UTC).
@@ -114,6 +180,7 @@ This release includes many breaking changes across the user-facing Python and Ru
 - Fixed HTTP client errors discarding the underlying cause from the reqwest source chain (Rust)
 - Fixed `HttpClient` rejecting invalid response header keys instead of silently dropping them (Rust)
 - Fixed `Instrument` rejecting negative `min_price`, preventing spread instruments from loading in Python
+- Fixed Interactive Brokers crypto order sizing where inverse quote-quantity SELL orders were converted to `cashQty` (which IBKR accepts for BUY only) and fractional coin quantities were truncated to zero via `int()`, causing venue rejection ("size value cannot be zero"); the Python and Rust adapters now apply `cashQty` only for inverse quote-quantity BUYs and reject quote-quantity SELLs
 - Fixed live external order claim registration in Rust
 - Fixed live reconciliation logging below-cached fill mismatches as errors, halting `shutdown_on_error` nodes (Rust)
 - Fixed live reconciliation logging transient venue report-query failures as errors (Rust)

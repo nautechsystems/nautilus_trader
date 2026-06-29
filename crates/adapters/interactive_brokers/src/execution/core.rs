@@ -637,13 +637,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .max(client_scoped_next_id);
 
         if starting_order_id != next_id {
-            tracing::info!(
+            tracing::debug!(
                 "Adjusted next Interactive Brokers order ID from {} to {} based on client ID/open orders",
                 next_id,
                 starting_order_id
             );
         } else {
-            tracing::info!(
+            tracing::debug!(
                 "Initialized next Interactive Brokers order ID to {}",
                 starting_order_id
             );
@@ -670,7 +670,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .await
         {
             Ok((balances, margins)) => {
-                tracing::info!(
+                tracing::debug!(
                     "Received account summary: {} balances, {} margins",
                     balances.len(),
                     margins.len()
@@ -1473,7 +1473,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 {
                     tracing::error!("query_order: failed to send inferred order canceled event");
                 } else {
-                    tracing::info!(
+                    tracing::debug!(
                         "query_order: inferred cancel for {} from missing open order {}",
                         client_order_id,
                         target_order.label()
@@ -1532,7 +1532,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .map(Arc::new);
 
         if original_order.is_none() {
-            tracing::info!(
+            tracing::debug!(
                 "Order {} not found in cache for modify; querying IB open orders",
                 cmd.client_order_id
             );
@@ -1687,11 +1687,11 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         };
 
         if orders_to_cancel.is_empty() {
-            tracing::info!("No open orders to cancel");
+            tracing::debug!("No open orders to cancel");
             return Ok(());
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Canceling {} open order(s) for instrument {}",
             orders_to_cancel.len(),
             cmd.instrument_id
@@ -2140,7 +2140,7 @@ impl InteractiveBrokersExecutionClient {
             }
         }
 
-        tracing::info!("Finished canceling all orders");
+        tracing::debug!("Finished canceling all orders");
 
         Ok(())
     }

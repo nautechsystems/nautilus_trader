@@ -8,36 +8,76 @@ Examples include non-crypto perpetual contracts and venue-specific synthetic swa
 
 ## Fields
 
-| Field                 | Rust type          | Python type       | Required/default | Notes                                   |
-|-----------------------|--------------------|-------------------|------------------|-----------------------------------------|
-| `instrument_id`       | `InstrumentId`     | `InstrumentId`    | Required         | Stored as `id` in Rust.                 |
-| `raw_symbol`          | `Symbol`           | `Symbol`          | Required         | Native venue symbol.                    |
-| `underlying`          | `Ustr`             | `str`             | Required         | Underlying asset or reference market.   |
-| `asset_class`         | `AssetClass`       | `AssetClass`      | Required         | Asset class of the underlying.          |
-| `base_currency`       | `Option<Currency>` | `Currency \| None` | `None`           | Base currency, required for inverse.    |
-| `quote_currency`      | `Currency`         | `Currency`        | Required         | Currency used to quote the price.       |
-| `settlement_currency` | `Currency`         | `Currency`        | Required         | Currency used to settle PnL and fees.   |
-| `is_inverse`          | `bool`             | `bool`            | Required         | True when sizing/costing is inverse.    |
-| `price_precision`     | `u8`               | `int`             | Required         | Decimal places allowed for prices.      |
-| `size_precision`      | `u8`               | `int`             | Required         | Decimal places allowed for order sizes. |
-| `price_increment`     | `Price`            | `Price`           | Required         | Smallest valid price step.              |
-| `size_increment`      | `Quantity`         | `Quantity`        | Required         | Smallest valid size step.               |
-| `multiplier`          | `Quantity`         | `Quantity`        | `1`              | Contract multiplier.                    |
-| `lot_size`            | `Quantity`         | `Quantity`        | `1`              | Rounded lot or board size.              |
-| `max_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                 |
-| `min_quantity`        | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                 |
-| `max_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.           |
-| `min_notional`        | `Option<Money>`    | `Money \| None`    | `None`           | Minimum order notional value.           |
-| `max_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.     |
-| `min_price`           | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.     |
-| `margin_init`         | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Initial margin rate.                    |
-| `margin_maint`        | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maintenance margin rate.                |
-| `maker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate. |
-| `taker_fee`           | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate. |
-| `tick_scheme_name`    | N/A                | `str \| None`      | `None`           | Registered variable tick scheme name.   |
-| `info`                | `Option<Params>`   | `dict \| None`     | `None`           | Adapter metadata.                       |
-| `ts_event`            | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.         |
-| `ts_init`             | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds. |
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field                 | Type               | Required/default | Notes                                    |
+|-----------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`       | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
+| `raw_symbol`          | `Symbol`           | Required         | Native venue symbol.                     |
+| `underlying`          | `Ustr`             | Required         | Underlying asset or reference market.    |
+| `asset_class`         | `AssetClass`       | Required         | Asset class of the underlying.           |
+| `base_currency`       | `Option<Currency>` | `None`           | Base currency, required for inverse.     |
+| `quote_currency`      | `Currency`         | Required         | Currency used to quote the price.        |
+| `settlement_currency` | `Currency`         | Required         | Currency used to settle PnL and fees.    |
+| `is_inverse`          | `bool`             | Required         | True when sizing/costing is inverse.     |
+| `price_precision`     | `u8`               | Required         | Decimal places allowed for prices.       |
+| `size_precision`      | `u8`               | Required         | Decimal places allowed for order sizes.  |
+| `price_increment`     | `Price`            | Required         | Smallest valid price step.               |
+| `size_increment`      | `Quantity`         | Required         | Smallest valid size step.                |
+| `multiplier`          | `Quantity`         | `1`              | Contract multiplier.                     |
+| `lot_size`            | `Quantity`         | `1`              | Rounded lot or board size.               |
+| `max_quantity`        | `Option<Quantity>` | `None`           | Maximum order quantity.                  |
+| `min_quantity`        | `Option<Quantity>` | `None`           | Minimum order quantity.                  |
+| `max_notional`        | `Option<Money>`    | `None`           | Maximum order notional value.            |
+| `min_notional`        | `Option<Money>`    | `None`           | Minimum order notional value.            |
+| `max_price`           | `Option<Price>`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`           | `Option<Price>`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`         | `Option<Decimal>`  | `0`              | Initial margin rate.                     |
+| `margin_maint`        | `Option<Decimal>`  | `0`              | Maintenance margin rate.                 |
+| `maker_fee`           | `Option<Decimal>`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`           | `Option<Decimal>`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`         | `Option<Ustr>`     | `None`           | Registered variable tick scheme name.    |
+| `info`                | `Option<Params>`   | `None`           | Adapter metadata.                        |
+| `ts_event`            | `UnixNanos`        | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`             | `UnixNanos`        | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+<Tab value="Python">
+
+| Field                 | Type               | Required/default | Notes                                    |
+|-----------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`       | `InstrumentId`     | Required         |                                          |
+| `raw_symbol`          | `Symbol`           | Required         | Native venue symbol.                     |
+| `underlying`          | `str`              | Required         | Underlying asset or reference market.    |
+| `asset_class`         | `AssetClass`       | Required         | Asset class of the underlying.           |
+| `base_currency`       | `Currency \| None` | `None`           | Base currency, required for inverse.     |
+| `quote_currency`      | `Currency`         | Required         | Currency used to quote the price.        |
+| `settlement_currency` | `Currency`         | Required         | Currency used to settle PnL and fees.    |
+| `is_inverse`          | `bool`             | Required         | True when sizing/costing is inverse.     |
+| `price_precision`     | `int`              | Required         | Decimal places allowed for prices.       |
+| `size_precision`      | `int`              | Required         | Decimal places allowed for order sizes.  |
+| `price_increment`     | `Price`            | Required         | Smallest valid price step.               |
+| `size_increment`      | `Quantity`         | Required         | Smallest valid size step.                |
+| `multiplier`          | `Quantity`         | `1`              | Contract multiplier.                     |
+| `lot_size`            | `Quantity`         | `1`              | Rounded lot or board size.               |
+| `max_quantity`        | `Quantity \| None` | `None`           | Maximum order quantity.                  |
+| `min_quantity`        | `Quantity \| None` | `None`           | Minimum order quantity.                  |
+| `max_notional`        | `Money \| None`    | `None`           | Maximum order notional value.            |
+| `min_notional`        | `Money \| None`    | `None`           | Minimum order notional value.            |
+| `max_price`           | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`           | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`         | `Decimal \| None`  | `0`              | Initial margin rate.                     |
+| `margin_maint`        | `Decimal \| None`  | `0`              | Maintenance margin rate.                 |
+| `maker_fee`           | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`           | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`         | `str \| None`      | `None`           | Registered variable tick scheme name.    |
+| `info`                | `dict \| None`     | `None`           | Adapter metadata.                        |
+| `ts_event`            | `int`              | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`             | `int`              | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+</Tabs>
 
 *Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 
@@ -88,34 +128,33 @@ let eurusd_perp = PerpetualContract::builder()
 ```python tab="Python"
 from decimal import Decimal
 
-from nautilus_trader.model.currencies import EUR
-from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.instruments import PerpetualContract
-from nautilus_trader.model.objects import Price
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model import AssetClass
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import PerpetualContract
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
 
 eurusd_perp = PerpetualContract(
     instrument_id=InstrumentId.from_str("EURUSD-PERP.AX"),
     raw_symbol=Symbol("EURUSD-PERP"),
     underlying="EURUSD",
     asset_class=AssetClass.FX,
-    base_currency=EUR,
-    quote_currency=USD,
-    settlement_currency=USD,
+    quote_currency=Currency.from_str("USD"),
+    settlement_currency=Currency.from_str("USD"),
     is_inverse=False,
     price_precision=5,
     size_precision=0,
     price_increment=Price.from_str("0.00001"),
     size_increment=Quantity.from_int(1),
+    ts_event=0,
+    ts_init=0,
+    base_currency=Currency.from_str("EUR"),
     margin_init=Decimal("0.03"),
     margin_maint=Decimal("0.03"),
     maker_fee=Decimal("0.00002"),
     taker_fee=Decimal("0.00002"),
-    ts_event=0,
-    ts_init=0,
 )
 ```
 

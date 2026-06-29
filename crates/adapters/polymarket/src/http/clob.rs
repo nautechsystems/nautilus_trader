@@ -549,7 +549,7 @@ impl PolymarketClobPublicClient {
             book.add(order, 0, (bids_len + i) as u64, Default::default());
         }
 
-        log::info!(
+        log::debug!(
             "Fetched order book for {} with {} bids and {} asks",
             instrument_id,
             resp.bids.len(),

@@ -8,46 +8,94 @@ Examples include Betfair match-odds selections and handicap market selections.
 
 ## Fields
 
-| Field                  | Rust type          | Python type       | Required/default | Notes                                      |
-|------------------------|--------------------|-------------------|------------------|--------------------------------------------|
-| `instrument_id`        | `InstrumentId`     | N/A               | Rust only        | Stored as `id` in Rust.                    |
-| `raw_symbol`           | `Symbol`           | N/A               | Rust only        | Native or generated venue symbol.          |
-| `venue_name`           | N/A                | `str`             | Python only      | Venue used to construct the instrument ID. |
-| `event_type_id`        | `u64`              | `int`             | Required         | Event type identifier.                     |
-| `event_type_name`      | `Ustr`             | `str`             | Required         | Event type name, such as a sport.          |
-| `competition_id`       | `u64`              | `int`             | Required         | Competition identifier.                    |
-| `competition_name`     | `Ustr`             | `str`             | Required         | Competition name.                          |
-| `event_id`             | `u64`              | `int`             | Required         | Event identifier.                          |
-| `event_name`           | `Ustr`             | `str`             | Required         | Event name.                                |
-| `event_country_code`   | `Ustr`             | `str`             | Required         | Event country code.                        |
-| `event_open_date`      | `UnixNanos`        | `datetime`        | Required         | Event open time.                           |
-| `betting_type`         | `Ustr`             | `str`             | Required         | Betting type published by the venue.       |
-| `market_id`            | `Ustr`             | `str`             | Required         | Market identifier.                         |
-| `market_name`          | `Ustr`             | `str`             | Required         | Market name.                               |
-| `market_type`          | `Ustr`             | `str`             | Required         | Market type, such as match odds.           |
-| `market_start_time`    | `UnixNanos`        | `datetime`        | Required         | Market start time.                         |
-| `selection_id`         | `u64`              | `int`             | Required         | Selection or runner identifier.            |
-| `selection_name`       | `Ustr`             | `str`             | Required         | Selection or runner name.                  |
-| `selection_handicap`   | `f64`              | `float`           | Required         | Handicap value for handicap markets.       |
-| `currency`             | `Currency`         | `str`             | Required         | Quote and settlement currency.             |
-| `price_precision`      | `u8`               | `int`             | Required         | Decimal places allowed for prices.         |
-| `size_precision`       | `u8`               | `int`             | Required         | Decimal places allowed for order sizes.    |
-| `price_increment`      | `Price`            | `Price \| None`    | Required/Rust    | Price step, often set by a tick scheme.    |
-| `size_increment`       | `Quantity`         | `Quantity`        | Required/Rust    | Minimum size step.                         |
-| `max_quantity`         | `Option<Quantity>` | `Quantity \| None` | `None`           | Maximum order quantity.                    |
-| `min_quantity`         | `Option<Quantity>` | `Quantity \| None` | `None`           | Minimum order quantity.                    |
-| `max_notional`         | `Option<Money>`    | `Money \| None`    | `None`           | Maximum order notional value.              |
-| `min_notional`         | `Option<Money>`    | `Money \| None`    | `None`           | Minimum order notional value.              |
-| `max_price`            | `Option<Price>`    | `Price \| None`    | `None`           | Maximum valid quote or order price.        |
-| `min_price`            | `Option<Price>`    | `Price \| None`    | `None`           | Minimum valid quote or order price.        |
-| `margin_init`          | `Option<Decimal>`  | `Decimal \| None`  | `1`              | Initial margin rate.                       |
-| `margin_maint`         | `Option<Decimal>`  | `Decimal \| None`  | `1`              | Maintenance margin rate.                   |
-| `maker_fee`            | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.    |
-| `taker_fee`            | `Option<Decimal>`  | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.    |
-| `tick_scheme_name`     | N/A                | `str \| None`      | `None`           | Registered variable tick scheme name.      |
-| `info`                 | `Option<Params>`   | `dict \| None`     | `{}`/`None`      | Adapter metadata.                          |
-| `ts_event`             | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`              | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds.   |
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field                | Type               | Required/default | Notes                                    |
+|----------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`      | `InstrumentId`     | Required         | Stored as `id` in Rust.                  |
+| `raw_symbol`         | `Symbol`           | Required         | Native or generated venue symbol.        |
+| `event_type_id`      | `u64`              | Required         | Event type identifier.                   |
+| `event_type_name`    | `Ustr`             | Required         | Event type name, such as a sport.        |
+| `competition_id`     | `u64`              | Required         | Competition identifier.                  |
+| `competition_name`   | `Ustr`             | Required         | Competition name.                        |
+| `event_id`           | `u64`              | Required         | Event identifier.                        |
+| `event_name`         | `Ustr`             | Required         | Event name.                              |
+| `event_country_code` | `Ustr`             | Required         | Event country code.                      |
+| `event_open_date`    | `UnixNanos`        | Required         | Event open time.                         |
+| `betting_type`       | `Ustr`             | Required         | Betting type published by the venue.     |
+| `market_id`          | `Ustr`             | Required         | Market identifier.                       |
+| `market_name`        | `Ustr`             | Required         | Market name.                             |
+| `market_type`        | `Ustr`             | Required         | Market type, such as match odds.         |
+| `market_start_time`  | `UnixNanos`        | Required         | Market start time.                       |
+| `selection_id`       | `u64`              | Required         | Selection or runner identifier.          |
+| `selection_name`     | `Ustr`             | Required         | Selection or runner name.                |
+| `selection_handicap` | `f64`              | Required         | Handicap value for handicap markets.     |
+| `currency`           | `Currency`         | Required         | Quote and settlement currency.           |
+| `price_precision`    | `u8`               | Required         | Decimal places allowed for prices.       |
+| `size_precision`     | `u8`               | Required         | Decimal places allowed for order sizes.  |
+| `price_increment`    | `Price`            | Required         | Price step, often set by a tick scheme.  |
+| `size_increment`     | `Quantity`         | Required         | Minimum size step.                       |
+| `max_quantity`       | `Option<Quantity>` | `None`           | Maximum order quantity.                  |
+| `min_quantity`       | `Option<Quantity>` | `None`           | Minimum order quantity.                  |
+| `max_notional`       | `Option<Money>`    | `None`           | Maximum order notional value.            |
+| `min_notional`       | `Option<Money>`    | `None`           | Minimum order notional value.            |
+| `max_price`          | `Option<Price>`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`          | `Option<Price>`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`        | `Option<Decimal>`  | `1`              | Initial margin rate.                     |
+| `margin_maint`       | `Option<Decimal>`  | `1`              | Maintenance margin rate.                 |
+| `maker_fee`          | `Option<Decimal>`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`          | `Option<Decimal>`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`        | `Option<Ustr>`     | `None`           | Registered variable tick scheme name.    |
+| `info`               | `Option<Params>`   | `None`           | Adapter metadata.                        |
+| `ts_event`           | `UnixNanos`        | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`            | `UnixNanos`        | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+<Tab value="Python">
+
+| Field                | Type               | Required/default | Notes                                    |
+|----------------------|--------------------|------------------|------------------------------------------|
+| `instrument_id`      | `InstrumentId`     | Required         |                                          |
+| `raw_symbol`         | `Symbol`           | Required         | Native or generated venue symbol.        |
+| `event_type_id`      | `int`              | Required         | Event type identifier.                   |
+| `event_type_name`    | `str`              | Required         | Event type name, such as a sport.        |
+| `competition_id`     | `int`              | Required         | Competition identifier.                  |
+| `competition_name`   | `str`              | Required         | Competition name.                        |
+| `event_id`           | `int`              | Required         | Event identifier.                        |
+| `event_name`         | `str`              | Required         | Event name.                              |
+| `event_country_code` | `str`              | Required         | Event country code.                      |
+| `event_open_date`    | `int`              | Required         | Event open time.                         |
+| `betting_type`       | `str`              | Required         | Betting type published by the venue.     |
+| `market_id`          | `str`              | Required         | Market identifier.                       |
+| `market_name`        | `str`              | Required         | Market name.                             |
+| `market_type`        | `str`              | Required         | Market type, such as match odds.         |
+| `market_start_time`  | `int`              | Required         | Market start time.                       |
+| `selection_id`       | `int`              | Required         | Selection or runner identifier.          |
+| `selection_name`     | `str`              | Required         | Selection or runner name.                |
+| `selection_handicap` | `float`            | Required         | Handicap value for handicap markets.     |
+| `currency`           | `Currency`         | Required         | Quote and settlement currency.           |
+| `price_precision`    | `int`              | Required         | Decimal places allowed for prices.       |
+| `size_precision`     | `int`              | Required         | Decimal places allowed for order sizes.  |
+| `price_increment`    | `Price`            | Required         | Price step, often set by a tick scheme.  |
+| `size_increment`     | `Quantity`         | Required         | Minimum size step.                       |
+| `max_quantity`       | `Quantity \| None` | `None`           | Maximum order quantity.                  |
+| `min_quantity`       | `Quantity \| None` | `None`           | Minimum order quantity.                  |
+| `max_notional`       | `Money \| None`    | `None`           | Maximum order notional value.            |
+| `min_notional`       | `Money \| None`    | `None`           | Minimum order notional value.            |
+| `max_price`          | `Price \| None`    | `None`           | Maximum valid quote or order price.      |
+| `min_price`          | `Price \| None`    | `None`           | Minimum valid quote or order price.      |
+| `margin_init`        | `Decimal \| None`  | `1`              | Initial margin rate.                     |
+| `margin_maint`       | `Decimal \| None`  | `1`              | Maintenance margin rate.                 |
+| `maker_fee`          | `Decimal \| None`  | `0`              | Maker fee rate. Negative values rebate.  |
+| `taker_fee`          | `Decimal \| None`  | `0`              | Taker fee rate. Negative values rebate.  |
+| `tick_scheme`        | `str \| None`      | `None`           | Registered variable tick scheme name.    |
+| `info`               | `dict \| None`     | `None`           | Adapter metadata.                        |
+| `ts_event`           | `int`              | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`            | `int`              | Required         | Initialization timestamp in nanoseconds. |
+
+</Tab>
+</Tabs>
 
 *Note: Python builds the instrument ID and raw symbol from the venue, market, selection,
 and handicap fields. Rust receives them as `instrument_id` and `raw_symbol`.*
@@ -118,12 +166,20 @@ let selection = BettingInstrument::builder()
 ```python tab="Python"
 import pandas as pd
 
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.instruments import BettingInstrument
-from nautilus_trader.model.objects import Money
+from nautilus_trader.model import BettingInstrument
+from nautilus_trader.model import Currency
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import Money
+from nautilus_trader.model import Price
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import Symbol
+from nautilus_trader.model import Venue
+
+GBP = Currency.from_str("GBP")
 
 selection = BettingInstrument(
-    venue_name="BETFAIR",
+    instrument_id=InstrumentId(Symbol("1-123456789-50214"), Venue("BETFAIR")),
+    raw_symbol=Symbol("1-123456789-50214"),
     event_type_id=6423,
     event_type_name="American Football",
     competition_id=12282733,
@@ -131,18 +187,20 @@ selection = BettingInstrument(
     event_id=29678534,
     event_name="NFL",
     event_country_code="GB",
-    event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+    event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").value,
     betting_type="ODDS",
     market_id="1-123456789",
     market_name="AFC Conference Winner",
     market_type="SPECIAL",
-    market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+    market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").value,
     selection_id=50214,
     selection_name="Kansas City Chiefs",
-    currency="GBP",
     selection_handicap=0.0,
+    currency=GBP,
     price_precision=2,
     size_precision=2,
+    price_increment=Price.from_str("0.01"),
+    size_increment=Quantity.from_str("0.01"),
     min_notional=Money(1, GBP),
     ts_event=0,
     ts_init=0,

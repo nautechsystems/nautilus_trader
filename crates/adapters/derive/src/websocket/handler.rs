@@ -178,7 +178,7 @@ impl FeedHandler {
                             }
                         }
                         Message::Close(_) => {
-                            log::info!("Derive WebSocket close frame received");
+                            log::debug!("Derive WebSocket close frame received");
                             return None;
                         }
                         _ => {}

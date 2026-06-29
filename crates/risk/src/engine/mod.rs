@@ -56,8 +56,8 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 fn format_rate_limit(rate_limit: &RateLimit) -> String {
-    let interval_ns = rate_limit.interval_ns.get();
-    let limit = rate_limit.limit.get();
+    let interval_ns = rate_limit.interval_ns();
+    let limit = rate_limit.limit();
     let total_secs = interval_ns / 1_000_000_000;
     let remainder_ns = interval_ns % 1_000_000_000;
     let hours = total_secs / 3600;
@@ -265,8 +265,7 @@ impl RiskEngine {
         };
 
         Throttler::new(
-            config.max_order_submit.limit.get(),
-            config.max_order_submit.interval_ns.get(),
+            config.max_order_submit,
             clock,
             "ORDER_SUBMIT_THROTTLER",
             success_handler,
@@ -310,8 +309,7 @@ impl RiskEngine {
         };
 
         Throttler::new(
-            config.max_order_modify.limit.get(),
-            config.max_order_modify.interval_ns.get(),
+            config.max_order_modify,
             clock,
             "ORDER_MODIFY_THROTTLER",
             success_handler,

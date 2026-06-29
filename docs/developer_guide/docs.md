@@ -165,8 +165,10 @@ No imports are needed.
 
 ### Tabs
 
-Add `tab="..."` to consecutive fenced code blocks for language-specific or variant code examples.
-List Rust before Python so Rust is the default (left-most) tab.
+Use tabs for language-specific or variant content. List Rust before Python so Rust is the
+default (left-most) tab.
+
+For code examples, add `tab="..."` to consecutive fenced code blocks:
 
 ```markdown
 \`\`\`rust tab="Rust"
@@ -176,6 +178,29 @@ let params = Params::from([("close_position", true.into())]);
 \`\`\`python tab="Python"
 strategy.submit_order(order, params={"close_position": True})
 \`\`\`
+```
+
+For tables or other content, wrap each variant in `<Tabs>` and `<Tab>`. The instrument Fields
+tables use this so each language shows a single type column instead of side-by-side Rust and
+Python columns. Leave a blank line above and below the inner content so the Markdown renders.
+
+```markdown
+<Tabs items={["Rust", "Python"]}>
+<Tab value="Rust">
+
+| Field           | Type           | Required/default | Notes                   |
+|-----------------|----------------|------------------|-------------------------|
+| `instrument_id` | `InstrumentId` | Required         | Stored as `id` in Rust. |
+
+</Tab>
+<Tab value="Python">
+
+| Field           | Type           | Required/default | Notes |
+|-----------------|----------------|------------------|-------|
+| `instrument_id` | `InstrumentId` | Required         |       |
+
+</Tab>
+</Tabs>
 ```
 
 ### Steps

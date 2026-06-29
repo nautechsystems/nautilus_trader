@@ -178,8 +178,9 @@ survive.
 
 ## Portfolio statistics
 
-There are a variety of [built-in portfolio statistics](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/analysis/src/statistics)
-which analyse a trading portfolio's performance for both backtests and live trading.
+There are a variety of built-in portfolio statistics in
+`crates/analysis/src/statistics` which analyse a trading portfolio's performance
+for both backtests and live trading.
 
 The statistics are generally categorized as follows.
 
@@ -188,53 +189,40 @@ The statistics are generally categorized as follows.
 - Positions based statistics
 - Orders based statistics
 
-You can also call a trader's `PortfolioAnalyzer` and calculate statistics at any arbitrary
-time, including *during* a backtest, or live trading session.
+Backtest statistics are exposed after a run through `engine.get_result()`.
 
 ## Custom statistics
 
-Custom portfolio statistics can be defined by inheriting from the `PortfolioStatistic`
-base class, and implementing any of the `calculate_` methods.
+Custom metrics for post-run analysis can be computed from reports, snapshots, or
+position data and added to the dictionaries passed to visualization APIs such as
+`create_tearsheet_from_stats()`.
 
-For example, the following is the implementation for the built-in `WinRate` statistic:
+For example, calculate a win rate from realized PnLs:
 
 ```python
 import pandas as pd
-from typing import Any
-from nautilus_trader.analysis.statistic import PortfolioStatistic
 
 
-class WinRate(PortfolioStatistic):
-    """
-    Calculates the win rate from a realized PnLs series.
-    """
+def calculate_win_rate(realized_pnls: pd.Series) -> float:
+    if realized_pnls.empty:
+        return 0.0
 
-    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Any | None:
-        # Preconditions
-        if realized_pnls is None or realized_pnls.empty:
-            return 0.0
-
-        # Calculate statistic
-        winners = [x for x in realized_pnls if x > 0.0]
-        losers = [x for x in realized_pnls if x <= 0.0]
-
-        return len(winners) / float(max(1, (len(winners) + len(losers))))
+    winners = realized_pnls[realized_pnls > 0.0]
+    return len(winners) / len(realized_pnls)
 ```
 
-These statistics can then be registered with a traders `PortfolioAnalyzer`.
+Then include the metric in offline tearsheet inputs:
 
 ```python
-stat = WinRate()
-
-# Register with the portfolio analyzer
-engine.portfolio.analyzer.register_statistic(stat)
+stats_general = {
+    "Win Rate": calculate_win_rate(realized_pnls),
+}
 ```
 
-See the [`PortfolioAnalyzer` API Reference](/docs/python-api-latest/analysis.html#nautilus_trader.analysis.analyzer.PortfolioAnalyzer) for all available methods.
-
 :::tip
-Your statistic should handle degenerate inputs such as `None`, empty series, or insufficient data.
-Return `None` for unknown/incalculable values, or a reasonable default like `0.0` when semantically appropriate (e.g., win rate with no trades).
+Your metric should handle degenerate inputs such as empty series or insufficient data.
+Return `None` for unknown or incalculable values, or a reasonable default like `0.0`
+when semantically appropriate.
 :::
 
 ## Returns: position vs portfolio

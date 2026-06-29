@@ -747,9 +747,8 @@ pub fn instrument_id_to_ib_contract(
         symbol: Symbol::from(&symbol_clean),
         security_type: SecurityType::Stock,
         exchange: Exchange::from("SMART"),
-        currency: Currency::from("USD"), // Will be resolved from contract details
+        currency: Currency::from(""), // Will be resolved from contract details
         primary_exchange: Exchange::from(exchange_str),
-        local_symbol: symbol_clean,
         ..Default::default()
     })
 }
@@ -1411,5 +1410,19 @@ mod tests {
         assert_eq!(contract.security_type, SecurityType::Future);
         assert_eq!(contract.exchange.as_str(), "CBOT");
         assert_eq!(contract.local_symbol.as_str(), "YMM6");
+    }
+
+    #[rstest]
+    fn test_instrument_id_to_ib_contract_default_stock_omits_local_symbol_and_currency() {
+        let instrument_id = InstrumentId::from("IUSA.IBIS");
+
+        let contract = instrument_id_to_ib_contract(instrument_id, Some("IBIS")).unwrap();
+
+        assert_eq!(contract.security_type, SecurityType::Stock);
+        assert_eq!(contract.symbol.as_str(), "IUSA");
+        assert_eq!(contract.exchange.as_str(), "SMART");
+        assert_eq!(contract.primary_exchange.as_str(), "IBIS");
+        assert!(contract.currency.as_str().is_empty());
+        assert!(contract.local_symbol.is_empty());
     }
 }

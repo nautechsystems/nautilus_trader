@@ -471,7 +471,7 @@ impl OKXWsFeedHandler {
                             conn_id,
                         } => {
                             if code == OKX_SUCCESS_CODE {
-                                log::info!("WebSocket authenticated: conn_id={conn_id}");
+                                log::debug!("WebSocket authenticated: conn_id={conn_id}");
                             } else {
                                 log::error!(
                                     "WebSocket authentication failed: \

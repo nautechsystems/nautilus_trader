@@ -228,19 +228,19 @@ pub struct AxMdTicker {
     pub tn: i64,
     /// Instrument symbol.
     pub s: Ustr,
-    /// Last price.
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    /// Last price (null when no recent price data, e.g. before first trade).
+    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
     pub p: Decimal,
     /// Last quantity.
     pub q: u64,
     /// Open price (24h), null before first session open.
     #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
     pub o: Decimal,
-    /// Low price (24h).
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    /// Low price (24h, null when no recent price data).
+    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
     pub l: Decimal,
-    /// High price (24h).
-    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    /// High price (24h, null when no recent price data).
+    #[serde(deserialize_with = "deserialize_optional_decimal_or_zero")]
     pub h: Decimal,
     /// Volume (24h).
     pub v: u64,
@@ -1148,6 +1148,23 @@ mod tests {
         assert_eq!(msg.s.as_str(), "EURUSD-PERP");
         assert_eq!(msg.m, None);
         assert_eq!(msg.i, None);
+    }
+
+    #[rstest]
+    fn test_load_md_ticker_null_prices_decode() {
+        // Null p/o/l/h must still decode; mark price arrives via `m`
+        let json = include_str!("../../test_data/ws_md_ticker_null_prices.json");
+        let msg = parse_md_message(json).unwrap();
+        let AxMdMessage::Ticker(ticker) = msg else {
+            panic!("expected ticker message");
+        };
+        assert_eq!(ticker.s.as_str(), "QQQ-PERP");
+        assert_eq!(ticker.p, Decimal::ZERO);
+        assert_eq!(ticker.o, Decimal::ZERO);
+        assert_eq!(ticker.l, Decimal::ZERO);
+        assert_eq!(ticker.h, Decimal::ZERO);
+        assert_eq!(ticker.m, Some(dec!(716.38)));
+        assert_eq!(ticker.i, Some(AxInstrumentState::Open));
     }
 
     #[rstest]

@@ -1,7 +1,7 @@
 {
   "positions": [
     {
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
       "symbol": "BTC-PERP",
       "signed_quantity": 2,
       "signed_notional": "90000.00",
@@ -9,7 +9,7 @@
       "realized_pnl": "1250.50"
     },
     {
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "account_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
       "symbol": "ETH-PERP",
       "signed_quantity": -5,
       "signed_notional": "-14000.00",

@@ -214,7 +214,7 @@ impl BinanceFuturesWebSocketClient {
         let slot = self.create_connection().await?;
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
-        log::info!(
+        log::debug!(
             "Connected to Binance Futures stream pool: url={}, product_type={:?}",
             self.url,
             self.product_type
@@ -246,7 +246,7 @@ impl BinanceFuturesWebSocketClient {
         *self.out_tx.lock().expect("out_tx lock poisoned") = None;
         *self.out_rx.lock().expect("out_rx lock poisoned") = None;
 
-        log::info!("Disconnected from Binance Futures stream pool");
+        log::debug!("Disconnected from Binance Futures stream pool");
         Ok(())
     }
 
@@ -300,7 +300,7 @@ impl BinanceFuturesWebSocketClient {
                 slots.push(new_slot);
                 slots.len()
             };
-            log::info!(
+            log::debug!(
                 "Pool slot {} connected: url={}, product_type={:?}",
                 slot_count - 1,
                 self.url,

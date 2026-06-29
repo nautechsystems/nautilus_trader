@@ -116,10 +116,10 @@ Steps to reach a position where the execution client can submit a signed order:
 6. **Set the environment variables.** Export the three values the client reads in testnet
    mode (or pass them on `DeriveExecClientConfig`, where the config field wins):
 
-   ```fish
-   set -gx DERIVE_TESTNET_WALLET_ADDRESS      "0x..."   # Derive Chain smart-contract wallet
-   set -gx DERIVE_TESTNET_SESSION_PRIVATE_KEY "0x..."   # secp256k1 session-key private key
-   set -gx DERIVE_TESTNET_SUBACCOUNT_ID       "12345"   # integer subaccount id
+   ```bash
+   export DERIVE_TESTNET_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
+   export DERIVE_TESTNET_SESSION_PRIVATE_KEY="0x..."  # secp256k1 session-key private key
+   export DERIVE_TESTNET_SUBACCOUNT_ID="12345"  # integer subaccount id
    ```
 
 ### Minimum funding
@@ -168,16 +168,16 @@ Mainnet onboarding mirrors testnet against the production dashboard. Use real fu
 6. **Set the environment variables.** Export the three mainnet values (or pass them on
    `DeriveExecClientConfig`, where the config field wins):
 
-   ```fish
-   set -gx DERIVE_WALLET_ADDRESS      "0x..."   # Derive Chain smart-contract wallet
-   set -gx DERIVE_SESSION_PRIVATE_KEY "0x..."   # secp256k1 session-key private key
-   set -gx DERIVE_SUBACCOUNT_ID       "12345"   # integer subaccount id
+   ```bash
+   export DERIVE_WALLET_ADDRESS="0x..."  # Derive Chain smart-contract wallet
+   export DERIVE_SESSION_PRIVATE_KEY="0x..."  # secp256k1 session-key private key
+   export DERIVE_SUBACCOUNT_ID="12345"  # integer subaccount id
    ```
 
-   The `node_exec_tester` example is pinned to `DeriveEnvironment::Testnet`; flip
-   the literal to `DeriveEnvironment::Mainnet` for real-funds runs. The
-   `node_data_tester` and `node_delta_neutral` examples default to testnet and read
-   `DERIVE_ENVIRONMENT=mainnet` to flip. Production deployments select the network via
+   All three Rust examples (`node_data_tester`, `node_exec_tester`, `node_delta_neutral`)
+   pin the network with a `const DERIVE_ENVIRONMENT: DeriveEnvironment =
+   DeriveEnvironment::Testnet;` literal; flip it to `DeriveEnvironment::Mainnet` for
+   real-funds runs. Production deployments select the network via
    `DeriveDataClientConfig::environment` / `DeriveExecClientConfig::environment`.
 
 ## Capabilities
@@ -278,12 +278,19 @@ Derive error `11054` states that trigger orders cannot replace or be replaced. T
 therefore rejects Nautilus modify requests for trigger orders with an `OrderModifyRejected`
 event; cancel and resubmit for trigger updates.
 
+Derive validates the trigger price side and rejects a trigger that does not sit beyond the
+current price in the expected direction with error `11051`. The trigger price is fixed when the
+order is signed, so a tight offset on a fast-moving or high-priced instrument can drift onto the
+wrong side before the venue receives the order. Size the trigger offset to comfortably exceed
+expected price movement during submission (for `ETH-PERP`, tens of dollars rather than a few
+cents); a too-tight offset produces spurious `11051` rejections.
+
 #### Execution instructions
 
 | Instruction   | Supported | Derive value  | Notes                                                         |
 |---------------|-----------|---------------|---------------------------------------------------------------|
 | `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.    |
-| `reduce_only` | ✓         | `reduce_only` | Supported for perps and options. Spot is rejected locally.    |
+| `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied.   |
 
 #### Time in force
 
@@ -312,6 +319,13 @@ Reduce-only orders for perpetuals and options still reach the venue, where the o
 depends on the subaccount's position state. The `derive-flatten` bin closes derivative
 positions only and never spot, since flattening a spot balance would dump the base asset
 into a different quote.
+
+Derive only honors `reduce_only` on market orders or non-resting limits (`IOC`/`FOK`). A
+resting `GTC` or post-only limit with `reduce_only` is rejected by the venue with error
+`11024 Reduce only not supported with this time in force`. As a result a Nautilus bracket whose
+take-profit leg is a reduce-only `GTC` limit cannot rest on Derive: the entry and stop-loss legs
+submit, but the take-profit is rejected. Use a reduce-only `IOC`/`FOK` close or a
+non-reduce-only take-profit when targeting Derive.
 
 #### Order rejection semantics
 
@@ -371,12 +385,12 @@ the underlying WS subscribe call: the first feed subscribed for an instrument op
 and the last unsubscribe closes it. As a consequence, the `interval` from the first subscribe
 wins; subsequent feeds subscribing with a different interval share the existing channel.
 
-Mark prices, index prices, funding rates, and option greeks all read fields that the venue
-includes in the full ticker payload (`mark_price`, `index_price`, `perp_details.funding_rate`,
-`option_pricing`). Observed Derive pushes on `ticker_slim` carry these fields, so the derived
-feeds work. If the venue ever pushes the compact `SlimEnvelope` shape on this channel, those
-derived feeds will silently produce no data for that frame; the quote feed still works because
-bid/ask are present in both shapes.
+Mark prices, index prices, funding rates, and option greeks read fields from the ticker payload.
+Both the full ticker shape and the compact `SlimEnvelope` shape carry these fields, so the
+derived feeds work on either: `mark_price` and `index_price` are required (a frame missing them
+fails to deserialize and is logged, rather than silently dropped), while `funding_rate` and
+`option_pricing` are optional and present only for the relevant instrument class. The quote feed
+always works because bid/ask are present in both shapes.
 
 Funding rates are only meaningful for perpetuals, and option greeks only for options.
 Subscribing the wrong feed for an instrument's class (e.g. funding rates for an option) is
@@ -409,26 +423,27 @@ Class/struct: `DeriveDataClientConfig`.
 
 Class/struct: `DeriveExecClientConfig`.
 
-| Option                      | Default   | Description |
-|-----------------------------|-----------|-------------|
-| `wallet_address`            | `None`    | Derive Chain smart‑contract wallet address. Falls back to env vars below. |
-| `session_key`               | `None`    | secp256k1 session‑key private key. Falls back to env vars below. |
-| `subaccount_id`             | `None`    | Derive subaccount id. Falls back to env vars below. |
-| `base_url_rest`             | `None`    | Override for the REST base URL. |
-| `base_url_ws`               | `None`    | Override for the WebSocket base URL. |
-| `proxy_url`                 | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `environment`               | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python). |
-| `http_timeout_secs`         | `10`      | REST request timeout in seconds. |
-| `max_retries`               | `3`       | Retry attempts for recoverable reads and definitive non‑write paths. |
-| `retry_delay_initial_ms`    | `100`     | Initial retry delay in milliseconds. |
-| `retry_delay_max_ms`        | `5000`    | Maximum retry delay in milliseconds. |
-| `max_fee_per_contract`      | `None`    | Per‑contract USDC fee cap signed into each order. |
-| `domain_separator`          | `None`    | Optional EIP-712 domain separator override. |
-| `action_typehash`           | `None`    | Optional EIP-712 action typehash override. |
-| `trade_module_address`      | `None`    | Optional Trade module contract address override. |
-| `signature_expiry_secs`     | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
-| `market_order_slippage_bps` | `50`      | Slippage bound for market‑order limit prices. |
-| `transport_backend`         | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
+| Option                             | Default   | Description |
+|------------------------------------|-----------|-------------|
+| `wallet_address`                   | `None`    | Derive Chain smart‑contract wallet address. Falls back to env vars below. |
+| `session_key`                      | `None`    | secp256k1 session‑key private key. Falls back to env vars below. |
+| `subaccount_id`                    | `None`    | Derive subaccount id. Falls back to env vars below. |
+| `base_url_rest`                    | `None`    | Override for the REST base URL. |
+| `base_url_ws`                      | `None`    | Override for the WebSocket base URL. |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `environment`                      | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python). |
+| `http_timeout_secs`                | `10`      | REST request timeout in seconds. |
+| `max_retries`                      | `3`       | Retry attempts for recoverable reads and definitive non‑write paths. |
+| `retry_delay_initial_ms`           | `100`     | Initial retry delay in milliseconds. |
+| `retry_delay_max_ms`               | `5000`    | Maximum retry delay in milliseconds. |
+| `max_fee_per_contract`             | `None`    | Per‑contract USDC fee cap signed into each order. |
+| `domain_separator`                 | `None`    | Optional EIP-712 domain separator override. |
+| `action_typehash`                  | `None`    | Optional EIP-712 action typehash override. |
+| `trade_module_address`             | `None`    | Optional Trade module contract address override. |
+| `signature_expiry_secs`            | `600`     | Order/replace TTL; must be >300s. Trigger orders use fixed 31-day TTL. |
+| `market_order_slippage_bps`        | `50`      | Slippage bound for market‑order limit prices. |
+| `max_matching_requests_per_second` | `None`    | Max matching‑engine write requests/sec (create/cancel/replace). Defaults to the Trader‑tier limit of 1 when unset; raise for Market Maker accounts. |
+| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled. |
 
 The default transport falls back to `Tungstenite` when the build disables the
 `transport-sockudo` feature.

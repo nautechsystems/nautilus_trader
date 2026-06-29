@@ -154,7 +154,7 @@ impl InteractiveBrokersInstrumentProvider {
             match self.load_cache(cache_path).await {
                 Ok(cache_loaded) => {
                     if cache_loaded {
-                        tracing::info!(
+                        tracing::debug!(
                             "Initialized provider with {} instruments from cache",
                             self.count()
                         );
@@ -640,7 +640,7 @@ impl InteractiveBrokersInstrumentProvider {
                     .into_iter()
                     .next()
                     .map(|details| {
-                        tracing::info!(
+                        tracing::debug!(
                             "Qualified continuous future contract {}.{} as local_symbol={} trading_class={} con_id={}",
                             contract.symbol.as_str(),
                             contract.exchange.as_str(),
@@ -679,7 +679,7 @@ impl InteractiveBrokersInstrumentProvider {
                     max_expiry_days,
                 )
                 .await?;
-            tracing::info!(
+            tracing::debug!(
                 "Loaded {} futures instruments for chain request {}.{}",
                 loaded,
                 chain_contract.symbol.as_str(),
@@ -739,7 +739,7 @@ impl InteractiveBrokersInstrumentProvider {
                         options_chain_exchange.as_deref(),
                     )
                     .await?;
-                tracing::info!(
+                tracing::debug!(
                     "Loaded {} option instruments for chain request {}.{}",
                     loaded,
                     underlying.symbol.as_str(),
@@ -1145,7 +1145,7 @@ impl InteractiveBrokersInstrumentProvider {
             return Ok(false);
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Loading spread instrument {} with {} legs",
             spread_instrument_id,
             leg_tuples.len()
@@ -1155,7 +1155,7 @@ impl InteractiveBrokersInstrumentProvider {
         let mut leg_contract_details = Vec::new();
 
         for (leg_instrument_id, ratio) in &leg_tuples {
-            tracing::info!(
+            tracing::debug!(
                 "Loading leg instrument: {} (ratio: {})",
                 leg_instrument_id,
                 ratio
@@ -1214,7 +1214,7 @@ impl InteractiveBrokersInstrumentProvider {
                 .insert(spread_instrument_id, first_details.price_magnifier);
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Successfully loaded spread instrument {}",
             spread_instrument_id
         );
@@ -1319,7 +1319,7 @@ impl InteractiveBrokersInstrumentProvider {
         if loaded_ids.is_empty() {
             tracing::debug!("load_all_async called but no instruments were loaded");
         } else {
-            tracing::info!("load_all_async loaded {} instruments", loaded_ids.len());
+            tracing::debug!("load_all_async loaded {} instruments", loaded_ids.len());
         }
 
         Ok(loaded_ids)
@@ -1499,7 +1499,7 @@ impl InteractiveBrokersInstrumentProvider {
         if loaded_ids.is_empty() {
             tracing::warn!("No contract details were processed for {}", instrument_id);
         } else {
-            tracing::info!(
+            tracing::debug!(
                 "Successfully loaded {} instrument(s) for {}",
                 loaded_ids.len(),
                 instrument_id
@@ -1764,7 +1764,7 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Batch loaded {} instruments ({} after filtering)",
             loaded_ids.len(),
             filtered_count
@@ -1810,7 +1810,7 @@ impl InteractiveBrokersInstrumentProvider {
         option_chain_exchange: Option<&str>,
     ) -> anyhow::Result<usize> {
         let exchange = option_chain_exchange.unwrap_or_else(|| underlying.exchange.as_str());
-        tracing::info!(
+        tracing::debug!(
             "Building option chain for {}.{} (sec_type={:?}, contract_id={}, expiry_min={:?}, expiry_max={:?}, config_min_days={:?}, config_max_days={:?})",
             underlying.symbol.as_str(),
             exchange,
@@ -1907,7 +1907,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         all_expirations.sort_unstable();
 
-        tracing::info!(
+        tracing::debug!(
             "Filtered {} option expirations for {}.{}",
             all_expirations.len(),
             underlying.symbol.as_str(),
@@ -1916,7 +1916,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Now fetch contract details for each expiry using contract_details
         for expiration in all_expirations {
-            tracing::info!(
+            tracing::debug!(
                 "Requesting option contract details for {}.{} expiry {}",
                 underlying.symbol.as_str(),
                 exchange,
@@ -1953,7 +1953,7 @@ impl InteractiveBrokersInstrumentProvider {
 
             match client.contract_details(&option_contract).await {
                 Ok(details_vec) => {
-                    tracing::info!(
+                    tracing::debug!(
                         "Received {} raw option contract details for {}.{} expiry {}",
                         details_vec.len(),
                         underlying.symbol.as_str(),
@@ -1994,7 +1994,7 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Successfully loaded {} option instruments from chain for {}.{}",
             total_loaded,
             underlying.symbol.as_str(),
@@ -2042,7 +2042,7 @@ impl InteractiveBrokersInstrumentProvider {
         min_expiry_days: Option<u32>,
         max_expiry_days: Option<u32>,
     ) -> anyhow::Result<usize> {
-        tracing::info!(
+        tracing::debug!(
             "Building futures chain for {}.{} (currency={}, trading_class={:?}, include_expired={}, min_days={:?}, max_days={:?}, config_min_days={:?}, config_max_days={:?})",
             symbol,
             exchange,
@@ -2086,7 +2086,7 @@ impl InteractiveBrokersInstrumentProvider {
             .await
             .context("Failed to fetch futures chain from IB")?;
 
-        tracing::info!(
+        tracing::debug!(
             "Received {} raw futures contract details for {}.{}",
             details_vec.len(),
             symbol,
@@ -2146,7 +2146,7 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Successfully loaded {} futures instruments from chain",
             total_loaded
         );
@@ -2198,7 +2198,7 @@ impl InteractiveBrokersInstrumentProvider {
             );
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Loading BAG contract with {} legs",
             bag_contract.combo_legs.len()
         );
@@ -2354,7 +2354,7 @@ impl InteractiveBrokersInstrumentProvider {
 
         // Check if spread is already cached after ensuring the BAG contract ID is mapped.
         if self.instruments.contains_key(&spread_instrument_id) {
-            tracing::info!("Spread instrument {} already cached", spread_instrument_id);
+            tracing::debug!("Spread instrument {} already cached", spread_instrument_id);
             self.contract_details
                 .insert(spread_instrument_id, bag_details.clone());
             self.contracts
@@ -2389,7 +2389,7 @@ impl InteractiveBrokersInstrumentProvider {
         self.price_magnifiers
             .insert(spread_instrument_id, bag_details.price_magnifier);
 
-        tracing::info!(
+        tracing::debug!(
             "Successfully loaded spread instrument {} with {} legs",
             spread_instrument_id,
             leg_tuples.len()
@@ -2457,7 +2457,7 @@ impl InteractiveBrokersInstrumentProvider {
         // Write cache to file
         let json = serde_json::to_string_pretty(&cache)?;
         fs::write(cache_path, json)?;
-        tracing::info!(
+        tracing::debug!(
             "Saved instrument cache to {} ({} instruments)",
             cache_path,
             cache.instruments.len()
@@ -2494,7 +2494,7 @@ impl InteractiveBrokersInstrumentProvider {
             let cache_age = Utc::now() - cache.cache_timestamp;
             let max_age = chrono::Duration::days(validity_days as i64);
             if cache_age > max_age {
-                tracing::info!(
+                tracing::debug!(
                     "Cache is expired (age: {} days, max: {} days). Ignoring cache",
                     cache_age.num_days(),
                     validity_days
@@ -2577,7 +2577,7 @@ impl InteractiveBrokersInstrumentProvider {
             }
         }
 
-        tracing::info!(
+        tracing::debug!(
             "Loaded instrument cache from {} ({} instruments, created at {})",
             cache_path,
             loaded_count,

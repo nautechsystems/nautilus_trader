@@ -244,7 +244,7 @@ fn test_itch_node_grid_market_maker() {
     let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
     let engine_config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
-            max_order_submit: unlimited.clone(),
+            max_order_submit: unlimited,
             max_order_modify: unlimited,
             ..Default::default()
         }),
@@ -302,7 +302,7 @@ fn test_itch_node_streaming_grid_market_maker() {
     let unlimited = RateLimit::new(1_000_000, 1_000_000_000);
     let engine_config = BacktestEngineConfig {
         risk_engine: Some(RiskEngineConfig {
-            max_order_submit: unlimited.clone(),
+            max_order_submit: unlimited,
             max_order_modify: unlimited,
             ..Default::default()
         }),

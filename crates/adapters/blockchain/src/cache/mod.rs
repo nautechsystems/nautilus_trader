@@ -151,10 +151,10 @@ impl BlockchainCache {
                 );
                 return;
             }
-            log::info!("Chain seeded in the database");
+            log::debug!("Chain seeded in the database");
 
             match database.create_block_partition(&self.chain).await {
-                Ok(message) => log::info!("Executing block partition creation: {message}"),
+                Ok(message) => log::debug!("Executing block partition creation: {message}"),
                 Err(e) => log::error!(
                     "Error creating block partition for chain {}: {e}. Continuing without partition creation...",
                     self.chain.chain_id
@@ -162,7 +162,7 @@ impl BlockchainCache {
             }
 
             match database.create_token_partition(&self.chain).await {
-                Ok(message) => log::info!("Executing token partition creation: {message}"),
+                Ok(message) => log::debug!("Executing token partition creation: {message}"),
                 Err(e) => log::error!(
                     "Error creating token partition for chain {}: {e}. Continuing without partition creation...",
                     self.chain.chain_id
@@ -203,7 +203,7 @@ impl BlockchainCache {
                 database.load_invalid_token_addresses(self.chain.chain_id)
             )?;
 
-            log::info!(
+            log::debug!(
                 "Loading {} valid tokens and {} invalid tokens from cache database",
                 tokens.len(),
                 invalid_tokens.len()
@@ -233,7 +233,7 @@ impl BlockchainCache {
             let pool_rows = database
                 .load_pools(self.chain.clone(), &dex_id.to_string())
                 .await?;
-            log::info!(
+            log::debug!(
                 "Loading {} pools for DEX {} from cache database",
                 pool_rows.len(),
                 dex_id,
@@ -379,11 +379,11 @@ impl BlockchainCache {
             }
 
             if block_timestamps.is_empty() {
-                log::info!("No blocks found in database");
+                log::debug!("No blocks found in database");
                 return Ok(());
             }
 
-            log::info!(
+            log::debug!(
                 "Loading {} blocks timestamps from the cache database with last block number {}",
                 block_timestamps.len(),
                 block_timestamps.last().unwrap().number,
@@ -473,7 +473,7 @@ impl BlockchainCache {
     ///
     /// Returns an error if adding the DEX to the database fails.
     pub async fn add_dex(&mut self, dex: SharedDex) -> anyhow::Result<()> {
-        log::info!("Adding dex {} to the cache", dex.name);
+        log::debug!("Adding dex {} to the cache", dex.name);
 
         if let Some(database) = &self.database {
             database.add_dex(dex.clone()).await?;

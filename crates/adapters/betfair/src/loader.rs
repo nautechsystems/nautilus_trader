@@ -47,15 +47,16 @@ use crate::{
         },
     },
     data_types::{
-        BetfairBspBookDelta, BetfairRaceProgress, BetfairRaceRunnerData, BetfairSequenceCompleted,
-        BetfairStartingPrice, BetfairTicker,
+        BetfairBspBookDelta, BetfairCricketMatch, BetfairRaceProgress, BetfairRaceRunnerData,
+        BetfairSequenceCompleted, BetfairStartingPrice, BetfairTicker,
     },
     stream::{
-        messages::{MCM, RCM, StreamMessage, stream_decode},
+        messages::{CCM, MCM, RCM, StreamMessage, stream_decode},
         parse::{
             make_trade_tick, parse_betfair_starting_prices, parse_betfair_ticker,
-            parse_bsp_book_deltas, parse_instrument_closes, parse_instrument_statuses,
-            parse_race_progress, parse_race_runner_data, parse_runner_book_deltas,
+            parse_bsp_book_deltas, parse_cricket_match, parse_instrument_closes,
+            parse_instrument_statuses, parse_race_progress, parse_race_runner_data,
+            parse_runner_book_deltas,
         },
     },
 };
@@ -85,6 +86,8 @@ pub enum BetfairDataItem {
     RaceRunnerData(BetfairRaceRunnerData),
     /// Race-level progress data (from RCM).
     RaceProgress(BetfairRaceProgress),
+    /// Cricket match data (from CCM).
+    CricketMatch(BetfairCricketMatch),
 }
 
 /// Reads Betfair historical data files and converts them into Nautilus domain objects.
@@ -162,6 +165,7 @@ impl BetfairDataLoader {
             match msg {
                 StreamMessage::MarketChange(mcm) => self.process_mcm(&mcm, &mut items),
                 StreamMessage::RaceChange(rcm) => Self::process_rcm(&rcm, &mut items),
+                StreamMessage::CricketChange(ccm) => Self::process_ccm(&ccm, &mut items),
                 StreamMessage::Connection(_)
                 | StreamMessage::Status(_)
                 | StreamMessage::OrderChange(_) => {}
@@ -426,6 +430,20 @@ impl BetfairDataLoader {
             }
         }
     }
+
+    fn process_ccm(ccm: &CCM, items: &mut Vec<BetfairDataItem>) {
+        let Some(cricket_changes) = &ccm.cc else {
+            return;
+        };
+
+        let ts_init = parse_millis_timestamp(ccm.pt);
+
+        for cricket_change in cricket_changes {
+            if let Some(cricket) = parse_cricket_match(cricket_change, ts_init, ts_init) {
+                items.push(BetfairDataItem::CricketMatch(cricket));
+            }
+        }
+    }
 }
 
 fn open_reader(filepath: &Path) -> anyhow::Result<Box<dyn BufRead>> {
@@ -554,6 +572,30 @@ mod tests {
             .expect("expected race progress data");
         assert_eq!(progress.ts_event, expected_event);
         assert_eq!(progress.ts_init, expected_init);
+
+        std::fs::remove_file(&tmp_file).ok();
+    }
+
+    #[rstest]
+    fn test_load_ccm_cricket_match() {
+        let ccm = compact_json(&load_test_json("stream/ccm_single.json"));
+        let tmp_dir = std::env::temp_dir().join("betfair_test");
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let tmp_file = tmp_dir.join("test_ccm.json");
+        std::fs::write(&tmp_file, ccm).unwrap();
+
+        let mut loader = BetfairDataLoader::new(Currency::GBP(), None);
+        let items = loader.load(&tmp_file).unwrap();
+
+        let cricket = items
+            .iter()
+            .find_map(|item| match item {
+                BetfairDataItem::CricketMatch(cricket) => Some(cricket),
+                _ => None,
+            })
+            .expect("expected cricket match data");
+        assert_eq!(cricket.event_id, "35741575");
+        assert_eq!(cricket.market_id, "1.259334639");
 
         std::fs::remove_file(&tmp_file).ok();
     }

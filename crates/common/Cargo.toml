@@ -42,7 +42,10 @@ python = [
 live = ["tokio"]
 simulation = ["live", "madsim", "nautilus-core/simulation"]
 defi = ["nautilus-model/defi", "alloy-primitives"]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization?/high-precision",
+]
 capnp = [
   "dep:capnp",
   "dep:nautilus-serialization",
@@ -57,7 +60,18 @@ ignored = [
 ]
 
 [package.metadata.docs.rs]
-all-features = true
+# Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
+features = [
+  "capnp",
+  "defi",
+  "ffi",
+  "high-precision",
+  "indicators",
+  "live",
+  "sbe",
+  "simulation",
+  "tracing-bridge",
+]
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
@@ -163,6 +177,11 @@ harness = false
 [[bench]]
 name = "logging"
 path = "benches/logging.rs"
+harness = false
+
+[[bench]]
+name = "throttler"
+path = "benches/throttler.rs"
 harness = false
 
 # Run with `cargo run -p nautilus-common --features live --example greeks_actor_example`

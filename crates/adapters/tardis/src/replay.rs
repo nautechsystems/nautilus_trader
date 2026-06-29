@@ -77,8 +77,8 @@ impl DateCursor {
 ///
 /// Panics if unable to determine the output path (current directory fallback fails).
 pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> anyhow::Result<()> {
-    log::info!("Starting replay");
-    log::info!("Config filepath: {}", config_filepath.display());
+    log::debug!("Starting replay");
+    log::debug!("Config filepath: {}", config_filepath.display());
 
     // Load and parse the replay configuration
     let config_data = fs::read_to_string(config_filepath)
@@ -98,25 +98,25 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
-    log::info!("Output path: {}", path.display());
+    log::debug!("Output path: {}", path.display());
 
     let normalize_symbols = config.normalize_symbols.unwrap_or(true);
-    log::info!("normalize_symbols={normalize_symbols}");
+    log::debug!("normalize_symbols={normalize_symbols}");
 
     let book_snapshot_output = config
         .book_snapshot_output
         .clone()
         .unwrap_or(BookSnapshotOutput::Deltas);
-    log::info!("book_snapshot_output={book_snapshot_output:?}");
+    log::debug!("book_snapshot_output={book_snapshot_output:?}");
 
     let extract_bbo_as_quotes = config.extract_bbo_as_quotes.unwrap_or(false);
-    log::info!("extract_bbo_as_quotes={extract_bbo_as_quotes}");
+    log::debug!("extract_bbo_as_quotes={extract_bbo_as_quotes}");
 
     let compression = config
         .compression
         .clone()
         .unwrap_or(ParquetCompression::Zstd);
-    log::info!("compression={compression:?}");
+    log::debug!("compression={compression:?}");
     let compression = compression.as_parquet_compression();
 
     let http_client = TardisHttpClient::new(
@@ -143,7 +143,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         machine_client.add_instrument_info((**info).clone());
     }
 
-    log::info!("Starting tardis-machine stream");
+    log::debug!("Starting tardis-machine stream");
     let stream = machine_client.replay(config.options).await?;
     pin_mut!(stream);
 
@@ -284,7 +284,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         batch_and_write_greeks(greeks, instrument_id, cursor.date_utc, &path, compression);
     }
 
-    log::info!(
+    log::debug!(
         "Replay completed after {} messages",
         msg_count.separate_with_commas()
     );
@@ -565,7 +565,7 @@ fn batch_and_write_bars(
     if let Err(e) = write_parquet_local(&batch, &filepath, compression) {
         log::error!("Error writing {}: {e}", filepath.display());
     } else {
-        log::info!("File written: {}", filepath.display());
+        log::debug!("File written: {}", filepath.display());
     }
 }
 
@@ -686,7 +686,7 @@ fn write_batch(
     if let Err(e) = write_parquet_local(batch, &filepath, compression) {
         log::error!("Error writing {}: {e}", filepath.display());
     } else {
-        log::info!("File written: {}", filepath.display());
+        log::debug!("File written: {}", filepath.display());
     }
 }
 

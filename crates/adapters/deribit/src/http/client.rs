@@ -1068,7 +1068,7 @@ impl DeribitHttpClient {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Parsed {} instruments ({} skipped, {} errors)",
             instruments.len(),
             skipped_count,
@@ -1345,7 +1345,7 @@ impl DeribitHttpClient {
             }
         }
 
-        log::info!(
+        log::debug!(
             "Fetched {} historical trades for {} from {} to {}",
             all_trades.len(),
             instrument_id,
@@ -1465,7 +1465,7 @@ impl DeribitHttpClient {
             }
         }
 
-        log::info!("Parsed {} bars for {}", bars.len(), bar_type);
+        log::debug!("Parsed {} bars for {}", bars.len(), bar_type);
 
         Ok(bars)
     }
@@ -1517,7 +1517,7 @@ impl DeribitHttpClient {
             ts_init,
         )?;
 
-        log::info!(
+        log::debug!(
             "Fetched order book for {} with {} bids and {} asks",
             instrument_id,
             order_book_data.bids.len(),

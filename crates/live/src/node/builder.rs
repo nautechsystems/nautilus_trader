@@ -36,9 +36,10 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_model::identifiers::TraderId;
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::{
+    clock_factory::ClockFactory,
     config::StreamingConfig,
     event_store::{EventStoreFactory, KernelEventStore},
-    kernel::NautilusKernel,
+    kernel::{NautilusKernel, NautilusKernelDependencies},
 };
 
 use super::{
@@ -85,6 +86,7 @@ pub struct LiveNodeBuilder {
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     event_store_factory: Option<EventStoreFactory>,
+    clock_factory: Option<ClockFactory>,
     external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
     external_msgbus_egress: Option<Box<dyn MessageBusExternalEgress>>,
     external_msgbus_ingress: Option<ExternalMessageBusIngress>,
@@ -100,6 +102,7 @@ impl Debug for LiveNodeBuilder {
             .field("data_client_configs", &self.data_client_configs.keys())
             .field("exec_client_configs", &self.exec_client_configs.keys())
             .field("event_store_factory", &self.event_store_factory.is_some())
+            .field("clock_factory", &self.clock_factory.is_some())
             .field(
                 "external_msgbus_factory",
                 &self.external_msgbus_factory.is_some(),
@@ -144,6 +147,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            clock_factory: None,
             external_msgbus_factory: None,
             external_msgbus_egress: None,
             external_msgbus_ingress: None,
@@ -171,6 +175,7 @@ impl LiveNodeBuilder {
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
             event_store_factory: None,
+            clock_factory: None,
             external_msgbus_factory: None,
             external_msgbus_egress: None,
             external_msgbus_ingress: None,
@@ -264,6 +269,16 @@ impl LiveNodeBuilder {
     #[must_use]
     pub const fn with_delay_shutdown_secs(mut self, delay_secs: u64) -> Self {
         self.config.timeout_shutdown = Duration::from_secs(delay_secs);
+        self
+    }
+
+    /// Inject a caller-supplied clock factory for the kernel and component clocks.
+    #[must_use]
+    pub fn with_clock_factory<F>(mut self, factory: F) -> Self
+    where
+        F: Fn() -> Rc<RefCell<dyn Clock>> + 'static,
+    {
+        self.clock_factory = Some(ClockFactory::new(factory));
         self
     }
 
@@ -496,11 +511,12 @@ impl LiveNodeBuilder {
         let runner = AsyncRunner::new();
         runner.bind_senders();
 
-        let kernel = NautilusKernel::new_with(
+        let kernel = NautilusKernel::new_with_dependencies(
             self.name.clone(),
             self.config.clone(),
-            None,
-            self.event_store_factory.take(),
+            NautilusKernelDependencies::default()
+                .with_clock_factory(self.clock_factory.take())
+                .with_event_store_factory(self.event_store_factory.take()),
         )?;
 
         self.install_external_msgbus_factory(&kernel)?;

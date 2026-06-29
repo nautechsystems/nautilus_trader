@@ -94,36 +94,51 @@ macro_rules! log_trace {
 /// ```
 #[macro_export]
 macro_rules! log_debug {
-    // Component only
-    ($msg:literal, component = $component:expr) => {
-        log::debug!(component = $component; $msg);
-    };
-    ($fmt:literal, $($args:expr),+, component = $component:expr) => {
-        log::debug!(component = $component; $fmt, $($args),+);
-    };
-
-    // Color only
-    ($msg:literal, color = $color:expr) => {
-        log::debug!(color = $color as u8; $msg);
-    };
-    ($fmt:literal, $($args:expr),+, color = $color:expr) => {
-        log::debug!(color = $color as u8; $fmt, $($args),+);
-    };
-
     // Both color and component (color first)
     ($msg:literal, color = $color:expr, component = $component:expr) => {
         log::debug!(component = $component, color = $color as u8; $msg);
     };
-    ($fmt:literal, $($args:expr),+, color = $color:expr, component = $component:expr) => {
-        log::debug!(component = $component, color = $color as u8; $fmt, $($args),+);
+    ($fmt:literal, $arg1:expr, color = $color:expr, component = $component:expr) => {
+        log::debug!(component = $component, color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, color = $color:expr, component = $component:expr) => {
+        log::debug!(component = $component, color = $color as u8; $fmt, $arg1, $arg2);
     };
 
     // Both color and component (component first)
     ($msg:literal, component = $component:expr, color = $color:expr) => {
         log::debug!(component = $component, color = $color as u8; $msg);
     };
-    ($fmt:literal, $($args:expr),+, component = $component:expr, color = $color:expr) => {
-        log::debug!(component = $component, color = $color as u8; $fmt, $($args),+);
+    ($fmt:literal, $arg1:expr, component = $component:expr, color = $color:expr) => {
+        log::debug!(component = $component, color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, component = $component:expr, color = $color:expr) => {
+        log::debug!(component = $component, color = $color as u8; $fmt, $arg1, $arg2);
+    };
+
+    // Component only
+    ($msg:literal, component = $component:expr) => {
+        log::debug!(component = $component; $msg);
+    };
+    ($fmt:literal, $arg1:expr, component = $component:expr) => {
+        log::debug!(component = $component; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, component = $component:expr) => {
+        log::debug!(component = $component; $fmt, $arg1, $arg2);
+    };
+
+    // Color only
+    ($msg:literal, color = $color:expr) => {
+        log::debug!(color = $color as u8; $msg);
+    };
+    ($fmt:literal, $arg1:expr, color = $color:expr) => {
+        log::debug!(color = $color as u8; $fmt, $arg1);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, color = $color:expr) => {
+        log::debug!(color = $color as u8; $fmt, $arg1, $arg2);
+    };
+    ($fmt:literal, $arg1:expr, $arg2:expr, $arg3:expr, color = $color:expr) => {
+        log::debug!(color = $color as u8; $fmt, $arg1, $arg2, $arg3);
     };
 
     // Default (no color or component - auto-capture module path)

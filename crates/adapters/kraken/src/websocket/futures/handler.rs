@@ -158,7 +158,7 @@ impl FuturesFeedHandler {
                             continue;
                         }
                         Message::Close(_) => {
-                            log::info!("WebSocket connection closed");
+                            log::debug!("WebSocket connection closed");
                             return None;
                         }
                         Message::Frame(_) => {
@@ -178,7 +178,7 @@ impl FuturesFeedHandler {
                     };
 
                     if text == RECONNECTED {
-                        log::info!("Received WebSocket reconnected signal");
+                        log::debug!("Received WebSocket reconnected signal");
                         return Some(KrakenFuturesWsMessage::Reconnected);
                     }
 

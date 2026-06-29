@@ -391,20 +391,16 @@ impl DataClient for PolymarketDataClient {
             "Tracking Polymarket RTDS custom data subscription: {}",
             cmd.data_type
         );
-        let Some(wire) = self.rtds_feed.track_subscribe(cmd.data_type)? else {
+        let changed = self.rtds_feed.track_subscribe(cmd.data_type)?;
+        if !changed {
             return Ok(());
-        };
+        }
 
         if !self.is_connected() {
             return Ok(());
         }
 
-        let feed = self.rtds_feed.clone();
-        get_runtime().spawn(async move {
-            if let Err(e) = feed.subscribe_live(wire).await {
-                log::error!("Failed to subscribe RTDS custom data: {e}");
-            }
-        });
+        self.rtds_feed.schedule_sync();
 
         Ok(())
     }
@@ -439,7 +435,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -462,7 +457,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to quotes for {instrument_id}");
         Ok(())
     }
 
@@ -485,7 +479,6 @@ impl DataClient for PolymarketDataClient {
         }
 
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Subscribed to trades for {instrument_id}");
         Ok(())
     }
 
@@ -497,7 +490,6 @@ impl DataClient for PolymarketDataClient {
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from book deltas for {instrument_id}");
         Ok(())
     }
 
@@ -507,7 +499,6 @@ impl DataClient for PolymarketDataClient {
         self.drop_pending_if_unwanted(instrument_id);
         self.drop_local_book_state_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from quotes for {instrument_id}");
         Ok(())
     }
 
@@ -516,7 +507,6 @@ impl DataClient for PolymarketDataClient {
         self.active_trade_subs.remove(&instrument_id);
         self.drop_pending_if_unwanted(instrument_id);
         self.sync_ws_subscription(instrument_id);
-        log::debug!("Unsubscribed from trades for {instrument_id}");
         Ok(())
     }
 
@@ -533,20 +523,16 @@ impl DataClient for PolymarketDataClient {
             "Tracking Polymarket RTDS custom data unsubscription: {}",
             cmd.data_type
         );
-        let Some(wire) = self.rtds_feed.track_unsubscribe(&cmd.data_type)? else {
+        let changed = self.rtds_feed.track_unsubscribe(&cmd.data_type)?;
+        if !changed {
             return Ok(());
-        };
+        }
 
         if !self.is_connected() {
             return Ok(());
         }
 
-        let feed = self.rtds_feed.clone();
-        get_runtime().spawn(async move {
-            if let Err(e) = feed.unsubscribe_live(wire).await {
-                log::error!("Failed to unsubscribe RTDS custom data: {e}");
-            }
-        });
+        self.rtds_feed.schedule_sync();
 
         Ok(())
     }

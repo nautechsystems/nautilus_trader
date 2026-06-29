@@ -620,7 +620,7 @@ impl SandboxExecutionClient {
             position_handler,
         });
 
-        log::info!(
+        log::debug!(
             "Sandbox registered message handlers for venue={}",
             self.config.venue
         );
@@ -640,7 +640,7 @@ impl SandboxExecutionClient {
                 &handlers.position_handler,
             );
 
-            log::info!(
+            log::debug!(
                 "Sandbox deregistered message handlers for venue={}",
                 self.config.venue
             );

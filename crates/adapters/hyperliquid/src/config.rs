@@ -58,7 +58,8 @@ pub struct HyperliquidDataClientConfig {
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (`Sockudo` by default; `Tungstenite` when
+    /// the `transport-sockudo` feature is disabled).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -170,7 +171,8 @@ pub struct HyperliquidExecClientConfig {
     /// If true, attach Nautilus builder attribution to eligible mainnet orders.
     #[builder(default = true)]
     pub include_builder_attribution: bool,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (`Sockudo` by default; `Tungstenite` when
+    /// the `transport-sockudo` feature is disabled).
     #[builder(default)]
     pub transport_backend: TransportBackend,
     /// Timeout in seconds for WebSocket post trading requests.

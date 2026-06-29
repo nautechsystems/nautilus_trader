@@ -74,9 +74,14 @@ class TearsheetDrawdownChart(TearsheetChart, frozen=True, kw_only=True):
 
 
 class TearsheetMonthlyReturnsChart(TearsheetChart, frozen=True, kw_only=True):
+    compounding: bool = True
+
     @property
     def name(self) -> str:
         return "monthly_returns"
+
+    def kwargs(self) -> dict[str, Any]:
+        return {"compounding": self.compounding}
 
 
 class TearsheetDistributionChart(TearsheetChart, frozen=True, kw_only=True):
@@ -92,9 +97,14 @@ class TearsheetRollingSharpeChart(TearsheetChart, frozen=True, kw_only=True):
 
 
 class TearsheetYearlyReturnsChart(TearsheetChart, frozen=True, kw_only=True):
+    compounding: bool = True
+
     @property
     def name(self) -> str:
         return "yearly_returns"
+
+    def kwargs(self) -> dict[str, Any]:
+        return {"compounding": self.compounding}
 
 
 class TearsheetBarsWithFillsChart(TearsheetChart, frozen=True, kw_only=True):

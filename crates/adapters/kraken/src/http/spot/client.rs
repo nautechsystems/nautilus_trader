@@ -1384,7 +1384,7 @@ impl KrakenSpotHttpClient {
             {
                 Ok(tokenized_pairs) => {
                     if !tokenized_pairs.is_empty() {
-                        log::info!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
+                        log::debug!("Fetched {} tokenized asset pairs", tokenized_pairs.len());
                     }
                     let tokenized_instruments: Vec<InstrumentAny> =
                         tokenized_pairs

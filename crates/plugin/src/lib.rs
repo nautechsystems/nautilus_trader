@@ -54,3 +54,15 @@ pub mod prelude {
         PluginError, PluginErrorCode, PluginManifest, PluginResult, Slice,
     };
 }
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn init_symbol_matches_exported_entrypoint() {
+        assert_eq!(NAUTILUS_PLUGIN_INIT_SYMBOL, b"nautilus_plugin_init");
+    }
+}

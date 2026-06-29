@@ -140,7 +140,7 @@ impl PolymarketDataClient {
                 .collect::<Vec<_>>(),
         );
 
-        log::info!("Published {total} Polymarket instruments to data engine");
+        log::debug!("Published {total} Polymarket instruments to data engine");
         Ok(())
     }
 
@@ -188,7 +188,7 @@ impl PolymarketDataClient {
                 {
                     Ok(total) => {
                         if total > 0 {
-                            log::info!(
+                            log::debug!(
                                 "Refreshed {total} Polymarket instruments into the live cache"
                             );
                         }

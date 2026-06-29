@@ -4091,6 +4091,8 @@ cdef class DataEngine(Component):
 
         update_interval_seconds = params.get("update_interval_seconds", 1)
         quote_build_delay = params.get("quote_build_delay", 0)
+        disable_vega_pricing = params.get("disable_vega_pricing", False)
+        vega_pricing_timeout_seconds = params.get("vega_pricing_timeout_seconds", 60)
         greeks_calculator = GreeksCalculator(self._cache, self._clock)
         self._spread_quote_aggregators[key] = SpreadQuoteAggregator(
             spread_instrument=instrument,
@@ -4100,6 +4102,8 @@ cdef class DataEngine(Component):
             historical=False,
             update_interval_seconds=update_interval_seconds,
             quote_build_delay=quote_build_delay,
+            disable_vega_pricing=disable_vega_pricing,
+            vega_pricing_timeout_seconds=vega_pricing_timeout_seconds,
         )
         self._log.debug(f"Created aggregator for {key=}")
 

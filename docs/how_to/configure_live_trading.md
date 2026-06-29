@@ -74,10 +74,10 @@ config = TradingNodeConfig(
 | `trader_id`              | "TRADER-001" | Unique trader identifier (name‑tag format). |
 | `instance_id`            | `None`       | Optional unique instance identifier.        |
 | `timeout_connection`     | 60.0         | Connection timeout in seconds.              |
-| `timeout_reconciliation` | 10.0         | Reconciliation timeout in seconds.          |
+| `timeout_reconciliation` | 30.0         | Reconciliation timeout in seconds.          |
 | `timeout_portfolio`      | 10.0         | Portfolio initialization timeout.           |
 | `timeout_disconnection`  | 10.0         | Disconnection timeout.                      |
-| `timeout_post_stop`      | 5.0          | Post‑stop cleanup timeout.                  |
+| `timeout_post_stop`      | 10.0         | Post‑stop cleanup timeout.                  |
 
 ### Cache database configuration
 
@@ -124,7 +124,7 @@ use nautilus_common::{
     enums::SerializationEncoding,
     msgbus::{backing::MessageBusBackingFactory, config::MessageBusConfig},
 };
-use nautilus_infrastructure::redis::msgbus::RedisMessageBusConfig;
+use nautilus_infrastructure::redis::msgbus::{RedisMessageBusConfig, RedisMessageBusFactory};
 
 let config = MessageBusConfig {
     encoding: SerializationEncoding::Json,
@@ -143,7 +143,7 @@ let backing = RedisMessageBusConfig {
     ..Default::default()
 };
 
-let message_bus_backing = backing.create(
+let message_bus_backing = RedisMessageBusFactory::new(backing).create(
     trader_id,
     instance_id,
     config.clone(),
@@ -345,8 +345,9 @@ The "inflight check loop task still pending" message appears because the normal 
 shutdown path is not triggered. This is tracked as
 [#2785](https://github.com/nautechsystems/nautilus_trader/issues/2785).
 
-The v2 `LiveNode` already handles Ctrl+C via `tokio::signal::ctrl_c()` and a Python SIGINT
-bridge, so runner and tasks shut down cleanly.
+The v2 `LiveNode` handles Ctrl+C (SIGINT) and, on Unix, SIGTERM in its Rust run loop.
+The Python v2 bridge also routes SIGINT into the same shutdown path, so runner and tasks shut down
+cleanly.
 
 Example pattern for Windows:
 

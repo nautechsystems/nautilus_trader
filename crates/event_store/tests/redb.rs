@@ -72,6 +72,61 @@ fn manifest(run_id: &str) -> RunManifest {
     }
 }
 
+fn raw_run_path(base: &std::path::Path, run_id: &str) -> std::path::PathBuf {
+    let dir = base.join(INSTANCE_ID);
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    dir.join(format!("{run_id}.redb"))
+}
+
+fn create_pre_codec_run_file(path: &std::path::Path) {
+    let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+    let manifest: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("manifest");
+    let db = redb::Database::create(path).expect("create redb");
+    let txn = db.begin_write().expect("begin write");
+    {
+        txn.open_table(entries).expect("open entries");
+        let mut manifest_table = txn.open_table(manifest).expect("open manifest");
+        manifest_table
+            .insert("current", b"old-format".as_slice())
+            .expect("insert manifest");
+    }
+    txn.commit().expect("commit");
+}
+
+fn create_future_format_run_file(path: &std::path::Path) {
+    let entries: redb::TableDefinition<u64, &[u8]> = redb::TableDefinition::new("entries");
+    let manifest: redb::TableDefinition<&str, &[u8]> = redb::TableDefinition::new("manifest");
+    let store_format: redb::TableDefinition<&str, u32> = redb::TableDefinition::new("store_format");
+    let db = redb::Database::create(path).expect("create redb");
+    let txn = db.begin_write().expect("begin write");
+    {
+        txn.open_table(entries).expect("open entries");
+        let mut format_table = txn.open_table(store_format).expect("open store format");
+        format_table.insert("codec", 2_u32).expect("insert format");
+        let mut manifest_table = txn.open_table(manifest).expect("open manifest");
+        manifest_table
+            .insert("current", b"future-format".as_slice())
+            .expect("insert manifest");
+    }
+    txn.commit().expect("commit");
+}
+
+fn assert_corrupted_regenerated<T: std::fmt::Debug>(result: Result<T, EventStoreError>) {
+    match result {
+        Err(EventStoreError::Corrupted(msg)) => {
+            assert!(msg.contains("regenerated"), "msg was: {msg}");
+        }
+        other => panic!("expected Corrupted regeneration error, was {other:?}"),
+    }
+}
+
+fn assert_corrupted<T: std::fmt::Debug>(result: Result<T, EventStoreError>) {
+    match result {
+        Err(EventStoreError::Corrupted(_)) => {}
+        other => panic!("expected Corrupted error, was {other:?}"),
+    }
+}
+
 fn build_entry(seq: u64, headers: Headers, ts_init: u64) -> EventStoreEntry {
     let topic: Topic = "exec.command.SubmitOrder".into();
     let payload_type = Ustr::from("SubmitOrder");
@@ -98,6 +153,60 @@ fn build_entry(seq: u64, headers: Headers, ts_init: u64) -> EventStoreEntry {
         ts_init,
         ts_publish,
     )
+}
+
+#[rstest]
+fn open_rejects_store_without_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-old-format");
+    create_pre_codec_run_file(&path);
+
+    let mut backend = RedbBackend::new(tmp.path());
+    assert_corrupted_regenerated(backend.open_run(manifest("run-old-format")));
+    assert_corrupted_regenerated(RedbBackend::open_sealed_file(&path));
+}
+
+#[rstest]
+fn open_rejects_store_with_future_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-future-format");
+    create_future_format_run_file(&path);
+
+    let mut backend = RedbBackend::new(tmp.path());
+    assert_corrupted(backend.open_run(manifest("run-future-format")));
+    assert_corrupted(RedbBackend::open_sealed_file(&path));
+}
+
+#[rstest]
+fn list_runs_rejects_store_without_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-old-format");
+    create_pre_codec_run_file(&path);
+
+    assert_corrupted_regenerated(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
+}
+
+#[rstest]
+fn list_runs_rejects_store_with_future_format_marker() {
+    let tmp = TempDir::new().expect("tempdir");
+    let path = raw_run_path(tmp.path(), "run-future-format");
+    create_future_format_run_file(&path);
+
+    assert_corrupted(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
+}
+
+#[rstest]
+fn list_runs_rejects_unsupported_store_even_with_healthy_run() {
+    let tmp = TempDir::new().expect("tempdir");
+    let mut backend = RedbBackend::new(tmp.path());
+    backend.open_run(manifest("run-good")).expect("open run");
+    backend.seal(RunStatus::Ended).expect("seal");
+    drop(backend);
+
+    let path = raw_run_path(tmp.path(), "run-old-format");
+    create_pre_codec_run_file(&path);
+
+    assert_corrupted_regenerated(RedbBackend::list_runs(tmp.path(), INSTANCE_ID));
 }
 
 fn append_with(seq: u64, ts_init: u64, index_keys: Vec<IndexKey>) -> AppendEntry {
@@ -949,7 +1058,7 @@ fn parity_with_memory_backend_for_indices() {
 
 #[rstest]
 fn scan_returns_corrupted_when_entry_bytes_are_garbled() {
-    // Garbled bincode payload at a known seq must surface as Corrupted, not Backend
+    // Garbled codec payload at a known seq must surface as Corrupted, not Backend
     // or Gap. Drives the decode->Corrupted classification on both scan paths.
     let tmp = TempDir::new().expect("tempdir");
     let path = {
@@ -971,7 +1080,7 @@ fn scan_returns_corrupted_when_entry_bytes_are_garbled() {
         let txn = db.begin_write().expect("begin write");
         {
             let mut table = txn.open_table(entries).expect("open table");
-            // Replace seq=2's bytes with something that is not a valid bincode envelope.
+            // Replace seq=2's bytes with something that is not a valid codec envelope.
             table
                 .insert(2_u64, b"\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF".as_slice())
                 .expect("overwrite seq 2");
@@ -1060,9 +1169,13 @@ fn open_run_returns_corrupted_for_table_type_mismatch() {
     {
         let manifest_wrong: redb::TableDefinition<&str, u64> =
             redb::TableDefinition::new("manifest");
+        let store_format: redb::TableDefinition<&str, u32> =
+            redb::TableDefinition::new("store_format");
         let db = redb::Database::create(&path).expect("create redb");
         let txn = db.begin_write().expect("begin write");
         {
+            let mut format_table = txn.open_table(store_format).expect("open store format");
+            format_table.insert("codec", 1_u32).expect("insert format");
             let mut table = txn.open_table(manifest_wrong).expect("open table");
             table.insert("current", 42_u64).expect("insert");
         }

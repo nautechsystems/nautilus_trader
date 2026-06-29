@@ -3450,6 +3450,134 @@ impl BybitHttpClient {
         Ok(instruments)
     }
 
+    /// Requests full instrument definitions and their market statuses in a single endpoint pass.
+    ///
+    /// Both are parsed from the same `/v5/market/instruments-info` response, avoiding a second
+    /// round-trip when a caller needs definitions and statuses together (e.g. the polling loop
+    /// serving both instrument and status subscriptions).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    pub async fn request_instruments_with_statuses(
+        &self,
+        product_type: BybitProductType,
+    ) -> anyhow::Result<(
+        Vec<InstrumentAny>,
+        AHashMap<InstrumentId, MarketStatusAction>,
+    )> {
+        let ts_init = self.generate_ts_init();
+        let mut statuses = AHashMap::new();
+
+        let default_fee_rate = |symbol: Ustr| BybitFeeRate {
+            symbol,
+            taker_fee_rate: "0.001".to_string(),
+            maker_fee_rate: "0.001".to_string(),
+            base_coin: None,
+        };
+
+        // A perp with a non-zero delivery time is scheduled for delisting.
+        let perp_status = |status: MarketStatusAction, is_scheduled_perp: bool| {
+            if status == MarketStatusAction::Trading && is_scheduled_perp {
+                MarketStatusAction::PreClose
+            } else {
+                status
+            }
+        };
+
+        let instruments = match product_type {
+            BybitProductType::Spot => {
+                let fee_map = self.fetch_fee_map(product_type, None).await?;
+                self.paginate_instruments::<BybitInstrumentSpot, _>(
+                    product_type,
+                    &None::<String>,
+                    None,
+                    |def| {
+                        let id = InstrumentId::new(
+                            Symbol::from(make_bybit_symbol(def.symbol, product_type)),
+                            *BYBIT_VENUE,
+                        );
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let fee = fee_map
+                            .get(&def.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_spot_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
+            }
+            BybitProductType::Linear => {
+                let fee_map = self.fetch_fee_map(product_type, None).await?;
+                self.paginate_instruments::<BybitInstrumentLinear, _>(
+                    product_type,
+                    &None::<String>,
+                    None,
+                    |def| {
+                        let id = InstrumentId::new(
+                            Symbol::from(make_bybit_symbol(def.symbol, product_type)),
+                            *BYBIT_VENUE,
+                        );
+                        let scheduled = def.contract_type == BybitContractType::LinearPerpetual
+                            && def.delivery_time != "0";
+                        statuses.insert(id, perp_status(def.status.into(), scheduled));
+                        let fee = fee_map
+                            .get(&def.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_linear_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
+            }
+            BybitProductType::Inverse => {
+                let fee_map = self.fetch_fee_map(product_type, None).await?;
+                self.paginate_instruments::<BybitInstrumentInverse, _>(
+                    product_type,
+                    &None::<String>,
+                    None,
+                    |def| {
+                        let id = InstrumentId::new(
+                            Symbol::from(make_bybit_symbol(def.symbol, product_type)),
+                            *BYBIT_VENUE,
+                        );
+                        let scheduled = def.contract_type == BybitContractType::InversePerpetual
+                            && def.delivery_time != "0";
+                        statuses.insert(id, perp_status(def.status.into(), scheduled));
+                        let fee = fee_map
+                            .get(&def.symbol)
+                            .cloned()
+                            .unwrap_or_else(|| default_fee_rate(def.symbol));
+                        parse_inverse_instrument(def, &fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
+            }
+            BybitProductType::Option => {
+                let fee_map = self.fetch_option_fee_map(None).await?;
+                self.paginate_instruments::<BybitInstrumentOption, _>(
+                    product_type,
+                    &None::<String>,
+                    None,
+                    |def| {
+                        let id = InstrumentId::new(
+                            Symbol::from(make_bybit_symbol(def.symbol, product_type)),
+                            *BYBIT_VENUE,
+                        );
+                        statuses.insert(id, MarketStatusAction::from(def.status));
+                        let fee = fee_map.get(&def.base_coin);
+                        parse_option_instrument(def, fee, ts_init, ts_init).ok()
+                    },
+                )
+                .await?
+            }
+        };
+
+        self.cache_instruments(&instruments);
+
+        Ok((instruments, statuses))
+    }
+
     /// Request ticker information for market data.
     ///
     /// Fetches ticker data from Bybit's `/v5/market/tickers` endpoint and returns

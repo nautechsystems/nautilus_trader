@@ -124,13 +124,15 @@ class EMACross(Strategy):
         self.register_indicator_for_bars(self.config.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.config.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
+        self.request_bars(
+            self.config.bar_type,
+            start=self._clock.utc_now() - pd.Timedelta(days=1),
+            callback=lambda _: self.subscribe_bars(self.config.bar_type),
+        )
         # self.request_quote_ticks(self.config.instrument_id)
         # self.request_trade_ticks(self.config.instrument_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.config.bar_type)
-
         if self.config.subscribe_quote_ticks:
             self.subscribe_quote_ticks(self.config.instrument_id)
         if self.config.subscribe_trade_ticks:

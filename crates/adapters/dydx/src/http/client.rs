@@ -877,7 +877,7 @@ impl DydxHttpClient {
         }
 
         if skipped_inactive > 0 {
-            log::info!(
+            log::debug!(
                 "Parsed {} instruments, skipped {} inactive",
                 instruments.len(),
                 skipped_inactive
@@ -943,9 +943,9 @@ impl DydxHttpClient {
         let count = items.len();
 
         if skipped_inactive > 0 {
-            log::info!("Cached {count} instruments, skipped {skipped_inactive} inactive");
+            log::debug!("Cached {count} instruments, skipped {skipped_inactive} inactive");
         } else {
-            log::info!("Cached {count} instruments");
+            log::debug!("Cached {count} instruments");
         }
 
         Ok(())
@@ -977,7 +977,7 @@ impl DydxHttpClient {
             self.instrument_cache
                 .insert(instrument.clone(), market.clone());
 
-            log::info!("Fetched and cached new instrument: {ticker}");
+            log::debug!("Fetched and cached new instrument: {ticker}");
             return Ok(Some(instrument));
         }
 
@@ -1405,7 +1405,7 @@ impl DydxHttpClient {
         // dYdX returns newest first; reverse to chronological order
         rates.reverse();
 
-        log::info!("Fetched {} funding rates for {instrument_id}", rates.len(),);
+        log::debug!("Fetched {} funding rates for {instrument_id}", rates.len(),);
 
         Ok(rates)
     }

@@ -534,7 +534,13 @@ docs-rust:  #-- Build Rust documentation with cargo doc
 docsrs-check: export DOCS_RS=1
 docsrs-check: export RUSTDOCFLAGS=--cfg docsrs -D warnings
 docsrs-check: check-hack-installed #-- Check documentation builds for docs.rs compatibility
-	cargo +nightly hack --workspace doc --no-deps --all-features
+	cargo +nightly hack --workspace --ignore-private --ignore-unknown-features \
+		--features arrow,capnp,cloud,cython-compat,defi,display \
+		--features example-databento,examples,ffi,high-precision,host \
+		--features hypersync,indicators,live,node,persistence,plugin \
+		--features postgres,redis,replay,sbe,simulation,streaming,stubs \
+		--features tracing-bridge,transport-sockudo,turmoil \
+		doc --no-deps
 
 .PHONY: docs-check-links
 docs-check-links:  #-- Check for broken links in documentation (periodic audit)
@@ -1032,7 +1038,7 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 .PHONY: sync-v2
 sync-v2:  #-- Sync v2 Python dependencies (without building the package)
 	$(info $(M) Syncing v2 Python dependencies...)
-	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
+	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
 build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)

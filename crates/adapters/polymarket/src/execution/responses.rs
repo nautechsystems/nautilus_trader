@@ -164,7 +164,7 @@ pub(super) fn emit_market_order_submitted(
         return;
     };
 
-    log::info!(
+    log::debug!(
         "Converted {} quote quantity {} to base quantity {} (from signed taker_amount)",
         order.instrument_id(),
         amount,
@@ -524,7 +524,7 @@ pub(super) fn handle_order_response(
                     }
 
                     if pending_cancels.contains(&order.client_order_id()) {
-                        log::info!(
+                        log::debug!(
                             "Order {} has pending cancel, issuing deferred cancel for {}",
                             order.client_order_id(),
                             venue_order_id
@@ -604,7 +604,7 @@ fn emit_buy_overfill_update(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
 ) {
-    log::info!(
+    log::warn!(
         "Raising {} BUY quantity to {new_qty} to absorb a marketable fill above the nominal size",
         order.client_order_id(),
     );
@@ -679,12 +679,12 @@ pub(super) async fn check_fok_status(
         return;
     }
 
-    log::info!("FOK order {order_id} unresolved after 5s, checking REST status");
+    log::warn!("FOK order {order_id} unresolved after 5s, checking REST status");
 
     let venue_order = match submitter.get_order(order_id).await {
         Ok(Some(o)) => o,
         Ok(None) => {
-            log::info!("FOK order {order_id} not found (empty response), WS will reconcile");
+            log::debug!("FOK order {order_id} not found (empty response), WS will reconcile");
             return;
         }
         Err(e) => {
@@ -698,15 +698,15 @@ pub(super) async fn check_fok_status(
 
     match order_status {
         OrderStatus::Rejected => {
-            log::info!("FOK order {order_id} resolved via REST as Rejected");
+            log::debug!("FOK order {order_id} resolved via REST as Rejected");
             emitter.emit_order_rejected(order, "FOK order unfilled", ts_now, false);
         }
         OrderStatus::Canceled => {
-            log::info!("FOK order {order_id} resolved via REST as Canceled");
+            log::debug!("FOK order {order_id} resolved via REST as Canceled");
             emitter.emit_order_canceled(order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Expired => {
-            log::info!("FOK order {order_id} resolved via REST as Expired");
+            log::debug!("FOK order {order_id} resolved via REST as Expired");
             emitter.emit_order_expired(order, Some(venue_order_id), ts_now);
         }
         OrderStatus::Filled => {
@@ -751,7 +751,7 @@ pub(super) async fn check_fok_status(
             );
             report.price = Some(price);
 
-            log::info!("FOK order {order_id} resolved via REST as Filled; reconciling via report");
+            log::debug!("FOK order {order_id} resolved via REST as Filled; reconciling via report");
             emitter.send_order_status_report(report);
         }
         _ => {}

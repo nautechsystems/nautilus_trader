@@ -182,7 +182,7 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     stats.emitted_condition_ids.dedup();
 
     if !unique_condition_ids.is_empty() {
-        log::info!(
+        log::debug!(
             "Polymarket resolve batch requested={} fetched={} resolved={} emitted={} skipped_non_binary={} clob_fallback_successes={} failed={}",
             unique_condition_ids.len(),
             stats.fetched_markets,

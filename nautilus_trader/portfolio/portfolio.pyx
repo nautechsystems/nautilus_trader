@@ -664,7 +664,11 @@ cdef class Portfolio(PortfolioFacade):
 
         cdef Money converted_pnl
         if updated_position is not None and updated_position.is_closed_c() and updated_position.realized_pnl is not None:
-            self.analyzer.record_trade(updated_position.id, updated_position.realized_pnl)
+            self.analyzer.record_trade(
+                updated_position.id,
+                updated_position.realized_pnl,
+                updated_position.ts_last,
+            )
 
             if (
                 account.base_currency is not None
@@ -676,7 +680,11 @@ cdef class Portfolio(PortfolioFacade):
                     venue=event.instrument_id.venue,
                 )
                 if converted_pnl is not None:
-                    self.analyzer.record_trade(updated_position.id, converted_pnl)
+                    self.analyzer.record_trade(
+                        updated_position.id,
+                        converted_pnl,
+                        updated_position.ts_last,
+                    )
                 else:
                     self._log.warning(
                         f"Cannot record account-currency realized PnL for {updated_position.id}: "

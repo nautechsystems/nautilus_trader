@@ -45,11 +45,13 @@
 //! - [Databento DBN Schema](https://databento.com/docs/schemas)
 
 mod custom;
+mod expiration;
 mod instruments;
 mod market_data;
 mod primitives;
 
 pub use custom::{decode_imbalance_msg, decode_statistics_msg, is_supported_stat_type};
+pub use expiration::{DatabentoDecodeConfig, OptionExpirationRule, corrected_option_expiration};
 pub use instruments::{
     decode_equity, decode_futures_contract, decode_futures_spread, decode_instrument_def_msg,
     decode_option_contract, decode_option_spread,

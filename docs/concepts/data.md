@@ -338,6 +338,16 @@ These methods work together in a typical workflow:
 1. First, `request_bars()` loads historical data to initialize indicators or state of strategy with past market behavior.
 2. Then, `subscribe_bars()` ensures the strategy continues receiving new bars as they form in real-time.
 
+:::tip[Request and subscribe ordering]
+
+When `validate_data_sequence=True` (common with live adapters such as Interactive Brokers),
+calling `subscribe_bars()` immediately after `request_bars()` can cause a race condition:
+live bars arriving before the historical batch may cause the validator to discard older
+warmup bars. To avoid it, pass a `callback` to `request_bars()` and subscribe from inside
+it, as shown in the example below.
+
+:::
+
 Example usage in `on_start()`:
 
 ```python
@@ -351,11 +361,14 @@ def on_start(self) -> None:
 
     # Request historical data to initialize indicators
     # These bars will be delivered to the on_historical_data(...) handler in strategy
-    self.request_bars(bar_type, start=start)
-
-    # Subscribe to real-time updates
-    # New bars will be delivered to the on_bar(...) handler in strategy
-    self.subscribe_bars(bar_type)
+    # Subscribe to real-time bars as a callback to the request so the live stream
+    # only starts once history is loaded (see tip above)
+    # New live bars will be delivered to the on_bar(...) handler in strategy
+    self.request_bars(
+        bar_type,
+        start=start,
+        callback=lambda _: self.subscribe_bars(bar_type),
+    )
 ```
 
 Required handlers in your strategy to receive the data:
@@ -420,9 +433,9 @@ self.register_indicator_for_bars(bar_type, self.ema)
 ### Performance considerations
 
 Bar aggregators track OHLC prices via the fixed-point `Price` type. Threshold comparisons for
-tick and volume aggregators use integer arithmetic, while value-based and imbalance/runs aggregators
-currently use `f64` for notional value and signed accumulation (these are being migrated to
-fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
+tick and volume aggregators, including their imbalance and runs variants, use integer arithmetic,
+while value-based aggregators (value, value imbalance, and value runs) currently use `f64` for
+notional value and signed accumulation (these are being migrated to fixed-point integer arithmetic). The choice of aggregation method has a modest impact on per-update
 overhead:
 
 - **Time bars** are the most efficient for high-throughput data. The aggregator accumulates

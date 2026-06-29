@@ -353,7 +353,7 @@ impl AxMdWebSocketClient {
             {
                 Ok(Ok(client)) => {
                     if attempt > 1 {
-                        log::info!("WebSocket connection established after {attempt} attempts");
+                        log::debug!("WebSocket connection established after {attempt} attempts");
                     }
                     break client;
                 }

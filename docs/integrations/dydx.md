@@ -89,8 +89,8 @@ The dYdX v4 adapter includes multiple components which can be used together or s
 - `DydxInstrumentProvider`: Instrument parsing and loading functionality.
 - `DydxDataClient`: Market data feed manager.
 - `DydxExecutionClient`: Account management and trade execution gateway.
-- `DydxLiveDataClientFactory`: Factory for dYdX v4 data clients (used by the trading node builder).
-- `DydxLiveExecClientFactory`: Factory for dYdX v4 execution clients (used by the trading node builder).
+- `DydxDataClientFactory`: Factory for dYdX v4 data clients (used by the trading node builder).
+- `DydxExecutionClientFactory`: Factory for dYdX v4 execution clients (used by the trading node builder).
 
 :::note
 Most users will define a configuration for a live trading node (as below),
@@ -491,16 +491,11 @@ The default of 4 req/s is conservative and works across all public providers.
 
 ### Multiple gRPC URL fallback
 
-Use `base_url_grpc` to override the primary gRPC endpoint:
+The execution config's `grpc_endpoint` field overrides the primary gRPC endpoint.
+It is a config-struct field and is not a parameter of the Python `DydxExecClientConfig`
+constructor.
 
-```python
-exec_config = DydxExecClientConfig(
-    base_url_grpc="https://primary-grpc.example.com:443",
-    # ...
-)
-```
-
-When `base_url_grpc` is unset, the adapter uses the default public nodes for the
+When `grpc_endpoint` is unset, the adapter uses the default public nodes for the
 selected network with built-in fallback across the public validator list. Explicit
 multi-URL fallback via user config is not currently exposed on the Python config.
 
@@ -583,7 +578,7 @@ Specify the subaccount number in the execution client config:
 config = TradingNodeConfig(
     exec_clients={
         "DYDX": DydxExecClientConfig(
-            subaccount=0,  # Default subaccount
+            subaccount_number=0,  # Default subaccount
         ),
     },
 )
@@ -598,7 +593,7 @@ clients for different subaccounts to implement strategy segregation or risk isol
 
 The dYdX testnet (`dydx-testnet-4`) is a full replica of mainnet for testing strategies
 without risking real funds. All default testnet endpoints are resolved automatically when
-`environment=DydxNetwork.TESTNET`.
+`network=DydxNetwork.TESTNET`.
 
 ### 1. Create a testnet wallet
 
@@ -646,7 +641,7 @@ export DYDX_TESTNET_PRIVATE_KEY="0x..."  # hex-encoded, 0x prefix optional
 
 ### 4. Configure the trading node
 
-Set `environment=DydxNetwork.TESTNET` on both data and execution clients:
+Set `network=DydxNetwork.TESTNET` on both data and execution clients:
 
 ```python
 from nautilus_trader.adapters.dydx import DydxNetwork
@@ -657,16 +652,16 @@ config = TradingNodeConfig(
         DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=DydxNetwork.TESTNET,
+            network=DydxNetwork.TESTNET,
         ),
     },
     exec_clients={
         DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to DYDX_TESTNET_WALLET_ADDRESS env var
             private_key=None,     # Falls back to DYDX_TESTNET_PRIVATE_KEY env var
-            subaccount=0,
+            subaccount_number=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=DydxNetwork.TESTNET,
+            network=DydxNetwork.TESTNET,
         ),
     },
 )
@@ -674,8 +669,9 @@ config = TradingNodeConfig(
 
 ### Testnet endpoints
 
-Default testnet endpoints are used automatically. Override via `base_url_http`,
-`base_url_ws`, or `base_url_grpc` (execution only) on the respective config if needed.
+Default testnet endpoints are used automatically. Override via the `http_endpoint`,
+`ws_endpoint`, or `grpc_endpoint` config-struct fields on the execution config if needed
+(these are not Python constructor parameters).
 
 | Service   | Default URL                                          |
 |-----------|------------------------------------------------------|
@@ -687,8 +683,9 @@ Default testnet endpoints are used automatically. Override via `base_url_http`,
 
 ### Mainnet endpoints
 
-Default mainnet endpoints are used automatically. Override via `base_url_http`,
-`base_url_ws`, or `base_url_grpc` (execution only) on the respective config if needed.
+Default mainnet endpoints are used automatically. Override via the `http_endpoint`,
+`ws_endpoint`, or `grpc_endpoint` config-struct fields on the execution config if needed
+(these are not Python constructor parameters).
 
 | Service   | Default URL                                         |
 |-----------|-----------------------------------------------------|
@@ -707,34 +704,40 @@ wallet credentials.
 | Option                    | Default   | Description                                                                                 |
 |---------------------------|-----------|---------------------------------------------------------------------------------------------|
 | `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.         |
-| `environment`             | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
+| `network`                 | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
 | `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.  |
-| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.             |
-| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.            |
+| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.            |
+| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.           |
 | `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                       |
 | `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                       |
-| `retry_delay_initial_ms`  | `1,000`   | Initial delay (milliseconds) between retries.                                               |
-| `retry_delay_max_ms`      | `10,000`  | Maximum delay (milliseconds) between retries.                                               |
+| `retry_delay_initial_ms`  | `100`     | Initial delay (milliseconds) between retries.                                               |
+| `retry_delay_max_ms`      | `5,000`   | Maximum delay (milliseconds) between retries.                                               |
 | `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                                |
+
+`base_url_http` and `base_url_ws` are config-struct fields and are not parameters of the
+Python `DydxDataClientConfig` constructor.
 
 ### Execution client configuration options
 
 | Option                         | Default   | Description                                                                                        |
 |--------------------------------|-----------|----------------------------------------------------------------------------------------------------|
 | `wallet_address`               | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
-| `subaccount`                   | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
-| `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
+| `subaccount_number`            | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
+| `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`.|
 | `authenticator_ids`            | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                     |
-| `environment`                  | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                    |
-| `base_url_http`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
-| `base_url_ws`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
-| `base_url_grpc`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
+| `network`                      | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                    |
+| `http_endpoint`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
+| `ws_endpoint`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
+| `grpc_endpoint`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
 | `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                              |
 | `max_retries`                  | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                  |
 | `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
 | `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
 | `grpc_rate_limit_per_second`   | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                        |
 | `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                       |
+
+`http_endpoint`, `ws_endpoint`, and `grpc_endpoint` are config-struct fields and are not
+parameters of the Python `DydxExecClientConfig` constructor.
 
 ### Basic setup
 
@@ -754,16 +757,16 @@ config = TradingNodeConfig(
         DYDX: DydxDataClientConfig(
             wallet_address=None,  # Falls back to env var
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=DydxNetwork.MAINNET,
+            network=DydxNetwork.MAINNET,
         ),
     },
     exec_clients={
         DYDX: DydxExecClientConfig(
             wallet_address=None,  # Falls back to env var
             private_key=None,     # Falls back to env var
-            subaccount=0,
+            subaccount_number=0,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            environment=DydxNetwork.MAINNET,
+            network=DydxNetwork.MAINNET,
         ),
     },
 )
@@ -772,15 +775,15 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and register the client factories:
 
 ```python
-from nautilus_trader.adapters.dydx import DydxLiveDataClientFactory
-from nautilus_trader.adapters.dydx import DydxLiveExecClientFactory
+from nautilus_trader.adapters.dydx import DydxDataClientFactory
+from nautilus_trader.adapters.dydx import DydxExecutionClientFactory
 from nautilus_trader.adapters.dydx.constants import DYDX
 from nautilus_trader.live.node import TradingNode
 
 node = TradingNode(config=config)
 
-node.add_data_client_factory(DYDX, DydxLiveDataClientFactory)
-node.add_exec_client_factory(DYDX, DydxLiveExecClientFactory)
+node.add_data_client_factory(DYDX, DydxDataClientFactory)
+node.add_exec_client_factory(DYDX, DydxExecutionClientFactory)
 
 node.build()
 ```
@@ -788,7 +791,7 @@ node.build()
 ### API credentials
 
 Credentials can be passed directly via the Python config (`wallet_address`, `private_key`) or
-resolved automatically from environment variables based on the configured `environment`.
+resolved automatically from environment variables based on the configured `network`.
 
 #### Environment variables
 
@@ -802,7 +805,7 @@ resolved automatically from environment variables based on the configured `envir
 #### Resolution priority
 
 1. Value passed in the Python config (if non-empty)
-2. Environment variable selected by `environment`
+2. Environment variable selected by `network`
 
 ### Permissioned key trading
 

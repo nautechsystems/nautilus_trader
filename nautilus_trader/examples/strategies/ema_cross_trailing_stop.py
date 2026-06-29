@@ -159,11 +159,11 @@ class EMACrossTrailingStop(Strategy):
         self.request_bars(
             self.config.bar_type,
             start=self._clock.utc_now() - pd.Timedelta(days=1),
+            callback=lambda _: self.subscribe_bars(self.config.bar_type),
         )
 
         # Subscribe to live data
         self.subscribe_quote_ticks(self.config.instrument_id)
-        self.subscribe_bars(self.config.bar_type)
 
     def on_stop(self) -> None:
         """

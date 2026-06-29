@@ -873,7 +873,7 @@ impl BinanceFuturesExecutionClient {
                     Err(e) => {
                         let err_str = format!("{e}");
                         if err_str.contains("-4046") {
-                            log::info!("{symbol} margin type already {margin_type:?}");
+                            log::debug!("{symbol} margin type already {margin_type:?}");
                         } else {
                             return Err(e)
                                 .context(format!("failed to set margin type for {symbol}"));
@@ -1161,7 +1161,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             if instruments.is_empty() {
                 log::warn!("No instruments returned for Binance Futures");
             } else {
-                log::info!("Loaded {} Futures instruments", instruments.len());
+                log::debug!("Loaded {} Futures instruments", instruments.len());
             }
 
             self.core.set_instruments_initialized();
@@ -1174,14 +1174,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .context("failed to apply futures config")?;
 
         // Create listen key for user data stream
-        log::info!("Creating listen key for user data stream...");
+        log::debug!("Creating listen key for user data stream...");
         let listen_key_response = self
             .http_client
             .create_listen_key()
             .await
             .context("failed to create listen key")?;
         let listen_key = listen_key_response.listen_key;
-        log::info!("Listen key created successfully");
+        log::debug!("Listen key created successfully");
 
         {
             let mut key_guard = self.listen_key.write().expect(MUTEX_POISONED);
@@ -1340,7 +1340,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .context("failed to request Binance Futures account state")?;
 
         if !account_state.balances.is_empty() {
-            log::info!(
+            log::debug!(
                 "Received account state with {} balance(s) and {} margin(s)",
                 account_state.balances.len(),
                 account_state.margins.len()
@@ -1356,7 +1356,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         if let Some(ref mut ws_trading) = self.ws_trading_client {
             match ws_trading.connect().await {
                 Ok(()) => {
-                    log::info!("Connected to Binance Futures WS trading API");
+                    log::debug!("Connected to Binance Futures WS trading API");
 
                     let ws_trading_clone = ws_trading.clone();
                     let emitter = self.emitter.clone();
@@ -1908,7 +1908,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if instruments.is_empty() {
                         log::warn!("No instruments returned for Binance Futures");
                     } else {
-                        log::info!("Loaded {} Futures instruments", instruments.len());
+                        log::debug!("Loaded {} Futures instruments", instruments.len());
                     }
                 }
                 Err(e) => {
@@ -2396,7 +2396,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         self.spawn_task("cancel_all_orders", async move {
             match http_client.cancel_all_orders(instrument_id).await {
                 Ok(_) => {
-                    log::info!("Cancel all regular orders request accepted for {instrument_id}");
+                    log::debug!("Cancel all regular orders request accepted for {instrument_id}");
                 }
                 Err(e) => {
                     log::error!("Failed to cancel all regular orders for {instrument_id}: {e}");
@@ -2405,7 +2405,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match http_client.cancel_all_algo_orders(instrument_id).await {
                 Ok(()) => {
-                    log::info!("Cancel all algo orders request accepted for {instrument_id}");
+                    log::debug!("Cancel all algo orders request accepted for {instrument_id}");
                 }
                 Err(e) => {
                     log::error!("Failed to cancel all algo orders for {instrument_id}: {e}");

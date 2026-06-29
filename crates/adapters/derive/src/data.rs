@@ -684,7 +684,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Derive data client: {}", self.client_id);
+        log::debug!("Disposing Derive data client: {}", self.client_id);
         self.stop()
     }
 

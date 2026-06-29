@@ -311,7 +311,7 @@ node's bus thread. Bounded egress implementations drop on a full queue instead o
 back-pressure to the trading loop. Closing the message bus closes the configured egress.
 
 Inbound external streams are exposed through the separate Rust `MessageBusExternalIngress` trait.
-Ingress yields the same `BusMessage { topic, type, encoding, payload }` shape.
+Ingress yields the same `BusMessage { topic, payload_type, encoding, payload }` shape.
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. The inbound payload type must first be registered for
 streaming on the receiving message bus; unregistered types are skipped without decoding.

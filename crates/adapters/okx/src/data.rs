@@ -175,7 +175,7 @@ impl OKXDataClient {
                 config.api_key.clone(),
                 config.api_secret.clone(),
                 config.api_passphrase.clone(),
-                config.base_url_http.clone(),
+                Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
@@ -185,7 +185,7 @@ impl OKXDataClient {
             )?
         } else {
             OKXHttpClient::new(
-                config.base_url_http.clone(),
+                Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
                 config.retry_delay_initial_ms,
@@ -1114,14 +1114,14 @@ impl DataClient for OKXDataClient {
         let raw_depth = cmd.depth.map_or(0, |d| d.get());
         let depth = resolve_book_depth(raw_depth);
         if depth != raw_depth {
-            log::info!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
+            log::debug!("Clamped book depth {raw_depth} to {depth} (OKX supports 50 or 400)");
         }
 
         let vip = self.vip_level().unwrap_or(OKXVipLevel::Vip0);
         let channel = match depth {
             50 => {
                 if vip < OKXVipLevel::Vip4 {
-                    log::info!(
+                    log::debug!(
                         "VIP level {vip} insufficient for 50-depth channel, falling back to default"
                     );
                     OKXBookChannel::Book

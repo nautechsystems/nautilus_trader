@@ -157,7 +157,7 @@ impl BlockchainExecutionClient {
     /// Refreshes all wallet balances including native currency and tracked ERC-20 tokens.
     async fn refresh_wallet_balances(&mut self) -> anyhow::Result<()> {
         let native_currency_balance = self.fetch_native_currency_balance().await?;
-        log::info!(
+        log::debug!(
             "Initializing wallet balance with native currency balance: {} {}",
             native_currency_balance.as_decimal(),
             native_currency_balance.currency
@@ -176,7 +176,7 @@ impl BlockchainExecutionClient {
 
             for token in tokens {
                 if let Ok(token_balance) = self.fetch_token_balance(&token).await {
-                    log::info!("Adding token balance to the wallet: {token_balance}");
+                    log::debug!("Adding token balance to the wallet: {token_balance}");
                     self.wallet_balance.add_token_balance(token_balance);
                 }
             }

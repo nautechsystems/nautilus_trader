@@ -369,7 +369,7 @@ impl OrderSubmitter {
             Ok(tx_hashes)
         } else {
             // Long-term orders can be batched in a single transaction
-            log::info!(
+            log::debug!(
                 "Batch submitting {} long-term limit orders in single transaction",
                 orders.len()
             );
@@ -477,7 +477,7 @@ impl OrderSubmitter {
                 self.order_builder.is_short_term_cancel(*tif, *expire_ns)
             });
 
-        log::info!(
+        log::debug!(
             "Batch cancelling {} orders (short_term={}, long_term={})",
             orders.len(),
             short_term.len(),

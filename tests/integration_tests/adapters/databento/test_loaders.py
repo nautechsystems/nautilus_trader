@@ -200,7 +200,7 @@ def test_loader_definition_opra_pillar() -> None:
 def test_loader_xnasitch_definition() -> None:
     # Arrange
     loader = _make_loader()
-    path = DATABENTO_RUST_TEST_DATA_DIR / "test_data.definition.dbn.zst"
+    path = DATABENTO_RUST_TEST_DATA_DIR / "test_data.definition.equity.dbn.zst"
 
     # Act
     data = loader.from_dbn_file(path)

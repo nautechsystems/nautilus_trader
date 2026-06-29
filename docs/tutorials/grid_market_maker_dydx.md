@@ -266,13 +266,11 @@ DYDX_WALLET_ADDRESS=dydx1...
 ### Run the example
 
 ```bash
-# Mainnet (default)
 cargo run --example dydx-grid-mm --package nautilus-dydx --features examples
-
-# Testnet (set DYDX_NETWORK=testnet, requires testnet API trading key)
-DYDX_NETWORK=testnet \
-  cargo run --example dydx-grid-mm --package nautilus-dydx --features examples
 ```
+
+The example targets mainnet. To run against testnet, set the `DYDX_NETWORK` constant near the top
+of the example to `DydxNetwork::Testnet` (this needs a testnet API trading key) and rebuild.
 
 ### Graceful shutdown
 
@@ -289,23 +287,13 @@ The `main` function lives at
 [`crates/adapters/dydx/examples/node_grid_mm.rs`](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/adapters/dydx/examples/node_grid_mm.rs):
 
 ```rust
+const DYDX_NETWORK: DydxNetwork = DydxNetwork::Mainnet;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenvy::dotenv().ok();
 
-    let network = match std::env::var("DYDX_NETWORK") {
-        Err(_) => DydxNetwork::Mainnet,
-        Ok(value) => match value.to_ascii_lowercase().as_str() {
-            "testnet" => DydxNetwork::Testnet,
-            "mainnet" | "" => DydxNetwork::Mainnet,
-            other => {
-                return Err(format!(
-                    "DYDX_NETWORK must be 'mainnet' or 'testnet' (case-insensitive), got '{other}'",
-                )
-                .into());
-            }
-        },
-    };
+    let network = DYDX_NETWORK;
 
     let environment = Environment::Live;
     let trader_id = TraderId::from("TESTER-001");
@@ -649,9 +637,9 @@ node.add_strategy(GridMarketMaker::new(eth_config))?;
 
 ### Mainnet vs testnet toggle
 
-The example reads `DYDX_NETWORK` and selects the appropriate endpoint and
-credential set. Set `DYDX_NETWORK=testnet` to run against testnet; leave
-unset for mainnet.
+The example selects the network from the `DYDX_NETWORK` constant near the top of the file
+(`DydxNetwork::Mainnet` by default). Change it to `DydxNetwork::Testnet` and rebuild to run
+against testnet.
 
 ## Further reading
 

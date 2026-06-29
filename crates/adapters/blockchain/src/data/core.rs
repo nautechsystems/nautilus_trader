@@ -149,7 +149,7 @@ impl BlockchainDataClientCore {
         let cache = BlockchainCache::new(chain.clone());
 
         // Log RPC endpoints being used
-        log::info!(
+        log::debug!(
             "Initializing blockchain data client for '{}' with HTTP RPC: {}",
             chain.name,
             config.http_rpc_url
@@ -157,7 +157,7 @@ impl BlockchainDataClientCore {
 
         let rpc_client = if !config.use_hypersync_for_live_data && config.wss_rpc_url.is_some() {
             let wss_rpc_url = config.wss_rpc_url.clone().expect("wss_rpc_url is required");
-            log::info!("WebSocket RPC URL: {wss_rpc_url}");
+            log::debug!("WebSocket RPC URL: {wss_rpc_url}");
             Some(Self::initialize_rpc_client(
                 chain.name,
                 wss_rpc_url,
@@ -165,7 +165,7 @@ impl BlockchainDataClientCore {
                 config.proxy_url.clone(),
             ))
         } else {
-            log::info!("Using HyperSync for live data (no WebSocket RPC)");
+            log::debug!("Using HyperSync for live data (no WebSocket RPC)");
             None
         };
         let http_rpc_client = Arc::new(BlockchainHttpRpcClient::new(
@@ -201,7 +201,7 @@ impl BlockchainDataClientCore {
     /// Initializes the database connection for the blockchain cache.
     pub async fn initialize_cache_database(&mut self) {
         if let Some(pg_connect_options) = &self.config.postgres_cache_database_config {
-            log::info!(
+            log::debug!(
                 "Initializing blockchain cache on database '{}'",
                 pg_connect_options.database
             );
@@ -246,7 +246,7 @@ impl BlockchainDataClientCore {
     ///
     /// Returns an error if cache initialization or connection setup fails.
     pub async fn connect(&mut self) -> anyhow::Result<()> {
-        log::info!(
+        log::debug!(
             "Connecting blockchain data client for '{}'",
             self.chain.name
         );
@@ -258,7 +258,7 @@ impl BlockchainDataClientCore {
 
         let from_block = self.determine_from_block();
 
-        log::info!(
+        log::debug!(
             "Connecting to blockchain data source for '{}' from block {}",
             self.chain.name,
             from_block.separate_with_commas()
@@ -293,26 +293,26 @@ impl BlockchainDataClientCore {
         if let Some(blocks_status) = self.cache.get_cache_block_consistency_status().await {
             // If blocks are consistent proceed with copy command.
             if blocks_status.is_consistent() {
-                log::info!(
+                log::debug!(
                     "Cache is consistent: no gaps detected (last continuous block: {})",
                     blocks_status.last_continuous_block
                 );
                 let target_block = max(blocks_status.max_block + 1, from_block);
-                log::info!(
+                log::debug!(
                     "Starting fast sync with COPY from block {}",
                     target_block.separate_with_commas()
                 );
                 self.sync_blocks(target_block, to_block, true).await?;
             } else {
                 let gap_size = blocks_status.max_block - blocks_status.last_continuous_block;
-                log::info!(
+                log::debug!(
                     "Cache inconsistency detected: {} blocks missing between {} and {}",
                     gap_size,
                     blocks_status.last_continuous_block + 1,
                     blocks_status.max_block
                 );
 
-                log::info!(
+                log::debug!(
                     "Block syncing Phase 1: Filling gaps with INSERT (blocks {} to {})",
                     blocks_status.last_continuous_block + 1,
                     blocks_status.max_block
@@ -324,7 +324,7 @@ impl BlockchainDataClientCore {
                 )
                 .await?;
 
-                log::info!(
+                log::debug!(
                     "Block syncing Phase 2: Continuing with fast COPY from block {}",
                     (blocks_status.max_block + 1).separate_with_commas()
                 );
@@ -357,7 +357,7 @@ impl BlockchainDataClientCore {
             self.hypersync_client.current_block().await
         };
         let total_blocks = to_block.saturating_sub(from_block) + 1;
-        log::info!(
+        log::debug!(
             "Syncing blocks from {} to {} (total: {} blocks)",
             from_block.separate_with_commas(),
             to_block.separate_with_commas(),
@@ -388,7 +388,7 @@ impl BlockchainDataClientCore {
         let cancellation_token = self.cancellation_token.clone();
         let sync_result = tokio::select! {
             () = cancellation_token.cancelled() => {
-                log::info!("Block sync cancelled");
+                log::debug!("Block sync cancelled");
                 Err(anyhow::anyhow!("Sync cancelled"))
             }
             result = async {
@@ -478,7 +478,7 @@ impl BlockchainDataClientCore {
 
         // Skip sync if we're already up to date
         if effective_from_block > to_block {
-            log::info!(
+            log::debug!(
                 "D {} already synced to block {} (current: {}), skipping sync",
                 dex,
                 last_synced_block.unwrap_or(0).separate_with_commas(),
@@ -494,7 +494,7 @@ impl BlockchainDataClientCore {
             .await?;
 
         let total_blocks = to_block.saturating_sub(effective_from_block) + 1;
-        log::info!(
+        log::debug!(
             "Syncing Pool: '{}' events from {} to {} (total: {} blocks){}",
             pool_display,
             effective_from_block.separate_with_commas(),
@@ -611,7 +611,7 @@ impl BlockchainDataClientCore {
         let cancellation_token = self.cancellation_token.clone();
         let sync_result = tokio::select! {
             () = cancellation_token.cancelled() => {
-                log::info!("Pool event sync cancelled");
+                log::debug!("Pool event sync cancelled");
                 Err(anyhow::anyhow!("Sync cancelled"))
             }
             result = async {
@@ -712,7 +712,7 @@ impl BlockchainDataClientCore {
                 && last_block_across_pool_events_table
                     .is_some_and(|table_max| block_number > table_max)
             {
-                log::info!(
+                log::debug!(
                     "Crossed beyond stale data at block {block_number} - flushing current batches with ON CONFLICT, then switching to COPY"
                 );
 
@@ -732,7 +732,7 @@ impl BlockchainDataClientCore {
                 .await?;
 
                 beyond_stale_data = true;
-                log::info!("Switched to COPY mode - future batches will use COPY command");
+                log::debug!("Switched to COPY mode - future batches will use COPY command");
             } else {
                 // Process batches when they reach batch size
                 self.flush_event_batches(
@@ -799,7 +799,7 @@ impl BlockchainDataClientCore {
             .update_pool_last_synced_block(dex, &pool_identifier, to_block)
             .await?;
 
-        log::info!(
+        log::debug!(
             "Successfully synced Dex '{}' Pool '{}' up to block {}",
             dex,
             pool_display,
@@ -1200,7 +1200,7 @@ impl BlockchainDataClientCore {
             anyhow::bail!("Unknown DEX {dex_id} on chain {}", self.chain.name);
         };
 
-        log::info!("Registering DEX {dex_id} on chain {}", self.chain.name);
+        log::debug!("Registering DEX {dex_id} on chain {}", self.chain.name);
         self.cache.add_dex(dex_extended.dex.clone()).await?;
         self.subscription_manager.register_dex_for_subscriptions(
             dex_id,
@@ -1238,7 +1238,7 @@ impl BlockchainDataClientCore {
         pool: &SharedPool,
         to_block: Option<u64>,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
-        log::info!(
+        log::debug!(
             "Bootstrapping latest pool profiler for pool {}",
             pool.address
         );
@@ -1286,7 +1286,7 @@ impl BlockchainDataClientCore {
                     );
                     None
                 } else {
-                    log::info!(
+                    log::debug!(
                         "Loaded valid snapshot from block {} which contains {} positions and {} ticks",
                         snapshot.block_position.number.separate_with_commas(),
                         snapshot.positions.len(),
@@ -1294,12 +1294,12 @@ impl BlockchainDataClientCore {
                     );
                     let block_position = snapshot.block_position.clone();
                     profiler.restore_from_snapshot(snapshot)?;
-                    log::info!("Restored profiler from snapshot");
+                    log::debug!("Restored profiler from snapshot");
                     Some(block_position)
                 }
             }
             _ => {
-                log::info!("No valid snapshot found, processing from beginning");
+                log::debug!("No valid snapshot found, processing from beginning");
                 None
             }
         };
@@ -1400,7 +1400,9 @@ impl BlockchainDataClientCore {
         from_position: Option<BlockPosition>,
         to_block: u64,
     ) -> anyhow::Result<(PoolProfiler, bool)> {
-        log::info!("Constructing pool profiler from hypersync stream and RPC final state querying");
+        log::debug!(
+            "Constructing pool profiler from hypersync stream and RPC final state querying"
+        );
         let dex_extended = self.get_dex_extended(&profiler.pool.dex.name)?.clone();
         let mint_event_signature = dex_extended.mint_created_event.as_ref();
         let burn_event_signature = dex_extended.burn_created_event.as_ref();
@@ -1437,7 +1439,7 @@ impl BlockchainDataClientCore {
         });
         let total_blocks = to_block.saturating_sub(from_block) + 1;
 
-        log::info!(
+        log::debug!(
             "Bootstrapping pool profiler for pool {} from block {} to {} (total: {} blocks)",
             profiler.pool.address,
             from_block.separate_with_commas(),
@@ -1599,7 +1601,7 @@ impl BlockchainDataClientCore {
     ) -> anyhow::Result<SnapshotValidation> {
         let (validation, block_position) = if already_validated {
             // Skip RPC call - profiler was validated during construction from RPC
-            log::info!("Snapshot already validated from RPC, skipping on-chain comparison");
+            log::debug!("Snapshot already validated from RPC, skipping on-chain comparison");
             let last_event = profiler
                 .last_processed_event
                 .clone()
@@ -1609,7 +1611,7 @@ impl BlockchainDataClientCore {
             // Fetch on-chain state and compare
             match self.get_on_chain_snapshot(profiler).await {
                 Ok(on_chain_snapshot) => {
-                    log::info!("Comparing profiler state with on-chain state...");
+                    log::debug!("Comparing profiler state with on-chain state...");
                     let comparison = compare_pool_profiler_detailed(profiler, &on_chain_snapshot);
                     let validation = if comparison.is_valid_for_snapshot() {
                         if !comparison.is_exact_match() {
@@ -1654,7 +1656,7 @@ impl BlockchainDataClientCore {
                     validation.as_str(),
                 )
                 .await?;
-            log::info!(
+            log::debug!(
                 "Set pool snapshot validation state to {}",
                 validation.as_str()
             );
@@ -1765,7 +1767,7 @@ impl BlockchainDataClientCore {
     /// Returns an error if database streaming fails or event processing fails.
     pub async fn replay_pool_events(&self, pool: &Pool, dex: &SharedDex) -> anyhow::Result<()> {
         if let Some(database) = &self.cache.database {
-            log::info!(
+            log::debug!(
                 "Replaying historical events for pool {} to hydrate profiler",
                 pool.instrument_id
             );
@@ -1810,7 +1812,7 @@ impl BlockchainDataClientCore {
                 }
             }
 
-            log::info!(
+            log::debug!(
                 "Replayed {event_count} historical events for pool {}",
                 pool.instrument_id
             );

@@ -18,7 +18,13 @@ from __future__ import annotations
 from decimal import Decimal
 
 from strategies.backtest_surface import MarketDataAuditActor
+from strategies.backtest_surface import MarketDataAuditActorConfig
 from strategies.backtest_surface import RoutedOrderExecAlgorithm
+from strategies.backtest_surface import RoutedOrderExecAlgorithmConfig
+from strategies.backtest_surface import RoutedOrderProbe
+from strategies.backtest_surface import RoutedOrderProbeConfig
+from strategies.backtest_surface import StreamingWhipsaw
+from strategies.backtest_surface import StreamingWhipsawConfig
 
 from nautilus_trader.backtest import BacktestEngine
 from nautilus_trader.backtest import BacktestEngineConfig
@@ -27,6 +33,7 @@ from nautilus_trader.execution import BestPriceFillModel
 from nautilus_trader.execution import OneTickSlippageFillModel
 from nautilus_trader.execution import StaticLatencyModel
 from nautilus_trader.model import AccountType
+from nautilus_trader.model import ActorId
 from nautilus_trader.model import AggregationSource
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import Bar
@@ -540,6 +547,176 @@ def test_streaming_run_keeps_strategy_state_across_batches():
     assert result.total_orders == 4
     assert result.total_positions == 2
     assert result.summary["positions.open"] == "0"
+    engine.dispose()
+
+
+def test_strategy_instance_retains_config_object():
+    instrument = TestInstrumentProvider.audusd_sim()
+    config = StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="100000")
+
+    strategy = StreamingWhipsaw(config)
+
+    assert strategy.config is config
+    assert strategy.config.instrument_id == str(instrument.id)
+    assert strategy.config.trade_size == "100000"
+
+
+def test_actor_instance_retains_config_object():
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    config = MarketDataAuditActorConfig(instrument_id=str(instrument.id), log_events=False)
+
+    actor = MarketDataAuditActor(config)
+
+    assert actor.config is config
+    assert actor.config.instrument_id == str(instrument.id)
+
+
+def test_add_actor_with_constructed_instance_consumes_quotes():
+    MarketDataAuditActor.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+        book_type=BookType.L2_MBP,
+    )
+    engine.add_instrument(instrument)
+
+    config = MarketDataAuditActorConfig(instrument_id=str(instrument.id), log_events=False)
+    actor = MarketDataAuditActor(config)
+    engine.add_actor(actor)
+
+    data = []
+    data.extend(_crypto_quotes(instrument, count=4, mid_start=Decimal("2000.00")))
+    data.extend(_book_depths(instrument, count=4))
+    engine.add_data(data)
+    engine.run()
+    result = engine.get_result()
+
+    assert result.iterations == 8
+    assert result.total_orders == 0
+    assert MarketDataAuditActor.quote_count == 4
+    assert MarketDataAuditActor.book_count >= 1
+    engine.dispose()
+
+
+def test_add_strategy_with_constructed_instance_submits_orders():
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.audusd_sim()
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USD)],
+        base_currency=USD,
+        fill_model=BestPriceFillModel(prob_fill_on_limit=1.0, prob_slippage=0.0),
+    )
+    engine.add_instrument(instrument)
+
+    config = StreamingWhipsawConfig(instrument_id=str(instrument.id), trade_size="100000")
+    strategy = StreamingWhipsaw(config)
+    engine.add_strategy(strategy)
+
+    engine.add_data(_audusd_quotes(instrument, count=10))
+    engine.run()
+    result = engine.get_result()
+
+    assert result.iterations == 10
+    assert result.total_orders == 4
+    assert result.total_positions == 2
+    engine.dispose()
+
+
+def test_add_exec_algorithm_and_strategy_instances_route_orders():
+    RoutedOrderExecAlgorithm.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    algo_id = ExecAlgorithmId("PY-ROUTE-INSTANCE")
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+    )
+    engine.add_instrument(instrument)
+
+    algo = RoutedOrderExecAlgorithm(
+        RoutedOrderExecAlgorithmConfig(
+            exec_algorithm_id=str(algo_id),
+            log_events=False,
+            log_commands=False,
+        ),
+    )
+    engine.add_exec_algorithm(algo)
+
+    probe = RoutedOrderProbe(
+        RoutedOrderProbeConfig(
+            instrument_id=str(instrument.id),
+            trade_size="0.10000",
+            exec_algorithm_id=str(algo_id),
+        ),
+    )
+    engine.add_strategy(probe)
+
+    engine.add_data(_crypto_quotes(instrument, count=3, mid_start=Decimal("2000.00")))
+    engine.run()
+    result = engine.get_result()
+    orders = engine.cache.orders()
+
+    assert result.iterations == 3
+    assert result.total_orders == 1
+    assert orders[0].exec_algorithm_id == algo_id
+    assert RoutedOrderExecAlgorithm.received_exec_algorithm_ids == [algo_id]
+    engine.dispose()
+
+
+def test_add_actors_registers_multiple_constructed_instances():
+    MarketDataAuditActor.reset_observations()
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = TestInstrumentProvider.ethusdt_binance()
+    engine.add_venue(
+        venue=Venue("BINANCE"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, USDT)],
+        base_currency=USDT,
+        book_type=BookType.L2_MBP,
+    )
+    engine.add_instrument(instrument)
+
+    engine.add_actors(
+        [
+            MarketDataAuditActor(
+                MarketDataAuditActorConfig(
+                    instrument_id=str(instrument.id),
+                    actor_id=ActorId("AUDIT-A"),
+                    log_events=False,
+                ),
+            ),
+            MarketDataAuditActor(
+                MarketDataAuditActorConfig(
+                    instrument_id=str(instrument.id),
+                    actor_id=ActorId("AUDIT-B"),
+                    log_events=False,
+                ),
+            ),
+        ],
+    )
+
+    data = []
+    data.extend(_crypto_quotes(instrument, count=4, mid_start=Decimal("2000.00")))
+    data.extend(_book_depths(instrument, count=4))
+    engine.add_data(data)
+    engine.run()
+    result = engine.get_result()
+
+    assert result.iterations == 8
+    # Both registered actors count all 4 quotes (4 x 2)
+    assert MarketDataAuditActor.quote_count == 8
     engine.dispose()
 
 

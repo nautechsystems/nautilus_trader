@@ -25,8 +25,8 @@ on the use case.
 - `BitmexInstrumentProvider`: Instrument parsing and loading functionality.
 - `BitmexDataClient`: A market data feed manager.
 - `BitmexExecutionClient`: An account management and trade execution gateway.
-- `BitmexLiveDataClientFactory`: Factory for BitMEX data clients (used by the trading node builder).
-- `BitmexLiveExecClientFactory`: Factory for BitMEX execution clients (used by the trading node builder).
+- `BitmexDataClientFactory`: Factory for BitMEX data clients (used by the trading node builder).
+- `BitmexExecutionClientFactory`: Factory for BitMEX execution clients (used by the trading node builder).
 
 :::note
 Most users will define a configuration for a live trading node (as below),
@@ -195,6 +195,7 @@ The BitMEX integration supports the following order types and execution features
 | `MARKET_IF_TOUCHED`    | ✓         | Supported (set `trigger_price`).              |
 | `LIMIT_IF_TOUCHED`     | ✓         | Supported (set `price` and `trigger_price`).  |
 | `TRAILING_STOP_MARKET` | ✓         | Supported (set `trailing_offset`). Price offset type only. |
+| `TRAILING_STOP_LIMIT`  | ✓         | Supported (set `price` and `trailing_offset`). Price offset type only. |
 
 ### Execution instructions
 
@@ -249,8 +250,9 @@ in `examples/live/bitmex/bitmex_exec_tester.py`.
 ### Trailing stops
 
 BitMEX supports trailing stop orders that automatically adjust the stop price as the market moves
-favorably. The adapter maps `TRAILING_STOP_MARKET` orders to BitMEX's pegged orders with
-`TrailingStopPeg` price type.
+favorably. The adapter maps `TRAILING_STOP_MARKET` and `TRAILING_STOP_LIMIT` orders to BitMEX's
+pegged orders with the `TrailingStopPeg` price type; the limit variant additionally carries the
+limit `price`.
 
 **Limitations:**
 
@@ -576,7 +578,7 @@ The submit broadcaster is configured via the execution client configuration:
 | Option                 | Default | Description                                                                               |
 |------------------------|---------|-------------------------------------------------------------------------------------------|
 | `submitter_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
-| `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
+| `submitter_proxy_urls` | `None`  | Optional list of proxy URLs for submit broadcaster path diversity. |
 
 **Example configuration**:
 
@@ -644,7 +646,7 @@ The cancel broadcaster is configured via the execution client configuration:
 | Option                 | Default | Description                                                                               |
 |------------------------|---------|-------------------------------------------------------------------------------------------|
 | `canceller_pool_size`  | `None`  | Size of the HTTP client pool. `None` resolves to 1 (single client, no redundancy). |
-| `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
+| `canceller_proxy_urls` | `None`  | Optional list of proxy URLs for cancel broadcaster path diversity. |
 
 **Example configuration**:
 
@@ -802,7 +804,7 @@ The BitMEX data client provides the following configuration options:
 | `retry_delay_initial_ms`           | `1,000`   | Initial backoff delay (milliseconds) between retries. |
 | `retry_delay_max_ms`               | `10,000`  | Maximum backoff delay (milliseconds) between retries. |
 | `recv_window_ms`                   | `10,000`  | Expiration window (milliseconds) for signed requests. See [Request authentication](#request-authentication-and-expiration). |
-| `update_instruments_interval_mins` | `60`      | Interval (minutes) between instrument catalogue refreshes. |
+| `update_instruments_interval_mins` | `None`    | Interval (minutes) between instrument catalogue refreshes. `None` disables periodic refresh. |
 | `max_requests_per_second`          | `10`      | Burst rate limit enforced by the adapter for REST calls. |
 | `max_requests_per_minute`          | `120`     | Rolling minute rate limit enforced by the adapter for REST calls. |
 | `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
@@ -830,8 +832,8 @@ The BitMEX execution client provides the following configuration options:
 | `canceller_pool_size`          | `None`    | Number of HTTP clients in the cancel broadcaster pool. `None` resolves to 1. See [Cancel broadcaster](#cancel-broadcaster). |
 | `submitter_pool_size`          | `None`    | Number of HTTP clients in the submit broadcaster pool. `None` resolves to 1. See [Submit broadcaster](#submit-broadcaster). |
 | `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `submitter_proxy_urls`         | `None`    | Optional list of proxy URLs for submit broadcaster path diversity. *Not yet wired through Python integration.* |
-| `canceller_proxy_urls`         | `None`    | Optional list of proxy URLs for cancel broadcaster path diversity. *Not yet wired through Python integration.* |
+| `submitter_proxy_urls`         | `None`    | Optional list of proxy URLs for submit broadcaster path diversity. |
+| `canceller_proxy_urls`         | `None`    | Optional list of proxy URLs for cancel broadcaster path diversity. |
 | `transport_backend`            | `Sockudo` | WebSocket transport backend. |
 
 ### Configuration examples

@@ -17,7 +17,7 @@
 //!
 //! The OSS live crate does not host dynamic plug-ins directly. Public
 //! `nautilus-plugin` is the guest SDK; host-side loading, vtables, bridge
-//! adapters, and server policy belong in `nautilus-plugin-host`.
+//! adapters, and server policy belong to the host-side plug-in integration.
 
 #[derive(Debug, Default)]
 pub(crate) struct NodePlugins;

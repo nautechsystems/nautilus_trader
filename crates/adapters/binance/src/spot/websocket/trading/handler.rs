@@ -195,7 +195,7 @@ impl BinanceSpotWsTradingHandler {
                     if let Message::Text(ref text) = msg
                         && text.as_str() == RECONNECTED
                     {
-                        log::info!("Handler received reconnection signal");
+                        log::debug!("Handler received reconnection signal");
 
                         // Fail any pending requests - they won't get responses on new connection
                         self.fail_pending_requests();
@@ -462,7 +462,7 @@ impl BinanceSpotWsTradingHandler {
                 // Success response
                 match meta {
                     BinanceSpotWsTradingRequestMeta::SessionLogon => {
-                        log::info!("Session authenticated");
+                        log::debug!("Session authenticated");
                         self.emit(BinanceSpotWsTradingMessage::Authenticated);
                     }
                     BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
@@ -471,7 +471,7 @@ impl BinanceSpotWsTradingHandler {
                             .and_then(|r| r.get("subscriptionId"))
                             .map(|v| v.to_string())
                             .unwrap_or_default();
-                        log::info!("User data stream subscribed: id={subscription_id}");
+                        log::debug!("User data stream subscribed: id={subscription_id}");
                         self.emit(BinanceSpotWsTradingMessage::UserDataSubscribed {
                             subscription_id,
                         });
@@ -675,11 +675,11 @@ impl BinanceSpotWsTradingHandler {
                 })
             }
             BinanceSpotWsTradingRequestMeta::SessionLogon => {
-                log::info!("Session authenticated (SBE response)");
+                log::debug!("Session authenticated (SBE response)");
                 Ok(BinanceSpotWsTradingMessage::Authenticated)
             }
             BinanceSpotWsTradingRequestMeta::SubscribeUserData => {
-                log::info!("User data stream subscribed (SBE response)");
+                log::debug!("User data stream subscribed (SBE response)");
                 Ok(BinanceSpotWsTradingMessage::UserDataSubscribed {
                     subscription_id: request_id,
                 })

@@ -149,67 +149,30 @@ catalog.write_to_parquet(&quotes, None, None, None)?;
 
 ```rust
 use nautilus_backtest::config::{
-    BacktestDataConfig, BacktestEngineConfig,
-    BacktestRunConfig, BacktestVenueConfig, NautilusDataType,
+    BacktestDataConfig, BacktestRunConfig, BacktestVenueConfig, NautilusDataType,
 };
 use nautilus_model::enums::{AccountType, BookType, OmsType};
-use ustr::Ustr;
 
-let venue_config = BacktestVenueConfig::new(
-    Ustr::from("SIM"),
-    OmsType::Hedging,
-    AccountType::Margin,
-    BookType::L1_MBP,
-    None, // routing
-    None, // frozen_account
-    None, // reject_stop_orders
-    None, // support_gtd_orders
-    None, // support_contingent_orders
-    None, // use_position_ids
-    None, // use_random_ids
-    None, // use_reduce_only
-    None, // bar_execution
-    None, // bar_adaptive_high_low_ordering
-    None, // trade_execution
-    None, // use_market_order_acks
-    None, // liquidity_consumption
-    None, // allow_cash_borrowing
-    None, // queue_position
-    None, // oto_trigger_mode
-    vec!["1_000_000 USD".to_string()],
-    None, // base_currency
-    None, // default_leverage
-    None, // leverages
-    None, // price_protection_points
-);
+let venue_config = BacktestVenueConfig::builder()
+    .name("SIM")
+    .oms_type(OmsType::Hedging)
+    .account_type(AccountType::Margin)
+    .book_type(BookType::L1_MBP)
+    .starting_balances(vec!["1_000_000 USD".to_string()])
+    .build()?;
 
-let data_config = BacktestDataConfig::new(
-    NautilusDataType::QuoteTick,
-    catalog_path,
-    None, // catalog_fs_protocol
-    None, // catalog_fs_storage_options
-    Some(instrument_id),
-    None, // instrument_ids
-    None, // start_time
-    None, // end_time
-    None, // filter_expr
-    None, // client_id
-    None, // metadata
-    None, // bar_spec
-    None, // bar_types
-    None, // optimize_file_loading
-);
+let data_config = BacktestDataConfig::builder()
+    .data_type(NautilusDataType::QuoteTick)
+    .catalog_path(catalog_path)
+    .instrument_id(instrument_id)
+    .build()?;
 
-let run_config = BacktestRunConfig::new(
-    Some("ema-cross-run".to_string()),
-    vec![venue_config],
-    vec![data_config],
-    BacktestEngineConfig::default(),
-    Some(100), // Stream in chunks of 100
-    None,      // dispose_on_completion
-    None,      // start
-    None,      // end
-);
+let run_config = BacktestRunConfig::builder()
+    .id("ema-cross-run".to_string())
+    .venues(vec![venue_config])
+    .data(vec![data_config])
+    .chunk_size(100)
+    .build()?;
 ```
 
 ### 3. Build, add strategies, and run

@@ -70,6 +70,24 @@ transport_failure_then_success() {
   echo "transport retry succeeded"
 }
 
+http_404_then_success() {
+  local count
+
+  count="$(increment_attempt_count)"
+  if [[ "$count" -lt 2 ]]; then
+    echo "curl: (22) The requested URL returned error: 404" >&2
+    return 22
+  fi
+
+  echo "HTTP 404 retry succeeded"
+}
+
+http_403_failure() {
+  increment_attempt_count > /dev/null
+  echo "curl: (22) The requested URL returned error: 403" >&2
+  return 22
+}
+
 mixed_rekor_digest_then_success() {
   local count
 
@@ -213,6 +231,46 @@ if [[ "$(attempt_count)" != "2" ]]; then
 fi
 if ! grep -q "transport retry succeeded" "$transport_output"; then
   fail "transport failure case did not print the verifier success output."
+fi
+
+attempt_file="${work_dir}/http-404-count"
+set_attempt_count 0
+http_404_output="${work_dir}/http-404-output.txt"
+run_release_verification_with_retry \
+  "mock PyPI provenance verification" \
+  3 \
+  1 \
+  1 \
+  http_404_then_success > "$http_404_output" 2>&1
+
+if [[ "$(attempt_count)" != "2" ]]; then
+  fail "HTTP 404 case should verify on the second attempt."
+fi
+if ! grep -q "HTTP 404 retry succeeded" "$http_404_output"; then
+  fail "HTTP 404 case did not print the verifier success output."
+fi
+
+attempt_file="${work_dir}/http-403-count"
+set_attempt_count 0
+http_403_output="${work_dir}/http-403-output.txt"
+set +e
+run_release_verification_with_retry \
+  "mock PyPI provenance verification" \
+  3 \
+  1 \
+  1 \
+  http_403_failure > "$http_403_output" 2>&1
+http_403_status=$?
+set -e
+
+if [[ "$http_403_status" -eq 0 ]]; then
+  fail "HTTP 403 case should fail."
+fi
+if [[ "$(attempt_count)" != "1" ]]; then
+  fail "HTTP 403 case should fail fast after one attempt."
+fi
+if ! grep -q "non-retryable verification error" "$http_403_output"; then
+  fail "HTTP 403 case did not report a non-retryable error."
 fi
 
 attempt_file="${work_dir}/mixed-count"

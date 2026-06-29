@@ -57,6 +57,7 @@ class DatabentoDataLoader:
         filepath: str | os.PathLike | pathlib.Path,
         use_exchange_as_venue: bool,
         skip_on_error: bool = False,
+        expiration_overrides: typing.Mapping[str, typing.Mapping[str, str]] | None = None,
     ) -> typing.Any: ...
     def load_order_book_deltas(
         self,

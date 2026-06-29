@@ -284,7 +284,7 @@ impl BinanceSpotDataClient {
         };
         let data_sender = get_data_event_sender();
 
-        log::info!("Configured Spot market data mode: {spot_market_data_mode:?}");
+        log::debug!("Configured Spot market data mode: {spot_market_data_mode:?}");
 
         Ok(Self {
             clock,
@@ -578,7 +578,7 @@ impl BinanceSpotDataClient {
 
             book_buffers.insert(instrument_id, BookBuffer::new(epoch));
 
-            log::info!(
+            log::debug!(
                 "OrderBook snapshot rebuild for {instrument_id} starting \
                 (reconnect, epoch={epoch})"
             );
@@ -969,7 +969,7 @@ impl BinanceSpotDataClient {
                     }
                 }
 
-                log::info!(
+                log::debug!(
                     "OrderBook snapshot rebuild for {instrument_id} completed \
                     (lastUpdateId={last_update_id}, replayed={replayed})"
                 );
@@ -1548,7 +1548,7 @@ impl DataClient for BinanceSpotDataClient {
                 }
             });
             self.tasks.push(poll_handle);
-            log::info!("Instrument status polling started: interval={poll_secs}s");
+            log::debug!("Instrument status polling started: interval={poll_secs}s");
         }
 
         self.is_connected.store(true, Ordering::Release);
@@ -1664,7 +1664,7 @@ impl DataClient for BinanceSpotDataClient {
                 self.book_buffers
                     .insert(instrument_id, BookBuffer::new(epoch));
 
-                log::info!("OrderBook full snapshot rebuild for {instrument_id} starting");
+                log::debug!("OrderBook full snapshot rebuild for {instrument_id} starting");
 
                 let stream = format!("{symbol_lower}@depth");
                 self.spawn_ws(

@@ -106,17 +106,28 @@ uv run maturin develop --extras dev,test
 
 ### Development wheels (pre-release)
 
-CI publishes a wheel to the v2 index on every successful `develop` or `nightly` build.
+CI publishes Python v2 wheels to the separate v2 index on successful `develop` and `nightly`
+builds.
 
 ```bash
-pip install --index-url https://packages.nautechsystems.io/v2/simple/ --pre nautilus-trader
+uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ nautilus-trader
 ```
 
-| Platform         | Python  | Develop | Nightly |
-| :--------------- | :------ | :------ | :------ |
-| `Linux (x86_64)` | 3.12-14 | ✓       | ✓       |
+| Platform         | Python    | Develop | Nightly |
+| :--------------- | :-------- | :------ | :------ |
+| `Linux (x86_64)` | 3.12-3.14 | ✓       | ✓       |
 
-The `--pre` flag is required because wheels are tagged as development releases.
+The `--pre` flag is required because wheels are tagged as pre-release builds. Run this command
+outside the NautilusTrader source checkout so the repository's `exclude-newer` uv policy does not
+filter out newly published v2 wheels. The installed package imports as `nautilus_trader`.
+
+Build from source inside a checkout, when a v2 wheel is not available for your platform, or when you
+need local Rust changes:
+
+```bash
+cd ..
+make build-debug-v2
+```
 
 ## Testing
 

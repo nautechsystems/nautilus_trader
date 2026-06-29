@@ -385,7 +385,7 @@ impl PolymarketGammaHttpClient {
             page_num += 1;
             all_markets.extend(page);
 
-            log::info!(
+            log::debug!(
                 "Fetched markets page {page_num}: {page_len} markets (total: {})",
                 all_markets.len(),
             );
@@ -426,7 +426,7 @@ impl PolymarketGammaHttpClient {
         let markets = self.fetch_all_gamma_markets().await?;
         let ts_init = self.clock.get_time_ns();
         let instruments = parse_markets_to_instruments(&markets, ts_init);
-        log::info!("Parsed {} instruments from Gamma API", instruments.len());
+        log::debug!("Parsed {} instruments from Gamma API", instruments.len());
         Ok(instruments)
     }
 
@@ -482,7 +482,7 @@ impl PolymarketGammaHttpClient {
             anyhow::bail!("All {total_slugs} slug requests failed");
         }
 
-        log::info!("Parsed {} instruments from slug queries", instruments.len());
+        log::debug!("Parsed {} instruments from slug queries", instruments.len());
         Ok(instruments)
     }
 
@@ -591,7 +591,7 @@ impl PolymarketGammaHttpClient {
             anyhow::bail!("All {total} event slug requests failed");
         }
 
-        log::info!(
+        log::debug!(
             "Parsed {} instruments from event slug queries",
             instruments.len()
         );
@@ -744,7 +744,7 @@ impl PolymarketGammaHttpClient {
             let market_count: usize = page.iter().map(|e| e.markets.len()).sum();
             all_events.extend(page);
 
-            log::info!(
+            log::debug!(
                 "Fetched events page {page_num}: {page_len} events, {market_count} markets (total events: {})",
                 all_events.len(),
             );
@@ -777,7 +777,7 @@ impl PolymarketGammaHttpClient {
         let markets = flatten_event_markets(events);
         let total_markets = markets.len();
         let instruments = parse_markets_to_instruments(&markets, ts_init);
-        log::info!(
+        log::debug!(
             "Parsed {} instruments from {total_events} events ({total_markets} markets)",
             instruments.len(),
         );

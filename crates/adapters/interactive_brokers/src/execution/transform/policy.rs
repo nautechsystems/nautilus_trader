@@ -15,7 +15,7 @@
 
 use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
-    enums::{OrderType as NautilusOrderType, TrailingOffsetType},
+    enums::{OrderSide, OrderType as NautilusOrderType, TrailingOffsetType},
     instruments::Instrument,
     orders::{Order as NautilusOrder, any::OrderAny},
 };
@@ -41,14 +41,23 @@ pub(super) fn apply_quantity_policy(
     ib_order: &mut IBOrder,
     order: &OrderAny,
     instrument_provider: &InteractiveBrokersInstrumentProvider,
-) {
+) -> anyhow::Result<()> {
     if let Some(instrument) = instrument_provider.find(&order.instrument_id())
         && instrument.is_inverse()
         && order.is_quote_quantity()
     {
+        // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments
+        // (e.g. PAXOS crypto); a SELL must use the base/coin quantity (`total_quantity`).
+        if order.order_side() != OrderSide::Buy {
+            anyhow::bail!(
+                "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
+                 a SELL must use the base quantity"
+            );
+        }
         ib_order.cash_qty = Some(order.quantity().as_f64());
         ib_order.total_quantity = 0.0;
     }
+    Ok(())
 }
 
 pub(super) fn apply_trailing_order_policy(

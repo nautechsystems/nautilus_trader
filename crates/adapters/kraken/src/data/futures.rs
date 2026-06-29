@@ -165,7 +165,7 @@ impl KrakenFuturesDataClient {
 
         self.http.cache_instruments(&instruments);
 
-        log::info!(
+        log::debug!(
             "Loaded instruments: client_id={}, count={}",
             self.client_id,
             instruments.len()
@@ -495,7 +495,7 @@ impl DataClient for KrakenFuturesDataClient {
     }
 
     fn dispose(&mut self) -> anyhow::Result<()> {
-        log::info!("Disposing Futures data client: {}", self.client_id);
+        log::debug!("Disposing Futures data client: {}", self.client_id);
         self.stop()
     }
 
@@ -596,7 +596,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe book",
         );
 
-        log::info!("Subscribed to book: instrument_id={instrument_id}, depth={depth:?}");
         Ok(())
     }
 
@@ -615,7 +614,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe quotes",
         );
 
-        log::info!("Subscribed to quotes: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -632,7 +630,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe trades",
         );
 
-        log::info!("Subscribed to trades: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -649,7 +646,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe mark price",
         );
 
-        log::info!("Subscribed to mark price: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -666,7 +662,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe index price",
         );
 
-        log::info!("Subscribed to index price: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -683,7 +678,6 @@ impl DataClient for KrakenFuturesDataClient {
             "subscribe funding rate",
         );
 
-        log::info!("Subscribed to funding rate: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -699,7 +693,7 @@ impl DataClient for KrakenFuturesDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::info!(
+        log::debug!(
             "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
             cmd.instrument_id,
         );
@@ -721,7 +715,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe book",
         );
 
-        log::info!("Unsubscribed from book: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -740,7 +733,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe quotes",
         );
 
-        log::info!("Unsubscribed from quotes: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -757,7 +749,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe trades",
         );
 
-        log::info!("Unsubscribed from trades: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -774,7 +765,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe mark price",
         );
 
-        log::info!("Unsubscribed from mark price: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -791,7 +781,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe index price",
         );
 
-        log::info!("Unsubscribed from index price: instrument_id={instrument_id}");
         Ok(())
     }
 
@@ -808,7 +797,6 @@ impl DataClient for KrakenFuturesDataClient {
             "unsubscribe funding rate",
         );
 
-        log::info!("Unsubscribed from funding rate: instrument_id={instrument_id}");
         Ok(())
     }
 

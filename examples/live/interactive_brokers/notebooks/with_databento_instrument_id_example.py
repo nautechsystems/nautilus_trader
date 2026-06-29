@@ -136,15 +136,15 @@ class DemoStrategy(Strategy):
         start = utc_now - pd.Timedelta(
             minutes=30,
         )
+        # Subscribe to live bars from the request callback so the stream starts only
+        # after history loads; reuse the request-time clock so a slow request can't gap
         self.request_bars(
             BarType.from_str(f"{self.config.instrument_id}-1-MINUTE-LAST-EXTERNAL"),
             start,
-        )
-
-        utc_now = self.clock.utc_now()
-        self.subscribe_bars(
-            self.config.bar_type,
-            params={"start_ns": (utc_now - pd.Timedelta(minutes=2)).value},
+            callback=lambda _: self.subscribe_bars(
+                self.config.bar_type,
+                params={"start_ns": (utc_now - pd.Timedelta(minutes=2)).value},
+            ),
         )
 
         if not self.config.enable_order_submission:

@@ -34,9 +34,9 @@ from nautilus_trader.model.identifiers import TraderId
 
 
 # Specify instrument to be traded
-instrument_id = InstrumentId.from_str("ESZ5.XCME")
+instrument_id = InstrumentId.from_str("ESZ6.XCME")
 
-instrument_provider = InstrumentProviderConfig(load_all=True)
+instrument_provider = InstrumentProviderConfig(load_ids=frozenset([instrument_id]))
 
 # Configure the trading node:
 # For correct subscription operation, you must specify all instruments to be immediately
@@ -79,7 +79,7 @@ node = TradingNode(config=config_node)
 
 # Configure and initialize the quoter strategy
 config_quoter = SimpleQuoterStrategyConfig(
-    instrument_id=InstrumentId.from_str("ESZ5.XCME"),
+    instrument_id=instrument_id,
     tob_offset_ticks=0,
     log_data=False,
 )
