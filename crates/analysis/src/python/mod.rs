@@ -46,6 +46,8 @@ pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::statistics::returns_avg::ReturnsAverage>()?;
     m.add_class::<crate::statistics::returns_avg_loss::ReturnsAverageLoss>()?;
     m.add_class::<crate::statistics::returns_avg_win::ReturnsAverageWin>()?;
+    m.add_class::<crate::statistics::returns_kurtosis::ReturnsKurtosis>()?;
+    m.add_class::<crate::statistics::returns_skewness::ReturnsSkewness>()?;
     m.add_class::<crate::statistics::returns_volatility::ReturnsVolatility>()?;
     m.add_class::<crate::statistics::risk_return_ratio::RiskReturnRatio>()?;
     m.add_class::<crate::statistics::sharpe_ratio::SharpeRatio>()?;

@@ -31,6 +31,8 @@ from nautilus_trader.analysis import ProfitFactor
 from nautilus_trader.analysis import ReturnsAverage
 from nautilus_trader.analysis import ReturnsAverageLoss
 from nautilus_trader.analysis import ReturnsAverageWin
+from nautilus_trader.analysis import ReturnsKurtosis
+from nautilus_trader.analysis import ReturnsSkewness
 from nautilus_trader.analysis import ReturnsVolatility
 from nautilus_trader.analysis import RiskReturnRatio
 from nautilus_trader.analysis import SharpeRatio
@@ -55,6 +57,8 @@ NO_ARG_STATISTICS = [
     (ReturnsAverage, "Average (Return"),
     (ReturnsAverageLoss, "Average Loss (Return"),
     (ReturnsAverageWin, "Average Win (Return"),
+    (ReturnsKurtosis, "Returns Kurtosis"),
+    (ReturnsSkewness, "Returns Skewness"),
     (RiskReturnRatio, "Risk Return Ratio"),
     (WinRate, "Win Rate"),
 ]
@@ -129,6 +133,17 @@ def test_portfolio_analyzer_register_and_deregister_statistic():
 
     analyzer.deregister_statistic(stat)
 
+    assert analyzer.statistic(stat.name) is None
+
+
+@pytest.mark.parametrize("stat", [ReturnsSkewness(), ReturnsKurtosis()])
+def test_portfolio_analyzer_registers_distribution_statistics(stat):
+    analyzer = PortfolioAnalyzer()
+
+    analyzer.register_statistic(stat)
+    assert analyzer.statistic(stat.name) is not None
+
+    analyzer.deregister_statistic(stat)
     assert analyzer.statistic(stat.name) is None
 
 
