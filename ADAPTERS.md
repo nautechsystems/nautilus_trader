@@ -82,17 +82,21 @@ The following adapters are maintained in the core repository:
 | Architect (AX)      | Data/Execution |
 | Betfair             | Data/Execution |
 | Binance             | Data/Execution |
+| Blockchain          | Data           |
 | BitMEX              | Data/Execution |
 | Bybit               | Data/Execution |
 | Coinbase            | Data/Execution |
 | Databento           | Data           |
 | Deribit             | Data/Execution |
+| Derive              | Data/Execution |
 | dYdX                | Data/Execution |
 | Hyperliquid         | Data/Execution |
 | Interactive Brokers | Data/Execution |
 | Kraken              | Data/Execution |
+| Lighter             | Data/Execution |
 | OKX                 | Data/Execution |
 | Polymarket          | Data/Execution |
+| Sandbox             | Execution      |
 | Tardis              | Data           |
 
 ## Community listings
@@ -133,4 +137,4 @@ Community adapters are externally maintained and are not supported by NautilusTr
 This document may be updated from time to time. Changes are tracked through the
 repository's version control history.
 
-Last updated: 2026-06-29
+Last updated: 2026-06-30

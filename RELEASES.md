@@ -2,19 +2,18 @@
 
 Released on TBD (UTC).
 
-### Enhancements
-
 ### Breaking Changes
-
-### Security
+- Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
 
 ### Fixes
+- Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
+- Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
 
 ### Internal Improvements
+- Upgraded `redis` crate to v1.3.0
 
 ### Documentation Updates
-
-### Deprecations
+- Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
 
 ---
 
