@@ -1,0 +1,64 @@
+{
+  "environment": "MAINNET",
+  "trader_id": "HYPERLIQUID-SWEEP-001",
+  "logging": {
+    "log_level": "INFO",
+    "use_pyo3": true
+  },
+  "hyperliquid": {
+    "private_key_env": "HYPERLIQUID_PK",
+    "vault_address_env": "HYPERLIQUID_VAULT",
+    "account_address_env": "HYPERLIQUID_ACCOUNT_ADDRESS",
+    "normalize_prices": true,
+    "include_builder_attribution": true,
+    "product_types": [
+      "perp"
+    ]
+  },
+  "instrument_provider": {
+    "load_all": false,
+    "load_ids": [
+      "BTC-USD-PERP.HYPERLIQUID",
+      "ETH-USD-PERP.HYPERLIQUID"
+    ]
+  },
+  "exec_engine": {
+    "reconciliation": true,
+    "reconciliation_lookback_mins": 1440,
+    "open_check_interval_secs": 15.0,
+    "open_check_threshold_ms": 10000,
+    "open_check_open_only": false,
+    "open_check_lookback_mins": 60,
+    "graceful_shutdown_on_exception": true
+  },
+  "strategies": [
+    {
+      "order_id_tag": "BTC-SWEEP",
+      "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+      "external_order_claims": [
+        "BTC-USD-PERP.HYPERLIQUID"
+      ],
+      "order_qty": "0.001",
+      "quote_offset_bps": 10,
+      "recenter_threshold_bps": 3,
+      "unwind_cross_touch": false,
+      "close_positions_on_stop": true,
+      "reduce_only_on_stop": true,
+      "log_data": false
+    },
+    {
+      "order_id_tag": "ETH-SWEEP",
+      "instrument_id": "ETH-USD-PERP.HYPERLIQUID",
+      "external_order_claims": [
+        "ETH-USD-PERP.HYPERLIQUID"
+      ],
+      "order_qty": "0.01",
+      "quote_offset_bps": 10,
+      "recenter_threshold_bps": 3,
+      "unwind_cross_touch": false,
+      "close_positions_on_stop": true,
+      "reduce_only_on_stop": true,
+      "log_data": false
+    }
+  ]
+}

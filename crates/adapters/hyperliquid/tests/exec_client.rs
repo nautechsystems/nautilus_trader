@@ -1315,6 +1315,71 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
+async fn test_ws_modify_can_target_cloid_when_venue_order_id_unknown() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let modify_coid = ClientOrderId::new("O-WS-MODIFY-CLOID");
+    ws_client
+        .modify_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            None,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Price::from("56700.0"),
+            Quantity::from("0.0003"),
+            None,
+            false,
+            true,
+            TimeInForce::Gtc,
+            Some(modify_coid),
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing modify action");
+    let modify_order = &action["order"];
+    let modify_cloid = signer
+        .cached_client_order_id_cloid(&modify_coid)
+        .expect("missing modify cloid")
+        .to_hex();
+
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("modify"));
+    assert_eq!(
+        action.get("oid").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str()),
+    );
+    assert_eq!(
+        modify_order.get("c").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str()),
+    );
+    assert_valid_cloid(&modify_cloid);
+    assert_eq!(
+        ws_client.get_cloid_mapping(&Ustr::from(&modify_cloid)),
+        Some(modify_coid),
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_venue_id_is_invalid() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({

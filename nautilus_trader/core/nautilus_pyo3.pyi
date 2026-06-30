@@ -9629,7 +9629,7 @@ class HyperliquidWebSocketClient:
         self,
         signer: HyperliquidHttpClient,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: VenueOrderId | None,
         order_side: OrderSide,
         order_type: OrderType,
         price: Price,
