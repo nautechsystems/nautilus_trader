@@ -65,7 +65,7 @@ use std::{
     hash::Hash,
     sync::{
         Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 
@@ -111,6 +111,102 @@ pub struct OrderIdentity {
     /// subsequent status reports so a cancel-replace `ACCEPTED` that omits
     /// `price` can still produce an `OrderUpdated` carrying an accurate value.
     pub price: Option<Price>,
+}
+
+/// One outbound Hyperliquid modify that may still surface venue events.
+#[derive(Debug, Clone)]
+pub struct PendingModifyIntent {
+    /// Monotonic client-side generation assigned before posting the modify.
+    pub generation: u64,
+    /// Venue order id expected to be canceled by this modify, if known.
+    pub old_venue_order_id: Option<VenueOrderId>,
+    /// User-intended absolute total quantity for the replacement.
+    pub target_qty: Quantity,
+    /// Exact venue request sent for this modify, once built.
+    pub request: Option<HyperliquidExecPlaceOrderRequest>,
+}
+
+/// Pending modify chain for one stable client order id / CLOID.
+#[derive(Debug, Clone, Default)]
+pub struct PendingModifyChain {
+    intents: VecDeque<PendingModifyIntent>,
+}
+
+/// Claimed pending modify data used to promote one replacement leg.
+#[derive(Debug, Clone)]
+pub struct PendingModifyClaim {
+    /// User-intended absolute total quantity for the promoted replacement.
+    pub target_qty: Quantity,
+    /// Exact venue request sent for the promoted replacement, if available.
+    pub request: Option<HyperliquidExecPlaceOrderRequest>,
+}
+
+impl PendingModifyChain {
+    fn is_empty(&self) -> bool {
+        self.intents.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.intents.len()
+    }
+
+    fn front(&self) -> Option<&PendingModifyIntent> {
+        self.intents.front()
+    }
+
+    fn back_mut(&mut self) -> Option<&mut PendingModifyIntent> {
+        self.intents.back_mut()
+    }
+
+    fn push_back(&mut self, intent: PendingModifyIntent) {
+        self.intents.push_back(intent);
+    }
+
+    fn remove_generation(&mut self, generation: u64) -> bool {
+        let Some(index) = self
+            .intents
+            .iter()
+            .position(|intent| intent.generation == generation)
+        else {
+            return false;
+        };
+        self.intents.remove(index);
+        true
+    }
+
+    fn first_matching_replacement(
+        &self,
+        report_price: Option<Price>,
+        report_qty: Option<Quantity>,
+    ) -> usize {
+        let mut best_index = 0;
+        let mut best_score = 0_u8;
+
+        for (index, intent) in self.intents.iter().enumerate() {
+            let Some(request) = &intent.request else {
+                continue;
+            };
+
+            let mut score = 0_u8;
+            if let Some(price) = report_price
+                && request.price == price.as_decimal().normalize()
+            {
+                score += 2;
+            }
+            if let Some(qty) = report_qty
+                && request.size == qty.as_decimal().normalize()
+            {
+                score += 1;
+            }
+
+            if score > best_score {
+                best_score = score;
+                best_index = index;
+            }
+        }
+
+        best_index
+    }
 }
 
 /// Bounded FIFO deduplication set.
@@ -215,15 +311,18 @@ pub struct WsDispatchState {
     /// order id under the same client order id is treated as the
     /// replacement leg of a Hyperliquid modify and emitted as `OrderUpdated`.
     pub cached_venue_order_ids: DashMap<ClientOrderId, VenueOrderId>,
-    /// Maps `client_order_id` to the old venue order id of an in-flight
-    /// modify. Populated by `modify_order` before the HTTP call so the WS
-    /// cancel handler sees the marker even when `CANCELED(old_voi)` arrives
-    /// before the HTTP response. Cleared on the matching `ACCEPTED(new_voi)`
-    /// or on any modify failure. A `CANCELED(old_voi)` arriving while the
-    /// marker is set is treated as the cancel leg of a cancel-before-accept
-    /// race and suppressed so the later `ACCEPTED(new_voi)` can flow through
-    /// the `OrderUpdated` path.
-    pub pending_modify_keys: DashMap<ClientOrderId, VenueOrderId>,
+    /// Event timestamp for the cached venue order id binding.
+    pub cached_venue_order_id_ts: DashMap<ClientOrderId, UnixNanos>,
+    /// Venue order ids that were superseded by later cancel-replace
+    /// promotions. Used to prevent late `ACCEPTED` reports from rolling the
+    /// binding backward.
+    pub superseded_venue_order_ids: DashMap<ClientOrderId, AHashSet<VenueOrderId>>,
+    /// Per-order chain of in-flight modifies. Populated by `modify_order`
+    /// before the post so the WS cancel handler sees the marker even when
+    /// `CANCELED(old_voi)` arrives before the response. An intent with
+    /// `old_venue_order_id = None` means the modify targeted the stable CLOID
+    /// before the exchange venue order id was known.
+    pub pending_modify_keys: DashMap<ClientOrderId, PendingModifyChain>,
     /// User-intended absolute total qty for an in-flight modify; the
     /// cancel-replace promotion uses it instead of the venue's
     /// remaining-only `report.quantity`.
@@ -241,7 +340,8 @@ pub struct WsDispatchState {
     pub pending_modify_request: DashMap<ClientOrderId, HyperliquidExecPlaceOrderRequest>,
     /// Corrective reduce queued by the cancel-replace promotion: client order
     /// id to (new venue order id, reduced request). Drained by the WS loop.
-    pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExecPlaceOrderRequest)>,
+    pub pending_corrective: DashMap<ClientOrderId, (u64, HyperliquidExecPlaceOrderRequest, u64)>,
+    next_modify_generation: AtomicU64,
     clearing: AtomicBool,
 }
 
@@ -258,8 +358,11 @@ impl Default for WsDispatchState {
             pending_modify_target_qty: DashMap::new(),
             buffered_fills: DashMap::new(),
             order_filled_qty: DashMap::new(),
+            cached_venue_order_id_ts: DashMap::new(),
+            superseded_venue_order_ids: DashMap::new(),
             pending_modify_request: DashMap::new(),
             pending_corrective: DashMap::new(),
+            next_modify_generation: AtomicU64::new(1),
             clearing: AtomicBool::new(false),
         }
     }
@@ -364,8 +467,29 @@ impl WsDispatchState {
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) {
+        self.record_venue_order_id_at(client_order_id, venue_order_id, UnixNanos::default());
+    }
+
+    /// Caches the venue order id observed for a tracked client order id with
+    /// its venue event timestamp.
+    pub fn record_venue_order_id_at(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: UnixNanos,
+    ) {
+        if let Some(previous) = self.cached_venue_order_id(&client_order_id)
+            && previous != venue_order_id
+        {
+            self.superseded_venue_order_ids
+                .entry(client_order_id)
+                .or_default()
+                .insert(previous);
+        }
         self.cached_venue_order_ids
             .insert(client_order_id, venue_order_id);
+        self.cached_venue_order_id_ts
+            .insert(client_order_id, ts_event);
     }
 
     /// Returns the previously cached venue order id, if any.
@@ -374,18 +498,56 @@ impl WsDispatchState {
         self.cached_venue_order_ids.get(client_order_id).map(|r| *r)
     }
 
+    /// Returns whether a report points at an already superseded binding.
+    #[must_use]
+    pub fn is_stale_venue_order_id(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: UnixNanos,
+    ) -> bool {
+        if self
+            .superseded_venue_order_ids
+            .get(client_order_id)
+            .is_some_and(|ids| ids.contains(&venue_order_id))
+        {
+            return true;
+        }
+
+        let Some(cached_venue_order_id) = self.cached_venue_order_id(client_order_id) else {
+            return false;
+        };
+        if cached_venue_order_id == venue_order_id {
+            return false;
+        }
+
+        self.cached_venue_order_id_ts
+            .get(client_order_id)
+            .is_some_and(|cached_ts| ts_event < *cached_ts)
+    }
+
     /// Marks an in-flight modify for cancel-before-accept suppression and
     /// records the target absolute total qty for the cancel-replace promotion.
     pub fn mark_pending_modify(
         &self,
         client_order_id: ClientOrderId,
-        old_venue_order_id: VenueOrderId,
+        old_venue_order_id: impl Into<Option<VenueOrderId>>,
         target_qty: Quantity,
-    ) {
+    ) -> u64 {
+        let generation = self.next_modify_generation.fetch_add(1, Ordering::AcqRel);
+        let intent = PendingModifyIntent {
+            generation,
+            old_venue_order_id: old_venue_order_id.into(),
+            target_qty,
+            request: None,
+        };
         self.pending_modify_keys
-            .insert(client_order_id, old_venue_order_id);
+            .entry(client_order_id)
+            .or_default()
+            .push_back(intent);
         self.pending_modify_target_qty
             .insert(client_order_id, target_qty);
+        generation
     }
 
     /// Clears the pending modify marker for a client order id.
@@ -395,13 +557,48 @@ impl WsDispatchState {
         self.pending_modify_request.remove(client_order_id);
     }
 
+    /// Clears one failed modify generation without disturbing newer in-flight
+    /// modifies for the same CLOID.
+    pub fn clear_pending_modify_generation(
+        &self,
+        client_order_id: &ClientOrderId,
+        generation: u64,
+    ) {
+        let mut remove_chain = false;
+
+        if let Some(mut chain) = self.pending_modify_keys.get_mut(client_order_id) {
+            if !chain.remove_generation(generation) {
+                return;
+            }
+            if chain.is_empty() {
+                remove_chain = true;
+            } else {
+                self.refresh_pending_modify_compat_maps(client_order_id, &chain);
+            }
+        }
+
+        if remove_chain {
+            self.clear_pending_modify(client_order_id);
+        }
+    }
+
     /// Stashes the exact venue request sent for an in-flight modify.
     pub fn stash_modify_request(
         &self,
         client_order_id: ClientOrderId,
         request: HyperliquidExecPlaceOrderRequest,
     ) {
-        self.pending_modify_request.insert(client_order_id, request);
+        let mut update_compat = false;
+        if let Some(mut chain) = self.pending_modify_keys.get_mut(&client_order_id)
+            && let Some(intent) = chain.back_mut()
+        {
+            intent.request = Some(request.clone());
+            update_compat = chain.len() == 1;
+        }
+
+        if update_compat {
+            self.pending_modify_request.insert(client_order_id, request);
+        }
     }
 
     /// Returns a clone of the stashed in-flight modify request, if any.
@@ -410,9 +607,9 @@ impl WsDispatchState {
         &self,
         client_order_id: &ClientOrderId,
     ) -> Option<HyperliquidExecPlaceOrderRequest> {
-        self.pending_modify_request
+        self.pending_modify_keys
             .get(client_order_id)
-            .map(|r| r.clone())
+            .and_then(|chain| chain.front().and_then(|intent| intent.request.clone()))
     }
 
     /// Queues a corrective reduce for the WebSocket consumer loop to post.
@@ -421,9 +618,10 @@ impl WsDispatchState {
         client_order_id: ClientOrderId,
         oid: u64,
         request: HyperliquidExecPlaceOrderRequest,
+        generation: u64,
     ) {
         self.pending_corrective
-            .insert(client_order_id, (oid, request));
+            .insert(client_order_id, (oid, request, generation));
     }
 
     /// Removes and returns a queued corrective reduce, if any.
@@ -431,7 +629,7 @@ impl WsDispatchState {
     pub fn take_corrective(
         &self,
         client_order_id: &ClientOrderId,
-    ) -> Option<(u64, HyperliquidExecPlaceOrderRequest)> {
+    ) -> Option<(u64, HyperliquidExecPlaceOrderRequest, u64)> {
         self.pending_corrective
             .remove(client_order_id)
             .map(|(_, v)| v)
@@ -440,15 +638,111 @@ impl WsDispatchState {
     /// Returns the pending modify marker for a client order id, if any.
     #[must_use]
     pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
-        self.pending_modify_keys.get(client_order_id).map(|r| *r)
+        self.pending_modify_keys
+            .get(client_order_id)
+            .and_then(|chain| chain.front().and_then(|intent| intent.old_venue_order_id))
+    }
+
+    /// Returns whether the client order id has an in-flight modify marker.
+    #[must_use]
+    pub fn has_pending_modify(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_modify_keys
+            .get(client_order_id)
+            .is_some_and(|chain| !chain.is_empty())
+    }
+
+    /// Returns whether the pending marker applies to the given cancel report.
+    #[must_use]
+    pub fn pending_modify_matches(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.pending_modify_keys
+            .get(client_order_id)
+            .is_some_and(|chain| {
+                chain
+                    .intents
+                    .iter()
+                    .any(|intent| match intent.old_venue_order_id {
+                        Some(old_venue_order_id) => old_venue_order_id == venue_order_id,
+                        None => true,
+                    })
+            })
     }
 
     /// Returns the recorded target absolute total qty, if any.
     #[must_use]
     pub fn pending_modify_target_qty(&self, client_order_id: &ClientOrderId) -> Option<Quantity> {
-        self.pending_modify_target_qty
+        self.pending_modify_keys
             .get(client_order_id)
-            .map(|r| *r)
+            .and_then(|chain| chain.front().map(|intent| intent.target_qty))
+    }
+
+    /// Claims the pending intent that best matches the replacement report and
+    /// advances intermediate old-leg suppression for any newer intent.
+    #[must_use]
+    pub fn claim_pending_modify_for_replacement(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+        report_price: Option<Price>,
+        report_qty: Option<Quantity>,
+    ) -> Option<PendingModifyClaim> {
+        let mut remove_chain = false;
+        let mut claim = None;
+
+        if let Some(mut chain) = self.pending_modify_keys.get_mut(client_order_id) {
+            if chain.is_empty() {
+                return None;
+            }
+
+            let claim_index = chain.first_matching_replacement(report_price, report_qty);
+            let mut claimed = None;
+            for _ in 0..=claim_index {
+                claimed = chain.intents.pop_front();
+            }
+
+            if let Some(intent) = claimed {
+                claim = Some(PendingModifyClaim {
+                    target_qty: intent.target_qty,
+                    request: intent.request,
+                });
+            }
+
+            if let Some(next) = chain.intents.front_mut() {
+                next.old_venue_order_id = Some(venue_order_id);
+                self.refresh_pending_modify_compat_maps(client_order_id, &chain);
+            } else {
+                remove_chain = true;
+            }
+        }
+
+        if remove_chain {
+            self.clear_pending_modify(client_order_id);
+        }
+
+        claim
+    }
+
+    fn refresh_pending_modify_compat_maps(
+        &self,
+        client_order_id: &ClientOrderId,
+        chain: &PendingModifyChain,
+    ) {
+        if let Some(front) = chain.front() {
+            self.pending_modify_target_qty
+                .insert(*client_order_id, front.target_qty);
+            if let Some(request) = &front.request {
+                self.pending_modify_request
+                    .insert(*client_order_id, request.clone());
+            } else {
+                self.pending_modify_request.remove(client_order_id);
+            }
+        } else {
+            self.pending_modify_target_qty.remove(client_order_id);
+            self.pending_modify_request.remove(client_order_id);
+        }
     }
 
     /// Buffers a `FillReport` arrived during an in-flight cancel-replace.
@@ -495,6 +789,8 @@ impl WsDispatchState {
         self.order_identities.remove(client_order_id);
         self.emitted_accepted.remove(client_order_id);
         self.cached_venue_order_ids.remove(client_order_id);
+        self.cached_venue_order_id_ts.remove(client_order_id);
+        self.superseded_venue_order_ids.remove(client_order_id);
         self.pending_modify_keys.remove(client_order_id);
         self.pending_modify_target_qty.remove(client_order_id);
         self.pending_modify_request.remove(client_order_id);
@@ -644,14 +940,15 @@ pub fn dispatch_order_fill(
 
     // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
     // strand it (see module docs).
-    if state.pending_modify(&client_order_id).is_some()
+    if state.has_pending_modify(&client_order_id)
         && let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && report.venue_order_id != cached_voi
+        && !state.is_stale_venue_order_id(&client_order_id, report.venue_order_id, report.ts_event)
     {
-        let target = state.pending_modify_target_qty(&client_order_id);
-        let sent_request = state.modify_request(&client_order_id);
+        let pending_target = state.pending_modify_target_qty(&client_order_id);
+        let pending_request = state.modify_request(&client_order_id);
         // Prefer the modify target price over the stale cached identity price
-        let price = sent_request
+        let price = pending_request
             .as_ref()
             .zip(identity.price)
             .and_then(|(r, cached)| Price::from_decimal_dp(r.price, cached.precision).ok())
@@ -664,6 +961,20 @@ pub fn dispatch_order_fill(
             state.buffer_fill(client_order_id, report.clone());
             return DispatchOutcome::Tracked;
         };
+        let claim = state.claim_pending_modify_for_replacement(
+            &client_order_id,
+            report.venue_order_id,
+            None,
+            None,
+        );
+        let target = claim
+            .as_ref()
+            .map(|claim| claim.target_qty)
+            .or(pending_target);
+        let sent_request = claim
+            .as_ref()
+            .and_then(|claim| claim.request.clone())
+            .or(pending_request);
         let updated_quantity = target.unwrap_or(identity.quantity);
         promote_cancel_replace(
             client_order_id,
@@ -779,6 +1090,13 @@ fn handle_accepted(
     if let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && cached_voi != venue_order_id
     {
+        if state.is_stale_venue_order_id(&client_order_id, venue_order_id, ts_event) {
+            log::debug!(
+                "Skipping stale ACCEPTED for {venue_order_id} (cached {cached_voi}) on {client_order_id}",
+            );
+            return DispatchOutcome::Skip;
+        }
+
         let price = report.price.or(identity.price);
         let Some(price) = price else {
             log::warn!(
@@ -790,9 +1108,15 @@ fn handle_accepted(
 
         // Prefer user target over venue's remaining-only `report.quantity`;
         // fall back when no marker (external modify).
-        let target_total_qty = state.pending_modify_target_qty(&client_order_id);
+        let claim = state.claim_pending_modify_for_replacement(
+            &client_order_id,
+            venue_order_id,
+            report.price,
+            Some(report.quantity),
+        );
+        let target_total_qty = claim.as_ref().map(|claim| claim.target_qty);
         let updated_quantity = target_total_qty.unwrap_or(report.quantity);
-        let sent_request = state.modify_request(&client_order_id);
+        let sent_request = claim.and_then(|claim| claim.request);
 
         promote_cancel_replace(
             client_order_id,
@@ -830,7 +1154,7 @@ fn handle_accepted(
     }
 
     state.insert_accepted(client_order_id);
-    state.record_venue_order_id(client_order_id, venue_order_id);
+    state.record_venue_order_id_at(client_order_id, venue_order_id, ts_event);
     state.update_identity_price(&client_order_id, report.price);
 
     let accepted = OrderAccepted::new(
@@ -868,10 +1192,9 @@ fn promote_cancel_replace(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) {
-    state.record_venue_order_id(client_order_id, venue_order_id);
+    state.record_venue_order_id_at(client_order_id, venue_order_id, ts_event);
     state.update_identity_quantity(&client_order_id, quantity);
     state.update_identity_price(&client_order_id, Some(price));
-    state.clear_pending_modify(&client_order_id);
 
     let updated = OrderUpdated::new(
         emitter.trader_id(),
@@ -920,7 +1243,7 @@ pub fn promote_replacement_from_query(
         return false;
     };
 
-    if state.pending_modify(&client_order_id).is_none() {
+    if !state.has_pending_modify(&client_order_id) {
         return false;
     }
 
@@ -929,6 +1252,14 @@ pub fn promote_replacement_from_query(
     };
 
     if report.venue_order_id == cached_voi {
+        return false;
+    }
+
+    if state.is_stale_venue_order_id(&client_order_id, report.venue_order_id, report.ts_last) {
+        log::debug!(
+            "Skipping stale query replacement for {client_order_id}: venue_order_id={}",
+            report.venue_order_id,
+        );
         return false;
     }
 
@@ -945,9 +1276,15 @@ pub fn promote_replacement_from_query(
     };
 
     // Prefer the user target over the venue's remaining-only `report.quantity`
-    let updated_quantity = state
-        .pending_modify_target_qty(&client_order_id)
-        .unwrap_or(report.quantity);
+    let claim = state.claim_pending_modify_for_replacement(
+        &client_order_id,
+        report.venue_order_id,
+        report.price,
+        Some(report.quantity),
+    );
+    let updated_quantity = claim
+        .as_ref()
+        .map_or(report.quantity, |claim| claim.target_qty);
 
     promote_cancel_replace(
         client_order_id,
@@ -995,9 +1332,9 @@ fn maybe_queue_corrective_reduce(
         let mut corrective = sent_request;
         corrective.size = remaining;
 
-        state.mark_pending_modify(client_order_id, venue_order_id, target);
+        let generation = state.mark_pending_modify(client_order_id, venue_order_id, target);
         state.stash_modify_request(client_order_id, corrective.clone());
-        state.queue_corrective(client_order_id, new_oid, corrective);
+        state.queue_corrective(client_order_id, new_oid, corrective, generation);
 
         log::warn!(
             "Cancel-replace left {client_order_id} oversized on {venue_order_id} \
@@ -1079,9 +1416,7 @@ fn handle_canceled(
     // pending marker (set before the modify HTTP call and cleared on
     // failure) lets us suppress the old leg so the later ACCEPTED can route
     // through OrderUpdated. See GH-3827.
-    if let Some(pending_old) = state.pending_modify(&client_order_id)
-        && pending_old == venue_order_id
-    {
+    if state.pending_modify_matches(&client_order_id, venue_order_id) {
         log::debug!(
             "Skipping cancel-before-accept leg for {client_order_id}: venue_order_id={venue_order_id}",
         );
@@ -1244,7 +1579,7 @@ fn ensure_accepted_emitted(
         return;
     }
     state.insert_accepted(client_order_id);
-    state.record_venue_order_id(client_order_id, venue_order_id);
+    state.record_venue_order_id_at(client_order_id, venue_order_id, ts_event);
 
     let accepted = OrderAccepted::new(
         emitter.trader_id(),
@@ -1345,13 +1680,56 @@ mod tests {
         let voi = VenueOrderId::new("v-1");
         let target_qty = Quantity::from("0.0001");
 
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
         assert!(state.pending_modify_target_qty(&cid).is_none());
         state.mark_pending_modify(cid, voi, target_qty);
+        assert!(state.has_pending_modify(&cid));
         assert_eq!(state.pending_modify(&cid), Some(voi));
+        assert!(state.pending_modify_matches(&cid, voi));
+        assert!(!state.pending_modify_matches(&cid, VenueOrderId::new("v-2")));
         assert_eq!(state.pending_modify_target_qty(&cid), Some(target_qty));
         state.clear_pending_modify(&cid);
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_target_qty(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_pending_modify_unknown_old_venue_order_id_matches_any_cancel() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-010-CLOID");
+        let target_qty = Quantity::from("0.0001");
+
+        state.mark_pending_modify(cid, None, target_qty);
+
+        assert!(state.has_pending_modify(&cid));
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_matches(&cid, VenueOrderId::new("v-1")));
+        assert!(state.pending_modify_matches(&cid, VenueOrderId::new("v-2")));
+        assert_eq!(state.pending_modify_target_qty(&cid), Some(target_qty));
+    }
+
+    #[rstest]
+    fn test_pending_modify_generation_clear_keeps_newer_modify() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-010-GEN");
+        let old_voi = VenueOrderId::new("v-1");
+        let target_a = Quantity::from("0.0001");
+        let target_b = Quantity::from("0.0002");
+
+        let gen_a = state.mark_pending_modify(cid, old_voi, target_a);
+        let gen_b = state.mark_pending_modify(cid, old_voi, target_b);
+
+        state.clear_pending_modify_generation(&cid, gen_a);
+
+        assert!(state.has_pending_modify(&cid));
+        assert_eq!(state.pending_modify(&cid), Some(old_voi));
+        assert_eq!(state.pending_modify_target_qty(&cid), Some(target_b));
+
+        state.clear_pending_modify_generation(&cid, gen_b);
+
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify_target_qty(&cid).is_none());
     }
 
@@ -1390,9 +1768,10 @@ mod tests {
             },
             cloid: None,
         };
-        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("1"));
+        let generation =
+            state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("1"));
         state.stash_modify_request(cid, request.clone());
-        state.queue_corrective(cid, 1, request);
+        state.queue_corrective(cid, 1, request, generation);
         assert!(state.modify_request(&cid).is_some());
 
         state.cleanup_terminal(&cid);

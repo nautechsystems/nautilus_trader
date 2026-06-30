@@ -667,6 +667,7 @@ async def test_cancel_order_by_client_id(
         ws_client.cancel_order.assert_awaited_once()
         http_client.cancel_order.assert_not_awaited()
         assert ws_client.cancel_order.call_args.args[0] is http_client
+        assert ws_client.cancel_order.await_args.kwargs["venue_order_id"] is None
     finally:
         await client._disconnect()
 
@@ -716,6 +717,7 @@ async def test_cancel_order_by_venue_id(
         # Assert
         ws_client.cancel_order.assert_awaited_once()
         http_client.cancel_order.assert_not_awaited()
+        assert ws_client.cancel_order.await_args.kwargs["venue_order_id"] is None
     finally:
         await client._disconnect()
 
@@ -1296,6 +1298,7 @@ async def test_modify_limit_order(
         ws_client.modify_order.assert_awaited_once()
         http_client.modify_order.assert_not_awaited()
         assert ws_client.modify_order.call_args.args[0] is http_client
+        assert ws_client.modify_order.await_args.kwargs["venue_order_id"] is None
     finally:
         await client._disconnect()
 
@@ -1366,6 +1369,7 @@ async def test_modify_order_after_partial_fill_sends_remaining_qty(
         # Assert
         ws_client.modify_order.assert_awaited_once()
         http_client.modify_order.assert_not_awaited()
+        assert ws_client.modify_order.await_args.kwargs["venue_order_id"] is None
         sent_quantity = ws_client.modify_order.await_args.kwargs["quantity"]
         assert sent_quantity == nautilus_pyo3.Quantity.from_str("0.00060")
         # Markers track the user-intended absolute total and price so the

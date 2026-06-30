@@ -249,7 +249,7 @@ mod tests {
 
     fn exec_modify() -> HyperliquidExecModifyOrderRequest {
         HyperliquidExecModifyOrderRequest {
-            oid: 12345,
+            oid: 12345.into(),
             order: exec_order(),
         }
     }
