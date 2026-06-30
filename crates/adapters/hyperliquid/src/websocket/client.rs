@@ -855,7 +855,7 @@ impl HyperliquidWebSocketClient {
         &self,
         signer: &HyperliquidHttpClient,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         order_side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -872,10 +872,21 @@ impl HyperliquidWebSocketClient {
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
-        let oid = venue_order_id
-            .as_str()
-            .parse::<u64>()
-            .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
+        let modify_id = if let Some(venue_order_id) = venue_order_id {
+            venue_order_id
+                .as_str()
+                .parse::<u64>()
+                .map(Into::into)
+                .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?
+        } else if let Some(client_order_id) = client_order_id {
+            signer
+                .get_or_generate_client_order_id_cloid(client_order_id)
+                .into()
+        } else {
+            return Err(HyperliquidError::bad_request(
+                "Either venue_order_id or client_order_id must be provided for modify",
+            ));
+        };
         let is_buy = matches!(order_side, OrderSide::Buy);
         let price_decimals = signer.get_price_precision_for_symbol(symbol).unwrap_or(2);
         let price = if signer.normalize_prices() {
@@ -907,7 +918,10 @@ impl HyperliquidWebSocketClient {
             self.cache_cloid_mapping(Ustr::from(&cloid.to_hex()), client_order_id);
         }
         let action = HyperliquidExecAction::Modify {
-            modify: HyperliquidExecModifyOrderRequest { oid, order },
+            modify: HyperliquidExecModifyOrderRequest {
+                oid: modify_id,
+                order,
+            },
         };
         let response = self.post_action_exec(signer, &action).await?;
 

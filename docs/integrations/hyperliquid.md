@@ -888,7 +888,7 @@ ALO (Add-Liquidity-Only) lane.
 |-------------------|------------|------|-------------------------------------------------------|
 | Submit order      | ✓          | ✓    | Single order submission.                              |
 | Submit order list | ✓          | ✓    | Batch order submission (single API call).             |
-| Modify order      | ✓          | ✓    | Requires venue order ID.                              |
+| Modify order      | ✓          | ✓    | Targets venue order ID or CLOID.                      |
 | Cancel order      | ✓          | ✓    | Cancel by client order ID.                            |
 | Cancel all orders | ✓          | ✓    | Single batched `cancelByCloid` for open orders.       |
 | Batch cancel      | ✓          | ✓    | Single batched `cancelByCloid` for the provided list. |
@@ -938,8 +938,8 @@ sequenceDiagram
     participant HTTP as Hyperliquid HTTP
     participant WS as Hyperliquid WS
 
-    Strategy->>ExecClient: ModifyOrder(cloid, old_oid)
-    ExecClient->>HTTP: POST /exchange { action: "modify", oid: old_oid }
+    Strategy->>ExecClient: ModifyOrder(cloid, old_oid?)
+    ExecClient->>HTTP: POST /exchange { action: "modify", oid: old_oid_or_cloid }
     HTTP-->>ExecClient: { status: "ok" }
     ExecClient->>Dispatch: mark_pending_modify(cloid, old_oid)
     WS-->>ExecClient: ACCEPTED(new_oid, cloid)

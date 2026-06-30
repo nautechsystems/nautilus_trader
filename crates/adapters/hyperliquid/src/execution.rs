@@ -72,8 +72,8 @@ use crate::{
         models::{
             ClearinghouseState, Cloid, HyperliquidExecAction, HyperliquidExecCancelByCloidRequest,
             HyperliquidExecCancelOrderRequest, HyperliquidExecGrouping,
-            HyperliquidExecModifyOrderRequest, HyperliquidExecOrderKind,
-            HyperliquidExecPlaceOrderRequest, SpotClearinghouseState,
+            HyperliquidExecModifyOrderId, HyperliquidExecModifyOrderRequest,
+            HyperliquidExecOrderKind, HyperliquidExecPlaceOrderRequest, SpotClearinghouseState,
         },
         parse::derive_outcome_settlements,
     },
@@ -865,38 +865,26 @@ impl ExecutionClient for HyperliquidExecutionClient {
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         log::debug!("Modifying order: {cmd:?}");
 
-        let venue_order_id = match cmd.venue_order_id {
-            Some(id) => id,
-            None => {
-                let reason = "venue_order_id is required for modify";
-                log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
-                self.emitter.emit_order_modify_rejected_event(
-                    cmd.strategy_id,
-                    cmd.instrument_id,
-                    cmd.client_order_id,
-                    None,
-                    reason,
-                    self.clock.get_time_ns(),
-                );
-                return Ok(());
+        let venue_order_id = cmd.venue_order_id;
+        let parsed_oid = if let Some(venue_order_id) = venue_order_id {
+            match venue_order_id.as_str().parse::<u64>() {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    let reason = format!("Failed to parse venue_order_id '{venue_order_id}': {e}");
+                    log::warn!("{reason}");
+                    self.emitter.emit_order_modify_rejected_event(
+                        cmd.strategy_id,
+                        cmd.instrument_id,
+                        cmd.client_order_id,
+                        Some(venue_order_id),
+                        &reason,
+                        self.clock.get_time_ns(),
+                    );
+                    return Ok(());
+                }
             }
-        };
-
-        let oid: u64 = match venue_order_id.as_str().parse() {
-            Ok(id) => id,
-            Err(e) => {
-                let reason = format!("Failed to parse venue_order_id '{venue_order_id}': {e}");
-                log::warn!("{reason}");
-                self.emitter.emit_order_modify_rejected_event(
-                    cmd.strategy_id,
-                    cmd.instrument_id,
-                    cmd.client_order_id,
-                    Some(venue_order_id),
-                    &reason,
-                    self.clock.get_time_ns(),
-                );
-                return Ok(());
-            }
+        } else {
+            None
         };
 
         // Look up cached order to get side, reduce_only, post_only, TIF
@@ -914,7 +902,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                     cmd.strategy_id,
                     cmd.instrument_id,
                     cmd.client_order_id,
-                    Some(venue_order_id),
+                    venue_order_id,
                     reason,
                     self.clock.get_time_ns(),
                 );
@@ -939,7 +927,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
-                Some(venue_order_id),
+                venue_order_id,
                 &reason,
                 self.clock.get_time_ns(),
             );
@@ -1014,6 +1002,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         };
         let cloid = http_client.get_or_generate_client_order_id_cloid(order.client_order_id());
         hyperliquid_order.cloid = Some(cloid);
+        let modify_order_id: HyperliquidExecModifyOrderId =
+            parsed_oid.map_or_else(|| cloid.into(), |oid| oid.into());
 
         let dispatch_state = self.ws_dispatch_state.clone();
         let client_order_id = cmd.client_order_id;
@@ -1033,7 +1023,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.spawn_task("modify_order", async move {
             let action = HyperliquidExecAction::Modify {
                 modify: HyperliquidExecModifyOrderRequest {
-                    oid,
+                    oid: modify_order_id,
                     order: hyperliquid_order,
                 },
             };
@@ -1854,7 +1844,7 @@ fn is_inflight_modify_old_leg_cancel(
     report: &OrderStatusReport,
 ) -> bool {
     report.order_status == OrderStatus::Canceled
-        && dispatch_state.pending_modify(client_order_id) == Some(report.venue_order_id)
+        && dispatch_state.pending_modify_matches(client_order_id, report.venue_order_id)
 }
 
 #[derive(Clone)]
@@ -2304,7 +2294,10 @@ fn spawn_corrective_reduce(
 
     get_runtime().spawn(async move {
         let action = HyperliquidExecAction::Modify {
-            modify: HyperliquidExecModifyOrderRequest { oid, order },
+            modify: HyperliquidExecModifyOrderRequest {
+                oid: oid.into(),
+                order,
+            },
         };
 
         let keep_marker = match ws_client.post_action_exec(&http_client, &action).await {
@@ -3088,7 +3081,11 @@ mod tests {
         state.register_identity(cid, test_identity());
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
-        state.mark_pending_modify(cid, VenueOrderId::new("old-voi"), test_identity().quantity);
+        state.mark_pending_modify(
+            cid,
+            Some(VenueOrderId::new("old-voi")),
+            test_identity().quantity,
+        );
 
         ws_client.cache_cloid_mapping(cloid_for("O-HER-BUF"), cid);
 
@@ -3163,7 +3160,7 @@ mod tests {
         state.register_identity(cid, identity);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("old-voi"));
-        state.mark_pending_modify(cid, VenueOrderId::new("old-voi"), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("old-voi")), target_total);
 
         ws_client.cache_cloid_mapping(cloid_for("O-HER-CR-QTY"), cid);
 
@@ -3292,7 +3289,7 @@ mod tests {
 
         // Modify dispatched while nothing had filled: marker plus the exact
         // request sent to the venue, sized at the full target.
-        state.mark_pending_modify(cid, VenueOrderId::new(old_voi), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new(old_voi)), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
 
         // A 0.165 fill lands on the old leg after the modify was dispatched
@@ -3358,7 +3355,7 @@ mod tests {
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new(old_voi));
         // Modify dispatched while nothing had filled: request sized at the full target
-        state.mark_pending_modify(cid, VenueOrderId::new(old_voi), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new(old_voi)), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
         // An old-leg fill raced the modify; the replacement ACCEPTED was dropped
         state.record_filled_qty(cid, Quantity::from("0.165"));
@@ -3418,7 +3415,7 @@ mod tests {
         state.register_identity(cid, identity);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
-        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("445117664938")), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
 
         let accepted = make_status_report_with_quantity(
@@ -3464,7 +3461,7 @@ mod tests {
         state.register_identity(cid, identity);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
-        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("445117664938")), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
 
         // Nothing recorded yet; the only fill arrives buffered on the new leg
@@ -3516,7 +3513,7 @@ mod tests {
         state.register_identity(cid, identity);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("445117664938"));
-        state.mark_pending_modify(cid, VenueOrderId::new("445117664938"), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("445117664938")), target_total);
         state.stash_modify_request(cid, limit_request(Decimal::from(1)));
         state.record_filled_qty(cid, target_total);
 
@@ -3561,7 +3558,7 @@ mod tests {
         state.register_identity(cid, identity);
         state.insert_accepted(cid);
         state.record_venue_order_id(cid, VenueOrderId::new("445117686214"));
-        state.mark_pending_modify(cid, VenueOrderId::new("445117686214"), target_total);
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("445117686214")), target_total);
         state.stash_modify_request(cid, limit_request("0.835".parse::<Decimal>().unwrap()));
         // A further 0.300 lands in-flight: cumulative now 0.465
         state.record_filled_qty(cid, Quantity::from("0.465"));

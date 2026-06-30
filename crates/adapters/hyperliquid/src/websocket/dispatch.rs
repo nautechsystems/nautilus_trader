@@ -216,14 +216,15 @@ pub struct WsDispatchState {
     /// replacement leg of a Hyperliquid modify and emitted as `OrderUpdated`.
     pub cached_venue_order_ids: DashMap<ClientOrderId, VenueOrderId>,
     /// Maps `client_order_id` to the old venue order id of an in-flight
-    /// modify. Populated by `modify_order` before the HTTP call so the WS
-    /// cancel handler sees the marker even when `CANCELED(old_voi)` arrives
-    /// before the HTTP response. Cleared on the matching `ACCEPTED(new_voi)`
-    /// or on any modify failure. A `CANCELED(old_voi)` arriving while the
-    /// marker is set is treated as the cancel leg of a cancel-before-accept
-    /// race and suppressed so the later `ACCEPTED(new_voi)` can flow through
-    /// the `OrderUpdated` path.
-    pub pending_modify_keys: DashMap<ClientOrderId, VenueOrderId>,
+    /// modify, when known. Populated by `modify_order` before the HTTP call so
+    /// the WS cancel handler sees the marker even when `CANCELED(old_voi)`
+    /// arrives before the HTTP response. `None` means the modify targeted the
+    /// original CLOID before the exchange venue order id was known. Cleared on
+    /// the matching `ACCEPTED(new_voi)` or on any modify failure. A matching
+    /// `CANCELED(old_voi)` arriving while the marker is set is treated as the
+    /// cancel leg of a cancel-before-accept race and suppressed so the later
+    /// `ACCEPTED(new_voi)` can flow through the `OrderUpdated` path.
+    pub pending_modify_keys: DashMap<ClientOrderId, Option<VenueOrderId>>,
     /// User-intended absolute total qty for an in-flight modify; the
     /// cancel-replace promotion uses it instead of the venue's
     /// remaining-only `report.quantity`.
@@ -379,7 +380,7 @@ impl WsDispatchState {
     pub fn mark_pending_modify(
         &self,
         client_order_id: ClientOrderId,
-        old_venue_order_id: VenueOrderId,
+        old_venue_order_id: Option<VenueOrderId>,
         target_qty: Quantity,
     ) {
         self.pending_modify_keys
@@ -437,10 +438,33 @@ impl WsDispatchState {
             .map(|(_, v)| v)
     }
 
-    /// Returns the pending modify marker for a client order id, if any.
+    /// Returns whether the client order id has an in-flight modify marker.
+    #[must_use]
+    pub fn has_pending_modify(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_modify_keys.contains_key(client_order_id)
+    }
+
+    /// Returns the old venue order id for a pending modify, if known.
     #[must_use]
     pub fn pending_modify(&self, client_order_id: &ClientOrderId) -> Option<VenueOrderId> {
-        self.pending_modify_keys.get(client_order_id).map(|r| *r)
+        self.pending_modify_keys
+            .get(client_order_id)
+            .and_then(|r| *r)
+    }
+
+    /// Returns whether the pending marker applies to the given cancel report.
+    #[must_use]
+    pub fn pending_modify_matches(
+        &self,
+        client_order_id: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.pending_modify_keys
+            .get(client_order_id)
+            .is_some_and(|r| match *r {
+                Some(old_venue_order_id) => old_venue_order_id == venue_order_id,
+                None => true,
+            })
     }
 
     /// Returns the recorded target absolute total qty, if any.
@@ -644,7 +668,7 @@ pub fn dispatch_order_fill(
 
     // Promote the binding from the fill so a dropped replacement ACCEPTED cannot
     // strand it (see module docs).
-    if state.pending_modify(&client_order_id).is_some()
+    if state.has_pending_modify(&client_order_id)
         && let Some(cached_voi) = state.cached_venue_order_id(&client_order_id)
         && report.venue_order_id != cached_voi
     {
@@ -920,7 +944,7 @@ pub fn promote_replacement_from_query(
         return false;
     };
 
-    if state.pending_modify(&client_order_id).is_none() {
+    if !state.has_pending_modify(&client_order_id) {
         return false;
     }
 
@@ -995,7 +1019,7 @@ fn maybe_queue_corrective_reduce(
         let mut corrective = sent_request;
         corrective.size = remaining;
 
-        state.mark_pending_modify(client_order_id, venue_order_id, target);
+        state.mark_pending_modify(client_order_id, Some(venue_order_id), target);
         state.stash_modify_request(client_order_id, corrective.clone());
         state.queue_corrective(client_order_id, new_oid, corrective);
 
@@ -1079,9 +1103,7 @@ fn handle_canceled(
     // pending marker (set before the modify HTTP call and cleared on
     // failure) lets us suppress the old leg so the later ACCEPTED can route
     // through OrderUpdated. See GH-3827.
-    if let Some(pending_old) = state.pending_modify(&client_order_id)
-        && pending_old == venue_order_id
-    {
+    if state.pending_modify_matches(&client_order_id, venue_order_id) {
         log::debug!(
             "Skipping cancel-before-accept leg for {client_order_id}: venue_order_id={venue_order_id}",
         );
@@ -1345,14 +1367,34 @@ mod tests {
         let voi = VenueOrderId::new("v-1");
         let target_qty = Quantity::from("0.0001");
 
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
         assert!(state.pending_modify_target_qty(&cid).is_none());
-        state.mark_pending_modify(cid, voi, target_qty);
+        state.mark_pending_modify(cid, Some(voi), target_qty);
+        assert!(state.has_pending_modify(&cid));
         assert_eq!(state.pending_modify(&cid), Some(voi));
+        assert!(state.pending_modify_matches(&cid, voi));
+        assert!(!state.pending_modify_matches(&cid, VenueOrderId::new("v-2")));
         assert_eq!(state.pending_modify_target_qty(&cid), Some(target_qty));
         state.clear_pending_modify(&cid);
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
         assert!(state.pending_modify_target_qty(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_pending_modify_unknown_old_venue_order_id_matches_any_cancel() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::new("O-011");
+        let target_qty = Quantity::from("0.0001");
+
+        state.mark_pending_modify(cid, None, target_qty);
+
+        assert!(state.has_pending_modify(&cid));
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(state.pending_modify_matches(&cid, VenueOrderId::new("v-1")));
+        assert!(state.pending_modify_matches(&cid, VenueOrderId::new("v-2")));
+        assert_eq!(state.pending_modify_target_qty(&cid), Some(target_qty));
     }
 
     #[rstest]
@@ -1361,12 +1403,17 @@ mod tests {
         let cid = ClientOrderId::new("O-020");
         state.register_identity(cid, make_identity());
         state.insert_accepted(cid);
-        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("0.0001"));
+        state.mark_pending_modify(
+            cid,
+            Some(VenueOrderId::new("v-1")),
+            Quantity::from("0.0001"),
+        );
         state.insert_filled(cid);
         state.cleanup_terminal(&cid);
 
         assert!(state.lookup_identity(&cid).is_none());
         assert!(!state.emitted_accepted.contains(&cid));
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
         assert!(state.pending_modify_target_qty(&cid).is_none());
         // `filled_orders` outlives `cleanup_terminal` so replays stay suppressed.
@@ -1390,7 +1437,7 @@ mod tests {
             },
             cloid: None,
         };
-        state.mark_pending_modify(cid, VenueOrderId::new("v-1"), Quantity::from("1"));
+        state.mark_pending_modify(cid, Some(VenueOrderId::new("v-1")), Quantity::from("1"));
         state.stash_modify_request(cid, request.clone());
         state.queue_corrective(cid, 1, request);
         assert!(state.modify_request(&cid).is_some());
@@ -1399,6 +1446,7 @@ mod tests {
 
         assert!(state.modify_request(&cid).is_none());
         assert!(state.take_corrective(&cid).is_none());
+        assert!(!state.has_pending_modify(&cid));
         assert!(state.pending_modify(&cid).is_none());
     }
 }

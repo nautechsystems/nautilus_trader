@@ -166,7 +166,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # failure. The WS handler uses it to suppress the old leg of a
         # cancel-replace when CANCELED(old_voi) arrives before the replacement
         # ACCEPTED(new_voi). See GH-3827.
-        self._pending_modify_keys: dict[str, str] = {}
+        # The value is None for a CLOID-targeted modify sent before the venue
+        # order id is known.
+        self._pending_modify_keys: dict[str, str | None] = {}
         # User-intended absolute total qty and price for an in-flight modify;
         # the cancel-replace promotion uses these for an accurate OrderUpdated.
         self._pending_modify_target_qty: dict[str, Quantity] = {}
@@ -832,17 +834,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         elif command.venue_order_id:
             venue_order_id = command.venue_order_id
 
-        if venue_order_id is None:
-            self.generate_order_modify_rejected(
-                strategy_id=command.strategy_id,
-                instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,
-                reason="VENUE_ORDER_ID_REQUIRED",
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
         # Use command values if provided, else fall back to current order values
         price = command.price if command.price else (order.price if order.has_price else None)
         # Hyperliquid modify is cancel-replace; subtract filled to avoid overfill.
@@ -885,7 +876,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                 command.instrument_id.value,
             )
-            pyo3_venue_order_id = nautilus_pyo3.VenueOrderId(venue_order_id.value)
+            pyo3_venue_order_id = (
+                nautilus_pyo3.VenueOrderId(venue_order_id.value) if venue_order_id else None
+            )
             pyo3_order_side = order_side_to_pyo3(order.side)
             pyo3_order_type = order_type_to_pyo3(order.order_type)
             pyo3_price = nautilus_pyo3.Price.from_str(str(price))
@@ -902,7 +895,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             # Mark in-flight BEFORE the await so the WS cancel handler sees it regardless of timing.
             # Cleared on non-transport post errors; preserved on transport errors so WS can reconcile.
-            self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
+            self._pending_modify_keys[command.client_order_id.value] = (
+                venue_order_id.value if venue_order_id else None
+            )
             self._pending_modify_target_qty[command.client_order_id.value] = target_total_qty
             self._pending_modify_target_price[command.client_order_id.value] = price
             self._log.info(f"Order modification requested for {command.client_order_id}")
@@ -1197,9 +1192,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # CANCELED while a failed modify never falls here.
         pending_old_voi = self._pending_modify_keys.get(key)
         if (
-            pending_old_voi is not None
+            key in self._pending_modify_keys
             and event.venue_order_id is not None
-            and event.venue_order_id.value == pending_old_voi
+            and (pending_old_voi is None or event.venue_order_id.value == pending_old_voi)
         ):
             self._log.debug(
                 f"Suppressing cancel-before-accept for {event.client_order_id!r} "
@@ -1388,9 +1383,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # still reconcile.
             pending_old_voi = self._pending_modify_keys.get(key)
             if (
-                pending_old_voi is not None
+                key in self._pending_modify_keys
                 and report.venue_order_id is not None
-                and report.venue_order_id.value == pending_old_voi
+                and (pending_old_voi is None or report.venue_order_id.value == pending_old_voi)
             ):
                 self._log.debug(
                     f"Skipping cancel-before-accept leg for "

@@ -1255,7 +1255,7 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         .modify_order(
             &signer,
             InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
-            VenueOrderId::from("12345"),
+            Some(VenueOrderId::from("12345")),
             OrderSide::Sell,
             OrderType::Limit,
             Price::from("56800.0"),
@@ -1300,6 +1300,71 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         Some("0.0002"),
     );
     assert_eq!(modify_order.get("r").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        modify_order.get("c").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str()),
+    );
+    assert_valid_cloid(&modify_cloid);
+    assert_eq!(
+        ws_client.get_cloid_mapping(&Ustr::from(&modify_cloid)),
+        Some(modify_coid),
+    );
+
+    ws_client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_ws_modify_can_target_cloid_when_venue_order_id_unknown() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let signer = create_test_trade_signer(addr).await;
+    let mut ws_client = HyperliquidWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        HyperliquidEnvironment::Mainnet,
+        None,
+        TransportBackend::default(),
+        None,
+    );
+    ws_client.set_post_timeout(Duration::from_secs(1));
+    ws_client.connect().await.unwrap();
+
+    let modify_coid = ClientOrderId::new("O-WS-MODIFY-CLOID");
+    ws_client
+        .modify_order(
+            &signer,
+            InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT),
+            None,
+            OrderSide::Buy,
+            OrderType::Limit,
+            Price::from("56700.0"),
+            Quantity::from("0.0003"),
+            None,
+            false,
+            true,
+            TimeInForce::Gtc,
+            Some(modify_coid),
+        )
+        .await
+        .unwrap();
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing modify action");
+    let modify_order = &action["order"];
+    let modify_cloid = signer
+        .cached_client_order_id_cloid(&modify_coid)
+        .expect("missing modify cloid")
+        .to_hex();
+
+    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("modify"));
+    assert_eq!(
+        action.get("oid").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str()),
+    );
     assert_eq!(
         modify_order.get("c").and_then(|v| v.as_str()),
         Some(modify_cloid.as_str()),
@@ -2344,6 +2409,85 @@ async fn test_modify_order_success_marks_pending_modify() {
     assert_eq!(
         client.ws_dispatch_state().pending_modify(&cid),
         Some(old_voi),
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_modify_order_without_venue_order_id_targets_cloid() {
+    let state = TestServerState::default();
+    let last_action = state.last_exchange_action.clone();
+    let addr = start_mock_server(state).await;
+
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+
+    let order = make_limit_order("O-MOD-CLOID");
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    let cmd = ModifyOrder::new(
+        order.trader_id(),
+        Some(*HYPERLIQUID_CLIENT_ID),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        None,
+        Some(Quantity::from("0.0002")),
+        Some(Price::from("56800.0")),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None, // correlation_id
+    );
+
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async { client.pending_tasks_all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let action = last_action
+        .lock()
+        .await
+        .clone()
+        .expect("modify action should have been sent");
+    let expected_cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
+
+    assert_eq!(action.get("type").and_then(|t| t.as_str()), Some("modify"));
+    assert_eq!(
+        action.get("oid").and_then(|oid| oid.as_str()),
+        Some(expected_cloid.as_str())
+    );
+    assert_eq!(
+        action["order"].get("c").and_then(|c| c.as_str()),
+        Some(expected_cloid.as_str()),
+    );
+    assert_valid_cloid(&expected_cloid);
+    assert!(
+        client
+            .ws_dispatch_state()
+            .has_pending_modify(&order.client_order_id())
+    );
+    assert!(
+        client
+            .ws_dispatch_state()
+            .pending_modify(&order.client_order_id())
+            .is_none()
+    );
+    assert_eq!(
+        client
+            .ws_dispatch_state()
+            .pending_modify_target_qty(&order.client_order_id()),
+        Some(Quantity::from("0.0002")),
     );
 
     client.disconnect().await.unwrap();

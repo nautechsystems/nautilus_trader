@@ -1970,7 +1970,10 @@ impl HyperliquidHttpClient {
         };
 
         let action = HyperliquidExecAction::Modify {
-            modify: HyperliquidExecModifyOrderRequest { oid, order },
+            modify: HyperliquidExecModifyOrderRequest {
+                oid: oid.into(),
+                order,
+            },
         };
 
         let response = self.inner.post_action_exec(&action).await?;
