@@ -24,7 +24,10 @@ use nautilus_core::{
     },
 };
 use nautilus_model::{
-    enums::{AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
+    },
     events::AccountState,
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -1388,7 +1391,7 @@ impl BinanceFuturesAlgoOrder {
     ///
     /// # Errors
     ///
-    /// Returns an error if quantity or price parsing fails.
+    /// Returns an error if quantity, price, trigger, or trailing fields cannot be parsed.
     pub fn to_order_status_report(
         &self,
         account_id: AccountId,
@@ -1450,6 +1453,8 @@ impl BinanceFuturesAlgoOrder {
         } else {
             None
         };
+        let trigger_price = self.parse_trigger_price(price_precision)?;
+        let trailing_offset = self.parse_trailing_offset()?;
 
         let mut report = OrderStatusReport::new(
             account_id,
@@ -1474,7 +1479,54 @@ impl BinanceFuturesAlgoOrder {
             report = report.with_price(price);
         }
 
+        if let Some(trigger_price) = trigger_price {
+            report = report
+                .with_trigger_price(trigger_price)
+                .with_trigger_type(parse_working_type(self.working_type));
+        }
+
+        if let Some(trailing_offset) = trailing_offset {
+            report = report
+                .with_trailing_offset(trailing_offset)
+                .with_trailing_offset_type(TrailingOffsetType::BasisPoints);
+        }
+
         Ok(report)
+    }
+
+    fn parse_trigger_price(&self, price_precision: u8) -> anyhow::Result<Option<Price>> {
+        let raw_trigger_price = match self.order_type {
+            BinanceFuturesOrderType::TrailingStopMarket => self
+                .trigger_price
+                .as_deref()
+                .or(self.activate_price.as_deref()),
+            _ => self.trigger_price.as_deref(),
+        };
+        let trigger_price = raw_trigger_price
+            .map(|price| parse_positive_price_at_precision(price, price_precision, "trigger_price"))
+            .transpose()?
+            .flatten();
+
+        if trigger_price.is_none() && requires_algo_trigger_price(self.order_type) {
+            anyhow::bail!(
+                "missing positive trigger_price for Binance algo order type {:?}",
+                self.order_type
+            );
+        }
+
+        Ok(trigger_price)
+    }
+
+    fn parse_trailing_offset(&self) -> anyhow::Result<Option<Decimal>> {
+        if self.order_type != BinanceFuturesOrderType::TrailingStopMarket {
+            return Ok(None);
+        }
+
+        self.callback_rate
+            .as_deref()
+            .map(parse_callback_rate_basis_points)
+            .transpose()
+            .map(Option::flatten)
     }
 
     fn parse_order_type(&self) -> OrderType {
@@ -1502,6 +1554,51 @@ impl BinanceFuturesAlgoOrder {
             Some(BinanceAlgoStatus::Unknown) | None => OrderStatus::Initialized,
         }
     }
+}
+
+fn parse_positive_price_at_precision(
+    raw: &str,
+    precision: u8,
+    field: &str,
+) -> anyhow::Result<Option<Price>> {
+    let decimal = parse_required_decimal(raw, field)?;
+    if decimal <= Decimal::ZERO {
+        return Ok(None);
+    }
+
+    Price::from_decimal_dp(decimal, precision)
+        .map(Some)
+        .map_err(|e| anyhow::anyhow!("invalid {field} precision: {e}"))
+}
+
+fn parse_callback_rate_basis_points(raw: &str) -> anyhow::Result<Option<Decimal>> {
+    let rate = parse_required_decimal(raw, "callback_rate")?;
+    if rate <= Decimal::ZERO {
+        return Ok(None);
+    }
+
+    rate.checked_mul(Decimal::from(100))
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("invalid callback_rate='{raw}': multiplication overflow"))
+}
+
+fn parse_working_type(working_type: Option<BinanceWorkingType>) -> TriggerType {
+    match working_type {
+        Some(BinanceWorkingType::ContractPrice) => TriggerType::LastPrice,
+        Some(BinanceWorkingType::MarkPrice) => TriggerType::MarkPrice,
+        Some(BinanceWorkingType::Unknown) | None => TriggerType::Default,
+    }
+}
+
+fn requires_algo_trigger_price(order_type: BinanceFuturesOrderType) -> bool {
+    matches!(
+        order_type,
+        BinanceFuturesOrderType::Stop
+            | BinanceFuturesOrderType::StopMarket
+            | BinanceFuturesOrderType::TakeProfit
+            | BinanceFuturesOrderType::TakeProfitMarket
+            | BinanceFuturesOrderType::TrailingStopMarket
+    )
 }
 
 /// Cancel response for algo orders from Binance Futures Algo Service API.
@@ -2033,6 +2130,42 @@ mod tests {
     }
 
     #[rstest]
+    fn test_algo_order_to_report_sets_trigger_fields() {
+        let order = algo_order_with_price(Some("44000.00"));
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("45000.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::MarkPrice));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_sets_trailing_fields() {
+        let mut order = algo_order_with_price(None);
+        order.order_type = BinanceFuturesOrderType::TrailingStopMarket;
+        order.trigger_price = None;
+        order.activate_price = Some("45000.00".to_string());
+        order.callback_rate = Some("0.25".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.trigger_price, Some(Price::from("45000.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::MarkPrice));
+        assert_eq!(report.trailing_offset, Some(Decimal::from(25)));
+        assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints);
+    }
+
+    #[rstest]
     #[case(None)]
     #[case(Some("0"))]
     #[case(Some(""))]
@@ -2060,6 +2193,52 @@ mod tests {
 
         let error = result.unwrap_err().to_string();
         assert!(error.contains("invalid price"));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_rejects_invalid_trigger_price() {
+        let mut order = algo_order_with_price(Some("50000.00"));
+        order.trigger_price = Some("not-a-number".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("trigger_price"));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_rejects_missing_trigger_price() {
+        let mut order = algo_order_with_price(None);
+        order.order_type = BinanceFuturesOrderType::StopMarket;
+        order.trigger_price = None;
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("missing positive trigger_price"));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_rejects_invalid_callback_rate() {
+        let mut order = algo_order_with_price(None);
+        order.order_type = BinanceFuturesOrderType::TrailingStopMarket;
+        order.trigger_price = None;
+        order.activate_price = Some("45000.00".to_string());
+        order.callback_rate = Some("not-a-number".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("callback_rate"));
     }
 
     #[rstest]
