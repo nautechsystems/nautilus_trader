@@ -1069,11 +1069,12 @@ impl BinanceFuturesOrder {
     ///
     /// # Errors
     ///
-    /// Returns an error if quantity parsing fails.
+    /// Returns an error if quantity or price parsing fails.
     pub fn to_order_status_report(
         &self,
         account_id: AccountId,
         instrument_id: InstrumentId,
+        price_precision: u8,
         size_precision: u8,
         treat_expired_as_canceled: bool,
         ts_init: UnixNanos,
@@ -1101,8 +1102,21 @@ impl BinanceFuturesOrder {
 
         let quantity: Decimal = self.orig_qty.parse().context("invalid orig_qty")?;
         let filled_qty: Decimal = self.executed_qty.parse().context("invalid executed_qty")?;
+        let price = if self.price.is_empty() {
+            None
+        } else {
+            let price: Decimal = self.price.parse().context("invalid price")?;
+            if price == Decimal::ZERO {
+                None
+            } else {
+                Some(
+                    Price::from_decimal_dp(price, price_precision)
+                        .context("invalid price precision")?,
+                )
+            }
+        };
 
-        Ok(OrderStatusReport::new(
+        let mut report = OrderStatusReport::new(
             account_id,
             instrument_id,
             Some(client_order_id),
@@ -1119,7 +1133,13 @@ impl BinanceFuturesOrder {
             ts_event,
             ts_init,
             Some(UUID4::new()),
-        ))
+        );
+
+        if let Some(price) = price {
+            report = report.with_price(price);
+        }
+
+        Ok(report)
     }
 }
 
@@ -1368,11 +1388,12 @@ impl BinanceFuturesAlgoOrder {
     ///
     /// # Errors
     ///
-    /// Returns an error if quantity parsing fails.
+    /// Returns an error if quantity or price parsing fails.
     pub fn to_order_status_report(
         &self,
         account_id: AccountId,
         instrument_id: InstrumentId,
+        price_precision: u8,
         size_precision: u8,
         ts_init: UnixNanos,
     ) -> anyhow::Result<OrderStatusReport> {
@@ -1416,8 +1437,21 @@ impl BinanceFuturesAlgoOrder {
             .as_ref()
             .map_or(Ok(Decimal::ZERO), |q| q.parse())
             .context("invalid executed_qty")?;
+        let price = if let Some(price) = self.price.as_ref().filter(|price| !price.is_empty()) {
+            let price: Decimal = price.parse().context("invalid price")?;
+            if price == Decimal::ZERO {
+                None
+            } else {
+                Some(
+                    Price::from_decimal_dp(price, price_precision)
+                        .context("invalid price precision")?,
+                )
+            }
+        } else {
+            None
+        };
 
-        Ok(OrderStatusReport::new(
+        let mut report = OrderStatusReport::new(
             account_id,
             instrument_id,
             Some(client_order_id),
@@ -1434,7 +1468,13 @@ impl BinanceFuturesAlgoOrder {
             ts_event,
             ts_init,
             Some(UUID4::new()),
-        ))
+        );
+
+        if let Some(price) = price {
+            report = report.with_price(price);
+        }
+
+        Ok(report)
     }
 
     fn parse_order_type(&self) -> OrderType {
@@ -1952,13 +1992,148 @@ mod tests {
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let report = order
-            .to_order_status_report(account_id, instrument_id, 3, false, ts_init)
+            .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
             .unwrap();
 
         assert_eq!(
             report.client_order_id,
             Some(ClientOrderId::from("O-20200101-000000-000-000-0")),
         );
+        assert_eq!(report.price, Some(Price::from("50000.00")));
+    }
+
+    #[rstest]
+    #[case("0")]
+    #[case("")]
+    fn test_order_to_report_omits_missing_price(#[case] price: &str) {
+        let order = order_with_price(price);
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
+            .unwrap();
+
+        assert_eq!(report.price, None);
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_sets_price() {
+        let order = algo_order_with_price(Some("50000.00"));
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.price, Some(Price::from("50000.00")));
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some("0"))]
+    #[case(Some(""))]
+    fn test_algo_order_to_report_omits_missing_price(#[case] price: Option<&str>) {
+        let order = algo_order_with_price(price);
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.price, None);
+    }
+
+    #[rstest]
+    fn test_order_to_report_rejects_invalid_price() {
+        let order = order_with_price("not-a-number");
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("invalid price"));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_rejects_invalid_price() {
+        let order = algo_order_with_price(Some("not-a-number"));
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("invalid price"));
+    }
+
+    fn order_with_price(price: &str) -> BinanceFuturesOrder {
+        BinanceFuturesOrder {
+            symbol: Ustr::from("BTCUSDT"),
+            order_id: 12345678,
+            client_order_id: "external-order".to_string(),
+            orig_qty: "0.001".to_string(),
+            executed_qty: "0.000".to_string(),
+            cum_quote: "0.00".to_string(),
+            price: price.to_string(),
+            avg_price: Some("0.00".to_string()),
+            stop_price: Some("0.00".to_string()),
+            status: BinanceOrderStatus::New,
+            time_in_force: BinanceTimeInForce::Gtc,
+            order_type: BinanceFuturesOrderType::Market,
+            orig_type: Some(BinanceFuturesOrderType::Market),
+            side: BinanceSide::Buy,
+            position_side: Some(BinancePositionSide::Both),
+            reduce_only: Some(false),
+            close_position: Some(false),
+            activate_price: None,
+            price_rate: None,
+            working_type: Some(BinanceWorkingType::ContractPrice),
+            price_protect: Some(false),
+            is_isolated: None,
+            good_till_date: Some(0),
+            price_match: Some(BinancePriceMatch::None),
+            self_trade_prevention_mode: Some(BinanceSelfTradePreventionMode::None),
+            update_time: Some(1_625_474_304_765),
+            working_type_id: None,
+        }
+    }
+
+    fn algo_order_with_price(price: Option<&str>) -> BinanceFuturesAlgoOrder {
+        BinanceFuturesAlgoOrder {
+            algo_id: 123456789,
+            client_algo_id: "x-aHRE4BCj-Rmy-algo-order-1".to_string(),
+            algo_type: BinanceAlgoType::Conditional,
+            order_type: BinanceFuturesOrderType::TakeProfit,
+            symbol: Ustr::from("BTCUSDT"),
+            side: BinanceSide::Sell,
+            position_side: Some(BinancePositionSide::Both),
+            time_in_force: Some(BinanceTimeInForce::Gtc),
+            quantity: Some("0.001".to_string()),
+            algo_status: Some(BinanceAlgoStatus::New),
+            trigger_price: Some("45000.00".to_string()),
+            price: price.map(str::to_string),
+            working_type: Some(BinanceWorkingType::MarkPrice),
+            close_position: Some(false),
+            price_protect: None,
+            reduce_only: Some(false),
+            activate_price: None,
+            callback_rate: None,
+            create_time: Some(1_625_474_304_765),
+            update_time: Some(1_625_474_304_765),
+            trigger_time: None,
+            actual_order_id: None,
+            executed_qty: None,
+            avg_price: None,
+        }
     }
 
     #[rstest]
@@ -2020,7 +2195,7 @@ mod tests {
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let report = order
-            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
             .unwrap();
 
         assert_eq!(
@@ -2068,7 +2243,7 @@ mod tests {
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
         let report = order
-            .to_order_status_report(account_id, instrument_id, 3, ts_init)
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
             .unwrap();
 
         assert_eq!(
