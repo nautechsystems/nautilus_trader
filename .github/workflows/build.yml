@@ -311,7 +311,7 @@ jobs:
 
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-core-local EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
+        run: make cargo-test-core-local EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
 
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
