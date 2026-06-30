@@ -15,6 +15,14 @@
       "perp"
     ]
   },
+  "datadog": {
+    "enabled": true,
+    "tags": [
+      "env:dev",
+      "service:nautilus",
+      "component:hyperliquid-sweep"
+    ]
+  },
   "instrument_provider": {
     "load_all": false,
     "load_ids": [

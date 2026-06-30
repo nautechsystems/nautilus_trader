@@ -14,12 +14,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 import argparse
 import json
 import os
-from pathlib import Path
 import sys
+from dataclasses import replace
+from decimal import Decimal
+from pathlib import Path
 
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID
 from nautilus_trader.adapters.hyperliquid import HyperliquidDataClientConfig
@@ -34,6 +35,9 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.nautilus_pyo3 import HyperliquidEnvironment
 from nautilus_trader.core.nautilus_pyo3 import hyperliquid_resolve_execution_account_address
+from nautilus_trader.datadog import DatadogTelemetryConfig
+from nautilus_trader.datadog import configure as configure_datadog
+from nautilus_trader.datadog import stop as stop_datadog
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import TraderId
 
@@ -57,6 +61,11 @@ sys.path.insert(0, str(STRATEGY_DIR))
 
 SWEEP_STRATEGY_PATH = "sweep_strategy:SweepStrategy"
 SWEEP_CONFIG_PATH = "sweep_strategy:SweepStrategyConfig"
+DEFAULT_DATADOG_TAGS = (
+    "env:dev",
+    "service:nautilus",
+    "component:hyperliquid-sweep",
+)
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -78,6 +87,14 @@ def env_float(name: str, default: float, *fallback_names: str) -> float:
 
 def env_decimal(name: str, default: str) -> Decimal:
     return Decimal(os.getenv(name, default))
+
+
+def bool_value(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() in {"1", "true", "yes", "y", "on"}
 
 
 def hyperliquid_credential_env_names(testnet: bool) -> tuple[str, str]:
@@ -133,6 +150,10 @@ def default_env_config() -> dict:
             "normalize_prices": True,
             "include_builder_attribution": True,
         },
+        "datadog": {
+            "enabled": env_bool("NAUTILUS_DATADOG_ENABLED", False),
+            "tags": DEFAULT_DATADOG_TAGS,
+        },
         "strategies": [
             {
                 "instrument_id": instrument_id,
@@ -165,6 +186,66 @@ def load_config(path: Path | None) -> dict:
         return default_env_config()
     with path.open() as f:
         return json.load(f)
+
+
+def datadog_enabled(config: dict) -> bool:
+    env_enabled = os.getenv("NAUTILUS_DATADOG_ENABLED")
+    if env_enabled is not None:
+        return env_bool("NAUTILUS_DATADOG_ENABLED", False)
+    return bool_value(config.get("datadog", {}).get("enabled"), False)
+
+
+def parse_datadog_tags(raw_tags: object) -> tuple[str, ...]:
+    if raw_tags is None:
+        return ()
+    if isinstance(raw_tags, str):
+        normalized = raw_tags.replace(",", " ")
+        return tuple(tag for tag in normalized.split() if tag)
+    return tuple(str(tag) for tag in raw_tags if tag)
+
+
+def merge_datadog_tags(*tag_groups: tuple[str, ...]) -> tuple[str, ...]:
+    tags: list[str] = []
+    positions: dict[str, int] = {}
+    free_tags: set[str] = set()
+
+    for group in tag_groups:
+        for tag in group:
+            if ":" in tag:
+                prefix = tag.split(":", 1)[0]
+                if prefix in positions:
+                    tags[positions[prefix]] = tag
+                else:
+                    positions[prefix] = len(tags)
+                    tags.append(tag)
+            elif tag not in free_tags:
+                free_tags.add(tag)
+                tags.append(tag)
+
+    return tuple(tags)
+
+
+def configure_sweep_datadog(config: dict) -> None:
+    if not datadog_enabled(config):
+        return
+
+    config_tags = parse_datadog_tags(config.get("datadog", {}).get("tags"))
+    telemetry_config = DatadogTelemetryConfig.from_env(enabled=True)
+    telemetry_config = replace(
+        telemetry_config,
+        constant_tags=merge_datadog_tags(
+            DEFAULT_DATADOG_TAGS,
+            telemetry_config.constant_tags,
+            config_tags,
+        ),
+    )
+    configure_datadog(telemetry_config)
+    print(
+        "Datadog telemetry enabled: "
+        f"dogstatsd={telemetry_config.host}:{telemetry_config.port}, "
+        f"tags={','.join(telemetry_config.constant_tags)}",
+        flush=True,
+    )
 
 
 def strategy_entries(config: dict) -> list[dict]:
@@ -342,8 +423,13 @@ def parse_args() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    node = build_node(load_config(args.config))
+    config = load_config(args.config)
+    configure_sweep_datadog(config)
+    node: TradingNode | None = None
     try:
+        node = build_node(config)
         node.run()
     finally:
-        node.dispose()
+        if node is not None:
+            node.dispose()
+        stop_datadog()

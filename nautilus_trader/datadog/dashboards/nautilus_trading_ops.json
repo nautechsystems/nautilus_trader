@@ -1,0 +1,210 @@
+{
+  "title": "Nautilus Trading Ops",
+  "description": "Sample dashboard for NautilusTrader Datadog telemetry. Template variables assume metrics are emitted by nautilus_trader.datadog.telemetry with the default namespace.",
+  "layout_type": "ordered",
+  "template_variables": [
+    {
+      "name": "env",
+      "prefix": "env",
+      "default": "*"
+    },
+    {
+      "name": "venue",
+      "prefix": "venue",
+      "default": "*"
+    },
+    {
+      "name": "instrument",
+      "prefix": "instrument",
+      "default": "*"
+    },
+    {
+      "name": "strategy",
+      "prefix": "strategy",
+      "default": "*"
+    }
+  ],
+  "widgets": [
+    {
+      "definition": {
+        "type": "note",
+        "content": "# Nautilus Trading Ops\nQuote propagation, queue pressure, message bus fanout, and strategy callback latency.",
+        "background_color": "white",
+        "font_size": "18",
+        "text_align": "left",
+        "show_tick": false
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Internal Age p95 / p99",
+        "requests": [
+          {
+            "q": "p95:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "p99:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line",
+            "style": {
+              "palette": "warm",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Live Data Queue Pressure",
+        "requests": [
+          {
+            "q": "avg:nautilus.live_data_queue.depth{$env} by {queue}",
+            "display_type": "line"
+          },
+          {
+            "q": "avg:nautilus.live_data_queue.utilization{$env} by {queue}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Data Queue Drain Age p95",
+        "requests": [
+          {
+            "q": "p95:nautilus.live_data_queue.drain_age_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Publish / MessageBus Fanout p95",
+        "requests": [
+          {
+            "q": "p95:nautilus.market_data.quote.publish_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line"
+          },
+          {
+            "q": "p95:nautilus.msgbus.publish_ms{$env,topic:data.quotes*} by {topic}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Strategy Quote Callback p95 / p99",
+        "requests": [
+          {
+            "q": "p95:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "display_type": "line"
+          },
+          {
+            "q": "p99:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Strategy Start Latency p95",
+        "requests": [
+          {
+            "q": "p95:nautilus.market_data.quote.strategy_start_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Feed Age p95",
+        "requests": [
+          {
+            "q": "p95:nautilus.market_data.quote.feed_age_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Throughput",
+        "requests": [
+          {
+            "q": "sum:nautilus.market_data.quote.processed{$env,$venue,$instrument} by {instrument}.as_count()",
+            "display_type": "bars"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "toplist",
+        "title": "Slowest Strategy Handlers",
+        "requests": [
+          {
+            "q": "top(p95:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}, 10, 'mean', 'desc')"
+          }
+        ]
+      }
+    }
+  ]
+}

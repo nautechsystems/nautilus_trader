@@ -19,6 +19,7 @@ import socket
 import sys
 import traceback
 from collections import deque
+from time import perf_counter_ns
 from typing import Any
 from typing import Callable
 
@@ -31,6 +32,9 @@ import pytz
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
+from nautilus_trader.datadog.telemetry import distribution as dd_distribution
+from nautilus_trader.datadog.telemetry import enabled as dd_enabled
+from nautilus_trader.datadog.telemetry import gauge as dd_gauge
 
 cimport numpy as np
 from cpython.datetime cimport datetime
@@ -2814,6 +2818,14 @@ cdef class MessageBus:
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef void publish_c(self, str topic, msg: Any, bint external_pub = True):
+        cdef:
+            bint telemetry_enabled = dd_enabled()
+            object dd_tags = None
+            uint64_t dispatch_start_ns = 0
+            bytes payload_bytes = None
+            int i
+            Subscription sub
+
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
@@ -2825,16 +2837,24 @@ cdef class MessageBus:
             subs = self._resolve_subscriptions(topic)
             self._resolved = True
 
+        if telemetry_enabled:
+            dd_tags = (f"topic:{topic}",)
+            dd_gauge("msgbus.subscriber_count", len(subs), tags=dd_tags)
+            dispatch_start_ns = perf_counter_ns()
+
         # Send message to all matched subscribers
-        cdef:
-            int i
-            Subscription sub
         for i in range(len(subs)):
             sub = subs[i]
             sub.handler(msg)
 
+        if telemetry_enabled:
+            dd_distribution(
+                "msgbus.publish_ms",
+                (perf_counter_ns() - dispatch_start_ns) / 1_000_000.0,
+                tags=dd_tags,
+            )
+
         # Publish externally (if configured)
-        cdef bytes payload_bytes = None
         if isinstance(msg, self._publishable_types):
             if external_pub and self._database is not None and not self._database.is_closed():
                 if isinstance(msg, bytes):

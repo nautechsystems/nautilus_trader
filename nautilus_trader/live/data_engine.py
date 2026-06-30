@@ -29,6 +29,9 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.messages import DataCommand
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.data.messages import RequestData
+from nautilus_trader.datadog.telemetry import distribution as dd_distribution
+from nautilus_trader.datadog.telemetry import enabled as dd_enabled
+from nautilus_trader.datadog.telemetry import gauge as dd_gauge
 from nautilus_trader.live.enqueue import ThrottledEnqueuer
 
 
@@ -287,6 +290,9 @@ class LiveDataEngine(DataEngine):
             The command to execute.
 
         """
+        if dd_enabled():
+            self._record_queue_metrics("cmd_queue", self._cmd_queue)
+
         self._cmd_enqueuer.enqueue(command)
 
     def request(self, request: RequestData) -> None:
@@ -303,6 +309,9 @@ class LiveDataEngine(DataEngine):
             The request to handle.
 
         """
+        if dd_enabled():
+            self._record_queue_metrics("req_queue", self._req_queue)
+
         self._req_enqueuer.enqueue(request)
 
     def response(self, response: DataResponse) -> None:
@@ -319,6 +328,9 @@ class LiveDataEngine(DataEngine):
             The response to handle.
 
         """
+        if dd_enabled():
+            self._record_queue_metrics("res_queue", self._res_queue)
+
         self._res_enqueuer.enqueue(response)
 
     def process(self, data: Data) -> None:
@@ -340,6 +352,9 @@ class LiveDataEngine(DataEngine):
         loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
+        if dd_enabled():
+            self._record_queue_metrics("data_queue", self._data_queue)
+
         self._data_enqueuer.enqueue(data)
 
     # -- INTERNAL -------------------------------------------------------------------------------------
@@ -364,6 +379,38 @@ class LiveDataEngine(DataEngine):
                 "System will terminate immediately to prevent operation in degraded state",
             )
             os._exit(1)  # Immediate crash
+
+    def _record_queue_metrics(self, queue_name: str, queue: asyncio.Queue) -> None:
+        size = queue.qsize()
+        capacity = queue.maxsize
+        tags = (f"queue:{queue_name}", "engine:data")
+        dd_gauge("live_data_queue.depth", size, tags=tags)
+
+        if capacity:
+            dd_gauge("live_data_queue.utilization", size / capacity, tags=tags)
+
+    def _record_data_queue_drain_age(self, data: Data) -> None:
+        ts_init = getattr(data, "ts_init", 0)
+        if not ts_init:
+            return
+
+        now_ns = self._clock.timestamp_ns()
+        if now_ns < ts_init:
+            return
+
+        tags = [f"data_type:{type(data).__name__}"]
+        instrument_id = getattr(data, "instrument_id", None)
+        if instrument_id is not None:
+            tags.append(f"instrument:{instrument_id}")
+            venue = getattr(instrument_id, "venue", None)
+            if venue is not None:
+                tags.append(f"venue:{venue}")
+
+        dd_distribution(
+            "live_data_queue.drain_age_ms",
+            (now_ns - ts_init) / 1_000_000.0,
+            tags=tuple(tags),
+        )
 
     def _enqueue_sentinels(self) -> None:
         self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
@@ -482,6 +529,10 @@ class LiveDataEngine(DataEngine):
                     data: Data | None = await self._data_queue.get()
                     if data is self._sentinel:
                         break
+
+                    if dd_enabled():
+                        self._record_queue_metrics("data_queue", self._data_queue)
+                        self._record_data_queue_drain_age(data)
 
                     self._handle_data(data)
                 except asyncio.CancelledError:

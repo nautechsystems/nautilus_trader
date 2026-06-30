@@ -26,6 +26,7 @@ attempts to operate without a managing `Trader` instance.
 
 import asyncio
 from concurrent.futures import Executor
+from time import perf_counter_ns
 from typing import Any
 from typing import Callable
 
@@ -37,6 +38,8 @@ from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.datadog.telemetry import distribution as dd_distribution
+from nautilus_trader.datadog.telemetry import enabled as dd_enabled
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -4416,19 +4419,59 @@ cdef class Actor(Component):
         """
         Condition.not_none(tick, "tick")
 
+        cdef:
+            bint telemetry_enabled = dd_enabled()
+            object dd_tags = None
+            uint64_t ts_now = 0
+            uint64_t indicator_start_ns = 0
+            uint64_t strategy_start_ns = 0
+
+        if telemetry_enabled:
+            dd_tags = (
+                f"venue:{tick.instrument_id.venue}",
+                f"instrument:{tick.instrument_id}",
+                f"strategy:{self.id}",
+                "data_type:quote",
+            )
+
         # Update indicators
         cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)
         if indicators:
+            if telemetry_enabled:
+                indicator_start_ns = perf_counter_ns()
             self._handle_indicators_for_quote(indicators, tick)
+            if telemetry_enabled:
+                dd_distribution(
+                    "market_data.quote.indicator_handler_ms",
+                    (perf_counter_ns() - indicator_start_ns) / 1_000_000.0,
+                    tags=dd_tags,
+                )
 
         if historical:
             self.handle_historical_data(tick)
         elif self._fsm.state == ComponentState.RUNNING:
             try:
+                if telemetry_enabled:
+                    ts_now = self._clock.timestamp_ns()
+                    if ts_now >= tick.ts_init:
+                        dd_distribution(
+                            "market_data.quote.strategy_start_ms",
+                            (ts_now - tick.ts_init) / 1_000_000.0,
+                            tags=dd_tags,
+                        )
+                    strategy_start_ns = perf_counter_ns()
+
                 self.on_quote_tick(tick)
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
+            finally:
+                if telemetry_enabled and strategy_start_ns != 0:
+                    dd_distribution(
+                        "market_data.quote.strategy_handler_ms",
+                        (perf_counter_ns() - strategy_start_ns) / 1_000_000.0,
+                        tags=dd_tags,
+                    )
 
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
         cdef Indicator indicator

@@ -32,6 +32,7 @@ just need to override the `execute`, `process`, `send` and `receive` methods.
 from dataclasses import dataclass
 from decimal import Decimal
 from decimal import InvalidOperation
+from time import perf_counter_ns
 from typing import Any
 from typing import Callable
 from typing import Generator
@@ -41,6 +42,9 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.datetime import min_date
 from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.data.config import DataEngineConfig
+from nautilus_trader.datadog.telemetry import distribution as dd_distribution
+from nautilus_trader.datadog.telemetry import enabled as dd_enabled
+from nautilus_trader.datadog.telemetry import increment as dd_increment
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.persistence.catalog import BaseDataCatalog
 from nautilus_trader.persistence.funcs import parse_filters_expr
@@ -2712,27 +2716,72 @@ cdef class DataEngine(Component):
                     self._handle_quote_tick(quote_tick)
 
     cpdef void _handle_quote_tick(self, QuoteTick tick, bint historical = False):
+        cdef:
+            InstrumentId instrument_id = tick.instrument_id
+            list synthetics = self._synthetic_quote_feeds.get(instrument_id)
+            bint telemetry_enabled = dd_enabled()
+            object dd_tags = None
+            uint64_t ts_now = 0
+            uint64_t data_engine_start_ns = 0
+            uint64_t publish_start_ns = 0
+
+        if telemetry_enabled:
+            ts_now = self._clock.timestamp_ns()
+            data_engine_start_ns = perf_counter_ns()
+            dd_tags = (
+                f"venue:{instrument_id.venue}",
+                f"instrument:{instrument_id}",
+                "data_type:quote",
+            )
+            dd_increment("market_data.quote.processed", tags=dd_tags)
+
+            if ts_now >= tick.ts_event:
+                dd_distribution(
+                    "market_data.quote.feed_age_ms",
+                    (ts_now - tick.ts_event) / 1_000_000.0,
+                    tags=dd_tags,
+                )
+            if ts_now >= tick.ts_init:
+                dd_distribution(
+                    "market_data.quote.internal_age_ms",
+                    (ts_now - tick.ts_init) / 1_000_000.0,
+                    tags=dd_tags,
+                )
+
         if not (historical and self._disable_historical_cache):
             self._cache.add_quote_tick(tick)
 
         # Handle synthetics update
-        cdef:
-            InstrumentId instrument_id = tick.instrument_id
-            list synthetics = self._synthetic_quote_feeds.get(instrument_id)
         if synthetics is not None:
             self._update_synthetics_with_quote(synthetics, tick)
 
         cdef str topic = self._topic_cache.get_quotes_topic(instrument_id, historical)
         if self.debug or historical:
             self._log.debug(f"Publishing quote tick to topic: {topic}, historical={historical}, instrument={instrument_id}")
+
+        if telemetry_enabled:
+            publish_start_ns = perf_counter_ns()
         self._msgbus.publish_c(
             topic=topic,
             msg=tick,
         )
+        if telemetry_enabled:
+            dd_distribution(
+                "market_data.quote.publish_ms",
+                (perf_counter_ns() - publish_start_ns) / 1_000_000.0,
+                tags=dd_tags,
+            )
 
         # Feed to option chain manager (if applicable)
         if not historical:
             self._feed_quote_to_option_chain(tick)
+
+        if telemetry_enabled:
+            dd_distribution(
+                "market_data.quote.data_engine_ms",
+                (perf_counter_ns() - data_engine_start_ns) / 1_000_000.0,
+                tags=dd_tags,
+            )
 
     cpdef void _handle_trade_tick(self, TradeTick tick, bint historical = False):
         if not (historical and self._disable_historical_cache):
