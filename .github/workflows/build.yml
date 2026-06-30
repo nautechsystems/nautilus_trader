@@ -313,6 +313,13 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-core-local EXTRA_FEATURES="capnp" NEXTEST_PROFILE=ci
 
+      - name: Clean Rust test artifacts (before adapters)
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: |
+          rm -rf "${CARGO_TARGET_DIR}/nextest"
+          rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
+          df -h . "${CARGO_TARGET_DIR}"
+
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
