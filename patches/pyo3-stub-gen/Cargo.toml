@@ -13,7 +13,7 @@
 edition = "2021"
 name = "pyo3-stub-gen"
 version = "0.20.0"
-build = false
+build = "build.rs"
 autolib = false
 autobins = false
 autoexamples = false
@@ -96,6 +96,9 @@ version = "0.3.47"
 
 [dependencies.toml]
 version = "1.0.6"
+
+[build-dependencies.pyo3-build-config]
+version = ">= 0.26.0"
 
 [dev-dependencies.test-case]
 version = "3.3.1"
