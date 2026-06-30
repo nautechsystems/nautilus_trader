@@ -59,9 +59,9 @@ checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
 name = "arc-swap"
-version = "1.9.1"
+version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
 dependencies = [
  "rustversion",
 ]
@@ -1273,7 +1273,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -1341,7 +1341,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1410,7 +1410,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1432,7 +1432,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -1458,7 +1458,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
