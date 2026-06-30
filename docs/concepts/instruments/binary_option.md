@@ -140,4 +140,4 @@ Representative adapters that create or consume `BinaryOption` instruments includ
 ## Related guides
 
 - [Order Book](../order_book.md) covers binary market order book behavior.
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.

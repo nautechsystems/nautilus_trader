@@ -478,7 +478,7 @@ static PNGs via Plotly's Kaleido exporter.
 ## Further reading
 
 - [`HurstVpinDirectional` strategy source](https://github.com/nautechsystems/nautilus_trader/tree/develop/crates/trading/src/examples/strategies/hurst_vpin_directional)
-- [Data concepts: bar types and aggregation](../concepts/data.md)
+- [Data concepts: bar types and aggregation](../concepts/data/)
 - [Tardis integration guide](../integrations/tardis.md)
 - [Kraken integration guide](../integrations/kraken.md)
 - [Kraken Futures documentation](https://docs.kraken.com/api/docs/futures-api)

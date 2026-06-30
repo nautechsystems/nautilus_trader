@@ -168,4 +168,4 @@ Representative adapters that create or consume `BettingInstrument` instruments i
 ## Related guides
 
 - [Accounting](../accounting.md) covers betting account behavior.
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.

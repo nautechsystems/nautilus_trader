@@ -105,4 +105,4 @@ Representative adapters that create or consume `Commodity` instruments include:
 ## Related guides
 
 - [Futures Contract](futures_contract.md) covers dated futures on commodity underlyings.
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.

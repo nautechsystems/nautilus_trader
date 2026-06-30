@@ -135,6 +135,6 @@ Representative adapters that create or consume `CurrencyPair` instruments includ
 
 ## Related guides
 
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.
 - [Execution](../execution.md) explains order checks that use instrument precision.
 - [Value types](../value_types.md) explains `Price`, `Quantity`, and `Money`.

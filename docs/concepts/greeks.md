@@ -357,6 +357,6 @@ Complete working examples are available in the repository:
 ## Related guides
 
 - [Options](options.md) - Option instruments, chain subscriptions, and strike filtering.
-- [Data](data.md) - Built-in data types, custom data, and the subscription model.
+- [Data](data/) - Built-in data types, custom data, and the subscription model.
 - [Actors](actors.md) - Subscription and handler reference.
 - [Strategies](strategies.md) - Strategy implementation and handler methods.

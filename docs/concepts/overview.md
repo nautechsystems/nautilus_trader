@@ -141,7 +141,7 @@ For the complete specification, refer to [RFC 4122: A Universally Unique Identif
 
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 
-- `OrderBookDelta` (L1/L2/L3)
+- `OrderBookDelta` (single order book change)
 - `OrderBookDeltas` (container type)
 - `OrderBookDepth10` (fixed depth of 10 levels per side)
 - `QuoteTick`

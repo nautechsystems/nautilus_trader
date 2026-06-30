@@ -79,4 +79,4 @@ may come from any adapter already loaded into the system.
 ## Related guides
 
 - [Synthetics](../synthetics.md) covers formula-derived instruments and synthetic bars.
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.

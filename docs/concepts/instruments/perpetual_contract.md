@@ -127,4 +127,4 @@ Representative adapters that create or consume `PerpetualContract` instruments i
 ## Related guides
 
 - [Crypto Perpetual](crypto_perpetual.md) covers crypto perpetual futures.
-- [Data](../data.md) covers mark prices, index prices, and funding rate updates.
+- [Data](../data/) covers mark prices, index prices, and funding rate updates.

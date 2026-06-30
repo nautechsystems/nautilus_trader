@@ -147,6 +147,6 @@ Representative adapters that create or consume `CryptoPerpetual` instruments inc
 
 ## Related guides
 
-- [Data](../data.md) covers mark prices, index prices, and funding rate updates.
+- [Data](../data/) covers mark prices, index prices, and funding rate updates.
 - [Options](../options.md) covers option-specific instrument types.
 - [Execution](../execution.md) explains precision and notional checks before orders reach a venue.

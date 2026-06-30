@@ -251,7 +251,8 @@ class MyActor(Actor):
 
 When `validate_data_sequence=True`, subscribe to live bars via the `request_bars()`
 `callback` (rather than a separate `subscribe_bars()` call) so the stream starts only
-after history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe).
+after history has loaded; see
+[Working with bars: request vs. subscribe](data/index.md#working-with-bars-request-vs-subscribe).
 
 Separating historical and real-time handlers lets you apply different processing logic
 based on context. For example:
@@ -387,5 +388,5 @@ published on matching topics until you unsubscribe the handler.
 ## Related guides
 
 - [Strategies](strategies.md) - Strategies extend actors with order management capabilities.
-- [Data](data.md) - Data types and subscriptions available to actors.
+- [Data](data/) - Data types and subscriptions available to actors.
 - [Message Bus](message_bus.md) - The messaging system actors use for communication.

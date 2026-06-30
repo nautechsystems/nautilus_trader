@@ -95,5 +95,5 @@ Representative adapters that create or consume `Equity` instruments include:
 
 ## Related guides
 
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.
 - [Value types](../value_types.md) explains `Price`, `Quantity`, and `Money`.

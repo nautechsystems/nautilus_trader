@@ -1636,7 +1636,7 @@ if __name__ == "__main__":
 
 When `validate_data_sequence=True`, subscribe to live bars via the `request_bars()`
 `callback` so the stream starts only after history has loaded; see
-[Working with bars: request vs. subscribe](../concepts/data.md#working-with-bars-request-vs-subscribe).
+[Working with bars: request vs. subscribe](../concepts/data/index.md#working-with-bars-request-vs-subscribe).
 
 ## Live trading with Dockerized gateway
 
