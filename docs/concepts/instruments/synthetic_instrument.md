@@ -9,36 +9,16 @@ component instrument prices.
 
 ## Fields
 
-<Tabs items={["Rust", "Python"]}>
-<Tab value="Rust">
-
-| Field             | Type                | Required/default | Notes                                       |
-|-------------------|---------------------|------------------|---------------------------------------------|
-| `symbol`          | `Symbol`            | Required         | Synthetic symbol used with venue `SYNTH`.   |
-| `id`              | `InstrumentId`      | Derived          | Instrument ID formed from `symbol.SYNTH`.   |
-| `price_precision` | `u8`                | Required         | Decimal places allowed for synthetic price. |
-| `price_increment` | `Price`             | Derived          | Smallest price step from precision.         |
-| `components`      | `Vec<InstrumentId>` | Required         | Component instruments used by the formula.  |
-| `formula`         | `String`            | Required         | Numeric expression over component IDs.      |
-| `ts_event`        | `UnixNanos`         | Required         | Event timestamp in nanoseconds.             |
-| `ts_init`         | `UnixNanos`         | Required         | Initialization timestamp in nanoseconds.    |
-
-</Tab>
-<Tab value="Python">
-
-| Field             | Type                 | Required/default | Notes                                       |
-|-------------------|----------------------|------------------|---------------------------------------------|
-| `symbol`          | `Symbol`             | Required         | Synthetic symbol used with venue `SYNTH`.   |
-| `id`              | `InstrumentId`       | Derived          | Instrument ID formed from `symbol.SYNTH`.   |
-| `price_precision` | `int`                | Required         | Decimal places allowed for synthetic price. |
-| `price_increment` | `Price`              | Derived          | Smallest price step from precision.         |
-| `components`      | `list[InstrumentId]` | Required         | Component instruments used by the formula.  |
-| `formula`         | `str`                | Required         | Numeric expression over component IDs.      |
-| `ts_event`        | `int`                | Required         | Event timestamp in nanoseconds.             |
-| `ts_init`         | `int`                | Required         | Initialization timestamp in nanoseconds.    |
-
-</Tab>
-</Tabs>
+| Field             | Rust type           | Python type          | Required/default | Notes                                       |
+|-------------------|---------------------|----------------------|------------------|---------------------------------------------|
+| `symbol`          | `Symbol`            | `Symbol`             | Required         | Synthetic symbol used with venue `SYNTH`.   |
+| `id`              | `InstrumentId`      | `InstrumentId`       | Derived          | Instrument ID formed from `symbol.SYNTH`.   |
+| `price_precision` | `u8`                | `int`                | Required         | Decimal places allowed for synthetic price. |
+| `price_increment` | `Price`             | `Price`              | Derived          | Smallest price step from precision.         |
+| `components`      | `Vec<InstrumentId>` | `list[InstrumentId]` | Required         | Component instruments used by the formula.  |
+| `formula`         | `String`            | `str`                | Required         | Numeric expression over component IDs.      |
+| `ts_event`        | `UnixNanos`         | `int`                | Required         | Event timestamp in nanoseconds.             |
+| `ts_init`         | `UnixNanos`         | `int`                | Required         | Initialization timestamp in nanoseconds.    |
 
 *Note: Python constructs the instrument ID from `symbol` and the `SYNTH` venue. Rust
 stores the same value as `id`.*
@@ -99,4 +79,4 @@ may come from any adapter already loaded into the system.
 ## Related guides
 
 - [Synthetics](../synthetics.md) covers formula-derived instruments and synthetic bars.
-- [Data](../data.md) explains market data that references instruments.
+- [Data](../data/) explains market data that references instruments.

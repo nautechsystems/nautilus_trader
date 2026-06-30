@@ -1,42 +1,51 @@
 # Data
 
-Common built-in data types include:
-
-- `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
-- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas for more efficient processing.
-- `OrderBookDepth10`: Aggregated order book snapshot (up to 10 levels per bid and ask side).
-- `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
-- `TradeTick`: A single trade/match event between counterparties.
-- `Bar`: OHLCV (Open, High, Low, Close, Volume) bar/candle, aggregated using a specified *aggregation method*.
-- `MarkPriceUpdate`: The current mark price for an instrument (typically used in derivatives trading).
-- `IndexPriceUpdate`: The index price for an instrument (underlying price used for mark price calculations).
-- `FundingRateUpdate`: The funding rate for perpetual contracts (periodic payments between long and short positions).
-- `InstrumentStatus`: An instrument-level status event.
-- `InstrumentClose`: The closing price of an instrument.
-
-See the API reference for the full set of built-in data classes and wrappers.
-
 NautilusTrader operates primarily on granular order book data for the highest realism
 in execution simulations. Backtests can also run on any supported market data type,
 depending on the desired simulation fidelity.
 
+## Built-in data types
+
+The main built-in market data types cover order book state, top-of-book updates,
+trades, bars, derivative reference prices, funding rates, and instrument lifecycle
+events. Each type has a dedicated guide with its fields, behavior, and construction
+examples.
+
+| Data type                                      | Category             | Description                                          |
+|------------------------------------------------|----------------------|------------------------------------------------------|
+| [`OrderBookDelta`](order_book_delta.md)        | Order book           | Single incremental order book change.                |
+| [`OrderBookDeltas`](order_book_deltas.md)      | Order book           | Batch of related order book deltas.                  |
+| [`OrderBookDepth10`](order_book_depth10.md)    | Order book           | Fixed top 10 bid and ask levels.                     |
+| [`QuoteTick`](quote_tick.md)                   | Top‑of‑book          | Best bid and ask prices and sizes.                   |
+| [`TradeTick`](trade_tick.md)                   | Trades               | Single venue trade or match event.                   |
+| [`Bar`](bar.md)                                | Aggregation          | OHLCV bar for a specific `BarType`.                  |
+| [`MarkPriceUpdate`](mark_price_update.md)      | Derivative reference | Mark price for a derivatives instrument.             |
+| [`IndexPriceUpdate`](index_price_update.md)    | Derivative reference | Index price used by a derivatives market.            |
+| [`FundingRateUpdate`](funding_rate_update.md)  | Derivative reference | Funding rate and next funding metadata.              |
+| [`OptionGreeks`](option_greeks.md)             | Options              | Venue‑provided Greeks and implied volatility.        |
+| [`InstrumentStatus`](instrument_status.md)     | Instrument event     | Trading, quoting, and halt status changes.           |
+| [`InstrumentClose`](instrument_close.md)       | Instrument event     | Close, settlement, or other venue close price event. |
+
 When data flows over the message bus, topic-addressable data stays under the `data`
 root. Live streams use `data.<kind>...`; the data pipeline path uses
-`data.pipeline.<kind>...`. See [Message Bus](message_bus.md#topic-hierarchy) for
+`data.pipeline.<kind>...`. See [Message Bus](../message_bus.md#topic-hierarchy) for
 the topic hierarchy.
 
 ## Order books
 
-A high-performance order book implemented in Rust is available to maintain order book state based on provided data.
+A high-performance order book implemented in Rust is available to maintain order
+book state based on provided data.
 
-`OrderBook` instances are maintained per instrument for both backtesting and live trading, with the following book types available:
+`OrderBook` instances are maintained per instrument for both backtesting and live
+trading, with the following book types available:
 
-- `L3_MBO`: **Market by order (MBO)** or L3 data, uses every order book event at every price level, keyed by order ID.
-- `L2_MBP`: **Market by price (MBP)** or L2 data, aggregates order book events by price level.
-- `L1_MBP`: **Market by price (MBP)** or L1 data, also known as best bid and offer (BBO), captures only top-level updates.
+- `L3_MBO`: Level 3 market-by-order (MBO). Uses every order book event at every price level, keyed by order ID.
+- `L2_MBP`: Level 2 market-by-price (MBP). Aggregates order book events by price level.
+- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book, also known as best bid and offer (BBO). Captures only top-level updates.
 
 :::note
-Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
+Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive
+`L1_MBP` books in backtests.
 :::
 
 ### Delta flags and event boundaries
@@ -66,7 +75,7 @@ All market data belongs to an instrument. The instrument definition supplies the
 identity, precision, price and size increments, limits, currencies, and contract
 semantics that make the data meaningful.
 
-See [Instruments](instruments/) for the instrument taxonomy and per-type guides.
+See [Instruments](../instruments/) for the instrument taxonomy and per-type guides.
 
 ## Bars and aggregation
 
@@ -89,7 +98,7 @@ Data aggregation in NautilusTrader transforms granular market data into structur
 
 - To provide data for technical indicators and strategy development.
 - Because time-aggregated data (like minute bars) are often sufficient for many strategies.
-- To reduce costs compared to high-frequency L1/L2/L3 market data.
+- To reduce costs compared to high-frequency order book market data.
 
 ### Aggregation methods
 
@@ -548,13 +557,13 @@ typically receipt time; for internally created data it is the creation time of t
 ## Data flow
 
 From the `DataEngine` onward, data follows the same pathway regardless of
-[environment context](architecture.md#environment-contexts) (backtest, sandbox,
+[environment context](../architecture.md#environment-contexts) (backtest, sandbox,
 live). In live and sandbox modes a venue adapter creates a normalized data
 object and sends it through a channel; in backtests the engine feeds data
 directly. Either way the `DataEngine` stores it in the `Cache` (for cached
 types) and publishes it on the `MessageBus` to subscribed handlers.
 For a step-by-step trace with a sequence diagram, see
-[Data flow: life of a quote tick](architecture.md#data-flow-life-of-a-quote-tick).
+[Data flow: life of a quote tick](../architecture.md#data-flow-life-of-a-quote-tick).
 
 For users who need more flexibility, the platform also supports the creation of custom data types.
 For details on how to implement user-defined data types, see the [Custom Data](#custom-data) section below.
@@ -1438,7 +1447,7 @@ NautilusTrader defines an internal data format specified in the `nautilus_model`
 These models are serialized into Arrow record batches and written to Parquet files.
 Nautilus backtesting is most efficient when using these Nautilus-format Parquet files.
 
-However, migrating the data model between [precision modes](../getting_started/installation.md#precision-mode) and schema changes can be challenging.
+However, migrating the data model between [precision modes](../../getting_started/installation.md#precision-mode) and schema changes can be challenging.
 This guide explains how to handle data migrations using our utility tools.
 
 ### Migration tools
@@ -1905,8 +1914,8 @@ class GreeksData(Data):
 
 ## Related guides
 
-- [Instruments](instruments/) - Financial instruments referenced by data.
-- [Options](options.md) - Option instruments, chain subscriptions, and strike filtering.
-- [Greeks](greeks.md) - Venue-provided and locally computed option Greeks.
-- [Cache](cache.md) - Data storage and retrieval.
-- [Adapters](adapters.md) - Data sources and connectivity.
+- [Instruments](../instruments/) - Financial instruments referenced by data.
+- [Options](../options.md) - Option instruments, chain subscriptions, and strike filtering.
+- [Greeks](../greeks.md) - Venue-provided and locally computed option Greeks.
+- [Cache](../cache.md) - Data storage and retrieval.
+- [Adapters](../adapters.md) - Data sources and connectivity.

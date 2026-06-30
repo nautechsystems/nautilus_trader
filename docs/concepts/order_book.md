@@ -1,9 +1,10 @@
 # Order Book
 
 NautilusTrader provides a high-performance order book implemented in Rust, capable of
-maintaining full book state from L1 through L3 data. The `OrderBook` is the primary
-component for tracking public market depth, while the `OwnOrderBook` tracks your own
-orders separately, enabling filtered views that show true available liquidity.
+maintaining full book state for the supported public book types. The `OrderBook` is
+the primary component for tracking public market depth, while the `OwnOrderBook`
+tracks your own orders separately, enabling filtered views that show true available
+liquidity.
 
 :::note
 This guide documents the Rust API. These types are also available from Python via
@@ -17,13 +18,16 @@ API reference for differences.
 
 `OrderBook` instances are maintained per instrument for both backtesting and live trading:
 
-- `L3_MBO`: **Market by order** data. Tracks every order at every price level, keyed by order ID.
-- `L2_MBP`: **Market by price** data. Aggregates orders by price level (one entry per price).
-- `L1_MBP`: **Top-of-book** data, also known as best bid and offer (BBO). Captures only the
-  best prices.
+- `L3_MBO`: Level 3 market-by-order (MBO) data. Tracks every order at every price
+  level, keyed by order ID.
+- `L2_MBP`: Level 2 market-by-price (MBP) data. Aggregates orders by price level
+  (one entry per price).
+- `L1_MBP`: Level 1 market-by-price (MBP) top-of-book data, also known as best bid
+  and offer (BBO). Captures only the best prices.
 
 :::note
-Top-of-book data such as `QuoteTick`, `TradeTick` and `Bar` can also maintain `L1_MBP` books.
+Quote, trade, and bar data (`QuoteTick`, `TradeTick`, and `Bar`) can also drive
+`L1_MBP` books.
 :::
 
 ## Subscribing to book data
@@ -32,7 +36,7 @@ Strategies and actors subscribe to order book updates through the following meth
 Subscriptions and handlers are part of the Python strategy/actor layer:
 
 ```python
-# L3/L2 incremental deltas
+# Incremental book deltas
 self.subscribe_order_book_deltas(instrument_id)
 
 # Aggregated depth snapshots (up to 10 levels)

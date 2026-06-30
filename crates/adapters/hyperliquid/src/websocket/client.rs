@@ -687,23 +687,9 @@ impl HyperliquidWebSocketClient {
             ))
         })?;
         let action = if let Some(client_order_id) = client_order_id {
-            if let Some(cloid) = signer.cached_client_order_id_cloid(&client_order_id) {
-                HyperliquidExecAction::CancelByCloid {
-                    cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
-                }
-            } else if let Some(oid) = venue_order_id {
-                let oid = oid
-                    .as_str()
-                    .parse::<u64>()
-                    .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
-                HyperliquidExecAction::Cancel {
-                    cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
-                }
-            } else {
-                let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
-                HyperliquidExecAction::CancelByCloid {
-                    cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
-                }
+            let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
+            HyperliquidExecAction::CancelByCloid {
+                cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
             }
         } else if let Some(oid) = venue_order_id {
             let oid = oid
@@ -731,11 +717,9 @@ impl HyperliquidWebSocketClient {
     ) -> HyperliquidResult<Vec<Option<String>>> {
         let mut cloid_requests = Vec::new();
         let mut cloid_indices = Vec::new();
-        let mut oid_requests = Vec::new();
-        let mut oid_indices = Vec::new();
         let mut results = vec![None; cancels.len()];
 
-        for (index, (instrument_id, client_order_id, venue_order_id)) in cancels.iter().enumerate()
+        for (index, (instrument_id, client_order_id, _venue_order_id)) in cancels.iter().enumerate()
         {
             let symbol = instrument_id.symbol.inner();
             let Some(asset) = signer.get_asset_index_for_symbol(symbol) else {
@@ -745,27 +729,12 @@ impl HyperliquidWebSocketClient {
                 continue;
             };
 
-            if let Some(cloid) = signer.cached_client_order_id_cloid(client_order_id) {
-                cloid_requests.push(HyperliquidExecCancelByCloidRequest { asset, cloid });
-                cloid_indices.push(index);
-            } else if let Some(venue_order_id) = venue_order_id {
-                match venue_order_id.as_str().parse::<u64>() {
-                    Ok(oid) => {
-                        oid_requests.push(HyperliquidExecCancelOrderRequest { asset, oid });
-                        oid_indices.push(index);
-                    }
-                    Err(_) => {
-                        results[index] = Some("Invalid venue order ID format".to_string());
-                    }
-                }
-            } else {
-                let cloid = signer.get_or_generate_client_order_id_cloid(*client_order_id);
-                cloid_requests.push(HyperliquidExecCancelByCloidRequest { asset, cloid });
-                cloid_indices.push(index);
-            }
+            let cloid = signer.get_or_generate_client_order_id_cloid(*client_order_id);
+            cloid_requests.push(HyperliquidExecCancelByCloidRequest { asset, cloid });
+            cloid_indices.push(index);
         }
 
-        if cloid_requests.is_empty() && oid_requests.is_empty() {
+        if cloid_requests.is_empty() {
             return Ok(results);
         }
 
@@ -778,19 +747,6 @@ impl HyperliquidWebSocketClient {
                 .await?;
 
             for (index, error) in cloid_indices.into_iter().zip(errors) {
-                results[index] = error;
-            }
-        }
-
-        if !oid_requests.is_empty() {
-            let action = HyperliquidExecAction::Cancel {
-                cancels: oid_requests,
-            };
-            let errors = self
-                .post_cancel_action_errors(signer, &action, oid_indices.len())
-                .await?;
-
-            for (index, error) in oid_indices.into_iter().zip(errors) {
                 results[index] = error;
             }
         }
@@ -872,19 +828,19 @@ impl HyperliquidWebSocketClient {
                 "Asset index not found for symbol: {symbol}. Ensure instruments are loaded."
             ))
         })?;
-        let modify_id = if let Some(venue_order_id) = venue_order_id {
+        let modify_id = if let Some(client_order_id) = client_order_id {
+            signer
+                .get_or_generate_client_order_id_cloid(client_order_id)
+                .into()
+        } else if let Some(venue_order_id) = venue_order_id {
             venue_order_id
                 .as_str()
                 .parse::<u64>()
                 .map(Into::into)
                 .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?
-        } else if let Some(client_order_id) = client_order_id {
-            signer
-                .get_or_generate_client_order_id_cloid(client_order_id)
-                .into()
         } else {
             return Err(HyperliquidError::bad_request(
-                "Either venue_order_id or client_order_id must be provided for modify",
+                "Either client_order_id or venue_order_id must be provided for modify",
             ));
         };
         let is_buy = matches!(order_side, OrderSide::Buy);

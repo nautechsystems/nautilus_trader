@@ -617,6 +617,6 @@ class AnotherStrategy(Strategy):
 
 ## Related guides
 
-- [Data](data.md) - Data types stored in the cache.
+- [Data](data/) - Data types stored in the cache.
 - [Strategies](strategies.md) - Strategies access cache for market data and state.
 - [Reports](reports.md) - Generate reports from cached data.

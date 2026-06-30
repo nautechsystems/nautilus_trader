@@ -1286,8 +1286,8 @@ async fn test_ws_trading_cancel_and_modify_send_expected_actions() {
         Some("modify"),
     );
     assert_eq!(
-        modify_action.get("oid").and_then(|v| v.as_u64()),
-        Some(12345)
+        modify_action.get("oid").and_then(|v| v.as_str()),
+        Some(modify_cloid.as_str())
     );
     assert_eq!(modify_order.get("a").and_then(|v| v.as_u64()), Some(0));
     assert_eq!(modify_order.get("b").and_then(|v| v.as_bool()), Some(false));
@@ -1382,6 +1382,15 @@ async fn test_ws_modify_can_target_cloid_when_venue_order_id_unknown() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_venue_id_is_invalid() {
     let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": ["success", "success"]
+            }
+        }
+    }));
     let addr = start_mock_server(state.clone()).await;
     let signer = create_test_trade_signer(addr).await;
     let mut ws_client = HyperliquidWebSocketClient::new(
@@ -1398,6 +1407,9 @@ async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_venue_id_is_invalid()
     let valid_cloid = signer.get_or_generate_client_order_id_cloid(valid_coid);
     let valid_cloid_hex = valid_cloid.to_hex();
     let invalid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-BAD");
+    let invalid_cloid_hex = signer
+        .get_or_generate_client_order_id_cloid(invalid_coid)
+        .to_hex();
     let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
 
     let results = ws_client
@@ -1422,18 +1434,19 @@ async fn test_ws_cancel_orders_keeps_valid_cancel_when_one_venue_id_is_invalid()
         .clone()
         .expect("missing cancel action");
 
-    assert_eq!(
-        results,
-        vec![None, Some("Invalid venue order ID format".to_string())],
-    );
+    assert_eq!(results, vec![None, None]);
     assert_eq!(
         action.get("type").and_then(|v| v.as_str()),
         Some("cancelByCloid"),
     );
-    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 2);
     assert_eq!(
         action["cancels"][0].get("cloid").and_then(|v| v.as_str()),
         Some(valid_cloid_hex.as_str()),
+    );
+    assert_eq!(
+        action["cancels"][1].get("cloid").and_then(|v| v.as_str()),
+        Some(invalid_cloid_hex.as_str()),
     );
 
     ws_client.disconnect().await.unwrap();
@@ -1587,7 +1600,7 @@ async fn test_ws_cancel_orders_returns_per_item_errors_for_mixed_venue_statuses(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_ws_cancel_orders_returns_err_when_second_route_post_fails() {
+async fn test_ws_cancel_orders_returns_status_count_errors_for_cloid_batch() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({
         "status": "ok",
@@ -1600,7 +1613,6 @@ async fn test_ws_cancel_orders_returns_err_when_second_route_post_fails() {
             }
         }
     }));
-    state.rate_limit_after.store(1, Ordering::Relaxed);
     let addr = start_mock_server(state.clone()).await;
     let signer = create_test_trade_signer(addr).await;
     let mut ws_client = HyperliquidWebSocketClient::new(
@@ -1613,33 +1625,41 @@ async fn test_ws_cancel_orders_returns_err_when_second_route_post_fails() {
     ws_client.set_post_timeout(Duration::from_secs(1));
     ws_client.connect().await.unwrap();
 
-    let cloid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-CLOID-ERR-FIRST");
-    let oid_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-OID-POST-FAIL");
-    let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid);
+    let first_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-CLOID-SHORT-A");
+    let second_coid = ClientOrderId::new("O-WS-BATCH-CANCEL-CLOID-SHORT-B");
+    let _ = signer.get_or_generate_client_order_id_cloid(first_coid);
+    let _ = signer.get_or_generate_client_order_id_cloid(second_coid);
     let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
-    let err = ws_client
+    let results = ws_client
         .cancel_orders(
             &signer,
             &[
-                (instrument_id, cloid_coid, None),
-                (instrument_id, oid_coid, Some(VenueOrderId::from("177"))),
+                (instrument_id, first_coid, None),
+                (instrument_id, second_coid, Some(VenueOrderId::from("177"))),
             ],
         )
         .await
-        .expect_err("later post failure should stay an error");
+        .unwrap();
 
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    assert_eq!(results.len(), 2);
     assert!(
-        err.to_string().contains("Rate limited"),
-        "unexpected error: {err}",
+        results[0]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
     );
-    assert_eq!(*state.exchange_request_count.lock().await, 2);
+    assert!(
+        results[1]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
+    );
 
     ws_client.disconnect().await.unwrap();
 }
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
+async fn test_ws_cancel_orders_reports_cloid_route_rejection_without_oid_fallback() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({
         "status": "err",
@@ -1660,7 +1680,6 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
     ws_client.connect().await.unwrap();
 
     let cloid_coid = ClientOrderId::new("O-WS-BATCH-CLOID-FAIL");
-    let oid_coid = ClientOrderId::new("O-WS-BATCH-OID-OK");
     let cloid = signer.get_or_generate_client_order_id_cloid(cloid_coid);
     let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
 
@@ -1669,7 +1688,11 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
             &signer,
             &[
                 (instrument_id, cloid_coid, None),
-                (instrument_id, oid_coid, Some(VenueOrderId::from("177"))),
+                (
+                    instrument_id,
+                    ClientOrderId::new("O-WS-BATCH-CLOID-FAIL-2"),
+                    Some(VenueOrderId::from("177")),
+                ),
             ],
         )
         .await
@@ -1683,15 +1706,22 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
         .clone()
         .expect("missing cancel action");
 
-    assert_eq!(request_count, 2);
+    assert_eq!(request_count, 1);
     assert_eq!(results.len(), 2);
     assert!(
         results[0]
             .as_ref()
             .is_some_and(|reason| reason.contains("cloid route rejected"))
     );
-    assert_eq!(results[1], None);
-    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
+    assert!(
+        results[1]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("cloid route rejected"))
+    );
+    assert_eq!(
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid")
+    );
     assert_eq!(
         signer
             .cached_client_order_id_cloid(&cloid_coid)
@@ -1704,7 +1734,7 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_route_is_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_ws_cancel_orders_sends_oid_route_when_cloid_status_count_mismatches() {
+async fn test_ws_cancel_orders_reports_cloid_status_count_mismatch_without_oid_fallback() {
     let state = TestServerState::default();
     *state.cancel_response_override.lock().await = Some(json!({
         "status": "ok",
@@ -1729,7 +1759,6 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_status_count_mismatche
 
     let cloid_coid_a = ClientOrderId::new("O-WS-BATCH-CLOID-SHORT-A");
     let cloid_coid_b = ClientOrderId::new("O-WS-BATCH-CLOID-SHORT-B");
-    let oid_coid = ClientOrderId::new("O-WS-BATCH-OID-AFTER-SHORT");
     let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid_a);
     let _ = signer.get_or_generate_client_order_id_cloid(cloid_coid_b);
     let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
@@ -1740,7 +1769,11 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_status_count_mismatche
             &[
                 (instrument_id, cloid_coid_a, None),
                 (instrument_id, cloid_coid_b, None),
-                (instrument_id, oid_coid, Some(VenueOrderId::from("188"))),
+                (
+                    instrument_id,
+                    ClientOrderId::new("O-WS-BATCH-CLOID-SHORT-C"),
+                    Some(VenueOrderId::from("188")),
+                ),
             ],
         )
         .await
@@ -1754,20 +1787,27 @@ async fn test_ws_cancel_orders_sends_oid_route_when_cloid_status_count_mismatche
         .clone()
         .expect("missing cancel action");
 
-    assert_eq!(request_count, 2);
+    assert_eq!(request_count, 1);
     assert_eq!(results.len(), 3);
     assert!(
         results[0]
             .as_ref()
-            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 3 cancels"))
     );
     assert!(
         results[1]
             .as_ref()
-            .is_some_and(|reason| reason.contains("returned 1 statuses for 2 cancels"))
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 3 cancels"))
     );
-    assert_eq!(results[2], None);
-    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
+    assert!(
+        results[2]
+            .as_ref()
+            .is_some_and(|reason| reason.contains("returned 1 statuses for 3 cancels"))
+    );
+    assert_eq!(
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid")
+    );
 
     ws_client.disconnect().await.unwrap();
 }
@@ -3359,6 +3399,15 @@ async fn test_batch_cancel_orders_missing_asset_index_logs_and_skips() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_batch_cancel_orders_invalid_venue_id_logs_and_dispatches_valid() {
     let state = TestServerState::default();
+    *state.cancel_response_override.lock().await = Some(json!({
+        "status": "ok",
+        "response": {
+            "type": "cancel",
+            "data": {
+                "statuses": ["success", "success"]
+            }
+        }
+    }));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
@@ -3416,11 +3465,26 @@ async fn test_batch_cancel_orders_invalid_venue_id_logs_and_dispatches_valid() {
         .await
         .clone()
         .expect("missing cancel action");
-    assert_eq!(action.get("type").and_then(|v| v.as_str()), Some("cancel"));
-    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
     assert_eq!(
-        action["cancels"][0].get("o").and_then(|v| v.as_u64()),
-        Some(310)
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid")
+    );
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        action["cancels"][0].get("asset").and_then(|v| v.as_u64()),
+        Some(0)
+    );
+    assert_valid_cloid(
+        action["cancels"][0]
+            .get("cloid")
+            .and_then(|v| v.as_str())
+            .expect("missing first cloid"),
+    );
+    assert_valid_cloid(
+        action["cancels"][1]
+            .get("cloid")
+            .and_then(|v| v.as_str())
+            .expect("missing second cloid"),
     );
 
     client.disconnect().await.unwrap();
@@ -3859,7 +3923,25 @@ async fn test_cancel_order_invalid_venue_id_logs_and_emits_no_cancel_rejected() 
         events.is_empty(),
         "invalid venue ID should not emit OrderCancelRejected: {events:?}",
     );
-    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    let action = state
+        .last_exchange_action
+        .lock()
+        .await
+        .clone()
+        .expect("missing cancel action");
+    assert_eq!(
+        action.get("type").and_then(|v| v.as_str()),
+        Some("cancelByCloid")
+    );
+    assert_eq!(action["cancels"].as_array().unwrap().len(), 1);
+    assert_valid_cloid(
+        action["cancels"][0]
+            .get("cloid")
+            .and_then(|v| v.as_str())
+            .expect("missing cloid"),
+    );
 
     client.disconnect().await.unwrap();
 }

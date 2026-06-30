@@ -1800,32 +1800,12 @@ impl HyperliquidHttpClient {
         })?;
 
         let action = if let Some(client_order_id) = client_order_id {
-            if let Some(cloid) = self.cached_client_order_id_cloid(&client_order_id) {
-                HyperliquidExecAction::CancelByCloid {
-                    cancels: vec![HyperliquidExecCancelByCloidRequest {
-                        asset: asset_id,
-                        cloid,
-                    }],
-                }
-            } else if let Some(oid) = venue_order_id {
-                let oid_u64 = oid
-                    .as_str()
-                    .parse::<u64>()
-                    .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
-                HyperliquidExecAction::Cancel {
-                    cancels: vec![HyperliquidExecCancelOrderRequest {
-                        asset: asset_id,
-                        oid: oid_u64,
-                    }],
-                }
-            } else {
-                let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
-                HyperliquidExecAction::CancelByCloid {
-                    cancels: vec![HyperliquidExecCancelByCloidRequest {
-                        asset: asset_id,
-                        cloid,
-                    }],
-                }
+            let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
+            HyperliquidExecAction::CancelByCloid {
+                cancels: vec![HyperliquidExecCancelByCloidRequest {
+                    asset: asset_id,
+                    cloid,
+                }],
             }
         } else if let Some(oid) = venue_order_id {
             let oid_u64 = oid
@@ -1875,7 +1855,7 @@ impl HyperliquidHttpClient {
     pub async fn modify_order(
         &self,
         instrument_id: InstrumentId,
-        venue_order_id: VenueOrderId,
+        venue_order_id: Option<VenueOrderId>,
         order_side: OrderSide,
         order_type: OrderType,
         price: Price,
@@ -1893,10 +1873,20 @@ impl HyperliquidHttpClient {
             ))
         })?;
 
-        let oid: u64 = venue_order_id
-            .as_str()
-            .parse()
-            .map_err(|_| Error::bad_request("Invalid venue order ID format"))?;
+        let modify_id = if let Some(client_order_id) = client_order_id {
+            self.get_or_generate_client_order_id_cloid(client_order_id)
+                .into()
+        } else if let Some(venue_order_id) = venue_order_id {
+            venue_order_id
+                .as_str()
+                .parse::<u64>()
+                .map(Into::into)
+                .map_err(|_| Error::bad_request("Invalid venue order ID format"))?
+        } else {
+            return Err(Error::bad_request(
+                "Either client_order_id or venue_order_id must be provided for modify",
+            ));
+        };
 
         let is_buy = matches!(order_side, OrderSide::Buy);
         let decimals = self.get_price_precision_for_symbol(symbol).unwrap_or(2);
@@ -1971,7 +1961,7 @@ impl HyperliquidHttpClient {
 
         let action = HyperliquidExecAction::Modify {
             modify: HyperliquidExecModifyOrderRequest {
-                oid: oid.into(),
+                oid: modify_id,
                 order,
             },
         };

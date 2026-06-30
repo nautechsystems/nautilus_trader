@@ -82,8 +82,9 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings are provided via [PyO3](https://pyo3.rs), with an ongoing migration from
-Cython. No Rust toolchain is required at install time.
+Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust-native v2 runtime.
+The legacy Cython v1 core remains supported during the v2 release-candidate phase.
+No Rust toolchain is required at install time.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -213,7 +214,7 @@ We aim to maintain a stable, passing build across all branches.
 
 > [!NOTE]
 >
-> Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+> The v2 release-candidate line is the transition toward a **stable API for version 2.x**.
 > Once this milestone is reached, we plan to implement a formal deprecation process for any API changes.
 > This approach allows us to maintain a rapid development pace for now.
 
@@ -266,6 +267,16 @@ To install the latest binary wheel (or sdist package) from PyPI using Python's p
 ```bash
 pip install -U nautilus_trader
 ```
+
+To test the v2 release-candidate wheels from PyPI:
+
+```bash
+pip install -U nautilus_trader --pre
+```
+
+The v2 release-candidate wheels use `2.0.0rcN` versions and are intended for community testing
+before the final `2.0.0` release. We do not recommend using release candidates in production
+environments, such as live trading controlling real capital.
 
 Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`,
 `ib`, `polymarket`, `visualization`):

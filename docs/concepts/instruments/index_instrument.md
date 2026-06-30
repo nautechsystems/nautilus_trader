@@ -8,42 +8,19 @@ Examples include `SPX.XCBO`, `VIX.XCBO`, and venue-specific reference indexes.
 
 ## Fields
 
-<Tabs items={["Rust", "Python"]}>
-<Tab value="Rust">
-
-| Field             | Type             | Required/default | Notes                                    |
-|-------------------|------------------|------------------|------------------------------------------|
-| `instrument_id`   | `InstrumentId`   | Required         | Stored as `id` in Rust.                  |
-| `raw_symbol`      | `Symbol`         | Required         | Native venue symbol.                     |
-| `currency`        | `Currency`       | Required         | Reference currency for quoted values.    |
-| `price_precision` | `u8`             | Required         | Decimal places allowed for prices.       |
-| `size_precision`  | `u8`             | Required         | Decimal places allowed for quantities.   |
-| `price_increment` | `Price`          | Required         | Smallest valid price step.               |
-| `size_increment`  | `Quantity`       | Required         | Smallest valid size step.                |
-| `ts_event`        | `UnixNanos`      | Required         | Event timestamp in nanoseconds.          |
-| `ts_init`         | `UnixNanos`      | Required         | Initialization timestamp in nanoseconds. |
-| `tick_scheme`     | `Option<Ustr>`   | `None`           | Registered variable tick scheme name.    |
-| `info`            | `Option<Params>` | `None`           | Adapter metadata.                        |
-
-</Tab>
-<Tab value="Python">
-
-| Field             | Type           | Required/default | Notes                                    |
-|-------------------|----------------|------------------|------------------------------------------|
-| `instrument_id`   | `InstrumentId` | Required         |                                          |
-| `raw_symbol`      | `Symbol`       | Required         | Native venue symbol.                     |
-| `currency`        | `Currency`     | Required         | Reference currency for quoted values.    |
-| `price_precision` | `int`          | Required         | Decimal places allowed for prices.       |
-| `size_precision`  | `int`          | Required         | Decimal places allowed for quantities.   |
-| `price_increment` | `Price`        | Required         | Smallest valid price step.               |
-| `size_increment`  | `Quantity`     | Required         | Smallest valid size step.                |
-| `ts_event`        | `int`          | Required         | Event timestamp in nanoseconds.          |
-| `ts_init`         | `int`          | Required         | Initialization timestamp in nanoseconds. |
-| `tick_scheme`     | `str \| None`  | `None`           | Registered variable tick scheme name.    |
-| `info`            | `dict \| None` | `None`           | Adapter metadata.                        |
-
-</Tab>
-</Tabs>
+| Field             | Rust type        | Python type    | Required/default | Notes                                    |
+|-------------------|------------------|----------------|------------------|------------------------------------------|
+| `instrument_id`   | `InstrumentId`   | `InstrumentId` | Required         | Stored as `id` in Rust.                  |
+| `raw_symbol`      | `Symbol`         | `Symbol`       | Required         | Native venue symbol.                     |
+| `currency`        | `Currency`       | `Currency`     | Required         | Reference currency for quoted values.    |
+| `price_precision` | `u8`             | `int`          | Required         | Decimal places allowed for prices.       |
+| `size_precision`  | `u8`             | `int`          | Required         | Decimal places allowed for quantities.   |
+| `price_increment` | `Price`          | `Price`        | Required         | Smallest valid price step.               |
+| `size_increment`  | `Quantity`       | `Quantity`     | Required         | Smallest valid size step.                |
+| `ts_event`        | `UnixNanos`      | `int`          | Required         | Event timestamp in nanoseconds.          |
+| `ts_init`         | `UnixNanos`      | `int`          | Required         | Initialization timestamp in nanoseconds. |
+| `tick_scheme`     | `Option<Ustr>`   | `str \| None`  | `None`           | Registered variable tick scheme name.    |
+| `info`            | `Option<Params>` | `dict \| None` | `None`           | Adapter metadata.                        |
 
 *Note: Python constructors use `instrument_id`; Rust stores the same value as `id`.*
 

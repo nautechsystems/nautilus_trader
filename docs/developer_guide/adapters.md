@@ -2558,7 +2558,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
 When implementing `_subscribe_order_book_deltas` or streaming order book
 data, adapters **must** set `RecordFlag` flags correctly on each
-`OrderBookDelta`. See also [Delta flags and event boundaries](../concepts/data.md#delta-flags-and-event-boundaries).
+`OrderBookDelta`. See also
+[Delta flags and event boundaries](../concepts/data/index.md#delta-flags-and-event-boundaries).
 
 - **`F_LAST`**: Set on the last delta of every logical event group. The
   `DataEngine` uses this flag as the flush signal when `buffer_deltas` is
