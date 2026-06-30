@@ -39,8 +39,9 @@
         "BTC-USD-PERP.HYPERLIQUID"
       ],
       "order_qty": "0.001",
-      "quote_offset_bps": 10,
-      "recenter_threshold_bps": 3,
+      "quote_offset_bps": 0.2,
+      "quote_recenter_threshold_bps": 0.1,
+      "unwind_recenter_threshold_bps": 0.1,
       "unwind_cross_touch": false,
       "close_positions_on_stop": true,
       "reduce_only_on_stop": true,
@@ -53,8 +54,9 @@
         "ETH-USD-PERP.HYPERLIQUID"
       ],
       "order_qty": "0.01",
-      "quote_offset_bps": 10,
-      "recenter_threshold_bps": 3,
+      "quote_offset_bps": 0.2,
+      "quote_recenter_threshold_bps": 0.1,
+      "unwind_recenter_threshold_bps": 0.1,
       "unwind_cross_touch": false,
       "close_positions_on_stop": true,
       "reduce_only_on_stop": true,
