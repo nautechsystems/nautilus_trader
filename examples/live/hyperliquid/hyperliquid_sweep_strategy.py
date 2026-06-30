@@ -66,8 +66,14 @@ def env_bool(name: str, default: bool) -> bool:
     return value.lower() in {"1", "true", "yes", "y", "on"}
 
 
-def env_int(name: str, default: int) -> int:
-    return int(os.getenv(name, str(default)))
+def env_float(name: str, default: float, *fallback_names: str) -> float:
+    value = os.getenv(name)
+    if value is None:
+        for fallback_name in fallback_names:
+            value = os.getenv(fallback_name)
+            if value is not None:
+                break
+    return float(value if value is not None else str(default))
 
 
 def env_decimal(name: str, default: str) -> Decimal:
@@ -132,10 +138,15 @@ def default_env_config() -> dict:
                 "instrument_id": instrument_id,
                 "external_order_claims": [instrument_id],
                 "order_qty": str(env_decimal("HYPERLIQUID_SWEEP_ORDER_QTY", "0.001")),
-                "quote_offset_bps": env_int("HYPERLIQUID_SWEEP_QUOTE_OFFSET_BPS", 10),
-                "recenter_threshold_bps": env_int(
+                "quote_offset_bps": env_float("HYPERLIQUID_SWEEP_QUOTE_OFFSET_BPS", 10.0),
+                "quote_recenter_threshold_bps": env_float(
+                    "HYPERLIQUID_SWEEP_QUOTE_RECENTER_THRESHOLD_BPS",
+                    3.0,
                     "HYPERLIQUID_SWEEP_RECENTER_THRESHOLD_BPS",
-                    3,
+                ),
+                "unwind_recenter_threshold_bps": env_float(
+                    "HYPERLIQUID_SWEEP_UNWIND_RECENTER_THRESHOLD_BPS",
+                    0.0,
                 ),
                 "unwind_cross_touch": env_bool(
                     "HYPERLIQUID_SWEEP_UNWIND_CROSS_TOUCH",

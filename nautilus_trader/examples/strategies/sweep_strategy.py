@@ -17,17 +17,20 @@ Sweep strategy.
 
 Maintains one post-only bid and one post-only ask around the live quote mid at
 ``mid +/- quote_offset_bps``. The quote pair is modified in place when the mid
-moves by ``recenter_threshold_bps`` from the last quote anchor. When either quote
-fills, the strategy cancels the remaining quote liquidity and works a reduce-only
-unwind order at the configured touch until the filled inventory is flat.
+moves by ``quote_recenter_threshold_bps`` from the last quote anchor. When either
+quote fills, the strategy cancels the remaining quote liquidity and works a
+reduce-only unwind order at the configured touch until the filled inventory is
+flat. The unwind order is modified when the touch drifts by
+``unwind_recenter_threshold_bps`` from the working unwind price.
 
 """
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
-from nautilus_trader.config import NonNegativeInt
+from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
@@ -59,11 +62,14 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
         The instrument ID to trade.
     order_qty : Decimal
         The size for each quoting order.
-    quote_offset_bps : NonNegativeInt, default 10
+    quote_offset_bps : NonNegativeFloat, default 10.0
         Distance from mid for the symmetric quote pair.
-    recenter_threshold_bps : NonNegativeInt, default 5
+    quote_recenter_threshold_bps : NonNegativeFloat, default 5.0
         Mid move from the last quote anchor required before modifying quotes.
         Use zero to recenter every quote tick.
+    unwind_recenter_threshold_bps : NonNegativeFloat, default 0.0
+        Touch move from the working unwind order required before modifying its
+        price. Use zero to recenter on every touch price change.
     unwind_cross_touch : bool, default False
         If ``False``, unwind passively at the same-side touch: sell at best ask
         after a buy fill, buy at best bid after a sell fill. If ``True``, unwind
@@ -81,13 +87,24 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     order_qty: Decimal
-    quote_offset_bps: NonNegativeInt = 10
-    recenter_threshold_bps: NonNegativeInt = 5
+    quote_offset_bps: NonNegativeFloat = 10.0
+    quote_recenter_threshold_bps: NonNegativeFloat = 5.0
+    unwind_recenter_threshold_bps: NonNegativeFloat = 0.0
     unwind_cross_touch: bool = False
     client_id: ClientId | None = None
     close_positions_on_stop: bool = True
     reduce_only_on_stop: bool = True
     log_data: bool = False
+
+    @classmethod
+    def parse(cls, raw: bytes | str) -> SweepStrategyConfig:
+        config = json.loads(raw)
+        if "recenter_threshold_bps" in config:
+            config.setdefault(
+                "quote_recenter_threshold_bps",
+                config.pop("recenter_threshold_bps"),
+            )
+        return super().parse(json.dumps(config))
 
 
 class SweepStrategy(Strategy):
@@ -182,9 +199,15 @@ class SweepStrategy(Strategy):
                 self._maintain_unwind_order(self._last_quote)
 
     def on_order_rejected(self, event: OrderRejected) -> None:
+        if self._is_reduce_only_would_increase_unwind_rejection(event):
+            self._clear_stale_unwind_target(event.reason)
+            return
         self._handle_terminal_or_rejected(event.client_order_id)
 
     def on_order_modify_rejected(self, event: OrderModifyRejected) -> None:
+        if self._is_reduce_only_would_increase_unwind_rejection(event):
+            self._clear_stale_unwind_target(event.reason)
+            return
         if self._matches_working_order(event.client_order_id):
             self._anchor_mid = None
         if self._unwind_order and event.client_order_id == self._unwind_order.client_order_id:
@@ -289,16 +312,18 @@ class SweepStrategy(Strategy):
             self._unwind_order.filled_qty,
         )
         quantity = self._instrument.make_qty(desired_total)
-        if self._unwind_order.price != price or self._unwind_order.quantity != quantity:
+        recenter_price = self._should_recenter_unwind_order(price)
+        quantity_changed = self._unwind_order.quantity != quantity
+        if recenter_price or quantity_changed:
             self.modify_order(
                 self._unwind_order,
-                quantity=quantity,
-                price=price,
+                quantity=quantity if quantity_changed else None,
+                price=price if recenter_price else None,
                 client_id=self.config.client_id,
             )
 
     def _quote_prices(self, mid: Decimal) -> tuple[Price, Price] | None:
-        pct = Decimal(self.config.quote_offset_bps) / Decimal(10_000)
+        pct = Decimal(str(self.config.quote_offset_bps)) / Decimal(10_000)
         bid_price = self._make_bid_price(mid * (Decimal(1) - pct))
         ask_price = self._make_ask_price(mid * (Decimal(1) + pct))
         if bid_price is None or ask_price is None:
@@ -359,10 +384,23 @@ class SweepStrategy(Strategy):
     def _should_recenter(self, mid: Decimal) -> bool:
         if self._anchor_mid is None or self._anchor_mid <= 0:
             return True
-        if self.config.recenter_threshold_bps == 0:
+        if self.config.quote_recenter_threshold_bps == 0:
             return True
         moved_bps = abs(mid - self._anchor_mid) / self._anchor_mid * Decimal(10_000)
-        return moved_bps >= Decimal(self.config.recenter_threshold_bps)
+        return moved_bps >= Decimal(str(self.config.quote_recenter_threshold_bps))
+
+    def _should_recenter_unwind_order(self, price: Price) -> bool:
+        if self._unwind_order is None or self._unwind_order.price == price:
+            return False
+        if self.config.unwind_recenter_threshold_bps == 0:
+            return True
+
+        current_price = self._unwind_order.price.as_decimal()
+        if current_price <= 0:
+            return True
+
+        drift_bps = abs(price.as_decimal() - current_price) / current_price * Decimal(10_000)
+        return drift_bps >= Decimal(str(self.config.unwind_recenter_threshold_bps))
 
     def _needs_unwind(self) -> bool:
         return self._inventory_to_unwind != 0
@@ -405,6 +443,29 @@ class SweepStrategy(Strategy):
             self._anchor_mid = None
         if self._unwind_order and client_order_id == self._unwind_order.client_order_id:
             self._unwind_order = None
+
+    def _is_reduce_only_would_increase_unwind_rejection(
+        self,
+        event: OrderRejected | OrderModifyRejected,
+    ) -> bool:
+        if event.instrument_id != self.config.instrument_id:
+            return False
+        if self._unwind_order is None:
+            return False
+        if event.client_order_id != self._unwind_order.client_order_id:
+            return False
+
+        reason = event.reason.lower().replace("-", " ")
+        return "reduce only" in reason and "increase position" in reason
+
+    def _clear_stale_unwind_target(self, reason: str) -> None:
+        self.log.info(
+            "Clearing stale unwind target after reduce-only rejection; "
+            f"resuming quote mode: {reason}",
+        )
+        self._inventory_to_unwind = Decimal(0)
+        self._unwind_order = None
+        self._anchor_mid = None
 
     def _matches_working_order(self, client_order_id: ClientOrderId) -> bool:
         return bool(
