@@ -1089,7 +1089,15 @@ def test_live_stub_exposes_native_live_node_config_signature():
         r"portfolio:\s+(?:portfolio\.)?PortfolioConfig \| None = None",
         live_stub,
     )
+    assert re.search(
+        r"streaming:\s+StreamingConfig \| None = None",
+        live_stub,
+    )
+    assert "@typing.final\nclass StreamingConfig:" in live_stub
+    assert "@typing.final\nclass RotationConfig:" in live_stub
     assert '"PortfolioConfig"' in live_stub
+    assert '"StreamingConfig"' in live_stub
+    assert '"RotationConfig"' in live_stub
 
 
 def test_live_stub_exposes_builder_engine_config_methods():
@@ -1101,6 +1109,10 @@ def test_live_stub_exposes_builder_engine_config_methods():
     )
     assert (
         "def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ..."
+        in live_stub
+    )
+    assert (
+        "def with_streaming_config(self, config: StreamingConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )
     assert (

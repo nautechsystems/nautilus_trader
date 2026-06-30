@@ -806,11 +806,9 @@ impl LiveNodeConfig {
     pub(crate) fn validate_runtime_support(&self) -> ConfigResult<()> {
         let mut collector = ConfigErrorCollector::new();
 
-        collector.collect(check_supported_field(
-            "LiveNodeConfig.streaming",
-            self.streaming.is_none(),
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
+        if let Some(streaming) = &self.streaming {
+            collector.collect(streaming.validate());
+        }
         collector.collect(check_supported_field(
             "LiveNodeConfig.emulator",
             self.emulator.is_none(),
@@ -1127,7 +1125,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_validate_runtime_support_rejects_streaming_config() {
+    fn test_validate_runtime_support_accepts_streaming_config() {
         let config = LiveNodeConfig {
             streaming: Some(StreamingConfig::new(
                 "catalog".to_string(),
@@ -1139,11 +1137,7 @@ mod tests {
             ..Default::default()
         };
 
-        let error = config.validate_runtime_support().unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "LiveNodeConfig.streaming is not supported by the Rust live runtime yet"
-        );
+        assert!(config.validate_runtime_support().is_ok());
     }
 
     #[rstest]
@@ -1160,6 +1154,7 @@ mod tests {
                 false,
                 RotationConfig::NoRotation,
             )),
+            emulator: Some(OrderEmulatorConfig::default()),
             loop_debug: true,
             ..Default::default()
         };
@@ -1172,7 +1167,7 @@ mod tests {
                 assert_eq!(
                     errors[0],
                     ConfigError::UnsupportedField {
-                        field: "LiveNodeConfig.streaming".to_string(),
+                        field: "LiveNodeConfig.emulator".to_string(),
                         reason: RUST_RUNTIME_UNSUPPORTED.to_string(),
                     },
                 );

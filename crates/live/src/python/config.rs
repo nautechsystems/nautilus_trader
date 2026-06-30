@@ -25,6 +25,7 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
+use nautilus_system::config::{RotationConfig, StreamingConfig};
 use pyo3::{
     IntoPyObject, Py, PyAny, PyResult, Python, pymethods,
     types::{PyAnyMethods, PyDict, PyDictMethods},
@@ -138,6 +139,193 @@ pub(crate) fn coerce_json_config(
         }
         Ok(result)
     })
+}
+
+#[pyo3::pyclass(
+    name = "RotationConfig",
+    module = "nautilus_trader.core.nautilus_pyo3.live",
+    from_py_object
+)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
+#[derive(Debug, Clone)]
+pub struct PyRotationConfig {
+    inner: RotationConfig,
+}
+
+impl PyRotationConfig {
+    fn into_inner(self) -> RotationConfig {
+        self.inner
+    }
+}
+
+impl From<RotationConfig> for PyRotationConfig {
+    fn from(inner: RotationConfig) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyRotationConfig {
+    #[new]
+    #[pyo3(signature = (mode="no_rotation", max_size=None, interval_ns=None, schedule_ns=None))]
+    fn py_new(
+        mode: &str,
+        max_size: Option<u64>,
+        interval_ns: Option<u64>,
+        schedule_ns: Option<u64>,
+    ) -> PyResult<Self> {
+        let normalized = mode.to_ascii_lowercase().replace('-', "_");
+        let inner = match normalized.as_str() {
+            "size" => RotationConfig::Size {
+                max_size: max_size
+                    .ok_or_else(|| to_pyvalue_err("RotationConfig.size requires `max_size`"))?,
+            },
+            "interval" => RotationConfig::Interval {
+                interval_ns: interval_ns.ok_or_else(|| {
+                    to_pyvalue_err("RotationConfig.interval requires `interval_ns`")
+                })?,
+            },
+            "scheduled_dates" => RotationConfig::ScheduledDates {
+                interval_ns: interval_ns.ok_or_else(|| {
+                    to_pyvalue_err("RotationConfig.scheduled_dates requires `interval_ns`")
+                })?,
+                schedule_ns: schedule_ns
+                    .ok_or_else(|| {
+                        to_pyvalue_err("RotationConfig.scheduled_dates requires `schedule_ns`")
+                    })?
+                    .into(),
+            },
+            "no_rotation" => RotationConfig::NoRotation,
+            _ => {
+                return Err(to_pyvalue_err(format!("invalid rotation mode: {mode:?}")));
+            }
+        };
+
+        Ok(Self { inner })
+    }
+
+    #[staticmethod]
+    fn size(max_size: u64) -> Self {
+        RotationConfig::Size { max_size }.into()
+    }
+
+    #[staticmethod]
+    fn interval(interval_ns: u64) -> Self {
+        RotationConfig::Interval { interval_ns }.into()
+    }
+
+    #[staticmethod]
+    fn scheduled_dates(interval_ns: u64, schedule_ns: u64) -> Self {
+        RotationConfig::ScheduledDates {
+            interval_ns,
+            schedule_ns: schedule_ns.into(),
+        }
+        .into()
+    }
+
+    #[staticmethod]
+    fn no_rotation() -> Self {
+        RotationConfig::NoRotation.into()
+    }
+
+    #[getter]
+    fn mode(&self) -> &str {
+        match &self.inner {
+            RotationConfig::Size { .. } => "size",
+            RotationConfig::Interval { .. } => "interval",
+            RotationConfig::ScheduledDates { .. } => "scheduled_dates",
+            RotationConfig::NoRotation => "no_rotation",
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+
+    fn __str__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+}
+
+#[pyo3::pyclass(
+    name = "StreamingConfig",
+    module = "nautilus_trader.core.nautilus_pyo3.live",
+    from_py_object
+)]
+#[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.live")]
+#[derive(Debug, Clone)]
+pub struct PyStreamingConfig {
+    inner: StreamingConfig,
+}
+
+impl PyStreamingConfig {
+    pub(crate) fn into_inner(self) -> StreamingConfig {
+        self.inner
+    }
+}
+
+impl From<StreamingConfig> for PyStreamingConfig {
+    fn from(inner: StreamingConfig) -> Self {
+        Self { inner }
+    }
+}
+
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+#[pymethods]
+impl PyStreamingConfig {
+    #[new]
+    #[pyo3(signature = (catalog_path, fs_protocol=None, flush_interval_ms=1000, replace_existing=false, rotation_config=None))]
+    fn py_new(
+        catalog_path: String,
+        fs_protocol: Option<String>,
+        flush_interval_ms: u64,
+        replace_existing: bool,
+        rotation_config: Option<PyRotationConfig>,
+    ) -> PyResult<Self> {
+        let inner = StreamingConfig::new(
+            catalog_path,
+            fs_protocol.unwrap_or_else(|| "file".to_string()),
+            flush_interval_ms,
+            replace_existing,
+            rotation_config.map_or(RotationConfig::NoRotation, PyRotationConfig::into_inner),
+        );
+        inner.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn catalog_path(&self) -> &str {
+        &self.inner.catalog_path
+    }
+
+    #[getter]
+    fn fs_protocol(&self) -> &str {
+        &self.inner.fs_protocol
+    }
+
+    #[getter]
+    fn flush_interval_ms(&self) -> u64 {
+        self.inner.flush_interval_ms
+    }
+
+    #[getter]
+    fn replace_existing(&self) -> bool {
+        self.inner.replace_existing
+    }
+
+    #[getter]
+    fn rotation_config(&self) -> PyRotationConfig {
+        self.inner.rotation_config.clone().into()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+
+    fn __str__(&self) -> String {
+        format!("{:?}", self.inner)
+    }
 }
 
 // Normalizes a Python `max_notional_per_order` dict (values can be `int`, `float`,
@@ -644,7 +832,7 @@ impl LiveNodeConfig {
     /// Configuration for live Nautilus system nodes.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
+    #[pyo3(signature = (environment=None, trader_id=None, load_state=None, save_state=None, shutdown_on_error=None, logging=None, instance_id=None, timeout_connection_secs=None, timeout_reconciliation_secs=None, timeout_portfolio_secs=None, timeout_disconnection_secs=None, delay_post_stop_secs=None, timeout_shutdown_secs=None, cache=None, msgbus=None, portfolio=None, streaming=None, loop_debug=None, data_engine=None, risk_engine=None, exec_engine=None, plugins=None))]
     fn py_new(
         environment: Option<Environment>,
         trader_id: Option<TraderId>,
@@ -662,6 +850,7 @@ impl LiveNodeConfig {
         cache: Option<CacheConfig>,
         msgbus: Option<MessageBusConfig>,
         portfolio: Option<PortfolioConfig>,
+        streaming: Option<PyStreamingConfig>,
         loop_debug: Option<bool>,
         data_engine: Option<LiveDataEngineConfig>,
         risk_engine: Option<LiveRiskEngineConfig>,
@@ -710,7 +899,7 @@ impl LiveNodeConfig {
             msgbus,
             portfolio,
             emulator: None,
-            streaming: None,
+            streaming: streaming.map(PyStreamingConfig::into_inner),
             event_store: None,
             loop_debug: loop_debug.unwrap_or(false),
             data_engine: data_engine.unwrap_or_default(),
@@ -788,5 +977,10 @@ impl LiveNodeConfig {
     #[getter]
     fn plugins(&self) -> Vec<PluginConfig> {
         self.plugins.clone()
+    }
+
+    #[getter]
+    fn streaming(&self) -> Option<PyStreamingConfig> {
+        self.streaming.clone().map(PyStreamingConfig::from)
     }
 }

@@ -24,6 +24,8 @@ from nautilus_trader.live import LiveExecClientConfig
 from nautilus_trader.live import LiveExecEngineConfig
 from nautilus_trader.live import LiveNodeConfig
 from nautilus_trader.live import LiveRiskEngineConfig
+from nautilus_trader.live import RotationConfig
+from nautilus_trader.live import StreamingConfig
 from nautilus_trader.live import PluginConfig
 from nautilus_trader.live import PortfolioConfig
 from nautilus_trader.live import RoutingConfig
@@ -228,6 +230,19 @@ def test_live_node_config_accepts_portfolio_config_argument():
     config = LiveNodeConfig(portfolio=portfolio)
 
     assert isinstance(config, LiveNodeConfig)
+
+
+def test_live_node_config_accepts_streaming_config_argument(tmp_path):
+    streaming = StreamingConfig(
+        str(tmp_path),
+        rotation_config=RotationConfig.no_rotation(),
+    )
+    config = LiveNodeConfig(streaming=streaming)
+
+    assert isinstance(config.streaming, StreamingConfig)
+    assert config.streaming.catalog_path == str(tmp_path)
+    assert config.streaming.fs_protocol == "file"
+    assert config.streaming.rotation_config.mode == "no_rotation"
 
 
 def test_live_risk_engine_config_defaults():

@@ -25,6 +25,8 @@ from nautilus_trader.live import LiveExecEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
 from nautilus_trader.live import PortfolioConfig
+from nautilus_trader.live import RotationConfig
+from nautilus_trader.live import StreamingConfig
 from nautilus_trader.model import TraderId
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
@@ -142,6 +144,24 @@ def test_builder_accepts_supported_runtime_configs():
         .with_data_engine_config(LiveDataEngineConfig(time_bars_build_with_no_updates=False))
         .with_risk_engine_config(LiveRiskEngineConfig(bypass=True))
         .with_exec_engine_config(LiveExecEngineConfig(reconciliation=False))
+        .build()
+    )
+
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.SANDBOX
+
+
+def test_builder_accepts_streaming_config(tmp_path):
+    trader_id = TraderId("TESTER-003")
+    streaming = StreamingConfig(
+        str(tmp_path),
+        replace_existing=True,
+        rotation_config=RotationConfig.no_rotation(),
+    )
+
+    node = (
+        LiveNode.builder("TEST", trader_id, Environment.SANDBOX)
+        .with_streaming_config(streaming)
         .build()
     )
 

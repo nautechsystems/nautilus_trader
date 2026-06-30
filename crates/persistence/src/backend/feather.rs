@@ -204,6 +204,17 @@ pub struct FeatherWriter {
     seen_event_ids: Box<FifoCache<UUID4, 10_000>>,
 }
 
+impl std::fmt::Debug for FeatherWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FeatherWriter")
+            .field("base_path", &self.base_path)
+            .field("rotation_config", &self.rotation_config)
+            .field("flush_interval_ms", &self.flush_interval_ms)
+            .field("writers", &self.writers.len())
+            .finish_non_exhaustive()
+    }
+}
+
 impl FeatherWriter {
     /// Creates a new [`FeatherWriter`] instance.
     pub fn new(
