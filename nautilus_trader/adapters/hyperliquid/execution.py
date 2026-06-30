@@ -160,17 +160,19 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._accepted_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._terminal_orders: nautilus_pyo3.FifoCache = nautilus_pyo3.FifoCache()
         self._pending_filled: set[str] = set()
-        # client_order_id.value to old venue_order_id.value for in-flight
-        # Hyperliquid modifies, populated before the modify HTTP call and
-        # cleared on either the replacement ACCEPTED(new_voi) or any modify
-        # failure. The WS handler uses it to suppress the old leg of a
-        # cancel-replace when CANCELED(old_voi) arrives before the replacement
-        # ACCEPTED(new_voi). See GH-3827.
-        self._pending_modify_keys: dict[str, str] = {}
-        # User-intended absolute total qty and price for an in-flight modify;
-        # the cancel-replace promotion uses these for an accurate OrderUpdated.
+        # Compatibility view: client_order_id.value to the front pending
+        # modify's old venue_order_id.value, when known. None means the modify
+        # targeted the stable CLOID before the exchange venue order id was known.
+        self._pending_modify_keys: dict[str, str | None] = {}
+        # User-intended absolute total qty and price for the front pending
+        # modify; the cancel-replace promotion uses these for an accurate
+        # OrderUpdated.
         self._pending_modify_target_qty: dict[str, Quantity] = {}
         self._pending_modify_target_price: dict[str, Price] = {}
+        self._pending_modify_chains: dict[str, list[dict[str, object]]] = {}
+        self._next_modify_generation = 1
+        self._cached_venue_order_id_ts: dict[str, int] = {}
+        self._superseded_venue_order_ids: dict[str, set[str]] = {}
 
         # FillReports buffered when fill arrives before order is in cache,
         # drained on OrderAccepted.
@@ -281,6 +283,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
     def _cleanup_cloid_mapping(self, client_order_id: ClientOrderId) -> None:
         self._pending_fills.pop(client_order_id.value, None)
+        modify_generation: int | None = None
         try:
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(client_order_id.value)
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
@@ -832,17 +835,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         elif command.venue_order_id:
             venue_order_id = command.venue_order_id
 
-        if venue_order_id is None:
-            self.generate_order_modify_rejected(
-                strategy_id=command.strategy_id,
-                instrument_id=command.instrument_id,
-                client_order_id=command.client_order_id,
-                venue_order_id=venue_order_id,
-                reason="VENUE_ORDER_ID_REQUIRED",
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
-
         # Use command values if provided, else fall back to current order values
         price = command.price if command.price else (order.price if order.has_price else None)
         # Hyperliquid modify is cancel-replace; subtract filled to avoid overfill.
@@ -885,7 +877,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                 command.instrument_id.value,
             )
-            pyo3_venue_order_id = nautilus_pyo3.VenueOrderId(venue_order_id.value)
+            # Hyperliquid-owned orders are command-addressed by stable CLOID.
+            # The volatile venue order id is only retained for event metadata
+            # and old-leg cancel suppression.
+            pyo3_venue_order_id = None
             pyo3_order_side = order_side_to_pyo3(order.side)
             pyo3_order_type = order_type_to_pyo3(order.order_type)
             pyo3_price = nautilus_pyo3.Price.from_str(str(price))
@@ -902,9 +897,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             # Mark in-flight BEFORE the await so the WS cancel handler sees it regardless of timing.
             # Cleared on non-transport post errors; preserved on transport errors so WS can reconcile.
-            self._pending_modify_keys[command.client_order_id.value] = venue_order_id.value
-            self._pending_modify_target_qty[command.client_order_id.value] = target_total_qty
-            self._pending_modify_target_price[command.client_order_id.value] = price
+            modify_generation = self._mark_pending_modify(
+                command.client_order_id.value,
+                venue_order_id,
+                target_total_qty,
+                price,
+            )
             self._log.info(f"Order modification requested for {command.client_order_id}")
 
             await self._ws_client.modify_order(
@@ -930,9 +928,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     f"({type(e).__name__}: {e}); awaiting WS reconciliation",
                 )
                 return
-            self._pending_modify_keys.pop(command.client_order_id.value, None)
-            self._pending_modify_target_qty.pop(command.client_order_id.value, None)
-            self._pending_modify_target_price.pop(command.client_order_id.value, None)
+            if modify_generation is not None:
+                self._clear_pending_modify_generation(
+                    command.client_order_id.value,
+                    modify_generation,
+                )
             self.generate_order_modify_rejected(
                 strategy_id=command.strategy_id,
                 instrument_id=command.instrument_id,
@@ -956,9 +956,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 command.instrument_id.value,
             )
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(command.client_order_id.value)
-            pyo3_venue_order_id = (
-                nautilus_pyo3.VenueOrderId(venue_order_id.value) if venue_order_id else None
-            )
+            # Hyperliquid-owned cancels should not depend on the latest
+            # exchange OID ack; route by stable CLOID via client_order_id.
+            pyo3_venue_order_id = None
 
             await self._ws_client.cancel_order(
                 self._client,
@@ -1195,11 +1195,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # Cancel-before-accept race: the pending marker is set before the modify HTTP
         # call and removed on failure, so an in-flight modify suppresses its old leg
         # CANCELED while a failed modify never falls here.
-        pending_old_voi = self._pending_modify_keys.get(key)
-        if (
-            pending_old_voi is not None
-            and event.venue_order_id is not None
-            and event.venue_order_id.value == pending_old_voi
+        if event.venue_order_id is not None and self._pending_modify_matches(
+            key,
+            event.venue_order_id,
         ):
             self._log.debug(
                 f"Suppressing cancel-before-accept for {event.client_order_id!r} "
@@ -1246,6 +1244,165 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     def _handle_order_modify_rejected_pyo3(self, msg: nautilus_pyo3.OrderModifyRejected) -> None:
         event = OrderModifyRejected.from_dict(msg.to_dict())
         self._send_order_event(event)
+
+    def _mark_pending_modify(
+        self,
+        key: str,
+        old_venue_order_id: VenueOrderId | None,
+        target_qty: Quantity,
+        target_price: Price,
+    ) -> int:
+        generation = self._next_modify_generation
+        self._next_modify_generation += 1
+        self._pending_modify_chains.setdefault(key, []).append(
+            {
+                "generation": generation,
+                "old_venue_order_id": old_venue_order_id.value if old_venue_order_id else None,
+                "target_qty": target_qty,
+                "target_price": target_price,
+            },
+        )
+        self._refresh_pending_modify_view(key)
+        return generation
+
+    def _clear_pending_modify(self, key: str) -> None:
+        self._pending_modify_chains.pop(key, None)
+        self._pending_modify_keys.pop(key, None)
+        self._pending_modify_target_qty.pop(key, None)
+        self._pending_modify_target_price.pop(key, None)
+
+    def _clear_pending_modify_generation(self, key: str, generation: int) -> None:
+        self._ensure_pending_modify_chain(key)
+        chain = self._pending_modify_chains.get(key)
+        if not chain:
+            return
+
+        remaining = [intent for intent in chain if intent.get("generation") != generation]
+        if len(remaining) == len(chain):
+            return
+        if remaining:
+            self._pending_modify_chains[key] = remaining
+            self._refresh_pending_modify_view(key)
+        else:
+            self._clear_pending_modify(key)
+
+    def _ensure_pending_modify_chain(self, key: str) -> None:
+        if key in self._pending_modify_chains or key not in self._pending_modify_keys:
+            return
+
+        self._pending_modify_chains[key] = [
+            {
+                "generation": 0,
+                "old_venue_order_id": self._pending_modify_keys.get(key),
+                "target_qty": self._pending_modify_target_qty.get(key),
+                "target_price": self._pending_modify_target_price.get(key),
+            },
+        ]
+
+    def _refresh_pending_modify_view(self, key: str) -> None:
+        chain = self._pending_modify_chains.get(key)
+        if not chain:
+            self._clear_pending_modify(key)
+            return
+
+        front = chain[0]
+        self._pending_modify_keys[key] = front.get("old_venue_order_id")  # type: ignore[assignment]
+
+        target_qty = front.get("target_qty")
+        if target_qty is not None:
+            self._pending_modify_target_qty[key] = target_qty  # type: ignore[assignment]
+        else:
+            self._pending_modify_target_qty.pop(key, None)
+
+        target_price = front.get("target_price")
+        if target_price is not None:
+            self._pending_modify_target_price[key] = target_price  # type: ignore[assignment]
+        else:
+            self._pending_modify_target_price.pop(key, None)
+
+    def _pending_modify_matches(self, key: str, venue_order_id: VenueOrderId) -> bool:
+        self._ensure_pending_modify_chain(key)
+        chain = self._pending_modify_chains.get(key)
+        if not chain:
+            return False
+
+        venue_value = venue_order_id.value
+        return any(
+            intent.get("old_venue_order_id") is None
+            or intent.get("old_venue_order_id") == venue_value
+            for intent in chain
+        )
+
+    def _claim_pending_modify_for_replacement(
+        self,
+        key: str,
+        new_venue_order_id: VenueOrderId,
+        *,
+        report_price: Price | None,
+        report_qty: Quantity | None,
+    ) -> dict[str, object] | None:
+        self._ensure_pending_modify_chain(key)
+        chain = self._pending_modify_chains.get(key)
+        if not chain:
+            return None
+
+        best_index = 0
+        best_score = 0
+        for index, intent in enumerate(chain):
+            score = 0
+            if report_price is not None and intent.get("target_price") == report_price:
+                score += 2
+            if report_qty is not None and intent.get("target_qty") == report_qty:
+                score += 1
+            if score > best_score:
+                best_index = index
+                best_score = score
+
+        claimed = None
+        for _ in range(best_index + 1):
+            claimed = chain.pop(0)
+
+        if chain:
+            chain[0]["old_venue_order_id"] = new_venue_order_id.value
+            self._refresh_pending_modify_view(key)
+        else:
+            self._clear_pending_modify(key)
+
+        return claimed
+
+    def _is_stale_venue_order_id(
+        self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> bool:
+        key = client_order_id.value
+        if venue_order_id.value in self._superseded_venue_order_ids.get(key, set()):
+            return True
+
+        cached_voi = self._cache.venue_order_id(client_order_id)
+        if cached_voi is None or cached_voi == venue_order_id:
+            return False
+
+        cached_ts = self._cached_venue_order_id_ts.get(key)
+        return cached_ts is not None and ts_event < cached_ts
+
+    def _record_venue_order_id_binding(
+        self,
+        client_order_id: ClientOrderId,
+        new_venue_order_id: VenueOrderId,
+        ts_event: int,
+    ) -> None:
+        key = client_order_id.value
+        previous = self._cache.venue_order_id(client_order_id)
+        if previous is not None and previous != new_venue_order_id:
+            self._superseded_venue_order_ids.setdefault(key, set()).add(previous.value)
+        self._cache.add_venue_order_id(
+            client_order_id,
+            new_venue_order_id,
+            overwrite=True,
+        )
+        self._cached_venue_order_id_ts[key] = ts_event
 
     def _handle_order_status_report_pyo3(  # noqa: C901 (complexity unavoidable)
         self,
@@ -1308,7 +1465,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 and report.venue_order_id is not None
                 and report.venue_order_id != cached_voi
             ):
+                if self._is_stale_venue_order_id(
+                    report.client_order_id,
+                    report.venue_order_id,
+                    report.ts_last,
+                ):
+                    self._log.debug(
+                        f"Skipping stale ACCEPTED for {report.venue_order_id!r} "
+                        f"(cached {cached_voi!r}) on {report.client_order_id!r}",
+                    )
+                    return
+
+                claim = self._claim_pending_modify_for_replacement(
+                    key,
+                    report.venue_order_id,
+                    report_price=report.price,
+                    report_qty=report.quantity,
+                )
                 update_price = report.price
+                if update_price is None and claim is not None:
+                    update_price = claim.get("target_price")  # type: ignore[assignment]
                 if update_price is None:
                     update_price = self._pending_modify_target_price.get(key)
                 if update_price is None and order.has_price:
@@ -1322,7 +1498,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
                 # Prefer user target over venue's remaining-only
                 # `report.quantity`; fall back when no marker (external modify).
-                target_qty = self._pending_modify_target_qty.get(key)
+                target_qty = claim.get("target_qty") if claim is not None else None
                 update_quantity = target_qty if target_qty is not None else report.quantity
 
                 self._promote_cancel_replace(
@@ -1386,11 +1562,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # OrderUpdated path. The marker is cleared on non-transport modify
             # failure; on transport failure it stays so a landed modify can
             # still reconcile.
-            pending_old_voi = self._pending_modify_keys.get(key)
-            if (
-                pending_old_voi is not None
-                and report.venue_order_id is not None
-                and report.venue_order_id.value == pending_old_voi
+            if report.venue_order_id is not None and self._pending_modify_matches(
+                key,
+                report.venue_order_id,
             ):
                 self._log.debug(
                     f"Skipping cancel-before-accept leg for "
@@ -1527,6 +1701,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             and cached_voi is not None
             and report.venue_order_id is not None
             and report.venue_order_id != cached_voi
+            and not self._is_stale_venue_order_id(
+                order.client_order_id,
+                report.venue_order_id,
+                report.ts_event,
+            )
         ):
             if order.is_closed:
                 self._log.error(
@@ -1545,7 +1724,13 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 )
                 return
 
-            target_qty = self._pending_modify_target_qty.get(key)
+            claim = self._claim_pending_modify_for_replacement(
+                key,
+                report.venue_order_id,
+                report_price=None,
+                report_qty=None,
+            )
+            target_qty = claim.get("target_qty") if claim is not None else None
             update_quantity = target_qty if target_qty is not None else order.quantity
 
             self._promote_cancel_replace(
@@ -1627,11 +1812,26 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if cached_voi is None or report.venue_order_id == cached_voi:
             return
 
+        if self._is_stale_venue_order_id(
+            report.client_order_id,
+            report.venue_order_id,
+            report.ts_last,
+        ):
+            return
+
         order = self._cache.order(report.client_order_id)
         if order is None or order.is_closed:
             return
 
+        claim = self._claim_pending_modify_for_replacement(
+            key,
+            report.venue_order_id,
+            report_price=report.price,
+            report_qty=report.quantity,
+        )
         update_price = report.price
+        if update_price is None and claim is not None:
+            update_price = claim.get("target_price")  # type: ignore[assignment]
         if update_price is None:
             update_price = self._pending_modify_target_price.get(key)
         if update_price is None and order.has_price:
@@ -1643,7 +1843,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
             return
 
-        target_qty = self._pending_modify_target_qty.get(key)
+        target_qty = claim.get("target_qty") if claim is not None else None
         update_quantity = target_qty if target_qty is not None else report.quantity
 
         self._promote_cancel_replace(
@@ -1668,14 +1868,15 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # Shared by the ACCEPTED branch and the fill path so a dropped ACCEPTED
         # still rebinds via the fill.
         key = order.client_order_id.value
+        previous = self._cache.venue_order_id(order.client_order_id)
+        if previous is not None and previous != new_venue_order_id:
+            self._superseded_venue_order_ids.setdefault(key, set()).add(previous.value)
         self._cache.add_venue_order_id(
             order.client_order_id,
             new_venue_order_id,
             overwrite=True,
         )
-        self._pending_modify_keys.pop(key, None)
-        self._pending_modify_target_qty.pop(key, None)
-        self._pending_modify_target_price.pop(key, None)
+        self._cached_venue_order_id_ts[key] = ts_event
         self.generate_order_updated(
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
@@ -1702,8 +1903,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             return False
         if report.client_order_id is None or report.venue_order_id is None:
             return False
-        pending_old_voi = self._pending_modify_keys.get(report.client_order_id.value)
-        return pending_old_voi is not None and report.venue_order_id.value == pending_old_voi
+        return self._pending_modify_matches(report.client_order_id.value, report.venue_order_id)
 
     def _is_external_order(self, client_order_id: ClientOrderId) -> bool:
         return not client_order_id or not self._cache.strategy_id_for_order(client_order_id)

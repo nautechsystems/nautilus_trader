@@ -29,16 +29,23 @@ Use this template only for issues that fit the **Bug** definition.
 - [ ] I’ve re-read the relevant sections of the documentation.
 - [ ] I’ve searched existing issues and discussions to avoid duplicates.
 - [ ] I’ve reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
-- [ ] I’ve tested this issue using a recent *development* wheel (`dev` develop or `a` nightly) and can still reproduce it.
+- [ ] I’ve tested this issue using a recent pre-release or development wheel (`2.0.0rcN`,
+      `dev` develop, or `a` nightly) and can still reproduce it.
 
-Checking a recent development wheel can save time because the issue may already have been fixed.
-You can install a development wheel by running:
+Checking a recent pre-release or development wheel can save time because the issue may already have been fixed.
+You can test the v2 release-candidate wheels from PyPI by running:
+
+```bash
+pip install -U nautilus_trader --pre
+```
+
+You can test branch development wheels by running:
 
 ```bash
 pip install -U nautilus_trader --pre --index-url https://packages.nautechsystems.io/simple
 ```
 
-See the [development-wheels](https://github.com/nautechsystems/nautilus_trader#development-wheels) section for more details.
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for more details.
 
 ### Expected Behavior
 

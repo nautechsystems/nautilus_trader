@@ -118,6 +118,28 @@ pub type AssetId = u32;
 /// Order ID assigned by Hyperliquid.
 pub type OrderId = u64;
 
+/// Identifier accepted by Hyperliquid's modify endpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum HyperliquidExecModifyOrderId {
+    /// Venue order ID assigned by Hyperliquid.
+    Oid(OrderId),
+    /// Client order ID (CLOID) accepted by Hyperliquid for modify.
+    Cloid(Cloid),
+}
+
+impl From<OrderId> for HyperliquidExecModifyOrderId {
+    fn from(value: OrderId) -> Self {
+        Self::Oid(value)
+    }
+}
+
+impl From<Cloid> for HyperliquidExecModifyOrderId {
+    fn from(value: Cloid) -> Self {
+        Self::Cloid(value)
+    }
+}
+
 /// Represents asset information from the meta endpoint.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1394,8 +1416,8 @@ pub struct HyperliquidExecCancelByCloidRequest {
 /// the venue order ID to modify.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HyperliquidExecModifyOrderRequest {
-    /// Venue order ID to modify.
-    pub oid: OrderId,
+    /// Venue order ID or CLOID to modify.
+    pub oid: HyperliquidExecModifyOrderId,
     /// Full replacement order specification.
     pub order: HyperliquidExecPlaceOrderRequest,
 }

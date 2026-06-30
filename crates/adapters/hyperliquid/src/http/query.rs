@@ -673,7 +673,7 @@ mod tests {
     #[rstest]
     fn test_modify_serialization() {
         let modify_request = HyperliquidExecModifyOrderRequest {
-            oid: 12345,
+            oid: 12345.into(),
             order: HyperliquidExecPlaceOrderRequest {
                 asset: 0,
                 is_buy: true,
