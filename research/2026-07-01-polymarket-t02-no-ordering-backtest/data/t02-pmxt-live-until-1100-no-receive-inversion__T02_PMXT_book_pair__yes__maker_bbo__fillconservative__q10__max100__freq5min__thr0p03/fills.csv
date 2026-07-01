@@ -1,0 +1,2 @@
+timestamp,strategy,reason,fill_side,quantity,price,trade_price,trade_size,trade_side,inventory_after,cash_after,transaction_hash
+2026-06-26T02:35:13.861000Z,maker_bbo,maker_trade_print,SELL,10.0,0.66,0.66,60.606058,BUY,-10.0,6.6000000000000005,0x8458336c990c6a8de7bd0a9ef12fcaeebee0f5f21af62db3512356283ad5133c

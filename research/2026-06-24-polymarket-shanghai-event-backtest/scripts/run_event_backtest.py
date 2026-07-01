@@ -101,6 +101,16 @@ def parse_args() -> argparse.Namespace:
         default="5min",
         help="Pandas frequency for output BBO/equity time series.",
     )
+    parser.add_argument(
+        "--replay-order",
+        choices=["source_time", "received_time"],
+        default="source_time",
+        help=(
+            "Row order used for replay. source_time preserves the original "
+            "research harness behavior; received_time replays PMXT rows in "
+            "collector receive-time order for no-receive-inversion samples."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -425,10 +435,17 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
     if df.empty:
         raise SystemExit(f"no parquet rows found for token_id={selection.token_id}")
     df["_row"] = range(len(df))
-    # `timestamp` is the exchange/event time and should drive replay order.
-    # `timestamp_received` is still part of the price_change batch key and is
-    # used here as a stable tie-breaker for rows with the same event time.
-    df = df.sort_values(["timestamp", "timestamp_received", "_row"], kind="mergesort")
+    if args.replay_order == "source_time":
+        # `timestamp` is the exchange/event time and drove the original
+        # Shanghai replay. `timestamp_received` remains a stable tie-breaker
+        # and part of the PMXT price_change batch key.
+        sort_columns = ["timestamp", "timestamp_received", "_row"]
+    else:
+        # For samples where PMXT `timestamp_received` has no per-asset receive
+        # inversion, this keeps replay aligned to collector delivery order
+        # instead of reordering rows by exchange/source timestamp.
+        sort_columns = ["timestamp_received", "timestamp", "_row"]
+    df = df.sort_values(sort_columns, kind="mergesort")
 
     bids: dict[float, float] = {}
     asks: dict[float, float] = {}
@@ -956,6 +973,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "fill_model": args.fill_model,
             "decision_frequency": args.decision_frequency,
             "signal_threshold": float(args.signal_threshold),
+            "replay_order": args.replay_order,
         },
         "replay_quality": {
             "book_events": book_events,
@@ -1046,6 +1064,7 @@ def run_backtest(args: argparse.Namespace) -> dict[str, Any]:
             "tick_size_change is tracked as replay state starting at 0.01 and updating from each event new_tick_size; fill prices are checked against the active tick grid.",
             "No latency, queue priority, fees, rebates, rewards, or partial queue-ahead model yet.",
             "L2 book is reconstructed from PMXT book snapshots plus price_change rows for the selected asset_id.",
+            f"Replay row order is {args.replay_order}.",
         ],
     }
     summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")

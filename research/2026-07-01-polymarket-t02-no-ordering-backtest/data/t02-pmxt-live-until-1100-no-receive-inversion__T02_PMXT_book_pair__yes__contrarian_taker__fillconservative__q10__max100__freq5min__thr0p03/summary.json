@@ -1,0 +1,116 @@
+{
+  "selection": {
+    "event_slug": "t02-pmxt-live-until-1100-no-receive-inversion",
+    "event_title": "T02 PMXT live-until-1100 no-receive-inversion sample",
+    "market_label": "T02 PMXT book pair",
+    "market_id": "t02-synthetic-market-0",
+    "condition_id": "b'0xce3c54c3e773e8b3bf73e4c12af93205b21195d03b9c386e22f274b9acfc2c56'",
+    "question": "Synthetic T02 PMXT book pair selected from the live-until-1100 sample",
+    "token_side": "YES",
+    "token_id": "13887983551129862992605123088744175927084435631400400451585519366058907542147",
+    "settlement_value": null
+  },
+  "inputs": {
+    "event_dir": "research/2026-07-01-polymarket-t02-no-ordering-backtest/curated/t02-pmxt-live-until-1100-no-receive-inversion",
+    "parquet_path": "research/2026-07-01-polymarket-t02-no-ordering-backtest/curated/t02-pmxt-live-until-1100-no-receive-inversion/orderbook.parquet",
+    "curated_root_mode": "repo_local",
+    "rows_for_token": 531,
+    "quote_size": 10.0,
+    "max_inventory": 100.0,
+    "strategy": "contrarian_taker",
+    "run_id": "t02-pmxt-live-until-1100-no-receive-inversion__T02_PMXT_book_pair__yes__contrarian_taker__fillconservative__q10__max100__freq5min__thr0p03",
+    "fill_model": "conservative",
+    "decision_frequency": "5min",
+    "signal_threshold": 0.03,
+    "replay_order": "received_time"
+  },
+  "replay_quality": {
+    "book_events": 1,
+    "price_change_events": 529,
+    "trade_events": 1,
+    "tick_size_change_events": 0,
+    "replay_events_after_initial_book": 391,
+    "skipped_before_initial_book": 140,
+    "pmxt_derived_bbo_diagnostic": {
+      "note": "PMXT best_bid/best_ask is treated as price_change batch-level BBO, not per-row ground truth. Boundary best_ask>=1.0 and best_bid<=0.0 are normalized as missing quotes for diagnostics only.",
+      "price_change_batch_compared": 389,
+      "price_change_batch_mismatches": 0,
+      "price_change_batch_mismatch_rate": 0.0,
+      "split_price_change_batch_key_count": 0,
+      "split_price_change_batch_key_examples": [],
+      "bbo_mismatch_warn_threshold": 0.01
+    },
+    "tick_size": {
+      "initial_tick_size": "0.01",
+      "final_tick_size": "0.01",
+      "tick_size_changes_applied": 0,
+      "old_tick_size_mismatches": 0,
+      "old_tick_size_mismatch_examples": [],
+      "fill_tick_price_checks": 0,
+      "fill_tick_price_violations": 0,
+      "fill_tick_price_violation_examples": []
+    },
+    "snapshot_alignment": {
+      "note": "Primary snapshot mismatch rates exclude book snapshots that share the same timestamp_received/timestamp/market/asset_id key with price_change rows, because those are likely same-message checkpoints rather than independent next snapshots.",
+      "raw_snapshot_pairs": 0,
+      "raw_snapshot_bbo_mismatches": 0,
+      "raw_snapshot_bbo_mismatch_rate": null,
+      "raw_snapshot_full_book_mismatches": 0,
+      "raw_snapshot_full_book_mismatch_rate": null,
+      "same_message_snapshot_pairs": 0,
+      "snapshot_pairs": 0,
+      "snapshot_bbo_mismatches": 0,
+      "snapshot_bbo_mismatch_rate": null,
+      "snapshot_full_book_mismatches": 0,
+      "snapshot_full_book_mismatch_rate": null,
+      "snapshot_bbo_mismatch_warn_threshold": 0.01
+    },
+    "book_sanity": {
+      "crossed_or_locked_books": 0,
+      "negative_spread_samples": 0
+    },
+    "trade_sanity": {
+      "trades_checked": 1,
+      "trades_without_book": 0,
+      "trades_inside_or_at_book": 1,
+      "trades_side_touch": 1,
+      "trades_off_book": 0,
+      "trade_off_book_rate": 0.0,
+      "trade_side_touch_rate": 1.0,
+      "trade_off_book_warn_threshold": 0.2
+    },
+    "results_validated": false,
+    "result_label": "smoke_test_unvalidated"
+  },
+  "backtest": {
+    "fills": 0,
+    "buy_fills": 0,
+    "sell_fills": 0,
+    "buy_qty": 0,
+    "sell_qty": 0,
+    "gross_notional": 0,
+    "ending_inventory": 0.0,
+    "ending_cash": 0.0,
+    "final_best_bid": 0.65,
+    "final_best_ask": 0.66,
+    "final_mid": 0.655,
+    "final_mark_price": 0.655,
+    "mtm_pnl": 0.0,
+    "settlement_pnl": null,
+    "return_on_gross_notional": null
+  },
+  "outputs": {
+    "fills_csv": "research/2026-07-01-polymarket-t02-no-ordering-backtest/data/t02-pmxt-live-until-1100-no-receive-inversion__T02_PMXT_book_pair__yes__contrarian_taker__fillconservative__q10__max100__freq5min__thr0p03/fills.csv",
+    "bbo_csv": "research/2026-07-01-polymarket-t02-no-ordering-backtest/data/t02-pmxt-live-until-1100-no-receive-inversion__T02_PMXT_book_pair__yes__contrarian_taker__fillconservative__q10__max100__freq5min__thr0p03/bbo_5min.csv",
+    "summary_json": "research/2026-07-01-polymarket-t02-no-ordering-backtest/data/t02-pmxt-live-until-1100-no-receive-inversion__T02_PMXT_book_pair__yes__contrarian_taker__fillconservative__q10__max100__freq5min__thr0p03/summary.json"
+  },
+  "assumptions": [
+    "Single-token research harness; not a full event-level negRisk/combo model.",
+    "maker_bbo uses PMXT last_trade_price events and fills only at the current valid two-sided uncrossed BBO when trade side is compatible; quotes are cleared when the replayed book becomes one-sided or crossed.",
+    "Taker strategies assume immediate top-of-book execution at sampled BBO and do not model taker delay or slippage beyond top level.",
+    "tick_size_change is tracked as replay state starting at 0.01 and updating from each event new_tick_size; fill prices are checked against the active tick grid.",
+    "No latency, queue priority, fees, rebates, rewards, or partial queue-ahead model yet.",
+    "L2 book is reconstructed from PMXT book snapshots plus price_change rows for the selected asset_id.",
+    "Replay row order is received_time."
+  ]
+}

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img">
+<title>T02 MTM equity curves</title>
+<rect width="100%" height="100%" fill="white"/>
+<style>text{font-family:Arial,Helvetica,sans-serif;font-size:12px;fill:#222}.small{font-size:10px;fill:#555}.title{font-size:16px;font-weight:700}.axis{stroke:#999;stroke-width:1}.grid{stroke:#e6e6e6;stroke-width:1}.legend{font-size:11px}</style>
+<text x="70" y="28" class="title">T02 MTM equity curves (no settlement)</text>
+<line class="grid" x1="70" y1="55.0" x2="955" y2="55.0"/>
+<line class="grid" x1="70" y1="157.5" x2="955" y2="157.5"/>
+<line class="grid" x1="70" y1="260.0" x2="955" y2="260.0"/>
+<line class="grid" x1="70" y1="362.5" x2="955" y2="362.5"/>
+<line class="grid" x1="70" y1="465.0" x2="955" y2="465.0"/>
+<line stroke="#444" stroke-width="1" stroke-dasharray="4 3" x1="70" y1="260.0" x2="955" y2="260.0"/>
+<line class="axis" x1="70" y1="465" x2="955" y2="465"/>
+<polyline fill="none" stroke="#d62728" stroke-width="2.4" points="70.0,94.7 291.2,94.7 512.5,94.7 733.8,94.7 955.0,94.7"/>
+<text x="80" y="485" class="small">YES maker_bbo</text>
+<polyline fill="none" stroke="#2ca02c" stroke-width="2.4" points="70.0,425.3 291.2,425.3 512.5,425.3 733.8,425.3 955.0,425.3"/>
+<text x="80" y="497" class="small">YES buy_hold_first_ask</text>
+<polyline fill="none" stroke="#9467bd" stroke-width="2.4" points="70.0,260.0 291.2,260.0 512.5,260.0 733.8,260.0 955.0,260.0"/>
+<text x="80" y="509" class="small">YES momentum_taker</text>
+<polyline fill="none" stroke="#8c564b" stroke-width="2.4" points="70.0,260.0 291.2,260.0 512.5,260.0 733.8,260.0 955.0,260.0"/>
+<text x="80" y="521" class="small">YES contrarian_taker</text>
+<polyline fill="none" stroke="#d62728" stroke-width="1.8" points="70.0,260.0 291.2,260.0 512.5,260.0 733.8,260.0 955.0,260.0"/>
+<text x="510" y="485" class="small">NO maker_bbo</text>
+<polyline fill="none" stroke="#2ca02c" stroke-width="1.8" points="70.0,425.3 291.2,425.3 512.5,425.3 733.8,425.3 955.0,425.3"/>
+<text x="510" y="497" class="small">NO buy_hold_first_ask</text>
+<polyline fill="none" stroke="#9467bd" stroke-width="1.8" points="70.0,260.0 291.2,260.0 512.5,260.0 733.8,260.0 955.0,260.0"/>
+<text x="510" y="509" class="small">NO momentum_taker</text>
+<polyline fill="none" stroke="#8c564b" stroke-width="1.8" points="70.0,260.0 291.2,260.0 512.5,260.0 733.8,260.0 955.0,260.0"/>
+<text x="510" y="521" class="small">NO contrarian_taker</text>
+<text x="8" y="67" class="small">0.06</text><text x="8" y="465" class="small">-0.06</text>
+</svg>

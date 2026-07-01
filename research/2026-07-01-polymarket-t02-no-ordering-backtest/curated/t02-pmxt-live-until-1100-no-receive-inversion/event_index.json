@@ -1,0 +1,26 @@
+{
+  "eventSlug": "t02-pmxt-live-until-1100-no-receive-inversion",
+  "title": "T02 PMXT live-until-1100 no-receive-inversion sample",
+  "source": {
+    "pmxt_hourly": "C:\\Projects\\PolyReaper\\data\\external\\pmxt\\polymarket\\v2\\orderbook\\hourly\\polymarket_orderbook_2026-06-26T02.parquet",
+    "raw_capture": "C:\\Projects\\PolyReaper\\research\\2026-06-25-polymarket-raw-ws-ordering-capture\\data\\raw\\ws_capture_20260626T022520Z.ndjson",
+    "alignment_diagnostics": "C:\\Projects\\PolyReaper\\research\\2026-06-25-polymarket-raw-ws-ordering-capture\\data\\diagnostics\\live_until_1100_pmxt_alignment_diagnostics.json",
+    "raw_ordering_diagnostics": "C:\\Projects\\PolyReaper\\research\\2026-06-25-polymarket-raw-ws-ordering-capture\\data\\diagnostics\\live_until_1100_raw_ws_ordering_diagnostics.json",
+    "source_report": "C:\\Projects\\PolyReaper\\research\\2026-06-25-polymarket-raw-ws-ordering-capture\\report_pmxt_alignment_ordering.md",
+    "raw_window_utc": {
+      "start": "2026-06-26T02:25:28.635Z",
+      "end": "2026-06-26T02:59:53.643Z"
+    },
+    "note": "Synthetic metadata for a research-only smoke replay. YES/NO labels are assigned by higher/lower first in-window book mid; no settlement value is known."
+  },
+  "markets": [
+    {
+      "label": "T02 PMXT book pair",
+      "marketId": "t02-synthetic-market-0",
+      "conditionId": "b'0xce3c54c3e773e8b3bf73e4c12af93205b21195d03b9c386e22f274b9acfc2c56'",
+      "question": "Synthetic T02 PMXT book pair selected from the live-until-1100 sample",
+      "yesToken": "13887983551129862992605123088744175927084435631400400451585519366058907542147",
+      "noToken": "41832664285845832459030640969891483663884721696292020563915305291791682631668"
+    }
+  ]
+}
