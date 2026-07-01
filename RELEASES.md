@@ -35,6 +35,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
+- Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 
 ### Internal Improvements

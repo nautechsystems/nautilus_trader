@@ -32,6 +32,9 @@ use crate::{
     identifiers::{Symbol, Venue},
 };
 
+/// Separates leg components in generic spread instrument IDs.
+pub const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
+
 /// Represents a valid instrument ID.
 ///
 /// The symbol and venue combination should uniquely identify the instrument.

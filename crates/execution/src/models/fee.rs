@@ -17,6 +17,7 @@ use std::{fmt::Debug, rc::Rc};
 
 use nautilus_model::{
     enums::LiquiditySide,
+    identifiers::GENERIC_SPREAD_ID_SEPARATOR,
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     types::{Currency, Money, Price, Quantity},
@@ -313,35 +314,48 @@ impl FeeModel for PerContractFeeModel {
     ) -> anyhow::Result<Money> {
         let total = self.commission.as_decimal()
             * fill_quantity.as_decimal()
-            * spread_contract_count(instrument);
+            * spread_contract_count(instrument)?;
         Money::from_decimal(total, self.commission.currency).map_err(Into::into)
     }
 }
 
-fn spread_contract_count(instrument: &InstrumentAny) -> Decimal {
-    let symbol = instrument.id().symbol.to_string();
-    if !symbol.contains("___") {
-        return Decimal::ONE;
+fn spread_contract_count(instrument: &InstrumentAny) -> anyhow::Result<Decimal> {
+    let instrument_id = instrument.id();
+    let symbol = instrument_id.symbol.as_str();
+    if !instrument.is_spread() || !symbol.contains(GENERIC_SPREAD_ID_SEPARATOR) {
+        return Ok(Decimal::ONE);
     }
 
-    symbol
-        .split("___")
-        .filter_map(spread_leg_ratio)
-        .sum::<i64>()
-        .max(1)
-        .into()
+    let mut total = 0_i64;
+
+    for component in symbol.split(GENERIC_SPREAD_ID_SEPARATOR) {
+        let ratio = spread_leg_ratio(component)
+            .ok_or_else(|| anyhow::anyhow!("Invalid generic spread leg component: {component}"))?;
+        total = total.checked_add(ratio).ok_or_else(|| {
+            anyhow::anyhow!("Generic spread contract count overflowed for {symbol}")
+        })?;
+    }
+
+    Ok(total.into())
 }
 
 fn spread_leg_ratio(component: &str) -> Option<i64> {
-    let ratio = component
-        .strip_prefix("((")
-        .and_then(|rest| rest.split_once("))").map(|(ratio, _)| ratio))
-        .or_else(|| {
-            component
-                .strip_prefix('(')
-                .and_then(|rest| rest.split_once(')').map(|(ratio, _)| ratio))
-        })?;
-    ratio.parse::<i64>().ok()
+    if let Some(rest) = component.strip_prefix("((") {
+        let (ratio, symbol) = rest.split_once("))")?;
+        return spread_leg_ratio_parts(ratio, symbol);
+    }
+
+    let rest = component.strip_prefix('(')?;
+    let (ratio, symbol) = rest.split_once(')')?;
+    spread_leg_ratio_parts(ratio, symbol)
+}
+
+fn spread_leg_ratio_parts(ratio: &str, symbol: &str) -> Option<i64> {
+    if symbol.is_empty() {
+        return None;
+    }
+
+    ratio.parse::<i64>().ok().filter(|ratio| *ratio > 0)
 }
 
 #[derive(Debug, Clone)]
@@ -818,6 +832,32 @@ mod tests {
     }
 
     #[rstest]
+    fn test_per_contract_fee_model_non_spread_symbol_with_separator_charges_one_contract() {
+        let commission_per_contract = Money::from("1.25 USD");
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let mut aud_usd = audusd_sim();
+        aud_usd.id = InstrumentId::from("AUD___USD.SIM");
+        let instrument = InstrumentAny::CurrencyPair(aud_usd);
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(2),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("2.50 USD"));
+    }
+
+    #[rstest]
     fn test_per_contract_fee_model_option_spread_charges_each_contract() {
         let commission_per_contract = Money::from("1.25 USD");
         let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
@@ -842,6 +882,88 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission, Money::from("7.50 USD"));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_non_generic_option_spread_charges_one_contract() {
+        let commission_per_contract = Money::from("1.25 USD");
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let instrument = InstrumentAny::OptionSpread(option_spread());
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(2),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("2.50 USD"));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_malformed_generic_spread_fails() {
+        let commission_per_contract = Money::from("1.25 USD");
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let spread_id = InstrumentId::from("(1)SPY C400___SPY C410.SMART");
+        let mut option_spread = option_spread();
+        option_spread.id = spread_id;
+        let instrument = InstrumentAny::OptionSpread(option_spread);
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let result = fee_model.get_commission(
+            &accepted_order,
+            Quantity::from(2),
+            Price::from("1.0"),
+            &instrument,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Invalid generic spread leg component: SPY C410"
+        );
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_generic_spread_contract_count_overflow_fails() {
+        let commission_per_contract = Money::from("1.25 USD");
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let max_ratio = i64::MAX;
+        let spread_symbol = format!("({max_ratio})SPY C400___({max_ratio})SPY C410");
+        let spread_id = InstrumentId::from(format!("{spread_symbol}.SMART"));
+        let mut option_spread = option_spread();
+        option_spread.id = spread_id;
+        let instrument = InstrumentAny::OptionSpread(option_spread);
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let result = fee_model.get_commission(
+            &accepted_order,
+            Quantity::from(2),
+            Price::from("1.0"),
+            &instrument,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Generic spread contract count overflowed for {spread_symbol}")
+        );
     }
 
     #[rstest]
