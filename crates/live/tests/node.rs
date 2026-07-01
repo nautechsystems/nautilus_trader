@@ -61,6 +61,8 @@ use nautilus_model::{
     reports::{OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
+#[cfg(feature = "streaming")]
+use nautilus_system::config::{RotationConfig, StreamingConfig};
 use nautilus_trading::{
     ExecutionAlgorithmConfig, ExecutionAlgorithmCore, nautilus_execution_algorithm,
     nautilus_strategy,
@@ -221,6 +223,28 @@ fn test_builder_accepts_live() {
     let result = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Live);
 
     assert!(result.is_ok());
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_builder_accepts_streaming_config() {
+    let catalog_path =
+        std::env::temp_dir().join(format!("nautilus-live-streaming-{}", UUID4::new()));
+    std::fs::create_dir_all(&catalog_path).unwrap();
+
+    let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+        .unwrap()
+        .with_streaming_config(StreamingConfig::new(
+            catalog_path.to_string_lossy().to_string(),
+            "file".to_string(),
+            1_000,
+            true,
+            RotationConfig::NoRotation,
+        ))
+        .build()
+        .unwrap();
+
+    assert_eq!(node.environment(), Environment::Sandbox);
 }
 
 // -- LiveNode construction tests (require process isolation via nextest) --------------------------

@@ -56,12 +56,12 @@ pub(crate) fn remote_full_uri(uri: &str, object_path: &str) -> anyhow::Result<St
     }
 }
 
-pub(crate) enum ObjectStoreLocationKind {
+pub enum ObjectStoreLocationKind {
     Local,
     Remote { store_root_url: Url },
 }
 
-pub(crate) struct ObjectStoreLocation {
+pub struct ObjectStoreLocation {
     pub object_store: Arc<dyn ObjectStore>,
     pub base_path: String,
     pub original_uri: String,
@@ -69,7 +69,7 @@ pub(crate) struct ObjectStoreLocation {
 }
 
 impl ObjectStoreLocation {
-    pub(crate) fn store_root_url(&self) -> Option<&Url> {
+    pub fn store_root_url(&self) -> Option<&Url> {
         match &self.kind {
             ObjectStoreLocationKind::Local => None,
             ObjectStoreLocationKind::Remote { store_root_url } => Some(store_root_url),
@@ -516,7 +516,7 @@ pub fn create_object_store_from_path(
     not(feature = "cloud"),
     allow(unused_variables, clippy::needless_pass_by_value)
 )]
-pub(crate) fn create_object_store_location_from_path(
+pub fn create_object_store_location_from_path(
     path: &str,
     storage_options: Option<AHashMap<String, String>>,
 ) -> anyhow::Result<ObjectStoreLocation> {

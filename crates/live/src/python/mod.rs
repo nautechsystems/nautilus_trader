@@ -37,6 +37,8 @@ pub fn live(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::node::LiveNode>()?;
     m.add_class::<node::LiveNodeBuilderPy>()?;
     m.add_class::<crate::config::LiveNodeConfig>()?;
+    m.add_class::<config::PyRotationConfig>()?;
+    m.add_class::<config::PyStreamingConfig>()?;
     m.add_class::<crate::config::LiveDataEngineConfig>()?;
     m.add_class::<crate::config::LiveRiskEngineConfig>()?;
     m.add_class::<crate::config::LiveExecEngineConfig>()?;

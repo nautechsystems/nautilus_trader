@@ -21,7 +21,9 @@ __all__ = [
     "LiveRiskEngineConfig",
     "PluginConfig",
     "PortfolioConfig",
+    "RotationConfig",
     "RoutingConfig",
+    "StreamingConfig",
 ]
 
 @typing.final
@@ -132,6 +134,47 @@ class LiveExecEngineConfig:
     ) -> LiveExecEngineConfig: ...
 
 @typing.final
+class RotationConfig:
+    @property
+    def mode(self) -> str: ...
+    def __new__(
+        cls,
+        mode: str = "no_rotation",
+        max_size: int | None = None,
+        interval_ns: int | None = None,
+        schedule_ns: int | None = None,
+    ) -> RotationConfig: ...
+    @staticmethod
+    def size(max_size: int) -> RotationConfig: ...
+    @staticmethod
+    def interval(interval_ns: int) -> RotationConfig: ...
+    @staticmethod
+    def scheduled_dates(interval_ns: int, schedule_ns: int) -> RotationConfig: ...
+    @staticmethod
+    def no_rotation() -> RotationConfig: ...
+
+@typing.final
+class StreamingConfig:
+    @property
+    def catalog_path(self) -> str: ...
+    @property
+    def fs_protocol(self) -> str: ...
+    @property
+    def flush_interval_ms(self) -> int: ...
+    @property
+    def replace_existing(self) -> bool: ...
+    @property
+    def rotation_config(self) -> RotationConfig: ...
+    def __new__(
+        cls,
+        catalog_path: str,
+        fs_protocol: str | None = None,
+        flush_interval_ms: int = 1000,
+        replace_existing: bool = False,
+        rotation_config: RotationConfig | None = None,
+    ) -> StreamingConfig: ...
+
+@typing.final
 class LiveNode:
     @property
     def environment(self) -> common.Environment: ...
@@ -180,6 +223,7 @@ class LiveNodeBuilder:
     def with_reconciliation_lookback_mins(self, mins: int) -> LiveNodeBuilder: ...
     def with_cache_config(self, config: common.CacheConfig) -> LiveNodeBuilder: ...
     def with_portfolio_config(self, config: portfolio.PortfolioConfig) -> LiveNodeBuilder: ...
+    def with_streaming_config(self, config: StreamingConfig) -> LiveNodeBuilder: ...
     def with_data_engine_config(self, config: LiveDataEngineConfig) -> LiveNodeBuilder: ...
     def with_risk_engine_config(self, config: LiveRiskEngineConfig) -> LiveNodeBuilder: ...
     def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ...
@@ -221,6 +265,8 @@ class LiveNodeConfig:
     def timeout_shutdown_secs(self) -> float: ...
     @property
     def plugins(self) -> list[PluginConfig]: ...
+    @property
+    def streaming(self) -> StreamingConfig | None: ...
     def __new__(
         cls,
         environment: common.Environment | None = None,
@@ -239,6 +285,7 @@ class LiveNodeConfig:
         cache: common.CacheConfig | None = None,
         msgbus: common.MessageBusConfig | None = None,
         portfolio: portfolio.PortfolioConfig | None = None,
+        streaming: StreamingConfig | None = None,
         loop_debug: bool | None = None,
         data_engine: LiveDataEngineConfig | None = None,
         risk_engine: LiveRiskEngineConfig | None = None,

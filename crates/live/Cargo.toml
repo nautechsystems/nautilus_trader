@@ -31,7 +31,14 @@ node = [
 ]
 plugin = ["node"]
 examples = ["node", "dep:nautilus-testkit", "nautilus-trading/examples"]
-streaming = ["node", "nautilus-persistence", "nautilus-system/streaming"]
+streaming = [
+  "node",
+  "dep:chrono-tz",
+  "dep:futures",
+  "dep:object_store",
+  "nautilus-persistence",
+  "nautilus-system/streaming",
+]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
@@ -105,8 +112,11 @@ ahash = { workspace = true }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bon = { workspace = true }
+chrono-tz = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 indexmap = { workspace = true }
 log = { workspace = true }
+object_store = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

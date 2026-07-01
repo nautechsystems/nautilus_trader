@@ -23,7 +23,6 @@ use std::{
 
 use nautilus_common::{
     live::get_runtime,
-    msgbus::typed_handler::ShareableMessageHandler,
     python::{cache::PyCache, clock::PyClock},
 };
 use nautilus_core::UnixNanos;
@@ -47,7 +46,7 @@ use object_store::ObjectStoreExt;
 use pyo3::{exceptions::PyIOError, prelude::*};
 
 use crate::{
-    backend::feather::{FeatherWriter, RotationConfig},
+    backend::feather::{FeatherWriter, FeatherWriterMessageBusSubscription, RotationConfig},
     parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
 
@@ -63,7 +62,7 @@ use crate::{
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.persistence")]
 pub struct PyStreamingFeatherWriter {
     writer: Rc<RefCell<FeatherWriter>>,
-    handler: Option<ShareableMessageHandler>,
+    handler: Option<FeatherWriterMessageBusSubscription>,
 }
 
 #[pymethods]
