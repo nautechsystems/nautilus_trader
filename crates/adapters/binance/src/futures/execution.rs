@@ -1492,7 +1492,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         }
         let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
-        let (_, size_precision) = self.get_instrument_precision(instrument_id);
+        let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
         let ts_init = self.clock.get_time_ns();
 
         match self.http_client.query_order(&params).await {
@@ -1500,6 +1500,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 let report = order.to_order_status_report(
                     self.core.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     self.config.treat_expired_as_canceled,
                     ts_init,
@@ -1517,6 +1518,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         let report = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument_id,
+                            price_precision,
                             size_precision,
                             ts_init,
                         )?;
@@ -1555,11 +1557,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for order in orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (_, size_precision) = self.get_instrument_precision(instrument_id);
+                    let (price_precision, size_precision) =
+                        self.get_instrument_precision(instrument_id);
 
                     if let Ok(report) = order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
+                        price_precision,
                         size_precision,
                         self.config.treat_expired_as_canceled,
                         ts_init,
@@ -1575,6 +1579,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         && let Ok(report) = order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
+                            instrument.price_precision(),
                             instrument.size_precision(),
                             self.config.treat_expired_as_canceled,
                             ts_init,
@@ -1587,11 +1592,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             for algo_order in algo_orders {
                 if let Some(instrument_id) = cmd.instrument_id {
-                    let (_, size_precision) = self.get_instrument_precision(instrument_id);
+                    let (price_precision, size_precision) =
+                        self.get_instrument_precision(instrument_id);
 
                     if let Ok(report) = algo_order.to_order_status_report(
                         self.core.account_id,
                         instrument_id,
+                        price_precision,
                         size_precision,
                         ts_init,
                     ) {
@@ -1606,6 +1613,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
+                            instrument.price_precision(),
                             instrument.size_precision(),
                             ts_init,
                         )
@@ -1636,12 +1644,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
 
             let orders = self.http_client.query_all_orders(&params).await?;
-            let (_, size_precision) = self.get_instrument_precision(instrument_id);
+            let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
 
             for order in orders {
                 if let Ok(report) = order.to_order_status_report(
                     self.core.account_id,
                     instrument_id,
+                    price_precision,
                     size_precision,
                     self.config.treat_expired_as_canceled,
                     ts_init,
@@ -1838,7 +1847,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             &command.client_order_id,
             BINANCE_NAUTILUS_FUTURES_BROKER_ID,
         ));
-        let (_, size_precision) = self.get_instrument_precision(command.instrument_id);
+        let (price_precision, size_precision) =
+            self.get_instrument_precision(command.instrument_id);
         let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
 
         self.spawn_task("query_order", async move {
@@ -1864,6 +1874,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     let report = order.to_order_status_report(
                         account_id,
                         command.instrument_id,
+                        price_precision,
                         size_precision,
                         treat_expired_as_canceled,
                         ts_init,

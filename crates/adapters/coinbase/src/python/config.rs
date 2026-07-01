@@ -16,6 +16,7 @@
 //! Python bindings for Coinbase configuration.
 
 use nautilus_model::enums::AccountType;
+use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 use rust_decimal::Decimal;
 
@@ -40,6 +41,7 @@ impl CoinbaseDataClientConfig {
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
         derivatives_poll_interval_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -53,6 +55,7 @@ impl CoinbaseDataClientConfig {
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         derivatives_poll_interval_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -68,7 +71,7 @@ impl CoinbaseDataClientConfig {
                 .unwrap_or(defaults.update_instruments_interval_mins),
             derivatives_poll_interval_secs: derivatives_poll_interval_secs
                 .unwrap_or(defaults.derivatives_poll_interval_secs),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -103,6 +106,7 @@ impl CoinbaseExecClientConfig {
         default_margin_type = None,
         default_leverage = None,
         retail_portfolio_id = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -120,6 +124,7 @@ impl CoinbaseExecClientConfig {
         default_margin_type: Option<CoinbaseMarginType>,
         default_leverage: Option<Decimal>,
         retail_portfolio_id: Option<String>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -138,7 +143,7 @@ impl CoinbaseExecClientConfig {
             default_margin_type,
             default_leverage,
             retail_portfolio_id,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 

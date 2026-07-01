@@ -398,5 +398,5 @@ The following adapters currently support option Greeks subscriptions:
 ## See also
 
 - [Greeks](greeks.md) - Local Greeks calculation and portfolio risk management.
-- [Data](data.md) - Built-in data types and the subscription model.
+- [Data](data/) - Built-in data types and the subscription model.
 - [Actors](actors.md) - Subscription and handler reference table.

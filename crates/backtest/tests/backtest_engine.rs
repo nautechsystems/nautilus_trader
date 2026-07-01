@@ -2706,7 +2706,36 @@ impl CascadingStopStrategy {
     }
 }
 
-nautilus_strategy!(CascadingStopStrategy);
+nautilus_strategy!(CascadingStopStrategy, {
+    fn on_order_filled(&mut self, _event: &OrderFilled) {
+        // Submit stop-loss in response to fill (cascading command)
+        if !self.stop_submitted.get() {
+            self.stop_submitted.set(true);
+            let instrument_id = self.instrument_id;
+            let trade_size = self.trade_size;
+            let order = self.order().stop_market(
+                instrument_id,
+                OrderSide::Sell,
+                trade_size,
+                Price::from("900.00"),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            self.submit_order(order, None, None, None)
+                .expect("failed to submit cascading stop loss");
+        }
+    }
+});
 
 impl Debug for CascadingStopStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -2729,35 +2758,6 @@ impl DataActor for CascadingStopStrategy {
                 instrument_id,
                 OrderSide::Buy,
                 trade_size,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            );
-            self.submit_order(order, None, None, None)?;
-        }
-        Ok(())
-    }
-
-    fn on_order_filled(&mut self, _event: &OrderFilled) -> anyhow::Result<()> {
-        // Submit stop-loss in response to fill (cascading command)
-        if !self.stop_submitted.get() {
-            self.stop_submitted.set(true);
-            let instrument_id = self.instrument_id;
-            let trade_size = self.trade_size;
-            let order = self.order().stop_market(
-                instrument_id,
-                OrderSide::Sell,
-                trade_size,
-                Price::from("900.00"),
-                None,
-                None,
-                None,
-                None,
-                None,
                 None,
                 None,
                 None,

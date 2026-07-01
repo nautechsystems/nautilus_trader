@@ -1703,6 +1703,7 @@ impl BinanceFuturesHttpClient {
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
+        let price_precision = self.get_price_precision(&symbol)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -1772,6 +1773,7 @@ impl BinanceFuturesHttpClient {
         order.to_order_status_report(
             account_id,
             instrument_id,
+            price_precision,
             size_precision,
             self.treat_expired_as_canceled,
             ts_init,
@@ -1811,6 +1813,7 @@ impl BinanceFuturesHttpClient {
     ) -> anyhow::Result<OrderStatusReport> {
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
+        let price_precision = self.get_price_precision(&symbol)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
         let binance_order_type = order_type_to_binance_futures(order_type)?;
@@ -1897,7 +1900,13 @@ impl BinanceFuturesHttpClient {
 
         let order = self.inner.submit_algo_order(&params).await?;
         let ts_init = self.clock.get_time_ns();
-        order.to_order_status_report(account_id, instrument_id, size_precision, ts_init)
+        order.to_order_status_report(
+            account_id,
+            instrument_id,
+            price_precision,
+            size_precision,
+            ts_init,
+        )
     }
 
     /// Submits multiple orders in a single request (up to 5 orders).
@@ -1943,6 +1952,7 @@ impl BinanceFuturesHttpClient {
 
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
+        let price_precision = self.get_price_precision(&symbol)?;
 
         let binance_side = BinanceSide::try_from(order_side)?;
 
@@ -1967,6 +1977,7 @@ impl BinanceFuturesHttpClient {
         order.to_order_status_report(
             account_id,
             instrument_id,
+            price_precision,
             size_precision,
             self.treat_expired_as_canceled,
             ts_init,
@@ -2233,6 +2244,7 @@ impl BinanceFuturesHttpClient {
 
         let symbol = format_binance_symbol(&instrument_id);
         let size_precision = self.get_size_precision(&symbol)?;
+        let price_precision = self.get_price_precision(&symbol)?;
 
         let order_id = venue_order_id
             .map(|id| id.inner().parse::<i64>())
@@ -2254,6 +2266,7 @@ impl BinanceFuturesHttpClient {
         order.to_order_status_report(
             account_id,
             instrument_id,
+            price_precision,
             size_precision,
             self.treat_expired_as_canceled,
             ts_init,
@@ -2307,11 +2320,13 @@ impl BinanceFuturesHttpClient {
                 InstrumentId::from(format!("{}{}.BINANCE", order.symbol, suffix))
             });
 
-            let size_precision = self.get_size_precision(&order.symbol).unwrap_or(8); // Default precision if not in cache
+            let price_precision = self.get_price_precision(&order.symbol).unwrap_or(8);
+            let size_precision = self.get_size_precision(&order.symbol).unwrap_or(8);
 
             match order.to_order_status_report(
                 account_id,
                 order_instrument_id,
+                price_precision,
                 size_precision,
                 self.treat_expired_as_canceled,
                 ts_init,

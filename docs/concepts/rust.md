@@ -86,11 +86,11 @@ The Nautilus crates are published to
 
 ```toml
 [dependencies]
-nautilus-backtest = "0.59"
-nautilus-common = "0.59"
-nautilus-execution = "0.59"
-nautilus-model = { version = "0.59", features = ["stubs"] }
-nautilus-trading = { version = "0.59", features = ["examples"] }
+nautilus-backtest = "0.60"
+nautilus-common = "0.60"
+nautilus-execution = "0.60"
+nautilus-model = { version = "0.60", features = ["stubs"] }
+nautilus-trading = { version = "0.60", features = ["examples"] }
 
 anyhow = "1"
 log = "0.4"
@@ -100,8 +100,8 @@ For live trading, add the live crate and the adapter for your venue:
 
 ```toml
 [dependencies]
-nautilus-live = "0.59"
-nautilus-okx = "0.59"
+nautilus-live = "0.60"
+nautilus-okx = "0.60"
 ```
 
 To track the latest development branch, point all Nautilus dependencies at the

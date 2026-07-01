@@ -1163,13 +1163,20 @@ match the venue limit.
 
 ### Data client configuration options
 
-| Option              | Default   | Description |
-|---------------------|-----------|-------------------------------------------------|
-| `environment`       | `None`    | Environment enum (`MAINNET` or `TESTNET`). |
-| `base_url_ws`       | `None`    | Override for the WebSocket base URL. |
-| `http_timeout_secs` | `60`      | Timeout (seconds) applied to REST calls. |
-| `proxy_url`         | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `transport_backend` | `Sockudo` | WebSocket transport backend. |
+| Option                               | Default   | Description |
+|--------------------------------------|-----------|-------------|
+| `private_key`                        | `None`    | Optional EVM private key for authenticated endpoints. |
+| `base_url_ws`                        | `None`    | Override for the WebSocket base URL. |
+| `base_url_http`                      | `None`    | Override for the HTTP info URL. |
+| `proxy_url`                          | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `environment`                        | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
+| `http_timeout_secs`                  | `60`      | Timeout (seconds) applied to REST calls. |
+| `ws_timeout_secs`                    | `30`      | Timeout (seconds) applied to WebSocket connections. |
+| `stale_stream_receive_timeout_secs`  | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor. |
+| `stream_health_check_interval_secs`  | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor. |
+| `stale_stream_warning_cooldown_secs` | `60`      | Cooldown (seconds) between stale warnings for the same market data stream. |
+| `update_instruments_interval_mins`   | `60`      | Interval (minutes) between instrument catalogue refreshes. |
+| `transport_backend`                  | `Sockudo` | WebSocket transport backend. |
 
 ### Execution client configuration options
 

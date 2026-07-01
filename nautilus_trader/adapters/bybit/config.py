@@ -23,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import BybitEnvironment
 from nautilus_trader.core.nautilus_pyo3 import BybitMarginMode
 from nautilus_trader.core.nautilus_pyo3 import BybitPositionMode
 from nautilus_trader.core.nautilus_pyo3 import BybitProductType
+from nautilus_trader.network import TransportBackend
 
 
 def _resolve_environment(
@@ -81,6 +82,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     environment: BybitEnvironment | None = None
     base_url_http: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
@@ -177,6 +179,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_private: str | None = None
     base_url_ws_trade: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     use_gtd: bool = False  # Not supported on Bybit
     use_ws_execution_fast: bool = False
     use_http_batch_api: bool = False

@@ -4,6 +4,7 @@ import typing
 
 from nautilus_trader import infrastructure
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "BlockchainDataClientConfig",
@@ -28,6 +29,7 @@ class BlockchainDataClientConfig:
         pool_filters: DexPoolFilters | None = None,
         postgres_cache_database_config: infrastructure.PostgresConnectOptions | None = None,
         proxy_url: str | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
     def chain(self) -> model.Chain: ...

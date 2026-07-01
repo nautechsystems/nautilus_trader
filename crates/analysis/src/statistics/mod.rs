@@ -30,6 +30,8 @@ pub mod profit_factor;
 pub mod returns_avg;
 pub mod returns_avg_loss;
 pub mod returns_avg_win;
+pub mod returns_kurtosis;
+pub mod returns_skewness;
 pub mod returns_volatility;
 pub mod risk_return_ratio;
 pub mod sharpe_ratio;

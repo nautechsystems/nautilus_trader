@@ -1,6 +1,6 @@
 [project]
 name = "nautilus_trader"
-version = "1.230.0"
+version = "1.231.0"
 description = "Production-grade Rust-native trading engine with deterministic event-driven architecture"
 authors = [{ name = "Nautech Systems", email = "info@nautechsystems.io" }]
 classifiers = [
@@ -95,7 +95,7 @@ dev = [
   "setuptools>=82",
   "mypy==1.20.2,<2.0.0", # Pinned to 1.20.2 (keep in line with .pre-commit-config.yaml)
   "pandas-stubs>=2.3.3,<4.0.0",
-  "ruff==0.15.18", # Pinned to 0.15.18 (keep in line with .pre-commit-config.yaml)
+  "ruff==0.15.20", # Pinned to 0.15.20 (keep in line with .pre-commit-config.yaml)
   "types-pytz>=2026.2,<2027.0",
   "types-toml>=0.10.8,<1.0.0",
 ]

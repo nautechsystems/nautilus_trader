@@ -108,7 +108,9 @@ use nautilus_model::{
         AggregationSource, BarAggregation, BookType, InstrumentClass, MarketStatusAction,
         OrderSide, PriceType, RecordFlag,
     },
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, Venue},
+    identifiers::{
+        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
+    },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     types::{Price, Quantity},
@@ -5035,8 +5037,6 @@ fn spread_quote_update_interval_seconds(params: Option<&Params>) -> Option<u64> 
         None => Some(1),
     }
 }
-
-const GENERIC_SPREAD_ID_SEPARATOR: &str = "___";
 
 fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentId, i64)>> {
     if !instrument.is_spread() {

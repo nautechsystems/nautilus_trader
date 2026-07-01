@@ -1723,18 +1723,6 @@ impl PyDataActor {
         Ok(())
     }
 
-    #[pyo3(name = "subscribe_order_fills")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_fills(&mut self, instrument_id: InstrumentId) {
-        DataActor::subscribe_order_fills(self.inner_mut(), instrument_id);
-    }
-
-    #[pyo3(name = "subscribe_order_cancels")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_subscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
-        DataActor::subscribe_order_cancels(self.inner_mut(), instrument_id);
-    }
-
     #[pyo3(name = "unsubscribe_data")]
     #[pyo3(signature = (data_type, client_id=None, params=None))]
     fn py_unsubscribe_data(
@@ -1960,18 +1948,6 @@ impl PyDataActor {
         client_id: Option<ClientId>,
     ) {
         DataActor::unsubscribe_option_chain(self.inner_mut(), series_id, client_id);
-    }
-
-    #[pyo3(name = "unsubscribe_order_fills")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_fills(&mut self, instrument_id: InstrumentId) {
-        DataActor::unsubscribe_order_fills(self.inner_mut(), instrument_id);
-    }
-
-    #[pyo3(name = "unsubscribe_order_cancels")]
-    #[pyo3(signature = (instrument_id))]
-    fn py_unsubscribe_order_cancels(&mut self, instrument_id: InstrumentId) {
-        DataActor::unsubscribe_order_cancels(self.inner_mut(), instrument_id);
     }
 
     #[pyo3(name = "request_data")]

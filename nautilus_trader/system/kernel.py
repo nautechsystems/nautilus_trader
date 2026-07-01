@@ -292,7 +292,7 @@ class NautilusKernel:
         if not config.message_bus or not config.message_bus.database:
             self._msgbus_db = None
         elif config.message_bus.database.type == "redis":
-            self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
+            self._msgbus_db = nautilus_pyo3.RedisMessageBusBacking(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                 instance_id=nautilus_pyo3.UUID4.from_str(self._instance_id.value),
                 config_json=pyo3_config_json(config.message_bus),
@@ -849,7 +849,7 @@ class NautilusKernel:
 
         Returns
         -------
-        RedisMessageBusDatabase or ``None``
+        RedisMessageBusBacking or ``None``
 
         """
         return self._msgbus_db

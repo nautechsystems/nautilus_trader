@@ -497,12 +497,8 @@ impl LiveNode {
         .map_err(to_pyruntime_err)?;
 
         if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
-            for instrument_id in &claims {
-                self.exec_manager_mut()
-                    .claim_external_orders(*instrument_id, strategy_id)
-                    .map_err(to_pyruntime_err)?;
-            }
-            log::info!("Registered external order claims for {strategy_id}: {claims:?}");
+            self.register_external_order_claims(strategy_id, &claims)
+                .map_err(to_pyruntime_err)?;
         }
 
         self.kernel_mut()
@@ -2070,6 +2066,14 @@ class ClaimsStrategy(Strategy):
             node.py_add_strategy_from_config(py, importable)
                 .expect("strategy should register");
         });
+
+        {
+            let exec_engine = node.kernel().exec_engine.borrow();
+            assert_eq!(
+                exec_engine.get_external_order_claim(&instrument_id),
+                Some(strategy_id)
+            );
+        }
 
         let result = node
             .exec_manager_mut()

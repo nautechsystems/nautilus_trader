@@ -31,6 +31,7 @@ pub mod sort;
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{data::ensure_rust_extractor_registered, identifiers::InstrumentId};
+use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
@@ -272,6 +273,10 @@ fn extract_data_config_from_pyobject(
         .map(|value| value.extract::<u64>())
         .transpose()?
         .unwrap_or(default.resolve_poll_max_wait_secs);
+    let transport_backend = match getattr_optional(obj, "transport_backend")? {
+        Some(value) => value.extract::<TransportBackend>()?,
+        None => default.transport_backend,
+    };
     Ok(PolymarketDataClientConfig {
         instrument_config,
         base_url_http,
@@ -296,7 +301,7 @@ fn extract_data_config_from_pyobject(
         resolve_poll_max_wait_secs,
         filters: Vec::new(),
         new_market_filter: None,
-        transport_backend: default.transport_backend,
+        transport_backend,
     })
 }
 

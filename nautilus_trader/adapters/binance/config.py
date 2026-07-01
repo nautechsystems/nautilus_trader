@@ -24,6 +24,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.network import TransportBackend
 
 
 class BinanceInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
@@ -121,6 +122,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     us: bool = False
     update_instruments_interval_mins: PositiveInt | None = 60
     use_agg_trade_ticks: bool = False
@@ -207,6 +209,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     base_url_ws_stream: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     us: bool = False
     use_gtd: bool = True
     use_reduce_only: bool = True

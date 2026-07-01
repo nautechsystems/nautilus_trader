@@ -225,10 +225,6 @@ impl MessageBusBackingFactory for RedisMessageBusFactory {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
-)]
 pub struct RedisMessageBusBacking {
     /// The trader ID for this message bus backing.
     pub trader_id: TraderId,

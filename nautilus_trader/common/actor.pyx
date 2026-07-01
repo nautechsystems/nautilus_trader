@@ -115,8 +115,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.events.order cimport OrderCanceled
-from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.greeks cimport GreeksCalculator
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -632,38 +630,6 @@ cdef class Actor(Component):
         ----------
         data : Data
             The historical data received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        # Optionally override in subclass
-
-    cpdef void on_order_filled(self, OrderFilled event):
-        """
-        Actions to be performed when running and receives an order filled event.
-
-        Parameters
-        ----------
-        event : OrderFilled
-            The event received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        # Optionally override in subclass
-
-    cpdef void on_order_canceled(self, OrderCanceled event):
-        """
-        Actions to be performed when running and receives an order canceled event.
-
-        Parameters
-        ----------
-        event : OrderCanceled
-            The event received.
 
         Warnings
         --------
@@ -2147,48 +2113,6 @@ cdef class Actor(Component):
         )
         self._send_data_cmd(command)
 
-    cpdef void subscribe_order_fills(self, InstrumentId instrument_id):
-        """
-        Subscribe to all order fills for the given instrument ID.
-
-        Once subscribed, any matching order fills published on the message bus are forwarded
-        to the `on_order_filled` handler.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to subscribe to fills for.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"events.fills.{instrument_id}",
-            handler=self._handle_order_filled,
-        )
-
-    cpdef void subscribe_order_cancels(self, InstrumentId instrument_id):
-        """
-        Subscribe to all order cancels for the given instrument ID.
-
-        Once subscribed, any matching order cancels published on the message bus are forwarded
-        to the `on_order_canceled` handler.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to subscribe to cancels for.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"events.cancels.{instrument_id}",
-            handler=self._handle_order_canceled,
-        )
-
     cpdef void unsubscribe_data(
         self,
         DataType data_type,
@@ -2885,42 +2809,6 @@ cdef class Actor(Component):
             params=used_params,
         )
         self._send_data_cmd(command)
-
-    cpdef void unsubscribe_order_fills(self, InstrumentId instrument_id):
-        """
-        Unsubscribe from all order fills for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to unsubscribe from fills for.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.unsubscribe(
-            topic=f"events.fills.{instrument_id}",
-            handler=self._handle_order_filled,
-        )
-
-    cpdef void unsubscribe_order_cancels(self, InstrumentId instrument_id):
-        """
-        Unsubscribe from all order cancels for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument to unsubscribe from cancels for.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.unsubscribe(
-            topic=f"events.cancels.{instrument_id}",
-            handler=self._handle_order_canceled,
-        )
 
     cpdef void publish_data(self, DataType data_type, Data data):
         """
@@ -4805,32 +4693,6 @@ cdef class Actor(Component):
                 self.on_instrument_close(update)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(update)}", e)
-                raise
-
-    cpdef void _handle_order_filled(self, OrderFilled event):
-        if str(event.strategy_id) == str(self.id):
-            # This represents a strategies automatic subscription to it's own
-            # order events, so we don't need to pass this event to the handler twice
-            return
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_order_filled(event)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(event)}", e)
-                raise
-
-    cpdef void _handle_order_canceled(self, OrderCanceled event):
-        if str(event.strategy_id) == str(self.id):
-            # This represents a strategies automatic subscription to it's own
-            # order events, so we don't need to pass this event to the handler twice
-            return
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_order_canceled(event)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(event)}", e)
                 raise
 
     cpdef void handle_data(self, Data data):

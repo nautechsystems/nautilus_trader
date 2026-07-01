@@ -211,7 +211,6 @@ BOOK_INTERVAL_SUBSCRIPTION_PARAMETERS = (
 )
 BOOK_INTERVAL_UNSUBSCRIBE_PARAMETERS = ("instrument_id", "interval_ms", "client_id", "params")
 BAR_SUBSCRIPTION_PARAMETERS = ("bar_type", "client_id", "params")
-ORDER_SUBSCRIPTION_PARAMETERS = ("instrument_id",)
 BLOCK_SUBSCRIPTION_PARAMETERS = ("chain", "client_id", "params")
 OPTION_CHAIN_SUBSCRIPTION_PARAMETERS = (
     "series_id",
@@ -259,8 +258,6 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("subscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
-    ("subscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("subscribe_blocks", BLOCK_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_pool_swaps", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -282,8 +279,6 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("unsubscribe_instrument_status", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_option_chain", OPTION_CHAIN_UNSUBSCRIBE_PARAMETERS),
-    ("unsubscribe_order_fills", ORDER_SUBSCRIPTION_PARAMETERS),
-    ("unsubscribe_order_cancels", ORDER_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_blocks", BLOCK_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_pool", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_pool_swaps", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
@@ -300,6 +295,14 @@ REGISTRATION_REQUIRED_SIGNATURES = [
     ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_bars", BAR_REQUEST_PARAMETERS),
+]
+REMOVED_ORDER_EVENT_METHODS = [
+    "on_order_filled",
+    "on_order_canceled",
+    "subscribe_order_fills",
+    "subscribe_order_cancels",
+    "unsubscribe_order_fills",
+    "unsubscribe_order_cancels",
 ]
 HISTORICAL_REQUEST_DATETIME_CASES = [
     pytest.param("datetime-utc", id="datetime-utc"),
@@ -541,6 +544,11 @@ def test_data_actor_registration_gated_methods_expose_expected_signatures(
     signature = inspect.signature(getattr(actor, method_name))
 
     assert tuple(signature.parameters) == parameter_names
+
+
+@pytest.mark.parametrize("method_name", REMOVED_ORDER_EVENT_METHODS)
+def test_data_actor_order_event_methods_are_not_exposed(actor, method_name):
+    assert not hasattr(actor, method_name)
 
 
 @pytest.mark.parametrize("request_time", HISTORICAL_REQUEST_DATETIME_CASES)

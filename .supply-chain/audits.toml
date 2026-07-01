@@ -109,6 +109,12 @@ criteria = "safe-to-deploy"
 delta = "1.9.0 -> 1.9.1"
 notes = "Single atomic ordering fix: compare_exchange failure order changed from Acquire to SeqCst in debt repayment. No new unsafe patterns."
 
+[[audits.arc-swap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.9.1 -> 1.9.2"
+notes = "Documentation-only release clarifying that RefCnt methods must not panic or unwind. No runtime logic, dependency, build-script, filesystem, network, process, or unsafe-code changes."
+
 [[audits.aws-lc-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -451,6 +457,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.2.1 -> 1.2.2"
 notes = "Additive feature/fix release: new HOTKEYS command module, TLS certificate auth, SO_LINGER socket option, connection-manager concurrency limit, bb8 sentinel pool. New code plus tests; no build-script or existing-behavior changes."
+
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.2.4 -> 1.3.0"
+notes = "Adds optional Bloom command support, numbered DB support for cluster clients, and a cluster retry backoff bound fix. No new build-script, filesystem, process, or suspicious network behavior."
 
 [[audits.rustls-native-certs]]
 who = "Nautech Systems <info@nautechsystems.io>"

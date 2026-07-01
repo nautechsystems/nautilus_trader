@@ -16,6 +16,7 @@
 //! Python bindings for Lighter configuration.
 
 use nautilus_model::identifiers::{AccountId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use pyo3::pymethods;
 
 use crate::{
@@ -40,6 +41,7 @@ impl LighterDataClientConfig {
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
         rest_quota_per_min = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -54,6 +56,7 @@ impl LighterDataClientConfig {
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         rest_quota_per_min: Option<u32>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -69,7 +72,7 @@ impl LighterDataClientConfig {
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             rest_quota_per_min,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -103,6 +106,7 @@ impl LighterExecClientConfig {
         market_order_slippage_bps = None,
         rest_quota_per_min = None,
         sendtx_quota_per_min = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -120,6 +124,7 @@ impl LighterExecClientConfig {
         market_order_slippage_bps: Option<u32>,
         rest_quota_per_min: Option<u32>,
         sendtx_quota_per_min: Option<u32>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::builder()
             .trader_id(trader_id)
@@ -141,7 +146,7 @@ impl LighterExecClientConfig {
                 .unwrap_or(defaults.market_order_slippage_bps),
             rest_quota_per_min,
             sendtx_quota_per_min,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 

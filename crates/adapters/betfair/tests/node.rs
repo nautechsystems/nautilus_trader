@@ -209,19 +209,17 @@ impl DataActor for SubmitLimitOnStart {
         self.submit_order(order, None, Some(client_id), None)?;
         Ok(())
     }
-
-    fn on_order_canceled(&mut self, _event: &OrderCanceled) -> anyhow::Result<()> {
-        self.probe.canceled.store(true, Ordering::Relaxed);
-        Ok(())
-    }
-
-    fn on_order_filled(&mut self, _event: &OrderFilled) -> anyhow::Result<()> {
-        self.probe.filled.store(true, Ordering::Relaxed);
-        Ok(())
-    }
 }
 
 nautilus_strategy!(SubmitLimitOnStart, {
+    fn on_order_canceled(&mut self, _event: &OrderCanceled) {
+        self.probe.canceled.store(true, Ordering::Relaxed);
+    }
+
+    fn on_order_filled(&mut self, _event: &OrderFilled) {
+        self.probe.filled.store(true, Ordering::Relaxed);
+    }
+
     fn on_order_accepted(&mut self, event: OrderAccepted) {
         self.probe.accepted.store(true, Ordering::Relaxed);
 

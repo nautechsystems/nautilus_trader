@@ -34,7 +34,8 @@ use crate::{
         information_ratio::InformationRatio, long_ratio::LongRatio, loser_avg::AvgLoser,
         loser_max::MaxLoser, loser_min::MinLoser, profit_factor::ProfitFactor,
         returns_avg::ReturnsAverage, returns_avg_loss::ReturnsAverageLoss,
-        returns_avg_win::ReturnsAverageWin, returns_volatility::ReturnsVolatility,
+        returns_avg_win::ReturnsAverageWin, returns_kurtosis::ReturnsKurtosis,
+        returns_skewness::ReturnsSkewness, returns_volatility::ReturnsVolatility,
         risk_return_ratio::RiskReturnRatio, sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio,
         tracking_error::TrackingError, treynor_ratio::TreynorRatio, win_rate::WinRate,
         winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
@@ -147,6 +148,7 @@ impl PortfolioAnalyzer {
     /// Registers a new portfolio statistic for calculation.
     #[pyo3(name = "register_statistic")]
     #[expect(clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_lines)]
     fn py_register_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -242,6 +244,14 @@ impl PortfolioAnalyzer {
                 let stat = statistic.extract::<TreynorRatio>(py)?;
                 self.register_statistic(Arc::new(stat));
             }
+            "ReturnsSkewness" => {
+                let stat = statistic.extract::<ReturnsSkewness>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
+            "ReturnsKurtosis" => {
+                let stat = statistic.extract::<ReturnsKurtosis>(py)?;
+                self.register_statistic(Arc::new(stat));
+            }
             _ => {
                 return Err(to_pyvalue_err(format!(
                     "Unknown statistic type: {type_name}"
@@ -255,6 +265,7 @@ impl PortfolioAnalyzer {
     /// Removes a specific statistic from calculation.
     #[pyo3(name = "deregister_statistic")]
     #[expect(clippy::needless_pass_by_value)]
+    #[expect(clippy::too_many_lines)]
     fn py_deregister_statistic(&mut self, py: Python, statistic: Py<PyAny>) -> PyResult<()> {
         let type_name = statistic
             .getattr(py, "__class__")?
@@ -348,6 +359,14 @@ impl PortfolioAnalyzer {
             }
             "TreynorRatio" => {
                 let stat = statistic.extract::<TreynorRatio>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "ReturnsSkewness" => {
+                let stat = statistic.extract::<ReturnsSkewness>(py)?;
+                self.deregister_statistic(&(Arc::new(stat) as Statistic));
+            }
+            "ReturnsKurtosis" => {
+                let stat = statistic.extract::<ReturnsKurtosis>(py)?;
                 self.deregister_statistic(&(Arc::new(stat) as Statistic));
             }
             _ => {

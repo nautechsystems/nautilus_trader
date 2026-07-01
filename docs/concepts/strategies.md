@@ -250,7 +250,8 @@ def on_start(self) -> None:
 ```
 
 Live bars are subscribed via the `request_bars()` `callback` so the stream starts only
-once history has loaded; see [Working with bars: request vs. subscribe](data.md#working-with-bars-request-vs-subscribe)
+once history has loaded; see
+[Working with bars: request vs. subscribe](data/index.md#working-with-bars-request-vs-subscribe)
 for why this matters under `validate_data_sequence=True`.
 
 ### Clock and timers

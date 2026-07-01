@@ -21,6 +21,7 @@ use nautilus_model::{
     identifiers::{AccountId, TraderId},
     types::Currency,
 };
+use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 
@@ -45,6 +46,7 @@ impl BinanceDataClientConfig {
         api_secret = None,
         spot_market_data_mode = None,
         instrument_status_poll_secs = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -56,6 +58,7 @@ impl BinanceDataClientConfig {
         api_secret: Option<String>,
         spot_market_data_mode: Option<BinanceSpotMarketDataMode>,
         instrument_status_poll_secs: Option<u64>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -68,7 +71,7 @@ impl BinanceDataClientConfig {
             spot_market_data_mode: spot_market_data_mode.unwrap_or(defaults.spot_market_data_mode),
             instrument_status_poll_secs: instrument_status_poll_secs
                 .unwrap_or(defaults.instrument_status_poll_secs),
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -104,6 +107,7 @@ impl BinanceExecClientConfig {
         treat_expired_as_canceled = false,
         use_trade_lite = false,
         bnfcr_currency = None,
+        transport_backend = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -124,6 +128,7 @@ impl BinanceExecClientConfig {
         treat_expired_as_canceled: bool,
         use_trade_lite: bool,
         bnfcr_currency: Option<Currency>,
+        transport_backend: Option<TransportBackend>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -146,7 +151,7 @@ impl BinanceExecClientConfig {
             bnfcr_currency: bnfcr_currency.unwrap_or(defaults.bnfcr_currency),
             treat_expired_as_canceled,
             use_trade_lite,
-            transport_backend: defaults.transport_backend,
+            transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
     }
 
@@ -165,7 +170,7 @@ mod tests {
     #[rstest]
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
         let config =
-            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None);
+            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None, None);
         let defaults = BinanceDataClientConfig::default();
 
         assert_eq!(config.product_type, defaults.product_type);
@@ -192,6 +197,7 @@ mod tests {
             Some("api-secret".to_string()),
             Some(BinanceSpotMarketDataMode::Json),
             Some(15),
+            None,
         );
 
         assert_eq!(config.product_type, BinanceProductType::UsdM);
@@ -216,7 +222,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
             trader_id, account_id, None, None, None, None, None, true, true, None, None, None,
-            None, None, false, false, None,
+            None, None, false, false, None, None,
         );
         let defaults = BinanceExecClientConfig::default();
 
@@ -267,6 +273,7 @@ mod tests {
             true,
             true,
             Some(Currency::USDC()),
+            None,
         );
 
         assert_eq!(config.product_type, BinanceProductType::UsdM);
@@ -312,6 +319,7 @@ mod tests {
             None,
             false,
             false,
+            None,
             None,
         );
 

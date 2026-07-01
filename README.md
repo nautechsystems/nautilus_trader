@@ -10,7 +10,7 @@
 
 | Branch    | Version                                                                                                                                                                                                                     | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
+| `master`  | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
 | `nightly` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fnightly%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=nightly)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 | `develop` | [![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fdevelop%2Fversion.json)](https://packages.nautechsystems.io/simple/nautilus-trader/index.html) | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=develop)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml) |
 
@@ -82,8 +82,9 @@ execution, while Python serves as the control plane. The same architecture, exec
 semantics, and time model operate across both environments, allowing strategies to move
 from research to production without reimplementation.
 
-Python bindings are provided via [PyO3](https://pyo3.rs), with an ongoing migration from
-Cython. No Rust toolchain is required at install time.
+Python bindings are provided via [PyO3](https://pyo3.rs) for the Rust-native v2 runtime.
+The legacy Cython v1 core remains supported during the v2 release-candidate phase.
+No Rust toolchain is required at install time.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
@@ -162,8 +163,9 @@ practices:
   publication cooldown before adoption, cargo-vet audits Rust provenance, and license checks enforce
   LGPL-3.0-or-later compatibility.
 - **Scanning and fuzzing**: Gitleaks secret screening and Zizmor Actions auditing run pre-commit;
-  CodeQL, cargo-audit, cargo-deny, OSV Scanner, and pip-audit run on pull requests and nightly; and
-  cargo-fuzz targets cover selected adapter and signing surfaces.
+  CodeQL runs on PRs to `master` and pushes to `nightly`; cargo-audit, cargo-deny, cargo-vet,
+  OSV Scanner, and pip-audit run on audit-relevant PRs and daily schedules; cargo-fuzz targets cover
+  selected adapter and signing surfaces.
 - **Build and release integrity**: GitHub Actions are pinned to commit SHAs, CI runners are hardened
   with egress allow-listing, Python artifacts carry SLSA build provenance, container images are
   Sigstore-signed with attested SPDX SBOMs, and PyPI and crates.io publishing uses OIDC Trusted
@@ -212,7 +214,7 @@ We aim to maintain a stable, passing build across all branches.
 
 > [!NOTE]
 >
-> Our [roadmap](/ROADMAP.md) aims to achieve a **stable API for version 2.x** (likely after the Rust port).
+> The v2 release-candidate line is the transition toward a **stable API for version 2.x**.
 > Once this milestone is reached, we plan to implement a formal deprecation process for any API changes.
 > This approach allows us to maintain a rapid development pace for now.
 
@@ -266,7 +268,18 @@ To install the latest binary wheel (or sdist package) from PyPI using Python's p
 pip install -U nautilus_trader
 ```
 
-Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`, `dydx`, `ib`, `polymarket`, `visualization`):
+To test the v2 release-candidate wheels from PyPI:
+
+```bash
+pip install -U nautilus_trader --pre
+```
+
+The v2 release-candidate wheels use `2.0.0rcN` versions and are intended for community testing
+before the final `2.0.0` release. We do not recommend using release candidates in production
+environments, such as live trading controlling real capital.
+
+Install optional dependencies as 'extras' for specific integrations (e.g., `betfair`, `docker`,
+`ib`, `polymarket`, `visualization`):
 
 ```bash
 pip install -U "nautilus_trader[docker,ib]"
@@ -492,14 +505,15 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 - `make install`: Installs in `release` build mode with all dependency groups and extras.
 - `make install-debug`: Same as `make install` but with `debug` build mode.
-- `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package).
+- `make install-deps`: Installs Python dependencies without building the package.
 - `make build`: Runs the build script in `release` build mode (default).
 - `make build-debug`: Runs the build script in `debug` build mode.
 - `make build-wheel`: Runs uv build with a wheel format in `release` mode.
 - `make build-wheel-debug`: Runs uv build with a wheel format in `debug` mode.
 - `make cargo-test`: Runs all Rust crate tests using `cargo-nextest`.
-- `make clean`: Deletes all build results, such as `.so` or `.dll` files.
-- `make distclean`: **CAUTION** Removes all artifacts not in the git index from the repository. This includes source files which have not been `git add`ed.
+- `make clean`: Deletes build artifacts, caches, and build directories.
+- `make distclean`: **CAUTION** Removes all artifacts not in the git index when run with
+  `FORCE=1`. This includes source files which have not been `git add`ed.
 - `make docs`: Builds the documentation HTML using Sphinx.
 - `make pre-commit`: Runs the pre-commit checks over all files.
 - `make ruff`: Runs ruff over all files using the `pyproject.toml` config (with autofix).

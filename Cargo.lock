@@ -740,9 +740,9 @@ checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "arc-swap"
-version = "1.9.1"
+version = "1.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a3a1fd6f75306b68087b831f025c712524bcb19aad54e557b1129cfa0a2b207"
+checksum = "c049c0be4daef0b145cb3555416b3b8ef5b7888a38aea1a3a155801fe7b0810b"
 dependencies = [
  "rustversion",
 ]
@@ -5349,7 +5349,7 @@ checksum = "034a0ad7deebf0c2abcf2435950a6666c3c15ea9d8fad0c0f48efa8a7f843fed"
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5364,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-architect-ax"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5410,7 +5410,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5447,7 +5447,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-betfair"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5493,7 +5493,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-binance"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5541,7 +5541,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bitmex"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5586,7 +5586,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-blockchain"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -5626,7 +5626,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-bybit"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5673,7 +5673,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5693,7 +5693,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-coinbase"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5736,7 +5736,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5786,7 +5786,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5819,7 +5819,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cryptography"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -5837,7 +5837,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -5867,7 +5867,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-databento"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5907,7 +5907,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-deribit"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -5955,7 +5955,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-derive"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -5998,7 +5998,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-dydx"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6045,7 +6045,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-event-store"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6073,7 +6073,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6103,7 +6103,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-hyperliquid"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6153,7 +6153,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "anyhow",
  "arraydeque",
@@ -6167,7 +6167,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6187,6 +6187,7 @@ dependencies = [
  "nautilus-persistence",
  "nautilus-serialization",
  "pyo3",
+ "pyo3-async-runtimes",
  "pyo3-stub-gen",
  "redis",
  "regex",
@@ -6203,7 +6204,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-interactive-brokers"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6242,7 +6243,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-kraken"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6293,7 +6294,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-lighter"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6341,7 +6342,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-live"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6381,7 +6382,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy-primitives",
@@ -6415,7 +6416,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6462,7 +6463,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-okx"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6509,7 +6510,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6546,7 +6547,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence-macros"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6556,7 +6557,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-plugin"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "log",
  "nautilus-model",
@@ -6565,7 +6566,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-polymarket"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "alloy",
@@ -6617,7 +6618,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-portfolio"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "bon",
@@ -6638,7 +6639,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "nautilus-analysis",
  "nautilus-architect-ax",
@@ -6683,7 +6684,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-risk"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "bon",
@@ -6705,7 +6706,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-sandbox"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6735,7 +6736,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-serialization"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "anyhow",
  "arrow 58.3.0",
@@ -6761,7 +6762,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-system"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6790,7 +6791,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tardis"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6838,7 +6839,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-testkit"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6873,7 +6874,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trader"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -6882,7 +6883,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-trading"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -6911,7 +6912,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-tutorials"
-version = "0.60.0"
+version = "0.61.0"
 dependencies = [
  "dotenvy",
  "nautilus-common",
@@ -8084,9 +8085,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "1.2.4"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bae41a63fd0b8a5372f82b21e810e09a316f5dd7efd96bf08e678fb240fc1918"
+checksum = "2fa6f8e4b491d7a8ef3a9550a4d71969bd0064f46e32b8dbbcc7fc60dad94fed"
 dependencies = [
  "arc-swap",
  "arcstr",

@@ -33,8 +33,12 @@ use nautilus_hyperliquid::{
     python,
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
+use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    types::{PyAnyMethods, PyModule},
+};
 use rstest::rstest;
 
 const SMOKE_PRIVATE_KEY: &str =
@@ -53,6 +57,61 @@ fn test_hyperliquid_python_factories_extract_from_registry() {
     });
 }
 
+#[rstest]
+fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() {
+    Python::initialize();
+
+    Python::attach(|py| {
+        let module = register_hyperliquid_python_module(py);
+        let config_cls = module
+            .getattr("HyperliquidDataClientConfig")
+            .expect("HyperliquidDataClientConfig class should exist");
+
+        let legacy_config: HyperliquidDataClientConfig = config_cls
+            .call1((
+                Option::<HyperliquidEnvironment>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<u64>::None,
+                Option::<u64>::None,
+                17_u64,
+            ))
+            .expect("legacy positional constructor should succeed")
+            .extract()
+            .expect("legacy config should extract");
+
+        let extended_config: HyperliquidDataClientConfig = config_cls
+            .call1((
+                Option::<HyperliquidEnvironment>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<String>::None,
+                Option::<u64>::None,
+                Option::<u64>::None,
+                19_u64,
+                Option::<TransportBackend>::None,
+                31_u64,
+                7_u64,
+                23_u64,
+            ))
+            .expect("extended positional constructor should succeed")
+            .extract()
+            .expect("extended config should extract");
+
+        assert_eq!(legacy_config.update_instruments_interval_mins, 17);
+        assert_eq!(legacy_config.stale_stream_receive_timeout_secs, 120);
+        assert_eq!(legacy_config.stream_health_check_interval_secs, 15);
+        assert_eq!(legacy_config.stale_stream_warning_cooldown_secs, 60);
+        assert_eq!(extended_config.update_instruments_interval_mins, 19);
+        assert_eq!(extended_config.stale_stream_receive_timeout_secs, 31);
+        assert_eq!(extended_config.stream_health_check_interval_secs, 7);
+        assert_eq!(extended_config.stale_stream_warning_cooldown_secs, 23);
+    });
+}
+
 fn setup_data_event_sender() {
     let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(sender);
@@ -63,9 +122,10 @@ fn setup_exec_event_sender() {
     replace_exec_event_sender(sender);
 }
 
-fn register_hyperliquid_python_module(py: Python<'_>) {
+fn register_hyperliquid_python_module(py: Python<'_>) -> pyo3::Bound<'_, PyModule> {
     let module = PyModule::new(py, "hyperliquid").expect("Hyperliquid module should be created");
     python::hyperliquid(&module).expect("Hyperliquid Python module should register");
+    module
 }
 
 fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {

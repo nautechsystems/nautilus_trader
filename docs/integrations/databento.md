@@ -869,7 +869,7 @@ for details.
 :::
 
 :::info
-See also the [Data concepts guide](../concepts/data.md).
+See also the [Data concepts guide](../concepts/data/).
 :::
 
 ### Historical loader options

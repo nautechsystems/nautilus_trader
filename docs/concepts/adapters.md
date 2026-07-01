@@ -197,4 +197,4 @@ For building a custom adapter, see the [Adapter Developer Guide](../developer_gu
 
 - [Live Trading](live.md) - Configure and run live trading with adapters.
 - [Execution](execution.md) - Order execution through adapters.
-- [Data](data.md) - Market data provided by adapters.
+- [Data](data/) - Market data provided by adapters.

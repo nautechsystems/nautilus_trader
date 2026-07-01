@@ -19,6 +19,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
+    time::{Duration, Instant},
 };
 
 use ahash::AHashMap;
@@ -89,10 +90,12 @@ pub struct HyperliquidDataClient {
     is_connected: AtomicBool,
     cancellation_token: CancellationToken,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
+    stream_health_handle: Mutex<Option<JoinHandle<()>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
+    stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
 }
 
 impl HyperliquidDataClient {
@@ -138,6 +141,10 @@ impl HyperliquidDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
+        let stream_health = Arc::new(Mutex::new(MarketDataStreamHealthMonitor::new(
+            Duration::from_secs(config.stale_stream_receive_timeout_secs),
+            Duration::from_secs(config.stale_stream_warning_cooldown_secs),
+        )));
 
         Ok(Self {
             clock,
@@ -148,10 +155,12 @@ impl HyperliquidDataClient {
             is_connected: AtomicBool::new(false),
             cancellation_token: CancellationToken::new(),
             ws_stream_handle: Mutex::new(None),
+            stream_health_handle: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
+            stream_health,
         })
     }
 
@@ -176,6 +185,104 @@ impl HyperliquidDataClient {
         for handle in tasks.drain(..) {
             handle.abort();
         }
+    }
+
+    fn abort_stream_health_monitor(&self) {
+        if let Some(handle) = self
+            .stream_health_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take()
+        {
+            handle.abort();
+        }
+    }
+
+    async fn stop_stream_health_monitor(&self) {
+        let handle = self
+            .stream_health_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take();
+
+        if let Some(handle) = handle {
+            match handle.await {
+                Ok(()) => {}
+                Err(e) if e.is_cancelled() => {}
+                Err(e) => log::warn!("Stream health monitor task failed: {e}"),
+            }
+        }
+    }
+
+    fn clear_stream_health(&self) {
+        self.stream_health.lock().expect(MUTEX_POISONED).clear();
+    }
+
+    fn register_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
+        if !self.stream_health_monitor_enabled() {
+            return;
+        }
+
+        self.stream_health.lock().expect(MUTEX_POISONED).subscribe(
+            channel,
+            instrument_id,
+            Instant::now(),
+        );
+    }
+
+    fn remove_stream_health(&self, channel: MarketDataChannel, instrument_id: InstrumentId) {
+        self.stream_health
+            .lock()
+            .expect(MUTEX_POISONED)
+            .unsubscribe(channel, instrument_id);
+    }
+
+    fn stream_health_monitor_enabled(&self) -> bool {
+        self.config.stale_stream_receive_timeout_secs > 0
+            && self.config.stream_health_check_interval_secs > 0
+    }
+
+    fn spawn_stream_health_monitor(&self) {
+        if !self.stream_health_monitor_enabled() {
+            return;
+        }
+
+        let mut slot = self.stream_health_handle.lock().expect(MUTEX_POISONED);
+        if slot.as_ref().is_some_and(|handle| !handle.is_finished()) {
+            return;
+        }
+
+        let stream_health = Arc::clone(&self.stream_health);
+        let cancellation_token = self.cancellation_token.clone();
+        let interval = Duration::from_secs(self.config.stream_health_check_interval_secs);
+        let clock = self.clock;
+
+        let handle = get_runtime().spawn(async move {
+            log::debug!("Hyperliquid stream health monitor started");
+
+            loop {
+                tokio::select! {
+                    () = cancellation_token.cancelled() => {
+                        log::debug!("Hyperliquid stream health monitor cancelled");
+                        break;
+                    }
+                    () = tokio::time::sleep(interval) => {
+                        let warnings = stream_health
+                            .lock()
+                            .expect(MUTEX_POISONED)
+                            .check_stale(Instant::now(), clock.get_time_ns());
+
+                        for warning in warnings {
+                            log_stream_health_warning(&warning);
+                        }
+                    }
+                }
+            }
+
+            log::debug!("Hyperliquid stream health monitor stopped");
+        });
+
+        *slot = Some(handle);
     }
 
     fn venue(&self) -> Venue {
@@ -265,6 +372,7 @@ impl HyperliquidDataClient {
 
         let data_sender = self.data_sender.clone();
         let cancellation_token = self.cancellation_token.clone();
+        let stream_health = Arc::clone(&self.stream_health);
 
         let task = get_runtime().spawn(async move {
             log::debug!("Hyperliquid WebSocket consumption loop started");
@@ -277,6 +385,17 @@ impl HyperliquidDataClient {
                     }
                     msg_opt = ws_client.next_event() => {
                         if let Some(msg) = msg_opt {
+                            if let Some((channel, instrument_id, ts_event)) =
+                                stream_health_update(&msg)
+                            {
+                                record_stream_receive(
+                                    &stream_health,
+                                    channel,
+                                    instrument_id,
+                                    ts_event,
+                                );
+                            }
+
                             match msg {
                                 NautilusWsMessage::Trades(trades) => {
                                     for trade in trades {
@@ -396,6 +515,8 @@ impl DataClient for HyperliquidDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Hyperliquid data client {}", self.client_id);
         self.cancellation_token.cancel();
+        self.abort_stream_health_monitor();
+        self.clear_stream_health();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
     }
@@ -405,6 +526,8 @@ impl DataClient for HyperliquidDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.cancellation_token = CancellationToken::new();
         self.abort_pending_tasks();
+        self.abort_stream_health_monitor();
+        self.clear_stream_health();
 
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
@@ -450,6 +573,7 @@ impl DataClient for HyperliquidDataClient {
         self.spawn_ws()
             .await
             .context("failed to spawn WebSocket client")?;
+        self.spawn_stream_health_monitor();
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected: client_id={}", self.client_id);
@@ -477,6 +601,8 @@ impl DataClient for HyperliquidDataClient {
             log::warn!("Error disconnecting WebSocket client: {e}");
         }
 
+        self.stop_stream_health_monitor().await;
+        self.clear_stream_health();
         self.instruments.store(AHashMap::new());
 
         self.is_connected.store(false, Ordering::Relaxed);
@@ -610,6 +736,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
         let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+        self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
         self.spawn_task("subscribe_book_deltas", async move {
             ws.subscribe_book_with_options(instrument_id, n_sig_figs, mantissa)
@@ -632,6 +759,7 @@ impl DataClient for HyperliquidDataClient {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
         let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+        self.register_stream_health(MarketDataChannel::Depth10, instrument_id);
 
         self.spawn_task("subscribe_book_depth10", async move {
             ws.subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa)
@@ -644,6 +772,7 @@ impl DataClient for HyperliquidDataClient {
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
+        self.register_stream_health(MarketDataChannel::Quote, instrument_id);
 
         self.spawn_task("subscribe_quotes", async move {
             ws.subscribe_quotes(instrument_id).await
@@ -735,6 +864,7 @@ impl DataClient for HyperliquidDataClient {
 
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
+        self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
 
         self.spawn_task("unsubscribe_book_deltas", async move {
             ws.unsubscribe_book(instrument_id).await
@@ -754,6 +884,7 @@ impl DataClient for HyperliquidDataClient {
 
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
+        self.remove_stream_health(MarketDataChannel::Depth10, instrument_id);
 
         self.spawn_task("unsubscribe_book_depth10", async move {
             ws.unsubscribe_book_depth10(instrument_id).await
@@ -770,6 +901,7 @@ impl DataClient for HyperliquidDataClient {
 
         let ws = self.ws_client.clone();
         let instrument_id = unsubscription.instrument_id;
+        self.remove_stream_health(MarketDataChannel::Quote, instrument_id);
 
         self.spawn_task("unsubscribe_quotes", async move {
             ws.unsubscribe_quotes(instrument_id).await
@@ -1200,6 +1332,201 @@ impl DataClient for HyperliquidDataClient {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum MarketDataChannel {
+    Deltas,
+    Depth10,
+    Quote,
+}
+
+impl MarketDataChannel {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Deltas => "deltas",
+            Self::Depth10 => "depth10",
+            Self::Quote => "quote",
+        }
+    }
+}
+
+type MarketDataStreamKey = (MarketDataChannel, InstrumentId);
+
+#[derive(Debug, Clone)]
+struct MarketDataStreamHealth {
+    last_receive_at: Instant,
+    last_venue_ts_event: Option<UnixNanos>,
+    consecutive_stale_count: u32,
+    last_warning_at: Option<Instant>,
+}
+
+impl MarketDataStreamHealth {
+    fn new(receive_at: Instant) -> Self {
+        Self {
+            last_receive_at: receive_at,
+            last_venue_ts_event: None,
+            consecutive_stale_count: 0,
+            last_warning_at: None,
+        }
+    }
+
+    fn record_receive(&mut self, receive_at: Instant, venue_ts_event: UnixNanos) {
+        self.last_receive_at = receive_at;
+        self.last_venue_ts_event = Some(venue_ts_event);
+        self.consecutive_stale_count = 0;
+        self.last_warning_at = None;
+    }
+}
+
+#[derive(Debug)]
+struct MarketDataStreamHealthMonitor {
+    stale_receive_threshold: Duration,
+    warning_cooldown: Duration,
+    streams: AHashMap<MarketDataStreamKey, MarketDataStreamHealth>,
+}
+
+impl MarketDataStreamHealthMonitor {
+    fn new(stale_receive_threshold: Duration, warning_cooldown: Duration) -> Self {
+        Self {
+            stale_receive_threshold,
+            warning_cooldown,
+            streams: AHashMap::new(),
+        }
+    }
+
+    fn subscribe(
+        &mut self,
+        channel: MarketDataChannel,
+        instrument_id: InstrumentId,
+        receive_at: Instant,
+    ) {
+        self.streams.insert(
+            (channel, instrument_id),
+            MarketDataStreamHealth::new(receive_at),
+        );
+    }
+
+    fn unsubscribe(&mut self, channel: MarketDataChannel, instrument_id: InstrumentId) {
+        self.streams.remove(&(channel, instrument_id));
+    }
+
+    fn clear(&mut self) {
+        self.streams.clear();
+    }
+
+    fn record_receive(
+        &mut self,
+        channel: MarketDataChannel,
+        instrument_id: InstrumentId,
+        receive_at: Instant,
+        venue_ts_event: UnixNanos,
+    ) {
+        if let Some(stream) = self.streams.get_mut(&(channel, instrument_id)) {
+            stream.record_receive(receive_at, venue_ts_event);
+        }
+    }
+
+    fn check_stale(
+        &mut self,
+        now: Instant,
+        wall_clock_now: UnixNanos,
+    ) -> Vec<MarketDataStaleWarning> {
+        let mut warnings = Vec::new();
+
+        for ((channel, instrument_id), stream) in &mut self.streams {
+            let receive_age = now.saturating_duration_since(stream.last_receive_at);
+            if receive_age < self.stale_receive_threshold {
+                stream.consecutive_stale_count = 0;
+                continue;
+            }
+
+            stream.consecutive_stale_count = stream.consecutive_stale_count.saturating_add(1);
+
+            let should_warn = stream.last_warning_at.is_none_or(|last_warning_at| {
+                now.saturating_duration_since(last_warning_at) >= self.warning_cooldown
+            });
+
+            if !should_warn {
+                continue;
+            }
+
+            stream.last_warning_at = Some(now);
+            warnings.push(MarketDataStaleWarning {
+                channel: *channel,
+                instrument_id: *instrument_id,
+                receive_age,
+                venue_age: stream.last_venue_ts_event.map(|ts_event| {
+                    Duration::from_nanos(wall_clock_now.as_u64().saturating_sub(ts_event.as_u64()))
+                }),
+                stale_count: stream.consecutive_stale_count,
+            });
+        }
+
+        warnings
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MarketDataStaleWarning {
+    channel: MarketDataChannel,
+    instrument_id: InstrumentId,
+    receive_age: Duration,
+    venue_age: Option<Duration>,
+    stale_count: u32,
+}
+
+fn stream_health_update(
+    msg: &NautilusWsMessage,
+) -> Option<(MarketDataChannel, InstrumentId, UnixNanos)> {
+    match msg {
+        NautilusWsMessage::Quote(quote) => Some((
+            MarketDataChannel::Quote,
+            quote.instrument_id,
+            quote.ts_event,
+        )),
+        NautilusWsMessage::Deltas(deltas) => Some((
+            MarketDataChannel::Deltas,
+            deltas.instrument_id,
+            deltas.ts_event,
+        )),
+        NautilusWsMessage::Depth10(depth) => Some((
+            MarketDataChannel::Depth10,
+            depth.instrument_id,
+            depth.ts_event,
+        )),
+        _ => None,
+    }
+}
+
+fn record_stream_receive(
+    stream_health: &Arc<Mutex<MarketDataStreamHealthMonitor>>,
+    channel: MarketDataChannel,
+    instrument_id: InstrumentId,
+    venue_ts_event: UnixNanos,
+) {
+    stream_health.lock().expect(MUTEX_POISONED).record_receive(
+        channel,
+        instrument_id,
+        Instant::now(),
+        venue_ts_event,
+    );
+}
+
+fn log_stream_health_warning(warning: &MarketDataStaleWarning) {
+    let venue_age_ms = warning
+        .venue_age
+        .map_or_else(|| "n/a".to_string(), |age| age.as_millis().to_string());
+
+    log::warn!(
+        "Hyperliquid market data stream stale: channel={}, instrument_id={}, \
+         receive_age_ms={}, venue_age_ms={}, stale_count={}",
+        warning.channel.as_str(),
+        warning.instrument_id,
+        warning.receive_age.as_millis(),
+        venue_age_ms,
+        warning.stale_count,
+    );
+}
+
 // Applies the request window and limit to a snapshot of recent trades. `trades`
 // must be sorted ascending by `ts_event`. Returns the subset within `[start, end]`
 // (each bound unbounded when `None`), keeping at most the most recent `limit`
@@ -1455,7 +1782,15 @@ async fn request_bars_from_http(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::AggressorSide, identifiers::TradeId};
+    use nautilus_common::live::runner::set_data_event_sender;
+    use nautilus_model::{
+        data::{
+            QuoteTick,
+            stubs::{stub_deltas, stub_depth10},
+        },
+        enums::AggressorSide,
+        identifiers::TradeId,
+    };
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use ustr::Ustr;
@@ -1465,6 +1800,235 @@ mod tests {
 
     fn btc_perp_id() -> InstrumentId {
         InstrumentId::from("BTC-PERP.HYPERLIQUID")
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_fresh_stream_does_not_warn() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+
+        let warnings = monitor.check_stale(
+            start + Duration::from_secs(4),
+            UnixNanos::from(4_000_000_000),
+        );
+        assert!(warnings.is_empty());
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_warns_once_after_threshold() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Quote, instrument_id, start);
+        monitor.record_receive(
+            MarketDataChannel::Quote,
+            instrument_id,
+            start + Duration::from_secs(1),
+            UnixNanos::from(1_000_000_000),
+        );
+
+        let warnings = monitor.check_stale(
+            start + Duration::from_secs(7),
+            UnixNanos::from(9_000_000_000),
+        );
+
+        assert_eq!(
+            warnings,
+            vec![MarketDataStaleWarning {
+                channel: MarketDataChannel::Quote,
+                instrument_id,
+                receive_age: Duration::from_secs(6),
+                venue_age: Some(Duration::from_secs(8)),
+                stale_count: 1,
+            }]
+        );
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_warns_at_receive_threshold() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Quote, instrument_id, start);
+
+        let warnings = monitor.check_stale(
+            start + Duration::from_secs(5),
+            UnixNanos::from(5_000_000_000),
+        );
+
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].receive_age, Duration::from_secs(5));
+        assert_eq!(warnings[0].stale_count, 1);
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_new_update_resets_age_and_stale_count() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Depth10, instrument_id, start);
+        assert_eq!(
+            monitor
+                .check_stale(
+                    start + Duration::from_secs(6),
+                    UnixNanos::from(6_000_000_000),
+                )
+                .len(),
+            1,
+        );
+
+        monitor.record_receive(
+            MarketDataChannel::Depth10,
+            instrument_id,
+            start + Duration::from_secs(7),
+            UnixNanos::from(7_000_000_000),
+        );
+
+        assert!(
+            monitor
+                .check_stale(
+                    start + Duration::from_secs(11),
+                    UnixNanos::from(11_000_000_000),
+                )
+                .is_empty()
+        );
+
+        let warnings = monitor.check_stale(
+            start + Duration::from_secs(13),
+            UnixNanos::from(13_000_000_000),
+        );
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].stale_count, 1);
+        assert_eq!(warnings[0].receive_age, Duration::from_secs(6));
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_unsubscribe_removes_stream() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        monitor.unsubscribe(MarketDataChannel::Deltas, instrument_id);
+
+        let warnings = monitor.check_stale(
+            start + Duration::from_secs(6),
+            UnixNanos::from(6_000_000_000),
+        );
+
+        assert!(warnings.is_empty());
+    }
+
+    #[rstest]
+    #[case(0, 15)]
+    #[case(120, 0)]
+    fn test_data_client_stream_health_config_zero_disables_monitor(
+        #[case] stale_receive_timeout_secs: u64,
+        #[case] check_interval_secs: u64,
+    ) {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let client = HyperliquidDataClient::new(
+            *crate::common::consts::HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig {
+                stale_stream_receive_timeout_secs: stale_receive_timeout_secs,
+                stream_health_check_interval_secs: check_interval_secs,
+                ..HyperliquidDataClientConfig::default()
+            },
+        )
+        .unwrap();
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        assert!(!client.stream_health_monitor_enabled());
+        client.register_stream_health(MarketDataChannel::Deltas, instrument_id);
+
+        let warnings = client
+            .stream_health
+            .lock()
+            .expect(MUTEX_POISONED)
+            .check_stale(
+                start + Duration::from_secs(121),
+                UnixNanos::from(121_000_000_000),
+            );
+
+        assert!(warnings.is_empty());
+    }
+
+    #[rstest]
+    fn test_stream_health_monitor_warning_cooldown_prevents_repeated_logs() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+
+        let first = monitor.check_stale(
+            start + Duration::from_secs(6),
+            UnixNanos::from(6_000_000_000),
+        );
+        let inside_cooldown = monitor.check_stale(
+            start + Duration::from_secs(7),
+            UnixNanos::from(7_000_000_000),
+        );
+        let second = monitor.check_stale(
+            start + Duration::from_secs(16),
+            UnixNanos::from(16_000_000_000),
+        );
+
+        assert_eq!(first.len(), 1);
+        assert!(inside_cooldown.is_empty());
+        assert_eq!(second.len(), 1);
+        assert_eq!(second[0].stale_count, 3);
+    }
+
+    #[rstest]
+    fn test_stream_health_update_extracts_tracked_market_data_messages() {
+        let quote = QuoteTick {
+            instrument_id: btc_perp_id(),
+            ts_event: UnixNanos::from(1),
+            ..QuoteTick::default()
+        };
+        let deltas = stub_deltas();
+        let depth = stub_depth10();
+
+        assert_eq!(
+            stream_health_update(&NautilusWsMessage::Quote(quote)),
+            Some((
+                MarketDataChannel::Quote,
+                quote.instrument_id,
+                quote.ts_event
+            )),
+        );
+        assert_eq!(
+            stream_health_update(&NautilusWsMessage::Deltas(deltas.clone())),
+            Some((
+                MarketDataChannel::Deltas,
+                deltas.instrument_id,
+                deltas.ts_event
+            )),
+        );
+        assert_eq!(
+            stream_health_update(&NautilusWsMessage::Depth10(Box::new(depth))),
+            Some((
+                MarketDataChannel::Depth10,
+                depth.instrument_id,
+                depth.ts_event
+            )),
+        );
+        assert_eq!(stream_health_update(&NautilusWsMessage::Reconnected), None,);
     }
 
     #[rstest]
