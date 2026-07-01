@@ -52,6 +52,10 @@ pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::statistics::risk_return_ratio::RiskReturnRatio>()?;
     m.add_class::<crate::statistics::sharpe_ratio::SharpeRatio>()?;
     m.add_class::<crate::statistics::sortino_ratio::SortinoRatio>()?;
+    m.add_class::<crate::statistics::ulcer_index::UlcerIndex>()?;
+    m.add_class::<crate::statistics::omega_ratio::OmegaRatio>()?;
+    m.add_class::<crate::statistics::value_at_risk::ValueAtRisk>()?;
+    m.add_class::<crate::statistics::expected_shortfall::ExpectedShortfall>()?;
 
     // Statistics - PnL-based
     m.add_class::<crate::statistics::expectancy::Expectancy>()?;
