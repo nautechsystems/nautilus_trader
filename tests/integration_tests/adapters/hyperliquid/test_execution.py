@@ -181,6 +181,82 @@ def test_ws_post_timeout_forwarded_to_ws_client(exec_client_builder, monkeypatch
     ws_client.set_post_timeout.assert_called_once_with(7)
 
 
+def test_datadog_open_order_counts_emit_total_and_grouped_gauges(
+    exec_client_builder,
+    monkeypatch,
+    instrument,
+    cache,
+):
+    # Arrange
+    client, _, _, _ = exec_client_builder(monkeypatch)
+    strategy_id = TestIdStubs.strategy_id()
+    open_order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-OPEN"),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50000.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+    )
+    close_order = LimitOrder(
+        trader_id=TestIdStubs.trader_id(),
+        strategy_id=strategy_id,
+        instrument_id=instrument.id,
+        client_order_id=ClientOrderId("O-CLOSE"),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_str("0.00100"),
+        price=Price.from_str("50001.0"),
+        init_id=TestIdStubs.uuid(),
+        ts_init=0,
+        reduce_only=True,
+    )
+    cache.add_order(open_order, None)
+    cache.add_order(close_order, None)
+
+    gauges = []
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.hyperliquid.execution.datadog_gauge",
+        lambda name, value, tags: gauges.append((name, value, tags)),
+    )
+
+    # Act
+    client._emit_datadog_open_order_counts()
+
+    # Assert
+    assert (
+        "order.open_count",
+        2,
+        ("venue:HYPERLIQUID", "scope:total"),
+    ) in gauges
+    assert (
+        "order.open_count",
+        1,
+        (
+            "venue:HYPERLIQUID",
+            "scope:by_instrument_strategy",
+            f"instrument:{instrument.id}",
+            f"strategy:{strategy_id}",
+            "order_role:open",
+            "side:BUY",
+        ),
+    ) in gauges
+    assert (
+        "order.open_count",
+        1,
+        (
+            "venue:HYPERLIQUID",
+            "scope:by_instrument_strategy",
+            f"instrument:{instrument.id}",
+            f"strategy:{strategy_id}",
+            "order_role:close",
+            "side:SELL",
+        ),
+    ) in gauges
+
+
 @pytest.mark.asyncio
 async def test_connect_success(exec_client_builder, monkeypatch):
     # Arrange

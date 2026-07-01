@@ -1,6 +1,6 @@
 {
   "title": "Nautilus Trading Ops",
-  "description": "Sample dashboard for NautilusTrader Datadog telemetry. Template variables assume metrics are emitted by nautilus_trader.datadog.telemetry with the default namespace, and order RTT percentiles, BBO distance, lightweight health counters.",
+  "description": "Sample dashboard for NautilusTrader Datadog telemetry. Template variables assume metrics are emitted by nautilus_trader.datadog.telemetry with the default namespace, plus open order count, order RTT percentiles, BBO distance, and lightweight health counters.",
   "layout_type": "ordered",
   "template_variables": [
     {
@@ -39,6 +39,11 @@
       "default": "*"
     },
     {
+      "name": "side",
+      "prefix": "side",
+      "default": "*"
+    },
+    {
       "name": "adapter",
       "prefix": "adapter",
       "default": "*"
@@ -48,7 +53,7 @@
     {
       "definition": {
         "type": "note",
-        "content": "# Nautilus Trading Ops\nQuote propagation, queue pressure, message bus fanout, and strategy callback latency, and order RTT percentiles, BBO distance, lightweight health counters.",
+        "content": "# Nautilus Trading Ops\nQuote propagation, queue pressure, message bus fanout, strategy callback latency, open order count, order RTT percentiles, BBO distance, and lightweight health counters.",
         "background_color": "white",
         "font_size": "18",
         "text_align": "left",
@@ -58,7 +63,7 @@
     {
       "definition": {
         "type": "note",
-        "content": "## Top Health\nProcess liveness, telemetry health, websocket state, rejects, and quote flow.",
+        "content": "## Top Health\nProcess liveness, telemetry health, websocket state, open order state, rejects, and quote flow.",
         "background_color": "white",
         "font_size": "16",
         "text_align": "left",
@@ -110,6 +115,37 @@
         "yaxis": {
           "scale": "linear",
           "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Open Orders",
+        "requests": [
+          {
+            "q": "max:nautilus.order.open_count{$env,$venue,scope:total}",
+            "display_type": "line",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "max:nautilus.order.open_count{$env,$venue,$instrument,$strategy,$order_role,$side,scope:by_instrument_strategy} by {instrument,order_role,side}",
+            "display_type": "line",
+            "style": {
+              "palette": "cool",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "orders"
         }
       }
     },

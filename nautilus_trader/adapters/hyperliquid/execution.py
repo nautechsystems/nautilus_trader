@@ -83,6 +83,7 @@ from nautilus_trader.model.orders import Order
 
 
 DATADOG_WS_HEALTH_INTERVAL = 10.0
+DATADOG_OPEN_ORDER_INTERVAL = 1.0
 
 
 @dataclass(slots=True)
@@ -207,6 +208,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._datadog_order_rtt_timings: dict[str, deque[_OrderRttTiming]] = {}
         self._datadog_ws_health_task: asyncio.Task | None = None
         self._datadog_ws_was_active = False
+        self._datadog_open_orders_task: asyncio.Task | None = None
+        self._datadog_open_order_series: set[tuple[str, str, str, str]] = set()
 
         # FillReports buffered when fill arrives before order is in cache,
         # drained on OrderAccepted.
@@ -283,6 +286,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
         self._start_datadog_ws_health_monitor()
+        self._start_datadog_open_orders_monitor()
 
         if self._account_address:
             await self._ws_client.subscribe_order_updates(self._account_address)
@@ -333,6 +337,71 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 await asyncio.sleep(DATADOG_WS_HEALTH_INTERVAL)
         except asyncio.CancelledError:
             return
+
+    def _start_datadog_open_orders_monitor(self) -> None:
+        if not datadog_enabled():
+            return
+        if self._datadog_open_orders_task is not None and not self._datadog_open_orders_task.done():
+            return
+
+        self._datadog_open_orders_task = self._loop.create_task(
+            self._datadog_open_orders_loop(),
+            name="hyperliquid-exec-datadog-open-orders",
+        )
+
+    def _stop_datadog_open_orders_monitor(self) -> None:
+        if self._datadog_open_orders_task is not None:
+            self._datadog_open_orders_task.cancel()
+            self._datadog_open_orders_task = None
+
+    async def _datadog_open_orders_loop(self) -> None:
+        try:
+            while True:
+                try:
+                    self._emit_datadog_open_order_counts()
+                except Exception as e:
+                    self._log.debug(f"Failed to emit Datadog open order counts: {e}")
+                await asyncio.sleep(DATADOG_OPEN_ORDER_INTERVAL)
+        except asyncio.CancelledError:
+            return
+
+    def _emit_datadog_open_order_counts(self) -> None:
+        open_orders = self._cache.orders_open(venue=self.venue)
+        tags_base = (f"venue:{HYPERLIQUID_VENUE.value}",)
+
+        datadog_gauge(
+            "order.open_count",
+            len(open_orders),
+            tags=(*tags_base, "scope:total"),
+        )
+
+        counts: dict[tuple[str, str, str, str], int] = {}
+        for order in open_orders:
+            key = (
+                _tag_value(order.instrument_id),
+                _tag_value(order.strategy_id),
+                "close" if order.is_reduce_only else "open",
+                order_side_to_str(order.side),
+            )
+            counts[key] = counts.get(key, 0) + 1
+
+        self._datadog_open_order_series.update(counts)
+
+        for instrument_id, strategy_id, order_role, side in sorted(
+            self._datadog_open_order_series,
+        ):
+            datadog_gauge(
+                "order.open_count",
+                counts.get((instrument_id, strategy_id, order_role, side), 0),
+                tags=(
+                    *tags_base,
+                    "scope:by_instrument_strategy",
+                    f"instrument:{instrument_id}",
+                    f"strategy:{strategy_id}",
+                    f"order_role:{order_role}",
+                    f"side:{side}",
+                ),
+            )
 
     def _sync_cloid_cache(self) -> None:
         orders = self._cache.orders(venue=self.venue)
@@ -391,6 +460,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:execution"),
             )
             self._stop_datadog_ws_health_monitor()
+            self._stop_datadog_open_orders_monitor()
 
             # Clear cloid cache to prevent unbounded memory growth
             self._ws_client.clear_cloid_cache()
@@ -399,6 +469,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 LogColor.BLUE,
             )
         self._stop_datadog_ws_health_monitor()
+        self._stop_datadog_open_orders_monitor()
 
     async def generate_order_status_report(
         self,
