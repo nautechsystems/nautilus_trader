@@ -85,15 +85,12 @@ impl Display for ValueAtRisk {
 /// linear interpolation between closest ranks, matching `numpy.percentile`.
 ///
 /// `sorted_values` must be sorted ascending and non-empty.
-fn percentile_linear(sorted_values: &[f64], q: f64) -> f64 {
+pub(crate) fn percentile_linear(sorted_values: &[f64], q: f64) -> f64 {
     debug_assert!(
         !sorted_values.is_empty(),
         "percentile requires a non-empty slice"
     );
     let n = sorted_values.len();
-    if n == 1 {
-        return sorted_values[0];
-    }
 
     let rank = (q / 100.0) * (n - 1) as f64;
     let lower = rank.floor() as usize;
