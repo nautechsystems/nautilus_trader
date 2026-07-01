@@ -307,9 +307,6 @@ impl LiveNodeBuilder {
     }
 
     /// Set the streaming configuration.
-    ///
-    /// The Rust live runtime does not support this setting yet.
-    /// `build()` returns an error when it is set.
     #[must_use]
     pub fn with_streaming_config(mut self, config: StreamingConfig) -> Self {
         self.config.streaming = Some(config);
@@ -597,7 +594,7 @@ impl LiveNodeBuilder {
             exec_manager_config,
         );
 
-        let node = LiveNode::new_from_builder(
+        let mut node = LiveNode::new_from_builder(
             kernel,
             runner,
             self.config,
@@ -605,6 +602,7 @@ impl LiveNodeBuilder {
             exec_clients,
             self.external_msgbus_ingress,
         );
+        node.init_streaming_writer()?;
         node.load_configured_plugins()?;
 
         log::info!("Built successfully");

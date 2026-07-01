@@ -64,7 +64,7 @@ use crate::{
         PluginConfig,
     },
     node::LiveNode,
-    python::config::coerce_json_config,
+    python::config::{PyStreamingConfig, coerce_json_config},
 };
 
 struct SendPtr<T>(*mut T);
@@ -1019,6 +1019,19 @@ impl LiveNodeBuilderPy {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             *inner_ref = Some(builder.with_portfolio_config(config));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_streaming_config")]
+    fn py_with_streaming_config(&self, config: PyStreamingConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_streaming_config(config.into_inner()));
             Ok(Self {
                 inner: self.inner.clone(),
             })

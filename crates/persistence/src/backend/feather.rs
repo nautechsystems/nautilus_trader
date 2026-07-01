@@ -29,7 +29,16 @@ use datafusion::arrow::{
 use nautilus_common::{
     cache::fifo::FifoCache,
     clock::Clock,
-    msgbus::{mstr::MStr, subscribe_any, typed_handler::ShareableMessageHandler, unsubscribe_any},
+    msgbus::{
+        mstr::MStr,
+        subscribe_any, subscribe_bars, subscribe_book_deltas, subscribe_book_depth10,
+        subscribe_funding_rates, subscribe_index_prices, subscribe_instruments,
+        subscribe_mark_prices, subscribe_option_greeks, subscribe_quotes, subscribe_trades,
+        typed_handler::{ShareableMessageHandler, TypedHandler},
+        unsubscribe_any, unsubscribe_bars, unsubscribe_book_deltas, unsubscribe_book_depth10,
+        unsubscribe_funding_rates, unsubscribe_index_prices, unsubscribe_instruments,
+        unsubscribe_mark_prices, unsubscribe_option_greeks, unsubscribe_quotes, unsubscribe_trades,
+    },
 };
 use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use nautilus_model::{
@@ -63,6 +72,21 @@ pub struct FileWriterPath {
     path: Path,
     type_str: String,
     instrument_id: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct FeatherWriterMessageBusSubscription {
+    any: ShareableMessageHandler,
+    quotes: TypedHandler<QuoteTick>,
+    trades: TypedHandler<TradeTick>,
+    bars: TypedHandler<Bar>,
+    deltas: TypedHandler<OrderBookDeltas>,
+    depth10: TypedHandler<OrderBookDepth10>,
+    index_prices: TypedHandler<IndexPriceUpdate>,
+    mark_prices: TypedHandler<MarkPriceUpdate>,
+    funding_rates: TypedHandler<FundingRateUpdate>,
+    option_greeks: TypedHandler<OptionGreeks>,
+    instruments: TypedHandler<InstrumentAny>,
 }
 
 /// A `FeatherBuffer` encodes data via an Arrow `StreamWriter`.
@@ -202,6 +226,17 @@ pub struct FeatherWriter {
     last_flush_ns: UnixNanos,
     /// Bounded cache of recently seen event IDs for deduplication.
     seen_event_ids: Box<FifoCache<UUID4, 10_000>>,
+}
+
+impl std::fmt::Debug for FeatherWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FeatherWriter")
+            .field("base_path", &self.base_path)
+            .field("rotation_config", &self.rotation_config)
+            .field("flush_interval_ms", &self.flush_interval_ms)
+            .field("writers", &self.writers.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl FeatherWriter {
@@ -866,22 +901,49 @@ impl FeatherWriter {
     /// Returns an error if subscription setup fails.
     pub fn subscribe_to_message_bus(
         writer: Rc<RefCell<Self>>,
-    ) -> Result<ShareableMessageHandler, Box<dyn std::error::Error>> {
+    ) -> Result<FeatherWriterMessageBusSubscription, Box<dyn std::error::Error>> {
         let runtime = writer.borrow().runtime.clone();
+
+        macro_rules! write_one_handler {
+            ($handler_writer:ident, $handler_runtime:ident, $type:ty, $name:literal) => {
+                TypedHandler::from(move |value: &$type| {
+                    let mut writer = $handler_writer.borrow_mut();
+                    let result = if tokio::runtime::Handle::try_current().is_ok() {
+                        tokio::task::block_in_place(|| {
+                            $handler_runtime.block_on(writer.write(value.clone()))
+                        })
+                    } else {
+                        $handler_runtime.block_on(writer.write(value.clone()))
+                    };
+                    if let Err(e) = result {
+                        log::warn!("Failed to write {}: {e}", $name);
+                    }
+                })
+            };
+        }
 
         // Create handler that downcasts messages and writes them
         // Note: We use Handle::enter() to allow blocking in the handler context
         // This works when the handler is called from outside an async runtime
+        let any_writer = writer.clone();
+        let any_runtime = runtime.clone();
         let handler = ShareableMessageHandler::from_any(move |message: &dyn Any| {
             // Enter the runtime context to allow blocking
-            let _guard = runtime.enter();
+            let _guard = any_runtime.enter();
 
             // Try to downcast to various data types and write them
             macro_rules! try_write {
                 ($message:expr, $type:ty, $name:literal) => {
                     if let Some(value) = $message.downcast_ref::<$type>() {
-                        let mut writer = writer.borrow_mut();
-                        if let Err(e) = runtime.block_on(writer.write(value.clone())) {
+                        let mut writer = any_writer.borrow_mut();
+                        let result = if tokio::runtime::Handle::try_current().is_ok() {
+                            tokio::task::block_in_place(|| {
+                                any_runtime.block_on(writer.write(value.clone()))
+                            })
+                        } else {
+                            any_runtime.block_on(writer.write(value.clone()))
+                        };
+                        if let Err(e) = result {
                             log::warn!("Failed to write {}: {e}", $name);
                         }
                         return;
@@ -930,37 +992,174 @@ impl FeatherWriter {
 
             if let Some(deltas) = message.downcast_ref::<OrderBookDeltas>() {
                 // Batch write so chunk_metadata can skip a leading BookAction::Clear sentinel
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_batch(deltas.deltas.clone())) {
+                let mut writer = any_writer.borrow_mut();
+                let result = if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(|| {
+                        any_runtime.block_on(writer.write_batch(deltas.deltas.clone()))
+                    })
+                } else {
+                    any_runtime.block_on(writer.write_batch(deltas.deltas.clone()))
+                };
+                if let Err(e) = result {
                     log::warn!("Failed to write OrderBookDeltas: {e}");
                 }
             } else if let Some(custom) = message.downcast_ref::<CustomData>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_data(Data::Custom(custom.clone()))) {
+                let mut writer = any_writer.borrow_mut();
+                let result = if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(|| {
+                        any_runtime.block_on(writer.write_data(Data::Custom(custom.clone())))
+                    })
+                } else {
+                    any_runtime.block_on(writer.write_data(Data::Custom(custom.clone())))
+                };
+                if let Err(e) = result {
                     log::warn!("Failed to write CustomData: {e}");
                 }
             } else if let Some(instrument) = message.downcast_ref::<InstrumentAny>() {
-                let mut writer = writer.borrow_mut();
-                if let Err(e) = runtime.block_on(writer.write_instrument(instrument.clone())) {
+                let mut writer = any_writer.borrow_mut();
+                let result = if tokio::runtime::Handle::try_current().is_ok() {
+                    tokio::task::block_in_place(|| {
+                        any_runtime.block_on(writer.write_instrument(instrument.clone()))
+                    })
+                } else {
+                    any_runtime.block_on(writer.write_instrument(instrument.clone()))
+                };
+                if let Err(e) = result {
                     log::warn!("Failed to write InstrumentAny: {e}");
                 }
             }
             // Silently ignore unsupported message types.
         });
 
-        // Subscribe to all messages using wildcard pattern
-        subscribe_any(
-            MStr::pattern("*"),
-            handler.clone(),
-            None, // No priority
+        let quote_writer = writer.clone();
+        let quote_runtime = runtime.clone();
+        let quotes = write_one_handler!(quote_writer, quote_runtime, QuoteTick, "QuoteTick");
+
+        let trade_writer = writer.clone();
+        let trade_runtime = runtime.clone();
+        let trades = write_one_handler!(trade_writer, trade_runtime, TradeTick, "TradeTick");
+
+        let bar_writer = writer.clone();
+        let bar_runtime = runtime.clone();
+        let bars = write_one_handler!(bar_writer, bar_runtime, Bar, "Bar");
+
+        let deltas_writer = writer.clone();
+        let deltas_runtime = runtime.clone();
+        let deltas = TypedHandler::from(move |value: &OrderBookDeltas| {
+            let mut writer = deltas_writer.borrow_mut();
+            let result = if tokio::runtime::Handle::try_current().is_ok() {
+                tokio::task::block_in_place(|| {
+                    deltas_runtime.block_on(writer.write_batch(value.deltas.clone()))
+                })
+            } else {
+                deltas_runtime.block_on(writer.write_batch(value.deltas.clone()))
+            };
+            if let Err(e) = result {
+                log::warn!("Failed to write OrderBookDeltas: {e}");
+            }
+        });
+
+        let depth10_writer = writer.clone();
+        let depth10_runtime = runtime.clone();
+        let depth10 = write_one_handler!(
+            depth10_writer,
+            depth10_runtime,
+            OrderBookDepth10,
+            "OrderBookDepth10"
         );
 
-        Ok(handler)
+        let index_price_writer = writer.clone();
+        let index_price_runtime = runtime.clone();
+        let index_prices = write_one_handler!(
+            index_price_writer,
+            index_price_runtime,
+            IndexPriceUpdate,
+            "IndexPriceUpdate"
+        );
+
+        let mark_price_writer = writer.clone();
+        let mark_price_runtime = runtime.clone();
+        let mark_prices = write_one_handler!(
+            mark_price_writer,
+            mark_price_runtime,
+            MarkPriceUpdate,
+            "MarkPriceUpdate"
+        );
+
+        let funding_rate_writer = writer.clone();
+        let funding_rate_runtime = runtime.clone();
+        let funding_rates = write_one_handler!(
+            funding_rate_writer,
+            funding_rate_runtime,
+            FundingRateUpdate,
+            "FundingRateUpdate"
+        );
+
+        let option_greeks_writer = writer.clone();
+        let option_greeks_runtime = runtime.clone();
+        let option_greeks = write_one_handler!(
+            option_greeks_writer,
+            option_greeks_runtime,
+            OptionGreeks,
+            "OptionGreeks"
+        );
+
+        let instrument_writer = writer;
+        let instrument_runtime = runtime;
+        let instruments = TypedHandler::from(move |value: &InstrumentAny| {
+            let mut writer = instrument_writer.borrow_mut();
+            let result = if tokio::runtime::Handle::try_current().is_ok() {
+                tokio::task::block_in_place(|| {
+                    instrument_runtime.block_on(writer.write_instrument(value.clone()))
+                })
+            } else {
+                instrument_runtime.block_on(writer.write_instrument(value.clone()))
+            };
+            if let Err(e) = result {
+                log::warn!("Failed to write InstrumentAny: {e}");
+            }
+        });
+
+        subscribe_any(MStr::pattern("*"), handler.clone(), None);
+        subscribe_quotes(MStr::pattern("*"), quotes.clone(), None);
+        subscribe_trades(MStr::pattern("*"), trades.clone(), None);
+        subscribe_bars(MStr::pattern("*"), bars.clone(), None);
+        subscribe_book_deltas(MStr::pattern("*"), deltas.clone(), None);
+        subscribe_book_depth10(MStr::pattern("*"), depth10.clone(), None);
+        subscribe_index_prices(MStr::pattern("*"), index_prices.clone(), None);
+        subscribe_mark_prices(MStr::pattern("*"), mark_prices.clone(), None);
+        subscribe_funding_rates(MStr::pattern("*"), funding_rates.clone(), None);
+        subscribe_option_greeks(MStr::pattern("*"), option_greeks.clone(), None);
+        subscribe_instruments(MStr::pattern("*"), instruments.clone(), None);
+
+        Ok(FeatherWriterMessageBusSubscription {
+            any: handler,
+            quotes,
+            trades,
+            bars,
+            deltas,
+            depth10,
+            index_prices,
+            mark_prices,
+            funding_rates,
+            option_greeks,
+            instruments,
+        })
     }
 
     /// Unsubscribes from the message bus.
-    pub fn unsubscribe_from_message_bus(handler: &ShareableMessageHandler) {
-        unsubscribe_any(MStr::pattern("*"), handler);
+    pub fn unsubscribe_from_message_bus(handler: &FeatherWriterMessageBusSubscription) {
+        unsubscribe_any(MStr::pattern("*"), &handler.any);
+        unsubscribe_quotes(MStr::pattern("*"), &handler.quotes);
+        unsubscribe_trades(MStr::pattern("*"), &handler.trades);
+        unsubscribe_bars(MStr::pattern("*"), &handler.bars);
+        unsubscribe_book_deltas(MStr::pattern("*"), &handler.deltas);
+        unsubscribe_book_depth10(MStr::pattern("*"), &handler.depth10);
+        unsubscribe_index_prices(MStr::pattern("*"), &handler.index_prices);
+        unsubscribe_mark_prices(MStr::pattern("*"), &handler.mark_prices);
+        unsubscribe_funding_rates(MStr::pattern("*"), &handler.funding_rates);
+        unsubscribe_option_greeks(MStr::pattern("*"), &handler.option_greeks);
+        unsubscribe_instruments(MStr::pattern("*"), &handler.instruments);
     }
 }
 
@@ -969,7 +1168,7 @@ mod tests {
     use std::{io::Cursor, sync::Arc};
 
     use datafusion::arrow::ipc::reader::StreamReader;
-    use nautilus_common::clock::TestClock;
+    use nautilus_common::{clock::TestClock, msgbus};
     use nautilus_model::{
         data::{Data, OrderBookDeltas_API, QuoteTick, TradeTick},
         enums::AggressorSide,
@@ -984,6 +1183,60 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_message_bus_subscription_writes_typed_quote() {
+        msgbus::get_message_bus().borrow_mut().dispose();
+
+        let temp_dir = TempDir::new().unwrap();
+        let local_fs = LocalFileSystem::new_with_prefix(temp_dir.path()).unwrap();
+        let store: Arc<dyn ObjectStore> = Arc::new(local_fs);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let mut per_instrument = HashSet::new();
+        per_instrument.insert(QuoteTick::path_prefix().to_string());
+
+        let writer = Rc::new(RefCell::new(FeatherWriter::new(
+            String::new(),
+            store,
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            Some(per_instrument),
+            None,
+        )));
+        let subscription = FeatherWriter::subscribe_to_message_bus(writer.clone()).unwrap();
+        let quote = QuoteTick::new(
+            InstrumentId::from("AAPL.AAPL"),
+            Price::from("100.0"),
+            Price::from("100.1"),
+            Quantity::from("10.0"),
+            Quantity::from("11.0"),
+            UnixNanos::from(100),
+            UnixNanos::from(100),
+        );
+
+        msgbus::publish_quote("data.quotes.AAPL".into(), &quote);
+        FeatherWriter::unsubscribe_from_message_bus(&subscription);
+        nautilus_common::live::get_runtime()
+            .block_on(async { writer.borrow_mut().close().await })
+            .unwrap();
+
+        let mut dirs = vec![temp_dir.path().to_path_buf()];
+        let mut found = false;
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let path = entry.unwrap().path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else if path.extension().is_some_and(|ext| ext == "feather") {
+                    found = true;
+                }
+            }
+        }
+
+        msgbus::get_message_bus().borrow_mut().dispose();
+        assert!(found);
+    }
 
     #[tokio::test]
     async fn test_writer_manager_keys() {

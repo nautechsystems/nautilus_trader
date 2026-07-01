@@ -77,8 +77,12 @@
 //! maintenance below 100ms (defaults are seconds to minutes). Cadence drifts
 //! by at most one body duration per fire.
 
+#[cfg(feature = "streaming")]
+use std::{cell::RefCell, rc::Rc};
 use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
+#[cfg(feature = "streaming")]
+use futures::StreamExt;
 use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
@@ -105,11 +109,26 @@ use nautilus_model::{
     orders::Order,
     reports::{OrderStatusReport, PositionStatusReport},
 };
+#[cfg(feature = "streaming")]
+use nautilus_persistence::{
+    backend::{
+        catalog::make_object_store_path,
+        feather::{
+            FeatherWriter, FeatherWriterMessageBusSubscription,
+            RotationConfig as FeatherRotationConfig,
+        },
+    },
+    parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
+};
+#[cfg(feature = "streaming")]
+use nautilus_system::config::{RotationConfig, StreamingConfig};
 use nautilus_system::{config::NautilusKernelConfig, kernel::NautilusKernel};
 use nautilus_trading::{
     ExecutionAlgorithm, ExecutionAlgorithmNative,
     strategy::{Strategy, StrategyNative},
 };
+#[cfg(feature = "streaming")]
+use object_store::ObjectStoreExt;
 use tabled::{builder::Builder, settings::Style};
 
 use crate::{
@@ -134,6 +153,122 @@ use config::{LiveNodeConfig, PluginConfig};
 use state::EngineConnectionStatus;
 pub use state::{LiveNodeHandle, NodeState};
 
+#[cfg(feature = "streaming")]
+fn create_streaming_writer(
+    streaming: &StreamingConfig,
+    config: &LiveNodeConfig,
+    kernel: &NautilusKernel,
+) -> anyhow::Result<Rc<RefCell<FeatherWriter>>> {
+    streaming.validate()?;
+
+    let catalog_path = match streaming.fs_protocol.as_str() {
+        "file" => streaming.catalog_path.clone(),
+        _protocol if streaming.catalog_path.contains("://") => streaming.catalog_path.clone(),
+        protocol => format!("{protocol}://{}", streaming.catalog_path),
+    };
+
+    let location = create_object_store_location_from_path(&catalog_path, None)?;
+    let environment = environment_path_component(config.environment);
+    let instance_id = kernel.instance_id().to_string();
+    let base_path = make_object_store_path(&location.base_path, &[environment, &instance_id]);
+
+    if streaming.replace_existing {
+        replace_existing_streaming_path(&location, &base_path)?;
+    }
+
+    let writer = FeatherWriter::new(
+        base_path,
+        location.object_store,
+        kernel.clock(),
+        feather_rotation_config(&streaming.rotation_config),
+        None,
+        Some(per_instrument_streaming_types()),
+        Some(streaming.flush_interval_ms),
+    );
+
+    Ok(Rc::new(RefCell::new(writer)))
+}
+
+#[cfg(feature = "streaming")]
+fn environment_path_component(environment: Environment) -> &'static str {
+    match environment {
+        Environment::Backtest => "backtest",
+        Environment::Sandbox => "sandbox",
+        Environment::Live => "live",
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn replace_existing_streaming_path(
+    location: &nautilus_persistence::parquet::ObjectStoreLocation,
+    base_path: &str,
+) -> anyhow::Result<()> {
+    if base_path.is_empty() && matches!(&location.kind, ObjectStoreLocationKind::Remote { .. }) {
+        anyhow::bail!("replace_existing for remote streaming paths requires a non-empty prefix");
+    }
+
+    let prefix = if base_path.is_empty() {
+        None
+    } else {
+        Some(object_store::path::Path::from(base_path.to_string()))
+    };
+    let store = location.object_store.clone();
+
+    nautilus_common::live::get_runtime().block_on(async move {
+        let mut stream = store.list(prefix.as_ref());
+        let mut paths = Vec::new();
+
+        while let Some(result) = stream.next().await {
+            paths.push(result?.location);
+        }
+
+        for path in paths {
+            store.delete(&path).await?;
+        }
+
+        anyhow::Ok(())
+    })
+}
+
+#[cfg(feature = "streaming")]
+fn feather_rotation_config(config: &RotationConfig) -> FeatherRotationConfig {
+    match config {
+        RotationConfig::Size { max_size } => FeatherRotationConfig::Size {
+            max_size: *max_size,
+        },
+        RotationConfig::Interval { interval_ns } => FeatherRotationConfig::Interval {
+            interval_ns: *interval_ns,
+        },
+        RotationConfig::ScheduledDates {
+            interval_ns,
+            schedule_ns,
+        } => FeatherRotationConfig::ScheduledDates {
+            interval_ns: *interval_ns,
+            rotation_time: *schedule_ns,
+            rotation_timezone: chrono_tz::UTC,
+        },
+        RotationConfig::NoRotation => FeatherRotationConfig::NoRotation,
+    }
+}
+
+#[cfg(feature = "streaming")]
+fn per_instrument_streaming_types() -> HashSet<String> {
+    [
+        "bars",
+        "funding_rate_update",
+        "index_prices",
+        "mark_prices",
+        "order_book_deltas",
+        "order_book_depths",
+        "option_greeks",
+        "quotes",
+        "trades",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect()
+}
+
 /// High-level abstraction for a live Nautilus system node.
 ///
 /// Provides a simplified interface for running live systems
@@ -156,6 +291,10 @@ pub struct LiveNode {
     exec_clients: Vec<LiveExecutionClient>,
     external_msgbus: Option<ExternalMessageBusIngress>,
     shutdown_deadline: Option<dst::time::Instant>,
+    #[cfg(feature = "streaming")]
+    streaming_writer: Option<Rc<RefCell<FeatherWriter>>>,
+    #[cfg(feature = "streaming")]
+    streaming_handler: Option<FeatherWriterMessageBusSubscription>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
     #[cfg(feature = "python")]
@@ -185,6 +324,10 @@ impl LiveNode {
             exec_clients,
             external_msgbus,
             shutdown_deadline: None,
+            #[cfg(feature = "streaming")]
+            streaming_writer: None,
+            #[cfg(feature = "streaming")]
+            streaming_handler: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
             #[cfg(feature = "python")]
@@ -246,7 +389,7 @@ impl LiveNode {
             exec_manager_config,
         );
 
-        let node = Self {
+        let mut node = Self {
             kernel,
             runner: Some(runner),
             config,
@@ -255,11 +398,16 @@ impl LiveNode {
             exec_clients: Vec::new(),
             external_msgbus: None,
             shutdown_deadline: None,
+            #[cfg(feature = "streaming")]
+            streaming_writer: None,
+            #[cfg(feature = "streaming")]
+            streaming_handler: None,
             #[cfg(feature = "plugin")]
             plugins: plugin::NodePlugins,
             #[cfg(feature = "python")]
             python_actors: Vec::new(),
         };
+        node.init_streaming_writer()?;
         node.load_configured_plugins()?;
 
         log::info!("LiveNode built successfully with kernel config");
@@ -338,6 +486,29 @@ impl LiveNode {
     #[must_use]
     pub fn handle(&self) -> LiveNodeHandle {
         self.handle.clone()
+    }
+
+    #[cfg(feature = "streaming")]
+    pub(crate) fn init_streaming_writer(&mut self) -> anyhow::Result<()> {
+        let Some(streaming) = self.config.streaming.clone() else {
+            return Ok(());
+        };
+
+        let writer = create_streaming_writer(&streaming, &self.config, &self.kernel)?;
+        let handler = FeatherWriter::subscribe_to_message_bus(writer.clone())
+            .map_err(|e| anyhow::anyhow!("failed to subscribe streaming writer: {e}"))?;
+
+        self.streaming_writer = Some(writer);
+        self.streaming_handler = Some(handler);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "streaming"))]
+    pub(crate) fn init_streaming_writer(&mut self) -> anyhow::Result<()> {
+        if self.config.streaming.is_some() {
+            anyhow::bail!("LiveNodeConfig.streaming requires the 'streaming' feature");
+        }
+        Ok(())
     }
 
     /// Starts the live node without entering a select loop.
@@ -1405,11 +1576,31 @@ impl LiveNode {
         }
 
         self.await_engines_disconnected().await;
+        #[cfg(feature = "streaming")]
+        self.close_streaming_writer().await?;
+
         self.kernel.finalize_stop().await;
 
         self.handle.set_state(NodeState::Stopped);
 
         disconnect_result
+    }
+
+    #[cfg(feature = "streaming")]
+    async fn close_streaming_writer(&mut self) -> anyhow::Result<()> {
+        if let Some(handler) = self.streaming_handler.take() {
+            FeatherWriter::unsubscribe_from_message_bus(&handler);
+        }
+
+        if let Some(writer) = self.streaming_writer.take() {
+            writer
+                .borrow_mut()
+                .close()
+                .await
+                .map_err(|e| anyhow::anyhow!("failed to close streaming writer: {e}"))?;
+        }
+
+        Ok(())
     }
 
     fn drain_channels(
@@ -1808,6 +1999,15 @@ impl LiveNode {
                 }
             }),
         })
+    }
+}
+
+#[cfg(feature = "streaming")]
+impl Drop for LiveNode {
+    fn drop(&mut self) {
+        if let Some(handler) = self.streaming_handler.take() {
+            FeatherWriter::unsubscribe_from_message_bus(&handler);
+        }
     }
 }
 
