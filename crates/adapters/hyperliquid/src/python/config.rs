@@ -35,6 +35,7 @@ impl HyperliquidDataClientConfig {
         proxy_url = None,
         http_timeout_secs = None,
         ws_timeout_secs = None,
+        bbo_redundancy = None,
         update_instruments_interval_mins = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -46,6 +47,7 @@ impl HyperliquidDataClientConfig {
         proxy_url: Option<String>,
         http_timeout_secs: Option<u64>,
         ws_timeout_secs: Option<u64>,
+        bbo_redundancy: Option<usize>,
         update_instruments_interval_mins: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
@@ -57,6 +59,7 @@ impl HyperliquidDataClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
+            bbo_redundancy: bbo_redundancy.unwrap_or(defaults.bbo_redundancy),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             transport_backend: defaults.transport_backend,

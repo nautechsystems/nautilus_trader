@@ -354,6 +354,7 @@ class LiveDataEngine(DataEngine):
         """
         if dd_enabled():
             self._record_queue_metrics("data_queue", self._data_queue)
+            self._record_data_queue_process_entry_age(data)
 
         self._data_enqueuer.enqueue(data)
 
@@ -389,7 +390,13 @@ class LiveDataEngine(DataEngine):
         if capacity:
             dd_gauge("live_data_queue.utilization", size / capacity, tags=tags)
 
+    def _record_data_queue_process_entry_age(self, data: Data) -> None:
+        self._record_data_queue_age("live_data_queue.process_entry_age_ms", data)
+
     def _record_data_queue_drain_age(self, data: Data) -> None:
+        self._record_data_queue_age("live_data_queue.drain_age_ms", data)
+
+    def _record_data_queue_age(self, metric_name: str, data: Data) -> None:
         ts_init = getattr(data, "ts_init", 0)
         if not ts_init:
             return
@@ -407,7 +414,7 @@ class LiveDataEngine(DataEngine):
                 tags.append(f"venue:{venue}")
 
         dd_distribution(
-            "live_data_queue.drain_age_ms",
+            metric_name,
             (now_ns - ts_init) / 1_000_000.0,
             tags=tuple(tags),
         )

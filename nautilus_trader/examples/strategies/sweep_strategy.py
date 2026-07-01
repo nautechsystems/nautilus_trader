@@ -28,8 +28,13 @@ flat. The unwind order is modified when the touch drifts by
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from datetime import time
+from datetime import timedelta
+from datetime import timezone
 from decimal import Decimal
 from time import monotonic_ns
+from zoneinfo import ZoneInfo
 
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import StrategyConfig
@@ -85,6 +90,28 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
         Passed through to ``close_all_positions`` during stop.
     bbo_distance_telemetry_interval_ms : NonNegativeFloat, default 1000.0
         Minimum interval between BBO distance telemetry samples.
+    market_open_embargo_minutes : NonNegativeFloat, default 0.0
+        Number of minutes after ``market_open_embargo_start`` to keep the
+        embargo active. Use zero to disable.
+    market_open_embargo_pre_open_minutes : NonNegativeFloat, default 0.0
+        Number of minutes before ``market_open_embargo_start`` to begin the
+        embargo.
+    market_open_embargo_timezone : str, default "America/New_York"
+        IANA timezone used to evaluate market boundary embargoes.
+    market_open_embargo_start : str, default "09:30:00"
+        Local market open time in ``HH:MM[:SS]`` format.
+    market_after_hours_embargo_minutes : NonNegativeFloat, default 0.0
+        Number of minutes after ``market_after_hours_embargo_start`` to keep the
+        embargo active. Use zero to disable.
+    market_after_hours_embargo_pre_start_minutes : NonNegativeFloat, default 0.0
+        Number of minutes before ``market_after_hours_embargo_start`` to begin the
+        after-hours embargo.
+    market_after_hours_embargo_start : str, default "16:00:00"
+        Local after-hours start time in ``HH:MM[:SS]`` format.
+    close_positions_on_embargo : bool, default False
+        If true, call ``close_all_positions`` once when entering the embargo.
+    reduce_only_on_embargo : bool, default True
+        Passed through to ``close_all_positions`` during embargo handling.
     log_data : bool, default False
         If true, log incoming quote ticks.
 
@@ -100,6 +127,15 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
     close_positions_on_stop: bool = True
     reduce_only_on_stop: bool = True
     bbo_distance_telemetry_interval_ms: NonNegativeFloat = 1000.0
+    market_open_embargo_minutes: NonNegativeFloat = 0.0
+    market_open_embargo_pre_open_minutes: NonNegativeFloat = 0.0
+    market_open_embargo_timezone: str = "America/New_York"
+    market_open_embargo_start: str = "09:30:00"
+    market_after_hours_embargo_minutes: NonNegativeFloat = 0.0
+    market_after_hours_embargo_pre_start_minutes: NonNegativeFloat = 0.0
+    market_after_hours_embargo_start: str = "16:00:00"
+    close_positions_on_embargo: bool = False
+    reduce_only_on_embargo: bool = True
     log_data: bool = False
 
     @classmethod
@@ -137,6 +173,12 @@ class SweepStrategy(Strategy):
         self._unwind_order: LimitOrder | None = None
         self._quote_order_ids: set[ClientOrderId] = set()
         self._last_bbo_distance_telemetry_ns = 0
+        self._embargo_active = False
+        self._embargo_tz = ZoneInfo(config.market_open_embargo_timezone)
+        self._embargo_start_time = time.fromisoformat(config.market_open_embargo_start)
+        self._after_hours_embargo_start_time = time.fromisoformat(
+            config.market_after_hours_embargo_start,
+        )
 
     def on_start(self) -> None:
         self._instrument = self.cache.instrument(self.config.instrument_id)
@@ -158,6 +200,9 @@ class SweepStrategy(Strategy):
             self.log.info(repr(tick))
 
         self._clear_closed_refs()
+        if self._handle_market_boundary_embargo():
+            return
+
         mid: Decimal | None = None
         if self._should_record_bbo_distance():
             mid = self._mid(tick)
@@ -184,6 +229,7 @@ class SweepStrategy(Strategy):
             return
 
         fill_qty = self._qty_decimal(event.last_qty)
+        embargo_active = self._is_market_boundary_embargo()
         if event.client_order_id in self._quote_order_ids:
             if event.order_side == OrderSide.BUY:
                 self._inventory_to_unwind += fill_qty
@@ -194,6 +240,14 @@ class SweepStrategy(Strategy):
                 f"inventory_to_unwind={self._inventory_to_unwind}",
             )
             self._cancel_quote_orders()
+            if embargo_active:
+                self.log.info(
+                    "Quote fill received during market boundary embargo; "
+                    f"client_order_id={event.client_order_id}",
+                )
+                self._embargo_active = True
+                self._apply_market_boundary_embargo()
+                return
             if self._last_quote is not None:
                 self._maintain_unwind_order(self._last_quote)
             return
@@ -207,8 +261,23 @@ class SweepStrategy(Strategy):
                 self._inventory_to_unwind = Decimal(0)
                 self._unwind_order = None
                 self._anchor_mid = None
+                if embargo_active:
+                    self._embargo_active = True
+                    self._apply_market_boundary_embargo()
+            elif embargo_active:
+                self._embargo_active = True
+                self._apply_market_boundary_embargo()
             elif self._last_quote is not None:
                 self._maintain_unwind_order(self._last_quote)
+            return
+
+        if embargo_active:
+            self.log.info(
+                "Order fill received during market boundary embargo; "
+                f"client_order_id={event.client_order_id}",
+            )
+            self._embargo_active = True
+            self._apply_market_boundary_embargo()
 
     def on_order_rejected(self, event: OrderRejected) -> None:
         if self._is_reduce_only_would_increase_unwind_rejection(event):
@@ -253,6 +322,7 @@ class SweepStrategy(Strategy):
         self._unwind_order = None
         self._quote_order_ids.clear()
         self._last_bbo_distance_telemetry_ns = 0
+        self._embargo_active = False
 
     def _maintain_quote_pair(self, mid: Decimal) -> None:
         prices = self._quote_prices(mid)
@@ -453,6 +523,87 @@ class SweepStrategy(Strategy):
     def _needs_unwind(self) -> bool:
         return self._inventory_to_unwind != 0
 
+    def _handle_market_boundary_embargo(self) -> bool:
+        if not self._is_market_boundary_embargo():
+            if self._embargo_active:
+                self.log.info("Market boundary embargo ended; resuming order maintenance")
+                self._embargo_active = False
+                self._anchor_mid = None
+            return False
+
+        if not self._embargo_active:
+            self.log.warning(
+                "Market boundary embargo active; canceling risk-adding orders"
+                + (
+                    " and closing positions"
+                    if self.config.close_positions_on_embargo
+                    else ""
+                ),
+            )
+            self._embargo_active = True
+            self._apply_market_boundary_embargo()
+        else:
+            self._cancel_risk_adding_orders_for_embargo()
+        return True
+
+    def _is_market_open_embargo(self) -> bool:
+        if self.config.market_open_embargo_minutes <= 0:
+            return False
+
+        now_utc = self.clock.utc_now()
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        return self._datetime_in_market_boundary_embargo(
+            now_utc,
+            self._embargo_tz,
+            self._embargo_start_time,
+            Decimal(str(self.config.market_open_embargo_minutes)),
+            Decimal(str(self.config.market_open_embargo_pre_open_minutes)),
+        )
+
+    def _is_market_after_hours_embargo(self) -> bool:
+        if self.config.market_after_hours_embargo_minutes <= 0:
+            return False
+
+        now_utc = self.clock.utc_now()
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        return self._datetime_in_market_boundary_embargo(
+            now_utc,
+            self._embargo_tz,
+            self._after_hours_embargo_start_time,
+            Decimal(str(self.config.market_after_hours_embargo_minutes)),
+            Decimal(str(self.config.market_after_hours_embargo_pre_start_minutes)),
+        )
+
+    def _is_market_boundary_embargo(self) -> bool:
+        return self._is_market_open_embargo() or self._is_market_after_hours_embargo()
+
+    def _apply_market_boundary_embargo(self) -> None:
+        if self.config.close_positions_on_embargo:
+            self.cancel_all_orders(self.config.instrument_id, client_id=self.config.client_id)
+            self._clear_local_order_refs_for_embargo()
+            self._inventory_to_unwind = Decimal(0)
+            self.close_all_positions(
+                self.config.instrument_id,
+                client_id=self.config.client_id,
+                reduce_only=self.config.reduce_only_on_embargo,
+            )
+            return
+
+        self._cancel_risk_adding_orders_for_embargo()
+
+    def _cancel_risk_adding_orders_for_embargo(self) -> None:
+        self._cancel_quote_orders()
+
+    def _clear_local_order_refs_for_embargo(self) -> None:
+        self._bid_order = None
+        self._ask_order = None
+        self._unwind_order = None
+        self._anchor_mid = None
+
     def _has_live_quote_pair(self) -> bool:
         return self._is_working(self._bid_order) and self._is_working(self._ask_order)
 
@@ -529,3 +680,36 @@ class SweepStrategy(Strategy):
     @staticmethod
     def _qty_decimal(quantity: Quantity) -> Decimal:
         return Decimal(str(quantity))
+
+    @staticmethod
+    def _datetime_in_market_boundary_embargo(
+        value: datetime,
+        tz: ZoneInfo,
+        start_time: time,
+        minutes: Decimal,
+        pre_start_minutes: Decimal = Decimal(0),
+    ) -> bool:
+        if minutes <= 0 and pre_start_minutes <= 0:
+            return False
+
+        local = value.astimezone(tz)
+        if local.weekday() >= 5:
+            return False
+
+        start = local.replace(
+            hour=start_time.hour,
+            minute=start_time.minute,
+            second=start_time.second,
+            microsecond=start_time.microsecond,
+        )
+        start -= timedelta(minutes=float(pre_start_minutes))
+        end = local.replace(
+            hour=start_time.hour,
+            minute=start_time.minute,
+            second=start_time.second,
+            microsecond=start_time.microsecond,
+        ) + timedelta(minutes=float(minutes))
+
+        elapsed_seconds = Decimal(str((local - start).total_seconds()))
+        duration_seconds = Decimal(str((end - start).total_seconds()))
+        return Decimal(0) <= elapsed_seconds < duration_seconds

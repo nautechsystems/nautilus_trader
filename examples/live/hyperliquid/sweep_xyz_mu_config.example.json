@@ -1,6 +1,6 @@
 {
   "environment": "MAINNET",
-  "trader_id": "HYPERLIQUID-SWEEP-001",
+  "trader_id": "HYPERLIQUID-MU-SWEEP-001",
   "logging": {
     "log_level": "INFO",
     "use_pyo3": true
@@ -13,22 +13,22 @@
     "include_builder_attribution": true,
     "bbo_redundancy": 4,
     "product_types": [
-      "perp"
+      "perp_hip3"
     ]
   },
   "datadog": {
-    "enabled": true,
+    "enabled": false,
     "tags": [
       "env:dev",
       "service:nautilus",
-      "component:hyperliquid-sweep"
+      "component:hyperliquid-sweep",
+      "instrument:xyz-mu"
     ]
   },
   "instrument_provider": {
     "load_all": false,
     "load_ids": [
-      "BTC-USD-PERP.HYPERLIQUID",
-      "ETH-USD-PERP.HYPERLIQUID"
+      "xyz:MU-USD-PERP.HYPERLIQUID"
     ]
   },
   "exec_engine": {
@@ -42,31 +42,25 @@
   },
   "strategies": [
     {
-      "order_id_tag": "BTC-SWEEP",
-      "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+      "order_id_tag": "MU-SWEEP",
+      "instrument_id": "xyz:MU-USD-PERP.HYPERLIQUID",
       "external_order_claims": [
-        "BTC-USD-PERP.HYPERLIQUID"
-      ],
-      "order_qty": "0.001",
-      "quote_offset_bps": 0.2,
-      "quote_recenter_threshold_bps": 0.1,
-      "unwind_recenter_threshold_bps": 0.1,
-      "unwind_cross_touch": false,
-      "close_positions_on_stop": true,
-      "reduce_only_on_stop": true,
-      "log_data": false
-    },
-    {
-      "order_id_tag": "ETH-SWEEP",
-      "instrument_id": "ETH-USD-PERP.HYPERLIQUID",
-      "external_order_claims": [
-        "ETH-USD-PERP.HYPERLIQUID"
+        "xyz:MU-USD-PERP.HYPERLIQUID"
       ],
       "order_qty": "0.01",
-      "quote_offset_bps": 0.2,
-      "quote_recenter_threshold_bps": 0.1,
+      "quote_offset_bps": 10,
+      "quote_recenter_threshold_bps": 1,
       "unwind_recenter_threshold_bps": 0.1,
       "unwind_cross_touch": false,
+      "market_open_embargo_minutes": 5,
+      "market_open_embargo_pre_open_minutes": 1,
+      "market_open_embargo_timezone": "America/New_York",
+      "market_open_embargo_start": "09:30:00",
+      "market_after_hours_embargo_minutes": 4,
+      "market_after_hours_embargo_pre_start_minutes": 1,
+      "market_after_hours_embargo_start": "16:00:00",
+      "close_positions_on_embargo": false,
+      "reduce_only_on_embargo": true,
       "close_positions_on_stop": true,
       "reduce_only_on_stop": true,
       "log_data": false

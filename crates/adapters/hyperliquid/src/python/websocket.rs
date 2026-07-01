@@ -747,16 +747,18 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to best bid/offer (BBO) quotes for an instrument.
     #[pyo3(name = "subscribe_quotes")]
+    #[pyo3(signature = (instrument_id, redundancy = 1))]
     fn py_subscribe_quotes<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        redundancy: usize,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_quotes(instrument_id)
+                .subscribe_quotes_with_redundancy(instrument_id, redundancy)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

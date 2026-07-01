@@ -668,7 +668,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_quotes(pyo3_instrument_id)
+        await self._ws_client.subscribe_quotes(pyo3_instrument_id, self._config.bbo_redundancy)
 
     async def _subscribe_trade_ticks(self, command: SubscribeTradeTicks) -> None:
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)

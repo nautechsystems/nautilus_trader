@@ -149,6 +149,7 @@ def default_env_config() -> dict:
             "account_address_env": "HYPERLIQUID_ACCOUNT_ADDRESS",
             "normalize_prices": True,
             "include_builder_attribution": True,
+            "bbo_redundancy": int(os.getenv("HYPERLIQUID_BBO_REDUNDANCY", "4")),
         },
         "datadog": {
             "enabled": env_bool("NAUTILUS_DATADOG_ENABLED", False),
@@ -172,6 +173,42 @@ def default_env_config() -> dict:
                 "unwind_cross_touch": env_bool(
                     "HYPERLIQUID_SWEEP_UNWIND_CROSS_TOUCH",
                     False,
+                ),
+                "market_open_embargo_minutes": env_float(
+                    "HYPERLIQUID_SWEEP_MARKET_OPEN_EMBARGO_MINUTES",
+                    0.0,
+                ),
+                "market_open_embargo_pre_open_minutes": env_float(
+                    "HYPERLIQUID_SWEEP_MARKET_OPEN_EMBARGO_PRE_OPEN_MINUTES",
+                    0.0,
+                ),
+                "market_open_embargo_timezone": os.getenv(
+                    "HYPERLIQUID_SWEEP_MARKET_OPEN_EMBARGO_TIMEZONE",
+                    "America/New_York",
+                ),
+                "market_open_embargo_start": os.getenv(
+                    "HYPERLIQUID_SWEEP_MARKET_OPEN_EMBARGO_START",
+                    "09:30:00",
+                ),
+                "market_after_hours_embargo_minutes": env_float(
+                    "HYPERLIQUID_SWEEP_MARKET_AFTER_HOURS_EMBARGO_MINUTES",
+                    0.0,
+                ),
+                "market_after_hours_embargo_pre_start_minutes": env_float(
+                    "HYPERLIQUID_SWEEP_MARKET_AFTER_HOURS_EMBARGO_PRE_START_MINUTES",
+                    0.0,
+                ),
+                "market_after_hours_embargo_start": os.getenv(
+                    "HYPERLIQUID_SWEEP_MARKET_AFTER_HOURS_EMBARGO_START",
+                    "16:00:00",
+                ),
+                "close_positions_on_embargo": env_bool(
+                    "HYPERLIQUID_SWEEP_CLOSE_POSITIONS_ON_EMBARGO",
+                    False,
+                ),
+                "reduce_only_on_embargo": env_bool(
+                    "HYPERLIQUID_SWEEP_REDUCE_ONLY_ON_EMBARGO",
+                    True,
                 ),
                 "close_positions_on_stop": True,
                 "reduce_only_on_stop": True,
@@ -319,6 +356,7 @@ def hyperliquid_client_configs(
         base_url_ws=hyperliquid.get("base_url_ws"),
         proxy_url=hyperliquid.get("proxy_url"),
         http_timeout_secs=hyperliquid.get("http_timeout_secs", 10),
+        bbo_redundancy=hyperliquid.get("bbo_redundancy", 4),
     )
     exec_config = HyperliquidExecClientConfig(
         private_key=env_or_value(hyperliquid, "private_key"),

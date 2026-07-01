@@ -644,9 +644,11 @@ impl DataClient for HyperliquidDataClient {
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
+        let bbo_redundancy = self.config.bbo_redundancy.max(1);
 
         self.spawn_task("subscribe_quotes", async move {
-            ws.subscribe_quotes(instrument_id).await
+            ws.subscribe_quotes_with_redundancy(instrument_id, bbo_redundancy)
+                .await
         });
 
         Ok(())

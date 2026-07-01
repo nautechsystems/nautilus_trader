@@ -249,7 +249,7 @@ async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
 
         # Assert
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
-        ws_client.subscribe_quotes.assert_awaited_once_with(expected_id)
+        ws_client.subscribe_quotes.assert_awaited_once_with(expected_id, 4)
     finally:
         await client._disconnect()
 

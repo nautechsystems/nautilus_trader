@@ -33,6 +33,14 @@ class TestHyperliquidDataClientConfig:
         assert config.base_url_ws is None
         assert config.environment is None
         assert config.http_timeout_secs == 10
+        assert config.bbo_redundancy == 4
+
+    def test_custom_bbo_redundancy(self):
+        # Arrange & Act
+        config = HyperliquidDataClientConfig(bbo_redundancy=2)
+
+        # Assert
+        assert config.bbo_redundancy == 2
 
     def test_testnet_config(self):
         # Arrange & Act

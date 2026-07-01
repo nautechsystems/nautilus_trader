@@ -128,6 +128,7 @@ pub struct HyperliquidWebSocketClient {
     subscriptions: SubscriptionState,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     bar_types: Arc<AtomicMap<String, BarType>>,
+    bbo_redundancy_by_coin: Arc<DashMap<Ustr, usize>>,
     asset_context_subs: Arc<DashMap<Ustr, AHashSet<AssetContextDataType>>>,
     all_dex_asset_ctxs_instrument_ids: Arc<AtomicMap<Ustr, Vec<Option<InstrumentId>>>>,
     cloid_cache: CloidCache,
@@ -153,6 +154,7 @@ impl Clone for HyperliquidWebSocketClient {
             subscriptions: self.subscriptions.clone(),
             instruments: Arc::clone(&self.instruments),
             bar_types: Arc::clone(&self.bar_types),
+            bbo_redundancy_by_coin: Arc::clone(&self.bbo_redundancy_by_coin),
             asset_context_subs: Arc::clone(&self.asset_context_subs),
             all_dex_asset_ctxs_instrument_ids: Arc::clone(&self.all_dex_asset_ctxs_instrument_ids),
             cloid_cache: Arc::clone(&self.cloid_cache),
@@ -195,6 +197,7 @@ impl HyperliquidWebSocketClient {
             subscriptions: SubscriptionState::new(':'),
             instruments: Arc::new(AtomicMap::new()),
             bar_types: Arc::new(AtomicMap::new()),
+            bbo_redundancy_by_coin: Arc::new(DashMap::new()),
             asset_context_subs: Arc::new(DashMap::new()),
             all_dex_asset_ctxs_instrument_ids: Arc::new(AtomicMap::new()),
             cloid_cache: Arc::new(Mutex::new(FifoCacheMap::new())),
@@ -285,6 +288,7 @@ impl HyperliquidWebSocketClient {
         let account_id = self.account_id;
         let subscriptions = self.subscriptions.clone();
         let cmd_tx_for_reconnect = cmd_tx.clone();
+        let bbo_redundancy_by_coin = Arc::clone(&self.bbo_redundancy_by_coin);
         let cloid_cache = Arc::clone(&self.cloid_cache);
         let post_router = Arc::clone(&self.post_router);
 
@@ -315,9 +319,22 @@ impl HyperliquidWebSocketClient {
                 for topic in topics {
                     match subscription_from_topic(&topic) {
                         Ok(subscription) => {
-                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
-                                subscriptions: vec![subscription],
-                            }) {
+                            let redundancy = match &subscription {
+                                SubscriptionRequest::Bbo { coin } => bbo_redundancy_by_coin
+                                    .get(coin)
+                                    .map_or(1, |entry| *entry.value())
+                                    .max(1),
+                                _ => 1,
+                            };
+                            let subscriptions = if redundancy == 1 {
+                                vec![subscription]
+                            } else {
+                                vec![subscription; redundancy]
+                            };
+
+                            if let Err(e) = cmd_tx_for_reconnect
+                                .send(HandlerCommand::Subscribe { subscriptions })
+                            {
                                 log::error!("Failed to send resubscribe command: {e}");
                             }
                         }
@@ -1209,10 +1226,23 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to best bid/offer (BBO) quotes for an instrument.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_quotes_with_redundancy(instrument_id, 1)
+            .await
+    }
+
+    /// Subscribe to best bid/offer (BBO) quotes for an instrument with
+    /// redundant physical subscriptions. Duplicate quote events are deduped by
+    /// the feed handler before they are emitted to the data engine.
+    pub async fn subscribe_quotes_with_redundancy(
+        &self,
+        instrument_id: InstrumentId,
+        redundancy: usize,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
+        let redundancy = redundancy.max(1);
 
         let cmd_tx = self.cmd_tx.read().await;
 
@@ -1221,12 +1251,14 @@ impl HyperliquidWebSocketClient {
             .send(HandlerCommand::UpdateInstrument(instrument.clone()))
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
-        let subscription = SubscriptionRequest::Bbo { coin };
+        self.bbo_redundancy_by_coin.insert(coin, redundancy);
+
+        let subscriptions = (0..redundancy)
+            .map(|_| SubscriptionRequest::Bbo { coin })
+            .collect();
 
         cmd_tx
-            .send(HandlerCommand::Subscribe {
-                subscriptions: vec![subscription],
-            })
+            .send(HandlerCommand::Subscribe { subscriptions })
             .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
         Ok(())
     }
@@ -1465,15 +1497,20 @@ impl HyperliquidWebSocketClient {
             .get_instrument(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
+        let redundancy = self
+            .bbo_redundancy_by_coin
+            .remove(&coin)
+            .map_or(1, |(_, redundancy)| redundancy)
+            .max(1);
 
-        let subscription = SubscriptionRequest::Bbo { coin };
+        let subscriptions = (0..redundancy)
+            .map(|_| SubscriptionRequest::Bbo { coin })
+            .collect();
 
         self.cmd_tx
             .read()
             .await
-            .send(HandlerCommand::Unsubscribe {
-                subscriptions: vec![subscription],
-            })
+            .send(HandlerCommand::Unsubscribe { subscriptions })
             .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
         Ok(())
     }

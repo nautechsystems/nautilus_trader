@@ -55,6 +55,11 @@ pub struct HyperliquidDataClientConfig {
     /// WebSocket timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
+    /// Number of redundant Hyperliquid BBO subscriptions to open for each
+    /// logical quote subscription. The first duplicate quote update received
+    /// is forwarded and later duplicates are dropped.
+    #[builder(default = 4)]
+    pub bbo_redundancy: usize,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,

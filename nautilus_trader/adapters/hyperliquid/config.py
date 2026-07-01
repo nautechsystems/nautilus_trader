@@ -40,6 +40,10 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
         Optional proxy URL for HTTP and WebSocket transports.
     http_timeout_secs : PositiveInt, default 10
         The timeout (seconds) for HTTP requests.
+    bbo_redundancy : PositiveInt, default 4
+        The number of redundant Hyperliquid BBO subscriptions to open for each
+        logical quote subscription. The adapter forwards the first copy of each
+        BBO event and drops later duplicates.
 
     """
 
@@ -48,6 +52,7 @@ class HyperliquidDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     proxy_url: str | None = None
     http_timeout_secs: PositiveInt = 10
+    bbo_redundancy: PositiveInt = 4
 
 
 class HyperliquidExecClientConfig(LiveExecClientConfig, frozen=True):

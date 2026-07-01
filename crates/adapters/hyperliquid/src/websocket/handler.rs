@@ -29,10 +29,10 @@ use nautilus_core::{
     AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType},
+    data::{BarType, CustomData, Data, DataType, QuoteTick},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    types::Price,
+    types::{Price, PriceRaw, QuantityRaw},
 };
 use nautilus_network::{
     RECONNECTED,
@@ -152,6 +152,37 @@ impl AssetContextCaches {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct BboDedupKey {
+    instrument_id: InstrumentId,
+    ts_event: UnixNanos,
+    bid_price_raw: PriceRaw,
+    bid_price_precision: u8,
+    ask_price_raw: PriceRaw,
+    ask_price_precision: u8,
+    bid_size_raw: QuantityRaw,
+    bid_size_precision: u8,
+    ask_size_raw: QuantityRaw,
+    ask_size_precision: u8,
+}
+
+impl From<&QuoteTick> for BboDedupKey {
+    fn from(quote: &QuoteTick) -> Self {
+        Self {
+            instrument_id: quote.instrument_id,
+            ts_event: quote.ts_event,
+            bid_price_raw: quote.bid_price.raw,
+            bid_price_precision: quote.bid_price.precision,
+            ask_price_raw: quote.ask_price.raw,
+            ask_price_precision: quote.ask_price.precision,
+            bid_size_raw: quote.bid_size.raw,
+            bid_size_precision: quote.bid_size.precision,
+            ask_size_raw: quote.ask_size.raw,
+            ask_size_precision: quote.ask_size.precision,
+        }
+    }
+}
+
 pub(super) struct FeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
@@ -172,6 +203,7 @@ pub(super) struct FeedHandler {
     all_dex_asset_ctxs_instrument_ids: AHashMap<Ustr, Vec<Option<InstrumentId>>>,
     depth10_subs: AHashSet<Ustr>,
     processed_trade_ids: FifoCache<u64, 10_000>,
+    processed_bbo_quotes: FifoCache<BboDedupKey, 10_000>,
     asset_context_caches: AssetContextCaches,
 }
 
@@ -211,6 +243,7 @@ impl FeedHandler {
             all_dex_asset_ctxs_instrument_ids: AHashMap::new(),
             depth10_subs: AHashSet::new(),
             processed_trade_ids: FifoCache::new(),
+            processed_bbo_quotes: FifoCache::new(),
             asset_context_caches: AssetContextCaches::default(),
         }
     }
@@ -404,6 +437,7 @@ impl FeedHandler {
                                         &self.asset_context_subs,
                                         &self.depth10_subs,
                                         &mut self.processed_trade_ids,
+                                        &mut self.processed_bbo_quotes,
                                         &mut self.asset_context_caches,
                                         &mut self.bar_cache,
                                         &self.all_dex_asset_ctxs_instrument_ids,
@@ -455,6 +489,7 @@ impl FeedHandler {
         asset_context_subs: &AHashMap<Ustr, AHashSet<AssetContextDataType>>,
         depth10_subs: &AHashSet<Ustr>,
         processed_trade_ids: &mut FifoCache<u64, 10_000>,
+        processed_bbo_quotes: &mut FifoCache<BboDedupKey, 10_000>,
         asset_context_caches: &mut AssetContextCaches,
         bar_cache: &mut AHashMap<String, CandleData>,
         all_dex_asset_ctxs_instrument_ids: &AHashMap<Ustr, Vec<Option<InstrumentId>>>,
@@ -594,7 +629,9 @@ impl FeedHandler {
                 }
             }
             HyperliquidWsMessage::Bbo { data } => {
-                if let Some(msg) = Self::handle_bbo(&data, instruments, ts_init) {
+                if let Some(msg) =
+                    Self::handle_bbo(&data, instruments, ts_init, processed_bbo_quotes)
+                {
                     result.push(msg);
                 }
             }
@@ -775,10 +812,24 @@ impl FeedHandler {
         data: &super::messages::WsBboData,
         instruments: &AHashMap<Ustr, InstrumentAny>,
         ts_init: UnixNanos,
+        processed_bbo_quotes: &mut FifoCache<BboDedupKey, 10_000>,
     ) -> Option<NautilusWsMessage> {
         if let Some(instrument) = instruments.get(&data.coin) {
             match parse_ws_quote_tick(data, instrument, ts_init) {
-                Ok(quote_tick) => Some(NautilusWsMessage::Quote(quote_tick)),
+                Ok(quote_tick) => {
+                    let dedup_key = BboDedupKey::from(&quote_tick);
+                    if processed_bbo_quotes.contains(&dedup_key) {
+                        log::trace!(
+                            "Dropping duplicate BBO quote: instrument_id={}, ts_event={}",
+                            quote_tick.instrument_id,
+                            quote_tick.ts_event
+                        );
+                        None
+                    } else {
+                        processed_bbo_quotes.add(dedup_key);
+                        Some(NautilusWsMessage::Quote(quote_tick))
+                    }
+                }
                 Err(e) => {
                     log::error!("Error parsing quote tick: {e}");
                     None
@@ -1243,7 +1294,7 @@ mod tests {
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             messages::{
                 NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
-                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBboData, WsBookData, WsLevelData,
             },
             post::PostRouter,
         },
@@ -1301,6 +1352,25 @@ mod tests {
                 }],
             ],
             time: 1_700_000_000_000,
+        }
+    }
+
+    fn one_level_bbo() -> WsBboData {
+        WsBboData {
+            coin: Ustr::from("BTC"),
+            time: 1_700_000_000_000,
+            bbo: [
+                Some(WsLevelData {
+                    px: dec!(50000.0),
+                    sz: dec!(1.25),
+                    n: 2,
+                }),
+                Some(WsLevelData {
+                    px: dec!(50001.0),
+                    sz: dec!(1.50),
+                    n: 3,
+                }),
+            ],
         }
     }
 
@@ -1467,6 +1537,29 @@ mod tests {
         );
 
         assert!(msgs.is_empty());
+    }
+
+    #[rstest]
+    fn handle_bbo_drops_duplicate_quote_event() {
+        let mut instruments = AHashMap::new();
+        instruments.insert(Ustr::from("BTC"), btc_perp());
+        let mut processed_bbo_quotes = FifoCache::new();
+
+        let first = FeedHandler::handle_bbo(
+            &one_level_bbo(),
+            &instruments,
+            UnixNanos::default(),
+            &mut processed_bbo_quotes,
+        );
+        let duplicate = FeedHandler::handle_bbo(
+            &one_level_bbo(),
+            &instruments,
+            UnixNanos::from(1),
+            &mut processed_bbo_quotes,
+        );
+
+        assert!(matches!(first, Some(NautilusWsMessage::Quote(_))));
+        assert!(duplicate.is_none());
     }
 
     #[rstest]

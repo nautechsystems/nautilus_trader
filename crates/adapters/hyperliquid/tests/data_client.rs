@@ -833,7 +833,7 @@ async fn test_data_client_subscribe_trades() {
 #[tokio::test]
 async fn test_data_client_subscribe_quotes() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
@@ -864,6 +864,26 @@ async fn test_data_client_subscribe_quotes() {
         matches!(event, DataEvent::Data(Data::Quote(_))),
         "Expected Quote event, was: {event:?}"
     );
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscriptions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|subscription| {
+                        subscription.get("type").and_then(|value| value.as_str()) == Some("bbo")
+                    })
+                    .count()
+                    == 4
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
 }

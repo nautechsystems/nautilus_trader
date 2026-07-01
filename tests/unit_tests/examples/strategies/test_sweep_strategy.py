@@ -14,7 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import json
+from datetime import datetime
+from datetime import time
+from datetime import timezone
+from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 from nautilus_trader.examples.strategies.sweep_strategy import SweepStrategy
 from nautilus_trader.examples.strategies.sweep_strategy import SweepStrategyConfig
@@ -29,6 +34,25 @@ def _config(**overrides) -> SweepStrategyConfig:
     }
     values.update(overrides)
     return SweepStrategyConfig.parse(json.dumps(values))
+
+
+class RecordingSweepStrategy(SweepStrategy):
+    def __init__(self, config: SweepStrategyConfig) -> None:
+        super().__init__(config)
+        self.embargo = False
+        self.calls = []
+
+    def _is_market_boundary_embargo(self) -> bool:
+        return self.embargo
+
+    def cancel_all_orders(self, *args, **kwargs):
+        self.calls.append(("cancel_all_orders", args, kwargs))
+
+    def close_all_positions(self, *args, **kwargs):
+        self.calls.append(("close_all_positions", args, kwargs))
+
+    def cancel_order(self, *args, **kwargs):
+        self.calls.append(("cancel_order", args, kwargs))
 
 
 def test_config_parse_accepts_fractional_bps():
@@ -52,6 +76,39 @@ def test_config_parse_accepts_fractional_bps():
     assert config.unwind_recenter_threshold_bps == 0.1
 
 
+def test_config_parse_accepts_market_open_embargo_settings():
+    # Arrange
+    raw = json.dumps(
+        {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "order_qty": "0.001",
+            "market_open_embargo_minutes": 5,
+            "market_open_embargo_pre_open_minutes": 1,
+            "market_open_embargo_timezone": "America/New_York",
+            "market_open_embargo_start": "09:30:00",
+            "market_after_hours_embargo_minutes": 4,
+            "market_after_hours_embargo_pre_start_minutes": 1,
+            "market_after_hours_embargo_start": "16:00:00",
+            "close_positions_on_embargo": False,
+            "reduce_only_on_embargo": True,
+        },
+    )
+
+    # Act
+    config = SweepStrategyConfig.parse(raw)
+
+    # Assert
+    assert config.market_open_embargo_minutes == 5
+    assert config.market_open_embargo_pre_open_minutes == 1
+    assert config.market_open_embargo_timezone == "America/New_York"
+    assert config.market_open_embargo_start == "09:30:00"
+    assert config.market_after_hours_embargo_minutes == 4
+    assert config.market_after_hours_embargo_pre_start_minutes == 1
+    assert config.market_after_hours_embargo_start == "16:00:00"
+    assert not config.close_positions_on_embargo
+    assert config.reduce_only_on_embargo
+
+
 def test_config_parse_accepts_legacy_recenter_threshold_bps():
     # Arrange
     raw = json.dumps(
@@ -67,6 +124,166 @@ def test_config_parse_accepts_legacy_recenter_threshold_bps():
 
     # Assert
     assert config.quote_recenter_threshold_bps == 0.1
+
+
+def test_market_open_embargo_window_uses_configured_timezone():
+    # Arrange
+    tz = ZoneInfo("America/New_York")
+    start = time(9, 30)
+    minutes = Decimal(5)
+
+    # Act, Assert
+    assert SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 14, 29, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+    assert SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 14, 30, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+    assert SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 14, 34, 59, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 14, 28, 59, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 14, 35, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 3, 14, 30, tzinfo=timezone.utc),
+        tz,
+        start,
+        minutes,
+        Decimal(1),
+    )
+
+
+def test_market_after_hours_embargo_window_covers_after_hours_boundary():
+    # Arrange
+    tz = ZoneInfo("America/New_York")
+    after_hours_start = time(16, 0)
+
+    # Act, Assert
+    assert SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 20, 59, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        Decimal(4),
+        Decimal(1),
+    )
+    assert SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 21, 3, 59, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        Decimal(4),
+        Decimal(1),
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 20, 58, 59, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        Decimal(4),
+        Decimal(1),
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_embargo(
+        datetime(2026, 1, 5, 21, 4, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        Decimal(4),
+        Decimal(1),
+    )
+
+
+def test_market_open_embargo_cuts_risk_adding_orders_once_and_resumes():
+    # Arrange
+    config = _config(market_open_embargo_minutes=5)
+    strategy = RecordingSweepStrategy(config=config)
+    bid_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    ask_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    unwind_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    strategy._bid_order = bid_order
+    strategy._ask_order = ask_order
+    strategy._unwind_order = unwind_order
+
+    # Act
+    strategy.embargo = True
+    assert strategy._handle_market_boundary_embargo()
+    assert strategy._handle_market_boundary_embargo()
+
+    strategy.embargo = False
+    assert not strategy._handle_market_boundary_embargo()
+
+    # Assert
+    assert strategy.calls == [
+        (
+            "cancel_order",
+            (bid_order,),
+            {"client_id": config.client_id},
+        ),
+        (
+            "cancel_order",
+            (ask_order,),
+            {"client_id": config.client_id},
+        ),
+    ]
+    assert strategy._bid_order is None
+    assert strategy._ask_order is None
+    assert strategy._unwind_order is unwind_order
+    assert not strategy._embargo_active
+
+
+def test_market_open_embargo_can_close_positions_when_explicitly_enabled():
+    # Arrange
+    config = _config(market_open_embargo_minutes=5, close_positions_on_embargo=True)
+    strategy = RecordingSweepStrategy(config=config)
+    strategy._bid_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    strategy._ask_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    strategy._unwind_order = SimpleNamespace(is_closed=False, is_pending_cancel=False)
+    strategy._inventory_to_unwind = Decimal("1")
+
+    # Act
+    strategy.embargo = True
+    assert strategy._handle_market_boundary_embargo()
+
+    # Assert
+    assert strategy.calls == [
+        (
+            "cancel_all_orders",
+            (config.instrument_id,),
+            {"client_id": config.client_id},
+        ),
+        (
+            "close_all_positions",
+            (config.instrument_id,),
+            {
+                "client_id": config.client_id,
+                "reduce_only": config.reduce_only_on_embargo,
+            },
+        ),
+    ]
+    assert strategy._bid_order is None
+    assert strategy._ask_order is None
+    assert strategy._unwind_order is None
+    assert strategy._inventory_to_unwind == 0
 
 
 def test_unwind_recenter_threshold_requires_touch_drift():

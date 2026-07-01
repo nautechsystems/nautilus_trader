@@ -372,6 +372,35 @@ class TestLiveDataEngine:
         self.engine.stop()
 
     @pytest.mark.asyncio
+    async def test_process_records_data_queue_process_entry_age(self):
+        # Arrange
+        ts_init = self.clock.timestamp_ns() - 5_000_000
+        tick = TestDataStubs.quote_tick(
+            instrument=BTCUSDT_BINANCE,
+            ts_event=ts_init,
+            ts_init=ts_init,
+        )
+
+        with (
+            patch("nautilus_trader.live.data_engine.dd_enabled", return_value=True),
+            patch("nautilus_trader.live.data_engine.dd_gauge"),
+            patch("nautilus_trader.live.data_engine.dd_distribution") as distribution,
+        ):
+            # Act
+            self.engine.process(tick)
+
+        # Assert
+        distribution.assert_called_once()
+        metric_name, value = distribution.call_args.args[:2]
+        tags = distribution.call_args.kwargs["tags"]
+
+        assert metric_name == "live_data_queue.process_entry_age_ms"
+        assert value >= 5.0
+        assert f"instrument:{BTCUSDT_BINANCE.id}" in tags
+        assert f"venue:{BTCUSDT_BINANCE.id.venue}" in tags
+        assert "data_type:QuoteTick" in tags
+
+    @pytest.mark.asyncio
     async def test_graceful_shutdown_on_exception_enabled_calls_shutdown_system(self):
         """
         Test that when graceful_shutdown_on_exception=True, shutdown_system is called on
