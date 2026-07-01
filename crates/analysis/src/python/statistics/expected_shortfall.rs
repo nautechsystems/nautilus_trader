@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::prelude::*;
 
 use super::transform_returns;
@@ -38,8 +39,8 @@ impl ExpectedShortfall {
     /// corresponding `VaR`. Returns `NaN` for an empty series.
     #[new]
     #[pyo3(signature = (confidence=None))]
-    fn py_new(confidence: Option<f64>) -> Self {
-        Self::new(confidence)
+    fn py_new(confidence: Option<f64>) -> PyResult<Self> {
+        Self::new_checked(confidence).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

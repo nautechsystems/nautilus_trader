@@ -17,6 +17,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::check_predicate_true;
 use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
@@ -49,12 +50,28 @@ pub struct ValueAtRisk {
 }
 
 impl ValueAtRisk {
+    /// Creates a new checked [`ValueAtRisk`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `confidence` is not finite and in the range `(0, 1)`.
+    pub fn new_checked(confidence: Option<f64>) -> anyhow::Result<Self> {
+        let confidence = confidence.unwrap_or(0.95);
+        check_predicate_true(
+            confidence.is_finite() && confidence > 0.0 && confidence < 1.0,
+            "confidence must be finite and in the range (0, 1)",
+        )?;
+        Ok(Self { confidence })
+    }
+
     /// Creates a new [`ValueAtRisk`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `confidence` is not finite and in the range `(0, 1)`.
     #[must_use]
     pub fn new(confidence: Option<f64>) -> Self {
-        Self {
-            confidence: confidence.unwrap_or(0.95),
-        }
+        Self::new_checked(confidence).expect("Invalid `confidence` for `ValueAtRisk`")
     }
 }
 
@@ -166,5 +183,24 @@ mod tests {
         ]);
         let result = var.calculate_from_returns(&returns).unwrap();
         assert!(approx_eq!(f64, result, -0.091, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    #[case(Some(0.0))]
+    #[case(Some(1.0))]
+    #[case(Some(1.5))]
+    #[case(Some(-0.5))]
+    #[case(Some(f64::NAN))]
+    #[case(Some(f64::INFINITY))]
+    fn test_new_checked_rejects_invalid_confidence(#[case] confidence: Option<f64>) {
+        assert!(ValueAtRisk::new_checked(confidence).is_err());
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(0.5))]
+    #[case(Some(0.99))]
+    fn test_new_checked_accepts_valid_confidence(#[case] confidence: Option<f64>) {
+        assert!(ValueAtRisk::new_checked(confidence).is_ok());
     }
 }
