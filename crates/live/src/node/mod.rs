@@ -84,8 +84,6 @@ use std::{fmt::Debug, future::Future, pin::Pin, time::Duration};
 #[cfg(feature = "streaming")]
 use futures::StreamExt;
 use indexmap::IndexSet;
-#[cfg(feature = "streaming")]
-use nautilus_common::msgbus::ShareableMessageHandler;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
     cache::database::CacheDatabaseAdapter,
@@ -115,7 +113,10 @@ use nautilus_model::{
 use nautilus_persistence::{
     backend::{
         catalog::make_object_store_path,
-        feather::{FeatherWriter, RotationConfig as FeatherRotationConfig},
+        feather::{
+            FeatherWriter, FeatherWriterMessageBusSubscription,
+            RotationConfig as FeatherRotationConfig,
+        },
     },
     parquet::{ObjectStoreLocationKind, create_object_store_location_from_path},
 };
@@ -293,7 +294,7 @@ pub struct LiveNode {
     #[cfg(feature = "streaming")]
     streaming_writer: Option<Rc<RefCell<FeatherWriter>>>,
     #[cfg(feature = "streaming")]
-    streaming_handler: Option<ShareableMessageHandler>,
+    streaming_handler: Option<FeatherWriterMessageBusSubscription>,
     #[cfg(feature = "plugin")]
     plugins: plugin::NodePlugins,
     #[cfg(feature = "python")]
