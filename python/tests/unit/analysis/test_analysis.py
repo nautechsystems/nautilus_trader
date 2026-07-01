@@ -112,6 +112,15 @@ def test_threshold_statistic_default_construction_and_name(cls, expected_prefix)
     assert stat.name.startswith(expected_prefix)
 
 
+@pytest.mark.parametrize("cls", [ValueAtRisk, ExpectedShortfall])
+@pytest.mark.parametrize("confidence", [0.0, 1.0, 1.5, -0.5, float("nan"), float("inf")])
+def test_confidence_statistic_rejects_invalid_confidence(cls, confidence):
+    # `confidence` must be finite and in the open interval (0, 1); otherwise the
+    # historical percentile index would be out of range.
+    with pytest.raises(ValueError):
+        cls(confidence=confidence)
+
+
 @pytest.mark.parametrize(
     ("cls", "_expected_prefix"),
     NO_ARG_STATISTICS + PERIOD_STATISTICS + THRESHOLD_STATISTICS,
