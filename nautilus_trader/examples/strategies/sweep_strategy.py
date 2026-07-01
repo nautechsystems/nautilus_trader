@@ -29,9 +29,12 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from time import monotonic_ns
 
 from nautilus_trader.config import NonNegativeFloat
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.datadog import enabled as dd_enabled
+from nautilus_trader.datadog import gauge as dd_gauge
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -80,6 +83,8 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
         If true, call ``close_all_positions`` during stop.
     reduce_only_on_stop : bool, default True
         Passed through to ``close_all_positions`` during stop.
+    bbo_distance_telemetry_interval_ms : NonNegativeFloat, default 1000.0
+        Minimum interval between BBO distance telemetry samples.
     log_data : bool, default False
         If true, log incoming quote ticks.
 
@@ -94,6 +99,7 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
     client_id: ClientId | None = None
     close_positions_on_stop: bool = True
     reduce_only_on_stop: bool = True
+    bbo_distance_telemetry_interval_ms: NonNegativeFloat = 1000.0
     log_data: bool = False
 
     @classmethod
@@ -130,6 +136,7 @@ class SweepStrategy(Strategy):
         self._ask_order: LimitOrder | None = None
         self._unwind_order: LimitOrder | None = None
         self._quote_order_ids: set[ClientOrderId] = set()
+        self._last_bbo_distance_telemetry_ns = 0
 
     def on_start(self) -> None:
         self._instrument = self.cache.instrument(self.config.instrument_id)
@@ -151,13 +158,18 @@ class SweepStrategy(Strategy):
             self.log.info(repr(tick))
 
         self._clear_closed_refs()
+        mid: Decimal | None = None
+        if self._should_record_bbo_distance():
+            mid = self._mid(tick)
+            self._record_bbo_distance_from_mid(tick, mid)
 
         if self._needs_unwind():
             self._cancel_quote_orders()
             self._maintain_unwind_order(tick)
             return
 
-        mid = self._mid(tick)
+        if mid is None:
+            mid = self._mid(tick)
         if self._anchor_mid is None or not self._has_live_quote_pair():
             self._maintain_quote_pair(mid)
             self._anchor_mid = mid
@@ -240,6 +252,7 @@ class SweepStrategy(Strategy):
         self._ask_order = None
         self._unwind_order = None
         self._quote_order_ids.clear()
+        self._last_bbo_distance_telemetry_ns = 0
 
     def _maintain_quote_pair(self, mid: Decimal) -> None:
         prices = self._quote_prices(mid)
@@ -364,9 +377,7 @@ class SweepStrategy(Strategy):
         else:
             increment = float(self._instrument.price_increment)
             rounded = (
-                round_down(float(raw), increment)
-                if is_bid
-                else round_up(float(raw), increment)
+                round_down(float(raw), increment) if is_bid else round_up(float(raw), increment)
             )
             price = Price(rounded, self._price_precision)
 
@@ -380,6 +391,43 @@ class SweepStrategy(Strategy):
 
     def _mid(self, tick: QuoteTick) -> Decimal:
         return (tick.bid_price.as_decimal() + tick.ask_price.as_decimal()) / Decimal(2)
+
+    def _should_record_bbo_distance(self) -> bool:
+        if not dd_enabled():
+            return False
+
+        interval_ns = int(self.config.bbo_distance_telemetry_interval_ms * 1_000_000)
+        if interval_ns <= 0:
+            return True
+
+        now_ns = monotonic_ns()
+        if now_ns - self._last_bbo_distance_telemetry_ns < interval_ns:
+            return False
+
+        self._last_bbo_distance_telemetry_ns = now_ns
+        return True
+
+    def _record_bbo_distance_from_mid(self, tick: QuoteTick, mid: Decimal) -> None:
+        if mid <= 0:
+            return
+
+        bid_distance_bps = (mid - tick.bid_price.as_decimal()) / mid * Decimal(10_000)
+        ask_distance_bps = (tick.ask_price.as_decimal() - mid) / mid * Decimal(10_000)
+        tags = (
+            f"venue:{self.config.instrument_id.venue}",
+            f"instrument:{self.config.instrument_id}",
+            f"strategy:{self.id}",
+        )
+        dd_gauge(
+            "market_data.quote.best_bid_distance_bps",
+            float(bid_distance_bps),
+            tags=tags,
+        )
+        dd_gauge(
+            "market_data.quote.best_ask_distance_bps",
+            float(ask_distance_bps),
+            tags=tags,
+        )
 
     def _should_recenter(self, mid: Decimal) -> bool:
         if self._anchor_mid is None or self._anchor_mid <= 0:

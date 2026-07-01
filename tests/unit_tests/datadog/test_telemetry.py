@@ -21,6 +21,7 @@ from nautilus_trader.datadog.telemetry import DatadogTelemetryConfig
 from nautilus_trader.datadog.telemetry import configure
 from nautilus_trader.datadog.telemetry import distribution
 from nautilus_trader.datadog.telemetry import enabled
+from nautilus_trader.datadog.telemetry import histogram
 from nautilus_trader.datadog.telemetry import stop
 
 
@@ -64,14 +65,16 @@ class TestDatadogTelemetry:
             telemetry.increment("orders.submitted", tags=("env:test",))
             telemetry.gauge("queue.depth", 4, tags=("queue:data",))
             telemetry.distribution("quote.age_ms", 1.5, tags=("instrument:BTCUSDT",))
-            lines = _receive_lines(receiver, 3)
+            telemetry.histogram("order.rtt_ms", 3.0, tags=("phase:ack",))
+            lines = _receive_lines(receiver, 4)
             telemetry.close()
 
         # Assert
         assert "test.orders.submitted:1|c|#service:nautilus,env:test" in lines
         assert "test.queue.depth:4|g|#service:nautilus,queue:data" in lines
         assert "test.quote.age_ms:1.5|d|#service:nautilus,instrument:BTCUSDT" in lines
-        assert telemetry.stats().sent == 3
+        assert "test.order.rtt_ms:3.0|h|#service:nautilus,phase:ack" in lines
+        assert telemetry.stats().sent == 4
 
     def test_global_telemetry_can_be_configured_and_stopped(self):
         # Arrange
@@ -90,9 +93,11 @@ class TestDatadogTelemetry:
             # Act
             configure(config)
             distribution("quote.internal_age_ms", 2.0, tags=("env:test",))
-            lines = _receive_lines(receiver, 1)
+            histogram("order.rtt_ms", 4.0, tags=("phase:confirmation",))
+            lines = _receive_lines(receiver, 2)
             stop()
 
         # Assert
         assert enabled() is False
         assert "test.quote.internal_age_ms:2.0|d|#env:test" in lines
+        assert "test.order.rtt_ms:4.0|h|#phase:confirmation" in lines

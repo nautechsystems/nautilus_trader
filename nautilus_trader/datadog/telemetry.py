@@ -39,6 +39,7 @@ DEFAULT_NAMESPACE: Final[str] = "nautilus"
 DEFAULT_QUEUE_SIZE: Final[int] = 100_000
 DEFAULT_FLUSH_INTERVAL: Final[float] = 0.25
 DEFAULT_PACKET_SIZE: Final[int] = 8_192
+DEFAULT_HEARTBEAT_INTERVAL: Final[float] = 10.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +67,9 @@ class DatadogTelemetryConfig:
         Worker queue polling interval in seconds.
     max_packet_size : int, default 8192
         Maximum DogStatsD packet size in bytes.
+    heartbeat_interval : float, default 10.0
+        Interval for telemetry heartbeat and internal stats gauges. Set to zero
+        to disable.
 
     """
 
@@ -78,6 +82,7 @@ class DatadogTelemetryConfig:
     default_sample_rate: float = 1.0
     flush_interval: float = DEFAULT_FLUSH_INTERVAL
     max_packet_size: int = DEFAULT_PACKET_SIZE
+    heartbeat_interval: float = DEFAULT_HEARTBEAT_INTERVAL
 
     @classmethod
     def from_env(cls, *, enabled: bool = True) -> DatadogTelemetryConfig:
@@ -96,6 +101,10 @@ class DatadogTelemetryConfig:
             constant_tags=_parse_tags(os.getenv("DD_TAGS", "")),
             queue_size=_int_from_env("NAUTILUS_DATADOG_QUEUE_SIZE", DEFAULT_QUEUE_SIZE),
             default_sample_rate=_float_from_env("NAUTILUS_DATADOG_SAMPLE_RATE", 1.0),
+            heartbeat_interval=_float_from_env(
+                "NAUTILUS_DATADOG_HEARTBEAT_INTERVAL",
+                DEFAULT_HEARTBEAT_INTERVAL,
+            ),
         )
 
 
@@ -125,7 +134,9 @@ class DatadogTelemetry:
         self.config = config or DatadogTelemetryConfig.from_env()
         self._queue: queue.Queue[_MetricSample] = queue.Queue(maxsize=self.config.queue_size)
         self._running = threading.Event()
+        self._heartbeat_stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._heartbeat_thread: threading.Thread | None = None
         self._sock: socket.socket | None = None
         self._addr = (self.config.host, self.config.port)
         self._sent = 0
@@ -149,9 +160,15 @@ class DatadogTelemetry:
             daemon=True,
         )
         self._thread.start()
+        self._start_heartbeat()
 
     def close(self, timeout: float = 2.0) -> None:
         self._running.clear()
+        self._heartbeat_stop.set()
+        if self._heartbeat_thread is not None:
+            self._heartbeat_thread.join(timeout=timeout)
+            self._heartbeat_thread = None
+
         if self._thread is not None:
             self._thread.join(timeout=timeout)
             self._thread = None
@@ -195,6 +212,15 @@ class DatadogTelemetry:
     ) -> None:
         self.record(name, value, "d", tags, sample_rate)
 
+    def histogram(
+        self,
+        name: str,
+        value: float,
+        tags: Sequence[str] | None = None,
+        sample_rate: float | None = None,
+    ) -> None:
+        self.record(name, value, "h", tags, sample_rate)
+
     def record(
         self,
         name: str,
@@ -232,6 +258,26 @@ class DatadogTelemetry:
                 continue
 
             self._send(sample)
+
+    def _start_heartbeat(self) -> None:
+        if self.config.heartbeat_interval <= 0.0:
+            return
+
+        self._heartbeat_stop.clear()
+        self._heartbeat_thread = threading.Thread(
+            target=self._run_heartbeat,
+            name="nautilus-datadog-heartbeat",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _run_heartbeat(self) -> None:
+        while not self._heartbeat_stop.wait(self.config.heartbeat_interval):
+            stats = self.stats()
+            self.gauge("telemetry.heartbeat", 1.0)
+            self.gauge("telemetry.dropped", stats.dropped)
+            self.gauge("telemetry.send_errors", stats.send_errors)
+            self.gauge("telemetry.queued", stats.queued)
 
     def _send(self, sample: _MetricSample) -> None:
         sock = self._sock
@@ -334,6 +380,17 @@ def distribution(
     telemetry = _GLOBAL_TELEMETRY
     if telemetry is not None:
         telemetry.distribution(name, value, tags, sample_rate)
+
+
+def histogram(
+    name: str,
+    value: float,
+    tags: Sequence[str] | None = None,
+    sample_rate: float | None = None,
+) -> None:
+    telemetry = _GLOBAL_TELEMETRY
+    if telemetry is not None:
+        telemetry.histogram(name, value, tags, sample_rate)
 
 
 def _format_line(

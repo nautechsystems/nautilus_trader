@@ -1,6 +1,6 @@
 {
   "title": "Nautilus Trading Ops",
-  "description": "Sample dashboard for NautilusTrader Datadog telemetry. Template variables assume metrics are emitted by nautilus_trader.datadog.telemetry with the default namespace.",
+  "description": "Sample dashboard for NautilusTrader Datadog telemetry. Template variables assume metrics are emitted by nautilus_trader.datadog.telemetry with the default namespace, and order RTT percentiles, BBO distance, lightweight health counters.",
   "layout_type": "ordered",
   "template_variables": [
     {
@@ -22,13 +22,33 @@
       "name": "strategy",
       "prefix": "strategy",
       "default": "*"
+    },
+    {
+      "name": "phase",
+      "prefix": "phase",
+      "default": "*"
+    },
+    {
+      "name": "order_command",
+      "prefix": "order_command",
+      "default": "*"
+    },
+    {
+      "name": "order_role",
+      "prefix": "order_role",
+      "default": "*"
+    },
+    {
+      "name": "adapter",
+      "prefix": "adapter",
+      "default": "*"
     }
   ],
   "widgets": [
     {
       "definition": {
         "type": "note",
-        "content": "# Nautilus Trading Ops\nQuote propagation, queue pressure, message bus fanout, and strategy callback latency.",
+        "content": "# Nautilus Trading Ops\nQuote propagation, queue pressure, message bus fanout, and strategy callback latency, and order RTT percentiles, BBO distance, lightweight health counters.",
         "background_color": "white",
         "font_size": "18",
         "text_align": "left",
@@ -37,11 +57,136 @@
     },
     {
       "definition": {
+        "type": "note",
+        "content": "## Top Health\nProcess liveness, telemetry health, websocket state, rejects, and quote flow.",
+        "background_color": "white",
+        "font_size": "16",
+        "text_align": "left",
+        "show_tick": false
+      }
+    },
+    {
+      "definition": {
         "type": "timeseries",
-        "title": "Quote Internal Age p95 / p99",
+        "title": "Telemetry Heartbeat / Drops",
         "requests": [
           {
-            "q": "p95:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
+            "q": "max:nautilus.telemetry.heartbeat{$env} by {component}",
+            "display_type": "line"
+          },
+          {
+            "q": "max:nautilus.telemetry.dropped{$env} by {component}",
+            "display_type": "line"
+          },
+          {
+            "q": "max:nautilus.telemetry.send_errors{$env} by {component}",
+            "display_type": "line"
+          },
+          {
+            "q": "max:nautilus.telemetry.queued{$env} by {component}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Hyperliquid WebSocket Health",
+        "requests": [
+          {
+            "q": "max:nautilus.adapter.ws.connected{$env,$venue,$adapter} by {adapter}",
+            "display_type": "line"
+          },
+          {
+            "q": "sum:nautilus.adapter.ws_reconnect{$env,$venue,$adapter} by {adapter}.as_count()",
+            "display_type": "bars"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Order Reject Counts",
+        "requests": [
+          {
+            "q": "sum:nautilus.order.rejected{$env,$venue,$instrument,$strategy,$order_command,$order_role} by {instrument,order_command}.as_count()",
+            "display_type": "bars"
+          },
+          {
+            "q": "sum:nautilus.order.modify_rejected{$env,$venue,$instrument,$strategy,$order_command,$order_role} by {instrument,order_command}.as_count()",
+            "display_type": "bars"
+          },
+          {
+            "q": "sum:nautilus.order.cancel_rejected{$env,$venue,$instrument,$strategy,$order_command,$order_role} by {instrument,order_command}.as_count()",
+            "display_type": "bars"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Throughput",
+        "requests": [
+          {
+            "q": "sum:nautilus.market_data.quote.processed{$env,$venue,$instrument} by {instrument}.as_count()",
+            "display_type": "bars"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "note",
+        "content": "## Market Data Quality\nFreshness and shape of the per-instrument top-of-book feed.",
+        "background_color": "white",
+        "font_size": "16",
+        "text_align": "left",
+        "show_tick": false
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Feed Age avg",
+        "requests": [
+          {
+            "q": "avg:nautilus.market_data.quote.feed_age_ms{$env,$venue,$instrument} by {instrument}",
+            "display_type": "line"
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Quote Internal Age avg / max",
+        "requests": [
+          {
+            "q": "avg:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
             "display_type": "line",
             "style": {
               "palette": "dog_classic",
@@ -50,7 +195,7 @@
             }
           },
           {
-            "q": "p99:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
+            "q": "max:nautilus.market_data.quote.internal_age_ms{$env,$venue,$instrument} by {instrument}",
             "display_type": "line",
             "style": {
               "palette": "warm",
@@ -64,6 +209,47 @@
           "include_zero": true,
           "label": "ms"
         }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "BBO Distance From Mid",
+        "requests": [
+          {
+            "q": "avg:nautilus.market_data.quote.best_bid_distance_bps{$env,$venue,$instrument,$strategy} by {instrument}",
+            "display_type": "line",
+            "style": {
+              "palette": "blue",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "avg:nautilus.market_data.quote.best_ask_distance_bps{$env,$venue,$instrument,$strategy} by {instrument}",
+            "display_type": "line",
+            "style": {
+              "palette": "orange",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "bps"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "note",
+        "content": "## Internal Pressure\nQueue pressure, fanout cost, and strategy callback timing.",
+        "background_color": "white",
+        "font_size": "16",
+        "text_align": "left",
+        "show_tick": false
       }
     },
     {
@@ -89,10 +275,10 @@
     {
       "definition": {
         "type": "timeseries",
-        "title": "Data Queue Drain Age p95",
+        "title": "Data Queue Drain Age avg",
         "requests": [
           {
-            "q": "p95:nautilus.live_data_queue.drain_age_ms{$env,$venue,$instrument} by {instrument}",
+            "q": "avg:nautilus.live_data_queue.drain_age_ms{$env,$venue,$instrument} by {instrument}",
             "display_type": "line"
           }
         ],
@@ -106,14 +292,14 @@
     {
       "definition": {
         "type": "timeseries",
-        "title": "Quote Publish / MessageBus Fanout p95",
+        "title": "Quote Publish / MessageBus Fanout avg / max",
         "requests": [
           {
-            "q": "p95:nautilus.market_data.quote.publish_ms{$env,$venue,$instrument} by {instrument}",
+            "q": "avg:nautilus.market_data.quote.publish_ms{$env,$venue,$instrument} by {instrument}",
             "display_type": "line"
           },
           {
-            "q": "p95:nautilus.msgbus.publish_ms{$env,topic:data.quotes*} by {topic}",
+            "q": "max:nautilus.msgbus.publish_ms{$env,topic:data.quotes*} by {topic}",
             "display_type": "line"
           }
         ],
@@ -127,14 +313,14 @@
     {
       "definition": {
         "type": "timeseries",
-        "title": "Strategy Quote Callback p95 / p99",
+        "title": "Strategy Quote Callback avg / max",
         "requests": [
           {
-            "q": "p95:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "q": "avg:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
             "display_type": "line"
           },
           {
-            "q": "p99:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "q": "max:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
             "display_type": "line"
           }
         ],
@@ -148,10 +334,10 @@
     {
       "definition": {
         "type": "timeseries",
-        "title": "Strategy Start Latency p95",
+        "title": "Strategy Start Latency avg",
         "requests": [
           {
-            "q": "p95:nautilus.market_data.quote.strategy_start_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
+            "q": "avg:nautilus.market_data.quote.strategy_start_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}",
             "display_type": "line"
           }
         ],
@@ -164,12 +350,45 @@
     },
     {
       "definition": {
+        "type": "note",
+        "content": "## Order Path\nHyperliquid command acknowledgement, user-stream confirmation, and sample volume.",
+        "background_color": "white",
+        "font_size": "16",
+        "text_align": "left",
+        "show_tick": false
+      }
+    },
+    {
+      "definition": {
         "type": "timeseries",
-        "title": "Quote Feed Age p95",
+        "title": "Order Ack RTT p50 / p95 / p99",
         "requests": [
           {
-            "q": "p95:nautilus.market_data.quote.feed_age_ms{$env,$venue,$instrument} by {instrument}",
-            "display_type": "line"
+            "q": "avg:nautilus.order.rtt_ms.median{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:ack} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "avg:nautilus.order.rtt_ms.95percentile{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:ack} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "warm",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "avg:nautilus.order.rtt_ms.99percentile{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:ack} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "cool",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
           }
         ],
         "yaxis": {
@@ -182,10 +401,50 @@
     {
       "definition": {
         "type": "timeseries",
-        "title": "Quote Throughput",
+        "title": "Order Confirmation RTT p50 / p95 / p99",
         "requests": [
           {
-            "q": "sum:nautilus.market_data.quote.processed{$env,$venue,$instrument} by {instrument}.as_count()",
+            "q": "avg:nautilus.order.rtt_ms.median{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:confirmation} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "dog_classic",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "avg:nautilus.order.rtt_ms.95percentile{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:confirmation} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "warm",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          },
+          {
+            "q": "avg:nautilus.order.rtt_ms.99percentile{$env,$venue,$instrument,$strategy,$order_command,$order_role,phase:confirmation} by {order_command,order_role}",
+            "display_type": "line",
+            "style": {
+              "palette": "cool",
+              "line_type": "solid",
+              "line_width": "normal"
+            }
+          }
+        ],
+        "yaxis": {
+          "scale": "linear",
+          "include_zero": true,
+          "label": "ms"
+        }
+      }
+    },
+    {
+      "definition": {
+        "type": "timeseries",
+        "title": "Order RTT Sample Count",
+        "requests": [
+          {
+            "q": "sum:nautilus.order.rtt_ms.count{$env,$venue,$instrument,$strategy,$phase,$order_command,$order_role} by {phase,order_command,order_role}.as_count()",
             "display_type": "bars"
           }
         ],
@@ -197,11 +456,21 @@
     },
     {
       "definition": {
+        "type": "note",
+        "content": "## Debug\nTriage helpers for finding the slowest callbacks.",
+        "background_color": "white",
+        "font_size": "16",
+        "text_align": "left",
+        "show_tick": false
+      }
+    },
+    {
+      "definition": {
         "type": "toplist",
         "title": "Slowest Strategy Handlers",
         "requests": [
           {
-            "q": "top(p95:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}, 10, 'mean', 'desc')"
+            "q": "top(max:nautilus.market_data.quote.strategy_handler_ms{$env,$venue,$instrument,$strategy} by {strategy,instrument}, 10, 'mean', 'desc')"
           }
         ]
       }

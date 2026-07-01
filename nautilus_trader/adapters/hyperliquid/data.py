@@ -54,6 +54,9 @@ from nautilus_trader.data.messages import UnsubscribeMarkPrices
 from nautilus_trader.data.messages import UnsubscribeOrderBook
 from nautilus_trader.data.messages import UnsubscribeQuoteTicks
 from nautilus_trader.data.messages import UnsubscribeTradeTicks
+from nautilus_trader.datadog import enabled as datadog_enabled
+from nautilus_trader.datadog import gauge as datadog_gauge
+from nautilus_trader.datadog import increment as datadog_increment
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
@@ -77,6 +80,7 @@ _PYO3HyperliquidOpenInterest: Any = getattr(
     "HyperliquidOpenInterest",
     None,
 )
+DATADOG_WS_HEALTH_INTERVAL = 10.0
 
 
 class HyperliquidAllMids(Data):
@@ -350,6 +354,8 @@ class HyperliquidDataClient(LiveMarketDataClient):
             proxy_url=config.proxy_url,
         )
         self._all_dexs_asset_ctxs_bootstrapped = False
+        self._datadog_ws_health_task: asyncio.Task | None = None
+        self._datadog_ws_was_active = False
 
     @property
     def instrument_provider(self) -> HyperliquidInstrumentProvider:
@@ -364,6 +370,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+        self._start_datadog_ws_health_monitor()
 
     async def _disconnect(self) -> None:
         # Delay to allow websocket to send any unsubscribe messages
@@ -372,10 +379,53 @@ class HyperliquidDataClient(LiveMarketDataClient):
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting WebSocket")
             await self._ws_client.close()
+            datadog_gauge(
+                "adapter.ws.connected",
+                0.0,
+                tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:data"),
+            )
             self._log.info(
                 f"Disconnected from WebSocket {self._ws_client.url}",
                 LogColor.BLUE,
             )
+        self._stop_datadog_ws_health_monitor()
+
+    def _start_datadog_ws_health_monitor(self) -> None:
+        if not datadog_enabled():
+            return
+        if self._datadog_ws_health_task is not None and not self._datadog_ws_health_task.done():
+            return
+
+        self._datadog_ws_was_active = bool(self._ws_client.is_active())
+        self._datadog_ws_health_task = self._loop.create_task(
+            self._datadog_ws_health_loop(),
+            name="hyperliquid-data-datadog-ws-health",
+        )
+
+    def _stop_datadog_ws_health_monitor(self) -> None:
+        if self._datadog_ws_health_task is not None:
+            self._datadog_ws_health_task.cancel()
+            self._datadog_ws_health_task = None
+        self._datadog_ws_was_active = False
+
+    async def _datadog_ws_health_loop(self) -> None:
+        try:
+            while True:
+                active = bool(self._ws_client.is_active())
+                datadog_gauge(
+                    "adapter.ws.connected",
+                    1.0 if active else 0.0,
+                    tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:data"),
+                )
+                if active and not self._datadog_ws_was_active:
+                    datadog_increment(
+                        "adapter.ws_reconnect",
+                        tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:data"),
+                    )
+                self._datadog_ws_was_active = active
+                await asyncio.sleep(DATADOG_WS_HEALTH_INTERVAL)
+        except asyncio.CancelledError:
+            return
 
     def _cache_instruments(self) -> None:
         # Ensures instrument definitions are available for correct

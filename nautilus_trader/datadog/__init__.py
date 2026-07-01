@@ -27,6 +27,7 @@ from nautilus_trader.datadog.telemetry import configure
 from nautilus_trader.datadog.telemetry import distribution
 from nautilus_trader.datadog.telemetry import enabled
 from nautilus_trader.datadog.telemetry import gauge
+from nautilus_trader.datadog.telemetry import histogram
 from nautilus_trader.datadog.telemetry import increment
 from nautilus_trader.datadog.telemetry import stop
 
@@ -38,6 +39,7 @@ __all__ = [
     "distribution",
     "enabled",
     "gauge",
+    "histogram",
     "increment",
     "load_dashboard",
     "publish_dashboard",

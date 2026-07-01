@@ -17,9 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections import deque
+from dataclasses import dataclass
 from decimal import ROUND_CEILING
 from decimal import ROUND_FLOOR
 from decimal import Decimal
+from time import perf_counter_ns
 from typing import Any
 
 from nautilus_trader.adapters.hyperliquid.config import HyperliquidExecClientConfig
@@ -33,6 +36,10 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.datadog import enabled as datadog_enabled
+from nautilus_trader.datadog import gauge as datadog_gauge
+from nautilus_trader.datadog import histogram as datadog_histogram
+from nautilus_trader.datadog import increment as datadog_increment
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -73,6 +80,30 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
+
+
+DATADOG_WS_HEALTH_INTERVAL = 10.0
+
+
+@dataclass(slots=True)
+class _OrderRttTiming:
+    order_command: str
+    order_role: str
+    instrument_id: str
+    strategy_id: str
+    order_type: str
+    side: str
+    reduce_only: bool
+    started_ns: int
+    ack_recorded: bool = False
+
+
+def _tag_value(value: object) -> str:
+    return str(getattr(value, "value", value))
+
+
+def _enum_tag(value: object) -> str:
+    return str(getattr(value, "name", value))
 
 
 class HyperliquidExecutionClient(LiveExecutionClient):
@@ -173,6 +204,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         self._next_modify_generation = 1
         self._cached_venue_order_id_ts: dict[str, int] = {}
         self._superseded_venue_order_ids: dict[str, set[str]] = {}
+        self._datadog_order_rtt_timings: dict[str, deque[_OrderRttTiming]] = {}
+        self._datadog_ws_health_task: asyncio.Task | None = None
+        self._datadog_ws_was_active = False
 
         # FillReports buffered when fill arrives before order is in cache,
         # drained on OrderAccepted.
@@ -248,6 +282,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         await self._ws_client.connect(self._loop, instruments, self._handle_msg)
         self._log.info(f"Connected to WebSocket {self._ws_client.url}", LogColor.BLUE)
+        self._start_datadog_ws_health_monitor()
 
         if self._account_address:
             await self._ws_client.subscribe_order_updates(self._account_address)
@@ -261,6 +296,43 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 f"Subscribed to user events (includes fills) for {self._account_address}",
                 LogColor.BLUE,
             )
+
+    def _start_datadog_ws_health_monitor(self) -> None:
+        if not datadog_enabled():
+            return
+        if self._datadog_ws_health_task is not None and not self._datadog_ws_health_task.done():
+            return
+
+        self._datadog_ws_was_active = bool(self._ws_client.is_active())
+        self._datadog_ws_health_task = self._loop.create_task(
+            self._datadog_ws_health_loop(),
+            name="hyperliquid-exec-datadog-ws-health",
+        )
+
+    def _stop_datadog_ws_health_monitor(self) -> None:
+        if self._datadog_ws_health_task is not None:
+            self._datadog_ws_health_task.cancel()
+            self._datadog_ws_health_task = None
+        self._datadog_ws_was_active = False
+
+    async def _datadog_ws_health_loop(self) -> None:
+        try:
+            while True:
+                active = bool(self._ws_client.is_active())
+                datadog_gauge(
+                    "adapter.ws.connected",
+                    1.0 if active else 0.0,
+                    tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:execution"),
+                )
+                if active and not self._datadog_ws_was_active:
+                    datadog_increment(
+                        "adapter.ws_reconnect",
+                        tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:execution"),
+                    )
+                self._datadog_ws_was_active = active
+                await asyncio.sleep(DATADOG_WS_HEALTH_INTERVAL)
+        except asyncio.CancelledError:
+            return
 
     def _sync_cloid_cache(self) -> None:
         orders = self._cache.orders(venue=self.venue)
@@ -283,7 +355,6 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
     def _cleanup_cloid_mapping(self, client_order_id: ClientOrderId) -> None:
         self._pending_fills.pop(client_order_id.value, None)
-        modify_generation: int | None = None
         try:
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(client_order_id.value)
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
@@ -314,6 +385,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         if not self._ws_client.is_closed():
             self._log.info("Disconnecting WebSocket")
             await self._ws_client.close()
+            datadog_gauge(
+                "adapter.ws.connected",
+                0.0,
+                tags=(f"venue:{HYPERLIQUID_VENUE.value}", "adapter:execution"),
+            )
+            self._stop_datadog_ws_health_monitor()
 
             # Clear cloid cache to prevent unbounded memory growth
             self._ws_client.clear_cloid_cache()
@@ -321,6 +398,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 f"Disconnected from WebSocket {self._ws_client.url}",
                 LogColor.BLUE,
             )
+        self._stop_datadog_ws_health_monitor()
 
     async def generate_order_status_report(
         self,
@@ -641,6 +719,211 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             return False
         return True
 
+    def _track_order_rtt(
+        self,
+        client_order_id: ClientOrderId,
+        *,
+        order_command: str,
+        order_role: str,
+        instrument_id: object,
+        strategy_id: object,
+        order_type: object,
+        side: object,
+        reduce_only: bool,
+    ) -> _OrderRttTiming | None:
+        if not datadog_enabled():
+            return None
+
+        timing = _OrderRttTiming(
+            order_command=order_command,
+            order_role=order_role,
+            instrument_id=_tag_value(instrument_id),
+            strategy_id=_tag_value(strategy_id),
+            order_type=_enum_tag(order_type),
+            side=_enum_tag(side),
+            reduce_only=reduce_only,
+            started_ns=perf_counter_ns(),
+        )
+        self._datadog_order_rtt_timings.setdefault(client_order_id.value, deque()).append(timing)
+        return timing
+
+    def _record_order_rtt_ack(
+        self,
+        timing: _OrderRttTiming | None,
+        *,
+        outcome: str,
+        keep_for_confirmation: bool = True,
+    ) -> None:
+        if timing is None:
+            return
+
+        timing.ack_recorded = True
+        self._emit_order_rtt(timing, phase="ack", outcome=outcome)
+        if not keep_for_confirmation:
+            self._remove_order_rtt_timing(timing)
+
+    def _record_order_rtt_confirmation(
+        self,
+        client_order_id: ClientOrderId,
+        *,
+        outcome: str,
+    ) -> None:
+        timings = self._datadog_order_rtt_timings.get(client_order_id.value)
+        if not timings:
+            return
+
+        timing = timings.popleft()
+        if not timings:
+            self._datadog_order_rtt_timings.pop(client_order_id.value, None)
+
+        self._emit_order_rtt(timing, phase="confirmation", outcome=outcome)
+
+    def _remove_order_rtt_timing(self, timing: _OrderRttTiming) -> None:
+        for key, timings in list(self._datadog_order_rtt_timings.items()):
+            try:
+                timings.remove(timing)
+            except ValueError:
+                continue
+
+            if not timings:
+                self._datadog_order_rtt_timings.pop(key, None)
+            return
+
+    def _emit_order_rtt(
+        self,
+        timing: _OrderRttTiming,
+        *,
+        phase: str,
+        outcome: str,
+    ) -> None:
+        elapsed_ms = (perf_counter_ns() - timing.started_ns) / 1_000_000
+        datadog_histogram(
+            "order.rtt_ms",
+            elapsed_ms,
+            tags=(
+                f"venue:{HYPERLIQUID_VENUE.value}",
+                f"instrument:{timing.instrument_id}",
+                f"strategy:{timing.strategy_id}",
+                f"phase:{phase}",
+                f"order_command:{timing.order_command}",
+                f"order_role:{timing.order_role}",
+                f"order_type:{timing.order_type}",
+                f"side:{timing.side}",
+                f"reduce_only:{str(timing.reduce_only).lower()}",
+                f"outcome:{outcome}",
+            ),
+        )
+
+    def _increment_order_failure_counter(
+        self,
+        metric_name: str,
+        *,
+        strategy_id: object,
+        instrument_id: object,
+        client_order_id: ClientOrderId,
+        order_command: str,
+        source: str,
+        due_post_only: bool | None = None,
+    ) -> None:
+        order = self._cache.order(client_order_id)
+        reduce_only = bool(order and order.is_reduce_only)
+        order_role = "close" if reduce_only else "open"
+        tags = [
+            f"venue:{HYPERLIQUID_VENUE.value}",
+            f"instrument:{_tag_value(instrument_id)}",
+            f"strategy:{_tag_value(strategy_id)}",
+            f"order_command:{order_command}",
+            f"order_role:{order_role}",
+            f"order_type:{_enum_tag(order.order_type) if order else 'UNKNOWN'}",
+            f"side:{order_side_to_str(order.side) if order else 'UNKNOWN'}",
+            f"reduce_only:{str(reduce_only).lower()}",
+            f"source:{source}",
+        ]
+        if due_post_only is not None:
+            tags.append(f"due_post_only:{str(due_post_only).lower()}")
+
+        datadog_increment(metric_name, tags=tuple(tags))
+
+    def generate_order_rejected(
+        self,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        reason,
+        ts_event,
+        due_post_only=False,
+    ) -> None:
+        order = self._cache.order(client_order_id)
+        self._increment_order_failure_counter(
+            "order.rejected",
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_command="close" if order and order.is_reduce_only else "open",
+            source="generated",
+            due_post_only=due_post_only,
+        )
+        super().generate_order_rejected(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            ts_event,
+            due_post_only,
+        )
+
+    def generate_order_modify_rejected(
+        self,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        reason,
+        ts_event,
+    ) -> None:
+        self._increment_order_failure_counter(
+            "order.modify_rejected",
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_command="modify",
+            source="generated",
+        )
+        super().generate_order_modify_rejected(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            ts_event,
+        )
+
+    def generate_order_cancel_rejected(
+        self,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        reason,
+        ts_event,
+    ) -> None:
+        self._increment_order_failure_counter(
+            "order.cancel_rejected",
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            order_command="cancel",
+            source="generated",
+        )
+        super().generate_order_cancel_rejected(
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            ts_event,
+        )
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
@@ -658,6 +941,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
+        timing: _OrderRttTiming | None = None
         try:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(order.instrument_id.value)
             pyo3_client_order_id = nautilus_pyo3.ClientOrderId(order.client_order_id.value)
@@ -694,6 +978,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             cloid = nautilus_pyo3.hyperliquid_cloid_from_client_order_id(pyo3_client_order_id)
             self._ws_client.cache_cloid_mapping(cloid, pyo3_client_order_id)
 
+            timing = self._track_order_rtt(
+                order.client_order_id,
+                order_command="close" if order.is_reduce_only else "open",
+                order_role="close" if order.is_reduce_only else "open",
+                instrument_id=order.instrument_id,
+                strategy_id=order.strategy_id,
+                order_type=order.order_type,
+                side=order_side_to_str(order.side),
+                reduce_only=order.is_reduce_only,
+            )
             pyo3_report = await self._ws_client.submit_order(
                 self._client,
                 instrument_id=pyo3_instrument_id,
@@ -707,6 +1001,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 post_only=order.is_post_only,
                 reduce_only=order.is_reduce_only,
             )
+            self._record_order_rtt_ack(timing, outcome="accepted")
         except Exception as e:
             if _is_transport_error(e):
                 self._log.warning(
@@ -720,6 +1015,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
             self._terminal_orders.add(order.client_order_id.value)
             self._cleanup_cloid_mapping(order.client_order_id)
+            self._record_order_rtt_ack(
+                timing,
+                outcome="rejected",
+                keep_for_confirmation=False,
+            )
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -808,7 +1108,10 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         # failure) leaves the order SUBMITTED for reconciliation.
         for pyo3_report in pyo3_reports or ():
             try:
-                self._handle_order_status_report_pyo3(pyo3_report)
+                self._handle_order_status_report_pyo3(
+                    pyo3_report,
+                    record_order_rtt_confirmation=False,
+                )
             except Exception as e:
                 self._log.warning(
                     f"Failed to process submit response report "
@@ -873,6 +1176,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
             return
 
+        modify_generation: int | None = None
+        timing: _OrderRttTiming | None = None
         try:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                 command.instrument_id.value,
@@ -905,6 +1210,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
             self._log.info(f"Order modification requested for {command.client_order_id}")
 
+            timing = self._track_order_rtt(
+                command.client_order_id,
+                order_command="modify",
+                order_role="close" if order.is_reduce_only else "open",
+                instrument_id=command.instrument_id,
+                strategy_id=command.strategy_id,
+                order_type=order.order_type,
+                side=order_side_to_str(order.side),
+                reduce_only=order.is_reduce_only,
+            )
             await self._ws_client.modify_order(
                 self._client,
                 instrument_id=pyo3_instrument_id,
@@ -919,6 +1234,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 time_in_force=pyo3_time_in_force,
                 client_order_id=pyo3_client_order_id,
             )
+            self._record_order_rtt_ack(timing, outcome="accepted")
 
         except Exception as e:
             if _is_transport_error(e):
@@ -941,6 +1257,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 reason=str(e),
                 ts_event=self._clock.timestamp_ns(),
             )
+            self._record_order_rtt_ack(
+                timing,
+                outcome="rejected",
+                keep_for_confirmation=False,
+            )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         # Try to get venue_order_id from cache first, fall back to command
@@ -951,6 +1272,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         elif command.venue_order_id:
             venue_order_id = command.venue_order_id
 
+        timing: _OrderRttTiming | None = None
         try:
             pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(
                 command.instrument_id.value,
@@ -960,6 +1282,16 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             # exchange OID ack; route by stable CLOID via client_order_id.
             pyo3_venue_order_id = None
 
+            timing = self._track_order_rtt(
+                command.client_order_id,
+                order_command="cancel",
+                order_role="close" if order and order.is_reduce_only else "open",
+                instrument_id=command.instrument_id,
+                strategy_id=command.strategy_id,
+                order_type=order.order_type if order else "UNKNOWN",
+                side=order_side_to_str(order.side) if order else "UNKNOWN",
+                reduce_only=bool(order and order.is_reduce_only),
+            )
             await self._ws_client.cancel_order(
                 self._client,
                 instrument_id=pyo3_instrument_id,
@@ -967,6 +1299,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 venue_order_id=pyo3_venue_order_id,
             )
             self._log.info(f"Order cancellation requested for {command.client_order_id}")
+            self._record_order_rtt_ack(timing, outcome="accepted")
         except Exception as e:
             if _is_transport_error(e):
                 self._log.warning(
@@ -981,6 +1314,11 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
                 reason=str(e),
                 ts_event=self._clock.timestamp_ns(),
+            )
+            self._record_order_rtt_ack(
+                timing,
+                outcome="rejected",
+                keep_for_confirmation=False,
             )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
@@ -1158,6 +1496,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
         event = OrderAccepted.from_dict(msg.to_dict())
         key = event.client_order_id.value
 
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="accepted")
+
         # Check caches to handle race conditions
         if key in self._accepted_orders or key in self._terminal_orders:
             self._log.debug(f"Ignoring duplicate OrderAccepted for {event.client_order_id!r}")
@@ -1207,11 +1547,14 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         self._terminal_orders.add(key)
         self._cleanup_cloid_mapping(event.client_order_id)
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="canceled")
         self._send_order_event(event)
 
     def _handle_order_expired_pyo3(self, msg: nautilus_pyo3.OrderExpired) -> None:
         event = OrderExpired.from_dict(msg.to_dict())
         key = event.client_order_id.value
+
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="expired")
 
         if key in self._terminal_orders:
             self._log.debug(f"Ignoring duplicate OrderExpired for {event.client_order_id!r}")
@@ -1223,26 +1566,57 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
     def _handle_order_updated_pyo3(self, msg: nautilus_pyo3.OrderUpdated) -> None:
         event = OrderUpdated.from_dict(msg.to_dict())
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="updated")
         self._send_order_event(event)
 
     def _handle_order_rejected_pyo3(self, msg: nautilus_pyo3.OrderRejected) -> None:
         event = OrderRejected.from_dict(msg.to_dict())
         key = event.client_order_id.value
 
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="rejected")
+
         if key in self._terminal_orders:
             self._log.debug(f"Ignoring duplicate OrderRejected for {event.client_order_id!r}")
             return
 
+        order = self._cache.order(event.client_order_id)
+        self._increment_order_failure_counter(
+            "order.rejected",
+            strategy_id=event.strategy_id,
+            instrument_id=event.instrument_id,
+            client_order_id=event.client_order_id,
+            order_command="close" if order and order.is_reduce_only else "open",
+            source="stream",
+            due_post_only=event.due_post_only,
+        )
         self._terminal_orders.add(key)
         self._cleanup_cloid_mapping(event.client_order_id)
         self._send_order_event(event)
 
     def _handle_order_cancel_rejected_pyo3(self, msg: nautilus_pyo3.OrderCancelRejected) -> None:
         event = OrderCancelRejected.from_dict(msg.to_dict())
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="rejected")
+        self._increment_order_failure_counter(
+            "order.cancel_rejected",
+            strategy_id=event.strategy_id,
+            instrument_id=event.instrument_id,
+            client_order_id=event.client_order_id,
+            order_command="cancel",
+            source="stream",
+        )
         self._send_order_event(event)
 
     def _handle_order_modify_rejected_pyo3(self, msg: nautilus_pyo3.OrderModifyRejected) -> None:
         event = OrderModifyRejected.from_dict(msg.to_dict())
+        self._record_order_rtt_confirmation(event.client_order_id, outcome="rejected")
+        self._increment_order_failure_counter(
+            "order.modify_rejected",
+            strategy_id=event.strategy_id,
+            instrument_id=event.instrument_id,
+            client_order_id=event.client_order_id,
+            order_command="modify",
+            source="stream",
+        )
         self._send_order_event(event)
 
     def _mark_pending_modify(
@@ -1407,6 +1781,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
     def _handle_order_status_report_pyo3(  # noqa: C901 (complexity unavoidable)
         self,
         pyo3_report: nautilus_pyo3.OrderStatusReport,
+        *,
+        record_order_rtt_confirmation: bool = True,
     ) -> None:
         report = OrderStatusReport.from_pyo3(pyo3_report)
 
@@ -1438,6 +1814,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
 
         if report.order_status == OrderStatus.REJECTED:
             key = report.client_order_id.value
+            if record_order_rtt_confirmation:
+                self._record_order_rtt_confirmation(report.client_order_id, outcome="rejected")
             if key in self._terminal_orders:
                 return
 
@@ -1476,6 +1854,12 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     )
                     return
 
+                if record_order_rtt_confirmation:
+                    self._record_order_rtt_confirmation(
+                        report.client_order_id,
+                        outcome="updated",
+                    )
+
                 claim = self._claim_pending_modify_for_replacement(
                     key,
                     report.venue_order_id,
@@ -1510,6 +1894,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                     ts_event=report.ts_last,
                 )
                 return
+
+            if record_order_rtt_confirmation:
+                self._record_order_rtt_confirmation(report.client_order_id, outcome="accepted")
 
             if key in self._accepted_orders or key in self._terminal_orders:
                 return
@@ -1572,6 +1959,9 @@ class HyperliquidExecutionClient(LiveExecutionClient):
                 )
                 return
 
+            if record_order_rtt_confirmation:
+                self._record_order_rtt_confirmation(report.client_order_id, outcome="canceled")
+
             if key in self._terminal_orders:
                 return
 
@@ -1587,6 +1977,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
         elif report.order_status == OrderStatus.EXPIRED:
             key = report.client_order_id.value
+            if record_order_rtt_confirmation:
+                self._record_order_rtt_confirmation(report.client_order_id, outcome="expired")
             if key in self._terminal_orders:
                 return
 
@@ -1602,6 +1994,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             )
         elif report.order_status == OrderStatus.FILLED:
             key = report.client_order_id.value
+            if record_order_rtt_confirmation:
+                self._record_order_rtt_confirmation(report.client_order_id, outcome="filled")
             if key in self._terminal_orders:
                 return
 
@@ -1673,6 +2067,8 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             self._processed_trade_ids.add(trade_id_str)
             self._send_fill_report(report)
             return
+
+        self._record_order_rtt_confirmation(client_order_id, outcome="filled")
 
         order = self._cache.order(client_order_id)
         if order is None:
@@ -1793,7 +2189,7 @@ class HyperliquidExecutionClient(LiveExecutionClient):
             for pyo3_buffered in buffered:
                 self._handle_fill_report_pyo3(pyo3_buffered)
 
-    def _promote_replacement_if_inflight_modify(self, report: OrderStatusReport) -> None:
+    def _promote_replacement_if_inflight_modify(self, report: OrderStatusReport) -> None:  # noqa: C901
         # During a tracked cancel-replace a query can surface the replacement leg
         # (ACCEPTED, new venue_order_id) before the WS ACCEPTED push or any fill.
         # Promote here so the binding advances without waiting for a signal that may
