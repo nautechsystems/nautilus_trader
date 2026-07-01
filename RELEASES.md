@@ -26,6 +26,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 ### Enhancements
 - Added returns skewness and kurtosis portfolio statistics (#4334), thanks @Martingale42
 - Added WebSocket transport backend selection for Python and PyO3 configs (#4342), thanks @graceyangfan
+- Added Up/Down Capture ratio portfolio statistics (#4354), thanks @mahimn01
 
 ### Breaking Changes
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus

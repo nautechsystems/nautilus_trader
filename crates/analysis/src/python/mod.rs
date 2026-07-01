@@ -69,9 +69,11 @@ pub fn analysis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Statistics - Benchmark-relative
     m.add_class::<crate::statistics::alpha::Alpha>()?;
     m.add_class::<crate::statistics::beta_ratio::BetaRatio>()?;
+    m.add_class::<crate::statistics::down_capture_ratio::DownCaptureRatio>()?;
     m.add_class::<crate::statistics::information_ratio::InformationRatio>()?;
     m.add_class::<crate::statistics::tracking_error::TrackingError>()?;
     m.add_class::<crate::statistics::treynor_ratio::TreynorRatio>()?;
+    m.add_class::<crate::statistics::up_capture_ratio::UpCaptureRatio>()?;
 
     Ok(())
 }

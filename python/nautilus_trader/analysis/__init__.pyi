@@ -55,6 +55,7 @@ __all__ = [
     "AvgWinner",
     "BetaRatio",
     "CalmarRatio",
+    "DownCaptureRatio",
     "Expectancy",
     "InformationRatio",
     "LongRatio",
@@ -77,6 +78,7 @@ __all__ = [
     "SortinoRatio",
     "TrackingError",
     "TreynorRatio",
+    "UpCaptureRatio",
     "WinRate",
 ]
 
@@ -151,6 +153,20 @@ class CalmarRatio:
         self, _realized_pnls: typing.Sequence[float]
     ) -> float | None: ...
     def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+
+@typing.final
+class DownCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns(self, _returns: typing.Mapping[int, float]) -> float | None: ...
+    def calculate_from_realized_pnls(
+        self, _realized_pnls: typing.Sequence[float]
+    ) -> float | None: ...
+    def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+    def calculate_from_returns_with_benchmark(
+        self, returns: typing.Mapping[int, float], benchmark: typing.Mapping[int, float]
+    ) -> float | None: ...
 
 @typing.final
 class Expectancy:
@@ -425,6 +441,20 @@ class TrackingError:
 @typing.final
 class TreynorRatio:
     def __init__(self, period: int | None = None, risk_free_rate: float | None = None) -> None: ...
+    @property
+    def name(self) -> str: ...
+    def calculate_from_returns(self, _returns: typing.Mapping[int, float]) -> float | None: ...
+    def calculate_from_realized_pnls(
+        self, _realized_pnls: typing.Sequence[float]
+    ) -> float | None: ...
+    def calculate_from_positions(self, _positions: typing.Sequence[typing.Any]) -> float | None: ...
+    def calculate_from_returns_with_benchmark(
+        self, returns: typing.Mapping[int, float], benchmark: typing.Mapping[int, float]
+    ) -> float | None: ...
+
+@typing.final
+class UpCaptureRatio:
+    def __init__(self, period: int | None = None) -> None: ...
     @property
     def name(self) -> str: ...
     def calculate_from_returns(self, _returns: typing.Mapping[int, float]) -> float | None: ...
