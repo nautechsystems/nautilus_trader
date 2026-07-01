@@ -20,13 +20,14 @@ use std::fmt::Display;
 use nautilus_core::correctness::check_predicate_true;
 use nautilus_model::position::Position;
 
-use crate::{Returns, statistic::PortfolioStatistic, statistics::value_at_risk::ValueAtRisk};
+use crate::{Returns, statistic::PortfolioStatistic, statistics::value_at_risk::percentile_linear};
 
 /// Calculates the historical Expected Shortfall (Conditional Value at Risk) of
 /// portfolio returns.
 ///
 /// Expected Shortfall is the average of the losses that occur beyond the
-/// [`ValueAtRisk`] threshold at a given confidence level — the mean of the worst
+/// [`ValueAtRisk`](crate::statistics::value_at_risk::ValueAtRisk) threshold at a
+/// given confidence level — the mean of the worst
 /// `1 - confidence` tail of the return distribution. It is a coherent risk
 /// measure and captures tail severity that `VaR` alone does not.
 ///
@@ -94,19 +95,27 @@ impl PortfolioStatistic for ExpectedShortfall {
             return Some(f64::NAN);
         }
 
-        // The VaR threshold at the same confidence (composes `ValueAtRisk`).
-        let var = ValueAtRisk::new(Some(self.confidence)).calculate_from_returns(raw_returns)?;
+        // Downsample and sort once; both the VaR threshold and the tail it bounds
+        // are taken from this same daily-binned, value-sorted sample, keeping them
+        // consistent by construction and avoiding a second downsample + sort.
+        let returns = self.downsample_to_daily_bins(raw_returns);
+        let mut values: Vec<f64> = returns.values().copied().collect();
+        values.sort_by(f64::total_cmp);
+
+        let alpha = 1.0 - self.confidence;
+        let var = percentile_linear(&values, alpha * 100.0);
         if var.is_nan() {
             return Some(f64::NAN);
         }
 
-        let returns = self.downsample_to_daily_bins(raw_returns);
-        let tail: Vec<f64> = returns.values().copied().filter(|&r| r <= var).collect();
-        if tail.is_empty() {
-            return Some(var);
-        }
-
-        Some(tail.iter().sum::<f64>() / tail.len() as f64)
+        // The tail is the sorted prefix of returns at or below the VaR threshold.
+        // A historical quantile always satisfies `var >= values[0]`, so at least
+        // the minimum bin qualifies and the tail is non-empty.
+        let cutoff = values.partition_point(|&r| r <= var);
+        let (sum, count) = values[..cutoff]
+            .iter()
+            .fold((0.0, 0_usize), |(sum, count), &r| (sum + r, count + 1));
+        Some(sum / count as f64)
     }
 
     fn calculate_from_realized_pnls(&self, _realized_pnls: &[f64]) -> Option<Self::Item> {
@@ -126,6 +135,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::statistics::value_at_risk::ValueAtRisk;
 
     fn create_returns(values: &[f64]) -> BTreeMap<UnixNanos, f64> {
         let mut new_return = BTreeMap::new();
@@ -180,6 +190,20 @@ mod tests {
             .calculate_from_returns(&returns)
             .unwrap();
         assert!(es <= var);
+    }
+
+    #[rstest]
+    fn test_expected_shortfall_averages_multi_element_tail() {
+        // At confidence 0.60 the VaR threshold is -0.024, so four returns
+        // (-0.10, -0.08, -0.05, -0.03) fall at or below it and ES averages all
+        // four: mean = -0.26 / 4 = -0.065. Exercises the multi-element tail mean
+        // (the other tests each produce a single-element tail).
+        let es = ExpectedShortfall::new(Some(0.60));
+        let returns = create_returns(&[
+            0.02, -0.05, 0.01, -0.08, 0.03, -0.02, 0.04, -0.10, 0.015, -0.03,
+        ]);
+        let result = es.calculate_from_returns(&returns).unwrap();
+        assert!(approx_eq!(f64, result, -0.065, epsilon = 1e-12));
     }
 
     #[rstest]

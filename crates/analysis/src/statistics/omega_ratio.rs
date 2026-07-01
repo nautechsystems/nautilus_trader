@@ -17,6 +17,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::check_predicate_true;
 use nautilus_model::position::Position;
 
 use crate::{Returns, statistic::PortfolioStatistic};
@@ -54,12 +55,25 @@ pub struct OmegaRatio {
 }
 
 impl OmegaRatio {
+    /// Creates a new checked [`OmegaRatio`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `threshold` is not finite.
+    pub fn new_checked(threshold: Option<f64>) -> anyhow::Result<Self> {
+        let threshold = threshold.unwrap_or(0.0);
+        check_predicate_true(threshold.is_finite(), "threshold must be finite")?;
+        Ok(Self { threshold })
+    }
+
     /// Creates a new [`OmegaRatio`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `threshold` is not finite.
     #[must_use]
     pub fn new(threshold: Option<f64>) -> Self {
-        Self {
-            threshold: threshold.unwrap_or(0.0),
-        }
+        Self::new_checked(threshold).expect("Invalid `threshold` for `OmegaRatio`")
     }
 }
 
@@ -167,5 +181,22 @@ mod tests {
         let returns = create_returns(&[0.01, -0.02, 0.015, -0.005, 0.025]);
         let result = ratio.calculate_from_returns(&returns).unwrap();
         assert!(approx_eq!(f64, result, 2.0, epsilon = 1e-12));
+    }
+
+    #[rstest]
+    #[case(Some(f64::NAN))]
+    #[case(Some(f64::INFINITY))]
+    #[case(Some(f64::NEG_INFINITY))]
+    fn test_new_checked_rejects_non_finite_threshold(#[case] threshold: Option<f64>) {
+        assert!(OmegaRatio::new_checked(threshold).is_err());
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(0.0))]
+    #[case(Some(-0.02))]
+    #[case(Some(0.5))]
+    fn test_new_checked_accepts_finite_threshold(#[case] threshold: Option<f64>) {
+        assert!(OmegaRatio::new_checked(threshold).is_ok());
     }
 }

@@ -15,6 +15,7 @@
 
 use std::collections::BTreeMap;
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::prelude::*;
 
 use super::transform_returns;
@@ -42,8 +43,8 @@ impl OmegaRatio {
     ///   *Journal of Performance Measurement*, 6(3), 59-84.
     #[new]
     #[pyo3(signature = (threshold=None))]
-    fn py_new(threshold: Option<f64>) -> Self {
-        Self::new(threshold)
+    fn py_new(threshold: Option<f64>) -> PyResult<Self> {
+        Self::new_checked(threshold).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

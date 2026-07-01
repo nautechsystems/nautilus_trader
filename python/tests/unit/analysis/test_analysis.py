@@ -117,8 +117,16 @@ def test_threshold_statistic_default_construction_and_name(cls, expected_prefix)
 def test_confidence_statistic_rejects_invalid_confidence(cls, confidence):
     # `confidence` must be finite and in the open interval (0, 1); otherwise the
     # historical percentile index would be out of range.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="confidence must be finite"):
         cls(confidence=confidence)
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
+def test_omega_ratio_rejects_non_finite_threshold(threshold):
+    # `threshold` has no natural range but must be finite; a non-finite value
+    # would silently poison the gain/loss split.
+    with pytest.raises(ValueError, match="threshold must be finite"):
+        OmegaRatio(threshold=threshold)
 
 
 @pytest.mark.parametrize(
