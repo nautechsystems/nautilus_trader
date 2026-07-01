@@ -38,6 +38,9 @@ impl HyperliquidDataClientConfig {
         ws_timeout_secs = None,
         update_instruments_interval_mins = None,
         transport_backend = None,
+        stale_stream_receive_timeout_secs = None,
+        stream_health_check_interval_secs = None,
+        stale_stream_warning_cooldown_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -50,6 +53,9 @@ impl HyperliquidDataClientConfig {
         ws_timeout_secs: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        stale_stream_receive_timeout_secs: Option<u64>,
+        stream_health_check_interval_secs: Option<u64>,
+        stale_stream_warning_cooldown_secs: Option<u64>,
     ) -> Self {
         let defaults = Self::default();
         Self {
@@ -60,6 +66,12 @@ impl HyperliquidDataClientConfig {
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
             ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
+            stale_stream_receive_timeout_secs: stale_stream_receive_timeout_secs
+                .unwrap_or(defaults.stale_stream_receive_timeout_secs),
+            stream_health_check_interval_secs: stream_health_check_interval_secs
+                .unwrap_or(defaults.stream_health_check_interval_secs),
+            stale_stream_warning_cooldown_secs: stale_stream_warning_cooldown_secs
+                .unwrap_or(defaults.stale_stream_warning_cooldown_secs),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),

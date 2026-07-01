@@ -55,6 +55,18 @@ pub struct HyperliquidDataClientConfig {
     /// WebSocket timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
+    /// Receive-age threshold in seconds for warning about stale market-data streams.
+    /// Choose a value above the instrument's expected quiet period.
+    /// Set to 0 to disable the stream health monitor.
+    #[builder(default = 120)]
+    pub stale_stream_receive_timeout_secs: u64,
+    /// Interval in seconds for running market-data stream health checks.
+    /// Set to 0 to disable the stream health monitor.
+    #[builder(default = 15)]
+    pub stream_health_check_interval_secs: u64,
+    /// Cooldown in seconds between stale warnings for the same market-data stream.
+    #[builder(default = 60)]
+    pub stale_stream_warning_cooldown_secs: u64,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -255,6 +267,25 @@ transport_backend = "tungstenite"
         assert_eq!(config.http_timeout_secs, 30);
         assert_eq!(config.update_instruments_interval_mins, 10);
         assert_eq!(config.transport_backend, TransportBackend::Tungstenite);
+        assert_eq!(config.stale_stream_receive_timeout_secs, 120);
+        assert_eq!(config.stream_health_check_interval_secs, 15);
+        assert_eq!(config.stale_stream_warning_cooldown_secs, 60);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_stale_stream_settings() {
+        let config: HyperliquidDataClientConfig = toml::from_str(
+            "
+stale_stream_receive_timeout_secs = 30
+stream_health_check_interval_secs = 5
+stale_stream_warning_cooldown_secs = 20
+",
+        )
+        .unwrap();
+
+        assert_eq!(config.stale_stream_receive_timeout_secs, 30);
+        assert_eq!(config.stream_health_check_interval_secs, 5);
+        assert_eq!(config.stale_stream_warning_cooldown_secs, 20);
     }
 
     #[rstest]

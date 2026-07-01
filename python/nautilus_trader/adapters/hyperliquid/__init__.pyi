@@ -83,6 +83,9 @@ class HyperliquidDataClientConfig:
         ws_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         transport_backend: network.TransportBackend | None = None,
+        stale_stream_receive_timeout_secs: int | None = None,
+        stream_health_check_interval_secs: int | None = None,
+        stale_stream_warning_cooldown_secs: int | None = None,
     ) -> None: ...
 
 @typing.final
