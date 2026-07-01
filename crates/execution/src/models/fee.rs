@@ -309,11 +309,39 @@ impl FeeModel for PerContractFeeModel {
         _order: &OrderAny,
         fill_quantity: Quantity,
         _fill_px: Price,
-        _instrument: &InstrumentAny,
+        instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        let total = self.commission.as_decimal() * fill_quantity.as_decimal();
+        let total = self.commission.as_decimal()
+            * fill_quantity.as_decimal()
+            * spread_contract_count(instrument);
         Money::from_decimal(total, self.commission.currency).map_err(Into::into)
     }
+}
+
+fn spread_contract_count(instrument: &InstrumentAny) -> Decimal {
+    let symbol = instrument.id().symbol.to_string();
+    if !symbol.contains("___") {
+        return Decimal::ONE;
+    }
+
+    symbol
+        .split("___")
+        .filter_map(spread_leg_ratio)
+        .sum::<i64>()
+        .max(1)
+        .into()
+}
+
+fn spread_leg_ratio(component: &str) -> Option<i64> {
+    let ratio = component
+        .strip_prefix("((")
+        .and_then(|rest| rest.split_once("))").map(|(ratio, _)| ratio))
+        .or_else(|| {
+            component
+                .strip_prefix('(')
+                .and_then(|rest| rest.split_once(')').map(|(ratio, _)| ratio))
+        })?;
+    ratio.parse::<i64>().ok()
 }
 
 #[derive(Debug, Clone)]
@@ -605,9 +633,13 @@ mod tests {
 
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderType},
+        identifiers::InstrumentId,
         instruments::{
             BinaryOption, CryptoOption, Instrument, InstrumentAny, OptionContract,
-            stubs::{audusd_sim, binary_option, crypto_option_btc_deribit, option_contract_appl},
+            stubs::{
+                audusd_sim, binary_option, crypto_option_btc_deribit, option_contract_appl,
+                option_spread,
+            },
         },
         orders::{
             Order, OrderAny,
@@ -783,6 +815,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(commission, Money::new(50.0, Currency::USD()));
+    }
+
+    #[rstest]
+    fn test_per_contract_fee_model_option_spread_charges_each_contract() {
+        let commission_per_contract = Money::from("1.25 USD");
+        let fee_model = PerContractFeeModel::new(commission_per_contract).unwrap();
+        let spread_id = InstrumentId::from("((2))SPY C410___(1)SPY C400.SMART");
+        let mut option_spread = option_spread();
+        option_spread.id = spread_id;
+        let instrument = InstrumentAny::OptionSpread(option_spread);
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .build();
+        let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
+
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(2),
+                Price::from("1.0"),
+                &instrument,
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::from("7.50 USD"));
     }
 
     #[rstest]
