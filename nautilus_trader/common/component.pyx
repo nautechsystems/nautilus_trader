@@ -2258,7 +2258,7 @@ cdef class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
-    database : nautilus_pyo3.RedisMessageBusDatabase, optional
+    database : nautilus_pyo3.RedisMessageBusBacking, optional
         The backing database for the message bus.
     config : MessageBusConfig, optional
         The configuration for the message bus.
@@ -2281,7 +2281,7 @@ cdef class MessageBus:
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
-        database: nautilus_pyo3.RedisMessageBusDatabase | None = None,
+        database: nautilus_pyo3.RedisMessageBusBacking | None = None,
         config: Any | None = None,
     ) -> None:
         # Temporary fix for import error

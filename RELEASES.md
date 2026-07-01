@@ -23,19 +23,26 @@ The `2.0.0rc1` wheels are already available on PyPI for community testing with n
 installation. Follow-up `2.0.0rcN` wheels are likely to ship at a higher cadence than normal
 releases as feedback arrives, before the final `2.0.0` release.
 
+### Enhancements
+- Added returns skewness and kurtosis portfolio statistics (#4334), thanks @Martingale42
+- Added WebSocket transport backend selection for Python and PyO3 configs (#4342), thanks @graceyangfan
+
 ### Breaking Changes
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
+- Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 
 ### Fixes
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
+- Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 
 ### Internal Improvements
 - Upgraded `redis` crate to v1.3.0
 
 ### Documentation Updates
 - Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
+- Fixed Lighter get-started Python v2 development wheel link
 
 ---
 

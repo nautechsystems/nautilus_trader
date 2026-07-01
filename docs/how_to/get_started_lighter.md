@@ -163,4 +163,4 @@ account, can take several minutes under the standard 60 req/min quota, and affec
 strategy or market when the account has broader exposure.
 
 [lighter-rwa-composite-mm]: ../tutorials/lighter_rwa_composite_mm.md
-[python-v2-install]: ../getting_started/installation.md#python-v2-development-wheels
+[python-v2-install]: ../getting_started/installation.md#python-v2-branch-development-wheels
