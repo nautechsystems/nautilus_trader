@@ -21,6 +21,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+from nautilus_trader.examples.strategies.sweep_strategy import WIDE_MODE_DURATION_MINUTES
 from nautilus_trader.examples.strategies.sweep_strategy import SweepStrategy
 from nautilus_trader.examples.strategies.sweep_strategy import SweepStrategyConfig
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -55,6 +56,15 @@ class RecordingSweepStrategy(SweepStrategy):
         self.calls.append(("cancel_order", args, kwargs))
 
 
+class ManualWideModeSweepStrategy(SweepStrategy):
+    def __init__(self, config: SweepStrategyConfig) -> None:
+        super().__init__(config)
+        self.wide_mode = False
+
+    def _is_wide_mode(self) -> bool:
+        return self.wide_mode
+
+
 def test_config_parse_accepts_fractional_bps():
     # Arrange
     raw = json.dumps(
@@ -74,6 +84,25 @@ def test_config_parse_accepts_fractional_bps():
     assert config.quote_offset_bps == 0.2
     assert config.quote_recenter_threshold_bps == 0.1
     assert config.unwind_recenter_threshold_bps == 0.1
+
+
+def test_config_parse_accepts_optional_wide_mode_quote_offset():
+    # Arrange
+    raw = json.dumps(
+        {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "order_qty": "0.001",
+            "wide_mode_quote_offset_bps": 25.5,
+        },
+    )
+
+    # Act
+    config = SweepStrategyConfig.parse(raw)
+    default_config = _config()
+
+    # Assert
+    assert config.wide_mode_quote_offset_bps == 25.5
+    assert default_config.wide_mode_quote_offset_bps is None
 
 
 def test_config_parse_accepts_market_open_embargo_settings():
@@ -211,6 +240,82 @@ def test_market_after_hours_embargo_window_covers_after_hours_boundary():
         Decimal(4),
         Decimal(1),
     )
+
+
+def test_wide_mode_window_covers_first_half_hour_after_boundaries():
+    # Arrange
+    tz = ZoneInfo("America/New_York")
+    market_open = time(9, 30)
+    after_hours_start = time(16, 0)
+
+    # Act, Assert
+    assert SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 14, 30, tzinfo=timezone.utc),
+        tz,
+        market_open,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 14, 59, 59, tzinfo=timezone.utc),
+        tz,
+        market_open,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 14, 29, 59, tzinfo=timezone.utc),
+        tz,
+        market_open,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 15, 0, tzinfo=timezone.utc),
+        tz,
+        market_open,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 21, 0, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 21, 29, 59, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+    assert not SweepStrategy._datetime_in_market_boundary_window(
+        datetime(2026, 1, 5, 21, 30, tzinfo=timezone.utc),
+        tz,
+        after_hours_start,
+        WIDE_MODE_DURATION_MINUTES,
+    )
+
+
+def test_wide_mode_offset_forces_recenter_when_mode_changes():
+    # Arrange
+    config = _config(
+        quote_offset_bps=10,
+        wide_mode_quote_offset_bps=25,
+        quote_recenter_threshold_bps=5,
+    )
+    strategy = ManualWideModeSweepStrategy(config=config)
+    strategy._anchor_mid = Decimal("100")
+    strategy._quote_offset_bps_in_use = Decimal("10")
+
+    # Act, Assert
+    assert strategy._active_quote_offset_bps() == Decimal("10")
+    assert not strategy._should_recenter(Decimal("100"))
+
+    strategy.wide_mode = True
+
+    assert strategy._active_quote_offset_bps() == Decimal("25")
+    assert strategy._should_recenter(Decimal("100"))
+
+    strategy._quote_offset_bps_in_use = Decimal("25")
+
+    assert not strategy._should_recenter(Decimal("100"))
 
 
 def test_market_open_embargo_cuts_risk_adding_orders_once_and_resumes():

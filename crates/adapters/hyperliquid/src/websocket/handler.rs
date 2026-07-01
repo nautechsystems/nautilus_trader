@@ -32,7 +32,7 @@ use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, QuoteTick},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    types::{Price, PriceRaw, QuantityRaw},
+    types::{Price, price::PriceRaw, quantity::QuantityRaw},
 };
 use nautilus_network::{
     RECONNECTED,
@@ -1274,7 +1274,7 @@ mod tests {
     };
 
     use ahash::{AHashMap, AHashSet};
-    use nautilus_common::cache::fifo::FifoCacheMap;
+    use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::Data,

@@ -85,6 +85,18 @@ def env_float(name: str, default: float, *fallback_names: str) -> float:
     return float(value if value is not None else str(default))
 
 
+def env_optional_float(name: str, *fallback_names: str) -> float | None:
+    value = os.getenv(name)
+    if value is None:
+        for fallback_name in fallback_names:
+            value = os.getenv(fallback_name)
+            if value is not None:
+                break
+    if value is None or value == "":
+        return None
+    return float(value)
+
+
 def env_decimal(name: str, default: str) -> Decimal:
     return Decimal(os.getenv(name, default))
 
@@ -161,6 +173,9 @@ def default_env_config() -> dict:
                 "external_order_claims": [instrument_id],
                 "order_qty": str(env_decimal("HYPERLIQUID_SWEEP_ORDER_QTY", "0.001")),
                 "quote_offset_bps": env_float("HYPERLIQUID_SWEEP_QUOTE_OFFSET_BPS", 10.0),
+                "wide_mode_quote_offset_bps": env_optional_float(
+                    "HYPERLIQUID_SWEEP_WIDE_MODE_QUOTE_OFFSET_BPS",
+                ),
                 "quote_recenter_threshold_bps": env_float(
                     "HYPERLIQUID_SWEEP_QUOTE_RECENTER_THRESHOLD_BPS",
                     3.0,

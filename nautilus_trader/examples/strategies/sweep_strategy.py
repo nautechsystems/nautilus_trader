@@ -15,11 +15,11 @@
 """
 Sweep strategy.
 
-Maintains one post-only bid and one post-only ask around the live quote mid at
-``mid +/- quote_offset_bps``. The quote pair is modified in place when the mid
-moves by ``quote_recenter_threshold_bps`` from the last quote anchor. When either
-quote fills, the strategy cancels the remaining quote liquidity and works a
-reduce-only unwind order at the configured touch until the filled inventory is
+Maintains one post-only bid and one post-only ask around the live quote mid. The
+quote pair is modified in place when the active quote offset changes, or when the
+mid moves by ``quote_recenter_threshold_bps`` from the last quote anchor. When
+either quote fills, the strategy cancels the remaining quote liquidity and works
+a reduce-only unwind order at the configured touch until the filled inventory is
 flat. The unwind order is modified when the touch drifts by
 ``unwind_recenter_threshold_bps`` from the working unwind price.
 
@@ -37,6 +37,7 @@ from time import monotonic_ns
 from zoneinfo import ZoneInfo
 
 from nautilus_trader.config import NonNegativeFloat
+from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.datadog import enabled as dd_enabled
 from nautilus_trader.datadog import gauge as dd_gauge
@@ -60,6 +61,9 @@ from nautilus_trader.model.tick_scheme.base import round_up
 from nautilus_trader.trading.strategy import Strategy
 
 
+WIDE_MODE_DURATION_MINUTES = Decimal(30)
+
+
 class SweepStrategyConfig(StrategyConfig, frozen=True):
     """
     Configuration for ``SweepStrategy`` instances.
@@ -72,6 +76,9 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
         The size for each quoting order.
     quote_offset_bps : NonNegativeFloat, default 10.0
         Distance from mid for the symmetric quote pair.
+    wide_mode_quote_offset_bps : PositiveFloat, optional
+        If set, use this quote offset for the first 30 minutes after the
+        configured market open and after-hours start.
     quote_recenter_threshold_bps : NonNegativeFloat, default 5.0
         Mid move from the last quote anchor required before modifying quotes.
         Use zero to recenter every quote tick.
@@ -120,6 +127,7 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
     instrument_id: InstrumentId
     order_qty: Decimal
     quote_offset_bps: NonNegativeFloat = 10.0
+    wide_mode_quote_offset_bps: PositiveFloat | None = None
     quote_recenter_threshold_bps: NonNegativeFloat = 5.0
     unwind_recenter_threshold_bps: NonNegativeFloat = 0.0
     unwind_cross_touch: bool = False
@@ -167,6 +175,7 @@ class SweepStrategy(Strategy):
         self._price_precision: int | None = None
         self._last_quote: QuoteTick | None = None
         self._anchor_mid: Decimal | None = None
+        self._quote_offset_bps_in_use: Decimal | None = None
         self._inventory_to_unwind = Decimal(0)
         self._bid_order: LimitOrder | None = None
         self._ask_order: LimitOrder | None = None
@@ -316,6 +325,7 @@ class SweepStrategy(Strategy):
         self._price_precision = None
         self._last_quote = None
         self._anchor_mid = None
+        self._quote_offset_bps_in_use = None
         self._inventory_to_unwind = Decimal(0)
         self._bid_order = None
         self._ask_order = None
@@ -325,12 +335,14 @@ class SweepStrategy(Strategy):
         self._embargo_active = False
 
     def _maintain_quote_pair(self, mid: Decimal) -> None:
-        prices = self._quote_prices(mid)
+        quote_offset_bps = self._active_quote_offset_bps()
+        prices = self._quote_prices(mid, quote_offset_bps)
         if prices is None:
             return
         bid_price, ask_price = prices
         self._maintain_quote_order(OrderSide.BUY, bid_price)
         self._maintain_quote_order(OrderSide.SELL, ask_price)
+        self._quote_offset_bps_in_use = quote_offset_bps
 
     def _maintain_quote_order(self, side: OrderSide, price: Price) -> None:
         if self._instrument is None or self._quote_qty is None:
@@ -405,8 +417,12 @@ class SweepStrategy(Strategy):
                 client_id=self.config.client_id,
             )
 
-    def _quote_prices(self, mid: Decimal) -> tuple[Price, Price] | None:
-        pct = Decimal(str(self.config.quote_offset_bps)) / Decimal(10_000)
+    def _quote_prices(
+        self,
+        mid: Decimal,
+        quote_offset_bps: Decimal,
+    ) -> tuple[Price, Price] | None:
+        pct = quote_offset_bps / Decimal(10_000)
         bid_price = self._make_bid_price(mid * (Decimal(1) - pct))
         ask_price = self._make_ask_price(mid * (Decimal(1) + pct))
         if bid_price is None or ask_price is None:
@@ -502,6 +518,8 @@ class SweepStrategy(Strategy):
     def _should_recenter(self, mid: Decimal) -> bool:
         if self._anchor_mid is None or self._anchor_mid <= 0:
             return True
+        if self._quote_offset_bps_in_use != self._active_quote_offset_bps():
+            return True
         if self.config.quote_recenter_threshold_bps == 0:
             return True
         moved_bps = abs(mid - self._anchor_mid) / self._anchor_mid * Decimal(10_000)
@@ -581,6 +599,31 @@ class SweepStrategy(Strategy):
     def _is_market_boundary_embargo(self) -> bool:
         return self._is_market_open_embargo() or self._is_market_after_hours_embargo()
 
+    def _is_wide_mode(self) -> bool:
+        if self.config.wide_mode_quote_offset_bps is None:
+            return False
+
+        now_utc = self.clock.utc_now()
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+
+        return self._datetime_in_market_boundary_window(
+            now_utc,
+            self._embargo_tz,
+            self._embargo_start_time,
+            WIDE_MODE_DURATION_MINUTES,
+        ) or self._datetime_in_market_boundary_window(
+            now_utc,
+            self._embargo_tz,
+            self._after_hours_embargo_start_time,
+            WIDE_MODE_DURATION_MINUTES,
+        )
+
+    def _active_quote_offset_bps(self) -> Decimal:
+        if self.config.wide_mode_quote_offset_bps is not None and self._is_wide_mode():
+            return Decimal(str(self.config.wide_mode_quote_offset_bps))
+        return Decimal(str(self.config.quote_offset_bps))
+
     def _apply_market_boundary_embargo(self) -> None:
         if self.config.close_positions_on_embargo:
             self.cancel_all_orders(self.config.instrument_id, client_id=self.config.client_id)
@@ -603,6 +646,7 @@ class SweepStrategy(Strategy):
         self._ask_order = None
         self._unwind_order = None
         self._anchor_mid = None
+        self._quote_offset_bps_in_use = None
 
     def _has_live_quote_pair(self) -> bool:
         return self._is_working(self._bid_order) and self._is_working(self._ask_order)
@@ -619,6 +663,7 @@ class SweepStrategy(Strategy):
         self._bid_order = None
         self._ask_order = None
         self._anchor_mid = None
+        self._quote_offset_bps_in_use = None
 
     def _cancel_if_active(self, order: LimitOrder | None) -> None:
         if order is None or order.is_closed or order.is_pending_cancel:
@@ -637,9 +682,11 @@ class SweepStrategy(Strategy):
         if self._bid_order and client_order_id == self._bid_order.client_order_id:
             self._bid_order = None
             self._anchor_mid = None
+            self._quote_offset_bps_in_use = None
         if self._ask_order and client_order_id == self._ask_order.client_order_id:
             self._ask_order = None
             self._anchor_mid = None
+            self._quote_offset_bps_in_use = None
         if self._unwind_order and client_order_id == self._unwind_order.client_order_id:
             self._unwind_order = None
 
@@ -665,6 +712,7 @@ class SweepStrategy(Strategy):
         self._inventory_to_unwind = Decimal(0)
         self._unwind_order = None
         self._anchor_mid = None
+        self._quote_offset_bps_in_use = None
 
     def _matches_working_order(self, client_order_id: ClientOrderId) -> bool:
         return bool(
@@ -683,6 +731,22 @@ class SweepStrategy(Strategy):
 
     @staticmethod
     def _datetime_in_market_boundary_embargo(
+        value: datetime,
+        tz: ZoneInfo,
+        start_time: time,
+        minutes: Decimal,
+        pre_start_minutes: Decimal = Decimal(0),
+    ) -> bool:
+        return SweepStrategy._datetime_in_market_boundary_window(
+            value,
+            tz,
+            start_time,
+            minutes,
+            pre_start_minutes,
+        )
+
+    @staticmethod
+    def _datetime_in_market_boundary_window(
         value: datetime,
         tz: ZoneInfo,
         start_time: time,
