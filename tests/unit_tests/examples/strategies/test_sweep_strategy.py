@@ -65,6 +65,11 @@ class ManualWideModeSweepStrategy(SweepStrategy):
         return self.wide_mode
 
 
+class FakeInstrument:
+    def make_qty(self, value: Decimal) -> Decimal:
+        return value
+
+
 def test_config_parse_accepts_fractional_bps():
     # Arrange
     raw = json.dumps(
@@ -84,6 +89,71 @@ def test_config_parse_accepts_fractional_bps():
     assert config.quote_offset_bps == 0.2
     assert config.quote_recenter_threshold_bps == 0.1
     assert config.unwind_recenter_threshold_bps == 0.1
+
+
+def test_config_parse_accepts_order_notional_usd():
+    # Arrange
+    raw = json.dumps(
+        {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "order_notional_usd": 93,
+        },
+    )
+
+    # Act
+    config = SweepStrategyConfig.parse(raw)
+
+    # Assert
+    assert config.order_qty is None
+    assert config.order_notional_usd == 93
+
+
+def test_config_parse_rejects_ambiguous_order_sizing():
+    # Arrange
+    missing_size = json.dumps(
+        {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+        },
+    )
+    duplicate_size = json.dumps(
+        {
+            "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+            "order_qty": "0.001",
+            "order_notional_usd": 93,
+        },
+    )
+
+    # Act, Assert
+    try:
+        SweepStrategyConfig.parse(missing_size)
+    except ValueError as exc:
+        assert "Either order_qty or order_notional_usd" in str(exc)
+    else:
+        raise AssertionError("Expected missing order size to be rejected")
+
+    try:
+        SweepStrategyConfig.parse(duplicate_size)
+    except ValueError as exc:
+        assert "Only one of order_qty or order_notional_usd" in str(exc)
+    else:
+        raise AssertionError("Expected duplicate order size to be rejected")
+
+
+def test_order_notional_usd_derives_quantity_from_mid():
+    # Arrange
+    config = SweepStrategyConfig.parse(
+        json.dumps(
+            {
+                "instrument_id": "BTC-USD-PERP.HYPERLIQUID",
+                "order_notional_usd": 93,
+            },
+        ),
+    )
+    strategy = SweepStrategy(config=config)
+    strategy._instrument = FakeInstrument()
+
+    # Act, Assert
+    assert strategy._quote_quantity(Decimal("31")) == Decimal("3")
 
 
 def test_config_parse_accepts_optional_wide_mode_quote_offset():

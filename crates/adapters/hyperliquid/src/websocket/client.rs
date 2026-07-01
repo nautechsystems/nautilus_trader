@@ -1226,7 +1226,7 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to best bid/offer (BBO) quotes for an instrument.
     pub async fn subscribe_quotes(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
-        self.subscribe_quotes_with_redundancy(instrument_id, 1)
+        self.subscribe_quotes_with_redundancy(instrument_id, 4)
             .await
     }
 

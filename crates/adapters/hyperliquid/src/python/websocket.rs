@@ -747,7 +747,7 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to best bid/offer (BBO) quotes for an instrument.
     #[pyo3(name = "subscribe_quotes")]
-    #[pyo3(signature = (instrument_id, redundancy = 1))]
+    #[pyo3(signature = (instrument_id, redundancy = 4))]
     fn py_subscribe_quotes<'py>(
         &self,
         py: Python<'py>,

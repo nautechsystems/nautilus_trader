@@ -73,7 +73,11 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
     instrument_id : InstrumentId
         The instrument ID to trade.
     order_qty : Decimal
-        The size for each quoting order.
+        The fixed quantity for each quoting order. Required unless
+        ``order_notional_usd`` is set.
+    order_notional_usd : PositiveFloat, optional
+        If set, derive each quoting order quantity from this USD notional using
+        the current quote mid. Mutually exclusive with ``order_qty``.
     quote_offset_bps : NonNegativeFloat, default 10.0
         Distance from mid for the symmetric quote pair.
     wide_mode_quote_offset_bps : PositiveFloat, optional
@@ -125,7 +129,8 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
     """
 
     instrument_id: InstrumentId
-    order_qty: Decimal
+    order_qty: Decimal | None = None
+    order_notional_usd: PositiveFloat | None = None
     quote_offset_bps: NonNegativeFloat = 10.0
     wide_mode_quote_offset_bps: PositiveFloat | None = None
     quote_recenter_threshold_bps: NonNegativeFloat = 5.0
@@ -154,7 +159,12 @@ class SweepStrategyConfig(StrategyConfig, frozen=True):
                 "quote_recenter_threshold_bps",
                 config.pop("recenter_threshold_bps"),
             )
-        return super().parse(json.dumps(config))
+        parsed = super().parse(json.dumps(config))
+        if parsed.order_qty is None and parsed.order_notional_usd is None:
+            raise ValueError("Either order_qty or order_notional_usd must be set")
+        if parsed.order_qty is not None and parsed.order_notional_usd is not None:
+            raise ValueError("Only one of order_qty or order_notional_usd may be set")
+        return parsed
 
 
 class SweepStrategy(Strategy):
@@ -196,12 +206,15 @@ class SweepStrategy(Strategy):
             self.stop()
             return
 
-        self._quote_qty = self._instrument.make_qty(self.config.order_qty)
+        if self.config.order_qty is not None:
+            self._quote_qty = self._instrument.make_qty(self.config.order_qty)
         self._price_precision = self._instrument.price_precision
         self.subscribe_quote_ticks(self.config.instrument_id, client_id=self.config.client_id)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
-        if self._instrument is None or self._quote_qty is None:
+        if self._instrument is None:
+            return
+        if self.config.order_notional_usd is None and self._quote_qty is None:
             return
 
         self._last_quote = tick
@@ -336,16 +349,19 @@ class SweepStrategy(Strategy):
 
     def _maintain_quote_pair(self, mid: Decimal) -> None:
         quote_offset_bps = self._active_quote_offset_bps()
+        quote_qty = self._quote_quantity(mid)
+        if quote_qty is None:
+            return
         prices = self._quote_prices(mid, quote_offset_bps)
         if prices is None:
             return
         bid_price, ask_price = prices
-        self._maintain_quote_order(OrderSide.BUY, bid_price)
-        self._maintain_quote_order(OrderSide.SELL, ask_price)
+        self._maintain_quote_order(OrderSide.BUY, bid_price, quote_qty)
+        self._maintain_quote_order(OrderSide.SELL, ask_price, quote_qty)
         self._quote_offset_bps_in_use = quote_offset_bps
 
-    def _maintain_quote_order(self, side: OrderSide, price: Price) -> None:
-        if self._instrument is None or self._quote_qty is None:
+    def _maintain_quote_order(self, side: OrderSide, price: Price, quantity: Quantity) -> None:
+        if self._instrument is None:
             return
 
         order = self._bid_order if side == OrderSide.BUY else self._ask_order
@@ -353,7 +369,7 @@ class SweepStrategy(Strategy):
             order = self.order_factory.limit(
                 instrument_id=self.config.instrument_id,
                 order_side=side,
-                quantity=self._quote_qty,
+                quantity=quantity,
                 price=price,
                 time_in_force=TimeInForce.GTC,
                 post_only=True,
@@ -366,8 +382,24 @@ class SweepStrategy(Strategy):
         if order.is_pending_cancel:
             return
 
-        if order.price != price:
-            self.modify_order(order, price=price, client_id=self.config.client_id)
+        price_changed = order.price != price
+        quantity_changed = order.quantity != quantity
+        if price_changed or quantity_changed:
+            self.modify_order(
+                order,
+                quantity=quantity if quantity_changed else None,
+                price=price if price_changed else None,
+                client_id=self.config.client_id,
+            )
+
+    def _quote_quantity(self, mid: Decimal) -> Quantity | None:
+        if self._instrument is None:
+            return None
+        if self.config.order_notional_usd is None:
+            return self._quote_qty
+        if mid <= 0:
+            return None
+        return self._instrument.make_qty(Decimal(str(self.config.order_notional_usd)) / mid)
 
     def _maintain_unwind_order(self, tick: QuoteTick) -> None:
         if self._instrument is None:
