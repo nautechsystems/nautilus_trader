@@ -36,8 +36,8 @@ use crate::{
         returns_avg_loss::ReturnsAverageLoss, returns_avg_win::ReturnsAverageWin,
         returns_kurtosis::ReturnsKurtosis, returns_skewness::ReturnsSkewness,
         returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
-        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, win_rate::WinRate,
-        winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tail_ratio::TailRatio,
+        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
@@ -94,6 +94,7 @@ impl Default for PortfolioAnalyzer {
         analyzer.register_statistic(Arc::new(ReturnsAverageWin {}));
         analyzer.register_statistic(Arc::new(SharpeRatio::new(None)));
         analyzer.register_statistic(Arc::new(SortinoRatio::new(None)));
+        analyzer.register_statistic(Arc::new(TailRatio {}));
         analyzer.register_statistic(Arc::new(ProfitFactor {}));
         analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
         analyzer.register_statistic(Arc::new(LongRatio::new(None)));

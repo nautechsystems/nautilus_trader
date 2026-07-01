@@ -36,6 +36,7 @@ pub mod returns_volatility;
 pub mod risk_return_ratio;
 pub mod sharpe_ratio;
 pub mod sortino_ratio;
+pub mod tail_ratio;
 pub mod tracking_error;
 pub mod treynor_ratio;
 pub mod win_rate;
