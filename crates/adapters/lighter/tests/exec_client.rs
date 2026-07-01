@@ -787,6 +787,7 @@ fn add_test_account(cache: &Rc<RefCell<Cache>>) {
             Money::from("10000.000000 USDC"),
         )],
         vec![],
+        vec![],
         true,
         UUID4::new(),
         UnixNanos::default(),

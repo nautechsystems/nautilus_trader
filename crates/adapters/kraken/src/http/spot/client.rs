@@ -1719,6 +1719,7 @@ impl KrakenSpotHttpClient {
             account_type,
             balances,
             margins,
+            vec![],
             true,
             UUID4::new(),
             ts_init,

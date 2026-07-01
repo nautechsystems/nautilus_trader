@@ -3702,6 +3702,7 @@ mod tests {
             AccountType::Cash,
             vec![],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             UnixNanos::default(),

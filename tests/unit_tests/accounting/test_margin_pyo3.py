@@ -116,6 +116,7 @@ def test_margin_getters_return_none_after_account_state_clears_margin():
             base_currency=USD,
             balances=event.balances,
             margins=[],
+            borrows=[],
             is_reported=True,
             event_id=UUID4(),
             ts_init=0,

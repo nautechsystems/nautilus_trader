@@ -1589,6 +1589,7 @@ impl KrakenFuturesHttpClient {
             AccountType::Margin,
             balances,
             margins,
+            vec![],
             true,
             UUID4::new(),
             ts_init,

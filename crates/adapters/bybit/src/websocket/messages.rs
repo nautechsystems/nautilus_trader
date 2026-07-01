@@ -911,9 +911,10 @@ pub struct BybitWsAccountWalletCoin {
     pub coin: Ustr,
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub wallet_balance: Decimal,
-    pub available_to_withdraw: String,
-    pub available_to_borrow: String,
-    pub accrued_interest: String,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub borrow_amount: Decimal,
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_or_zero")]
+    pub accrued_interest: Decimal,
     #[serde(
         default,
         rename = "totalOrderIM",

@@ -28,7 +28,7 @@ use crate::{
     enums::AccountType,
     events::AccountState,
     identifiers::AccountId,
-    types::{AccountBalance, Currency, MarginBalance},
+    types::{AccountBalance, BorrowBalance, Currency, MarginBalance},
 };
 
 #[pymethods]
@@ -37,12 +37,13 @@ impl AccountState {
     /// Represents an event which includes information on the state of the account.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (account_id, account_type, balances, margins, is_reported, event_id, ts_event, ts_init, base_currency=None))]
+    #[pyo3(signature = (account_id, account_type, balances, margins, borrows, is_reported, event_id, ts_event, ts_init, base_currency=None))]
     fn py_new(
         account_id: AccountId,
         account_type: AccountType,
         balances: Vec<AccountBalance>,
         margins: Vec<MarginBalance>,
+        borrows: Vec<BorrowBalance>,
         is_reported: bool,
         event_id: UUID4,
         ts_event: u64,
@@ -54,6 +55,7 @@ impl AccountState {
             account_type,
             balances,
             margins,
+            borrows,
             is_reported,
             event_id,
             ts_event.into(),
@@ -85,6 +87,11 @@ impl AccountState {
     #[getter]
     fn margins(&self) -> Vec<MarginBalance> {
         self.margins.clone()
+    }
+
+    #[getter]
+    fn borrows(&self) -> Vec<BorrowBalance> {
+        self.borrows.clone()
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -131,6 +138,18 @@ impl AccountState {
                 MarginBalance::py_from_dict(&margin_dict)
             })
             .collect::<PyResult<Vec<MarginBalance>>>()?;
+        // `borrows` is optional for backward compatibility with dicts produced
+        // before borrow balances were tracked.
+        let borrows: Vec<BorrowBalance> = match values.get_item("borrows")? {
+            Some(obj) if !obj.is_none() => obj
+                .try_iter()?
+                .map(|item| {
+                    let borrow_dict = item?.extract::<Bound<'_, PyDict>>()?;
+                    BorrowBalance::py_from_dict(&borrow_dict)
+                })
+                .collect::<PyResult<Vec<BorrowBalance>>>()?,
+            _ => Vec::new(),
+        };
         let reported = get_required::<bool>(values, "reported")?;
         let _event_id = get_required_string(values, "event_id")?;
         let ts_event = get_required::<u64>(values, "ts_event")?;
@@ -142,6 +161,7 @@ impl AccountState {
             })?,
             balances,
             margins,
+            borrows,
             reported,
             get_required_parsed(values, "event_id", |s| UUID4::from_str(&s))?,
             ts_event.into(),
@@ -169,8 +189,11 @@ impl AccountState {
             self.balances.iter().map(|b| b.py_to_dict(py)).collect();
         let margins_dict: PyResult<Vec<_>> =
             self.margins.iter().map(|m| m.py_to_dict(py)).collect();
+        let borrows_dict: PyResult<Vec<_>> =
+            self.borrows.iter().map(|b| b.py_to_dict(py)).collect();
         dict.set_item("balances", balances_dict?)?;
         dict.set_item("margins", margins_dict?)?;
+        dict.set_item("borrows", borrows_dict?)?;
         dict.set_item("reported", self.is_reported)?;
         dict.set_item("event_id", self.event_id.to_string())?;
         dict.set_item("info", PyDict::new(py))?;

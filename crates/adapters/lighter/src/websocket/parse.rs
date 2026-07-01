@@ -1095,6 +1095,7 @@ pub fn build_unified_account_state(
         AccountType::Margin,
         balances,
         margins,
+        vec![],
         true,
         UUID4::new(),
         ts_event,
