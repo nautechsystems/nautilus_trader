@@ -78,8 +78,7 @@
 //! by at most one body duration per fire.
 
 #[cfg(feature = "streaming")]
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
-use std::{fmt::Debug, future::Future, pin::Pin, time::Duration};
+use std::{cell::RefCell, rc::Rc};
 use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
 #[cfg(feature = "streaming")]
