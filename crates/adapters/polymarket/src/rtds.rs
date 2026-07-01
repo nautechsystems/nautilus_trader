@@ -483,6 +483,10 @@ impl PolymarketRtdsFeed {
 
     async fn run_reconcile_loop(&self) {
         loop {
+            if self.inner.closing.load(Ordering::Acquire) {
+                break;
+            }
+
             self.inner.reconcile_notify.notified().await;
 
             if self.inner.closing.load(Ordering::Acquire) {
@@ -2425,6 +2429,47 @@ mod tests {
                 .is_none(),
             "disconnect should clear the reconcile worker handle",
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconcile_worker_exits_when_shutdown_arrives_during_reconcile() {
+        let (feed, _rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        let guard = feed.inner.wire_mutex.lock().await;
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { !feed.inner.reconcile_pending.load(Ordering::Acquire) }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.inner.closing.store(true, Ordering::Release);
+        feed.inner.reconcile_notify.notify_waiters();
+
+        drop(guard);
+
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move {
+                    feed.inner
+                        .reconcile_task_handle
+                        .lock()
+                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .as_ref()
+                        .is_some_and(tokio::task::JoinHandle::is_finished)
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
     }
 
     #[rstest]
