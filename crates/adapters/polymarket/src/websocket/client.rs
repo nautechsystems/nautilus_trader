@@ -281,6 +281,15 @@ impl PolymarketWebSocketClient {
                 match handler.next().await {
                     Some(PolymarketWsMessage::Reconnected) => {
                         log::info!("Polymarket WebSocket reconnected");
+
+                        if handler.send(PolymarketWsMessage::Reconnected).is_err() {
+                            if handler.is_stopped() {
+                                log::debug!("Output channel closed, stopping handler");
+                            } else {
+                                log::error!("Output channel closed, stopping handler");
+                            }
+                            break;
+                        }
                     }
                     Some(msg) => {
                         if handler.send(msg).is_err() {
@@ -486,14 +495,79 @@ impl PolymarketWebSocketClient {
 
 #[cfg(test)]
 mod tests {
+    use std::net::SocketAddr;
+
+    use axum::{
+        Router,
+        extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
+        response::Response,
+        routing::get,
+    };
+    use nautilus_network::RECONNECTED;
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
 
-    use super::{WsChannel, idle_timeout_ms_for};
+    use super::{PolymarketWebSocketClient, WsChannel, idle_timeout_ms_for};
+
+    async fn handle_upgrade(ws: WebSocketUpgrade) -> Response {
+        ws.on_upgrade(handle_socket)
+    }
+
+    async fn handle_socket(mut socket: WebSocket) {
+        let _ = socket
+            .send(AxumWsMessage::Text(RECONNECTED.to_string().into()))
+            .await;
+    }
+
+    async fn start_test_server() -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind test websocket server");
+        let addr = listener.local_addr().expect("test websocket address");
+        let router = Router::new().route("/ws", get(handle_upgrade));
+
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("test websocket server failed");
+        });
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        addr
+    }
 
     #[rstest]
     #[case::market(WsChannel::Market, 60_000)]
     #[case::user(WsChannel::User, 300_000)]
     fn test_idle_timeout_ms_for_channel(#[case] channel: WsChannel, #[case] expected: u64) {
         assert_eq!(idle_timeout_ms_for(channel), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn connect_forwards_reconnected_message_to_receiver() {
+        let addr = start_test_server().await;
+        let mut client = PolymarketWebSocketClient::new_market(
+            Some(format!("ws://{addr}/ws")),
+            false,
+            TransportBackend::default(),
+        );
+
+        client.connect().await.expect("connect websocket client");
+
+        let message =
+            tokio::time::timeout(tokio::time::Duration::from_secs(2), client.next_message())
+                .await
+                .expect("wait for websocket message");
+
+        assert!(matches!(
+            message,
+            Some(super::super::messages::PolymarketWsMessage::Reconnected)
+        ));
+
+        client
+            .disconnect()
+            .await
+            .expect("disconnect websocket client");
     }
 }

@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
     sync::{
         Arc, Mutex as StdMutex,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
@@ -32,6 +32,7 @@ use nautilus_model::{
     data::{CustomData, Data as NautilusData, DataType, custom::CustomDataTrait},
     types::Price,
 };
+use nautilus_network::RECONNECTED;
 use nautilus_network::websocket::{
     TransportBackend, WebSocketClient, WebSocketConfig, channel_message_handler,
 };
@@ -74,10 +75,13 @@ struct PolymarketRtdsFeedInner {
     // can send only the delta from desired state to live wire state.
     live_subscriptions: StdMutex<AHashMap<String, RtdsWireSubscription>>,
     ws_client: StdMutex<Option<Arc<WebSocketClient>>>,
-    task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    message_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
+    reconcile_task_handle: StdMutex<Option<tokio::task::JoinHandle<()>>>,
     wire_mutex: tokio::sync::Mutex<()>,
-    sync_version: AtomicU64,
-    sync_running: AtomicBool,
+    reconcile_notify: tokio::sync::Notify,
+    reconcile_pending: AtomicBool,
+    reset_live_state_pending: AtomicBool,
+    closing: AtomicBool,
 }
 
 #[derive(Clone, Debug)]
@@ -129,6 +133,13 @@ enum TimestampGuard {
     Snapshot,
     // Live updates never replay, so drop only strictly-older points.
     Live,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ReconcileReason {
+    DesiredChanged,
+    EnsureConnected,
+    TransportReset,
 }
 
 #[derive(Clone, Debug)]
@@ -200,10 +211,13 @@ impl PolymarketRtdsFeed {
                 last_emitted_timestamps_ms: dashmap::DashMap::new(),
                 live_subscriptions: StdMutex::new(AHashMap::new()),
                 ws_client: StdMutex::new(None),
-                task_handle: StdMutex::new(None),
+                message_task_handle: StdMutex::new(None),
+                reconcile_task_handle: StdMutex::new(None),
                 wire_mutex: tokio::sync::Mutex::new(()),
-                sync_version: AtomicU64::new(0),
-                sync_running: AtomicBool::new(false),
+                reconcile_notify: tokio::sync::Notify::new(),
+                reconcile_pending: AtomicBool::new(false),
+                reset_live_state_pending: AtomicBool::new(false),
+                closing: AtomicBool::new(false),
             }),
         }
     }
@@ -270,46 +284,58 @@ impl PolymarketRtdsFeed {
     }
 
     pub(crate) async fn connect(&self) -> anyhow::Result<()> {
-        let _guard = self.inner.wire_mutex.lock().await;
-        let fresh_connect = self.ensure_connected_locked().await?;
-        let Some(ws) = self.current_ws() else {
-            anyhow::bail!("RTDS WebSocket client unavailable after connect");
-        };
-        self.reconcile_live_locked(&ws, fresh_connect).await?;
-        Ok(())
+        self.inner.closing.store(false, Ordering::Release);
+        self.ensure_reconcile_worker();
+        self.reconcile_once(false).await
     }
 
-    pub(crate) fn schedule_sync(&self) {
-        self.inner.sync_version.fetch_add(1, Ordering::AcqRel);
-
-        if self
-            .inner
-            .sync_running
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_err()
-        {
+    pub(crate) fn request_reconcile(&self, reason: ReconcileReason) {
+        if self.inner.closing.load(Ordering::Acquire) {
             return;
         }
 
-        let feed = self.clone();
-        get_runtime().spawn(async move {
-            feed.run_sync_loop().await;
-        });
+        if !self.has_subscriptions() && self.current_ws().is_none() {
+            return;
+        }
+
+        if matches!(reason, ReconcileReason::TransportReset) {
+            self.inner
+                .reset_live_state_pending
+                .store(true, Ordering::Release);
+        }
+
+        self.inner.reconcile_pending.store(true, Ordering::Release);
+        self.ensure_reconcile_worker();
+        self.inner.reconcile_notify.notify_one();
     }
 
     pub(crate) async fn disconnect(&self) {
         let _guard = self.inner.wire_mutex.lock().await;
+
+        self.inner.closing.store(true, Ordering::Release);
+        self.inner.reconcile_pending.store(false, Ordering::Release);
+        self.inner
+            .reset_live_state_pending
+            .store(false, Ordering::Release);
+        self.inner.reconcile_notify.notify_waiters();
+
         let ws = self
             .inner
             .ws_client
             .lock()
             .expect("RTDS ws_client mutex poisoned")
             .take();
-        let handle = self
+        let message_handle = self
             .inner
-            .task_handle
+            .message_task_handle
             .lock()
-            .expect("RTDS task_handle mutex poisoned")
+            .expect("RTDS message_task_handle mutex poisoned")
+            .take();
+        let reconcile_handle = self
+            .inner
+            .reconcile_task_handle
+            .lock()
+            .expect("RTDS reconcile_task_handle mutex poisoned")
             .take();
 
         if let Some(ws) = ws {
@@ -321,25 +347,24 @@ impl PolymarketRtdsFeed {
             .lock()
             .expect("RTDS live_subscriptions mutex poisoned")
             .clear();
+        drop(_guard);
 
-        if let Some(handle) = handle {
-            let abort_handle = handle.abort_handle();
-            tokio::select! {
-                result = handle => {
-                    if let Err(e) = result
-                        && !e.is_cancelled()
-                    {
-                        log::error!("RTDS handler task error: {e:?}");
-                    }
-                }
-                () = tokio::time::sleep(Duration::from_secs(2)) => {
-                    abort_handle.abort();
-                }
-            }
+        if let Some(handle) = message_handle {
+            await_task_shutdown(handle, "RTDS message loop").await;
+        }
+
+        if let Some(handle) = reconcile_handle {
+            await_task_shutdown(handle, "RTDS reconcile worker").await;
         }
     }
 
     pub(crate) fn abort(&self) {
+        self.inner.closing.store(true, Ordering::Release);
+        self.inner.reconcile_pending.store(false, Ordering::Release);
+        self.inner
+            .reset_live_state_pending
+            .store(false, Ordering::Release);
+
         let ws = self
             .inner
             .ws_client
@@ -361,12 +386,33 @@ impl PolymarketRtdsFeed {
 
         if let Some(handle) = self
             .inner
-            .task_handle
+            .message_task_handle
             .lock()
-            .expect("RTDS task_handle mutex poisoned")
+            .expect("RTDS message_task_handle mutex poisoned")
             .take()
         {
             handle.abort();
+        }
+
+        if let Some(handle) = self
+            .inner
+            .reconcile_task_handle
+            .lock()
+            .expect("RTDS reconcile_task_handle mutex poisoned")
+            .take()
+        {
+            handle.abort();
+        }
+    }
+
+    pub(crate) fn needs_connection_recovery(&self) -> bool {
+        if self.inner.closing.load(Ordering::Acquire) || !self.has_subscriptions() {
+            return false;
+        }
+
+        match self.current_ws() {
+            None => true,
+            Some(ws) => ws.is_disconnected(),
         }
     }
 
@@ -388,11 +434,6 @@ impl PolymarketRtdsFeed {
         self.handle_text_message(text);
     }
 
-    #[cfg(test)]
-    fn sync_running_for_test(&self) -> bool {
-        self.inner.sync_running.load(Ordering::Acquire)
-    }
-
     fn current_ws(&self) -> Option<Arc<WebSocketClient>> {
         self.inner
             .ws_client
@@ -401,48 +442,95 @@ impl PolymarketRtdsFeed {
             .clone()
     }
 
-    async fn run_sync_loop(&self) {
-        loop {
-            let target_version = self.inner.sync_version.load(Ordering::Acquire);
+    fn clear_ws_if_current(&self, ws: &Arc<WebSocketClient>) -> bool {
+        let mut guard = self
+            .inner
+            .ws_client
+            .lock()
+            .expect("RTDS ws_client mutex poisoned");
+        let Some(current) = guard.as_ref() else {
+            return false;
+        };
 
-            if let Err(e) = self.sync_live_once().await {
-                log::error!("Failed to sync RTDS custom data subscriptions: {e}");
+        if !Arc::ptr_eq(current, ws) {
+            return false;
+        }
+
+        *guard = None;
+        true
+    }
+
+    fn ensure_reconcile_worker(&self) {
+        let mut guard = self
+            .inner
+            .reconcile_task_handle
+            .lock()
+            .expect("RTDS reconcile_task_handle mutex poisoned");
+
+        if self.inner.closing.load(Ordering::Acquire) {
+            return;
+        }
+
+        if guard.as_ref().is_some_and(|handle| !handle.is_finished()) {
+            return;
+        }
+
+        let feed = self.clone();
+        *guard = Some(get_runtime().spawn(async move {
+            feed.run_reconcile_loop().await;
+        }));
+    }
+
+    async fn run_reconcile_loop(&self) {
+        loop {
+            if self.inner.closing.load(Ordering::Acquire) {
+                break;
             }
 
-            if self.inner.sync_version.load(Ordering::Acquire) == target_version {
-                // Clear the running flag, then re-check the version. A schedule_sync that
-                // bumped the version between the work above and this store saw the flag still
-                // set and skipped spawning a loop, so its work would be lost unless we pick it
-                // up here by re-acquiring the flag and looping again.
-                self.inner.sync_running.store(false, Ordering::Release);
+            self.inner.reconcile_notify.notified().await;
 
-                if self.inner.sync_version.load(Ordering::Acquire) == target_version {
-                    break;
-                }
+            if self.inner.closing.load(Ordering::Acquire) {
+                break;
+            }
 
-                if self
+            while self.inner.reconcile_pending.swap(false, Ordering::AcqRel) {
+                let reset_live_state = self
                     .inner
-                    .sync_running
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_err()
-                {
-                    break;
+                    .reset_live_state_pending
+                    .swap(false, Ordering::AcqRel);
+
+                if let Err(e) = self.reconcile_once(reset_live_state).await {
+                    log::error!("Failed to reconcile RTDS custom data subscriptions: {e}");
                 }
             }
         }
     }
 
-    async fn sync_live_once(&self) -> anyhow::Result<()> {
+    async fn reconcile_once(&self, reset_live_state: bool) -> anyhow::Result<()> {
         let _guard = self.inner.wire_mutex.lock().await;
+
+        if self.inner.closing.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        if !self.has_subscriptions() && self.current_ws().is_none() {
+            return Ok(());
+        }
+
         let fresh_connect = self.ensure_connected_locked().await?;
         let Some(ws) = self.current_ws() else {
-            anyhow::bail!("RTDS WebSocket client unavailable after sync");
+            anyhow::bail!("RTDS WebSocket client unavailable after reconcile");
         };
 
-        self.reconcile_live_locked(&ws, fresh_connect).await
+        self.reconcile_live_locked(&ws, fresh_connect || reset_live_state)
+            .await
     }
 
     async fn ensure_connected_locked(&self) -> anyhow::Result<bool> {
+        if self.inner.closing.load(Ordering::Acquire) {
+            return Ok(false);
+        }
+
         if self.current_ws().is_some_and(|ws| !ws.is_disconnected()) {
             return Ok(false);
         }
@@ -485,9 +573,9 @@ impl PolymarketRtdsFeed {
 
         if let Some(old_handle) = self
             .inner
-            .task_handle
+            .message_task_handle
             .lock()
-            .expect("RTDS task_handle mutex poisoned")
+            .expect("RTDS message_task_handle mutex poisoned")
             .replace(handle)
         {
             old_handle.abort();
@@ -497,11 +585,19 @@ impl PolymarketRtdsFeed {
     }
 
     fn snapshot_wire_subscriptions(&self) -> AHashMap<String, RtdsWireSubscription> {
-        self.inner
-            .subscriptions
-            .iter()
-            .map(|entry| (entry.key().clone(), entry.wire.clone()))
-            .collect()
+        let mut snapshot = AHashMap::new();
+
+        for entry in &self.inner.subscriptions {
+            snapshot
+                .entry(entry.wire.topic.to_string())
+                .or_insert_with(|| RtdsWireSubscription {
+                    topic: entry.wire.topic,
+                    msg_type: entry.wire.msg_type,
+                    filters: None,
+                });
+        }
+
+        snapshot
     }
 
     async fn reconcile_live_locked(
@@ -558,16 +654,17 @@ impl PolymarketRtdsFeed {
             self.send_wire_request(ws, "subscribe", subscribe).await?;
         }
 
-        let mut live = self
-            .inner
-            .live_subscriptions
-            .lock()
-            .expect("RTDS live_subscriptions mutex poisoned");
-        live.retain(|key, _| desired.contains_key(key));
-        for (key, wire) in desired {
-            live.insert(key, wire);
+        {
+            let mut live = self
+                .inner
+                .live_subscriptions
+                .lock()
+                .expect("RTDS live_subscriptions mutex poisoned");
+            live.retain(|key, _| desired.contains_key(key));
+            for (key, wire) in desired {
+                live.insert(key, wire);
+            }
         }
-
         Ok(())
     }
 
@@ -599,11 +696,9 @@ impl PolymarketRtdsFeed {
         loop {
             match raw_rx.recv().await {
                 Some(Message::Text(text)) => {
-                    if text.as_str() == "reconnected" {
+                    if text.as_str() == RECONNECTED {
                         log::info!("Polymarket RTDS reconnected");
-                        if let Err(e) = self.replay_after_reconnect(&ws).await {
-                            log::error!("Failed to replay RTDS subscriptions after reconnect: {e}");
-                        }
+                        self.request_reconcile(ReconcileReason::TransportReset);
                         continue;
                     }
 
@@ -621,6 +716,10 @@ impl PolymarketRtdsFeed {
                 }
                 None => {
                     log::debug!("RTDS message channel closed");
+
+                    if self.clear_ws_if_current(&ws) {
+                        self.request_reconcile(ReconcileReason::TransportReset);
+                    }
                     break;
                 }
             }
@@ -922,11 +1021,6 @@ impl PolymarketRtdsFeed {
             }
         }
     }
-
-    async fn replay_after_reconnect(&self, ws: &Arc<WebSocketClient>) -> anyhow::Result<()> {
-        let _guard = self.inner.wire_mutex.lock().await;
-        self.reconcile_live_locked(ws, true).await
-    }
 }
 
 impl ParsedSubscription {
@@ -952,12 +1046,7 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::CryptoPrices.as_str(),
                     msg_type: "update",
-                    // Live RTDS currently accepts the crypto filter in the same JSON-string
-                    // shape as equity filters; regression tests lock this wire format in.
-                    filters: Some(format!(
-                        r#"{{"symbol":"{}"}}"#,
-                        symbol_lower.to_ascii_uppercase()
-                    )),
+                    filters: None,
                 },
             }),
             POLYMARKET_RTDS_EQUITY_PRICE_TYPE_NAME => Ok(Self {
@@ -965,10 +1054,7 @@ impl ParsedSubscription {
                 wire: RtdsWireSubscription {
                     topic: RtdsTopic::EquityPrices.as_str(),
                     msg_type: "update",
-                    filters: Some(format!(
-                        r#"{{"symbol":"{}"}}"#,
-                        symbol_lower.to_ascii_uppercase()
-                    )),
+                    filters: None,
                 },
             }),
             other => anyhow::bail!("Unsupported RTDS custom data type: {other}"),
@@ -991,9 +1077,29 @@ fn price_from_str(field: &str, value: &str) -> anyhow::Result<Price> {
         .with_context(|| format!("invalid price for {field}: {value}"))
 }
 
+async fn await_task_shutdown(handle: tokio::task::JoinHandle<()>, description: &str) {
+    let abort_handle = handle.abort_handle();
+    tokio::select! {
+        result = handle => {
+            if let Err(e) = result
+                && !e.is_cancelled()
+            {
+                log::error!("{description} error: {e:?}");
+            }
+        }
+        () = tokio::time::sleep(Duration::from_secs(2)) => {
+            abort_handle.abort();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{net::SocketAddr, sync::Arc, time::Duration};
+    use std::{
+        net::SocketAddr,
+        sync::{Arc, atomic::Ordering},
+        time::Duration,
+    };
 
     use axum::{
         Router,
@@ -1050,6 +1156,39 @@ mod tests {
     #[derive(Clone, Default)]
     struct TestServerState {
         received_payloads: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+        connection_count: Arc<tokio::sync::Mutex<usize>>,
+        control_txs:
+            Arc<tokio::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<TestServerCommand>>>>,
+    }
+
+    #[derive(Debug)]
+    enum TestServerCommand {
+        SendText(String),
+        Close,
+    }
+
+    impl TestServerState {
+        async fn clear_received_payloads(&self) {
+            self.received_payloads.lock().await.clear();
+        }
+
+        async fn connection_count(&self) -> usize {
+            *self.connection_count.lock().await
+        }
+
+        async fn send_text_to_all(&self, text: String) {
+            let senders = self.control_txs.lock().await.clone();
+            for tx in senders {
+                let _ = tx.send(TestServerCommand::SendText(text.clone()));
+            }
+        }
+
+        async fn close_all_connections(&self) {
+            let senders = self.control_txs.lock().await.clone();
+            for tx in senders {
+                let _ = tx.send(TestServerCommand::Close);
+            }
+        }
     }
 
     async fn handle_rtds_upgrade(
@@ -1060,7 +1199,32 @@ mod tests {
     }
 
     async fn handle_rtds_socket(mut socket: WebSocket, state: TestServerState) {
-        while let Some(result) = socket.next().await {
+        *state.connection_count.lock().await += 1;
+
+        let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel();
+        state.control_txs.lock().await.push(control_tx);
+
+        loop {
+            let result = tokio::select! {
+                command = control_rx.recv() => {
+                    match command {
+                        Some(TestServerCommand::SendText(text)) => {
+                            if socket.send(AxumWsMessage::Text(text.into())).await.is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        Some(TestServerCommand::Close) => {
+                            let _ = socket.send(AxumWsMessage::Close(None)).await;
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+                result = socket.next() => result
+            };
+
+            let Some(result) = result else { break };
             let Ok(message) = result else { break };
 
             match message {
@@ -1079,6 +1243,43 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    fn build_crypto_update(
+        symbol: &str,
+        value: &str,
+        price_timestamp_ms: u64,
+        message_timestamp_ms: u64,
+    ) -> String {
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse crypto update fixture");
+        update["payload"]["symbol"] = json!(symbol);
+        update["payload"]["value"] =
+            serde_json::from_str(value).expect("crypto update value should be a JSON number");
+        update["payload"]["timestamp"] = json!(price_timestamp_ms);
+        update["timestamp"] = json!(message_timestamp_ms);
+        update.to_string()
+    }
+
+    fn collect_crypto_symbols(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        expected_count: usize,
+    ) -> Vec<String> {
+        let mut symbols = Vec::with_capacity(expected_count);
+        for _ in 0..expected_count {
+            let event = rx.try_recv().expect("custom data event");
+            let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+                panic!("expected custom data event");
+            };
+            let payload = custom
+                .data
+                .as_any()
+                .downcast_ref::<PolymarketRtdsCryptoPrice>()
+                .expect("PolymarketRtdsCryptoPrice");
+            symbols.push(payload.symbol.clone());
+        }
+        symbols.sort_unstable();
+        symbols
     }
 
     async fn start_rtds_server(state: TestServerState) -> SocketAddr {
@@ -1100,6 +1301,36 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(50)).await;
         addr
+    }
+
+    async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
+        let (handler, _raw_rx) = channel_message_handler();
+        Arc::new(
+            WebSocketClient::connect(
+                WebSocketConfig {
+                    url,
+                    headers: vec![],
+                    heartbeat: Some(POLYMARKET_RTDS_HEARTBEAT_SECS),
+                    heartbeat_msg: Some("PING".to_string()),
+                    reconnect_timeout_ms: Some(POLYMARKET_RTDS_RECONNECT_TIMEOUT_MS),
+                    reconnect_delay_initial_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_INITIAL_MS),
+                    reconnect_delay_max_ms: Some(POLYMARKET_RTDS_RECONNECT_DELAY_MAX_MS),
+                    reconnect_backoff_factor: Some(2.0),
+                    reconnect_jitter_ms: Some(POLYMARKET_RTDS_RECONNECT_JITTER_MS),
+                    reconnect_max_attempts: None,
+                    idle_timeout_ms: Some(POLYMARKET_RTDS_IDLE_TIMEOUT_MS),
+                    backend: TransportBackend::default(),
+                    proxy_url: None,
+                },
+                Some(handler),
+                None,
+                None,
+                vec![],
+                None,
+            )
+            .await
+            .expect("connect test ws"),
+        )
     }
 
     #[rstest]
@@ -1159,6 +1390,42 @@ mod tests {
         assert_eq!(payload.value, Price::from("61035.86"));
         assert_eq!(payload.price_timestamp_ms, 1780730269000);
         assert_eq!(payload.message_timestamp_ms, 1780730269142);
+    }
+
+    #[rstest]
+    fn test_handle_crypto_price_update_emits_custom_data_for_new_symbol_on_shared_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("btcusdt"))
+            .expect("track BTC");
+        let eth_data_type = crypto_data_type("ethusdt");
+        feed.track_subscribe(eth_data_type.clone())
+            .expect("track ETH");
+
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_CRYPTO_UPDATE_FIXTURE).expect("parse fixture");
+        update["payload"]["symbol"] = json!("ethusdt");
+        update["payload"]["value"] = json!(2450.11);
+        update["payload"]["timestamp"] = json!(1780730270000_u64);
+        update["timestamp"] = json!(1780730270142_u64);
+
+        feed.handle_text_for_test(&update.to_string());
+
+        let event = rx.try_recv().expect("ETH custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsCryptoPrice>()
+            .expect("PolymarketRtdsCryptoPrice");
+
+        assert_eq!(custom.data_type, eth_data_type);
+        assert_eq!(payload.symbol, "ethusdt");
+        assert_eq!(payload.value, Price::from("2450.11"));
+        assert_eq!(payload.price_timestamp_ms, 1780730270000);
+        assert_eq!(payload.message_timestamp_ms, 1780730270142);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]
@@ -1273,6 +1540,47 @@ mod tests {
     }
 
     #[rstest]
+    fn test_handle_equity_price_update_emits_custom_data_for_new_symbol_on_shared_topic() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(equity_data_type("AAPL"))
+            .expect("track AAPL");
+        let msft_data_type = equity_data_type("MSFT");
+        feed.track_subscribe(msft_data_type.clone())
+            .expect("track MSFT");
+
+        let mut update: serde_json::Value =
+            serde_json::from_str(RTDS_EQUITY_UPDATE_FIXTURE).expect("parse fixture");
+        update["payload"]["symbol"] = json!("msft");
+        update["payload"]["value"] = json!(432.15);
+        update["payload"]["full_accuracy_value"] = json!("432.1537");
+        update["payload"]["timestamp"] = json!(1711382401000_u64);
+        update["payload"]["received_at"] = json!(1711382401007_u64);
+        update["timestamp"] = json!(1711382401020_u64);
+
+        feed.handle_text_for_test(&update.to_string());
+
+        let event = rx.try_recv().expect("MSFT custom data event");
+        let DataEvent::Data(NautilusData::Custom(custom)) = event else {
+            panic!("expected custom data event");
+        };
+        let payload = custom
+            .data
+            .as_any()
+            .downcast_ref::<PolymarketRtdsEquityPrice>()
+            .expect("PolymarketRtdsEquityPrice");
+
+        assert_eq!(custom.data_type, msft_data_type);
+        assert_eq!(payload.symbol, "msft");
+        assert_eq!(payload.value, Price::from("432.15"));
+        assert_eq!(payload.full_accuracy_value, Price::from("432.1537"));
+        assert_eq!(payload.price_timestamp_ms, 1711382401000);
+        assert_eq!(payload.message_timestamp_ms, 1711382401020);
+        assert_eq!(payload.received_at_ms, Some(1711382401007));
+        assert!(!payload.is_carried_forward);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_handle_equity_price_subscribe_emits_snapshot_custom_data() {
         let (feed, mut rx) = make_feed();
         let data_type = equity_data_type("AAPL");
@@ -1372,40 +1680,67 @@ mod tests {
         )
         .await;
 
+        state.received_payloads.lock().await.clear();
+
         assert!(
             feed.track_subscribe(crypto_data_type("ETHUSDT"))
                 .expect("track ETH")
         );
-        feed.sync_live_once().await.expect("sync live");
+        feed.reconcile_once(false).await.expect("reconcile live");
 
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { state.received_payloads.lock().await.len() >= 2 }
-            },
-            Duration::from_secs(2),
-        )
-        .await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
 
-        let payloads = state.received_payloads.lock().await.clone();
-        let incremental = payloads.last().expect("incremental payload");
-        let subscriptions = incremental["subscriptions"]
-            .as_array()
-            .expect("subscriptions array");
-
-        assert_eq!(incremental["action"].as_str(), Some("subscribe"));
-        assert_eq!(subscriptions.len(), 1);
         assert!(
-            subscriptions
-                .iter()
-                .filter_map(|sub| sub["filters"].as_str())
-                .any(|filters| filters == r#"{"symbol":"ETHUSDT"}"#)
+            state.received_payloads.lock().await.is_empty(),
+            "adding another crypto symbol should reuse the existing topic-level RTDS subscription",
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_incremental_sync_unsubscribes_only_removed_symbol_while_connected() {
+    async fn test_incremental_sync_subscribes_only_new_equity_symbol_while_connected() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(equity_data_type("AAPL"))
+            .expect("track AAPL");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        assert!(
+            feed.track_subscribe(equity_data_type("MSFT"))
+                .expect("track MSFT")
+        );
+        feed.reconcile_once(false).await.expect("reconcile live");
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "adding another equity symbol should reuse the existing topic-level RTDS subscription",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_sync_keeps_crypto_topic_subscribed_while_other_symbols_remain() {
         let state = TestServerState::default();
         let addr = start_rtds_server(state.clone()).await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1434,7 +1769,85 @@ mod tests {
         state.received_payloads.lock().await.clear();
 
         assert!(feed.track_unsubscribe(&eth).expect("track unsubscribe"));
-        feed.sync_live_once().await.expect("sync live");
+        feed.reconcile_once(false).await.expect("reconcile live");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "removing one crypto symbol should keep the topic-level RTDS subscription alive while BTC remains",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_sync_keeps_equity_topic_subscribed_while_other_symbols_remain() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let aapl = equity_data_type("AAPL");
+        let msft = equity_data_type("MSFT");
+        assert!(feed.track_subscribe(aapl).expect("track AAPL"));
+        assert!(feed.track_subscribe(msft.clone()).expect("track MSFT"));
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        assert!(feed.track_unsubscribe(&msft).expect("track unsubscribe"));
+        feed.reconcile_once(false).await.expect("reconcile live");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "removing one equity symbol should keep the topic-level RTDS subscription alive while AAPL remains",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_incremental_sync_unsubscribes_crypto_topic_after_last_symbol_removed() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let btc = crypto_data_type("BTCUSDT");
+        assert!(feed.track_subscribe(btc.clone()).expect("track BTC"));
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        assert!(feed.track_unsubscribe(&btc).expect("track unsubscribe"));
+        feed.reconcile_once(false).await.expect("reconcile live");
 
         wait_until_async(
             || {
@@ -1446,22 +1859,70 @@ mod tests {
         .await;
 
         let payloads = state.received_payloads.lock().await.clone();
-        let incremental = payloads.last().expect("unsubscribe payload");
-        let subscriptions = incremental["subscriptions"]
-            .as_array()
-            .expect("subscriptions array");
-
-        assert_eq!(incremental["action"].as_str(), Some("unsubscribe"));
-        assert_eq!(subscriptions.len(), 1);
-        assert_eq!(
-            subscriptions[0]["filters"].as_str(),
-            Some(r#"{"symbol":"ETHUSDT"}"#)
+        let unsubscribe = payloads.last().expect("unsubscribe payload");
+        assert_eq!(unsubscribe["action"].as_str(), Some("unsubscribe"));
+        assert!(
+            unsubscribe["subscriptions"][0]["filters"].is_null(),
+            "topic-level crypto unsubscribe should omit filters",
         );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_schedule_sync_coalesces_new_symbols_into_one_wire_subscribe() {
+    async fn test_incremental_sync_unsubscribes_equity_topic_after_last_symbol_removed() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let aapl = equity_data_type("AAPL");
+        assert!(feed.track_subscribe(aapl.clone()).expect("track AAPL"));
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        state.received_payloads.lock().await.clear();
+
+        assert!(feed.track_unsubscribe(&aapl).expect("track unsubscribe"));
+        feed.reconcile_once(false).await.expect("reconcile live");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let unsubscribe = payloads.last().expect("unsubscribe payload");
+        assert_eq!(unsubscribe["action"].as_str(), Some("unsubscribe"));
+        assert_eq!(
+            unsubscribe["subscriptions"][0]["topic"].as_str(),
+            Some(RtdsTopic::EquityPrices.as_str()),
+        );
+        assert!(
+            unsubscribe["subscriptions"][0]["filters"].is_null(),
+            "topic-level equity unsubscribe should omit filters",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconcile_worker_coalesces_multiple_desired_changes() {
         let state = TestServerState::default();
         let addr = start_rtds_server(state.clone()).await;
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1492,39 +1953,565 @@ mod tests {
             feed.track_subscribe(crypto_data_type("ETHUSDT"))
                 .expect("track ETH")
         );
-        feed.schedule_sync();
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
         assert!(
             feed.track_subscribe(crypto_data_type("SOLUSDT"))
                 .expect("track SOL")
         );
-        feed.schedule_sync();
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
         drop(wire_guard);
 
         wait_until_async(
             || {
                 let state = state.clone();
+                async move { state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let payloads = state.received_payloads.lock().await.clone();
+        assert!(
+            payloads.is_empty(),
+            "coalesced crypto desired-state changes should not send a new wire request while the topic-level subscription is already live",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnected_control_replays_retained_subscriptions() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.track_subscribe(crypto_data_type("ETHUSDT"))
+            .expect("track ETH");
+        feed.track_subscribe(equity_data_type("AAPL"))
+            .expect("track AAPL");
+        feed.track_subscribe(equity_data_type("MSFT"))
+            .expect("track MSFT");
+
+        let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let loop_handle = tokio::spawn({
+            let feed = feed.clone();
+            let ws = ws.clone();
+            async move {
+                feed.run_message_loop(ws, raw_rx).await;
+            }
+        });
+
+        raw_tx
+            .send(Message::Text(RECONNECTED.into()))
+            .expect("send reconnect sentinel");
+        drop(raw_tx);
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        loop_handle.await.expect("join RTDS loop");
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let replay = payloads
+            .iter()
+            .find(|payload| {
+                payload["action"].as_str() == Some("subscribe")
+                    && payload["subscriptions"]
+                        .as_array()
+                        .is_some_and(|subscriptions| {
+                            subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::CryptoPrices.as_str())
+                                    && subscription["filters"].is_null()
+                            }) && subscriptions.iter().any(|subscription| {
+                                subscription["topic"].as_str()
+                                    == Some(RtdsTopic::EquityPrices.as_str())
+                                    && subscription["filters"].is_null()
+                            })
+                        })
+            })
+            .expect("topic-level replay payload");
+
+        let subscriptions = replay["subscriptions"]
+            .as_array()
+            .expect("subscriptions array");
+        assert_eq!(subscriptions.len(), 2);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_channel_close_self_heals_with_retained_subscriptions() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
+        *feed
+            .inner
+            .ws_client
+            .lock()
+            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let loop_handle = tokio::spawn({
+            let feed = feed.clone();
+            let ws = ws.clone();
+            async move {
+                feed.run_message_loop(ws, raw_rx).await;
+            }
+        });
+
+        drop(raw_tx);
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move { !state.received_payloads.lock().await.is_empty() }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        loop_handle.await.expect("join RTDS loop");
+
+        assert!(
+            feed.current_ws()
+                .is_some_and(|current| !Arc::ptr_eq(&current, &ws)),
+            "channel close should replace the dead RTDS client when retained subscriptions exist",
+        );
+
+        let payloads = state.received_payloads.lock().await.clone();
+        let replay = payloads.last().expect("recovery payload");
+        assert_eq!(replay["action"].as_str(), Some("subscribe"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_reconnects_and_resumes_multi_symbol_updates() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.track_subscribe(crypto_data_type("ETHUSDT"))
+            .expect("track ETH");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 1
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61035.86",
+                1780730269000,
+                1780730269142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2450.11",
+                1780730270000,
+                1780730270142,
+            ))
+            .await;
+
+        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 2),
+            vec!["btcusdt".to_string(), "ethusdt".to_string()],
+            "both retained symbols should emit before disconnect",
+        );
+
+        state.clear_received_payloads().await;
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 2
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61040.12",
+                1780730271000,
+                1780730271142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2455.55",
+                1780730272000,
+                1780730272142,
+            ))
+            .await;
+
+        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 2),
+            vec!["btcusdt".to_string(), "ethusdt".to_string()],
+            "both retained symbols should resume after server-side reconnect",
+        );
+
+        feed.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_server_disconnect_does_not_restore_unsubscribed_symbol() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        let btc = crypto_data_type("BTCUSDT");
+        let eth = crypto_data_type("ETHUSDT");
+        feed.track_subscribe(btc.clone()).expect("track BTC");
+        feed.track_subscribe(eth.clone()).expect("track ETH");
+        feed.connect().await.expect("connect feed");
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 1
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        assert!(feed.track_unsubscribe(&eth).expect("unsubscribe ETH"));
+        feed.reconcile_once(false)
+            .await
+            .expect("reconcile after unsubscribe");
+
+        state.clear_received_payloads().await;
+        state.close_all_connections().await;
+
+        wait_until_async(
+            || {
+                let state = state.clone();
+                async move {
+                    state.connection_count().await >= 2
+                        && !state.received_payloads.lock().await.is_empty()
+                }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        state
+            .send_text_to_all(build_crypto_update(
+                "btcusdt",
+                "61050.01",
+                1780730273000,
+                1780730273142,
+            ))
+            .await;
+        state
+            .send_text_to_all(build_crypto_update(
+                "ethusdt",
+                "2460.01",
+                1780730274000,
+                1780730274142,
+            ))
+            .await;
+
+        wait_until_async(|| async { !rx.is_empty() }, Duration::from_secs(2)).await;
+        assert_eq!(
+            collect_crypto_symbols(&mut rx, 1),
+            vec!["btcusdt".to_string()],
+            "reconnect should restore only still-retained symbols",
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "ETH should not be replayed after unsubscribe"
+        );
+
+        feed.disconnect().await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconcile_request_does_not_reconnect_while_closing() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+        feed.inner.closing.store(true, Ordering::Release);
+
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.current_ws().is_none(),
+            "closing feed should not reconnect"
+        );
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "closing feed should not replay subscriptions",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ensure_connected_without_retained_subscriptions_does_not_connect() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.request_reconcile(ReconcileReason::EnsureConnected);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.current_ws().is_none(),
+            "ensure-connected without retained subscriptions should not connect",
+        );
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "ensure-connected without retained subscriptions should not send wire subscribe",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_channel_close_does_not_self_heal_while_closing() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        let ws = connect_test_ws(format!("ws://{addr}/rtds")).await;
+        *feed
+            .inner
+            .ws_client
+            .lock()
+            .expect("RTDS ws_client mutex poisoned") = Some(ws.clone());
+        feed.inner.closing.store(true, Ordering::Release);
+
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let loop_handle = tokio::spawn({
+            let feed = feed.clone();
+            let ws = ws.clone();
+            async move {
+                feed.run_message_loop(ws, raw_rx).await;
+            }
+        });
+
+        drop(raw_tx);
+        loop_handle.await.expect("join RTDS loop");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.current_ws().is_none(),
+            "closing feed should not replace a dead RTDS client",
+        );
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "closing feed should not issue recovery subscribe",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_disconnect_cancels_reconcile_worker() {
+        let (feed, _rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+        wait_until_async(
+            || {
                 let feed = feed.clone();
                 async move {
-                    state.received_payloads.lock().await.len() == 1 && !feed.sync_running_for_test()
+                    feed.inner
+                        .reconcile_task_handle
+                        .lock()
+                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .as_ref()
+                        .is_some_and(|handle| !handle.is_finished())
                 }
             },
             Duration::from_secs(2),
         )
         .await;
 
-        let payloads = state.received_payloads.lock().await.clone();
-        let incremental = payloads.last().expect("coalesced payload");
-        let subscriptions = incremental["subscriptions"]
-            .as_array()
-            .expect("subscriptions array");
-        let filters: Vec<&str> = subscriptions
-            .iter()
-            .filter_map(|sub| sub["filters"].as_str())
-            .collect();
+        feed.disconnect().await;
 
-        assert_eq!(incremental["action"].as_str(), Some("subscribe"));
-        assert_eq!(subscriptions.len(), 2);
-        assert!(filters.contains(&r#"{"symbol":"ETHUSDT"}"#));
-        assert!(filters.contains(&r#"{"symbol":"SOLUSDT"}"#));
+        assert!(
+            feed.inner
+                .reconcile_task_handle
+                .lock()
+                .expect("RTDS reconcile_task_handle mutex poisoned")
+                .is_none(),
+            "disconnect should clear the reconcile worker handle",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconcile_worker_exits_when_shutdown_arrives_during_reconcile() {
+        let (feed, _rx) = make_feed();
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        let guard = feed.inner.wire_mutex.lock().await;
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move { !feed.inner.reconcile_pending.load(Ordering::Acquire) }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        feed.inner.closing.store(true, Ordering::Release);
+        feed.inner.reconcile_notify.notify_waiters();
+
+        drop(guard);
+
+        wait_until_async(
+            || {
+                let feed = feed.clone();
+                async move {
+                    feed.inner
+                        .reconcile_task_handle
+                        .lock()
+                        .expect("RTDS reconcile_task_handle mutex poisoned")
+                        .as_ref()
+                        .is_some_and(tokio::task::JoinHandle::is_finished)
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_disconnect_wins_against_pending_reconcile_before_new_ws_is_created() {
+        let state = TestServerState::default();
+        let addr = start_rtds_server(state.clone()).await;
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let feed = PolymarketRtdsFeed::new(
+            format!("ws://{addr}/rtds"),
+            TransportBackend::default(),
+            get_atomic_clock_realtime(),
+            tx,
+        );
+
+        feed.track_subscribe(crypto_data_type("BTCUSDT"))
+            .expect("track BTC");
+
+        let guard = feed.inner.wire_mutex.lock().await;
+
+        let disconnect_task = tokio::spawn({
+            let feed = feed.clone();
+            async move {
+                feed.disconnect().await;
+            }
+        });
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        feed.request_reconcile(ReconcileReason::DesiredChanged);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        drop(guard);
+        disconnect_task.await.expect("join disconnect task");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.current_ws().is_none(),
+            "disconnect should prevent a pending reconcile from creating a new RTDS client",
+        );
+        assert!(
+            state.received_payloads.lock().await.is_empty(),
+            "disconnect should prevent a pending reconcile from sending wire subscriptions",
+        );
     }
 }
