@@ -5,6 +5,7 @@ import enum
 import typing
 
 from nautilus_trader import model
+from nautilus_trader import network
 
 __all__ = [
     "BITMEX_HTTP_URL",
@@ -48,6 +49,7 @@ class BitmexDataClientConfig:
         environment: BitmexEnvironment | None = None,
         max_requests_per_second: int | None = None,
         max_requests_per_minute: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final
@@ -80,6 +82,7 @@ class BitmexExecClientConfig:
         submitter_proxy_urls: typing.Sequence[str] | None = None,
         canceller_proxy_urls: typing.Sequence[str] | None = None,
         deadmans_switch_timeout_secs: int | None = None,
+        transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
 
 @typing.final

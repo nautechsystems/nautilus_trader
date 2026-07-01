@@ -21,6 +21,7 @@ from nautilus_trader.config import NonNegativeInt
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.network import TransportBackend
 
 
 class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -112,6 +113,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     ws_connection_initial_delay_secs: PositiveFloat = 5
     ws_connection_delay_secs: PositiveFloat = 0.1
     ws_max_subscriptions_per_connection: PositiveInt = 200
@@ -201,6 +203,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     base_url_data_api: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     ws_max_subscriptions_per_connection: PositiveInt = 200
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None

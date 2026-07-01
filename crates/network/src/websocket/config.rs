@@ -44,6 +44,23 @@ use crate::error::{NetworkConfigError, NetworkConfigResult};
 /// [`WebSocketConfig::headers`]).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.network",
+        eq,
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.network")
+)]
+#[allow(
+    clippy::unsafe_derive_deserialize,
+    reason = "PyO3-backed enum still needs serde deserialization for strict config decoding"
+)]
 pub enum TransportBackend {
     /// `tokio-tungstenite` backed transport (default when `transport-sockudo` is disabled).
     #[cfg_attr(not(feature = "transport-sockudo"), default)]

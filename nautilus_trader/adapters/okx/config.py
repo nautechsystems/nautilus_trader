@@ -22,6 +22,7 @@ from nautilus_trader.core.nautilus_pyo3 import OKXInstrumentType
 from nautilus_trader.core.nautilus_pyo3 import OKXMarginMode
 from nautilus_trader.core.nautilus_pyo3 import OKXRegion
 from nautilus_trader.core.nautilus_pyo3 import OKXVipLevel
+from nautilus_trader.network import TransportBackend
 
 
 class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -86,6 +87,7 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     http_timeout_secs: PositiveInt | None = 60
     max_retries: PositiveInt | None = 3
     retry_delay_initial_ms: PositiveInt | None = 1_000
@@ -182,6 +184,7 @@ class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     margin_mode: OKXMarginMode | None = None
     use_spot_margin: bool = False
     http_timeout_secs: PositiveInt | None = 60

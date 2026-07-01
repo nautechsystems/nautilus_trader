@@ -19,6 +19,7 @@ from nautilus_trader.config import PositiveInt
 from nautilus_trader.core.nautilus_pyo3 import KrakenEnvironment
 from nautilus_trader.core.nautilus_pyo3 import KrakenProductType
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.network import TransportBackend
 
 
 class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -92,6 +93,7 @@ class KrakenDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws_futures: str | None = None
     base_url_ws_l3_spot: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
@@ -221,6 +223,7 @@ class KrakenExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws_spot: str | None = None
     base_url_ws_futures: str | None = None
     proxy_url: str | None = None
+    transport_backend: TransportBackend | None = None
     max_retries: PositiveInt | None = None
     retry_delay_initial_ms: PositiveInt | None = None
     retry_delay_max_ms: PositiveInt | None = None
