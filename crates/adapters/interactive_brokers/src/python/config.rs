@@ -36,6 +36,7 @@ fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl MarketDataType {
     #[classattr]
     const REALTIME: Self = Self::Realtime;
@@ -51,6 +52,7 @@ impl MarketDataType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl SymbologyMethod {
     #[classattr]
     const SIMPLIFIED: Self = Self::Simplified;
@@ -60,6 +62,7 @@ impl SymbologyMethod {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl TradingMode {
     #[classattr]
     const PAPER: Self = Self::Paper;
@@ -69,6 +72,7 @@ impl TradingMode {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersDataClientConfig {
     /// Creates a new `InteractiveBrokersDataClientConfig` instance.
     #[new]
@@ -191,6 +195,7 @@ impl InteractiveBrokersDataClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersExecClientConfig {
     /// Creates a new `InteractiveBrokersExecClientConfig` instance.
     #[new]
@@ -299,6 +304,7 @@ impl InteractiveBrokersExecClientConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl InteractiveBrokersInstrumentProviderConfig {
     /// Creates a new `InteractiveBrokersInstrumentProviderConfig` instance.
     #[new]
@@ -435,6 +441,7 @@ impl InteractiveBrokersInstrumentProviderConfig {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DockerizedIBGatewayConfig {
     /// Creates a new `DockerizedIBGatewayConfig` instance.
     #[new]

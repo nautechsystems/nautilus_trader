@@ -30,6 +30,7 @@ use crate::{
 };
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbAction {
     #[classattr]
     const BUY: Self = Self::Buy;
@@ -51,6 +52,7 @@ impl IbAction {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbOrderStatus {
     #[classattr]
     const API_PENDING: Self = Self::ApiPending;
@@ -78,6 +80,7 @@ impl IbOrderStatus {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbOrderType {
     #[classattr]
     const MARKET: Self = Self::Market;
@@ -137,6 +140,7 @@ impl IbOrderType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbTimeInForce {
     #[classattr]
     const DAY: Self = Self::Day;
@@ -162,6 +166,7 @@ impl IbTimeInForce {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbBuilderTimeInForce {
     #[classattr]
     const DAY: Self = Self::Day;
@@ -189,6 +194,7 @@ impl IbBuilderTimeInForce {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbSecurityType {
     #[classattr]
     const STOCK: Self = Self::Stock;
@@ -228,6 +234,7 @@ impl IbSecurityType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbOptionRight {
     #[classattr]
     const CALL: Self = Self::Call;
@@ -241,6 +248,7 @@ impl IbOptionRight {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbHistoricalTickType {
     #[classattr]
     const TRADES: Self = Self::Trades;
@@ -254,6 +262,7 @@ impl IbHistoricalTickType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbTradingHours {
     #[classattr]
     const REGULAR: Self = Self::Regular;
@@ -267,6 +276,7 @@ impl IbTradingHours {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbHistoricalBarSize {
     #[classattr]
     const SEC: Self = Self::Sec;
@@ -318,6 +328,7 @@ impl IbHistoricalBarSize {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbHistoricalWhatToShow {
     #[classattr]
     const TRADES: Self = Self::Trades;
@@ -347,6 +358,7 @@ impl IbHistoricalWhatToShow {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbRealtimeBarSize {
     #[classattr]
     const SEC5: Self = Self::Sec5;
@@ -358,6 +370,7 @@ impl IbRealtimeBarSize {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbRealtimeWhatToShow {
     #[classattr]
     const TRADES: Self = Self::Trades;
@@ -375,6 +388,7 @@ impl IbRealtimeWhatToShow {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbConditionKind {
     #[classattr]
     const PRICE: Self = Self::Price;
@@ -396,6 +410,7 @@ impl IbConditionKind {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbConditionConjunction {
     #[classattr]
     const AND: Self = Self::And;
@@ -414,6 +429,7 @@ impl IbConditionConjunction {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbComboLegOpenClose {
     #[classattr]
     const SAME: Self = Self::Same;
@@ -431,6 +447,7 @@ impl IbComboLegOpenClose {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbTriggerMethod {
     #[classattr]
     const DEFAULT: Self = Self::Default;
@@ -454,6 +471,7 @@ impl IbTriggerMethod {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbOcaType {
     #[classattr]
     const NONE: Self = Self::None;
@@ -471,6 +489,7 @@ impl IbOcaType {
 }
 
 #[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl IbLiquidity {
     #[classattr]
     const NONE: Self = Self::None;
@@ -490,6 +509,7 @@ impl IbLiquidity {
 macro_rules! py_i32_enum {
     ($ty:ty, $($name:ident => $variant:ident),+ $(,)?) => {
         #[pymethods]
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         impl $ty {
             $(
                 #[classattr]
@@ -507,6 +527,7 @@ macro_rules! py_i32_enum {
 macro_rules! py_str_enum {
     ($ty:ty, $($name:ident => $variant:ident),+ $(,)?) => {
         #[pymethods]
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         impl $ty {
             $(
                 #[classattr]
@@ -524,6 +545,7 @@ macro_rules! py_str_enum {
 macro_rules! py_marker_enum {
     ($ty:ty, $($name:ident => $variant:ident),+ $(,)?) => {
         #[pymethods]
+        #[pyo3_stub_gen::derive::gen_stub_pymethods]
         impl $ty {
             $(
                 #[classattr]
