@@ -53,7 +53,7 @@ on:
     branches: [develop, master, test-security]
     paths: *security_audit_paths
   schedule:
-    - cron: "0 12 * * *" # Daily at 12:00 UTC (2hrs prior to nightly-merge)
+    - cron: "0 23 * * *" # Daily at 23:00 UTC (2hrs prior to next nightly-merge)
   workflow_dispatch: # Allow manual trigger
 
 jobs:
