@@ -321,6 +321,62 @@ def test_anchor_set_after_first_quote(env):
     assert strategy._last_quoted_mid == Price(0.65000, env.instrument.price_precision)
 
 
+def test_anchor_set_before_first_order_submit(env, monkeypatch):
+    # Arrange
+    strategy = _make_strategy(env)
+    strategy.start()
+    original_submit_order = strategy.submit_order
+    observed_anchor = []
+
+    def submit_order_spy(order, *args, **kwargs):
+        observed_anchor.append(strategy._last_quoted_mid)
+        return original_submit_order(order, *args, **kwargs)
+
+    monkeypatch.setattr(strategy, "submit_order", submit_order_spy)
+
+    # Act
+    _process_quote(env, bid_price=0.64990, ask_price=0.65010)
+
+    # Assert
+    assert observed_anchor
+    assert all(anchor == Price(0.65000, env.instrument.price_precision) for anchor in observed_anchor)
+
+
+def test_duplicate_quote_during_first_submit_does_not_double_submit_grid(env, monkeypatch):
+    # Arrange
+    strategy = _make_strategy(env)
+    strategy.start()
+    original_submit_order = strategy.submit_order
+    reentered = False
+
+    ts = env.clock.timestamp_ns()
+    tick = TestDataStubs.quote_tick(
+        instrument=env.instrument,
+        bid_price=0.64990,
+        ask_price=0.65010,
+        ts_event=ts,
+        ts_init=ts,
+    )
+
+    def submit_order_with_reentrant_quote(order, *args, **kwargs):
+        nonlocal reentered
+        if not reentered:
+            reentered = True
+            strategy.on_quote_tick(tick)
+        return original_submit_order(order, *args, **kwargs)
+
+    monkeypatch.setattr(strategy, "submit_order", submit_order_with_reentrant_quote)
+
+    # Act
+    env.data_engine.process(tick)
+    env.exchange.process_quote_tick(tick)
+    env.exchange.process(ts)
+
+    # Assert
+    assert reentered
+    assert len(env.cache.orders_open(instrument_id=env.instrument.id)) == 6
+
+
 def test_requote_suppressed_below_threshold(env):
     # Arrange — requote_threshold_bps=5, first quote sets the anchor at mid=0.65000
     strategy = _make_strategy(env, requote_threshold_bps=5)

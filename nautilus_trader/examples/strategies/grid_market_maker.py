@@ -114,6 +114,7 @@ class GridMarketMaker(Strategy):
         self._trade_size: Quantity | None = config.trade_size
         self._price_precision: int | None = None
         self._last_quoted_mid: Price | None = None
+        self._pending_grid_signature: tuple[tuple[OrderSide, Price], ...] | None = None
         self._pending_self_cancels: set[ClientOrderId] = set()
 
     def on_start(self) -> None:
@@ -190,12 +191,19 @@ class GridMarketMaker(Strategy):
         if not grid:
             return
 
+        grid_signature = tuple(grid)
+        if not has_resting and self._pending_grid_signature == grid_signature:
+            return
+
         expire_time = None
         tif = TimeInForce.GTC
 
         if self.config.expire_time_secs is not None:
             expire_time = self.clock.utc_now() + timedelta(seconds=self.config.expire_time_secs)
             tif = TimeInForce.GTD
+
+        self._last_quoted_mid = mid
+        self._pending_grid_signature = grid_signature
 
         for side, price in grid:
             order = self.order_factory.limit(
@@ -209,8 +217,6 @@ class GridMarketMaker(Strategy):
             )
             self.submit_order(order)
 
-        self._last_quoted_mid = mid
-
     def on_order_filled(self, event: OrderFilled) -> None:
         """
         Actions to be performed when an order is filled.
@@ -220,6 +226,7 @@ class GridMarketMaker(Strategy):
         order = self.cache.order(event.client_order_id)
         if order is not None and order.is_closed:
             self._pending_self_cancels.discard(event.client_order_id)
+            self._pending_grid_signature = None
 
     def on_order_rejected(self, event: OrderRejected) -> None:
         """
@@ -228,6 +235,7 @@ class GridMarketMaker(Strategy):
         self._pending_self_cancels.discard(event.client_order_id)
         # Reset so the next quote tick can retry placing the full grid
         self._last_quoted_mid = None
+        self._pending_grid_signature = None
 
     def on_order_expired(self, event: OrderExpired) -> None:
         """
@@ -236,6 +244,7 @@ class GridMarketMaker(Strategy):
         self._pending_self_cancels.discard(event.client_order_id)
         # GTD expiry means the grid is gone; reset so re-quoting is not suppressed
         self._last_quoted_mid = None
+        self._pending_grid_signature = None
 
     def on_order_canceled(self, event: OrderCanceled) -> None:
         """
@@ -248,6 +257,7 @@ class GridMarketMaker(Strategy):
         if self.config.on_cancel_resubmit:
             # Reset so the next quote tick triggers a full grid resubmission
             self._last_quoted_mid = None
+            self._pending_grid_signature = None
 
     def on_reset(self) -> None:
         """
@@ -257,6 +267,7 @@ class GridMarketMaker(Strategy):
         self._trade_size = self.config.trade_size
         self._price_precision = None
         self._last_quoted_mid = None
+        self._pending_grid_signature = None
         self._pending_self_cancels.clear()
 
     def _should_requote(self, mid: Price) -> bool:
