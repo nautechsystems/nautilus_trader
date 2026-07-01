@@ -22,6 +22,7 @@ from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.identifiers cimport generic_spread_id_n_legs
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
@@ -205,4 +206,7 @@ cdef class PerContractFeeModel(FeeModel):
         Price fill_px,
         Instrument instrument,
     ):
-        return Money(self._commission * fill_qty, self._commission.currency)
+        return Money(
+            self._commission * fill_qty * generic_spread_id_n_legs(instrument.id),
+            self._commission.currency,
+        )
