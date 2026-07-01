@@ -15,6 +15,8 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
+#![warn(clippy::clone_on_ref_ptr)]
+
 use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use ahash::{AHashMap, AHashSet};
@@ -153,8 +155,8 @@ impl Portfolio {
     ) -> Self {
         let config = config.unwrap_or_default();
         let inner = Rc::new(RefCell::new(PortfolioState::new(
-            clock.clone(),
-            cache.clone(),
+            Rc::clone(&clock),
+            Rc::clone(&cache),
             &config,
         )));
 
@@ -175,9 +177,9 @@ impl Portfolio {
     #[must_use]
     pub fn clone_shallow(&self) -> Self {
         Self {
-            clock: self.clock.clone(),
-            cache: self.cache.clone(),
-            inner: self.inner.clone(),
+            clock: Rc::clone(&self.clock),
+            cache: Rc::clone(&self.cache),
+            inner: Rc::clone(&self.inner),
             config: self.config,
         }
     }
@@ -192,8 +194,8 @@ impl Portfolio {
 
         // Typed handlers for subscriptions
         let update_account_handler = {
-            let cache = cache.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |event: &AccountState| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -203,9 +205,9 @@ impl Portfolio {
         };
 
         let update_position_handler = {
-            let cache = cache.clone();
-            let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |event: &PositionEvent| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -215,9 +217,9 @@ impl Portfolio {
         };
 
         let update_quote_handler = {
-            let cache = cache.clone();
-            let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |quote: &QuoteTick| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -227,9 +229,9 @@ impl Portfolio {
         };
 
         let update_bar_handler = {
-            let cache = cache.clone();
-            let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |bar: &Bar| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -239,9 +241,9 @@ impl Portfolio {
         };
 
         let update_mark_price_handler = {
-            let cache = cache.clone();
-            let clock = clock.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |mark_price: &MarkPriceUpdate| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -257,8 +259,8 @@ impl Portfolio {
         };
 
         let update_order_handler = {
-            let cache = cache.clone();
-            let inner = inner_weak.clone();
+            let cache = Rc::clone(cache);
+            let inner = WeakCell::clone(&inner_weak);
             TypedHandler::from(move |event: &OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
@@ -271,8 +273,8 @@ impl Portfolio {
         msgbus::register_account_state_endpoint(endpoint, update_account_handler.clone());
 
         let update_order_endpoint_handler = {
-            let cache = cache.clone();
-            let clock = clock.clone();
+            let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
             let inner = inner_weak;
             TypedIntoHandler::from(move |event: OrderEventAny| {
                 if let Some(inner_rc) = inner.upgrade() {
@@ -2214,9 +2216,9 @@ fn update_instrument_id(
     }
 
     let portfolio_clone = Portfolio {
-        clock: clock.clone(),
-        cache: cache.clone(),
-        inner: inner.clone(),
+        clock: Rc::clone(clock),
+        cache: Rc::clone(cache),
+        inner: Rc::clone(inner),
         config,
     };
 
@@ -2375,9 +2377,9 @@ fn update_order(
         cache.borrow_mut().cache_account_owned(working_account);
 
         let portfolio_clone = Portfolio {
-            clock: clock.clone(),
-            cache: cache.clone(),
-            inner: inner.clone(),
+            clock: Rc::clone(clock),
+            cache: Rc::clone(cache),
+            inner: Rc::clone(inner),
             config,
         };
 
@@ -2507,9 +2509,9 @@ fn update_position(
     update_snapshot_timer_state(cache, clock, inner, config, account_id);
 
     let portfolio_clone = Portfolio {
-        clock: clock.clone(),
-        cache: cache.clone(),
-        inner: inner.clone(),
+        clock: Rc::clone(clock),
+        cache: Rc::clone(cache),
+        inner: Rc::clone(inner),
         config,
     };
 
@@ -2856,9 +2858,9 @@ fn emit_snapshot(
     ts_event: nautilus_core::UnixNanos,
 ) {
     let mut portfolio = Portfolio {
-        cache: cache.clone(),
-        clock: clock.clone(),
-        inner: inner.clone(),
+        cache: Rc::clone(cache),
+        clock: Rc::clone(clock),
+        inner: Rc::clone(inner),
         config,
     };
 
