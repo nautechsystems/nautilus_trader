@@ -8110,9 +8110,10 @@ async fn test_position_check_activity_throttle_independent_per_account() {
     ctx.add_position(&pos_b);
 
     // Simulate recent activity on account A only: B must remain unthrottled.
-    let ts_now = ctx.clock.borrow().get_time_ns();
+    // The activity timestamp is now stamped from the manager's clock inside
+    // `record_position_activity`, so no explicit timestamp is passed.
     ctx.manager
-        .record_position_activity(instrument_id, account_a, ts_now);
+        .record_position_activity(instrument_id, account_a);
 
     // No venue report for B: treated as flat, so a discrepancy.
     let mock_client = MockPositionExecutionClient::new(vec![], vec![]);
@@ -8131,6 +8132,97 @@ async fn test_position_check_activity_throttle_independent_per_account() {
     assert!(
         accounts_with_filled.contains(&account_b),
         "B's reconciliation must not be throttled by activity recorded for A",
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_grace_survives_accelerated_trading_clock() {
+    // The position-reconciliation grace is a real-time settling window: give the
+    // local execution pipeline a moment (real seconds) to catch up before
+    // flagging a cache-vs-venue gap. It is therefore measured on the monotonic
+    // clock, independent of `self.clock` — which can be driven off wall time and
+    // run fast (e.g. an accelerated simulated venue) or be anchored to a historic
+    // epoch. If the grace were measured on `self.clock`, an accelerated trading
+    // clock would shrink the window by the clock's speed and it would collapse
+    // before the first reconciliation poll (which is itself scheduled on the same
+    // monotonic clock, so it fires on real-time cadence).
+    //
+    // Here we record local activity, then jump `self.clock` ~954 days forward in
+    // a single step — standing in for a trading clock that has raced far ahead
+    // while only milliseconds of real time have elapsed — and assert the grace
+    // still engages and suppresses the discrepancy. Real elapsed time is tiny, so
+    // the monotonic-clock grace holds; a `self.clock`-based grace would read
+    // "activity was 954 days ago" and fire.
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 60_000_000_000, // 60s of real cover
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account = AccountId::from("BINANCE-A");
+
+    ctx.add_instrument(instrument.clone());
+    ctx.add_margin_account(account);
+
+    // Observe a fill: records local activity on the monotonic clock. The venue
+    // event timestamps do not feed the grace and are left arbitrary.
+    let ts_event = UnixNanos::from(1_000_000_000);
+    let fill_report = FillReport::new(
+        account,
+        instrument_id,
+        VenueOrderId::from("V-1"),
+        TradeId::from("T-1"),
+        OrderSide::Buy,
+        Quantity::from("0.06"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Taker,
+        Some(ClientOrderId::from("O-1")),
+        None,     // venue_position_id
+        ts_event, // ts_event
+        ts_event, // ts_init
+        None,     // report_id
+    );
+    ctx.manager
+        .observe_execution_report(&ExecutionReport::Fill(Box::new(fill_report)));
+
+    // Race the trading clock ~954 days ahead. A `self.clock`-based grace would now
+    // read "activity was 954 days ago" and fire; the monotonic grace must not.
+    let accelerated_jump_ns: u64 = 954 * 86_400 * 1_000_000_000; // 954 days in ns
+    ctx.advance_time(accelerated_jump_ns);
+
+    // Cache is flat but the venue reports a 0.06 long: a genuine discrepancy. The
+    // only thing between it and a synthesized EXTERNAL position is the grace.
+    let venue_report = PositionStatusReport::new(
+        account,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("0.06"),
+        UnixNanos::from(accelerated_jump_ns),
+        UnixNanos::from(accelerated_jump_ns),
+        None, // report_id
+        None, // venue_position_id
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        events.is_empty(),
+        "grace must survive an accelerated trading clock (it is measured on the \
+         monotonic clock); got {} reconciliation event(s) — the grace regressed \
+         to self.clock",
+        events.len(),
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account)),
+        0,
+        "grace path must return before the retry counter is touched",
     );
 }
 

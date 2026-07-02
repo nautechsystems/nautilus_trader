@@ -18,7 +18,7 @@
 //! This module provides the execution manager for reconciling execution state between
 //! the local cache and connected venues, as well as purging old state during live trading.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock};
+use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time::Duration};
 
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
@@ -26,6 +26,7 @@ use nautilus_common::{
     clients::ExecutionClient,
     clock::Clock,
     enums::{LogColor, LogLevel},
+    live::dst,
     log_info,
     messages::{
         ExecutionReport,
@@ -271,7 +272,10 @@ pub struct ExecutionManager {
     recon_check_retries: IndexMap<ClientOrderId, u32>,
     ts_last_query: IndexMap<ClientOrderId, UnixNanos>,
     order_local_activity_ns: IndexMap<ClientOrderId, UnixNanos>,
-    position_local_activity_ns: IndexMap<InstrumentAccountKey, UnixNanos>,
+    // Monotonic (`dst::time`) instants, deliberately NOT `self.clock`: the grace
+    // is a real-time settling window, so it must be measured in real elapsed time
+    // regardless of the trading clock's epoch or speed. See `record_position_activity`.
+    position_local_activity: IndexMap<InstrumentAccountKey, dst::time::Instant>,
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
     recent_fills_cache: IndexMap<TradeId, UnixNanos>,
 }
@@ -305,7 +309,7 @@ impl ExecutionManager {
             recon_check_retries: IndexMap::new(),
             ts_last_query: IndexMap::new(),
             order_local_activity_ns: IndexMap::new(),
-            position_local_activity_ns: IndexMap::new(),
+            position_local_activity: IndexMap::new(),
             position_recon_retries: IndexMap::new(),
             recent_fills_cache: IndexMap::new(),
         }
@@ -1439,14 +1443,21 @@ impl ExecutionManager {
     }
 
     /// Records position activity for reconciliation tracking, scoped per (instrument, account).
-    pub fn record_position_activity(
-        &mut self,
-        instrument_id: InstrumentId,
-        account_id: AccountId,
-        ts_event: UnixNanos,
-    ) {
-        self.position_local_activity_ns
-            .insert((instrument_id, account_id), ts_event);
+    ///
+    /// The activity is stamped from the monotonic `dst::time` clock (real elapsed
+    /// time), **not** from `self.clock` and **not** from the venue event's
+    /// `ts_event`. The position-discrepancy grace is a real-time settling window:
+    /// "give the local pipeline a moment to catch up before flagging a
+    /// cache-vs-venue gap". That is inherently wall/monotonic time — you want N
+    /// real seconds of cover regardless of the trading clock's epoch or speed.
+    /// `self.clock` can be driven off wall time (e.g. an accelerated simulated
+    /// venue), which would shrink the window by the clock's speed; the venue
+    /// `ts_event` lives on yet another axis. Measuring against the same monotonic
+    /// clock the reconciliation loop already schedules on keeps the grace honest.
+    /// See `check_position_discrepancy`.
+    pub fn record_position_activity(&mut self, instrument_id: InstrumentId, account_id: AccountId) {
+        self.position_local_activity
+            .insert((instrument_id, account_id), dst::time::Instant::now());
     }
 
     /// Returns the current position-reconciliation retry count for the given
@@ -1498,11 +1509,7 @@ impl ExecutionManager {
                 if let Some(coid) = client_order_id {
                     self.record_local_activity(coid);
                 }
-                self.record_position_activity(
-                    fill_report.instrument_id,
-                    fill_report.account_id,
-                    fill_report.ts_event,
-                );
+                self.record_position_activity(fill_report.instrument_id, fill_report.account_id);
             }
             ExecutionReport::OrderWithFills(order_report, fills) => {
                 if let Some(client_order_id) = &order_report.client_order_id
@@ -1522,7 +1529,6 @@ impl ExecutionManager {
                     self.record_position_activity(
                         fill_report.instrument_id,
                         fill_report.account_id,
-                        fill_report.ts_event,
                     );
                 }
             }
@@ -1530,7 +1536,6 @@ impl ExecutionManager {
                 self.record_position_activity(
                     position_report.instrument_id,
                     position_report.account_id,
-                    position_report.ts_last,
                 );
             }
             ExecutionReport::MassStatus(_) => {
@@ -1737,8 +1742,12 @@ impl ExecutionManager {
 
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        if let Some(&last_activity) = self.position_local_activity_ns.get(&key)
-            && (ts_now - last_activity) < self.config.position_check_threshold_ns
+        // Grace window: measured on the monotonic `dst::time` clock (real elapsed
+        // time), independent of `self.clock`. The threshold is a real-time cover,
+        // so an accelerated or historically-anchored `self.clock` cannot shrink it.
+        if let Some(&last_activity) = self.position_local_activity.get(&key)
+            && last_activity.elapsed()
+                < Duration::from_nanos(self.config.position_check_threshold_ns)
         {
             log::debug!(
                 "Skipping position reconciliation for {instrument_id}: recent activity within threshold"

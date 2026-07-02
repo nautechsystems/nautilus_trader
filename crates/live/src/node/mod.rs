@@ -1134,7 +1134,6 @@ impl LiveNode {
                                     self.exec_manager.record_position_activity(
                                         fill.instrument_id,
                                         fill.account_id,
-                                        fill.ts_event,
                                     );
                                     self.exec_manager.mark_fill_processed(fill.trade_id);
                                 }
@@ -1330,11 +1329,8 @@ impl LiveNode {
             self.exec_manager
                 .record_local_activity(event.client_order_id());
             if let OrderEventAny::Filled(fill) = event {
-                self.exec_manager.record_position_activity(
-                    fill.instrument_id,
-                    fill.account_id,
-                    fill.ts_event,
-                );
+                self.exec_manager
+                    .record_position_activity(fill.instrument_id, fill.account_id);
                 self.exec_manager.mark_fill_processed(fill.trade_id);
             }
             self.kernel.exec_engine.borrow_mut().process(event);
