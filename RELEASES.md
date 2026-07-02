@@ -34,6 +34,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 
 ### Fixes
+- Fixed v2 wranglers silently overflowing int64 for realistic source values; now raises a clear `ValueError` with the offending column/value and a hint to adjust the precision knob (e.g. NSE equity at 3812 INR with `price_precision=0`, or 140k-share 1-minute volume)
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
 - Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu
