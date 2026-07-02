@@ -118,3 +118,52 @@ def test_order_book_depth10_data_wrangler_round_trip() -> None:
         assert depth.asks[i].price.as_decimal() == expected_ask_prices[i]
         assert depth.bids[i].size.as_decimal() == expected_bid_sizes[i]
         assert depth.asks[i].size.as_decimal() == expected_ask_sizes[i]
+
+
+def test_bar_wrangler_overflow_raises_clear_error() -> None:
+    """BarDataWranglerV2 must raise a clear ValueError when a source value
+    would not fit in int64 after the wrangler's 10**FIXED_PRECISION scaling.
+
+    Previously the int64 overflow surfaced deep in polars/pyarrow as an
+    obscure "Int128" error. The new pre-.to_bytes() check fires with a
+    message identifying the column, the value, and the precision knob.
+    """
+    import pytest as _pytest
+    from nautilus_trader.persistence.wranglers_v2 import BarDataWranglerV2
+
+    wrangler = BarDataWranglerV2(
+        bar_type="TCS.XMCX-1-MINUTE-LAST-EXTERNAL",
+        price_precision=0,  # whole-rupee ticks → raw = 3.81e19, overflows
+        size_precision=0,
+    )
+    df = pd.DataFrame({
+        "open":   [3812.25],
+        "high":   [3813.0],
+        "low":    [3811.0],
+        "close":  [3811.0],
+        "volume": [100.0],
+        "ts_event": pd.to_datetime(["2026-01-01 00:00:00"], utc=True),
+    })
+    with _pytest.raises(ValueError, match="Wrangler overflow"):
+        wrangler.from_pandas(df)
+
+
+def test_bar_wrangler_normal_values_still_work() -> None:
+    """Sanity: the new overflow check does not break the normal path."""
+    from nautilus_trader.persistence.wranglers_v2 import BarDataWranglerV2
+
+    wrangler = BarDataWranglerV2(
+        bar_type="TCS.XMCX-1-MINUTE-LAST-EXTERNAL",
+        price_precision=2,  # paise → raw = 3.81e17, fits
+        size_precision=0,
+    )
+    df = pd.DataFrame({
+        "open":   [3812.25],
+        "high":   [3813.0],
+        "low":    [3811.0],
+        "close":  [3811.0],
+        "volume": [100.0],
+        "ts_event": pd.to_datetime(["2026-01-01 00:00:00"], utc=True),
+    })
+    result = wrangler.from_pandas(df)
+    assert len(result) == 1

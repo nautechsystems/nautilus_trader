@@ -33,6 +33,51 @@ from nautilus_trader.model.objects import FIXED_SCALAR
 RAW_BYTE_ORDER: Final = "little"
 
 
+# Maximum signed 64-bit integer. Fixed-point raw values are stored as
+# little-endian 16-byte (128-bit) signed integers (FIXED_PRECISION_BYTES),
+# but the meaningful range is int64 because the Rust PriceRaw / QuantityRaw
+# types are 64-bit. Wrangler operations that would produce a raw value
+# outside this range silently overflowed prior to 1.230.1, surfacing as
+# an obscure polars/pyarrow Int128 error downstream.
+_INT64_MAX: Final = 2**63 - 1
+_INT64_MIN: Final = -(2**63)
+
+
+def _check_raw_overflow(
+    value: int,
+    *,
+    kind: str,
+    col_name: str,
+    precision: int,
+) -> None:
+    """Raise ValueError if a fixed-point raw value would not fit in int64.
+
+    The wrangler formula
+        raw = round(source * 10**precision) * 10**(FIXED_PRECISION - precision)
+    is invariant in precision (both multiplications cancel) and always
+    produces source * 10**FIXED_PRECISION. For typical equity prices
+    (e.g. an NSE stock at 3812 INR with price_precision=2) or active
+    1-minute volumes (140k shares) this exceeds int64_max and the
+    downstream .to_bytes(FIXED_PRECISION_BYTES, signed=True) raises an
+    obscure polars/pyarrow Int128 overflow error.
+
+    Catching it here surfaces a clear message: the caller knows which
+    row and column overflowed, and can pre-scale the source or reduce
+    the precision to fit.
+    """
+    if value > _INT64_MAX or value < _INT64_MIN:
+        raise ValueError(
+            f"Wrangler overflow: {kind} column {col_name!r} produced raw "
+            f"value {value} which exceeds int64 range "
+            f"[{_INT64_MIN}, {_INT64_MAX}]. The wrangler formula scales "
+            f"source by 10**{FIXED_PRECISION} regardless of "
+            f"{kind}_precision={precision}; for this source magnitude the "
+            f"raw cannot fit. Reduce the source value or use a higher "
+            f"{kind}_precision to compensate via the invariant "
+            f"raw == source * 10**(FIXED_PRECISION - precision)."
+        )
+
+
 class WranglerBase(abc.ABC):
     IGNORE_KEYS: ClassVar[set[bytes]] = {b"class", b"pandas"}
 
@@ -258,7 +303,14 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
             price_mult = 10**self._inner.price_precision
             return (
                 df[col_name]
-                .apply(lambda x: round(x * price_mult) * price_scale)
+                .apply(
+                    lambda x: _check_raw_overflow(
+                        round(x * price_mult) * price_scale,
+                        kind="price",
+                        col_name=col_name,
+                        precision=self._inner.price_precision,
+                    ),
+                )
                 .apply(
                     lambda x: x.to_bytes(
                         FIXED_PRECISION_BYTES,
@@ -277,7 +329,14 @@ class OrderBookDepth10DataWranglerV2(WranglerBase):
             size_mult = 10**self._inner.size_precision
             return (
                 df[col_name]
-                .apply(lambda x: round(x * size_mult) * size_scale)
+                .apply(
+                    lambda x: _check_raw_overflow(
+                        round(x * size_mult) * size_scale,
+                        kind="size",
+                        col_name=col_name,
+                        precision=self._inner.size_precision,
+                    ),
+                )
                 .apply(
                     lambda x: x.to_bytes(
                         FIXED_PRECISION_BYTES,
@@ -553,7 +612,14 @@ class QuoteTickDataWranglerV2(WranglerBase):
         size_mult = 10**self._inner.size_precision
         bid_price = (
             df["bid_price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
@@ -561,7 +627,14 @@ class QuoteTickDataWranglerV2(WranglerBase):
         )
         ask_price = (
             df["ask_price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
@@ -569,7 +642,14 @@ class QuoteTickDataWranglerV2(WranglerBase):
         )
         bid_size = (
             df["bid_size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * size_mult) * size_scale,
+                    kind="size",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.size_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
             )
@@ -577,7 +657,14 @@ class QuoteTickDataWranglerV2(WranglerBase):
         )
         ask_size = (
             df["ask_size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * size_mult) * size_scale,
+                    kind="size",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.size_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
             )
@@ -711,7 +798,14 @@ class TradeTickDataWranglerV2(WranglerBase):
         size_mult = 10**self._inner.size_precision
         price = (
             df["price"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
@@ -719,7 +813,14 @@ class TradeTickDataWranglerV2(WranglerBase):
 
         size = (
             df["size"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * size_mult) * size_scale,
+                    kind="size",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.size_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
             )
@@ -864,35 +965,70 @@ class BarDataWranglerV2(WranglerBase):
         size_mult = 10**self._inner.size_precision
         open_price = (
             df["open"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
         )
         high_price = (
             df["high"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
         )
         low_price = (
             df["low"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
         )
         close_price = (
             df["close"]
-            .apply(lambda x: round(x * price_mult) * price_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * price_mult) * price_scale,
+                    kind="price",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.price_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=True),
             )
         )
         volume = (
             df["volume"]
-            .apply(lambda x: round(x * size_mult) * size_scale)
+            .apply(
+                lambda x: _check_raw_overflow(
+                    round(x * size_mult) * size_scale,
+                    kind="size",
+                    col_name="<inline: see caller>",
+                    precision=self._inner.size_precision,
+                ),
+            )
             .apply(
                 lambda x: x.to_bytes(FIXED_PRECISION_BYTES, byteorder=RAW_BYTE_ORDER, signed=False),
             )
