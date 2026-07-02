@@ -1,0 +1,18 @@
+experiment:
+  name: live_ws_fixture_smoke
+  description: Required repo-local live raw WS fixture smoke.
+adapter:
+  name: live_ws_v1
+  input:
+    ndjson_path: polymarket/tests/fixtures/live_ws_minimal.ndjson
+selection:
+  asset_id: "yes"
+strategy:
+  path: ./strategy.py
+  class: BuyHoldFirstAskStrategy
+  params:
+    quantity: "5"
+runtime:
+  run_id: live-fixture-smoke-v1
+report:
+  output_dir: ./runs

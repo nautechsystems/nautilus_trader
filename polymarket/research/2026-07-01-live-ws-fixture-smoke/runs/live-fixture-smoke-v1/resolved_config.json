@@ -1,0 +1,37 @@
+{
+  "experiment": {
+    "name": "live_ws_fixture_smoke",
+    "description": "Required repo-local live raw WS fixture smoke."
+  },
+  "adapter": {
+    "name": "live_ws_v1",
+    "adapter_version": "v1",
+    "source_type": "live_raw_ws",
+    "source_files_resolved": [
+      "polymarket/tests/fixtures/live_ws_minimal.ndjson"
+    ],
+    "assumptions": [
+      "One local raw WebSocket message is one replay step."
+    ],
+    "warnings": [
+      "No official Polymarket message id is assumed; local capture order is local evidence only."
+    ]
+  },
+  "strategy": {
+    "loader_mode": "path",
+    "source_path_original": "./strategy.py",
+    "source_path_resolved": "polymarket/research/2026-07-01-live-ws-fixture-smoke/strategy.py",
+    "class": "BuyHoldFirstAskStrategy",
+    "params_resolved": {
+      "quantity": "5"
+    },
+    "source_sha256": "fc5b2a221415c19071250bcfd077f994e388386a649be8b19aa2c6687eee13e7",
+    "warnings": []
+  },
+  "runtime": {
+    "run_id": "live-fixture-smoke-v1",
+    "created_at_utc": "2026-07-02T03:28:13.187610Z",
+    "config_path": "polymarket/research/2026-07-01-live-ws-fixture-smoke/experiment.yml",
+    "run_dir": "polymarket/research/2026-07-01-live-ws-fixture-smoke/runs/live-fixture-smoke-v1"
+  }
+}

@@ -1,0 +1,16 @@
+experiment:
+  name: live_ws_local_smoke
+  description: Optional local full live raw WS smoke. Requires POLYMARKET_LIVE_WS_NDJSON.
+adapter:
+  name: live_ws_v1
+  input:
+    ndjson_path_env: POLYMARKET_LIVE_WS_NDJSON
+strategy:
+  path: ./strategy.py
+  class: BuyHoldFirstAskStrategy
+  params:
+    quantity: "5"
+runtime:
+  run_id: live-local-smoke-v1
+report:
+  output_dir: ./runs

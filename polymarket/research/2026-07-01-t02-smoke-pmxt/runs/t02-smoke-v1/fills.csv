@@ -1,0 +1,2 @@
+timestamp,sequence,side,price,quantity,order_id,label,liquidity
+2026-06-26T02:35:13.861000Z,1,BUY,0.66,10,market,buy_hold_first_ask,taker

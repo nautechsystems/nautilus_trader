@@ -1,0 +1,77 @@
+{
+  "generated_at": "2026-07-02T03:32:33.581946Z",
+  "pmxt_hourly": {
+    "exists": true,
+    "path": "C:\\Projects\\PolyReaper\\data\\external\\pmxt\\polymarket\\v2\\orderbook\\hourly\\polymarket_orderbook_2026-06-26T02.parquet",
+    "bytes": 260120549,
+    "rows": 45508830,
+    "row_groups": 44,
+    "columns": [
+      "timestamp_received",
+      "timestamp",
+      "market",
+      "event_type",
+      "asset_id",
+      "bids",
+      "asks",
+      "price",
+      "size",
+      "side",
+      "best_bid",
+      "best_ask",
+      "fee_rate_bps",
+      "transaction_hash",
+      "old_tick_size",
+      "new_tick_size"
+    ]
+  },
+  "alignment_diag": {
+    "exists": true,
+    "status": "pmxt_available_compared",
+    "raw_window_utc": {
+      "start": "2026-06-26T02:25:28.635Z",
+      "end": "2026-06-26T02:59:53.643Z"
+    },
+    "pmxt_row_count": 2611,
+    "pmxt_event_type_counts": {
+      "price_change": 2608,
+      "last_trade_price": 1,
+      "book": 2
+    },
+    "raw_signature_count": 2699,
+    "pmxt_signature_count": 2611,
+    "matched_signature_count": 2611,
+    "raw_minus_pmxt_count": 88,
+    "pmxt_minus_raw_count": 0,
+    "pmxt_received_time_inversions": 0,
+    "pmxt_source_time_inversions": 410,
+    "passes_alignment_gate": true
+  },
+  "raw_ordering_diag": {
+    "exists": true,
+    "row_count": 2341,
+    "parse_error_count": 0,
+    "local_index_inversions": 0,
+    "recv_monotonic_ns_inversions": 0,
+    "recv_wall_time_inversions": 0,
+    "total_asset_series_inversions": 0,
+    "total_event_type_series_inversions": 8,
+    "passes_receive_order_gate": true
+  },
+  "t02_smoke": {
+    "exists": true,
+    "path": "polymarket/research/2026-07-01-t02-smoke-pmxt/data/t02_strategy_suite_summary.csv",
+    "rows": 8,
+    "replay_orders": [
+      "received_time"
+    ],
+    "result_labels": [
+      "smoke_test_unvalidated"
+    ],
+    "max_batch_mismatch_rate": 0.0,
+    "max_fill_tick_violations": 0,
+    "total_fills": 3,
+    "passes_smoke_gate": true
+  },
+  "overall_pass": true
+}

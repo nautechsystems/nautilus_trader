@@ -1,0 +1,10 @@
+{
+  "steps": 4,
+  "fills": 1,
+  "cash": "-3",
+  "position": "5",
+  "final_mark_price": "0.505",
+  "final_equity": "-0.475",
+  "tick_size_changes_applied": 1,
+  "final_tick_size": "0.001"
+}

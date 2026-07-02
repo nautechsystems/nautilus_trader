@@ -1,0 +1,42 @@
+{
+  "experiment": {
+    "name": "t02_pmxt_smoke_v1",
+    "description": "T02 PMXT received-time smoke through polymarket/backtest_v1."
+  },
+  "adapter": {
+    "name": "pmxt_event_v1",
+    "adapter_version": "v1",
+    "source_type": "pmxt_event",
+    "source_files_resolved": [
+      "polymarket/research/2026-07-01-t02-smoke-pmxt/curated/t02-pmxt-live-until-1100-no-receive-inversion/orderbook.parquet"
+    ],
+    "assumptions": [
+      "PMXT parquet lacks raw WebSocket message boundaries; replay steps are adapter approximations.",
+      "PMXT replay_order=received_time.",
+      "PMXT drop_until_first_book=True.",
+      "PMXT event folders are curated from PMXT-derived data."
+    ],
+    "warnings": [
+      "PMXT source timestamp may invert; timestamp_received should be preferred for no-receive-inversion samples.",
+      "PMXT best_bid/best_ask is not row-level ground truth.",
+      "PMXT event adapter inherits PMXT parquet data-quality concerns."
+    ]
+  },
+  "strategy": {
+    "loader_mode": "path",
+    "source_path_original": "./strategy.py",
+    "source_path_resolved": "polymarket/research/2026-07-01-t02-smoke-pmxt/strategy.py",
+    "class": "BuyHoldFirstAskStrategy",
+    "params_resolved": {
+      "quantity": "10"
+    },
+    "source_sha256": "2447f2820fbde7335c5342715b50b56090784a90fd1b65000378b195f509803d",
+    "warnings": []
+  },
+  "runtime": {
+    "run_id": "t02-smoke-v1",
+    "created_at_utc": "2026-07-02T03:28:12.480489Z",
+    "config_path": "polymarket/research/2026-07-01-t02-smoke-pmxt/experiment.yml",
+    "run_dir": "polymarket/research/2026-07-01-t02-smoke-pmxt/runs/t02-smoke-v1"
+  }
+}

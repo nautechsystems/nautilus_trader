@@ -1,0 +1,21 @@
+experiment:
+  name: t02_pmxt_smoke_v1
+  description: T02 PMXT received-time smoke through polymarket/backtest_v1.
+adapter:
+  name: pmxt_event_v1
+  input:
+    event_dir: polymarket/research/2026-07-01-t02-smoke-pmxt/curated/t02-pmxt-live-until-1100-no-receive-inversion
+    replay_order: received_time
+    drop_until_first_book: true
+    asset_id: "13887983551129862992605123088744175927084435631400400451585519366058907542147"
+selection:
+  asset_id: "13887983551129862992605123088744175927084435631400400451585519366058907542147"
+strategy:
+  path: ./strategy.py
+  class: BuyHoldFirstAskStrategy
+  params:
+    quantity: "10"
+runtime:
+  run_id: t02-smoke-v1
+report:
+  output_dir: ./runs
