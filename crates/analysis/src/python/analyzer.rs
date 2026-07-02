@@ -39,8 +39,8 @@ use crate::{
         returns_volatility::ReturnsVolatility, risk_return_ratio::RiskReturnRatio,
         sharpe_ratio::SharpeRatio, sortino_ratio::SortinoRatio, tail_ratio::TailRatio,
         tracking_error::TrackingError, treynor_ratio::TreynorRatio, ulcer_index::UlcerIndex,
-        value_at_risk::ValueAtRisk,
-        win_rate::WinRate, winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
+        value_at_risk::ValueAtRisk, win_rate::WinRate, winner_avg::AvgWinner,
+        winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
 
