@@ -1,0 +1,17 @@
+﻿experiment:
+  name: strategy_loader_example
+adapter:
+  name: live_ws_v1
+  input:
+    ndjson_path: polymarket/tests/fixtures/live_ws_minimal.ndjson
+selection:
+  asset_id: "yes"
+strategy:
+  path: ./strategy.py
+  class: LoaderExampleStrategy
+  params:
+    quantity: "5"
+runtime:
+  run_id: strategy-loader-test
+report:
+  output_dir: ./runs
