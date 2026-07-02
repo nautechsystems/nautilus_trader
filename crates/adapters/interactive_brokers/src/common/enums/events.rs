@@ -19,7 +19,8 @@
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -42,7 +43,8 @@ pub enum IbPlaceOrderEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -65,7 +67,8 @@ pub enum IbOrderUpdateEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -85,7 +88,8 @@ pub enum IbCancelOrderEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -106,7 +110,8 @@ pub enum IbOrdersEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -127,7 +132,8 @@ pub enum IbExecutionsEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -148,7 +154,8 @@ pub enum IbExerciseOptionsEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -169,7 +176,8 @@ pub enum IbHistoricalBarUpdateEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -190,7 +198,8 @@ pub enum IbMarketDepthEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -218,7 +227,8 @@ pub enum IbTickEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -238,7 +248,8 @@ pub enum IbAccountSummaryEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -258,7 +269,8 @@ pub enum IbPositionUpdateEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -278,7 +290,8 @@ pub enum IbPositionUpdateMultiEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -300,7 +313,8 @@ pub enum IbAccountUpdateEvent {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(

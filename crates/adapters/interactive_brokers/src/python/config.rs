@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 use crate::config::{
     DockerizedIBGatewayConfig, InteractiveBrokersDataClientConfig,
     InteractiveBrokersExecClientConfig, InteractiveBrokersInstrumentProviderConfig, MarketDataType,
-    SymbologyMethod, TradingMode,
+    TradingMode,
 };
 
 fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
@@ -33,42 +33,6 @@ fn validate_order_id_client_slot(client_id: i32) -> PyResult<()> {
     }
 
     Ok(())
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl MarketDataType {
-    #[classattr]
-    const REALTIME: Self = Self::Realtime;
-
-    #[classattr]
-    const FROZEN: Self = Self::Frozen;
-
-    #[classattr]
-    const DELAYED: Self = Self::Delayed;
-
-    #[classattr]
-    const DELAYED_FROZEN: Self = Self::DelayedFrozen;
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl SymbologyMethod {
-    #[classattr]
-    const SIMPLIFIED: Self = Self::Simplified;
-
-    #[classattr]
-    const RAW: Self = Self::Raw;
-}
-
-#[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
-impl TradingMode {
-    #[classattr]
-    const PAPER: Self = Self::Paper;
-
-    #[classattr]
-    const LIVE: Self = Self::Live;
 }
 
 #[pymethods]

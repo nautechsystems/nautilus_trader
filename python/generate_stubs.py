@@ -297,6 +297,10 @@ def generate_stubs() -> bool:
     maturin_features = pyproject.get("tool", {}).get("maturin", {}).get("features", [])
     cargo_features = [f for f in maturin_features if f != "extension-module"]
 
+    # extension-module (stripped above) is what enables gateway in the wheel build
+    if "nautilus-interactive-brokers/gateway" not in cargo_features:
+        cargo_features.append("nautilus-interactive-brokers/gateway")
+
     cmd = ["cargo", "run", "--bin", "python-stub-gen"]
 
     if cargo_features:

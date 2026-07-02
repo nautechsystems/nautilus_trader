@@ -78,10 +78,10 @@ def _normalize_market_data_type(market_data_type):
         return market_data_type
 
     mapping = {
-        1: MarketDataType.Realtime,
-        2: MarketDataType.Frozen,
-        3: MarketDataType.Delayed,
-        4: MarketDataType.DelayedFrozen,
+        1: MarketDataType.REALTIME,
+        2: MarketDataType.FROZEN,
+        3: MarketDataType.DELAYED,
+        4: MarketDataType.DELAYED_FROZEN,
     }
 
     return mapping.get(int(market_data_type), market_data_type)
@@ -89,11 +89,11 @@ def _normalize_market_data_type(market_data_type):
 
 def _normalize_trading_mode(trading_mode):
     if trading_mode is None or isinstance(trading_mode, TradingMode):
-        return trading_mode if trading_mode is not None else TradingMode.Paper
+        return trading_mode if trading_mode is not None else TradingMode.PAPER
 
     mapping = {
-        "paper": TradingMode.Paper,
-        "live": TradingMode.Live,
+        "paper": TradingMode.PAPER,
+        "live": TradingMode.LIVE,
     }
 
     return mapping[str(trading_mode).lower()]
@@ -108,8 +108,8 @@ def _normalize_symbology_method(symbology_method):
     value = getattr(symbology_method, "value", symbology_method)
     value = str(value).lower()
     mapping = {
-        "simplified": rust_symbology_enum.Simplified,
-        "raw": rust_symbology_enum.Raw,
+        "simplified": rust_symbology_enum.SIMPLIFIED,
+        "raw": rust_symbology_enum.RAW,
     }
 
     return mapping.get(value, symbology_method)
@@ -124,7 +124,7 @@ class DockerizedIBGatewayConfig(RustDockerizedIBGatewayConfig):
         cls,
         username: str | None = None,
         password: str | None = None,
-        trading_mode: TradingMode | str | None = TradingMode.Paper,
+        trading_mode: TradingMode | str | None = TradingMode.PAPER,
         read_only_api: bool = True,
         timeout: int = 300,
         container_image: str = "ghcr.io/gnzsnz/ib-gateway:stable",
@@ -201,7 +201,7 @@ class InteractiveBrokersDataClientConfig(RustInteractiveBrokersDataClientConfig)
         )
         obj.routing = routing if routing is not None else RoutingConfig()
         obj.legacy_market_data_type = int(
-            market_data_type if market_data_type is not None else MarketDataType.Realtime,
+            market_data_type if market_data_type is not None else MarketDataType.REALTIME,
         )
         return obj
 

@@ -21,7 +21,8 @@ use std::{fmt::Display, str::FromStr};
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -72,7 +73,8 @@ impl Display for IbHistoricalTickType {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -121,7 +123,8 @@ impl From<bool> for IbTradingHours {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -196,7 +199,8 @@ impl Display for IbHistoricalBarSize {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -270,7 +274,8 @@ impl Display for IbHistoricalWhatToShow {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -307,7 +312,8 @@ impl Display for IbRealtimeBarSize {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -359,7 +365,8 @@ impl Display for IbRealtimeWhatToShow {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(

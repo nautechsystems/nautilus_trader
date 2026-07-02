@@ -580,5 +580,5 @@ def test_pyo3_provider_config_accepts_raw_symbology():
     )
     rust_symbology_enum = type(InteractiveBrokersInstrumentProviderConfig().symbology_method)
 
-    assert config.symbology_method == rust_symbology_enum.Raw
+    assert config.symbology_method == rust_symbology_enum.RAW
     assert config.legacy_symbology_method == SymbologyMethod.IB_RAW

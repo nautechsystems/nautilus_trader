@@ -49,7 +49,8 @@ use crate::config::DockerizedIBGatewayConfig;
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(

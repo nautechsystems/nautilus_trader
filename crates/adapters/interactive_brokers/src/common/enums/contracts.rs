@@ -23,7 +23,8 @@ use nautilus_model::enums::OptionKind;
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
@@ -175,7 +176,8 @@ impl Display for IbSecurityType {
     feature = "python",
     pyo3::pyclass(
         module = "nautilus_trader.core.nautilus_pyo3.interactive_brokers",
-        from_py_object
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE"
     )
 )]
 #[cfg_attr(
