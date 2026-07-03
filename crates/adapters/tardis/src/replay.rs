@@ -678,7 +678,10 @@ fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
         UnixNanos::from(end_nanos as u64),
     );
 
-    PathBuf::new().join("bar").join(bar_type_str).join(filename)
+    PathBuf::new()
+        .join(Bar::path_prefix())
+        .join(bar_type_str)
+        .join(filename)
 }
 
 fn write_batch(
@@ -929,5 +932,75 @@ mod tests {
         assert_eq!(trades_out, vec![trade_1, trade_2]);
         assert_eq!(trades_out[0].instrument_id, instrument_id);
         assert!(trades_out[0].ts_init < trades_out[1].ts_init);
+    }
+
+    #[rstest]
+    fn test_bars_replay_catalog_round_trip() {
+        use nautilus_model::types::{Price, Quantity};
+
+        let compression = ParquetCompression::Zstd.as_parquet_compression();
+        let bar_type = BarType::from("BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+
+        let ts_1 = UnixNanos::from(
+            Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        let ts_2 = ts_1 + 1_000_000_000;
+
+        let bar_1 = Bar::new(
+            bar_type,
+            Price::from("100.00"),
+            Price::from("110.00"),
+            Price::from("90.00"),
+            Price::from("105.00"),
+            Quantity::from("1000"),
+            ts_1,
+            ts_1,
+        );
+        let bar_2 = Bar::new(
+            bar_type,
+            Price::from("105.00"),
+            Price::from("115.00"),
+            Price::from("95.00"),
+            Price::from("110.00"),
+            Quantity::from("1000"),
+            ts_2,
+            ts_2,
+        );
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let data_path = temp_dir.path().join("data");
+
+        let mut bars_map: AHashMap<BarType, Vec<Bar>> = AHashMap::new();
+        let mut bars_cursors: AHashMap<BarType, DateCursor> = AHashMap::new();
+
+        for bar in [bar_1, bar_2] {
+            handle_bar_msg(
+                bar,
+                &mut bars_map,
+                &mut bars_cursors,
+                &data_path,
+                compression,
+            );
+        }
+
+        for (bar_type, bars) in &bars_map {
+            let cursor = bars_cursors.get(bar_type).expect("Expected cursor");
+            batch_and_write_bars(bars, bar_type, cursor.date_utc, &data_path, compression);
+        }
+
+        // Bars must be written under the catalog convention path ("bars"), consistent
+        // with the other data types so they are discoverable by `ParquetDataCatalog`.
+        assert!(data_path.join(Bar::path_prefix()).exists());
+        assert!(!data_path.join("bar").exists());
+
+        let mut catalog = ParquetDataCatalog::new(temp_dir.path(), None, None, None, None);
+        let bars_out = catalog.bars(None, None, None).unwrap();
+
+        assert_eq!(bars_out, vec![bar_1, bar_2]);
+        assert_eq!(bars_out[0].bar_type, bar_type);
+        assert!(bars_out[0].ts_init < bars_out[1].ts_init);
     }
 }
