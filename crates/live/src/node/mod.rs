@@ -96,7 +96,7 @@ use nautilus_common::{
     timer::TimeEventHandler,
 };
 use nautilus_core::{
-    UUID4, UnixNanos,
+    UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_secs, secs_to_nanos_unchecked},
 };
 use nautilus_model::{
@@ -913,7 +913,7 @@ impl LiveNode {
 
         let recon_start = dst::time::Instant::now() + startup_delay;
 
-        let mut ts_last_inflight = self.exec_manager.generate_timestamp_ns();
+        let mut ts_last_inflight = dst::time::Instant::now();
         let mut ts_last_open = ts_last_inflight;
         let mut ts_last_position = ts_last_inflight;
 
@@ -1079,9 +1079,9 @@ impl LiveNode {
 
                     if recon_enabled && now >= recon_next {
                         let recon_intervals = ReconciliationCheckIntervals {
-                            inflight: inflight_interval_ns,
-                            open: open_interval_ns,
-                            position: position_interval_ns,
+                            inflight: Duration::from_nanos(inflight_interval_ns),
+                            open: Duration::from_nanos(open_interval_ns),
+                            position: Duration::from_nanos(position_interval_ns),
                         };
                         let mut recon_state = ReconciliationCheckState {
                             ts_last_inflight: &mut ts_last_inflight,
@@ -1092,6 +1092,7 @@ impl LiveNode {
                         };
 
                         self.run_reconciliation_checks(
+                            now,
                             recon_intervals,
                             &mut recon_state,
                         );
@@ -1774,12 +1775,11 @@ impl LiveNode {
     // in the event loop.
     fn run_reconciliation_checks(
         &mut self,
+        now: dst::time::Instant,
         intervals: ReconciliationCheckIntervals,
         state: &mut ReconciliationCheckState<'_>,
     ) {
-        let ts_now = self.exec_manager.generate_timestamp_ns();
-
-        if reconciliation_check_due(ts_now, *state.ts_last_inflight, intervals.inflight) {
+        if reconciliation_check_due(now, *state.ts_last_inflight, intervals.inflight) {
             if self.state() == NodeState::ShuttingDown {
                 return;
             }
@@ -1788,12 +1788,12 @@ impl LiveNode {
             for cmd in result.queries {
                 AsyncRunner::handle_exec_command(cmd);
             }
-            *state.ts_last_inflight = ts_now;
+            *state.ts_last_inflight = now;
         }
 
-        let open_due = reconciliation_check_due(ts_now, *state.ts_last_open, intervals.open);
+        let open_due = reconciliation_check_due(now, *state.ts_last_open, intervals.open);
         let position_due =
-            reconciliation_check_due(ts_now, *state.ts_last_position, intervals.position);
+            reconciliation_check_due(now, *state.ts_last_position, intervals.position);
 
         if (open_due || position_due) && self.state() == NodeState::ShuttingDown {
             return;
@@ -1802,7 +1802,7 @@ impl LiveNode {
         if state.open_order_report_task.is_some() {
             if open_due {
                 log::debug!("Open-order reconciliation already in progress");
-                *state.ts_last_open = ts_now;
+                *state.ts_last_open = now;
             }
 
             if position_due {
@@ -1817,7 +1817,7 @@ impl LiveNode {
         if state.position_report_task.is_some() {
             if position_due {
                 log::debug!("Position reconciliation already in progress");
-                *state.ts_last_position = ts_now;
+                *state.ts_last_position = now;
             }
 
             if open_due {
@@ -1831,10 +1831,10 @@ impl LiveNode {
 
         if position_due && (!open_due || *state.ts_last_position < *state.ts_last_open) {
             *state.position_report_task = self.start_position_report_check();
-            *state.ts_last_position = ts_now;
+            *state.ts_last_position = now;
         } else if open_due {
             *state.open_order_report_task = self.start_open_order_report_check();
-            *state.ts_last_open = ts_now;
+            *state.ts_last_open = now;
         }
     }
 
@@ -1982,24 +1982,28 @@ async fn request_position_reports(
     }
 }
 
-fn reconciliation_check_due(ts_now: UnixNanos, ts_last: UnixNanos, interval_ns: u64) -> bool {
-    interval_ns > 0
-        && ts_now
-            .duration_since(&ts_last)
-            .is_some_and(|elapsed_ns| elapsed_ns >= interval_ns)
+fn reconciliation_check_due(
+    now: dst::time::Instant,
+    last: dst::time::Instant,
+    interval: Duration,
+) -> bool {
+    interval > Duration::ZERO
+        && now
+            .checked_duration_since(last)
+            .is_some_and(|elapsed| elapsed >= interval)
 }
 
 #[derive(Clone, Copy)]
 struct ReconciliationCheckIntervals {
-    inflight: u64,
-    open: u64,
-    position: u64,
+    inflight: Duration,
+    open: Duration,
+    position: Duration,
 }
 
 struct ReconciliationCheckState<'a> {
-    ts_last_inflight: &'a mut UnixNanos,
-    ts_last_open: &'a mut UnixNanos,
-    ts_last_position: &'a mut UnixNanos,
+    ts_last_inflight: &'a mut dst::time::Instant,
+    ts_last_open: &'a mut dst::time::Instant,
+    ts_last_position: &'a mut dst::time::Instant,
     open_order_report_task: &'a mut Option<OpenOrderReportTask>,
     position_report_task: &'a mut Option<PositionReportTask>,
 }
@@ -2666,8 +2670,46 @@ mod tests {
         assert_eq!(cached_order.status(), OrderStatus::Initialized);
     }
 
-    #[rstest]
-    fn test_run_reconciliation_checks_does_not_publish_open_order_queries() {
+    #[cfg(all(feature = "simulation", madsim))]
+    async fn advance_clock(d: Duration) {
+        madsim::time::advance(d);
+        madsim::task::yield_now().await;
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    async fn advance_clock(d: Duration) {
+        tokio::time::advance(d).await;
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_reconciliation_check_due_uses_monotonic_elapsed_time() {
+        let last = dst::time::Instant::now();
+        let interval = Duration::from_millis(100);
+
+        assert!(!reconciliation_check_due(last, last, Duration::ZERO));
+        assert!(!reconciliation_check_due(last, last, interval));
+
+        advance_clock(Duration::from_millis(99)).await;
+        let before_interval = dst::time::Instant::now();
+        assert!(!reconciliation_check_due(before_interval, last, interval));
+
+        advance_clock(Duration::from_millis(1)).await;
+        let at_interval = dst::time::Instant::now();
+        assert!(reconciliation_check_due(at_interval, last, interval));
+
+        assert!(!reconciliation_check_due(last, at_interval, interval));
+    }
+
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_reconciliation_checks_does_not_publish_open_order_queries() {
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecEngineConfig {
                 reconciliation: true,
@@ -2713,17 +2755,21 @@ mod tests {
             venue_order_id,
         );
 
-        let mut ts_last_inflight = UnixNanos::default();
-        let mut ts_last_open = UnixNanos::default();
-        let mut ts_last_position = UnixNanos::default();
+        let last = dst::time::Instant::now();
+        advance_clock(Duration::from_nanos(1)).await;
+        let now = dst::time::Instant::now();
+        let mut ts_last_inflight = last;
+        let mut ts_last_open = last;
+        let mut ts_last_position = last;
         let mut open_order_report_task = None;
         let mut position_report_task = None;
 
         node.run_reconciliation_checks(
+            now,
             ReconciliationCheckIntervals {
-                inflight: 0,
-                open: 1,
-                position: 0,
+                inflight: Duration::ZERO,
+                open: Duration::from_nanos(1),
+                position: Duration::ZERO,
             },
             &mut ReconciliationCheckState {
                 ts_last_inflight: &mut ts_last_inflight,

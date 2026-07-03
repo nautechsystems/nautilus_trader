@@ -123,6 +123,7 @@ criterion = { workspace = true }
 madsim = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 toml = { workspace = true }
 ustr = { workspace = true }
 
