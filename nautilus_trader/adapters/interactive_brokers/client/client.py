@@ -172,7 +172,17 @@ class InteractiveBrokersClient(
         self._reconnect_jitter_secs: int = secrets.randbelow(4)
         self._had_ib_connection: bool = False
         self._last_disconnection_ns: int | None = None
-        self._randomize_client_id_on_next_connect: bool = False
+        self._client_id_collision_count: int = 0
+        # Reuse the configured client id for this many consecutive IB 326 collisions (back-off +
+        # retry) before falling back; then increment deterministically within a bounded band of
+        # `_max_client_id_offset` ids (configured_id .. configured_id + offset).
+        self._client_id_reuse_limit: int = 3
+        self._max_client_id_offset: int = 4
+        # Data-farm state (market-data farm 2103/2104, historical/HMDS farm 2105/2106). A
+        # transient farm "broken" degrades only the data feeds; the socket (and the
+        # order/execution channel) is kept alive and feeds resubscribe on the farm "OK".
+        self._data_farm_degraded_since_ns: int | None = None
+        self._data_farm_resubscription_task: asyncio.Task | None = None
 
         # MarketDataMixin
         self._bar_type_to_last_bar: dict[str, BarData | None] = {}
@@ -261,6 +271,9 @@ class InteractiveBrokersClient(
                 # which will set the `_is_ib_connected` event. This typically takes a few
                 # seconds, so we wait for it here.
                 await asyncio.wait_for(self._is_ib_connected.wait(), 15)
+                # Clean connect established; reset the client-id collision counter so a later
+                # reconnect starts again from the configured id.
+                self._client_id_collision_count = 0
                 self._start_connection_watchdog()
 
                 self._is_client_ready.set()
