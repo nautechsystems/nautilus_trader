@@ -33,9 +33,15 @@ impl DownCaptureRatio {
     /// `DownCapture = annualized_return(portfolio | benchmark < 0) / annualized_return(benchmark | benchmark < 0)`
     ///
     /// where each side's annualized return is the geometric (CAGR-style) value
-    /// `(prod(1 + x_i))^(period / m) - 1` and `m` is the number of down-market periods. The
-    /// period defaults to 252 trading days. This is the `empyrical.down_capture` convention
-    /// (not the Morningstar cumulative-return ratio).
+    /// `(prod(1 + x_i))^(period / m) - 1` and `m` is the number of down-market periods (the
+    /// size of the filtered subset, not the full aligned length). The period defaults to
+    /// 252 trading days. A value below 1.0 means the portfolio lost less than the benchmark
+    /// in down markets (smaller drawdowns), which is desirable.
+    ///
+    /// This is the `empyrical.down_capture` convention (geometric annualized-return ratio
+    /// over the `benchmark < 0` subset). Note that this differs from the Morningstar
+    /// definition, which uses a ratio of *cumulative* (non-annualized) returns; the two
+    /// coincide only when both subsets contain the same number of periods.
     ///
     /// # References
     ///
