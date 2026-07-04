@@ -1461,6 +1461,37 @@ impl ExecutionManager {
         self.position_recon_retries.get(key).copied().unwrap_or(0)
     }
 
+    /// Observes a local order event and updates tracking state.
+    ///
+    /// This is the `LiveNode` dispatch path for order events: acknowledgement
+    /// events clear reconciliation tracking, fills record fill/position
+    /// activity, and every event stamps local activity. The stamp must come
+    /// AFTER any [`Self::clear_recon_tracking`] call - that call drops the
+    /// local-activity mark, which is the sole grace gate protecting a
+    /// just-acknowledged order from missing-order reconciliation while the
+    /// venue report lags.
+    pub fn observe_order_event(&mut self, event: &OrderEventAny) {
+        match event {
+            OrderEventAny::Filled(fill) => {
+                self.record_position_activity(fill.instrument_id, fill.account_id);
+                self.mark_fill_processed(fill.trade_id);
+            }
+            OrderEventAny::Accepted(_)
+            | OrderEventAny::Rejected(_)
+            | OrderEventAny::Canceled(_)
+            | OrderEventAny::Expired(_)
+            | OrderEventAny::Denied(_)
+            | OrderEventAny::Updated(_)
+            | OrderEventAny::ModifyRejected(_)
+            | OrderEventAny::CancelRejected(_) => {
+                self.clear_recon_tracking(&event.client_order_id(), true);
+            }
+            _ => {}
+        }
+
+        self.record_local_activity(event.client_order_id());
+    }
+
     /// Observes an incoming execution report and updates tracking state.
     ///
     /// This should be called **before** the report is dispatched to the execution
@@ -1670,32 +1701,9 @@ impl ExecutionManager {
             return events;
         };
 
-        let ts_now = self.clock.borrow().timestamp_ns();
-        let ts_last = order.ts_last();
-
-        // Domain-time recency gate: ts_last and ts_now are both domain
-        // timestamps, so this stays on self.clock (it is not a real-time
-        // settling window).
-        match ts_now.duration_since(&ts_last) {
-            // Within the recency threshold: order is genuinely too recent, defer.
-            Some(elapsed_ns) if elapsed_ns < self.config.open_check_threshold_ns => {
-                return events;
-            }
-            // Old enough: fall through to the reconciliation checks below.
-            Some(_) => {}
-            // ts_last is ahead of ts_now - impossible under a sane clock.
-            // A corrupted far-future ts_last (for example a double-scaled
-            // timestamp) would otherwise stall this order's reconciliation
-            // forever with no signal, so warn before deferring.
-            None => {
-                log::warn!(
-                    "Order {client_order_id} has venue ts_last {ts_last} ahead of local ts_now {ts_now}; deferring reconciliation"
-                );
-                return events;
-            }
-        }
-
-        // Check local activity threshold
+        // Recent local activity is the real-time settling window for missing
+        // orders. Venue/domain timestamps can be ahead of the trading clock and
+        // must not stall reconciliation.
         if self.order_local_activity.within(
             &client_order_id,
             Duration::from_nanos(self.config.open_check_threshold_ns),

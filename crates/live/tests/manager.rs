@@ -7617,13 +7617,16 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     }
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
-    // A corrupted far-future ts_last must defer reconciliation without
-    // rejecting or panicking.
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_missing_gate_uses_local_activity_not_venue_ts_last() {
+    // A corrupted far-future ts_last must not stall missing-order reconciliation
+    // after the local activity grace expires.
     let config = ExecutionManagerConfig {
-        open_check_threshold_ns: 0,
+        open_check_threshold_ns: 200_000_000,
         open_check_missing_retries: 1,
         open_check_open_only: false,
         ..Default::default()
@@ -7631,7 +7634,7 @@ async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
     let mut ctx = TestContext::with_config(config);
     ctx.add_instrument(test_instrument());
 
-    let mut order = create_limit_order(
+    let order = create_limit_order(
         "O-AHEAD",
         test_instrument_id(),
         OrderSide::Buy,
@@ -7639,9 +7642,14 @@ async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
         "100.0",
     );
     let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
-    order.apply(submitted).unwrap();
+    ctx.add_order(order);
+    let order = ctx.cache.borrow_mut().update_order(&submitted).unwrap();
 
-    let future_ts = UnixNanos::from(10_000_000_000);
+    let future_ts = ctx
+        .clock
+        .borrow()
+        .timestamp_ns()
+        .saturating_add_ns(10_000_000_000_u64);
     let accepted = OrderEventAny::Accepted(
         OrderAcceptedSpec::builder()
             .trader_id(order.trader_id())
@@ -7654,8 +7662,11 @@ async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
             .ts_init(future_ts)
             .build(),
     );
-    order.apply(accepted).unwrap();
-    ctx.add_order(order);
+    let client_order_id = order.client_order_id();
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+    // Track the event exactly as the LiveNode dispatch path does: ack cleanup
+    // plus the local-activity stamp, in that order.
+    ctx.manager.observe_order_event(&accepted);
 
     let mock_client = MockExecutionClient::new(vec![]);
     let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
@@ -7664,7 +7675,76 @@ async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
 
     assert!(
         events.is_empty(),
-        "a far-future venue ts_last must defer reconciliation, not reject or panic",
+        "recent local activity should defer reconciliation",
+    );
+
+    advance_clock(dst::time::Duration::from_millis(250)).await;
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], OrderEventAny::Rejected(rejected) if rejected.client_order_id == client_order_id),
+        "far-future venue ts_last must not keep deferring reconciliation",
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_defers_for_just_accepted_order() {
+    // Regression: the LiveNode dispatch path for Accepted performs ack cleanup
+    // (clear_recon_tracking) and stamps local activity via observe_order_event.
+    // The stamp must survive the cleanup so a just-accepted order that a
+    // lagging venue report omits defers until the grace expires, rather than
+    // being rejected as missing.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 200_000_000,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let order = create_limit_order(
+        "O-ACCEPTED",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "10.0",
+        "100.0",
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    ctx.add_order(order);
+    let order = ctx.cache.borrow_mut().update_order(&submitted).unwrap();
+    let client_order_id = order.client_order_id();
+
+    let accepted =
+        TestOrderEventStubs::accepted(&order, test_account_id(), VenueOrderId::from("V-ACCEPTED"));
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+    ctx.manager.observe_order_event(&accepted);
+
+    // Venue response lags and omits the just-accepted order
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        events.is_empty(),
+        "a just-accepted order must defer missing-order reconciliation",
+    );
+
+    advance_clock(dst::time::Duration::from_millis(250)).await;
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], OrderEventAny::Rejected(rejected) if rejected.client_order_id == client_order_id),
+        "reconciliation must proceed once the local-activity grace expires",
     );
 }
 

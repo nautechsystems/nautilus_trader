@@ -501,6 +501,10 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             allow_overfills: config.allow_overfills,
             filter_unclaimed_external_orders: config.filter_unclaimed_external_orders,
             external_clients: config.external_clients,
+            // Keep purge intervals on the ExecutionEngine clock-timer path.
+            // LiveNode also dispatches purge checks from its maintenance loop,
+            // but engine timers must remain controlled by the injected Clock
+            // for callers using a custom live/sandbox clock factory.
             purge_closed_orders_interval_mins: config.purge_closed_orders_interval_mins,
             purge_closed_orders_buffer_mins: config.purge_closed_orders_buffer_mins,
             purge_closed_positions_interval_mins: config.purge_closed_positions_interval_mins,
@@ -1285,6 +1289,12 @@ mod tests {
             load_cache: false,
             snapshot_positions_interval_secs: Some(30.0),
             filter_unclaimed_external_orders: true,
+            purge_closed_orders_interval_mins: Some(5),
+            purge_closed_orders_buffer_mins: Some(1),
+            purge_closed_positions_interval_mins: Some(10),
+            purge_closed_positions_buffer_mins: Some(2),
+            purge_account_events_interval_mins: Some(15),
+            purge_account_events_lookback_mins: Some(3),
             ..Default::default()
         };
 
@@ -1293,6 +1303,12 @@ mod tests {
         assert!(!converted.load_cache);
         assert_eq!(converted.snapshot_positions_interval_secs, Some(30.0));
         assert!(converted.filter_unclaimed_external_orders);
+        assert_eq!(converted.purge_closed_orders_interval_mins, Some(5));
+        assert_eq!(converted.purge_closed_orders_buffer_mins, Some(1));
+        assert_eq!(converted.purge_closed_positions_interval_mins, Some(10));
+        assert_eq!(converted.purge_closed_positions_buffer_mins, Some(2));
+        assert_eq!(converted.purge_account_events_interval_mins, Some(15));
+        assert_eq!(converted.purge_account_events_lookback_mins, Some(3));
     }
 
     #[rstest]

@@ -1161,29 +1161,7 @@ impl LiveNode {
 
                     match &evt {
                         ExecutionEvent::Order(order_evt) => {
-                            self.exec_manager.record_local_activity(order_evt.client_order_id());
-                            match order_evt {
-                                OrderEventAny::Filled(fill) => {
-                                    self.exec_manager.record_position_activity(
-                                        fill.instrument_id,
-                                        fill.account_id,
-                                    );
-                                    self.exec_manager.mark_fill_processed(fill.trade_id);
-                                }
-                                OrderEventAny::Accepted(_)
-                                | OrderEventAny::Rejected(_)
-                                | OrderEventAny::Canceled(_)
-                                | OrderEventAny::Expired(_)
-                                | OrderEventAny::Denied(_)
-                                | OrderEventAny::Updated(_)
-                                | OrderEventAny::ModifyRejected(_)
-                                | OrderEventAny::CancelRejected(_) => {
-                                    self.exec_manager.clear_recon_tracking(
-                                        &order_evt.client_order_id(), true,
-                                    );
-                                }
-                                _ => {}
-                            }
+                            self.exec_manager.observe_order_event(order_evt);
                             close_ids.push(order_evt.client_order_id());
                         }
                         ExecutionEvent::OrderSubmittedBatch(batch) => {
@@ -1193,18 +1171,20 @@ impl LiveNode {
                         }
                         ExecutionEvent::OrderAcceptedBatch(batch) => {
                             for accepted in &batch.events {
-                                self.exec_manager.record_local_activity(accepted.client_order_id);
+                                // Stamp after clearing: `clear_recon_tracking` drops the
+                                // local-activity mark, the missing-order grace gate.
                                 self.exec_manager.clear_recon_tracking(
                                     &accepted.client_order_id, true,
                                 );
+                                self.exec_manager.record_local_activity(accepted.client_order_id);
                             }
                         }
                         ExecutionEvent::OrderCanceledBatch(batch) => {
                             for canceled in &batch.events {
-                                self.exec_manager.record_local_activity(canceled.client_order_id);
                                 self.exec_manager.clear_recon_tracking(
                                     &canceled.client_order_id, true,
                                 );
+                                self.exec_manager.record_local_activity(canceled.client_order_id);
                                 close_ids.push(canceled.client_order_id);
                             }
                         }
