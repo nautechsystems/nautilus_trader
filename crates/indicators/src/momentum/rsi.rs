@@ -316,7 +316,7 @@ mod tests {
         let value = run_rsi(&values, 14, MovingAverageType::Wilder);
         assert!(
             value < 1.0,
-            "RSI should drop below rsi_max after losses, got {value}"
+            "RSI should drop below rsi_max after losses, was {value}"
         );
     }
 
@@ -332,11 +332,12 @@ mod tests {
         for &v in &base {
             rsi.update_raw(v);
         }
+
         for (i, &v) in downs.iter().enumerate() {
             rsi.update_raw(v);
             assert!(
                 (rsi.value - expected[i]).abs() < 1e-4,
-                "step {i}: expected {}, got {}",
+                "step {i}: expected {}, was {}",
                 expected[i],
                 rsi.value
             );
