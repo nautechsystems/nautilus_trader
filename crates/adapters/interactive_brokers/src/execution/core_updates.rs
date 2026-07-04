@@ -11,7 +11,7 @@ use ibapi::subscriptions::SubscriptionItem;
 
 use super::*;
 use crate::{
-    common::enums::{IbAction, IbOrderStatus},
+    common::enums::{IbAction, IbOrderStatus, IbOrderType},
     execution::parse,
 };
 
@@ -447,14 +447,11 @@ impl InteractiveBrokersExecutionClient {
             strategy_id_map,
         )?;
         let price_magnifier = instrument_provider.get_price_magnifier(&instrument_id) as f64;
-        let price = order_data
-            .order
-            .limit_price
-            .map(|price| Price::new(price * price_magnifier, instrument.price_precision()));
-        let trigger_price = order_data
-            .order
-            .aux_price
-            .map(|price| Price::new(price * price_magnifier, instrument.price_precision()));
+        let (price, trigger_price) = Self::open_order_price_fields(
+            order_data,
+            price_magnifier,
+            instrument.price_precision(),
+        );
         let quantity = Quantity::new(order_data.order.total_quantity, instrument.size_precision());
         let venue_order_id =
             parse::ib_venue_order_id(order_data.order_id, order_data.order.perm_id);
@@ -479,6 +476,32 @@ impl InteractiveBrokersExecutionClient {
         exec_sender
             .send(ExecutionEvent::Order(OrderEventAny::Updated(event)))
             .map_err(|e| anyhow::anyhow!("Failed to send order updated event: {e}"))
+    }
+
+    fn open_order_price_fields(
+        order_data: &ibapi::orders::OrderData,
+        price_magnifier: f64,
+        price_precision: u8,
+    ) -> (Option<Price>, Option<Price>) {
+        let order_type = IbOrderType::from_str(order_data.order.order_type.as_str())
+            .map_or(OrderType::Market, IbOrderType::nautilus_order_type);
+        let price = order_data
+            .order
+            .limit_price
+            .map(|price| Price::new(price * price_magnifier, price_precision));
+        let trigger_price = order_data
+            .order
+            .aux_price
+            .map(|price| Price::new(price * price_magnifier, price_precision));
+
+        match order_type {
+            OrderType::Market | OrderType::MarketToLimit | OrderType::TrailingStopMarket => {
+                (None, None)
+            }
+            OrderType::Limit | OrderType::TrailingStopLimit => (price, None),
+            OrderType::StopMarket | OrderType::MarketIfTouched => (None, trigger_price),
+            OrderType::StopLimit | OrderType::LimitIfTouched => (price, trigger_price),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]

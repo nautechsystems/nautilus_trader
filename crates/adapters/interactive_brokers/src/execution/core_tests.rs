@@ -1409,6 +1409,101 @@ async fn test_process_order_update_stream_emits_accepted_then_canceled() {
 }
 
 #[tokio::test]
+async fn test_process_order_update_stream_clears_market_order_update_prices() {
+    let instrument_provider = create_test_instrument_provider();
+    let equity = equity_aapl();
+    let order_id = 7005;
+    let contract_id = 12347;
+    let client_order_id = ClientOrderId::from("O-STREAM-MKT-UPDATE");
+    let venue_order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let instrument_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let trader_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let strategy_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let order_avg_prices = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fills = Arc::new(Mutex::new(AHashMap::new()));
+    let pending_combo_fill_avgs = Arc::new(Mutex::new(AHashMap::new()));
+    let order_fill_progress = Arc::new(Mutex::new(AHashMap::new()));
+    let accepted_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let pending_cancel_orders = Arc::new(Mutex::new(ahash::AHashSet::new()));
+    let spread_fill_tracking = Arc::new(Mutex::new(AHashMap::new()));
+    let commission_cache = Arc::new(Mutex::new(AHashMap::new()));
+    let order_id_map = Arc::new(Mutex::new(AHashMap::new()));
+    let (exec_sender, mut exec_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (update_sender, update_receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut subscription = Subscription::new(update_receiver);
+
+    let instrument_id = equity.id();
+    instrument_provider.insert_test_instrument(InstrumentAny::from(equity), contract_id, 1);
+    venue_order_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, client_order_id);
+    instrument_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, instrument_id);
+    trader_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, TraderId::from("TRADER-001"));
+    strategy_id_map
+        .lock()
+        .unwrap()
+        .insert(order_id, StrategyId::from("STRATEGY-001"));
+
+    let mut open_order = create_test_open_order(order_id, "Submitted", "");
+    open_order.contract.contract_id = contract_id;
+    open_order.order.total_quantity = 10.0;
+    open_order.order.order_type = "MKT".to_string();
+    open_order.order.limit_price = Some(150.25);
+    open_order.order.aux_price = Some(149.75);
+
+    update_sender
+        .send(Ok(OrderUpdate::OpenOrder(open_order)))
+        .unwrap();
+    drop(update_sender);
+
+    InteractiveBrokersExecutionClient::process_order_update_stream(
+        &mut subscription,
+        &order_id_map,
+        &venue_order_id_map,
+        &instrument_provider,
+        &exec_sender,
+        nautilus_core::time::get_atomic_clock_realtime(),
+        AccountId::from("IB-001"),
+        &commission_cache,
+        &instrument_id_map,
+        &trader_id_map,
+        &strategy_id_map,
+        &spread_fill_tracking,
+        &order_avg_prices,
+        &pending_combo_fills,
+        &pending_combo_fill_avgs,
+        &order_fill_progress,
+        &accepted_orders,
+        &pending_cancel_orders,
+    )
+    .await;
+
+    let accepted_event = exec_receiver.try_recv().unwrap();
+    assert!(matches!(
+        accepted_event,
+        ExecutionEvent::Order(OrderEventAny::Accepted(_))
+    ));
+
+    let updated_event = exec_receiver.try_recv().unwrap();
+    match updated_event {
+        ExecutionEvent::Order(OrderEventAny::Updated(event)) => {
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.quantity, Quantity::from(10));
+            assert_eq!(event.price, None);
+            assert_eq!(event.trigger_price, None);
+        }
+        other => panic!("unexpected event: {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn test_process_order_update_stream_emits_fill_after_commission_report() {
     let instrument_provider = create_test_instrument_provider();
     let equity = equity_aapl();
