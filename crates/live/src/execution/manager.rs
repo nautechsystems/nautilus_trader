@@ -67,6 +67,8 @@ use nautilus_model::{
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
 
+use super::recency::RecencyMap;
+
 /// Tag for orders originating from venue (external orders).
 static TAG_VENUE: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("VENUE"));
 
@@ -231,11 +233,11 @@ impl ExecutionManagerConfig {
 struct InflightCheck {
     #[allow(dead_code)]
     pub client_order_id: ClientOrderId,
-    pub ts_submitted: dst::time::Instant,
+    pub submitted_at: dst::time::Instant,
     pub retry_count: u32,
     // `Instant` debug output is runtime-specific and intentionally only useful
     // as an opaque monotonic offset.
-    pub last_query_ts: Option<dst::time::Instant>,
+    pub last_query_at: Option<dst::time::Instant>,
 }
 
 /// Manager for execution state.
@@ -269,12 +271,12 @@ pub struct ExecutionManager {
     external_order_claims: IndexMap<InstrumentId, StrategyId>,
     processed_fills: IndexMap<TradeId, ClientOrderId>,
     recon_check_retries: IndexMap<ClientOrderId, u32>,
-    ts_last_query: IndexMap<ClientOrderId, dst::time::Instant>,
-    order_local_activity: IndexMap<ClientOrderId, dst::time::Instant>,
+    order_query_recency: RecencyMap<ClientOrderId>,
+    order_local_activity: RecencyMap<ClientOrderId>,
     // Monotonic (`dst::time`) instants, not `self.clock`; see `record_position_activity`.
-    position_local_activity: IndexMap<InstrumentAccountKey, dst::time::Instant>,
+    position_local_activity: RecencyMap<InstrumentAccountKey>,
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
-    recent_fills_cache: IndexMap<TradeId, dst::time::Instant>,
+    recent_fills_cache: RecencyMap<TradeId>,
 }
 
 impl Debug for ExecutionManager {
@@ -304,11 +306,11 @@ impl ExecutionManager {
             external_order_claims: IndexMap::new(),
             processed_fills: IndexMap::new(),
             recon_check_retries: IndexMap::new(),
-            ts_last_query: IndexMap::new(),
-            order_local_activity: IndexMap::new(),
-            position_local_activity: IndexMap::new(),
+            order_query_recency: RecencyMap::default(),
+            order_local_activity: RecencyMap::default(),
+            position_local_activity: RecencyMap::default(),
             position_recon_retries: IndexMap::new(),
-            recent_fills_cache: IndexMap::new(),
+            recent_fills_cache: RecencyMap::default(),
         }
     }
 
@@ -802,7 +804,7 @@ impl ExecutionManager {
 
         for (client_order_id, check) in &self.inflight_checks {
             if now
-                .checked_duration_since(check.ts_submitted)
+                .checked_duration_since(check.submitted_at)
                 .is_some_and(|elapsed| elapsed > threshold)
             {
                 to_check.push(*client_order_id);
@@ -819,17 +821,17 @@ impl ExecutionManager {
             }
 
             if let Some(check) = self.inflight_checks.get_mut(&client_order_id) {
-                if let Some(last_query_ts) = check.last_query_ts
+                if let Some(last_query_at) = check.last_query_at
                     && now
-                        .checked_duration_since(last_query_ts)
+                        .checked_duration_since(last_query_at)
                         .is_none_or(|elapsed| elapsed < threshold)
                 {
                     continue;
                 }
 
                 check.retry_count += 1;
-                check.last_query_ts = Some(now);
-                self.ts_last_query.insert(client_order_id, now);
+                check.last_query_at = Some(now);
+                self.order_query_recency.mark(client_order_id);
                 self.recon_check_retries
                     .insert(client_order_id, check.retry_count);
 
@@ -999,7 +1001,7 @@ impl ExecutionManager {
         filtered_orders.sort_by_key(|order| {
             let client_order_id = order.client_order_id();
             (
-                self.ts_last_query.get(&client_order_id).copied(),
+                self.order_query_recency.last_marked(&client_order_id),
                 client_order_id,
             )
         });
@@ -1028,30 +1030,27 @@ impl ExecutionManager {
                 continue;
             }
 
-            if let Some(&last_activity) = self.order_local_activity.get(&client_order_id) {
-                let elapsed = last_activity.elapsed();
-                let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
-
-                if elapsed < threshold {
-                    let elapsed_ms = elapsed.as_millis();
-                    let threshold_ms = threshold.as_millis();
-                    log::debug!(
-                        "Deferring open order query for {client_order_id}: recent local activity \
-                         ({elapsed_ms}ms < threshold={threshold_ms}ms)",
-                    );
-                    continue;
-                }
+            let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
+            if let Some(elapsed) = self.order_local_activity.elapsed_at(&client_order_id, now)
+                && elapsed < threshold
+            {
+                let elapsed_ms = elapsed.as_millis();
+                let threshold_ms = threshold.as_millis();
+                log::debug!(
+                    "Deferring open order query for {client_order_id}: recent local activity \
+                     ({elapsed_ms}ms < threshold={threshold_ms}ms)",
+                );
+                continue;
             }
 
-            if let Some(last_query_ts) = self.ts_last_query.get(&client_order_id)
-                && now
-                    .checked_duration_since(*last_query_ts)
-                    .is_none_or(|elapsed| elapsed < query_delay)
+            if self
+                .order_query_recency
+                .within_at(&client_order_id, now, query_delay)
             {
                 continue;
             }
 
-            self.ts_last_query.insert(client_order_id, now);
+            self.order_query_recency.mark(client_order_id);
             let ts_now = self.clock.borrow().timestamp_ns();
 
             let cmd = TradingCommand::QueryOrder(QueryOrder::new(
@@ -1128,18 +1127,16 @@ impl ExecutionManager {
                 && let Some(order) = self.get_order(*client_order_id)
             {
                 // Check for recent local activity to avoid race conditions with in-flight fills
-                if let Some(&last_activity) = self.order_local_activity.get(client_order_id) {
-                    let elapsed = last_activity.elapsed();
-                    let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
-
-                    if elapsed < threshold {
-                        let elapsed_ms = elapsed.as_millis();
-                        let threshold_ms = threshold.as_millis();
-                        log::debug!(
-                            "Deferring reconciliation for {client_order_id}: recent local activity ({elapsed_ms}ms < threshold={threshold_ms}ms)",
-                        );
-                        continue;
-                    }
+                let threshold = Duration::from_nanos(self.config.open_check_threshold_ns);
+                if let Some(elapsed) = self.order_local_activity.elapsed(client_order_id)
+                    && elapsed < threshold
+                {
+                    let elapsed_ms = elapsed.as_millis();
+                    let threshold_ms = threshold.as_millis();
+                    log::debug!(
+                        "Deferring reconciliation for {client_order_id}: recent local activity ({elapsed_ms}ms < threshold={threshold_ms}ms)",
+                    );
+                    continue;
                 }
 
                 let instrument = self.get_instrument(&report.instrument_id);
@@ -1379,19 +1376,18 @@ impl ExecutionManager {
 
     /// Registers an order as inflight for tracking.
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
-        let ts_submitted = dst::time::Instant::now();
         self.inflight_checks.insert(
             client_order_id,
             InflightCheck {
                 client_order_id,
-                ts_submitted,
+                submitted_at: dst::time::Instant::now(),
                 retry_count: 0,
-                last_query_ts: None,
+                last_query_at: None,
             },
         );
         self.recon_check_retries.insert(client_order_id, 0);
-        self.ts_last_query.shift_remove(&client_order_id);
-        self.order_local_activity.shift_remove(&client_order_id);
+        self.order_query_recency.remove(&client_order_id);
+        self.order_local_activity.remove(&client_order_id);
     }
 
     /// Records local activity for the specified order.
@@ -1401,8 +1397,7 @@ impl ExecutionManager {
     /// conditions where network/queue latency makes events appear "old" even
     /// though they just arrived.
     pub fn record_local_activity(&mut self, client_order_id: ClientOrderId) {
-        self.order_local_activity
-            .insert(client_order_id, dst::time::Instant::now());
+        self.order_local_activity.mark(client_order_id);
     }
 
     /// Clears reconciliation tracking state for an order.
@@ -1411,9 +1406,9 @@ impl ExecutionManager {
         self.recon_check_retries.shift_remove(client_order_id);
 
         if drop_last_query {
-            self.ts_last_query.shift_remove(client_order_id);
+            self.order_query_recency.remove(client_order_id);
         }
-        self.order_local_activity.shift_remove(client_order_id);
+        self.order_local_activity.remove(client_order_id);
     }
 
     /// Returns any external order claim for the given instrument ID.
@@ -1456,7 +1451,7 @@ impl ExecutionManager {
     /// See `check_position_discrepancy`.
     pub fn record_position_activity(&mut self, instrument_id: InstrumentId, account_id: AccountId) {
         self.position_local_activity
-            .insert((instrument_id, account_id), dst::time::Instant::now());
+            .mark((instrument_id, account_id));
     }
 
     /// Returns the current position-reconciliation retry count for the given
@@ -1551,8 +1546,7 @@ impl ExecutionManager {
 
     /// Marks a fill as recently processed with the current monotonic instant.
     pub fn mark_fill_processed(&mut self, trade_id: TradeId) {
-        self.recent_fills_cache
-            .insert(trade_id, dst::time::Instant::now());
+        self.recent_fills_cache.mark(trade_id);
     }
 
     /// Prunes expired fills from the recent fills cache.
@@ -1572,8 +1566,7 @@ impl ExecutionManager {
             Err(_) => Duration::ZERO,
         };
 
-        self.recent_fills_cache
-            .retain(|_, &mut cached_at| cached_at.elapsed() <= ttl);
+        self.recent_fills_cache.prune_older_than(ttl);
     }
 
     /// Purges closed orders from the cache that are older than the configured buffer.
@@ -1703,9 +1696,10 @@ impl ExecutionManager {
         }
 
         // Check local activity threshold
-        if let Some(&last_activity) = self.order_local_activity.get(&client_order_id)
-            && last_activity.elapsed() < Duration::from_nanos(self.config.open_check_threshold_ns)
-        {
+        if self.order_local_activity.within(
+            &client_order_id,
+            Duration::from_nanos(self.config.open_check_threshold_ns),
+        ) {
             return events;
         }
 
@@ -1763,10 +1757,10 @@ impl ExecutionManager {
         let ts_now = self.clock.borrow().timestamp_ns();
 
         // Grace window measured on the monotonic `dst::time` clock; see `record_position_activity`.
-        if let Some(&last_activity) = self.position_local_activity.get(&key)
-            && last_activity.elapsed()
-                < Duration::from_nanos(self.config.position_check_threshold_ns)
-        {
+        if self.position_local_activity.within(
+            &key,
+            Duration::from_nanos(self.config.position_check_threshold_ns),
+        ) {
             log::debug!(
                 "Skipping position reconciliation for {instrument_id}: recent activity within threshold"
             );

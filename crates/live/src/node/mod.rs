@@ -913,9 +913,9 @@ impl LiveNode {
 
         let recon_start = dst::time::Instant::now() + startup_delay;
 
-        let mut ts_last_inflight = dst::time::Instant::now();
-        let mut ts_last_open = ts_last_inflight;
-        let mut ts_last_position = ts_last_inflight;
+        let mut last_inflight_check = dst::time::Instant::now();
+        let mut last_open_check = last_inflight_check;
+        let mut last_position_check = last_inflight_check;
 
         // Per-task `(interval, next_fire)` schedules dispatched by the
         // shared `maintenance_timer` below. See module docs for rationale.
@@ -1084,9 +1084,9 @@ impl LiveNode {
                             position: Duration::from_nanos(position_interval_ns),
                         };
                         let mut recon_state = ReconciliationCheckState {
-                            ts_last_inflight: &mut ts_last_inflight,
-                            ts_last_open: &mut ts_last_open,
-                            ts_last_position: &mut ts_last_position,
+                            last_inflight_check: &mut last_inflight_check,
+                            last_open_check: &mut last_open_check,
+                            last_position_check: &mut last_position_check,
                             open_order_report_task: &mut open_order_report_task,
                             position_report_task: &mut position_report_task,
                         };
@@ -1779,7 +1779,7 @@ impl LiveNode {
         intervals: ReconciliationCheckIntervals,
         state: &mut ReconciliationCheckState<'_>,
     ) {
-        if reconciliation_check_due(now, *state.ts_last_inflight, intervals.inflight) {
+        if reconciliation_check_due(now, *state.last_inflight_check, intervals.inflight) {
             if self.state() == NodeState::ShuttingDown {
                 return;
             }
@@ -1788,12 +1788,12 @@ impl LiveNode {
             for cmd in result.queries {
                 AsyncRunner::handle_exec_command(cmd);
             }
-            *state.ts_last_inflight = now;
+            *state.last_inflight_check = now;
         }
 
-        let open_due = reconciliation_check_due(now, *state.ts_last_open, intervals.open);
+        let open_due = reconciliation_check_due(now, *state.last_open_check, intervals.open);
         let position_due =
-            reconciliation_check_due(now, *state.ts_last_position, intervals.position);
+            reconciliation_check_due(now, *state.last_position_check, intervals.position);
 
         if (open_due || position_due) && self.state() == NodeState::ShuttingDown {
             return;
@@ -1802,7 +1802,7 @@ impl LiveNode {
         if state.open_order_report_task.is_some() {
             if open_due {
                 log::debug!("Open-order reconciliation already in progress");
-                *state.ts_last_open = now;
+                *state.last_open_check = now;
             }
 
             if position_due {
@@ -1817,7 +1817,7 @@ impl LiveNode {
         if state.position_report_task.is_some() {
             if position_due {
                 log::debug!("Position reconciliation already in progress");
-                *state.ts_last_position = now;
+                *state.last_position_check = now;
             }
 
             if open_due {
@@ -1829,12 +1829,12 @@ impl LiveNode {
             return;
         }
 
-        if position_due && (!open_due || *state.ts_last_position < *state.ts_last_open) {
+        if position_due && (!open_due || *state.last_position_check < *state.last_open_check) {
             *state.position_report_task = self.start_position_report_check();
-            *state.ts_last_position = now;
+            *state.last_position_check = now;
         } else if open_due {
             *state.open_order_report_task = self.start_open_order_report_check();
-            *state.ts_last_open = now;
+            *state.last_open_check = now;
         }
     }
 
@@ -2001,9 +2001,9 @@ struct ReconciliationCheckIntervals {
 }
 
 struct ReconciliationCheckState<'a> {
-    ts_last_inflight: &'a mut dst::time::Instant,
-    ts_last_open: &'a mut dst::time::Instant,
-    ts_last_position: &'a mut dst::time::Instant,
+    last_inflight_check: &'a mut dst::time::Instant,
+    last_open_check: &'a mut dst::time::Instant,
+    last_position_check: &'a mut dst::time::Instant,
     open_order_report_task: &'a mut Option<OpenOrderReportTask>,
     position_report_task: &'a mut Option<PositionReportTask>,
 }
@@ -2758,9 +2758,9 @@ mod tests {
         let last = dst::time::Instant::now();
         advance_clock(Duration::from_nanos(1)).await;
         let now = dst::time::Instant::now();
-        let mut ts_last_inflight = last;
-        let mut ts_last_open = last;
-        let mut ts_last_position = last;
+        let mut last_inflight_check = last;
+        let mut last_open_check = last;
+        let mut last_position_check = last;
         let mut open_order_report_task = None;
         let mut position_report_task = None;
 
@@ -2772,9 +2772,9 @@ mod tests {
                 position: Duration::ZERO,
             },
             &mut ReconciliationCheckState {
-                ts_last_inflight: &mut ts_last_inflight,
-                ts_last_open: &mut ts_last_open,
-                ts_last_position: &mut ts_last_position,
+                last_inflight_check: &mut last_inflight_check,
+                last_open_check: &mut last_open_check,
+                last_position_check: &mut last_position_check,
                 open_order_report_task: &mut open_order_report_task,
                 position_report_task: &mut position_report_task,
             },
