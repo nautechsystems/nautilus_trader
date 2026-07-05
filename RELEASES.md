@@ -58,6 +58,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
+- Fixed Interactive Brokers `contract_details_to_dict` crash when `contractDetails.ineligibilityReasonList` contains non-serializable `IneligibilityReason` objects
 
 ### Internal Improvements
 - Improved portfolio statistics test coverage with canonical worked examples

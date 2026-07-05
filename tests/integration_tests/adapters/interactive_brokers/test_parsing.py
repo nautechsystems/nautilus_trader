@@ -16,8 +16,10 @@
 import datetime
 from decimal import Decimal
 
+import msgspec
 import pandas as pd
 import pytest
+from ibapi.ineligibility_reason import IneligibilityReason
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
@@ -36,6 +38,9 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VEN
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_FUT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import VENUES_OPT
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _tick_size_to_precision
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
+    contract_details_to_dict,
+)
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import (
     expiry_timestring_to_datetime,
 )
@@ -643,3 +648,27 @@ class TestNautilusPriceToIbPrice:
     @pytest.mark.parametrize("price_magnifier", [None, 0, -1])
     def test_invalid_magnifier_returns_original(self, price_magnifier: int | None) -> None:
         assert nautilus_price_to_ib_price(50.0, price_magnifier) == 50.0
+
+
+def test_contract_details_to_dict_serializes_ineligibility_reason_objects() -> None:
+    # Arrange
+    # Newer IB Gateway versions may populate `ineligibilityReasonList` with
+    # `ibapi.ineligibility_reason.IneligibilityReason` objects, which are plain Python
+    # objects (not Decimal/Enum/dict/list/tuple) and previously passed through
+    # `_serialize_for_json` unchanged, breaking downstream msgpack/JSON serialization
+    # (e.g. when persisting the instrument to a cache database).
+    contract_details = IBTestContractStubs.aapl_equity_contract_details()
+    contract_details.ineligibilityReasonList = [
+        IneligibilityReason("200", "Not eligible for continuous trading"),
+    ]
+    ib_contract_details = IBContractDetails.from_contract_details(contract_details)
+
+    # Act
+    result = contract_details_to_dict(ib_contract_details)
+
+    # Assert
+    encoded = msgspec.msgpack.encode(result)
+    decoded = msgspec.msgpack.decode(encoded)
+    assert decoded["ineligibilityReasonList"] == [
+        {"id_": "200", "description": "Not eligible for continuous trading"},
+    ]
