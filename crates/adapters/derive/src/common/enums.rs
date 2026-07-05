@@ -83,6 +83,9 @@ pub enum DeriveInstrumentType {
     Option,
     /// Perpetual swap.
     Perp,
+    /// Catch-all for unmodeled instrument types; skipped at instrument parse time.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Wire-level asset type as returned in subaccount and collateral responses
@@ -101,6 +104,9 @@ pub enum DeriveAssetType {
     Option,
     /// Perpetual position asset.
     Perp,
+    /// Catch-all for unmodeled asset types; collateral parsing does not depend on this value.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Order side (`direction` field on the venue API).
@@ -123,6 +129,9 @@ pub enum DeriveOrderSide {
 pub enum DeriveOrderType {
     Limit,
     Market,
+    /// Catch-all for unmodeled order types on responses; never sent on requests.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Trigger side accepted by `private/trigger_order`.
@@ -136,6 +145,9 @@ pub enum DeriveTriggerType {
     Stoploss,
     /// Take-profit trigger.
     Takeprofit,
+    /// Catch-all for unmodeled trigger types on responses; never sent on requests.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Trigger price source accepted by `private/trigger_order`.
@@ -149,6 +161,9 @@ pub enum DeriveTriggerPriceType {
     Mark,
     /// Derive index price. Present in schemas, but currently rejected by the venue.
     Index,
+    /// Catch-all for unmodeled trigger price sources on responses; never sent on requests.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Order lifecycle status reported by `private/get_orders`,
@@ -190,6 +205,9 @@ pub enum DeriveTimeInForce {
     Fok,
     /// Immediate-or-cancel: fill any tradable quantity, cancel the rest.
     Ioc,
+    /// Catch-all for unmodeled time-in-force flags on responses; never sent on requests.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Option kind parsed from the `instrument_name` suffix (e.g. `-C` or `-P`).
@@ -272,6 +290,11 @@ pub enum DeriveOrderCancelReason {
     #[serde(rename = "Post only order cannot cross the market")]
     #[strum(serialize = "Post only order cannot cross the market")]
     PostOnlyCrossMarket,
+    /// Catch-all for unmodeled cancel reasons; the venue mixes snake_case codes
+    /// with full English sentences, so the set is expected to drift.
+    #[serde(rename = "unknown", other)]
+    #[strum(serialize = "unknown")]
+    Unknown,
 }
 
 /// Cancel reason attached to a cancelled RFQ quote. Similar to
@@ -334,10 +357,18 @@ pub enum DeriveLiquidityRole {
     Maker,
     /// Aggressing side of the trade.
     Taker,
+    /// Catch-all for unmodeled liquidity roles.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Blockchain transaction lifecycle status (`tx_status` field on trades,
 /// deposits, withdrawals, transfers, and liquidation history).
+///
+/// Deliberately strict (no `Unknown` fallback): settlement status gates fill
+/// emission, and a new reverted-class status decoded as a catch-all would
+/// emit a fill for a trade that never settled. An unknown status fails the
+/// row, which trade-history salvage degrades to a logged skip.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString, AsRefStr,
 )]
@@ -375,6 +406,10 @@ pub enum DeriveMarginType {
     #[serde(rename = "PM2")]
     #[strum(serialize = "PM2")]
     Pm2,
+    /// Catch-all for unmodeled margin types; `PM2` itself arrived after `SM`/`PM`.
+    #[serde(rename = "unknown", other)]
+    #[strum(serialize = "unknown")]
+    Unknown,
 }
 
 /// Liquidation auction type returned by `private/get_liquidation_history`.
@@ -571,6 +606,7 @@ mod tests {
     #[case(DeriveInstrumentType::Erc20, "erc20")]
     #[case(DeriveInstrumentType::Option, "option")]
     #[case(DeriveInstrumentType::Perp, "perp")]
+    #[case(DeriveInstrumentType::Unknown, "unknown")]
     fn test_instrument_type_display(#[case] variant: DeriveInstrumentType, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
     }
@@ -580,6 +616,7 @@ mod tests {
     #[case(DeriveTimeInForce::PostOnly, "post_only")]
     #[case(DeriveTimeInForce::Fok, "fok")]
     #[case(DeriveTimeInForce::Ioc, "ioc")]
+    #[case(DeriveTimeInForce::Unknown, "unknown")]
     fn test_time_in_force_wire_strings(#[case] variant: DeriveTimeInForce, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveTimeInForce::from_str(expected).unwrap(), variant);
@@ -607,6 +644,7 @@ mod tests {
     #[case(DeriveAssetType::Erc20, "erc20")]
     #[case(DeriveAssetType::Option, "option")]
     #[case(DeriveAssetType::Perp, "perp")]
+    #[case(DeriveAssetType::Unknown, "unknown")]
     fn test_asset_type_wire_strings(#[case] variant: DeriveAssetType, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveAssetType::from_str(expected).unwrap(), variant);
@@ -626,6 +664,7 @@ mod tests {
     #[rstest]
     #[case(DeriveOrderType::Limit, "limit")]
     #[case(DeriveOrderType::Market, "market")]
+    #[case(DeriveOrderType::Unknown, "unknown")]
     fn test_order_type_wire_strings(#[case] variant: DeriveOrderType, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveOrderType::from_str(expected).unwrap(), variant);
@@ -634,6 +673,7 @@ mod tests {
     #[rstest]
     #[case(DeriveTriggerType::Stoploss, "stoploss")]
     #[case(DeriveTriggerType::Takeprofit, "takeprofit")]
+    #[case(DeriveTriggerType::Unknown, "unknown")]
     fn test_trigger_type_wire_strings(#[case] variant: DeriveTriggerType, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveTriggerType::from_str(expected).unwrap(), variant);
@@ -642,6 +682,7 @@ mod tests {
     #[rstest]
     #[case(DeriveTriggerPriceType::Mark, "mark")]
     #[case(DeriveTriggerPriceType::Index, "index")]
+    #[case(DeriveTriggerPriceType::Unknown, "unknown")]
     fn test_trigger_price_type_wire_strings(
         #[case] variant: DeriveTriggerPriceType,
         #[case] expected: &str,
@@ -687,6 +728,7 @@ mod tests {
         DeriveOrderCancelReason::PostOnlyCrossMarket,
         "Post only order cannot cross the market"
     )]
+    #[case(DeriveOrderCancelReason::Unknown, "unknown")]
     fn test_order_cancel_reason_wire_strings(
         #[case] variant: DeriveOrderCancelReason,
         #[case] expected: &str,
@@ -724,6 +766,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_response_enums_decode_unknown_wire_strings_leniently() {
+        assert_eq!(
+            serde_json::from_str::<DeriveInstrumentType>("\"structured\"").unwrap(),
+            DeriveInstrumentType::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveAssetType>("\"structured\"").unwrap(),
+            DeriveAssetType::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveOrderType>("\"twap\"").unwrap(),
+            DeriveOrderType::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveTriggerType>("\"trailing_stop\"").unwrap(),
+            DeriveTriggerType::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveTriggerPriceType>("\"last\"").unwrap(),
+            DeriveTriggerPriceType::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveTimeInForce>("\"day\"").unwrap(),
+            DeriveTimeInForce::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveOrderCancelReason>("\"Trigger worker restarted\"")
+                .unwrap(),
+            DeriveOrderCancelReason::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveLiquidityRole>("\"auction\"").unwrap(),
+            DeriveLiquidityRole::Unknown,
+        );
+        assert_eq!(
+            serde_json::from_str::<DeriveMarginType>("\"PM3\"").unwrap(),
+            DeriveMarginType::Unknown,
+        );
+
+        // Pins the deliberate strictness documented on DeriveTxStatus.
+        assert!(serde_json::from_str::<DeriveTxStatus>("\"bridging\"").is_err());
+    }
+
+    #[rstest]
     fn test_order_cancel_reason_empty_string_round_trips() {
         let json = serde_json::to_string(&DeriveOrderCancelReason::Empty).unwrap();
         assert_eq!(json, "\"\"");
@@ -734,6 +820,7 @@ mod tests {
     #[rstest]
     #[case(DeriveLiquidityRole::Maker, "maker")]
     #[case(DeriveLiquidityRole::Taker, "taker")]
+    #[case(DeriveLiquidityRole::Unknown, "unknown")]
     fn test_liquidity_role_wire_strings(
         #[case] variant: DeriveLiquidityRole,
         #[case] expected: &str,
@@ -757,6 +844,7 @@ mod tests {
     #[case(DeriveMarginType::Sm, "SM")]
     #[case(DeriveMarginType::Pm, "PM")]
     #[case(DeriveMarginType::Pm2, "PM2")]
+    #[case(DeriveMarginType::Unknown, "unknown")]
     fn test_margin_type_wire_strings(#[case] variant: DeriveMarginType, #[case] expected: &str) {
         assert_eq!(variant.to_string(), expected);
         assert_eq!(DeriveMarginType::from_str(expected).unwrap(), variant);

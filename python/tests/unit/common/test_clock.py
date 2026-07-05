@@ -74,6 +74,14 @@ def test_clock_datetime_surface_with_default_handler():
     assert clock.timer_count() == 0
 
 
+def test_clock_set_time_updates_test_clock_timestamp():
+    clock = Clock.new_test()
+
+    clock.set_time(1_700_000_000_000_000_000)
+
+    assert clock.timestamp_ns() == 1_700_000_000_000_000_000
+
+
 def test_clock_ns_surface_with_explicit_callbacks():
     clock = Clock.new_test()
     received = []

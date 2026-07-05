@@ -32,6 +32,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
@@ -230,6 +231,37 @@ async def test_subscribe_order_book_deltas(data_client_builder, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_subscribe_order_book_depth(data_client_builder, monkeypatch):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    await client._connect()
+    try:
+        ws_client.subscribe_book_snapshots.reset_mock()
+
+        command = SimpleNamespace(
+            instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+            book_type=BookType.L2_MBP,
+            depth=10,
+        )
+
+        # Act
+        await client._subscribe_order_book_depth(command)
+
+        # Assert
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.subscribe_book_snapshots.assert_awaited_once_with(
+            expected_id,
+            int(BookType.L2_MBP),
+            10,
+        )
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
 async def test_subscribe_quote_ticks(data_client_builder, monkeypatch):
     # Arrange
     client, ws_client, http_client, instrument_provider = data_client_builder(
@@ -401,6 +433,31 @@ async def test_unsubscribe_order_book_deltas(data_client_builder, monkeypatch):
         # Assert
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
         ws_client.unsubscribe_book.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_order_book_depth(data_client_builder, monkeypatch):
+    # Arrange
+    client, ws_client, http_client, instrument_provider = data_client_builder(
+        monkeypatch,
+    )
+
+    await client._connect()
+    try:
+        ws_client.unsubscribe_book_snapshots.reset_mock()
+
+        command = SimpleNamespace(
+            instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+        )
+
+        # Act
+        await client._unsubscribe_order_book_depth(command)
+
+        # Assert
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.unsubscribe_book_snapshots.assert_awaited_once_with(expected_id)
     finally:
         await client._disconnect()
 

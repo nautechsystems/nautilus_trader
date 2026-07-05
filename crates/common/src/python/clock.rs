@@ -86,6 +86,17 @@ impl PyClock {
         self.0.borrow().utc_now()
     }
 
+    #[pyo3(name = "set_time")]
+    fn py_set_time(&mut self, to_time_ns: u64) -> PyResult<()> {
+        let mut clock = self.0.borrow_mut();
+        let Some(test_clock) = clock.as_any_mut().downcast_mut::<TestClock>() else {
+            return Err(to_pyvalue_err("set_time is only supported by test clocks"));
+        };
+
+        test_clock.set_time(to_time_ns.into());
+        Ok(())
+    }
+
     /// Returns the names of active timers in the clock.
     #[pyo3(name = "timer_names")]
     fn py_timer_names(&self) -> Vec<String> {
@@ -358,6 +369,18 @@ mod tests {
     }
 
     #[rstest]
+    fn test_test_clock_py_set_time() {
+        Python::initialize();
+        Python::attach(|_py| {
+            let mut py_clock = PyClock::new_test();
+
+            py_clock.py_set_time(1_700_000_000_000_000_000).unwrap();
+
+            assert_eq!(py_clock.py_timestamp_ns(), 1_700_000_000_000_000_000);
+        });
+    }
+
+    #[rstest]
     fn test_test_clock_py_set_timer() {
         Python::initialize();
         Python::attach(|_py| {
@@ -549,6 +572,21 @@ mod tests {
             py_clock
                 .py_set_time_alert("ALERT1", dt, None, None)
                 .expect("live set_time_alert failed");
+        });
+    }
+
+    #[rstest]
+    fn test_live_clock_py_set_time_returns_error() {
+        Python::initialize();
+        Python::attach(|_py| {
+            let mut py_clock = PyClock::new_live();
+
+            let result = py_clock.py_set_time(1_700_000_000_000_000_000);
+
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "ValueError: set_time is only supported by test clocks",
+            );
         });
     }
 

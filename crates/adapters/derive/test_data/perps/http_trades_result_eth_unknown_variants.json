@@ -1,0 +1,72 @@
+{
+  "trades": [
+    {
+      "direction": "sell",
+      "index_price": "3500",
+      "instrument_name": "ETH-PERP",
+      "is_transfer": false,
+      "label": "",
+      "liquidity_role": "taker",
+      "mark_price": "3499",
+      "order_id": "o-1",
+      "quote_id": null,
+      "realized_pnl": "0",
+      "subaccount_id": 7,
+      "timestamp": 1751600000000,
+      "trade_amount": "1",
+      "trade_fee": "0.05",
+      "trade_id": "t-1",
+      "trade_price": "3499",
+      "tx_hash": "0xhash",
+      "tx_status": "settled",
+      "wallet": "0xwallet"
+    },
+    {
+      "direction": "buy",
+      "index_price": "3502",
+      "instrument_name": "ETH-PERP",
+      "is_transfer": false,
+      "label": "alpha-strategy",
+      "liquidity_role": "auction",
+      "mark_price": "3501",
+      "order_id": "o-2",
+      "quote_id": null,
+      "realized_pnl": "1.5",
+      "subaccount_id": 7,
+      "timestamp": 1751600001000,
+      "trade_amount": "0.5",
+      "trade_fee": "0.02",
+      "trade_id": "t-2",
+      "trade_price": "3501.5",
+      "tx_hash": null,
+      "tx_status": "pending",
+      "wallet": "0xwallet"
+    },
+    {
+      "direction": "short",
+      "index_price": "3503",
+      "instrument_name": "ETH-PERP",
+      "is_transfer": false,
+      "label": "",
+      "liquidity_role": "maker",
+      "mark_price": "3502",
+      "order_id": "o-3",
+      "quote_id": null,
+      "realized_pnl": "0",
+      "subaccount_id": 7,
+      "timestamp": 1751600002000,
+      "trade_amount": "2",
+      "trade_fee": "0.1",
+      "trade_id": "t-3",
+      "trade_price": "3502.5",
+      "tx_hash": "0xhash3",
+      "tx_status": "settled",
+      "wallet": "0xwallet"
+    }
+  ],
+  "pagination": {
+    "count": 3,
+    "num_pages": 1
+  },
+  "subaccount_id": 7
+}

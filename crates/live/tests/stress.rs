@@ -113,7 +113,7 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{
     config::{LiveExecEngineConfig, LiveNodeConfig},
-    node::{LiveNode, LiveNodeHandle, RunnerMetricsSnapshot},
+    node::{LiveNode, LiveNodeHandle, RunnerMetricsDelta, RunnerMetricsSnapshot},
 };
 use nautilus_model::{
     data::{Data, trade::TradeTick},
@@ -221,92 +221,6 @@ fn snapshot_bus() -> BusSnapshot {
 
 fn read_pub_count() -> u64 {
     msgbus::get_message_bus().borrow().pub_count()
-}
-
-#[derive(Clone, Copy)]
-struct RunnerMetricsDelta {
-    time_events: u64,
-    exec_events: u64,
-    exec_commands: u64,
-    data_events: u64,
-    data_commands: u64,
-    dispatch_busy_ns: u64,
-    maintenance_busy_ns: u64,
-    external_msgbus_busy_ns: u64,
-    elapsed_ns: u64,
-}
-
-impl RunnerMetricsDelta {
-    fn from_snapshots(before: RunnerMetricsSnapshot, after: RunnerMetricsSnapshot) -> Self {
-        Self {
-            time_events: after
-                .time_events
-                .dispatched
-                .saturating_sub(before.time_events.dispatched),
-            exec_events: after
-                .exec_events
-                .dispatched
-                .saturating_sub(before.exec_events.dispatched),
-            exec_commands: after
-                .exec_commands
-                .dispatched
-                .saturating_sub(before.exec_commands.dispatched),
-            data_events: after
-                .data_events
-                .dispatched
-                .saturating_sub(before.data_events.dispatched),
-            data_commands: after
-                .data_commands
-                .dispatched
-                .saturating_sub(before.data_commands.dispatched),
-            dispatch_busy_ns: after
-                .dispatch_busy_ns
-                .saturating_sub(before.dispatch_busy_ns),
-            maintenance_busy_ns: after
-                .maintenance_busy_ns
-                .saturating_sub(before.maintenance_busy_ns),
-            external_msgbus_busy_ns: after
-                .external_msgbus_busy_ns
-                .saturating_sub(before.external_msgbus_busy_ns),
-            elapsed_ns: after.elapsed_ns.saturating_sub(before.elapsed_ns),
-        }
-    }
-
-    const fn total_dispatched(&self) -> u64 {
-        self.time_events
-            + self.exec_events
-            + self.exec_commands
-            + self.data_events
-            + self.data_commands
-    }
-
-    fn dispatch_utilization(&self) -> f64 {
-        if self.elapsed_ns == 0 {
-            0.0
-        } else {
-            self.dispatch_busy_ns as f64 / self.elapsed_ns as f64
-        }
-    }
-
-    fn loop_utilization(&self) -> f64 {
-        if self.elapsed_ns == 0 {
-            0.0
-        } else {
-            self.total_busy_ns() as f64 / self.elapsed_ns as f64
-        }
-    }
-
-    const fn total_busy_ns(&self) -> u64 {
-        self.dispatch_busy_ns
-            .saturating_add(self.maintenance_busy_ns)
-            .saturating_add(self.external_msgbus_busy_ns)
-    }
-
-    fn mean_dispatch_ns(&self) -> u64 {
-        self.dispatch_busy_ns
-            .checked_div(self.total_dispatched())
-            .unwrap_or(0)
-    }
 }
 
 fn assert_runner_timing_advanced(_delta: &RunnerMetricsDelta) {

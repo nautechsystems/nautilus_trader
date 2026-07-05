@@ -41,15 +41,23 @@ from nautilus_trader.execution import ExecutionEngineConfig
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BettingInstrument
+from nautilus_trader.model import BookAction
+from nautilus_trader.model import BookOrder
+from nautilus_trader.model import BookType
 from nautilus_trader.model import Currency
 from nautilus_trader.model import ExecAlgorithmId
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import Money
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderBookDelta
+from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import OrderStatus
 from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import QuoteTick
+from nautilus_trader.model import Symbol
 from nautilus_trader.model import TradeId
 from nautilus_trader.model import TradeTick
 from nautilus_trader.model import Venue
@@ -86,6 +94,9 @@ EMA_CROSS_STOP_ENTRY_CONFIG = "strategies.acceptance:EMACrossStopEntryConfig"
 
 EMA_CROSS_TRAILING_STOP_STRATEGY = "strategies.acceptance:EMACrossTrailingStop"
 EMA_CROSS_TRAILING_STOP_CONFIG = "strategies.acceptance:EMACrossTrailingStopConfig"
+
+ORDER_BOOK_IMBALANCE_STRATEGY = "strategies.acceptance:OrderBookImbalance"
+ORDER_BOOK_IMBALANCE_CONFIG = "strategies.acceptance:OrderBookImbalanceConfig"
 
 EMA_CROSS_TRAILING_STOP_TAG = "ema-cross-trailing-stop"
 
@@ -670,12 +681,119 @@ class TestBacktestAcceptanceTestsETHUSDT:
         assert result.total_orders > 0
 
 
-@pytest.mark.skip(
-    reason="v2 missing: Betfair adapter / data provider + OrderBookImbalance strategy",
-)
 class TestBacktestAcceptanceTestsOrderBookImbalance:
+    def setup_method(self):
+        self.engine = _engine()
+        self.venue = Venue("BETFAIR")
+        self.gbp = Currency.from_str("GBP")
+        self.instrument = _betfair_betting_instrument(selection_id=19248890)
+
+        self.engine.add_venue(
+            venue=self.venue,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.BETTING,
+            base_currency=self.gbp,
+            starting_balances=[Money(100_000.0, self.gbp)],
+            book_type=BookType.L2_MBP,
+        )
+        self.engine.add_instrument(self.instrument)
+        self.engine.add_data(_betfair_order_book_deltas(self.instrument))
+
+    def teardown_method(self):
+        self.engine.dispose()
+
     def test_run_order_book_imbalance(self):
-        pass
+        self.engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path=ORDER_BOOK_IMBALANCE_STRATEGY,
+                config_path=ORDER_BOOK_IMBALANCE_CONFIG,
+                config={
+                    "instrument_id": str(self.instrument.id),
+                    "trade_size": "5.00",
+                },
+            ),
+        )
+
+        self.engine.run()
+        result = self.engine.get_result()
+
+        assert result.iterations == 1
+        assert result.total_orders == 2
+        assert result.total_positions == 1
+        assert result.summary["venues.total"] == "1"
+        assert result.summary["orders.closed"] == "2"
+        assert result.summary["positions.closed"] == "1"
+
+
+def _betfair_betting_instrument(selection_id: int) -> BettingInstrument:
+    raw_symbol = Symbol(f"1-166811431-{selection_id}-None")
+    gbp = Currency.from_str("GBP")
+    return BettingInstrument(
+        instrument_id=InstrumentId(raw_symbol, Venue("BETFAIR")),
+        raw_symbol=raw_symbol,
+        event_type_id=6423,
+        event_type_name="American Football",
+        competition_id=12282733,
+        competition_name="NFL",
+        event_id=29678534,
+        event_name="NFL",
+        event_country_code="GB",
+        event_open_date=1644276600000000000,
+        betting_type="ODDS",
+        market_id="1-166811431",
+        market_name="AFC Conference Winner",
+        market_type="SPECIAL",
+        market_start_time=1644276600000000000,
+        selection_id=selection_id,
+        selection_name="Kansas City Chiefs",
+        selection_handicap=-9999999.0,
+        currency=gbp,
+        price_precision=2,
+        size_precision=2,
+        price_increment=Price.from_str("0.01"),
+        size_increment=Quantity.from_str("0.01"),
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def _betfair_order_book_deltas(instrument: BettingInstrument) -> list[OrderBookDeltas]:
+    ts = 1_600_000_000_000_000_000
+    return [
+        OrderBookDeltas(
+            instrument_id=instrument.id,
+            deltas=[
+                OrderBookDelta(
+                    instrument.id,
+                    BookAction.ADD,
+                    BookOrder(
+                        OrderSide.BUY,
+                        Price.from_decimal_dp(Decimal("1.99"), instrument.price_precision),
+                        Quantity.from_decimal_dp(Decimal("250.00"), instrument.size_precision),
+                        1,
+                    ),
+                    0,
+                    1,
+                    ts,
+                    ts,
+                ),
+                OrderBookDelta(
+                    instrument.id,
+                    BookAction.ADD,
+                    BookOrder(
+                        OrderSide.SELL,
+                        Price.from_decimal_dp(Decimal("2.00"), instrument.price_precision),
+                        Quantity.from_decimal_dp(Decimal("10.00"), instrument.size_precision),
+                        2,
+                    ),
+                    0,
+                    2,
+                    ts,
+                    ts,
+                ),
+            ],
+        ),
+    ]
 
 
 @pytest.mark.skip(reason="v2 missing: Betfair adapter + MarketMaker example strategy")

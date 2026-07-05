@@ -2,6 +2,9 @@
 
 import typing
 
+from nautilus_trader.core.datetime import dt_to_unix_nanos as dt_to_unix_nanos
+from nautilus_trader.core.datetime import unix_nanos_to_dt as unix_nanos_to_dt
+
 __all__ = [
     "MILLISECONDS_IN_SECOND",
     "NANOSECONDS_IN_MICROSECOND",

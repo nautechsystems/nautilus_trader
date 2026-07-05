@@ -15,9 +15,12 @@
 
 //! Live market data client implementation for the OKX adapter.
 
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -54,11 +57,12 @@ use nautilus_model::{
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
 };
-use tokio::{task::JoinHandle, time::Duration};
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use crate::{
+    book_sync::{BookChannelScope, BookSyncSignal, BookSyncSignalKind, BookSyncTracker},
     common::{
         consts::{
             OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
@@ -151,6 +155,7 @@ pub struct OKXDataClient {
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     book_channels: Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
+    book_sync: BookSyncTracker,
     index_ticker_map: Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
     option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
     // `Mutex<AHashMap>` so the spawned subscribe task can roll back the
@@ -246,6 +251,7 @@ impl OKXDataClient {
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
             book_channels: Arc::new(AtomicMap::new()),
+            book_sync: BookSyncTracker::default(),
             index_ticker_map: Arc::new(AtomicMap::new()),
             option_greeks_subs: Arc::new(AtomicMap::new()),
             option_summary_family_subs: Arc::new(std::sync::Mutex::new(AHashMap::new())),
@@ -290,16 +296,53 @@ impl OKXDataClient {
         });
     }
 
+    fn spawn_book_health_monitor(&mut self) {
+        let interval_duration = Duration::from_secs(self.config.book_stale_check_interval_secs);
+        let threshold = Duration::from_secs(self.config.book_stale_threshold_secs);
+
+        if interval_duration.is_zero() || threshold.is_zero() {
+            return;
+        }
+
+        let book_sync = self.book_sync.clone();
+        let cancel = self.cancellation_token.clone();
+
+        let handle = get_runtime().spawn(async move {
+            let mut interval = tokio::time::interval(interval_duration);
+
+            loop {
+                tokio::select! {
+                    _ = interval.tick() => {
+                        handle_book_sync_signals(
+                            book_sync.stale_books(threshold, Instant::now())
+                        );
+                    }
+                    () = cancel.cancelled() => {
+                        log::debug!("Book health monitor task cancelled");
+                        break;
+                    }
+                }
+            }
+        });
+
+        self.tasks.push(handle);
+    }
+
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         message: OKXWsMessage,
         data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instruments_by_symbol: &mut AHashMap<Ustr, InstrumentAny>,
+        book_channels: &Arc<AtomicMap<InstrumentId, OKXBookChannel>>,
+        book_sync: &BookSyncTracker,
         quote_cache: &mut QuoteCache,
         funding_cache: &mut AHashMap<Ustr, (Ustr, u64)>,
         index_ticker_map: &Arc<AtomicMap<Ustr, AHashSet<Ustr>>>,
         option_greeks_subs: &Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
+        book_channel_scope: BookChannelScope,
+        snapshot_timeout: Duration,
+        cancel: &CancellationToken,
         clock: &AtomicTime,
     ) {
         match message {
@@ -323,6 +366,13 @@ impl OKXDataClient {
                     ts_init,
                 ) {
                     Ok(data_vec) => {
+                        book_sync.record_update_if_subscribed(
+                            book_channels,
+                            instrument.id(),
+                            action == OKXBookAction::Snapshot,
+                            Instant::now(),
+                        );
+
                         for data in data_vec {
                             Self::send_data(data_sender, data);
                         }
@@ -457,6 +507,13 @@ impl OKXDataClient {
                         ts_init,
                     ) {
                         Ok(data_vec) => {
+                            book_sync.record_update_if_subscribed(
+                                book_channels,
+                                instrument_id,
+                                true,
+                                Instant::now(),
+                            );
+
                             for d in data_vec {
                                 Self::send_data(data_sender, d);
                             }
@@ -609,6 +666,23 @@ impl OKXDataClient {
             }
             OKXWsMessage::Reconnected => {
                 log::info!("Websocket reconnected");
+
+                if !snapshot_timeout.is_zero() {
+                    let pending_count = book_sync.seed_pending_snapshots(
+                        book_channels,
+                        book_channel_scope,
+                        snapshot_timeout,
+                        Instant::now(),
+                    );
+
+                    if pending_count > 0 {
+                        spawn_snapshot_health_monitor(
+                            book_sync.clone(),
+                            cancel.clone(),
+                            snapshot_timeout,
+                        );
+                    }
+                }
             }
             OKXWsMessage::Authenticated => {
                 log::debug!("Websocket authenticated");
@@ -694,6 +768,41 @@ fn emit_instrument_status(
     }
 }
 
+fn spawn_snapshot_health_monitor(
+    book_sync: BookSyncTracker,
+    cancel: CancellationToken,
+    timeout: Duration,
+) {
+    get_runtime().spawn(async move {
+        tokio::select! {
+            () = tokio::time::sleep(timeout) => {
+                handle_book_sync_signals(book_sync.expired_pending_snapshots(Instant::now()));
+            }
+            () = cancel.cancelled() => {}
+        }
+    });
+}
+
+fn handle_book_sync_signals(signals: Vec<BookSyncSignal>) {
+    for signal in signals {
+        match signal.kind {
+            BookSyncSignalKind::Stale { elapsed } => {
+                log::warn!(
+                    "Book feed stale for {}: no update for {:.3}s",
+                    signal.instrument_id,
+                    elapsed.as_secs_f64()
+                );
+            }
+            BookSyncSignalKind::SnapshotMissing => {
+                log::warn!(
+                    "Book snapshot not received for {} after reconnect",
+                    signal.instrument_id
+                );
+            }
+        }
+    }
+}
+
 fn upsert_instrument(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument: InstrumentAny,
@@ -755,6 +864,7 @@ impl DataClient for OKXDataClient {
         self.cancellation_token = CancellationToken::new();
         self.tasks.clear();
         self.book_channels.store(AHashMap::new());
+        self.book_sync.clear();
         self.option_greeks_subs
             .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
         self.option_summary_family_subs
@@ -888,9 +998,12 @@ impl DataClient for OKXDataClient {
             let stream = ws.stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
+            let book_channels = self.book_channels.clone();
+            let book_sync = self.book_sync.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
             let cancel = self.cancellation_token.clone();
+            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -901,6 +1014,7 @@ impl DataClient for OKXDataClient {
                     .collect();
                 let mut quote_cache = QuoteCache::new();
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+
                 pin_mut!(stream);
 
                 loop {
@@ -911,10 +1025,15 @@ impl DataClient for OKXDataClient {
                                 &sender,
                                 &insts,
                                 &mut instruments_by_symbol,
+                                &book_channels,
+                                &book_sync,
                                 &mut quote_cache,
                                 &mut funding_cache,
                                 &idx_map,
                                 &greeks_subs,
+                                BookChannelScope::Public,
+                                snapshot_timeout,
+                                &cancel,
                                 clock,
                             );
                         }
@@ -951,9 +1070,12 @@ impl DataClient for OKXDataClient {
             let stream = ws.stream();
             let sender = self.data_sender.clone();
             let insts = self.instruments.clone();
+            let book_channels = self.book_channels.clone();
+            let book_sync = self.book_sync.clone();
             let idx_map = self.index_ticker_map.clone();
             let greeks_subs = self.option_greeks_subs.clone();
             let cancel = self.cancellation_token.clone();
+            let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
             let clock = self.clock;
 
             let handle = get_runtime().spawn(async move {
@@ -964,6 +1086,7 @@ impl DataClient for OKXDataClient {
                     .collect();
                 let mut quote_cache = QuoteCache::new();
                 let mut funding_cache: AHashMap<Ustr, (Ustr, u64)> = AHashMap::new();
+
                 pin_mut!(stream);
 
                 loop {
@@ -974,10 +1097,15 @@ impl DataClient for OKXDataClient {
                                 &sender,
                                 &insts,
                                 &mut instruments_by_symbol,
+                                &book_channels,
+                                &book_sync,
                                 &mut quote_cache,
                                 &mut funding_cache,
                                 &idx_map,
                                 &greeks_subs,
+                                BookChannelScope::Business,
+                                snapshot_timeout,
+                                &cancel,
                                 clock,
                             );
                         }
@@ -991,6 +1119,7 @@ impl DataClient for OKXDataClient {
             self.tasks.push(handle);
         }
 
+        self.spawn_book_health_monitor();
         self.is_connected.store(true, Ordering::Release);
         log::info!("Connected: client_id={}", self.client_id);
         Ok(())
@@ -1035,6 +1164,7 @@ impl DataClient for OKXDataClient {
         }
 
         self.book_channels.store(AHashMap::new());
+        self.book_sync.clear();
         self.option_greeks_subs
             .store(AHashMap::<InstrumentId, AHashSet<OKXGreeksType>>::new());
         self.option_summary_family_subs
@@ -1100,11 +1230,16 @@ impl DataClient for OKXDataClient {
             // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
             let instrument_id = cmd.instrument_id;
             let ws = self.business_ws()?.clone();
+            let book_channels = Arc::clone(&self.book_channels);
+            let book_sync = self.book_sync.clone();
             self.spawn_ws(
                 async move {
                     ws.subscribe_spread_book(instrument_id)
                         .await
-                        .context("spread book subscription")
+                        .context("spread book subscription")?;
+                    book_channels.insert(instrument_id, OKXBookChannel::SprdBooks5);
+                    book_sync.record_subscription(instrument_id, Instant::now());
+                    Ok(())
                 },
                 "spread book subscription",
             );
@@ -1142,6 +1277,7 @@ impl DataClient for OKXDataClient {
         let instrument_id = cmd.instrument_id;
         let ws = self.public_ws()?.clone();
         let book_channels = Arc::clone(&self.book_channels);
+        let book_sync = self.book_sync.clone();
 
         self.spawn_ws(
             async move {
@@ -1158,8 +1294,10 @@ impl DataClient for OKXDataClient {
                         .subscribe_books_channel(instrument_id)
                         .await
                         .context("books subscription")?,
+                    OKXBookChannel::SprdBooks5 => unreachable!(),
                 }
                 book_channels.insert(instrument_id, channel);
+                book_sync.record_subscription(instrument_id, Instant::now());
                 Ok(())
             },
             "order book delta subscription",
@@ -1378,6 +1516,8 @@ impl DataClient for OKXDataClient {
 
         if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
             let ws = self.business_ws()?.clone();
+            self.book_channels.remove(&instrument_id);
+            self.book_sync.remove(instrument_id);
             self.spawn_ws(
                 async move {
                     ws.unsubscribe_spread_book(instrument_id)
@@ -1392,6 +1532,7 @@ impl DataClient for OKXDataClient {
         let ws = self.public_ws()?.clone();
         let channel = self.book_channels.get_cloned(&instrument_id);
         self.book_channels.remove(&instrument_id);
+        self.book_sync.remove(instrument_id);
 
         self.spawn_ws(
             async move {
@@ -1405,6 +1546,10 @@ impl DataClient for OKXDataClient {
                         .await
                         .context("books-l2-tbt unsubscribe")?,
                     Some(OKXBookChannel::Book) => ws
+                        .unsubscribe_book(instrument_id)
+                        .await
+                        .context("book unsubscribe")?,
+                    Some(OKXBookChannel::SprdBooks5) => ws
                         .unsubscribe_book(instrument_id)
                         .await
                         .context("book unsubscribe")?,

@@ -534,8 +534,18 @@ CLOSE_ALL_POSITIONS_PARAMETERS = (
 )
 QUERY_ACCOUNT_PARAMETERS = ("account_id", "client_id", "params")
 QUERY_ORDER_PARAMETERS = ("order", "client_id", "params")
+PUBLISH_DATA_PARAMETERS = ("data_type", "data")
+PUBLISH_SIGNAL_PARAMETERS = ("name", "value", "ts_event")
+SIGNAL_SUBSCRIPTION_PARAMETERS = ("name", "priority")
+SIGNAL_UNSUBSCRIBE_PARAMETERS = ("name",)
+SYNTHETIC_PARAMETERS = ("synthetic",)
 DATA_SURFACE_SIGNATURES = [
+    ("publish_data", PUBLISH_DATA_PARAMETERS),
+    ("publish_signal", PUBLISH_SIGNAL_PARAMETERS),
+    ("add_synthetic", SYNTHETIC_PARAMETERS),
+    ("update_synthetic", SYNTHETIC_PARAMETERS),
     ("subscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("subscribe_signal", SIGNAL_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("subscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_book_deltas", BOOK_DELTAS_SUBSCRIPTION_PARAMETERS),
@@ -551,6 +561,7 @@ DATA_SURFACE_SIGNATURES = [
     ("subscribe_instrument_close", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("subscribe_option_chain", OPTION_CHAIN_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_data", DATA_SUBSCRIPTION_PARAMETERS),
+    ("unsubscribe_signal", SIGNAL_UNSUBSCRIBE_PARAMETERS),
     ("unsubscribe_instruments", VENUE_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_instrument", INSTRUMENT_SUBSCRIPTION_PARAMETERS),
     ("unsubscribe_book_deltas", INSTRUMENT_SUBSCRIPTION_PARAMETERS),

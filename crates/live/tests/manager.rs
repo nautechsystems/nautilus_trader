@@ -25,7 +25,8 @@ use indexmap::IndexSet;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
-    clock::TestClock,
+    clock::{Clock, TestClock},
+    live::dst,
     messages::{
         ExecutionReport,
         execution::{
@@ -56,7 +57,7 @@ use nautilus_model::{
     events::{
         OrderEventAny, OrderFilled,
         account::state::AccountState,
-        order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec},
+        order::spec::{OrderAcceptedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -73,6 +74,17 @@ use nautilus_model::{
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
+
+#[cfg(all(feature = "simulation", madsim))]
+async fn advance_clock(d: dst::time::Duration) {
+    madsim::time::advance(d);
+    madsim::task::yield_now().await;
+}
+
+#[cfg(not(all(feature = "simulation", madsim)))]
+async fn advance_clock(d: dst::time::Duration) {
+    tokio::time::advance(d).await;
+}
 
 struct TestContext {
     clock: Rc<RefCell<TestClock>>,
@@ -129,6 +141,12 @@ impl TestContext {
         self.clock
             .borrow_mut()
             .advance_time(UnixNanos::from(current.as_u64() + delta_nanos), true);
+    }
+
+    async fn advance_both(&self, d: dst::time::Duration) {
+        let delta_nanos = u64::try_from(d.as_nanos()).expect("test duration fits in u64 nanos");
+        self.advance_time(delta_nanos);
+        advance_clock(d).await;
     }
 
     fn add_instrument(&self, instrument: InstrumentAny) {
@@ -287,14 +305,18 @@ fn test_fill_deduplication_tracks_processed_fill() {
     assert!(ctx.manager.is_fill_recently_processed(&trade_id));
 }
 
-#[rstest]
-fn test_fill_deduplication_prune_removes_expired() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_fill_deduplication_prune_removes_expired() {
     let mut ctx = TestContext::new();
     let old_trade = TradeId::from("T-OLD");
     let new_trade = TradeId::from("T-NEW");
 
     ctx.manager.mark_fill_processed(old_trade);
-    ctx.advance_time(120_000_000_000); // 120 seconds
+    ctx.advance_both(dst::time::Duration::from_secs(120)).await;
     ctx.manager.mark_fill_processed(new_trade);
 
     ctx.manager.prune_recent_fills_cache(60.0); // 60 second TTL
@@ -303,8 +325,82 @@ fn test_fill_deduplication_prune_removes_expired() {
     assert!(ctx.manager.is_fill_recently_processed(&new_trade));
 }
 
-#[rstest]
-fn test_observe_order_report_clears_inflight_tracking() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_fill_deduplication_prune_uses_monotonic_ttl() {
+    let mut ctx = TestContext::new();
+    let trade_id = TradeId::from("T-MONOTONIC");
+
+    ctx.manager.mark_fill_processed(trade_id);
+    ctx.advance_time(120_000_000_000);
+    ctx.manager.prune_recent_fills_cache(60.0);
+    assert!(ctx.manager.is_fill_recently_processed(&trade_id));
+
+    advance_clock(dst::time::Duration::from_secs(61)).await;
+    ctx.manager.prune_recent_fills_cache(60.0);
+    assert!(!ctx.manager.is_fill_recently_processed(&trade_id));
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_prune_recent_fills_cache_keeps_all_on_overflow_ttl() {
+    // Positive-overflow and infinity TTLs must saturate to keep-all.
+    let mut ctx = TestContext::new();
+    let trade_id = TradeId::from("T-KEEP");
+    ctx.manager.mark_fill_processed(trade_id);
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+
+    ctx.manager.prune_recent_fills_cache(1.0e30);
+    assert!(
+        ctx.manager.is_fill_recently_processed(&trade_id),
+        "overflowing TTL must keep entries, not prune them",
+    );
+
+    ctx.manager.prune_recent_fills_cache(f64::INFINITY);
+    assert!(
+        ctx.manager.is_fill_recently_processed(&trade_id),
+        "infinite TTL must keep entries",
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_prune_recent_fills_cache_prunes_all_on_negative_or_nan_ttl() {
+    // Negative and NaN TTLs fall back to a zero TTL, matching the old cast.
+    let mut ctx = TestContext::new();
+
+    ctx.manager.mark_fill_processed(TradeId::from("T-NEG"));
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+    ctx.manager.prune_recent_fills_cache(-1.0);
+    assert!(
+        !ctx.manager
+            .is_fill_recently_processed(&TradeId::from("T-NEG"))
+    );
+
+    ctx.manager.mark_fill_processed(TradeId::from("T-NAN"));
+    advance_clock(dst::time::Duration::from_nanos(1)).await;
+    ctx.manager.prune_recent_fills_cache(f64::NAN);
+    assert!(
+        !ctx.manager
+            .is_fill_recently_processed(&TradeId::from("T-NAN"))
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_observe_order_report_clears_inflight_tracking() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 5,
@@ -335,15 +431,20 @@ fn test_observe_order_report_clears_inflight_tracking() {
     ctx.manager.observe_execution_report(&report);
 
     // Advance time past threshold so inflight check would trigger if still tracked
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     // Inflight check should return empty — tracking was cleared by observation
     let result = ctx.manager.check_inflight_orders();
     assert!(result.events.is_empty());
 }
 
-#[rstest]
-fn test_observe_pending_order_report_keeps_inflight_tracking() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_observe_pending_order_report_keeps_inflight_tracking() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 3,
@@ -374,7 +475,8 @@ fn test_observe_pending_order_report_keeps_inflight_tracking() {
     ctx.manager.observe_execution_report(&report);
 
     // Inflight tracking should still be active
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result = ctx.manager.check_inflight_orders();
 
     // Order is still tracked: should generate a query (retry 1 < max 3)
@@ -1586,8 +1688,12 @@ async fn test_reconcile_mass_status_sorts_events_chronologically() {
     assert!(result.events[0].ts_event() < result.events[1].ts_event());
 }
 
-#[rstest]
-fn test_inflight_order_generates_rejection_after_max_retries() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_order_generates_rejection_after_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -1604,7 +1710,8 @@ fn test_inflight_order_generates_rejection_after_max_retries() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000); // 200ms, past threshold
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await; // 200ms, past threshold
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -1617,8 +1724,41 @@ fn test_inflight_order_generates_rejection_after_max_retries() {
     }
 }
 
-#[rstest]
-fn test_inflight_check_skips_filtered_order_ids() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_timeout_uses_monotonic_gate_and_domain_event_timestamp() {
+    let config = ExecutionManagerConfig {
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 1,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-SPLIT");
+
+    ctx.add_instrument(test_instrument());
+    let order = create_submitted_order("O-SPLIT", instrument_id, OrderSide::Buy, "1.0", "3000.00");
+    ctx.add_order(order);
+
+    ctx.manager.register_inflight(client_order_id);
+    let domain_ts = ctx.clock.borrow().timestamp_ns();
+    advance_clock(dst::time::Duration::from_millis(200)).await;
+
+    let result = ctx.manager.check_inflight_orders();
+
+    assert_eq!(result.events.len(), 1);
+    assert_eq!(result.events[0].ts_event(), domain_ts);
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_check_skips_filtered_order_ids() {
     let filtered_id = ClientOrderId::from("O-FILTERED");
     let mut config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
@@ -1642,7 +1782,8 @@ fn test_inflight_check_skips_filtered_order_ids() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(filtered_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -1784,8 +1925,12 @@ async fn test_reconcile_mass_status_accepted_order_expired_at_venue() {
     assert!(matches!(result.events[0], OrderEventAny::Expired(_)));
 }
 
-#[rstest]
-fn test_inflight_increments_retry_count_before_max() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_increments_retry_count_before_max() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 3,
@@ -1802,27 +1947,34 @@ fn test_inflight_increments_retry_count_before_max() {
     ctx.manager.register_inflight(client_order_id);
 
     // First check - past threshold, retry count becomes 1, generates QueryOrder
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result1 = ctx.manager.check_inflight_orders();
     assert!(result1.events.is_empty()); // Not at max yet
     assert_eq!(result1.queries.len(), 1);
 
     // Second check - retry count becomes 2, generates QueryOrder
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result2 = ctx.manager.check_inflight_orders();
     assert!(result2.events.is_empty()); // Still not at max
     assert_eq!(result2.queries.len(), 1);
 
     // Third check - retry count becomes 3, equals max, generates rejection
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result3 = ctx.manager.check_inflight_orders();
     assert_eq!(result3.events.len(), 1);
     assert!(matches!(result3.events[0], OrderEventAny::Rejected(_)));
     assert!(result3.queries.is_empty());
 }
 
-#[rstest]
-fn test_inflight_pending_update_generates_canceled() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_pending_update_generates_canceled() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -1846,7 +1998,8 @@ fn test_inflight_pending_update_generates_canceled() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000); // 200ms, past threshold
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await; // 200ms, past threshold
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -1862,8 +2015,12 @@ fn test_inflight_pending_update_generates_canceled() {
     }
 }
 
-#[rstest]
-fn test_inflight_pending_cancel_generates_canceled() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_pending_cancel_generates_canceled() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -1887,7 +2044,8 @@ fn test_inflight_pending_cancel_generates_canceled() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -1903,8 +2061,12 @@ fn test_inflight_pending_cancel_generates_canceled() {
     }
 }
 
-#[rstest]
-fn test_inflight_generates_query_before_max_retries() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_generates_query_before_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 3,
@@ -1921,7 +2083,8 @@ fn test_inflight_generates_query_before_max_retries() {
     ctx.manager.register_inflight(client_order_id);
 
     // First check - past threshold, retry 1 < max 3 -> generates QueryOrder
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result = ctx.manager.check_inflight_orders();
 
     assert!(
@@ -1937,8 +2100,12 @@ fn test_inflight_generates_query_before_max_retries() {
     }
 }
 
-#[rstest]
-fn test_inflight_no_query_at_max_retries() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_no_query_at_max_retries() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 2,
@@ -1955,13 +2122,15 @@ fn test_inflight_no_query_at_max_retries() {
     ctx.manager.register_inflight(client_order_id);
 
     // First check - intermediate, generates query
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result1 = ctx.manager.check_inflight_orders();
     assert!(result1.events.is_empty());
     assert_eq!(result1.queries.len(), 1);
 
     // Second check - at max retries, generates terminal event only
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result2 = ctx.manager.check_inflight_orders();
 
     assert_eq!(
@@ -1976,8 +2145,12 @@ fn test_inflight_no_query_at_max_retries() {
     assert!(matches!(result2.events[0], OrderEventAny::Rejected(_)));
 }
 
-#[rstest]
-fn test_inflight_query_preserves_client_id_routing() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_query_preserves_client_id_routing() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 3,
@@ -1993,7 +2166,8 @@ fn test_inflight_query_preserves_client_id_routing() {
     ctx.add_order_with_client_id(order, client_id);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     let result = ctx.manager.check_inflight_orders();
     assert_eq!(result.queries.len(), 1);
@@ -2010,8 +2184,12 @@ fn test_inflight_query_preserves_client_id_routing() {
     }
 }
 
-#[rstest]
-fn test_inflight_query_throttled_within_threshold() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_query_throttled_within_threshold() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 5,
@@ -2034,7 +2212,8 @@ fn test_inflight_query_throttled_within_threshold() {
     ctx.manager.register_inflight(client_order_id);
 
     // First check past threshold generates a query
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result1 = ctx.manager.check_inflight_orders();
     assert_eq!(result1.queries.len(), 1);
 
@@ -2044,13 +2223,18 @@ fn test_inflight_query_throttled_within_threshold() {
     assert!(result2.events.is_empty());
 
     // Advance past threshold again, query should fire
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result3 = ctx.manager.check_inflight_orders();
     assert_eq!(result3.queries.len(), 1);
 }
 
-#[rstest]
-fn test_inflight_accepted_order_at_max_retries_no_event() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_accepted_order_at_max_retries_no_event() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -2073,7 +2257,8 @@ fn test_inflight_accepted_order_at_max_retries_no_event() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -2082,13 +2267,18 @@ fn test_inflight_accepted_order_at_max_retries_no_event() {
     assert!(result.queries.is_empty());
 
     // Tracking should be cleared, subsequent check also empty
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result2 = ctx.manager.check_inflight_orders();
     assert!(result2.events.is_empty());
 }
 
-#[rstest]
-fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -2099,7 +2289,8 @@ fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
 
     // Register inflight without adding order to cache
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     let result = ctx.manager.check_inflight_orders();
 
@@ -2107,13 +2298,18 @@ fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
     assert!(result.queries.is_empty());
 
     // Tracking cleared, subsequent check also empty
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result2 = ctx.manager.check_inflight_orders();
     assert!(result2.events.is_empty());
 }
 
-#[rstest]
-fn test_inflight_terminal_event_clears_tracking() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inflight_terminal_event_clears_tracking() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 1,
@@ -2128,7 +2324,8 @@ fn test_inflight_terminal_event_clears_tracking() {
     ctx.add_order(order);
 
     ctx.manager.register_inflight(client_order_id);
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     // First check generates terminal rejection
     let result1 = ctx.manager.check_inflight_orders();
@@ -2136,7 +2333,8 @@ fn test_inflight_terminal_event_clears_tracking() {
     assert!(matches!(result1.events[0], OrderEventAny::Rejected(_)));
 
     // Second check should return empty (tracking was cleared)
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
     let result2 = ctx.manager.check_inflight_orders();
     assert!(result2.events.is_empty());
     assert!(result2.queries.is_empty());
@@ -2281,8 +2479,12 @@ async fn test_reconcile_mass_status_order_already_in_sync() {
     assert!(result.events.is_empty());
 }
 
-#[rstest]
-fn test_clear_recon_tracking_removes_inflight() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_clear_recon_tracking_removes_inflight() {
     let config = ExecutionManagerConfig {
         inflight_threshold_ms: 100,
         inflight_max_retries: 5,
@@ -2297,7 +2499,8 @@ fn test_clear_recon_tracking_removes_inflight() {
     ctx.manager.clear_recon_tracking(&client_order_id, true);
 
     // Advance time past threshold
-    ctx.advance_time(200_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
 
     // Check should not generate events since order was cleared
     let result = ctx.manager.check_inflight_orders();
@@ -7034,8 +7237,12 @@ fn test_check_open_order_queries_returns_empty_when_cycle_limit_is_zero() {
     assert!(queries.is_empty());
 }
 
-#[rstest]
-fn test_check_open_order_queries_respects_query_delay() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_order_queries_respects_query_delay() {
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         max_single_order_queries_per_cycle: 5,
         single_order_query_delay_ms: 100,
@@ -7052,13 +7259,23 @@ fn test_check_open_order_queries_respects_query_delay() {
 
     let first_queries = ctx.manager.check_open_order_queries();
     let delayed_queries = ctx.manager.check_open_order_queries();
+    ctx.advance_time(200_000_000);
+    let domain_advanced_queries = ctx.manager.check_open_order_queries();
+    advance_clock(dst::time::Duration::from_millis(100)).await;
+    let monotonic_advanced_queries = ctx.manager.check_open_order_queries();
 
     assert_eq!(first_queries.len(), 1);
     assert!(delayed_queries.is_empty());
+    assert!(domain_advanced_queries.is_empty());
+    assert_eq!(monotonic_advanced_queries.len(), 1);
 }
 
-#[rstest]
-fn test_check_open_order_queries_defers_with_recent_local_activity() {
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_order_queries_defers_with_recent_local_activity() {
     let mut ctx = TestContext::with_config(ExecutionManagerConfig {
         max_single_order_queries_per_cycle: 5,
         open_check_threshold_ns: 5_000_000_000,
@@ -7076,8 +7293,14 @@ fn test_check_open_order_queries_defers_with_recent_local_activity() {
     ctx.manager.record_local_activity(client_order_id);
 
     let queries = ctx.manager.check_open_order_queries();
+    ctx.advance_time(6_000_000_000);
+    let domain_advanced_queries = ctx.manager.check_open_order_queries();
+    advance_clock(dst::time::Duration::from_secs(5)).await;
+    let monotonic_advanced_queries = ctx.manager.check_open_order_queries();
 
     assert!(queries.is_empty());
+    assert!(domain_advanced_queries.is_empty());
+    assert_eq!(monotonic_advanced_queries.len(), 1);
 }
 
 #[rstest]
@@ -7175,8 +7398,11 @@ fn insert_accepted_limit_order_for_instrument(
     ctx.cache.borrow_mut().update_order(&accepted).unwrap();
 }
 
-#[rstest]
-#[tokio::test]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_defers_with_recent_local_activity() {
     // Test that reconciliation is deferred when there's recent local activity
     // within the threshold, to avoid race conditions with in-flight fills.
@@ -7230,8 +7456,11 @@ async fn test_check_open_orders_defers_with_recent_local_activity() {
     assert_eq!(cached_order.filled_qty(), Quantity::from("0.0"));
 }
 
-#[rstest]
-#[tokio::test]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
     // Test that reconciliation proceeds when the local activity is older than
     // the configured threshold.
@@ -7259,7 +7488,8 @@ async fn test_check_open_orders_proceeds_after_threshold_exceeded() {
     ctx.add_order(order.clone());
 
     ctx.manager.record_local_activity(client_order_id);
-    ctx.advance_time(500_000_000);
+    ctx.advance_both(dst::time::Duration::from_millis(500))
+        .await;
 
     let report = create_order_status_report(
         Some(client_order_id),
@@ -7385,6 +7615,57 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     } else {
         panic!("Expected OrderRejected event, was {:?}", events[0]);
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_check_open_orders_defers_when_venue_ts_last_is_ahead() {
+    // A corrupted far-future ts_last must defer reconciliation without
+    // rejecting or panicking.
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let mut order = create_limit_order(
+        "O-AHEAD",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "10.0",
+        "100.0",
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    order.apply(submitted).unwrap();
+
+    let future_ts = UnixNanos::from(10_000_000_000);
+    let accepted = OrderEventAny::Accepted(
+        OrderAcceptedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-AHEAD"))
+            .account_id(test_account_id())
+            .ts_event(future_ts)
+            .ts_init(future_ts)
+            .build(),
+    );
+    order.apply(accepted).unwrap();
+    ctx.add_order(order);
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        events.is_empty(),
+        "a far-future venue ts_last must defer reconciliation, not reject or panic",
+    );
 }
 
 #[tokio::test]
@@ -8203,7 +8484,7 @@ async fn test_position_check_grace_survives_accelerated_trading_clock() {
     assert!(
         events.is_empty(),
         "grace must survive an accelerated trading clock (it is measured on the \
-         monotonic clock); got {} reconciliation event(s), the grace regressed \
+         monotonic clock); was {} reconciliation event(s), the grace regressed \
          to self.clock",
         events.len(),
     );
@@ -8212,6 +8493,71 @@ async fn test_position_check_grace_survives_accelerated_trading_clock() {
             .position_recon_retry_count(&(instrument_id, account)),
         0,
         "grace path must return before the retry counter is touched",
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_grace_expires_on_monotonic_clock() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 60_000_000_000,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account = AccountId::from("BINANCE-A");
+
+    ctx.add_instrument(instrument);
+    ctx.add_margin_account(account);
+
+    let ts_event = UnixNanos::from(1_000_000_000);
+    let fill_report = FillReport::new(
+        account,
+        instrument_id,
+        VenueOrderId::from("V-EXPIRY"),
+        TradeId::from("T-EXPIRY"),
+        OrderSide::Buy,
+        Quantity::from("0.06"),
+        Price::from("3000.00"),
+        Money::new(0.0, Currency::USDT()),
+        LiquiditySide::Taker,
+        Some(ClientOrderId::from("O-EXPIRY")),
+        None,
+        ts_event,
+        ts_event,
+        None,
+    );
+    ctx.manager
+        .observe_execution_report(&ExecutionReport::Fill(Box::new(fill_report)));
+
+    advance_clock(dst::time::Duration::from_secs(61)).await;
+
+    let venue_report = PositionStatusReport::new(
+        account,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("0.06"),
+        ts_event,
+        ts_event,
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_))),
+        "position discrepancy should fire after the monotonic grace expires",
     );
 }
 

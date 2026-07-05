@@ -33,7 +33,7 @@ use crate::{
         enums::{
             DeriveInstrumentType, DeriveOrderbookDepth, DeriveOrderbookGroup, DeriveTickerInterval,
         },
-        parse::format_instrument_id,
+        parse::{format_instrument_id, salvage_elements},
         rate_limit::{DERIVE_MATCHING_RATE_KEY, DERIVE_NON_MATCHING_RATE_KEY},
     },
     http::models::{
@@ -473,17 +473,9 @@ impl<'de> Deserialize<'de> for DeriveOrdersSubscriptionData {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = Value::deserialize(deserializer)?;
-        let orders = match value {
-            Value::Array(values) => values
-                .into_iter()
-                .filter_map(|value| serde_json::from_value::<DeriveOrder>(value).ok())
-                .collect(),
-            value => vec![
-                serde_json::from_value::<DeriveOrder>(value).map_err(serde::de::Error::custom)?,
-            ],
-        };
-        Ok(Self { orders })
+        Ok(Self {
+            orders: subscription_rows(deserializer)?,
+        })
     }
 }
 
@@ -499,17 +491,24 @@ impl<'de> Deserialize<'de> for DeriveTradesSubscriptionData {
     where
         D: serde::Deserializer<'de>,
     {
-        let value = Value::deserialize(deserializer)?;
-        let trades = match value {
-            Value::Array(values) => values
-                .into_iter()
-                .filter_map(|value| serde_json::from_value::<DeriveTrade>(value).ok())
-                .collect(),
-            value => vec![
-                serde_json::from_value::<DeriveTrade>(value).map_err(serde::de::Error::custom)?,
-            ],
-        };
-        Ok(Self { trades })
+        Ok(Self {
+            trades: subscription_rows(deserializer)?,
+        })
+    }
+}
+
+/// Decodes a private subscription payload that arrives as either a single row
+/// object or an array of rows; array elements are salvaged per element.
+fn subscription_rows<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    match Value::deserialize(deserializer)? {
+        Value::Array(values) => Ok(salvage_elements(values)),
+        value => Ok(vec![
+            serde_json::from_value::<T>(value).map_err(serde::de::Error::custom)?,
+        ]),
     }
 }
 

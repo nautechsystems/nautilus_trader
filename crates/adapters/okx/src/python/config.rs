@@ -45,6 +45,9 @@ impl OKXDataClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         update_instruments_interval_mins = None,
+        book_stale_check_interval_secs = None,
+        book_stale_threshold_secs = None,
+        book_snapshot_timeout_secs = None,
         vip_level = None,
         load_spreads = false,
         transport_backend = None,
@@ -66,6 +69,9 @@ impl OKXDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         update_instruments_interval_mins: Option<u64>,
+        book_stale_check_interval_secs: Option<u64>,
+        book_stale_threshold_secs: Option<u64>,
+        book_snapshot_timeout_secs: Option<u64>,
         vip_level: Option<OKXVipLevel>,
         load_spreads: bool,
         transport_backend: Option<TransportBackend>,
@@ -92,6 +98,12 @@ impl OKXDataClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
+            book_stale_check_interval_secs: book_stale_check_interval_secs
+                .unwrap_or(defaults.book_stale_check_interval_secs),
+            book_stale_threshold_secs: book_stale_threshold_secs
+                .unwrap_or(defaults.book_stale_threshold_secs),
+            book_snapshot_timeout_secs: book_snapshot_timeout_secs
+                .unwrap_or(defaults.book_snapshot_timeout_secs),
             vip_level,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
         }
@@ -195,10 +207,13 @@ mod tests {
     fn test_data_config_py_new_load_spreads() {
         let config = OKXDataClientConfig::py_new(
             None, None, None, None, None, None, None, None, None, None, None, None, None, None,
-            None, None, true, None,
+            None, None, None, None, None, true, None,
         );
 
         assert!(config.load_spreads);
+        assert_eq!(config.book_stale_check_interval_secs, 5);
+        assert_eq!(config.book_stale_threshold_secs, 30);
+        assert_eq!(config.book_snapshot_timeout_secs, 3);
     }
 
     #[rstest]

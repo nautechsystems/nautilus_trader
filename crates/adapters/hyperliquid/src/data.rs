@@ -22,7 +22,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use nautilus_common::{
@@ -141,10 +141,26 @@ impl HyperliquidDataClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
-        let stream_health = Arc::new(Mutex::new(MarketDataStreamHealthMonitor::new(
+        let mut stream_health_monitor = MarketDataStreamHealthMonitor::new(
             Duration::from_secs(config.stale_stream_receive_timeout_secs),
             Duration::from_secs(config.stale_stream_warning_cooldown_secs),
-        )));
+        );
+
+        if config.stale_stream_recovery_enabled {
+            if config.stale_stream_recovery_cooldown_secs > 0 {
+                stream_health_monitor = stream_health_monitor.with_recovery(
+                    Duration::from_secs(config.stale_stream_recovery_cooldown_secs),
+                    config.stale_stream_max_targeted_resubscribes,
+                );
+            } else {
+                log::warn!(
+                    "Hyperliquid stale stream recovery disabled: \
+                     stale_stream_recovery_cooldown_secs must be positive"
+                );
+            }
+        }
+
+        let stream_health = Arc::new(Mutex::new(stream_health_monitor));
 
         Ok(Self {
             clock,
@@ -256,6 +272,7 @@ impl HyperliquidDataClient {
         let cancellation_token = self.cancellation_token.clone();
         let interval = Duration::from_secs(self.config.stream_health_check_interval_secs);
         let clock = self.clock;
+        let ws_client = self.ws_client.clone();
 
         let handle = get_runtime().spawn(async move {
             log::debug!("Hyperliquid stream health monitor started");
@@ -267,14 +284,12 @@ impl HyperliquidDataClient {
                         break;
                     }
                     () = tokio::time::sleep(interval) => {
-                        let warnings = stream_health
+                        let events = stream_health
                             .lock()
                             .expect(MUTEX_POISONED)
                             .check_stale(Instant::now(), clock.get_time_ns());
 
-                        for warning in warnings {
-                            log_stream_health_warning(&warning);
-                        }
+                        handle_stream_health_events(&ws_client, &events).await;
                     }
                 }
             }
@@ -1357,6 +1372,8 @@ struct MarketDataStreamHealth {
     last_venue_ts_event: Option<UnixNanos>,
     consecutive_stale_count: u32,
     last_warning_at: Option<Instant>,
+    last_recovery_at: Option<Instant>,
+    resubscribe_attempts: u32,
 }
 
 impl MarketDataStreamHealth {
@@ -1366,6 +1383,8 @@ impl MarketDataStreamHealth {
             last_venue_ts_event: None,
             consecutive_stale_count: 0,
             last_warning_at: None,
+            last_recovery_at: None,
+            resubscribe_attempts: 0,
         }
     }
 
@@ -1374,13 +1393,22 @@ impl MarketDataStreamHealth {
         self.last_venue_ts_event = Some(venue_ts_event);
         self.consecutive_stale_count = 0;
         self.last_warning_at = None;
+        self.last_recovery_at = None;
+        self.resubscribe_attempts = 0;
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct StreamRecoveryConfig {
+    cooldown: Duration,
+    max_targeted_resubscribes: u32,
 }
 
 #[derive(Debug)]
 struct MarketDataStreamHealthMonitor {
     stale_receive_threshold: Duration,
     warning_cooldown: Duration,
+    recovery: Option<StreamRecoveryConfig>,
     streams: AHashMap<MarketDataStreamKey, MarketDataStreamHealth>,
 }
 
@@ -1389,8 +1417,17 @@ impl MarketDataStreamHealthMonitor {
         Self {
             stale_receive_threshold,
             warning_cooldown,
+            recovery: None,
             streams: AHashMap::new(),
         }
+    }
+
+    fn with_recovery(mut self, cooldown: Duration, max_targeted_resubscribes: u32) -> Self {
+        self.recovery = Some(StreamRecoveryConfig {
+            cooldown,
+            max_targeted_resubscribes,
+        });
+        self
     }
 
     fn subscribe(
@@ -1429,8 +1466,20 @@ impl MarketDataStreamHealthMonitor {
         &mut self,
         now: Instant,
         wall_clock_now: UnixNanos,
-    ) -> Vec<MarketDataStaleWarning> {
-        let mut warnings = Vec::new();
+    ) -> Vec<MarketDataStaleEvent> {
+        // Fresh BBO makes stale book streams relative-stale, not transport-stale
+        let fresh_quote_instruments: AHashSet<InstrumentId> = self
+            .streams
+            .iter()
+            .filter(|((channel, _), stream)| {
+                *channel == MarketDataChannel::Quote
+                    && now.saturating_duration_since(stream.last_receive_at)
+                        < self.stale_receive_threshold
+            })
+            .map(|((_, instrument_id), _)| *instrument_id)
+            .collect();
+
+        let mut events = Vec::new();
 
         for ((channel, instrument_id), stream) in &mut self.streams {
             let receive_age = now.saturating_duration_since(stream.last_receive_at);
@@ -1441,6 +1490,49 @@ impl MarketDataStreamHealthMonitor {
 
             stream.consecutive_stale_count = stream.consecutive_stale_count.saturating_add(1);
 
+            let quote_is_fresh = matches!(
+                channel,
+                MarketDataChannel::Deltas | MarketDataChannel::Depth10
+            ) && fresh_quote_instruments.contains(instrument_id);
+
+            let venue_age = stream.last_venue_ts_event.map(|ts_event| {
+                Duration::from_nanos(wall_clock_now.as_u64().saturating_sub(ts_event.as_u64()))
+            });
+
+            if let Some(recovery) = self.recovery {
+                // Recovery requires one prior warning, even after long check lag
+                let stale_since = stream.last_receive_at + self.stale_receive_threshold;
+                let anchor = stream.last_recovery_at.unwrap_or(stale_since);
+
+                if stream.last_warning_at.is_some()
+                    && now.saturating_duration_since(anchor) >= recovery.cooldown
+                {
+                    let action = if stream.resubscribe_attempts < recovery.max_targeted_resubscribes
+                    {
+                        stream.resubscribe_attempts += 1;
+                        StaleStreamAction::Resubscribe
+                    } else {
+                        // Reconnect replays all active subscriptions
+                        stream.resubscribe_attempts = 0;
+                        StaleStreamAction::Reconnect
+                    };
+                    stream.last_recovery_at = Some(now);
+                    stream.last_warning_at = Some(now);
+
+                    events.push(MarketDataStaleEvent {
+                        channel: *channel,
+                        instrument_id: *instrument_id,
+                        receive_age,
+                        venue_age,
+                        stale_count: stream.consecutive_stale_count,
+                        action,
+                        cooldown: recovery.cooldown,
+                        quote_is_fresh,
+                    });
+                    continue;
+                }
+            }
+
             let should_warn = stream.last_warning_at.is_none_or(|last_warning_at| {
                 now.saturating_duration_since(last_warning_at) >= self.warning_cooldown
             });
@@ -1450,28 +1542,49 @@ impl MarketDataStreamHealthMonitor {
             }
 
             stream.last_warning_at = Some(now);
-            warnings.push(MarketDataStaleWarning {
+            events.push(MarketDataStaleEvent {
                 channel: *channel,
                 instrument_id: *instrument_id,
                 receive_age,
-                venue_age: stream.last_venue_ts_event.map(|ts_event| {
-                    Duration::from_nanos(wall_clock_now.as_u64().saturating_sub(ts_event.as_u64()))
-                }),
+                venue_age,
                 stale_count: stream.consecutive_stale_count,
+                action: StaleStreamAction::Warn,
+                cooldown: self.warning_cooldown,
+                quote_is_fresh,
             });
         }
 
-        warnings
+        events
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StaleStreamAction {
+    Warn,
+    Resubscribe,
+    Reconnect,
+}
+
+impl StaleStreamAction {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Warn => "warn",
+            Self::Resubscribe => "resubscribe",
+            Self::Reconnect => "reconnect",
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct MarketDataStaleWarning {
+struct MarketDataStaleEvent {
     channel: MarketDataChannel,
     instrument_id: InstrumentId,
     receive_age: Duration,
     venue_age: Option<Duration>,
     stale_count: u32,
+    action: StaleStreamAction,
+    cooldown: Duration,
+    quote_is_fresh: bool,
 }
 
 fn stream_health_update(
@@ -1511,20 +1624,73 @@ fn record_stream_receive(
     );
 }
 
-fn log_stream_health_warning(warning: &MarketDataStaleWarning) {
-    let venue_age_ms = warning
+fn log_stream_health_event(event: &MarketDataStaleEvent) {
+    let venue_age_ms = event
         .venue_age
         .map_or_else(|| "n/a".to_string(), |age| age.as_millis().to_string());
+    let prefix = if event.quote_is_fresh {
+        "Hyperliquid book stream stale while bbo advances"
+    } else {
+        "Hyperliquid market data stream stale"
+    };
 
     log::warn!(
-        "Hyperliquid market data stream stale: channel={}, instrument_id={}, \
-         receive_age_ms={}, venue_age_ms={}, stale_count={}",
-        warning.channel.as_str(),
-        warning.instrument_id,
-        warning.receive_age.as_millis(),
+        "{prefix}: channel={}, instrument_id={}, receive_age_ms={}, venue_age_ms={}, \
+         stale_count={}, action={}, cooldown_secs={}",
+        event.channel.as_str(),
+        event.instrument_id,
+        event.receive_age.as_millis(),
         venue_age_ms,
-        warning.stale_count,
+        event.stale_count,
+        event.action.as_str(),
+        event.cooldown.as_secs(),
     );
+}
+
+async fn handle_stream_health_events(
+    ws_client: &HyperliquidWebSocketClient,
+    events: &[MarketDataStaleEvent],
+) {
+    // Deltas and depth10 share one venue `l2Book` stream
+    let mut resubscribed_books: AHashSet<InstrumentId> = AHashSet::new();
+    let mut reconnect_requested = false;
+
+    for event in events {
+        log_stream_health_event(event);
+
+        match event.action {
+            StaleStreamAction::Warn => {}
+            StaleStreamAction::Resubscribe => match event.channel {
+                MarketDataChannel::Deltas | MarketDataChannel::Depth10 => {
+                    if resubscribed_books.insert(event.instrument_id)
+                        && let Err(e) = ws_client.resubscribe_book(event.instrument_id).await
+                    {
+                        log::warn!(
+                            "Failed targeted l2Book resubscribe for {}: {e}",
+                            event.instrument_id,
+                        );
+                    }
+                }
+                MarketDataChannel::Quote => {
+                    if let Err(e) = ws_client.resubscribe_quotes(event.instrument_id).await {
+                        log::warn!(
+                            "Failed targeted bbo resubscribe for {}: {e}",
+                            event.instrument_id,
+                        );
+                    }
+                }
+            },
+            StaleStreamAction::Reconnect => reconnect_requested = true,
+        }
+    }
+
+    if reconnect_requested {
+        if ws_client.request_reconnect() {
+            log::warn!("Requested full WebSocket reconnect after failed targeted stream recovery");
+        } else {
+            log::debug!("Skipping reconnect request: connection not active");
+        }
+    }
 }
 
 // Applies the request window and limit to a snapshot of recent trades. `trades`
@@ -1840,12 +2006,15 @@ mod tests {
 
         assert_eq!(
             warnings,
-            vec![MarketDataStaleWarning {
+            vec![MarketDataStaleEvent {
                 channel: MarketDataChannel::Quote,
                 instrument_id,
                 receive_age: Duration::from_secs(6),
                 venue_age: Some(Duration::from_secs(8)),
                 stale_count: 1,
+                action: StaleStreamAction::Warn,
+                cooldown: Duration::from_secs(30),
+                quote_is_fresh: false,
             }]
         );
     }
@@ -1967,6 +2136,31 @@ mod tests {
     }
 
     #[rstest]
+    fn test_data_client_recovery_requires_positive_cooldown() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+        let client = HyperliquidDataClient::new(
+            *crate::common::consts::HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig {
+                stale_stream_recovery_enabled: true,
+                stale_stream_recovery_cooldown_secs: 0,
+                ..HyperliquidDataClientConfig::default()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            client
+                .stream_health
+                .lock()
+                .expect(MUTEX_POISONED)
+                .recovery
+                .is_none(),
+            "a zero recovery cooldown must leave the monitor observability-only",
+        );
+    }
+
+    #[rstest]
     fn test_stream_health_monitor_warning_cooldown_prevents_repeated_logs() {
         let mut monitor =
             MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10));
@@ -1992,6 +2186,184 @@ mod tests {
         assert!(inside_cooldown.is_empty());
         assert_eq!(second.len(), 1);
         assert_eq!(second[0].stale_count, 3);
+    }
+
+    fn check_at(
+        monitor: &mut MarketDataStreamHealthMonitor,
+        start: Instant,
+        secs: u64,
+    ) -> Vec<MarketDataStaleEvent> {
+        monitor.check_stale(
+            start + Duration::from_secs(secs),
+            UnixNanos::from(secs * 1_000_000_000),
+        )
+    }
+
+    #[rstest]
+    fn test_stream_health_recovery_ladder_escalates_and_resets() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
+                .with_recovery(Duration::from_secs(30), 2);
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+
+        let events = check_at(&mut monitor, start, 5);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, StaleStreamAction::Warn);
+
+        let events = check_at(&mut monitor, start, 20);
+        assert_eq!(events[0].action, StaleStreamAction::Warn);
+
+        let events = check_at(&mut monitor, start, 35);
+        assert_eq!(
+            events,
+            vec![MarketDataStaleEvent {
+                channel: MarketDataChannel::Deltas,
+                instrument_id,
+                receive_age: Duration::from_secs(35),
+                venue_age: None,
+                stale_count: 3,
+                action: StaleStreamAction::Resubscribe,
+                cooldown: Duration::from_secs(30),
+                quote_is_fresh: false,
+            }],
+        );
+
+        let events = check_at(&mut monitor, start, 50);
+        assert_eq!(events[0].action, StaleStreamAction::Warn);
+
+        let events = check_at(&mut monitor, start, 65);
+        assert_eq!(events[0].action, StaleStreamAction::Resubscribe);
+
+        let events = check_at(&mut monitor, start, 95);
+        assert_eq!(events[0].action, StaleStreamAction::Reconnect);
+
+        let events = check_at(&mut monitor, start, 125);
+        assert_eq!(events[0].action, StaleStreamAction::Resubscribe);
+    }
+
+    #[rstest]
+    fn test_stream_health_recovery_first_breach_warns_even_past_cooldown() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
+                .with_recovery(Duration::from_secs(1), 1);
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Quote, instrument_id, start);
+
+        // First stale checks must stay observability-only, even after cooldown
+        let events = check_at(&mut monitor, start, 40);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, StaleStreamAction::Warn);
+
+        let events = check_at(&mut monitor, start, 41);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].action, StaleStreamAction::Resubscribe);
+    }
+
+    #[rstest]
+    fn test_stream_health_receive_resets_recovery_state() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(10))
+                .with_recovery(Duration::from_secs(10), 2);
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        assert_eq!(
+            check_at(&mut monitor, start, 5)[0].action,
+            StaleStreamAction::Warn
+        );
+        assert_eq!(
+            check_at(&mut monitor, start, 15)[0].action,
+            StaleStreamAction::Resubscribe,
+        );
+
+        monitor.record_receive(
+            MarketDataChannel::Deltas,
+            instrument_id,
+            start + Duration::from_secs(16),
+            UnixNanos::from(16_000_000_000),
+        );
+
+        assert!(check_at(&mut monitor, start, 20).is_empty());
+
+        let events = check_at(&mut monitor, start, 21);
+        assert_eq!(events[0].action, StaleStreamAction::Warn);
+        assert_eq!(events[0].stale_count, 1);
+
+        assert_eq!(
+            check_at(&mut monitor, start, 31)[0].action,
+            StaleStreamAction::Resubscribe,
+        );
+        assert_eq!(
+            check_at(&mut monitor, start, 41)[0].action,
+            StaleStreamAction::Resubscribe,
+        );
+        assert_eq!(
+            check_at(&mut monitor, start, 51)[0].action,
+            StaleStreamAction::Reconnect,
+        );
+    }
+
+    #[rstest]
+    fn test_check_stale_book_with_fresh_quote_flags_relative_staleness() {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        monitor.subscribe(MarketDataChannel::Quote, instrument_id, start);
+        monitor.record_receive(
+            MarketDataChannel::Quote,
+            instrument_id,
+            start + Duration::from_secs(8),
+            UnixNanos::from(8_000_000_000),
+        );
+
+        let events = check_at(&mut monitor, start, 10);
+
+        assert_eq!(events.len(), 1, "fresh quote stream must not be reported");
+        assert_eq!(events[0].channel, MarketDataChannel::Deltas);
+        assert!(events[0].quote_is_fresh);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn test_check_stale_book_without_fresh_quote_is_not_flagged(#[case] quote_subscribed: bool) {
+        let mut monitor =
+            MarketDataStreamHealthMonitor::new(Duration::from_secs(5), Duration::from_secs(30));
+        let instrument_id = btc_perp_id();
+        let start = Instant::now();
+
+        monitor.subscribe(MarketDataChannel::Deltas, instrument_id, start);
+        if quote_subscribed {
+            monitor.subscribe(MarketDataChannel::Quote, instrument_id, start);
+        }
+
+        let events = check_at(&mut monitor, start, 10);
+
+        let deltas_event = events
+            .iter()
+            .find(|event| event.channel == MarketDataChannel::Deltas)
+            .expect("deltas event");
+        assert!(
+            !deltas_event.quote_is_fresh,
+            "a stale or absent quote stream must not flag relative staleness",
+        );
+
+        if quote_subscribed {
+            let quote_event = events
+                .iter()
+                .find(|event| event.channel == MarketDataChannel::Quote)
+                .expect("quote event");
+            assert!(!quote_event.quote_is_fresh);
+        }
     }
 
     #[rstest]

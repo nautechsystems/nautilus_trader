@@ -20,6 +20,12 @@ LYCHEE_VERSION := $(shell bash scripts/cargo-tool-version.sh lychee)
 # Tool versions from tools.toml
 PREK_VERSION := $(shell bash scripts/tool-version.sh prek)
 UV_VERSION := $(shell bash scripts/uv-version.sh)
+UV_V2_REQUIRED_SPEC := $(shell awk -F'"' '\
+	/^\[tool\.uv\]/ { in_section=1; next } \
+	/^\[/ { in_section=0 } \
+	in_section && /^[[:space:]]*required-version[[:space:]]*=/ { print $$2; exit } \
+' python/pyproject.toml)
+UV_V2_REQUIRED_VERSION := $(patsubst ==%,%,$(UV_V2_REQUIRED_SPEC))
 
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
@@ -31,6 +37,8 @@ VERBOSE ?= true
 # UV_SYNC_FLAGS controls whether uv keeps packages not managed by this project
 # Set UV_SYNC_FLAGS= to make uv prune packages not in uv.lock
 UV_SYNC_FLAGS ?= --inexact
+
+V2_CARGO_TARGET_DIR ?= $(CURDIR)/target-v2
 
 PIP_AUDIT_IGNORE_FLAGS :=
 
@@ -1037,19 +1045,40 @@ test-performance:  #-- Run performance tests with codspeed benchmarking
 
 .PHONY: sync-v2
 sync-v2:  #-- Sync v2 Python dependencies (without building the package)
-	$(info $(M) Syncing v2 Python dependencies...)
+	@if [ -z "$(UV_V2_REQUIRED_SPEC)" ]; then \
+		printf "$(RED)ERROR: Could not find required-version in python/pyproject.toml$(RESET)\n"; \
+		exit 1; \
+	fi
+	@if [ "$(UV_V2_REQUIRED_SPEC)" = "$(UV_V2_REQUIRED_VERSION)" ]; then \
+		printf "$(RED)ERROR: python/pyproject.toml required-version must use ==A.B.C, found $(UV_V2_REQUIRED_SPEC)$(RESET)\n"; \
+		exit 1; \
+	fi
+	@found="$$(uv --version 2>/dev/null | awk '{print $$2}' || true)"; \
+	if [ -z "$$found" ]; then \
+		printf "$(RED)ERROR: uv not found, ==$(UV_V2_REQUIRED_VERSION) required; run \`uv self update --version $(UV_V2_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		exit 1; \
+	fi; \
+	if [ "$$found" != "$(UV_V2_REQUIRED_VERSION)" ]; then \
+		printf "$(RED)ERROR: uv $$found found, ==$(UV_V2_REQUIRED_VERSION) required; run \`uv self update --version $(UV_V2_REQUIRED_VERSION)\` or prepend a matching binary to PATH.$(RESET)\n"; \
+		exit 1; \
+	fi
+	@printf "$(M) Syncing v2 Python dependencies...\n"
 	$Q cd python && VIRTUAL_ENV= uv sync --all-groups --all-extras --no-install-package nautilus-trader $(UV_SYNC_FLAGS)
 
 .PHONY: build-debug-v2
 build-debug-v2: sync-v2  #-- Build the v2 Python package in debug mode (also regenerates type stubs)
 	@$(MAKE) --no-print-directory py-stubs-v2
 	$(info $(M) Building v2 extension in debug mode...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=../target-v2 uv run --no-sync maturin develop
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(V2_CARGO_TARGET_DIR) uv run --no-sync maturin develop
 
 .PHONY: py-stubs-v2
 py-stubs-v2: sync-v2  #-- Regenerate v2 Python type stubs from Rust bindings
 	$(info $(M) Generating v2 Python type stubs...)
-	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(CURDIR)/target-v2 uv run --no-sync python generate_stubs.py
+	$Q cd python && VIRTUAL_ENV= CARGO_TARGET_DIR=$(V2_CARGO_TARGET_DIR) uv run --no-sync python generate_stubs.py
+
+.PHONY: check-v2-generated-drift
+check-v2-generated-drift:  #-- Check v2 generated stubs and docstrings are committed
+	$Q bash scripts/ci/check-v2-generated-drift.bash
 
 .PHONY: update-v2
 update-v2: cargo-update  #-- Update v2 dependencies (cargo and uv)
@@ -1064,7 +1093,7 @@ pytest-v2: build-debug-v2  #-- Run v2 Python tests
 
 .PHONY: pre-flight-v2
 pre-flight-v2: export CARGO_TARGET_DIR=target-v2
-pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, cargo-test, build, pytest)
+pre-flight-v2:  #-- Run v2 pre-flight checks (format, tests, build, generated drift, audit)
 	$(info $(M) Running v2 pre-flight checks...)
 	@if ! git diff --quiet; then \
 		printf "$(RED)ERROR: You have unstaged changes$(RESET)\n"; \
@@ -1077,6 +1106,7 @@ pre-flight-v2:  #-- Run comprehensive v2 pre-flight checks (format, check-code, 
 		&& $(MAKE) --no-print-directory check-code EXTRA_FEATURES="capnp,hypersync" \
 		&& $(MAKE) --no-print-directory cargo-test-extras \
 		&& $(MAKE) --no-print-directory build-debug-v2 \
+		&& $(MAKE) --no-print-directory check-v2-generated-drift \
 		&& $(MAKE) --no-print-directory pytest-v2 \
 		&& $(MAKE) --no-print-directory security-audit \
 	$(call timer_end,Pre-flight)

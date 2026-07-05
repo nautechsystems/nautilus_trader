@@ -1915,13 +1915,25 @@ fn handle_ws_message(
     if is_orders_channel {
         let data = match serde_json::from_str::<DeriveOrdersSubscriptionData>(payload.data.get()) {
             Ok(data) => data,
-            Err(_) => return,
+            Err(e) => {
+                log::warn!(
+                    "Failed to decode Derive orders frame on channel {}: {e}",
+                    payload.channel,
+                );
+                return;
+            }
         };
         dispatch_orders_payload(data, emitter, account_id, clock, dispatch_state);
     } else if is_trades_channel {
         let data = match serde_json::from_str::<DeriveTradesSubscriptionData>(payload.data.get()) {
             Ok(data) => data,
-            Err(_) => return,
+            Err(e) => {
+                log::warn!(
+                    "Failed to decode Derive trades frame on channel {}: {e}",
+                    payload.channel,
+                );
+                return;
+            }
         };
         dispatch_trades_payload(data, emitter, account_id, clock, dispatch_state);
     }

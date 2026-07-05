@@ -31,11 +31,13 @@ from nautilus_trader.core import UUID4
 from nautilus_trader.indicators import MovingAverageConvergenceDivergence
 from nautilus_trader.model import Bar
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BookType
 from nautilus_trader.model import ClientOrderId
 from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LimitOrder
 from nautilus_trader.model import MarketOrder
+from nautilus_trader.model import OrderBookDeltas
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderSide
 from nautilus_trader.model import Price
@@ -234,6 +236,97 @@ class TickScheduled(Strategy):
 
     def on_stop(self):
         pass
+
+
+class OrderBookImbalanceConfig(StrategyConfig):
+    _CUSTOM_FIELDS = ("instrument_id", "trade_size")
+
+    def __new__(cls, *args, **kwargs):
+        for key in cls._CUSTOM_FIELDS:
+            kwargs.pop(key, None)
+        return super().__new__(cls, *args, **kwargs)
+
+    def __init__(
+        self,
+        instrument_id: str,
+        trade_size: str,
+        **kwargs,
+    ):
+        super().__init__()
+        self.instrument_id = instrument_id
+        self.trade_size = trade_size
+
+
+class OrderBookImbalance(Strategy):
+    _MIN_IMBALANCE_SIZE = Decimal(100)
+    _MAX_IMBALANCE_RATIO = Decimal("0.20")
+
+    def __init__(self, config: OrderBookImbalanceConfig):
+        super().__init__(config)
+        self._instrument_id = InstrumentId.from_str(config.instrument_id)
+        self._trade_size = Quantity.from_str(config.trade_size)
+        self._has_submitted = False
+
+    def on_start(self):
+        self.subscribe_book_deltas(self._instrument_id, BookType.L2_MBP)
+
+    def on_book_deltas(self, deltas: OrderBookDeltas):
+        if self._has_submitted:
+            return
+
+        bid_size = Decimal(0)
+        ask_size = Decimal(0)
+        bid_price = None
+        ask_price = None
+
+        for delta in deltas.deltas:
+            size = delta.order.size.as_decimal()
+            if delta.order.side == OrderSide.BUY:
+                bid_size += size
+                bid_price = delta.order.price
+            elif delta.order.side == OrderSide.SELL:
+                ask_size += size
+                ask_price = delta.order.price
+
+        if bid_size <= 0 or ask_size <= 0:
+            return
+
+        larger = max(bid_size, ask_size)
+        smaller = min(bid_size, ask_size)
+
+        if larger <= self._MIN_IMBALANCE_SIZE:
+            return
+
+        if smaller / larger >= self._MAX_IMBALANCE_RATIO:
+            return
+
+        if bid_size > ask_size and ask_price is not None:
+            side = OrderSide.BUY
+            price = ask_price
+        elif bid_price is not None:
+            side = OrderSide.SELL
+            price = bid_price
+        else:
+            return
+
+        self._has_submitted = True
+        self.submit_order(
+            self.order_factory.limit(
+                instrument_id=self._instrument_id,
+                order_side=side,
+                quantity=self._trade_size,
+                price=price,
+                time_in_force=TimeInForce.FOK,
+                post_only=False,
+            ),
+        )
+
+    def on_stop(self):
+        self.cancel_all_orders(self._instrument_id)
+        self.close_all_positions(self._instrument_id)
+
+    def on_reset(self):
+        self._has_submitted = False
 
 
 class MultiInstrumentTickScheduledConfig(StrategyConfig):

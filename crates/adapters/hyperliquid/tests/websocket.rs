@@ -1766,6 +1766,350 @@ async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options()
     client.disconnect().await.expect("close failed");
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_resubscribe_book_echoes_original_options() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_book_with_options(instrument_id, Some(5), Some(2))
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().any(|(t, ok)| t == "l2Book" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client
+        .resubscribe_book(instrument_id)
+        .await
+        .expect("resubscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(t, _)| t == "l2Book").count() >= 2
+                    && !state.unsubscriptions.lock().await.is_empty()
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(unsubscriptions.len(), 1);
+    assert_eq!(
+        unsubscriptions[0].get("type").and_then(Value::as_str),
+        Some("l2Book"),
+    );
+    assert_eq!(
+        unsubscriptions[0].get("nSigFigs").and_then(Value::as_u64),
+        Some(5),
+        "expected the targeted unsubscribe to echo the original options"
+    );
+    assert_eq!(
+        unsubscriptions[0].get("mantissa").and_then(Value::as_u64),
+        Some(2),
+    );
+    drop(unsubscriptions);
+
+    let subscriptions = state.subscriptions.lock().await;
+    let (_, resubscribed) = subscriptions
+        .iter()
+        .rev()
+        .find(|(t, _)| t == "l2Book")
+        .expect("resubscribed stream")
+        .clone();
+    assert_eq!(
+        resubscribed.get("nSigFigs").and_then(Value::as_u64),
+        Some(5),
+        "expected the targeted resubscribe to preserve options"
+    );
+    assert_eq!(
+        resubscribed.get("mantissa").and_then(Value::as_u64),
+        Some(2),
+    );
+    drop(subscriptions);
+
+    client
+        .unsubscribe_book(instrument_id)
+        .await
+        .expect("unsubscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.unsubscriptions.lock().await.len() >= 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(
+        unsubscriptions[1].get("nSigFigs").and_then(Value::as_u64),
+        Some(5),
+        "expected the registry to survive the targeted resubscribe"
+    );
+    drop(unsubscriptions);
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_resubscribe_book_skips_unregistered_stream() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .resubscribe_book(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("resubscribe of an unregistered stream should be a no-op");
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    assert!(
+        state.subscription_events().await.is_empty(),
+        "no venue subscribe may result from an unregistered resubscribe"
+    );
+    assert!(state.unsubscriptions.lock().await.is_empty());
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_resubscribe_quotes_sends_unsubscribe_then_subscribe() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client
+        .resubscribe_quotes(instrument_id)
+        .await
+        .expect("resubscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(t, _)| t == "bbo").count() >= 2
+                    && !state.unsubscriptions.lock().await.is_empty()
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let events = state.subscription_events().await;
+    assert_eq!(
+        events.iter().filter(|(t, _)| t == "bbo").count(),
+        2,
+        "expected the targeted resubscribe to reach the venue"
+    );
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(unsubscriptions.len(), 1);
+    assert_eq!(
+        unsubscriptions[0].get("type").and_then(Value::as_str),
+        Some("bbo"),
+    );
+    assert_eq!(
+        unsubscriptions[0].get("coin").and_then(Value::as_str),
+        Some("BTC"),
+    );
+    drop(unsubscriptions);
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_resubscribe_quotes_skips_unsubscribed_stream() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_quotes(instrument_id)
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().any(|(t, ok)| t == "bbo" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client
+        .unsubscribe_quotes(instrument_id)
+        .await
+        .expect("unsubscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.unsubscriptions.lock().await.len() == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client
+        .resubscribe_quotes(instrument_id)
+        .await
+        .expect("resubscribe of an unsubscribed stream should be a no-op");
+
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let events = state.subscription_events().await;
+    assert_eq!(
+        events.iter().filter(|(t, _)| t == "bbo").count(),
+        1,
+        "no venue subscribe may result from an unsubscribed resubscribe",
+    );
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(
+        unsubscriptions.len(),
+        1,
+        "no venue unsubscribe may result from an unsubscribed resubscribe",
+    );
+    drop(unsubscriptions);
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_reconnect_replays_subscriptions() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    assert!(
+        !client.request_reconnect(),
+        "a client that never connected must reject the reconnect request"
+    );
+
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().any(|(t, ok)| t == "trades" && *ok)
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    assert!(
+        client.request_reconnect(),
+        "an active connection must accept the reconnect request"
+    );
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                let events = state.subscription_events().await;
+                events.iter().filter(|(t, ok)| t == "trades" && *ok).count() >= 2
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let events = state.subscription_events().await;
+    assert!(
+        events.iter().filter(|(t, ok)| t == "trades" && *ok).count() >= 2,
+        "expected trades to be replayed after the forced reconnect, events: {events:?}"
+    );
+
+    wait_until_active(&client, 5.0)
+        .await
+        .expect("client should return to active after the forced reconnect");
+
+    client.disconnect().await.expect("close failed");
+}
+
 #[tokio::test]
 async fn test_all_mids_subscription() {
     let state = Arc::new(TestServerState::default());

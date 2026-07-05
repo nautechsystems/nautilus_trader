@@ -49,7 +49,7 @@ use nautilus_common::{
     timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
-    Params, from_pydict,
+    Params, UnixNanos, from_pydict,
     python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
@@ -71,7 +71,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
         TraderId, Venue,
     },
-    instruments::InstrumentAny,
+    instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
@@ -1538,6 +1538,39 @@ impl PyStrategy {
         DataActor::on_load(self.inner_mut(), state).map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "publish_data")]
+    fn py_publish_data(&self, data_type: &DataType, data: &CustomData) {
+        DataActor::publish_data(self.inner(), data_type, data);
+    }
+
+    #[pyo3(name = "publish_signal")]
+    #[pyo3(signature = (name, value, ts_event=0))]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "PyO3 accepts an owned PyAny handle for Python signal values"
+    )]
+    fn py_publish_signal(
+        &self,
+        py: Python<'_>,
+        name: &str,
+        value: Py<PyAny>,
+        ts_event: u64,
+    ) -> PyResult<()> {
+        let value_str: String = value.bind(py).str()?.extract()?;
+        DataActor::publish_signal(self.inner(), name, value_str, UnixNanos::from(ts_event));
+        Ok(())
+    }
+
+    #[pyo3(name = "add_synthetic")]
+    fn py_add_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        DataActor::add_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "update_synthetic")]
+    fn py_update_synthetic(&self, synthetic: SyntheticInstrument) -> PyResult<()> {
+        DataActor::update_synthetic(self.inner(), synthetic).map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "resume")]
     fn py_resume(&mut self) -> PyResult<()> {
         Component::resume(self.inner_mut()).map_err(to_pyruntime_err)
@@ -2123,6 +2156,12 @@ impl PyStrategy {
         Ok(())
     }
 
+    #[pyo3(name = "subscribe_signal")]
+    #[pyo3(signature = (name="", priority=None))]
+    fn py_subscribe_signal(&mut self, name: &str, priority: Option<u32>) {
+        DataActor::subscribe_signal(self.inner_mut(), name, priority);
+    }
+
     #[pyo3(name = "subscribe_instruments")]
     #[pyo3(signature = (venue, client_id=None, params=None))]
     fn py_subscribe_instruments(
@@ -2436,6 +2475,11 @@ impl PyStrategy {
         })?;
         DataActor::unsubscribe_data(self.inner_mut(), data_type, client_id, params_map);
         Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_signal")]
+    fn py_unsubscribe_signal(&mut self, name: &str) {
+        DataActor::unsubscribe_signal(self.inner_mut(), name);
     }
 
     #[pyo3(name = "unsubscribe_instruments")]
@@ -3939,6 +3983,130 @@ class IndicatorEventStrategy:
                 loaded_state.get("strategy").map(Vec::as_slice),
                 Some(&b"loaded-from-python"[..])
             );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_publish_data_and_signal_reach_msgbus() {
+        use nautilus_common::msgbus::{
+            MStr, MessageBus, Pattern, get_message_bus, switchboard::get_custom_topic,
+            typed_handler::ShareableMessageHandler,
+        };
+        use nautilus_core::python::IntoPyObjectNautilusExt;
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, rust_strategy) = create_registered_tracking_strategy(py);
+            let data = sample_data();
+
+            let received_data: Rc<RefCell<Vec<CustomData>>> = Rc::new(RefCell::new(Vec::new()));
+            let received_data_clone = received_data.clone();
+            let data_handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
+                received_data_clone.borrow_mut().push(data.clone());
+            });
+            msgbus::subscribe_any(get_custom_topic(&data.data_type).into(), data_handler, None);
+
+            let received_signals: Rc<RefCell<Vec<Signal>>> = Rc::new(RefCell::new(Vec::new()));
+            let received_signals_clone = received_signals.clone();
+            let signal_handler = ShareableMessageHandler::from_typed(move |data: &CustomData| {
+                if let Some(signal) = data.data.as_any().downcast_ref::<Signal>() {
+                    received_signals_clone.borrow_mut().push(signal.clone());
+                }
+            });
+            let signal_pattern: MStr<Pattern> = "data.Signal*".to_string().into();
+            msgbus::subscribe_any(signal_pattern, signal_handler, None);
+
+            rust_strategy.py_publish_data(&data.data_type, &data);
+
+            let value: Py<PyAny> = 2.0_f64.into_py_any_unwrap(py);
+            rust_strategy
+                .py_publish_signal(py, "risk", value, 1_700_000_000_000_000_000)
+                .unwrap();
+
+            let received_data = received_data.borrow();
+            assert_eq!(received_data.len(), 1);
+            assert_eq!(received_data[0].data_type, data.data_type);
+
+            let received_signals = received_signals.borrow();
+            assert_eq!(received_signals.len(), 1);
+            assert_eq!(received_signals[0].name.as_str(), "risk");
+            assert_eq!(received_signals[0].value, "2.0");
+            assert_eq!(
+                received_signals[0].ts_event,
+                UnixNanos::from(1_700_000_000_000_000_000_u64),
+            );
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_add_and_update_synthetic_update_cache() {
+        use std::str::FromStr;
+
+        use nautilus_model::{
+            identifiers::{InstrumentId, Symbol},
+            instruments::SyntheticInstrument,
+        };
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, rust_strategy) = create_registered_tracking_strategy(py);
+
+            let comp1 = InstrumentId::from_str("BTC-USD.VENUE").unwrap();
+            let comp2 = InstrumentId::from_str("ETH-USD.VENUE").unwrap();
+            let symbol = Symbol::from("SYN");
+            let original_formula = format!("({comp1} + {comp2}) / 2.0");
+            let synthetic = SyntheticInstrument::new(
+                symbol,
+                2,
+                vec![comp1, comp2],
+                &original_formula,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+            let synthetic_id = synthetic.id;
+
+            rust_strategy.py_add_synthetic(synthetic).unwrap();
+
+            let updated_formula = format!("{comp1} + {comp2}");
+            let updated = SyntheticInstrument::new(
+                symbol,
+                2,
+                vec![comp1, comp2],
+                &updated_formula,
+                UnixNanos::default(),
+                UnixNanos::default(),
+            );
+            rust_strategy.py_update_synthetic(updated).unwrap();
+
+            let cache = DataActor::cache(rust_strategy.inner());
+            let stored = cache.synthetic(&synthetic_id).unwrap();
+            assert_eq!(stored.formula, updated_formula);
+        });
+    }
+
+    #[rstest::rstest]
+    fn test_python_subscribe_and_unsubscribe_signal_update_msgbus() {
+        use nautilus_common::msgbus::{MessageBus, get_message_bus, switchboard::get_signal_topic};
+
+        *get_message_bus().borrow_mut() = MessageBus::default();
+
+        pyo3::Python::initialize();
+        Python::attach(|py| {
+            let (_, mut rust_strategy) = create_registered_tracking_strategy(py);
+
+            rust_strategy.py_subscribe_signal("risk", Some(50));
+
+            let topic = get_signal_topic("risk");
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert_eq!(subscriptions.len(), 1);
+            assert_eq!(subscriptions[0].priority, 50);
+
+            rust_strategy.py_unsubscribe_signal("risk");
+
+            let subscriptions = get_message_bus().borrow_mut().matching_subscriptions(topic);
+            assert!(subscriptions.is_empty());
         });
     }
 

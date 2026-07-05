@@ -36,8 +36,8 @@ use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_network::websocket::TransportBackend;
 use nautilus_system::get_global_pyo3_registry;
 use pyo3::{
-    Py, Python,
-    types::{PyAnyMethods, PyModule},
+    IntoPyObjectExt, Py, Python,
+    types::{PyAny, PyAnyMethods, PyModule, PyTuple},
 };
 use rstest::rstest;
 
@@ -101,6 +101,34 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
             .extract()
             .expect("extended config should extract");
 
+        // PyO3 tuple `call1` impls stop before this arity
+        let recovery_args = PyTuple::new(
+            py,
+            [
+                py.None(),
+                py.None(),
+                py.None(),
+                py.None(),
+                py.None(),
+                py.None(),
+                py.None(),
+                obj(py, 19_u64),
+                py.None(),
+                obj(py, 31_u64),
+                obj(py, 7_u64),
+                obj(py, 23_u64),
+                obj(py, true),
+                obj(py, 45_u64),
+                obj(py, 5_u32),
+            ],
+        )
+        .expect("recovery args tuple should build");
+        let recovery_config: HyperliquidDataClientConfig = config_cls
+            .call1(recovery_args)
+            .expect("recovery positional constructor should succeed")
+            .extract()
+            .expect("recovery config should extract");
+
         assert_eq!(legacy_config.update_instruments_interval_mins, 17);
         assert_eq!(legacy_config.stale_stream_receive_timeout_secs, 120);
         assert_eq!(legacy_config.stream_health_check_interval_secs, 15);
@@ -109,7 +137,19 @@ fn test_hyperliquid_data_config_python_constructor_preserves_positional_order() 
         assert_eq!(extended_config.stale_stream_receive_timeout_secs, 31);
         assert_eq!(extended_config.stream_health_check_interval_secs, 7);
         assert_eq!(extended_config.stale_stream_warning_cooldown_secs, 23);
+        assert!(!extended_config.stale_stream_recovery_enabled);
+        assert_eq!(extended_config.stale_stream_recovery_cooldown_secs, 120);
+        assert_eq!(extended_config.stale_stream_max_targeted_resubscribes, 3);
+        assert!(recovery_config.stale_stream_recovery_enabled);
+        assert_eq!(recovery_config.stale_stream_recovery_cooldown_secs, 45);
+        assert_eq!(recovery_config.stale_stream_max_targeted_resubscribes, 5);
     });
+}
+
+fn obj<'py>(py: Python<'py>, value: impl IntoPyObjectExt<'py>) -> Py<PyAny> {
+    value
+        .into_py_any(py)
+        .expect("value should convert to a Python object")
 }
 
 fn setup_data_event_sender() {

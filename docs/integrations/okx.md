@@ -1024,7 +1024,9 @@ See the [OKX rate limit documentation](https://www.okx.com/docs-v5/en/#rest-api-
 
 ### Configuration options
 
-The OKX data client provides the following configuration options:
+The OKX data client provides the following configuration options. This table describes the
+Rust/pyo3 v2 data client config; Python v1 live configs do not expose the book health
+monitor fields below.
 
 #### Data client
 
@@ -1047,9 +1049,16 @@ The OKX data client provides the following configuration options:
 | `retry_delay_initial_ms`           | `1,000`                     | Initial delay before retrying.               |
 | `retry_delay_max_ms`               | `10,000`                    | Maximum exponential backoff delay.           |
 | `update_instruments_interval_mins` | `60`                        | Background instrument refresh interval.      |
+| `book_stale_check_interval_secs`   | `5`                         | Stale book check interval.                   |
+| `book_stale_threshold_secs`        | `30`                        | Idle time before a stale book warning.       |
+| `book_snapshot_timeout_secs`       | `3`                         | Post‑reconnect snapshot wait.                |
 | `vip_level`                        | `None`                      | Enables higher‑depth books by VIP tier.      |
 | `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.       |
 | `transport_backend`                | `Sockudo`                   | WebSocket transport backend.                 |
+
+Set `book_stale_check_interval_secs`, `book_stale_threshold_secs`, or
+`book_snapshot_timeout_secs` to `0` to disable that health monitor. Quiet markets can idle
+without book updates; increase `book_stale_threshold_secs` for sparse instruments.
 
 Supported data client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`.

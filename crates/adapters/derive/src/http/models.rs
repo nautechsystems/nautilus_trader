@@ -43,7 +43,7 @@ use crate::common::{
         DeriveOrderType, DeriveTimeInForce, DeriveTriggerPriceType, DeriveTriggerType,
         DeriveTxStatus,
     },
-    parse::{deserialize_derive_decimal, deserialize_optional_derive_decimal},
+    parse::deserialize_salvaged_vec,
 };
 
 /// Outbound JSON-RPC request frame. Used as-is by the WebSocket transport; the
@@ -531,7 +531,7 @@ pub struct DeriveOrderResult {
     /// Accepted order.
     pub order: DeriveOrder,
     /// Trades generated synchronously by the submission, when any.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_salvaged_vec")]
     pub trades: Vec<DeriveTrade>,
 }
 
@@ -569,67 +569,67 @@ impl<'de> Deserialize<'de> for DeriveEmptyResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePosition {
     /// Signed position amount; positive = long, negative = short.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub amount: Decimal,
     /// Average entry price over the lifetime of the position.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub average_price: Decimal,
     /// Position opening timestamp (UNIX ms).
     pub creation_timestamp: i64,
     /// Cumulative funding accrued by this position (perps only).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub cumulative_funding: Decimal,
     /// Position delta (with respect to forward for options).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub delta: Decimal,
     /// Position gamma (zero for non-options).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub gamma: Decimal,
     /// Current oracle index price for the underlying.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub index_price: Decimal,
     /// USD initial margin requirement for this position.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub initial_margin: Decimal,
     /// Instrument identifier (same as the base asset name).
     pub instrument_name: Ustr,
     /// Instrument category.
     pub instrument_type: DeriveInstrumentType,
     /// Effective leverage (perps only).
-    #[serde(default, deserialize_with = "deserialize_optional_derive_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub leverage: Option<Decimal>,
     /// Index price at which the position would liquidate.
-    #[serde(default, deserialize_with = "deserialize_optional_derive_decimal")]
+    #[serde(default, deserialize_with = "deserialize_optional_decimal")]
     pub liquidation_price: Option<Decimal>,
     /// USD maintenance margin requirement.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub maintenance_margin: Decimal,
     /// Current mark price.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub mark_price: Decimal,
     /// USD mark-to-market value of the position.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub mark_value: Decimal,
     /// Net USD settled from this position.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub net_settlements: Decimal,
     /// USD margin held against open orders touching this asset.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub open_orders_margin: Decimal,
     /// Funding not yet settled into cash balance (perps only).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub pending_funding: Decimal,
     /// Realized PnL booked on this position.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub realized_pnl: Decimal,
     /// Position theta (zero for non-options).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub theta: Decimal,
     /// Unrealized PnL.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub unrealized_pnl: Decimal,
     /// Position vega (zero for non-options).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub vega: Decimal,
 }
 
@@ -637,31 +637,31 @@ pub struct DerivePosition {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveCollateral {
     /// Collateral amount.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub amount: Decimal,
     /// Asset name (e.g. `"ETH"`, `"USDC"`).
     pub asset_name: Ustr,
     /// Asset category.
     pub asset_type: DeriveAssetType,
     /// Cumulative interest earned or paid.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub cumulative_interest: Decimal,
     /// Underlying currency.
     pub currency: Ustr,
     /// USD initial margin credit from this collateral.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub initial_margin: Decimal,
     /// USD maintenance margin credit.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub maintenance_margin: Decimal,
     /// Current mark price of the asset.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub mark_price: Decimal,
     /// USD value (`amount * mark_price`).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub mark_value: Decimal,
     /// Interest not yet settled on-chain.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub pending_interest: Decimal,
 }
 
@@ -671,18 +671,18 @@ pub struct DeriveSubaccount {
     /// Collateral rows contributing to margin.
     pub collaterals: Vec<DeriveCollateral>,
     /// Total initial margin credit from collaterals.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub collaterals_initial_margin: Decimal,
     /// Total maintenance margin credit from collaterals.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub collaterals_maintenance_margin: Decimal,
     /// Mark-to-market value of all collaterals.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub collaterals_value: Decimal,
     /// Subaccount currency (e.g. `"USDC"`).
     pub currency: Ustr,
     /// USD initial margin requirement.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub initial_margin: Decimal,
     /// Whether the subaccount is mid-liquidation.
     pub is_under_liquidation: bool,
@@ -690,30 +690,32 @@ pub struct DeriveSubaccount {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// USD maintenance margin requirement.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub maintenance_margin: Decimal,
     /// Margining mode (standard, portfolio, or PMRM v2).
     pub margin_type: DeriveMarginType,
     /// Open orders held by the subaccount.
+    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub open_orders: Vec<DeriveOrder>,
     /// USD margin held against open orders.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub open_orders_margin: Decimal,
     /// Open positions held by the subaccount.
+    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub positions: Vec<DerivePosition>,
     /// USD initial margin requirement attributable to positions.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub positions_initial_margin: Decimal,
     /// USD maintenance margin requirement attributable to positions.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub positions_maintenance_margin: Decimal,
     /// Mark-to-market value of positions.
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub positions_value: Decimal,
     /// Subaccount identifier.
     pub subaccount_id: i64,
     /// Total subaccount value (collateral + positions).
-    #[serde(deserialize_with = "deserialize_derive_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal")]
     pub subaccount_value: Decimal,
 }
 
@@ -842,7 +844,8 @@ pub struct DerivePaginationInfo {
 /// Paginated `private/get_orders` result envelope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveOrdersResult {
-    /// Orders on the current page.
+    /// Orders on the current page. Deliberately strict: reconciliation infers
+    /// state from absence, so a dropped order row is worse than a loud failure.
     pub orders: Vec<DeriveOrder>,
     /// Pagination metadata.
     pub pagination: DerivePaginationInfo,
@@ -853,7 +856,8 @@ pub struct DeriveOrdersResult {
 /// `private/get_open_orders` result envelope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveOpenOrdersResult {
-    /// Currently open orders.
+    /// Currently open orders. Deliberately strict: reconciliation infers
+    /// state from absence, so a dropped order row is worse than a loud failure.
     pub orders: Vec<DeriveOrder>,
     /// Owning subaccount.
     pub subaccount_id: i64,
@@ -863,6 +867,7 @@ pub struct DeriveOpenOrdersResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeriveTradesResult {
     /// Trades on the current page.
+    #[serde(deserialize_with = "deserialize_salvaged_vec")]
     pub trades: Vec<DeriveTrade>,
     /// Pagination metadata.
     pub pagination: DerivePaginationInfo,
@@ -931,7 +936,10 @@ pub struct DerivePublicFundingRateHistoryResult {
 /// `private/get_positions` result envelope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePositionsResult {
-    /// Positions held by the subaccount.
+    /// Positions held by the subaccount. Deliberately strict: mass status
+    /// synthesizes flat reports for instruments absent from this list, so a
+    /// dropped position row would report "flat" for a position the venue
+    /// still holds.
     pub positions: Vec<DerivePosition>,
     /// Owning subaccount.
     pub subaccount_id: i64,
@@ -1139,6 +1147,37 @@ mod tests {
             position.liquidation_price.as_ref().map(ToString::to_string),
             Some("4200.1234567890123456789012346".into()),
         );
+
+        // Order rows nested in the snapshot carry the same high-scale values.
+        let open_order = &subaccount.open_orders[0];
+        assert_eq!(
+            open_order.filled_amount.to_string(),
+            "0.1234567890123456789012345679",
+        );
+        assert_eq!(
+            open_order.max_fee.to_string(),
+            "0.1234567890123456789012345679",
+        );
+    }
+
+    #[rstest]
+    fn test_subaccount_salvages_unknown_variant_rows() {
+        let body = load_json("common/http_subaccount_unknown_variants.json");
+        let subaccount: DeriveSubaccount = serde_json::from_value(body).unwrap();
+
+        // The `queued`-status open order is skipped; snapshot and siblings survive.
+        assert_eq!(subaccount.margin_type, DeriveMarginType::Unknown);
+        assert_eq!(
+            subaccount.collaterals[0].asset_type,
+            DeriveAssetType::Unknown
+        );
+        assert_eq!(subaccount.open_orders.len(), 1);
+        assert_eq!(subaccount.open_orders[0].label.as_str(), "alpha-strategy");
+        assert_eq!(subaccount.positions.len(), 1);
+        assert_eq!(
+            subaccount.positions[0].instrument_type,
+            DeriveInstrumentType::Unknown,
+        );
     }
 
     #[rstest]
@@ -1163,6 +1202,43 @@ mod tests {
         assert!(result.orders.is_empty());
         assert_eq!(result.subaccount_id, 42);
         assert_eq!(result.pagination.count, 0);
+    }
+
+    #[rstest]
+    fn test_orders_result_decodes_unknown_variant_fields() {
+        let body = load_json("perps/http_orders_result_eth_unknown_variants.json");
+        let result: DeriveOrdersResult = serde_json::from_value(body).unwrap();
+
+        assert_eq!(result.orders.len(), 2);
+        assert_eq!(result.orders[0].order_status, DeriveOrderStatus::Open);
+        let unknowns = &result.orders[1];
+        assert_eq!(unknowns.order_status, DeriveOrderStatus::Cancelled);
+        assert_eq!(unknowns.cancel_reason, DeriveOrderCancelReason::Unknown);
+        assert_eq!(unknowns.order_type, DeriveOrderType::Unknown);
+        assert_eq!(unknowns.time_in_force, DeriveTimeInForce::Unknown);
+        assert_eq!(unknowns.trigger_type, Some(DeriveTriggerType::Unknown));
+        assert_eq!(
+            unknowns.trigger_price_type,
+            Some(DeriveTriggerPriceType::Unknown),
+        );
+    }
+
+    #[rstest]
+    fn test_orders_result_fails_on_unknown_order_status() {
+        // Pins the deliberate strictness documented on the struct.
+        let mut body = load_json("perps/http_orders_result_eth_unknown_variants.json");
+        body["orders"][0]["order_status"] = json!("queued");
+
+        assert!(serde_json::from_value::<DeriveOrdersResult>(body).is_err());
+    }
+
+    #[rstest]
+    fn test_positions_result_fails_on_undecodable_row() {
+        // Pins the deliberate strictness documented on the struct.
+        let mut body = load_json("perps/http_positions_result_eth.json");
+        body["positions"][0]["amount"] = json!({});
+
+        assert!(serde_json::from_value::<DerivePositionsResult>(body).is_err());
     }
 
     fn perp_ticker_json() -> Value {
@@ -1236,6 +1312,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_private_trade_decodes_high_scale_decimal_values() {
+        let mut body = load_json("perps/http_private_trade_eth.json");
+        body["trade_fee"] = json!("1.234567890123456789012345678912345e-1");
+        body["realized_pnl"] = json!("0.1234567890123456789012345678912345");
+
+        let trade: DeriveTrade = serde_json::from_value(body).unwrap();
+
+        assert_eq!(
+            trade.trade_fee.to_string(),
+            "0.1234567890123456789012345679"
+        );
+        assert_eq!(
+            trade.realized_pnl.to_string(),
+            "0.1234567890123456789012345679",
+        );
+    }
+
+    #[rstest]
     fn test_order_result_decodes_pending_trade_with_null_tx_hash() {
         let mut body = load_json("spot/http_submit_order_response_mainnet.json");
         let mut trade = load_json("perps/http_private_trade_eth.json");
@@ -1273,6 +1367,30 @@ mod tests {
         assert_eq!(result.pagination.count, 1);
         assert_eq!(result.pagination.num_pages, 1);
         assert_eq!(result.trades[0].trade_id, "t-1");
+    }
+
+    #[rstest]
+    fn test_trades_result_salvages_unknown_variant_rows() {
+        let body = load_json("perps/http_trades_result_eth_unknown_variants.json");
+        let result: DeriveTradesResult = serde_json::from_value(body).unwrap();
+
+        // The `short`-direction row is undecodable and skipped; the rest survive.
+        assert_eq!(result.trades.len(), 2);
+        assert_eq!(result.trades[0].trade_id, "t-1");
+        let unknowns = &result.trades[1];
+        assert_eq!(unknowns.trade_id, "t-2");
+        assert_eq!(unknowns.liquidity_role, DeriveLiquidityRole::Unknown);
+    }
+
+    #[rstest]
+    fn test_trades_result_drops_unknown_tx_status_rows() {
+        // An unknown settlement status must salvage away the row, never emit a fill.
+        let mut body = load_json("perps/http_trades_result_eth.json");
+        body["trades"][0]["tx_status"] = json!("bridging");
+
+        let result: DeriveTradesResult = serde_json::from_value(body).unwrap();
+
+        assert!(result.trades.is_empty());
     }
 
     #[rstest]

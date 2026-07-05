@@ -2786,6 +2786,7 @@ version = "0.0.0"
 dependencies = [
  "alloy-primitives",
  "libfuzzer-sys",
+ "nautilus-core",
  "nautilus-derive",
  "rust_decimal",
  "serde",

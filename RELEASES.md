@@ -32,6 +32,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Added Ulcer Index, Omega Ratio, VaR, and Expected Shortfall portfolio statistics (#4352), thanks @Martingale42
 - Added Tail Ratio portfolio statistic (#4341), thanks @Martingale42
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
+- Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
 
 ### Breaking Changes
@@ -41,6 +42,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 
 ### Fixes
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
+- Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
 - Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu
 - Fixed indicator rolling-window bounds and averages past capacity (#4351), thanks @Martingale42
@@ -54,6 +56,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
+- Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
@@ -61,6 +64,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Interactive Brokers `contract_details_to_dict` crash when `contractDetails.ineligibilityReasonList` contains non-serializable `IneligibilityReason` objects
 
 ### Internal Improvements
+- Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved portfolio statistics test coverage with canonical worked examples
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Rust (MSRV) to 1.96.1

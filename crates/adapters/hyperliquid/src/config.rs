@@ -24,6 +24,13 @@ use crate::common::{
 };
 
 /// Configuration for the Hyperliquid data client.
+///
+/// The `stale_stream_*` options control the stream health monitor. With recovery
+/// enabled, a stale stream is warned about first, targeted-resubscribed once per
+/// recovery cooldown (preserving its original `l2Book` options), and escalated to
+/// a full WebSocket reconnect after `stale_stream_max_targeted_resubscribes`
+/// failed attempts; fresh data resets the ladder. See the Hyperliquid integration
+/// guide ("Stream health and recovery") for details.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
@@ -67,6 +74,18 @@ pub struct HyperliquidDataClientConfig {
     /// Cooldown in seconds between stale warnings for the same market-data stream.
     #[builder(default = 60)]
     pub stale_stream_warning_cooldown_secs: u64,
+    /// Enables automated stale-stream recovery. Off by default: the stream health
+    /// monitor warns only and never changes subscriptions.
+    #[builder(default = false)]
+    pub stale_stream_recovery_enabled: bool,
+    /// Cooldown in seconds between recovery actions for the same market-data stream.
+    /// Must be positive for recovery to run.
+    #[builder(default = 120)]
+    pub stale_stream_recovery_cooldown_secs: u64,
+    /// Targeted resubscribe attempts for a stale stream before escalating to a
+    /// full WebSocket reconnect.
+    #[builder(default = 3)]
+    pub stale_stream_max_targeted_resubscribes: u32,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -270,6 +289,9 @@ transport_backend = "tungstenite"
         assert_eq!(config.stale_stream_receive_timeout_secs, 120);
         assert_eq!(config.stream_health_check_interval_secs, 15);
         assert_eq!(config.stale_stream_warning_cooldown_secs, 60);
+        assert!(!config.stale_stream_recovery_enabled);
+        assert_eq!(config.stale_stream_recovery_cooldown_secs, 120);
+        assert_eq!(config.stale_stream_max_targeted_resubscribes, 3);
     }
 
     #[rstest]
@@ -279,6 +301,9 @@ transport_backend = "tungstenite"
 stale_stream_receive_timeout_secs = 30
 stream_health_check_interval_secs = 5
 stale_stream_warning_cooldown_secs = 20
+stale_stream_recovery_enabled = true
+stale_stream_recovery_cooldown_secs = 45
+stale_stream_max_targeted_resubscribes = 5
 ",
         )
         .unwrap();
@@ -286,6 +311,9 @@ stale_stream_warning_cooldown_secs = 20
         assert_eq!(config.stale_stream_receive_timeout_secs, 30);
         assert_eq!(config.stream_health_check_interval_secs, 5);
         assert_eq!(config.stale_stream_warning_cooldown_secs, 20);
+        assert!(config.stale_stream_recovery_enabled);
+        assert_eq!(config.stale_stream_recovery_cooldown_secs, 45);
+        assert_eq!(config.stale_stream_max_targeted_resubscribes, 5);
     }
 
     #[rstest]

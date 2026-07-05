@@ -64,6 +64,133 @@ pub struct RunnerMetricsSnapshot {
     pub elapsed_ns: u64,
 }
 
+/// Derived deltas between two `LiveNode::run` runner metrics snapshots.
+///
+/// Values are saturating differences between two [`RunnerMetricsSnapshot`] samples. Queue depths
+/// and last-dispatch timestamps remain snapshot-only point-in-time values.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunnerMetricsDelta {
+    /// Number of time events dispatched during the sample window.
+    pub time_events: u64,
+    /// Number of execution events dispatched during the sample window.
+    pub exec_events: u64,
+    /// Number of execution commands dispatched during the sample window.
+    pub exec_commands: u64,
+    /// Number of data events dispatched during the sample window.
+    pub data_events: u64,
+    /// Number of data commands dispatched during the sample window.
+    pub data_commands: u64,
+    /// Nanoseconds spent in the five dispatch branches during the sample window.
+    pub dispatch_busy_ns: u64,
+    /// Nanoseconds spent in maintenance and reconciliation processing during the sample window.
+    pub maintenance_busy_ns: u64,
+    /// Nanoseconds spent handling external message bus ingress during the sample window.
+    pub external_msgbus_busy_ns: u64,
+    /// Monotonic nanoseconds elapsed during the sample window.
+    pub elapsed_ns: u64,
+}
+
+impl RunnerMetricsDelta {
+    /// Returns the saturating delta between two runner metrics snapshots.
+    #[must_use]
+    pub fn from_snapshots(before: RunnerMetricsSnapshot, after: RunnerMetricsSnapshot) -> Self {
+        Self {
+            time_events: after
+                .time_events
+                .dispatched
+                .saturating_sub(before.time_events.dispatched),
+            exec_events: after
+                .exec_events
+                .dispatched
+                .saturating_sub(before.exec_events.dispatched),
+            exec_commands: after
+                .exec_commands
+                .dispatched
+                .saturating_sub(before.exec_commands.dispatched),
+            data_events: after
+                .data_events
+                .dispatched
+                .saturating_sub(before.data_events.dispatched),
+            data_commands: after
+                .data_commands
+                .dispatched
+                .saturating_sub(before.data_commands.dispatched),
+            dispatch_busy_ns: after
+                .dispatch_busy_ns
+                .saturating_sub(before.dispatch_busy_ns),
+            maintenance_busy_ns: after
+                .maintenance_busy_ns
+                .saturating_sub(before.maintenance_busy_ns),
+            external_msgbus_busy_ns: after
+                .external_msgbus_busy_ns
+                .saturating_sub(before.external_msgbus_busy_ns),
+            elapsed_ns: after.elapsed_ns.saturating_sub(before.elapsed_ns),
+        }
+    }
+
+    /// Returns the total messages dispatched across all runner channels.
+    #[must_use]
+    pub const fn total_dispatched(&self) -> u64 {
+        self.time_events
+            .saturating_add(self.exec_events)
+            .saturating_add(self.exec_commands)
+            .saturating_add(self.data_events)
+            .saturating_add(self.data_commands)
+    }
+
+    /// Returns dispatch busy time divided by elapsed time for the sample window.
+    ///
+    /// Returns `0.0` when the elapsed window is zero.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "sample-window utilization is an approximate ratio"
+    )]
+    pub fn dispatch_utilization(&self) -> f64 {
+        if self.elapsed_ns == 0 {
+            0.0
+        } else {
+            self.dispatch_busy_ns as f64 / self.elapsed_ns as f64
+        }
+    }
+
+    /// Returns total timed runner-loop work divided by elapsed time for the sample window.
+    ///
+    /// Total work includes dispatch, maintenance, reconciliation, and external message bus ingress
+    /// handling. Returns `0.0` when the elapsed window is zero.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "sample-window utilization is an approximate ratio"
+    )]
+    pub fn loop_utilization(&self) -> f64 {
+        if self.elapsed_ns == 0 {
+            0.0
+        } else {
+            self.total_busy_ns() as f64 / self.elapsed_ns as f64
+        }
+    }
+
+    /// Returns mean dispatch time in nanoseconds for the sample window.
+    ///
+    /// Returns zero when no dispatches were recorded.
+    #[must_use]
+    pub fn mean_dispatch_ns(&self) -> u64 {
+        self.dispatch_busy_ns
+            .checked_div(self.total_dispatched())
+            .unwrap_or(0)
+    }
+
+    /// Returns the total nanoseconds spent in timed runner-loop work.
+    #[must_use]
+    pub const fn total_busy_ns(&self) -> u64 {
+        self.dispatch_busy_ns
+            .saturating_add(self.maintenance_busy_ns)
+            .saturating_add(self.external_msgbus_busy_ns)
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct RunnerMetrics {
     time_events: RunnerChannelMetrics,
@@ -280,6 +407,61 @@ mod tests {
     }
 
     #[rstest]
+    fn test_runner_metrics_delta_saturates_when_after_is_lower_than_before() {
+        let before = runner_snapshot([10, 9, 8, 7, 6], 100, 90, 80, 70);
+        let after = runner_snapshot([5, 4, 3, 2, 1], 50, 40, 30, 20);
+
+        let delta = RunnerMetricsDelta::from_snapshots(before, after);
+
+        assert_eq!(delta, RunnerMetricsDelta::default());
+    }
+
+    #[rstest]
+    fn test_runner_metrics_delta_zero_elapsed_window_returns_zero_utilization() {
+        let delta = RunnerMetricsDelta::from_snapshots(
+            RunnerMetricsSnapshot::default(),
+            runner_snapshot([1, 0, 0, 0, 0], 10, 20, 30, 0),
+        );
+
+        assert!(delta.dispatch_utilization().abs() < f64::EPSILON);
+        assert!(delta.loop_utilization().abs() < f64::EPSILON);
+    }
+
+    #[rstest]
+    fn test_runner_metrics_delta_zero_dispatched_returns_zero_mean_dispatch_time() {
+        let delta = RunnerMetricsDelta::from_snapshots(
+            RunnerMetricsSnapshot::default(),
+            runner_snapshot([0, 0, 0, 0, 0], 100, 0, 0, 100),
+        );
+
+        assert_eq!(delta.mean_dispatch_ns(), 0);
+    }
+
+    #[rstest]
+    fn test_runner_metrics_delta_total_dispatched_sums_all_channels() {
+        let delta = RunnerMetricsDelta::from_snapshots(
+            RunnerMetricsSnapshot::default(),
+            runner_snapshot([1, 2, 3, 4, 5], 0, 0, 0, 100),
+        );
+
+        assert_eq!(delta.total_dispatched(), 15);
+    }
+
+    #[rstest]
+    fn test_runner_metrics_delta_derived_metrics_use_sample_window_values() {
+        let before = runner_snapshot([1, 2, 0, 0, 0], 100, 10, 5, 200);
+        let after = runner_snapshot([4, 3, 2, 1, 0], 160, 30, 15, 300);
+
+        let delta = RunnerMetricsDelta::from_snapshots(before, after);
+
+        assert_eq!(delta.total_dispatched(), 7);
+        assert_eq!(delta.total_busy_ns(), 90);
+        assert_eq!(delta.mean_dispatch_ns(), 8);
+        assert!((delta.dispatch_utilization() - 0.6).abs() < f64::EPSILON);
+        assert!((delta.loop_utilization() - 0.9).abs() < f64::EPSILON);
+    }
+
+    #[rstest]
     fn test_runner_metrics_snapshot_reflects_dispatch_updates() {
         let metrics = RunnerMetrics::default();
 
@@ -416,6 +598,41 @@ mod tests {
         assert_eq!(snapshot.data_events.queue_depth, 4);
         assert_eq!(snapshot.data_commands.queue_depth, 5);
         assert_eq!(snapshot.elapsed_ns, 25);
+    }
+
+    fn runner_snapshot(
+        dispatched: [u64; 5],
+        dispatch_busy_ns: u64,
+        maintenance_busy_ns: u64,
+        external_msgbus_busy_ns: u64,
+        elapsed_ns: u64,
+    ) -> RunnerMetricsSnapshot {
+        let [
+            time_events,
+            exec_events,
+            exec_commands,
+            data_events,
+            data_commands,
+        ] = dispatched;
+
+        RunnerMetricsSnapshot {
+            time_events: channel_snapshot(time_events),
+            exec_events: channel_snapshot(exec_events),
+            exec_commands: channel_snapshot(exec_commands),
+            data_events: channel_snapshot(data_events),
+            data_commands: channel_snapshot(data_commands),
+            dispatch_busy_ns,
+            maintenance_busy_ns,
+            external_msgbus_busy_ns,
+            elapsed_ns,
+        }
+    }
+
+    fn channel_snapshot(dispatched: u64) -> RunnerChannelMetricsSnapshot {
+        RunnerChannelMetricsSnapshot {
+            dispatched,
+            ..Default::default()
+        }
     }
 
     fn snapshot_dispatch_counts(snapshot: RunnerMetricsSnapshot) -> [u64; 5] {

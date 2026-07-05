@@ -15,8 +15,6 @@
 
 //! Parsing utilities for the Derive adapter.
 
-use std::str::FromStr;
-
 use anyhow::Context;
 use nautilus_core::{UnixNanos, datetime::NANOSECONDS_IN_SECOND, params::Params};
 use nautilus_model::{
@@ -26,10 +24,8 @@ use nautilus_model::{
     types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use serde::{
-    Deserializer,
-    de::{Error as DeError, Unexpected, Visitor},
-};
+use serde::{Deserialize, Deserializer, de::DeserializeOwned};
+use serde_json::Value;
 use ustr::Ustr;
 
 use crate::{
@@ -43,7 +39,6 @@ use crate::{
     http::models::DeriveInstrument,
 };
 
-const DERIVE_DECIMAL_MAX_SCALE: usize = 28;
 const DERIVE_POST_ONLY_CROSS_MARKET_MESSAGE: &str = "post only order cannot cross the market";
 
 /// JSON-RPC error code returned when a post-only order crosses the market.
@@ -69,269 +64,44 @@ pub fn format_venue_symbol(instrument_id: &InstrumentId) -> anyhow::Result<Ustr>
     Ok(Ustr::from(instrument_id.symbol.as_str()))
 }
 
-/// Deserializes a Derive decimal, rounding fractional scales above 28 digits.
+/// Deserializes a JSON array into `Vec<T>`, salvaging the decodable elements
+/// (see [`salvage_elements`]).
 ///
 /// # Errors
 ///
-/// Returns an error when the value is not a valid decimal after Derive scale
-/// normalization.
-pub fn deserialize_derive_decimal<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
+/// Returns an error when the value is not a JSON array.
+pub fn deserialize_salvaged_vec<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
 where
     D: Deserializer<'de>,
+    T: DeserializeOwned,
 {
-    deserializer.deserialize_any(DeriveDecimalVisitor)
+    Ok(salvage_elements(Vec::<Value>::deserialize(deserializer)?))
 }
 
-/// Deserializes an optional Derive decimal, rounding fractional scales above 28 digits.
+/// Decodes each element of a JSON array into `T`, logging and skipping
+/// elements that fail to decode instead of failing the whole collection.
 ///
-/// # Errors
-///
-/// Returns an error when the value is not a valid decimal after Derive scale
-/// normalization.
-pub fn deserialize_optional_derive_decimal<'de, D>(
-    deserializer: D,
-) -> Result<Option<Decimal>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    deserializer.deserialize_any(OptionalDeriveDecimalVisitor)
-}
-
-struct DeriveDecimalVisitor;
-
-impl Visitor<'_> for DeriveDecimalVisitor {
-    type Value = Decimal;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a Derive decimal number as string, integer, float, or null")
-    }
-
-    fn visit_str<E: DeError>(self, value: &str) -> Result<Self::Value, E> {
-        if value.is_empty() {
-            return Ok(Decimal::ZERO);
-        }
-        parse_derive_decimal_str(value).map_err(E::custom)
-    }
-
-    fn visit_string<E: DeError>(self, value: String) -> Result<Self::Value, E> {
-        self.visit_str(&value)
-    }
-
-    fn visit_i64<E: DeError>(self, value: i64) -> Result<Self::Value, E> {
-        Ok(Decimal::from(value))
-    }
-
-    fn visit_u64<E: DeError>(self, value: u64) -> Result<Self::Value, E> {
-        Ok(Decimal::from(value))
-    }
-
-    fn visit_i128<E: DeError>(self, value: i128) -> Result<Self::Value, E> {
-        Ok(Decimal::from(value))
-    }
-
-    fn visit_u128<E: DeError>(self, value: u128) -> Result<Self::Value, E> {
-        Ok(Decimal::from(value))
-    }
-
-    fn visit_f64<E: DeError>(self, value: f64) -> Result<Self::Value, E> {
-        if value.is_nan() || value.is_infinite() {
-            return Err(E::invalid_value(Unexpected::Float(value), &self));
-        }
-        Decimal::try_from(value).map_err(E::custom)
-    }
-
-    fn visit_unit<E: DeError>(self) -> Result<Self::Value, E> {
-        Ok(Decimal::ZERO)
-    }
-
-    fn visit_none<E: DeError>(self) -> Result<Self::Value, E> {
-        Ok(Decimal::ZERO)
-    }
-}
-
-struct OptionalDeriveDecimalVisitor;
-
-impl Visitor<'_> for OptionalDeriveDecimalVisitor {
-    type Value = Option<Decimal>;
-
-    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("null or a Derive decimal number as string, integer, or float")
-    }
-
-    fn visit_str<E: DeError>(self, value: &str) -> Result<Self::Value, E> {
-        if value.is_empty() {
-            return Ok(None);
-        }
-        parse_derive_decimal_str(value).map(Some).map_err(E::custom)
-    }
-
-    fn visit_string<E: DeError>(self, value: String) -> Result<Self::Value, E> {
-        self.visit_str(&value)
-    }
-
-    fn visit_i64<E: DeError>(self, value: i64) -> Result<Self::Value, E> {
-        DeriveDecimalVisitor.visit_i64(value).map(Some)
-    }
-
-    fn visit_u64<E: DeError>(self, value: u64) -> Result<Self::Value, E> {
-        DeriveDecimalVisitor.visit_u64(value).map(Some)
-    }
-
-    fn visit_i128<E: DeError>(self, value: i128) -> Result<Self::Value, E> {
-        DeriveDecimalVisitor.visit_i128(value).map(Some)
-    }
-
-    fn visit_u128<E: DeError>(self, value: u128) -> Result<Self::Value, E> {
-        DeriveDecimalVisitor.visit_u128(value).map(Some)
-    }
-
-    fn visit_f64<E: DeError>(self, value: f64) -> Result<Self::Value, E> {
-        DeriveDecimalVisitor.visit_f64(value).map(Some)
-    }
-
-    fn visit_unit<E: DeError>(self) -> Result<Self::Value, E> {
-        Ok(None)
-    }
-
-    fn visit_none<E: DeError>(self) -> Result<Self::Value, E> {
-        Ok(None)
-    }
-}
-
-fn parse_derive_decimal_str(value: &str) -> Result<Decimal, String> {
-    let parsed = if value.contains('e') || value.contains('E') {
-        Decimal::from_scientific(value)
-    } else {
-        Decimal::from_str(value)
-    };
-
-    match parsed {
-        Ok(decimal) => Ok(decimal),
-        Err(e) => {
-            for scale in (0..=DERIVE_DECIMAL_MAX_SCALE).rev() {
-                let clamped =
-                    decimal_string_clamped_to_scale(value, scale).ok_or_else(|| e.to_string())?;
-
-                if let Ok(decimal) = Decimal::from_str(&clamped) {
-                    return Ok(decimal);
-                }
-            }
-            Err(e.to_string())
+/// Venue enum sets drift over time, so one unmodeled trade or account row
+/// must degrade to a logged skip rather than discard its siblings (the
+/// Hyperliquid dust-conversion incident shape). Reserved for rows where a
+/// missed element is recoverable (fills backfill via reconciliation); order
+/// and position arrays feeding mass status stay strict because absence there
+/// is read as state. The log carries only the decode error (which names the
+/// failing field and value); private rows hold signatures and wallet
+/// addresses, so the raw payload stays out of the logs.
+pub fn salvage_elements<T: DeserializeOwned>(values: Vec<Value>) -> Vec<T> {
+    let context = std::any::type_name::<T>()
+        .rsplit("::")
+        .next()
+        .unwrap_or("element");
+    let mut elements = Vec::with_capacity(values.len());
+    for value in values {
+        match T::deserialize(&value) {
+            Ok(element) => elements.push(element),
+            Err(e) => log::warn!("Skipping undecodable {context} element: {e}"),
         }
     }
-}
-
-fn decimal_string_clamped_to_scale(value: &str, max_scale: usize) -> Option<String> {
-    let (coefficient, exponent) = match value.find(['e', 'E']) {
-        Some(index) => {
-            let exponent = value[index + 1..].parse::<i32>().ok()?;
-            (&value[..index], exponent)
-        }
-        None => (value, 0),
-    };
-
-    let (sign, unsigned) = match coefficient.as_bytes().first()? {
-        b'+' => ("", &coefficient[1..]),
-        b'-' => ("-", &coefficient[1..]),
-        _ => ("", coefficient),
-    };
-    let (integer, fractional) = decimal_components(unsigned)?;
-    let digits = format!("{integer}{fractional}");
-    let point = i32::try_from(integer.len()).ok()?.checked_add(exponent)?;
-
-    let (integer, fractional) = if point <= 0 {
-        let zero_count = usize::try_from(-point).ok()?;
-        (
-            "0".to_string(),
-            format!("{}{digits}", "0".repeat(zero_count)),
-        )
-    } else {
-        let point = usize::try_from(point).ok()?;
-        if point >= digits.len() {
-            (
-                format!("{}{}", digits, "0".repeat(point - digits.len())),
-                String::new(),
-            )
-        } else {
-            (digits[..point].to_string(), digits[point..].to_string())
-        }
-    };
-
-    let (integer, fractional) = round_decimal_components(integer, fractional, max_scale);
-    let sign = if sign == "-" && decimal_digits_are_zero(&integer, &fractional) {
-        ""
-    } else {
-        sign
-    };
-
-    if fractional.is_empty() {
-        Some(format!("{sign}{integer}"))
-    } else {
-        Some(format!("{sign}{integer}.{fractional}"))
-    }
-}
-
-fn decimal_components(value: &str) -> Option<(&str, &str)> {
-    let mut split = value.split('.');
-    let integer = split.next()?;
-    let fractional = split.next().unwrap_or("");
-    if split.next().is_some()
-        || (integer.is_empty() && fractional.is_empty())
-        || !integer.chars().all(|c| c.is_ascii_digit())
-        || !fractional.chars().all(|c| c.is_ascii_digit())
-    {
-        return None;
-    }
-    Some((integer, fractional))
-}
-
-fn round_decimal_components(
-    mut integer: String,
-    fractional: String,
-    max_scale: usize,
-) -> (String, String) {
-    if fractional.len() <= max_scale {
-        return (integer, fractional);
-    }
-
-    let mut rounded = fractional.as_bytes()[..max_scale].to_vec();
-    if fractional.as_bytes()[max_scale] >= b'5' {
-        increment_decimal_digits(&mut integer, &mut rounded);
-    }
-
-    (
-        integer,
-        String::from_utf8(rounded).expect("decimal digits are ASCII"),
-    )
-}
-
-fn increment_decimal_digits(integer: &mut String, fractional: &mut [u8]) {
-    for digit in fractional.iter_mut().rev() {
-        if *digit < b'9' {
-            *digit += 1;
-            return;
-        }
-        *digit = b'0';
-    }
-
-    let mut integer_digits = integer.as_bytes().to_vec();
-    for digit in integer_digits.iter_mut().rev() {
-        if *digit < b'9' {
-            *digit += 1;
-            *integer = String::from_utf8(integer_digits).expect("decimal digits are ASCII");
-            return;
-        }
-        *digit = b'0';
-    }
-    integer_digits.insert(0, b'1');
-    *integer = String::from_utf8(integer_digits).expect("decimal digits are ASCII");
-}
-
-fn decimal_digits_are_zero(integer: &str, fractional: &str) -> bool {
-    integer
-        .bytes()
-        .chain(fractional.bytes())
-        .all(|digit| digit == b'0')
+    elements
 }
 
 /// Maps a Nautilus order side to the Derive direction string.
@@ -445,15 +215,21 @@ pub fn derive_order_side_to_nautilus(side: DeriveOrderSide) -> OrderSide {
 }
 
 /// Maps a Derive order type back to Nautilus.
+///
+/// Unmodeled venue order types decode as [`DeriveOrderType::Unknown`] and map
+/// to [`OrderType::Limit`] so the order stays visible to reconciliation.
 #[must_use]
 pub fn derive_order_type_to_nautilus(order_type: DeriveOrderType) -> OrderType {
     match order_type {
-        DeriveOrderType::Limit => OrderType::Limit,
+        DeriveOrderType::Limit | DeriveOrderType::Unknown => OrderType::Limit,
         DeriveOrderType::Market => OrderType::Market,
     }
 }
 
 /// Maps a Derive trigger order record back to the Nautilus order type.
+///
+/// An unmodeled trigger type degrades to the plain order type; the trigger
+/// price still rides on the report.
 #[must_use]
 pub fn derive_order_type_to_nautilus_for_order(
     order_type: DeriveOrderType,
@@ -466,11 +242,13 @@ pub fn derive_order_type_to_nautilus_for_order(
             OrderType::MarketIfTouched
         }
         (DeriveOrderType::Limit, Some(DeriveTriggerType::Takeprofit)) => OrderType::LimitIfTouched,
-        (order_type, None) => derive_order_type_to_nautilus(order_type),
+        (order_type, _) => derive_order_type_to_nautilus(order_type),
     }
 }
 
 /// Maps a Derive trigger price source back to Nautilus.
+///
+/// Unmodeled trigger price sources map to [`TriggerType::Default`].
 #[must_use]
 pub const fn derive_trigger_price_type_to_nautilus(
     trigger_price_type: DeriveTriggerPriceType,
@@ -478,14 +256,20 @@ pub const fn derive_trigger_price_type_to_nautilus(
     match trigger_price_type {
         DeriveTriggerPriceType::Mark => TriggerType::MarkPrice,
         DeriveTriggerPriceType::Index => TriggerType::IndexPrice,
+        DeriveTriggerPriceType::Unknown => TriggerType::Default,
     }
 }
 
 /// Maps a Derive TIF back to Nautilus.
+///
+/// Unmodeled time-in-force flags map to [`TimeInForce::Gtc`] so the order
+/// stays visible to reconciliation.
 #[must_use]
 pub fn derive_tif_to_nautilus(tif: DeriveTimeInForce) -> TimeInForce {
     match tif {
-        DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly => TimeInForce::Gtc,
+        DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly | DeriveTimeInForce::Unknown => {
+            TimeInForce::Gtc
+        }
         DeriveTimeInForce::Ioc => TimeInForce::Ioc,
         DeriveTimeInForce::Fok => TimeInForce::Fok,
     }
@@ -546,6 +330,13 @@ pub fn parse_derive_instrument_any(
         DeriveInstrumentType::Perp => parse_perp_instrument(instrument, ts_init).map(Some),
         DeriveInstrumentType::Option => parse_option_instrument(instrument, ts_init).map(Some),
         DeriveInstrumentType::Erc20 => parse_spot_instrument(instrument, ts_init).map(Some),
+        DeriveInstrumentType::Unknown => {
+            log::warn!(
+                "Skipping Derive instrument {} with unmodeled instrument type",
+                instrument.instrument_name,
+            );
+            Ok(None)
+        }
     }
 }
 
@@ -764,7 +555,6 @@ mod tests {
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
-    use serde::Deserialize;
     use serde_json::{Value, json};
 
     use super::*;
@@ -789,43 +579,6 @@ mod tests {
 
     fn spot_fixture() -> DeriveInstrument {
         serde_json::from_value(load_json("spot/instrument_eth.json")).unwrap()
-    }
-
-    #[derive(Deserialize)]
-    struct DeriveDecimalProbe {
-        #[serde(deserialize_with = "deserialize_derive_decimal")]
-        rounded: Decimal,
-        #[serde(deserialize_with = "deserialize_optional_derive_decimal")]
-        optional: Option<Decimal>,
-        #[serde(deserialize_with = "deserialize_derive_decimal")]
-        carry: Decimal,
-        #[serde(deserialize_with = "deserialize_derive_decimal")]
-        negative_zero: Decimal,
-    }
-
-    #[rstest]
-    fn test_deserialize_derive_decimal_rounds_high_scale_scientific_values() {
-        let carry_input = "999999999999999999999999999995e-29";
-        assert!(Decimal::from_scientific(carry_input).is_err());
-
-        let probe: DeriveDecimalProbe = serde_json::from_value(json!({
-            "rounded": "1.234567890123456789012345678912345e-1",
-            "optional": "51.234567890123456789012345678912345e-1",
-            "carry": carry_input,
-            "negative_zero": "-4e-29"
-        }))
-        .unwrap();
-
-        assert_eq!(probe.rounded.to_string(), "0.1234567890123456789012345679",);
-        assert_eq!(
-            probe.optional.as_ref().map(ToString::to_string),
-            Some("5.1234567890123456789012345679".into()),
-        );
-        assert_eq!(probe.carry.to_string(), "10.000000000000000000000000000",);
-        assert_eq!(
-            probe.negative_zero.to_string(),
-            "0.0000000000000000000000000000"
-        );
     }
 
     #[rstest]
@@ -912,6 +665,17 @@ mod tests {
         OrderType::LimitIfTouched
     )]
     #[case(DeriveOrderType::Limit, None, OrderType::Limit)]
+    #[case(
+        DeriveOrderType::Limit,
+        Some(DeriveTriggerType::Unknown),
+        OrderType::Limit
+    )]
+    #[case(
+        DeriveOrderType::Market,
+        Some(DeriveTriggerType::Unknown),
+        OrderType::Market
+    )]
+    #[case(DeriveOrderType::Unknown, None, OrderType::Limit)]
     fn test_derive_order_type_to_nautilus_for_order(
         #[case] order_type: DeriveOrderType,
         #[case] trigger_type: Option<DeriveTriggerType>,
@@ -921,6 +685,31 @@ mod tests {
             derive_order_type_to_nautilus_for_order(order_type, trigger_type),
             expected,
         );
+    }
+
+    #[rstest]
+    fn test_unknown_wire_variants_map_to_safe_defaults() {
+        assert_eq!(
+            derive_order_type_to_nautilus(DeriveOrderType::Unknown),
+            OrderType::Limit,
+        );
+        assert_eq!(
+            derive_tif_to_nautilus(DeriveTimeInForce::Unknown),
+            TimeInForce::Gtc,
+        );
+        assert_eq!(
+            derive_trigger_price_type_to_nautilus(DeriveTriggerPriceType::Unknown),
+            TriggerType::Default,
+        );
+    }
+
+    #[rstest]
+    fn test_salvage_elements_skips_undecodable_rows() {
+        let values = vec![json!(1), json!("not a number"), json!(2)];
+
+        let salvaged: Vec<i64> = salvage_elements(values);
+
+        assert_eq!(salvaged, vec![1, 2]);
     }
 
     #[rstest]
@@ -1156,6 +945,17 @@ mod tests {
             .expect_err("must reject missing perp details");
 
         assert!(err.to_string().contains("missing perp_details"));
+    }
+
+    #[rstest]
+    fn test_parse_derive_instrument_any_skips_unknown_instrument_type() {
+        let mut instrument = perp_fixture();
+        instrument.instrument_type = DeriveInstrumentType::Unknown;
+
+        let parsed = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
+            .expect("unknown instrument type must not error");
+
+        assert!(parsed.is_none());
     }
 
     #[rstest]

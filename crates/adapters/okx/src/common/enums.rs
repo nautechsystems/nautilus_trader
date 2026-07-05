@@ -978,6 +978,8 @@ pub enum OKXBookChannel {
     BookL2Tbt,
     /// Low-latency 50-depth channel (`books50-l2-tbt`).
     Books50L2Tbt,
+    /// Spread 5-depth snapshot channel (`sprd-books5`).
+    SprdBooks5,
 }
 
 /// Represents OKX VIP level tiers for trading fee structure and API limits.

@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 import time
+from datetime import UTC
+from datetime import datetime
 
 import pytest
 
@@ -21,6 +24,7 @@ from nautilus_trader.core import MILLISECONDS_IN_SECOND
 from nautilus_trader.core import NANOSECONDS_IN_MICROSECOND
 from nautilus_trader.core import NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core import NANOSECONDS_IN_SECOND
+from nautilus_trader.core import dt_to_unix_nanos
 from nautilus_trader.core import is_within_last_24_hours
 from nautilus_trader.core import last_weekday_nanos
 from nautilus_trader.core import micros_to_nanos
@@ -30,7 +34,10 @@ from nautilus_trader.core import nanos_to_millis
 from nautilus_trader.core import nanos_to_secs
 from nautilus_trader.core import secs_to_millis
 from nautilus_trader.core import secs_to_nanos
+from nautilus_trader.core import unix_nanos_to_dt
 from nautilus_trader.core import unix_nanos_to_iso8601
+from nautilus_trader.core.datetime import dt_to_unix_nanos as dt_to_unix_nanos_from_datetime_module
+from nautilus_trader.core.datetime import unix_nanos_to_dt as unix_nanos_to_dt_from_datetime_module
 
 
 def test_time_constants_match_conversion_scale():
@@ -42,6 +49,75 @@ def test_time_constants_match_conversion_scale():
     assert secs_to_nanos(1) == NANOSECONDS_IN_SECOND
     assert millis_to_nanos(1) == NANOSECONDS_IN_MILLISECOND
     assert micros_to_nanos(1) == NANOSECONDS_IN_MICROSECOND
+
+
+def test_datetime_helpers_are_available_from_core_and_datetime_module():
+    assert dt_to_unix_nanos_from_datetime_module is dt_to_unix_nanos
+    assert unix_nanos_to_dt_from_datetime_module is unix_nanos_to_dt
+
+
+def test_dt_to_unix_nanos_accepts_datetime():
+    value = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+    assert dt_to_unix_nanos(value) == 1_700_000_000_000_000_000
+
+
+def test_unix_nanos_to_dt_roundtrip():
+    nanos = 1_700_000_000_123_456_000
+
+    assert dt_to_unix_nanos(unix_nanos_to_dt(nanos)) == nanos
+
+
+def test_dt_to_unix_nanos_does_not_accept_arbitrary_value_attribute():
+    pytest.importorskip("pandas")
+
+    class ValueOnly:
+        value = 1_700_000_000_000_000_000
+
+    with pytest.raises(TypeError, match="Cannot convert input"):
+        dt_to_unix_nanos(ValueOnly())
+
+
+def test_dt_to_unix_nanos_without_pandas_accepts_datetime_str_and_int(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    value = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)
+
+    assert dt_to_unix_nanos(value) == 1_700_000_000_000_000_000
+    assert dt_to_unix_nanos("2023-11-14T22:13:20+00:00") == 1_700_000_000_000_000_000
+    assert dt_to_unix_nanos(1_700_000_000_000_000_000) == 1_700_000_000_000_000_000
+
+
+def test_dt_to_unix_nanos_without_pandas_rejects_arbitrary_value_attribute(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    class ValueOnly:
+        value = 1_700_000_000_000_000_000
+
+    with pytest.raises(TypeError, match="value must be datetime-like"):
+        dt_to_unix_nanos(ValueOnly())
+
+
+def test_dt_to_unix_nanos_without_pandas_rejects_nanosecond_precision_string(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    with pytest.raises(ValueError, match="pandas is required"):
+        dt_to_unix_nanos("2023-11-14T22:13:20.123456789+00:00")
+
+
+def test_unix_nanos_to_dt_without_pandas_accepts_microsecond_aligned_timestamp(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    value = unix_nanos_to_dt(1_700_000_000_123_456_000)
+
+    assert value == datetime(2023, 11, 14, 22, 13, 20, 123456, tzinfo=UTC)
+
+
+def test_unix_nanos_to_dt_without_pandas_rejects_nanosecond_precision_loss(monkeypatch):
+    monkeypatch.setitem(sys.modules, "pandas", None)
+
+    with pytest.raises(ValueError, match="pandas is required"):
+        unix_nanos_to_dt(1_700_000_000_123_456_789)
 
 
 @pytest.mark.parametrize(

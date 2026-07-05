@@ -3072,7 +3072,7 @@ fn test_extract_identifier_from_path() {
 
     // Test bar file path
     let identifier =
-        extract_identifier_from_path("data/bar/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
+        extract_identifier_from_path("data/bars/BTCUSD-1-MINUTE-LAST-EXTERNAL/file.parquet");
     assert_eq!(identifier, "BTCUSD-1-MINUTE-LAST-EXTERNAL");
 
     // Test path with fewer components
@@ -3136,7 +3136,7 @@ fn test_extract_sql_safe_filename() {
 
     // Test bar filename with timestamp range
     let filename = extract_sql_safe_filename(
-        "data/bar/BTCUSD/2021-01-01T00-00-00-000000000Z_2021-01-01T23-59-59-999999999Z.parquet",
+        "data/bars/BTCUSD/2021-01-01T00-00-00-000000000Z_2021-01-01T23-59-59-999999999Z.parquet",
     );
     assert_eq!(
         filename,

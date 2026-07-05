@@ -1067,6 +1067,26 @@ automatically, and order book snapshots are rebuilt. No manual intervention is r
 A heartbeat ping is sent every 30 seconds to keep the connection alive (Hyperliquid closes
 idle connections after 60 seconds).
 
+### Stream health and recovery
+
+The data client tracks receive freshness for order book deltas, depth-10 snapshots, and BBO
+quotes:
+
+- `stale_stream_receive_timeout_secs` sets the stale threshold.
+- `stale_stream_warning_cooldown_secs` controls repeat warnings.
+- A fresh BBO stream for the same instrument changes stale book warnings to relative-staleness
+  warnings. BBO quotes are only a freshness reference, not order book input.
+
+Recovery is off by default. When `stale_stream_recovery_enabled` is set:
+
+- The first stale check always warns.
+- A still-stale stream receives one targeted resubscribe per
+  `stale_stream_recovery_cooldown_secs`.
+- `l2Book` resubscribes preserve the original precision options.
+- After `stale_stream_max_targeted_resubscribes` attempts, the client requests a full WebSocket
+  reconnect.
+- Fresh data resets the stream's recovery ladder.
+
 ## API credentials
 
 There are two options for supplying your credentials to the Hyperliquid clients.
@@ -1171,20 +1191,23 @@ match the venue limit.
 
 ### Data client configuration options
 
-| Option                               | Default   | Description |
-|--------------------------------------|-----------|-------------|
-| `private_key`                        | `None`    | Optional EVM private key for authenticated endpoints. |
-| `base_url_ws`                        | `None`    | Override for the WebSocket base URL. |
-| `base_url_http`                      | `None`    | Override for the HTTP info URL. |
-| `proxy_url`                          | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
-| `environment`                        | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
-| `http_timeout_secs`                  | `60`      | Timeout (seconds) applied to REST calls. |
-| `ws_timeout_secs`                    | `30`      | Timeout (seconds) applied to WebSocket connections. |
-| `stale_stream_receive_timeout_secs`  | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor. |
-| `stream_health_check_interval_secs`  | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor. |
-| `stale_stream_warning_cooldown_secs` | `60`      | Cooldown (seconds) between stale warnings for the same market data stream. |
-| `update_instruments_interval_mins`   | `60`      | Interval (minutes) between instrument catalogue refreshes. |
-| `transport_backend`                  | `Sockudo` | WebSocket transport backend. |
+| Option                                   | Default   | Description |
+|------------------------------------------|-----------|-------------|
+| `private_key`                            | `None`    | Optional EVM private key for authenticated endpoints. |
+| `base_url_ws`                            | `None`    | Override for the WebSocket base URL. |
+| `base_url_http`                          | `None`    | Override for the HTTP info URL. |
+| `proxy_url`                              | `None`    | Optional proxy URL for HTTP and WebSocket transports. |
+| `environment`                            | `None`    | Environment enum (`MAINNET` or `TESTNET`); resolves to `MAINNET` when unset. |
+| `http_timeout_secs`                      | `60`      | Timeout (seconds) applied to REST calls. |
+| `ws_timeout_secs`                        | `30`      | Timeout (seconds) applied to WebSocket connections. |
+| `stale_stream_receive_timeout_secs`      | `120`     | Receive age threshold (seconds) for stale market data stream warnings. Set to `0` to disable the stream health monitor. |
+| `stream_health_check_interval_secs`      | `15`      | Interval (seconds) between market data stream health checks. Set to `0` to disable the stream health monitor. |
+| `stale_stream_warning_cooldown_secs`     | `60`      | Cooldown (seconds) between stale warnings for the same market data stream. |
+| `stale_stream_recovery_enabled`          | `False`   | Enable automated recovery of stale market data streams (targeted resubscribe, then reconnect). |
+| `stale_stream_recovery_cooldown_secs`    | `120`     | Cooldown (seconds) between recovery actions for the same market data stream. Must be positive for recovery to run. |
+| `stale_stream_max_targeted_resubscribes` | `3`       | Targeted resubscribe attempts for a stale stream before escalating to a full WebSocket reconnect. |
+| `update_instruments_interval_mins`       | `60`      | Interval (minutes) between instrument catalogue refreshes. |
+| `transport_backend`                      | `Sockudo` | WebSocket transport backend. |
 
 ### Execution client configuration options
 

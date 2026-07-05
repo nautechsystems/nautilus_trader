@@ -250,29 +250,12 @@ jobs:
             --rootdir="$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" \
             "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}/tests/" -v
 
-      # Temporary: show whether v2 stub or docstring generation dirtied tracked files while we isolate CI drift
-      - name: Report generated v2 file drift
-        if: always()
+      - name: Check generated v2 file drift
+        # Keep this 3.13 condition in sync with the matrix so drift is checked once per run.
+        if: matrix.python-version == '3.13'
         run: |
-          targets=(
-            python/generate_docstrings.py
-            python/generate_stubs.py
-            crates/pyo3
-            ':(glob)python/nautilus_trader/**/*.pyi'
-            ':(glob)crates/**/src/python/**/*.rs'
-          )
-
-          changes="$(git status --short --untracked-files=all -- "${targets[@]}")"
-
-          if [ -z "$changes" ]; then
-            echo "No generated v2 file drift detected"
-            exit 0
-          fi
-
-          echo "::warning::Tracked or untracked v2 build files changed during the job"
-          printf '%s\n' "$changes"
-          echo
-          git diff --stat HEAD -- "${targets[@]}" || true
+          make py-stubs-v2 V2_CARGO_TARGET_DIR=/home/runner/.cache/cargo-target/py-stubs-v2
+          bash scripts/ci/check-v2-generated-drift.bash
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel

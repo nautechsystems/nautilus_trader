@@ -582,6 +582,10 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 >
 > Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
 
+After changes to v2 PyO3 bindings or wrapped Rust docs, run `make py-stubs-v2` and commit the
+generated `.pyi` files and wrapper docstrings. See
+[Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
+
 ### Testing with Rust
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader.

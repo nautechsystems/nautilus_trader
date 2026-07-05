@@ -380,7 +380,7 @@ derive rates or utilization from deltas.
 use std::time::Duration;
 
 use nautilus_common::enums::Environment;
-use nautilus_live::node::LiveNode;
+use nautilus_live::node::{LiveNode, RunnerMetricsDelta};
 
 let mut node = LiveNode::builder(trader_id, Environment::Live)?
     // Add clients, actors, and strategies here.
@@ -396,47 +396,30 @@ tokio::spawn(async move {
         interval.tick().await;
 
         let next = metrics_handle.metrics_snapshot();
-        let elapsed_ns = next.elapsed_ns.saturating_sub(prev.elapsed_ns);
-        if elapsed_ns == 0 {
+        let delta = RunnerMetricsDelta::from_snapshots(prev, next);
+        if delta.elapsed_ns == 0 {
             prev = next;
             continue;
         }
 
-        let elapsed_s = elapsed_ns as f64 / 1_000_000_000.0;
-        let data_events = next
-            .data_events
-            .dispatched
-            .saturating_sub(prev.data_events.dispatched);
-        let data_event_rate = data_events as f64 / elapsed_s;
+        let elapsed_s = delta.elapsed_ns as f64 / 1_000_000_000.0;
+        let data_event_rate = delta.data_events as f64 / elapsed_s;
         let data_event_staleness_ns = if next.data_events.last_dispatch_at_ns == 0 {
             0
         } else {
             next.elapsed_ns
                 .saturating_sub(next.data_events.last_dispatch_at_ns)
         };
-        let dispatch_utilization = next
-            .dispatch_busy_ns
-            .saturating_sub(prev.dispatch_busy_ns) as f64
-            / elapsed_ns as f64;
-        let total_busy_ns = next
-            .dispatch_busy_ns
-            .saturating_sub(prev.dispatch_busy_ns)
-            .saturating_add(
-                next.maintenance_busy_ns
-                    .saturating_sub(prev.maintenance_busy_ns),
-            )
-            .saturating_add(
-                next.external_msgbus_busy_ns
-                    .saturating_sub(prev.external_msgbus_busy_ns),
-            );
-        let loop_utilization = total_busy_ns as f64 / elapsed_ns as f64;
 
-        tracing::info!(
-            data_event_rate,
-            data_event_staleness_ns,
-            dispatch_utilization,
-            loop_utilization,
-            data_queue_depth = next.data_events.queue_depth,
+        log::info!(
+            "Runner metrics: data_event_rate={data_event_rate:.0} \
+             data_event_staleness_ns={data_event_staleness_ns} \
+             dispatch_utilization={:.6} loop_utilization={:.6} \
+             mean_dispatch_ns={} data_queue_depth={}",
+            delta.dispatch_utilization(),
+            delta.loop_utilization(),
+            delta.mean_dispatch_ns(),
+            next.data_events.queue_depth,
         );
 
         prev = next;

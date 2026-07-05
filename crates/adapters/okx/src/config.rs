@@ -88,6 +88,17 @@ pub struct OKXDataClientConfig {
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
+    /// Interval for checking order book feed staleness in seconds.
+    #[builder(default = 5)]
+    pub book_stale_check_interval_secs: u64,
+    /// Maximum time without order book updates before emitting a stale signal in seconds.
+    ///
+    /// Set to 0 to disable. Quiet markets can idle without book changes.
+    #[builder(default = 30)]
+    pub book_stale_threshold_secs: u64,
+    /// Maximum time to wait for a post-reconnect order book snapshot in seconds.
+    #[builder(default = 3)]
+    pub book_snapshot_timeout_secs: u64,
     /// Optional VIP level that unlocks additional subscriptions.
     pub vip_level: Option<OKXVipLevel>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
@@ -301,6 +312,9 @@ http_timeout_secs = 90
         );
         assert_eq!(config.http_timeout_secs, 90);
         assert!(!config.load_spreads);
+        assert_eq!(config.book_stale_check_interval_secs, 5);
+        assert_eq!(config.book_stale_threshold_secs, 30);
+        assert_eq!(config.book_snapshot_timeout_secs, 3);
     }
 
     #[rstest]
@@ -313,6 +327,22 @@ load_spreads = true
         .unwrap();
 
         assert!(config.load_spreads);
+    }
+
+    #[rstest]
+    fn test_data_config_toml_book_stale_settings() {
+        let config: OKXDataClientConfig = toml::from_str(
+            "
+book_stale_check_interval_secs = 2
+book_stale_threshold_secs = 7
+book_snapshot_timeout_secs = 4
+",
+        )
+        .unwrap();
+
+        assert_eq!(config.book_stale_check_interval_secs, 2);
+        assert_eq!(config.book_stale_threshold_secs, 7);
+        assert_eq!(config.book_snapshot_timeout_secs, 4);
     }
 
     #[rstest]
