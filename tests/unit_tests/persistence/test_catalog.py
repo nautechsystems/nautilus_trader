@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
+import os
 import sys
 import tempfile
 from typing import Any
@@ -277,6 +278,28 @@ def test_query_files_respects_empty_files_list(
     )
 
     assert result == []
+
+
+def test_get_file_list_from_data_cls_includes_folder_aliases(
+    catalog: ParquetDataCatalog,
+) -> None:
+    base_path = catalog.path.rstrip("/")
+    canonical_path = (
+        f"{base_path}/data/trade_tick/BINANCEBTCUSDT/"
+        "2024-01-01T00-00-00-000000000Z_2024-01-01T00-01-00-000000000Z.parquet"
+    )
+    alias_path = (
+        f"{base_path}/data/trades/BINANCEETHUSDT/"
+        "2024-01-01T00-00-00-000000000Z_2024-01-01T00-01-00-000000000Z.parquet"
+    )
+
+    for file_path in (canonical_path, alias_path):
+        catalog.fs.makedirs(os.path.dirname(file_path), exist_ok=True)
+        catalog.fs.touch(file_path)
+
+    assert catalog.get_file_list_from_data_cls(TradeTick) == sorted(
+        [canonical_path, alias_path],
+    )
 
 
 def test_write_data_empty_records_gap_extends_file(catalog: ParquetDataCatalog) -> None:

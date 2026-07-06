@@ -41,9 +41,11 @@ def test_class_to_filename(s, expected):
     ("filename", "expected"),
     [
         ("trade_tick", TradeTick),
+        ("trades", TradeTick),
         ("order_book_deltas", OrderBookDelta),
         ("option_greeks", OptionGreeks),
         ("quote_tick", QuoteTick),
+        ("quotes", QuoteTick),
         ("nonexistent_filename", None),
     ],
 )

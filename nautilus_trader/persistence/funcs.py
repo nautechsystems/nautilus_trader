@@ -36,6 +36,18 @@ from nautilus_trader.serialization.arrow.serializer import _RUST_CUSTOM_TYPE_REG
 CUSTOM_DATA_PREFIX = "custom_"
 
 
+def class_to_filename_aliases(cls: type) -> tuple[str, ...]:
+    """
+    Return additional catalog directory names which can contain the class.
+    """
+    filename_aliases = {
+        "QuoteTick": ("quotes",),
+        "TradeTick": ("trades",),
+    }
+
+    return filename_aliases.get(cls.__name__, ())
+
+
 def class_to_filename(cls: type) -> str:
     """
     Convert the given class to a filename.
@@ -59,7 +71,9 @@ def filename_to_class(filename: str) -> type | None:
     """
     builtin_filename_to_class = {
         "quote_tick": QuoteTick,
+        "quotes": QuoteTick,
         "trade_tick": TradeTick,
+        "trades": TradeTick,
         "bar": Bar,
         "order_book_deltas": OrderBookDelta,
         "order_book_depths": OrderBookDepth10,

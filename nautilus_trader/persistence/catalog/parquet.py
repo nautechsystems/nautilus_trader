@@ -65,6 +65,7 @@ from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
+from nautilus_trader.persistence.funcs import class_to_filename_aliases
 from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import filename_to_class
 from nautilus_trader.persistence.funcs import urisafe_identifier
@@ -2223,12 +2224,15 @@ class ParquetDataCatalog(BaseDataCatalog):
             List of file paths matching the data class.
 
         """
-        file_prefix = class_to_filename(data_cls)
         base_path = self.path.rstrip("/")
-        glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
-        file_paths: list[str] = self.fs.glob(glob_path)
+        file_prefixes = (class_to_filename(data_cls), *class_to_filename_aliases(data_cls))
+        file_paths: list[str] = []
 
-        return file_paths
+        for file_prefix in file_prefixes:
+            glob_path = f"{base_path}/data/{file_prefix}/**/*.parquet"
+            file_paths.extend(self.fs.glob(glob_path))
+
+        return sorted(dict.fromkeys(file_paths))
 
     def query_first_timestamp(
         self,
