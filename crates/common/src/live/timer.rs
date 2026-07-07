@@ -217,6 +217,16 @@ impl LiveTimer {
             let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
 
             loop {
+                // Never fire an event scheduled past the stop time. The event's
+                // `ts_event` is the scheduled `next_time_ns`, so the bound is
+                // enforced on the scheduled time (matching `TestTimer`), not on
+                // the wall-clock read used only for `ts_init`.
+                if let Some(stop_time_ns) = stop_time_ns
+                    && next_time_ns > stop_time_ns
+                {
+                    break; // Timer expired before this event
+                }
+
                 // `timer.tick` is cancellation safe, if the cancel branch completes
                 // first then no tick has been consumed (no event was ready).
                 timer.tick().await;
@@ -243,15 +253,16 @@ impl LiveTimer {
                     }
                 }
 
+                // The event scheduled exactly at the stop time fires (inclusive
+                // boundary), then the timer expires.
+                let at_stop_boundary = stop_time_ns == Some(next_time_ns);
+
                 // Prepare next time interval
                 next_time_ns += interval_ns;
                 next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
-                // Check if expired
-                if let Some(stop_time_ns) = stop_time_ns
-                    && std::cmp::max(next_time_ns, now_ns) >= stop_time_ns
-                {
-                    break; // Timer expired
+                if at_stop_boundary {
+                    break; // Timer expired at the stop boundary
                 }
             }
         });
