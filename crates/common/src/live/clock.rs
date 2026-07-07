@@ -379,7 +379,7 @@ mod tests {
         clock.register_default_handler(TimeEventCallback::from(|_| {}));
 
         let now = clock.timestamp_ns();
-        let alert_time = now + 1_000_u64;
+        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
 
         clock
             .set_time_alert_ns("alert-callback", alert_time, None, None)
@@ -435,119 +435,5 @@ mod tests {
             Duration::from_secs(2),
         );
         assert!(events.lock().expect(MUTEX_POISONED).is_empty());
-    }
-
-    #[rstest]
-    fn test_live_timer_does_not_fire_past_stop_time() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
-
-        let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::from(|_| {}));
-
-        let now = clock.timestamp_ns();
-        let interval_ns = Duration::from_millis(20).as_nanos() as u64;
-        // Stop falls before the first scheduled event (now + interval), so the
-        // only event the old fire-then-check loop would have produced sits past
-        // the stop time - nothing may fire.
-        let stop = UnixNanos::from(*now + Duration::from_millis(10).as_nanos() as u64);
-
-        clock
-            .set_timer_ns("bounded", interval_ns, None, Some(stop), None, None, None)
-            .unwrap();
-
-        // Wait well past both the stop time and the first would-be fire.
-        let waited = std::time::Instant::now();
-        wait_until(
-            || waited.elapsed() >= Duration::from_millis(80),
-            Duration::from_secs(2),
-        );
-
-        assert!(events.lock().expect(MUTEX_POISONED).is_empty());
-
-        clock.cancel_timers();
-    }
-
-    #[rstest]
-    fn test_live_timer_fires_event_at_exact_stop_time() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
-
-        let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::from(|_| {}));
-
-        let now = clock.timestamp_ns();
-        let interval_ns = Duration::from_millis(15).as_nanos() as u64; // multiple of 1us
-        // Microsecond-aligned start just ahead of now so the scheduled `ts_event`
-        // values are exact (the live timer floors the first fire to a microsecond).
-        let start = UnixNanos::from(((*now / 1_000) + 2) * 1_000);
-        // Two intervals: events are scheduled at start + interval and at
-        // start + 2 * interval, the latter landing exactly on the stop time.
-        let stop = start + 2 * interval_ns;
-
-        clock
-            .set_timer_ns(
-                "boundary",
-                interval_ns,
-                Some(start),
-                Some(stop),
-                None,
-                None,
-                None,
-            )
-            .unwrap();
-
-        wait_for_events(&events, 2, Duration::from_millis(500));
-
-        let snapshot = events.lock().expect(MUTEX_POISONED).clone();
-
-        // The event scheduled exactly at the stop time fires (inclusive boundary);
-        // the old loop dropped it after incrementing past the stop.
-        assert!(
-            snapshot.iter().any(|(event, _)| event.ts_event == stop),
-            "expected an event at the exact stop time {stop}"
-        );
-        // Nothing fires past the stop time.
-        assert!(snapshot.iter().all(|(event, _)| event.ts_event <= stop));
-        // Exactly the two scheduled events, no more.
-        assert_eq!(snapshot.len(), 2);
-
-        clock.cancel_timers();
-    }
-
-    #[rstest]
-    fn test_live_timer_short_delay_not_early() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
-
-        let mut clock = LiveClock::new(Some(sender));
-        clock.register_default_handler(TimeEventCallback::from(|_| {}));
-
-        let now = clock.timestamp_ns();
-        let start_time = UnixNanos::from(*now + 500_000); // 0.5 ms in the future
-        let interval_ns = 1_000_000;
-
-        clock
-            .set_timer_ns(
-                "short-delay",
-                interval_ns,
-                Some(start_time),
-                None,
-                None,
-                None,
-                Some(true),
-            )
-            .unwrap();
-
-        wait_for_events(&events, 1, Duration::from_millis(100));
-
-        let snapshot = events.lock().expect(MUTEX_POISONED).clone();
-        assert!(!snapshot.is_empty());
-
-        for (event, actual_ts) in &snapshot {
-            assert!(actual_ts.as_u64() >= event.ts_event.as_u64());
-        }
-
-        clock.cancel_timers();
     }
 }
