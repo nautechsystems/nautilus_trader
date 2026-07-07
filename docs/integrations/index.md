@@ -28,6 +28,10 @@ The following integrations are currently supported:
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).
 
+Additional deployment design notes:
+
+- [Superior Trade v3 runtime attribution and relayers](superior_trade_runtime.md)
+
 ## Status
 
 - `planned`: Planned for future development.
