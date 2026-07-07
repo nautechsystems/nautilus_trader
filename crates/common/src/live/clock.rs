@@ -176,6 +176,7 @@ impl Clock for LiveClock {
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval((alert_time_ns - ts_now).into());
+        let fire_immediately = alert_time_ns == ts_now;
 
         let mut timer = LiveTimer::new(
             name,
@@ -183,7 +184,7 @@ impl Clock for LiveClock {
             ts_now,
             Some(alert_time_ns),
             callback,
-            false,
+            fire_immediately,
             self.sender.clone(),
         );
 

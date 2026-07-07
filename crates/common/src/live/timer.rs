@@ -51,7 +51,27 @@ fn expires_after_scheduled_time(next_time_ns: UnixNanos, stop_time_ns: Option<Un
     stop_time_ns == Some(next_time_ns)
 }
 
-fn normalize_start_time_ns(observed_next: u64, now_ns: UnixNanos) -> UnixNanos {
+fn is_stop_boundary(next_time_ns: u64, stop_time_ns: Option<UnixNanos>) -> bool {
+    stop_time_ns == Some(UnixNanos::from(next_time_ns))
+}
+
+fn should_adjust_past_due_time(
+    observed_next: u64,
+    now_ns: UnixNanos,
+    stop_time_ns: Option<UnixNanos>,
+) -> bool {
+    observed_next <= now_ns.as_u64() && !is_stop_boundary(observed_next, stop_time_ns)
+}
+
+fn normalize_start_time_ns(
+    observed_next: u64,
+    now_ns: UnixNanos,
+    stop_time_ns: Option<UnixNanos>,
+) -> UnixNanos {
+    if is_stop_boundary(observed_next, stop_time_ns) {
+        return UnixNanos::from(observed_next);
+    }
+
     let now_raw = now_ns.as_u64();
     let start_time_ns = if observed_next <= now_raw {
         now_raw
@@ -188,7 +208,7 @@ impl LiveTimer {
         let now_raw = now_ns.as_u64();
         let mut observed_next = self.next_time_ns.load(atomic::Ordering::SeqCst);
 
-        if observed_next <= now_raw {
+        if should_adjust_past_due_time(observed_next, now_ns, stop_time_ns) {
             loop {
                 match self.next_time_ns.compare_exchange(
                     observed_next,
@@ -209,7 +229,7 @@ impl LiveTimer {
                     }
                     Err(actual) => {
                         observed_next = actual;
-                        if observed_next > now_raw {
+                        if !should_adjust_past_due_time(observed_next, now_ns, stop_time_ns) {
                             break;
                         }
                     }
@@ -218,7 +238,7 @@ impl LiveTimer {
         }
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
-        let mut next_time_ns = normalize_start_time_ns(observed_next, now_ns);
+        let mut next_time_ns = normalize_start_time_ns(observed_next, now_ns, stop_time_ns);
         let next_time_atomic = self.next_time_ns.clone();
         next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
 
@@ -401,12 +421,38 @@ mod tests {
     }
 
     #[rstest]
+    fn test_live_timer_past_due_stop_boundary_is_not_adjusted_forward() {
+        let observed_next = 100;
+        let now = UnixNanos::from(110);
+        let stop_time_ns = Some(UnixNanos::from(observed_next));
+
+        assert!(!super::should_adjust_past_due_time(
+            observed_next,
+            now,
+            stop_time_ns
+        ));
+    }
+
+    #[rstest]
+    fn test_live_timer_past_due_time_before_stop_is_adjusted_forward() {
+        let observed_next = 90;
+        let now = UnixNanos::from(110);
+        let stop_time_ns = Some(UnixNanos::from(120));
+
+        assert!(super::should_adjust_past_due_time(
+            observed_next,
+            now,
+            stop_time_ns
+        ));
+    }
+
+    #[rstest]
     fn test_live_timer_start_time_normalization_adjusts_past_due_time() {
         let observed_next = 1_234_567;
         let now = UnixNanos::from(2_345_678);
 
         assert_eq!(
-            super::normalize_start_time_ns(observed_next, now),
+            super::normalize_start_time_ns(observed_next, now, None),
             UnixNanos::from(2_345_000)
         );
     }
@@ -417,8 +463,20 @@ mod tests {
         let now = UnixNanos::from(2_345_678);
 
         assert_eq!(
-            super::normalize_start_time_ns(observed_next, now),
+            super::normalize_start_time_ns(observed_next, now, None),
             UnixNanos::from(3_456_000)
+        );
+    }
+
+    #[rstest]
+    fn test_live_timer_start_time_normalization_keeps_stop_boundary_exact() {
+        let observed_next = 1_234_567;
+        let now = UnixNanos::from(2_345_678);
+        let stop_time_ns = Some(UnixNanos::from(observed_next));
+
+        assert_eq!(
+            super::normalize_start_time_ns(observed_next, now, stop_time_ns),
+            UnixNanos::from(observed_next)
         );
     }
 
