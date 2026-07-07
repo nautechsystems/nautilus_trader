@@ -123,7 +123,9 @@ impl Clock for LiveClock {
     }
 
     fn timer_exists(&self, name: &Ustr) -> bool {
-        self.timers.contains_key(name)
+        self.timers
+            .get(name)
+            .is_some_and(|timer| !timer.is_expired())
     }
 
     fn register_default_handler(&mut self, handler: TimeEventCallback) {
@@ -435,6 +437,45 @@ mod tests {
             Duration::from_secs(2),
         );
         assert!(events.lock().expect(MUTEX_POISONED).is_empty());
+    }
+
+    #[rstest]
+    fn test_live_clock_timer_exists_consistent_after_expiry() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+
+        let mut clock = LiveClock::new(Some(sender));
+        clock.register_default_handler(TimeEventCallback::from(|_| {}));
+
+        let name = Ustr::from("expiring");
+        let now = clock.timestamp_ns();
+        let interval_ns = Duration::from_millis(5).as_nanos() as u64;
+        let stop_time = UnixNanos::from(*now + Duration::from_millis(12).as_nanos() as u64);
+
+        clock
+            .set_timer_ns(
+                name.as_str(),
+                interval_ns,
+                None,
+                Some(stop_time),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert!(clock.timer_exists(&name));
+
+        // Wait for the timer task to run past its stop time and finish
+        wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));
+
+        // An expired timer is purged only lazily on the next set/cancel call,
+        // so the entry still sits in the map; the three introspection surfaces
+        // must nevertheless agree it is gone
+        assert!(clock.timers.contains_key(&name));
+        assert!(!clock.timer_exists(&name));
+        assert_eq!(clock.timer_count(), 0);
+        assert!(clock.timer_names().is_empty());
     }
 
     #[rstest]

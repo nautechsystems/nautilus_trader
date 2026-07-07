@@ -70,7 +70,7 @@ pub trait Clock: Debug + Any {
     /// Returns the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// If a timer with the `name` exists.
+    /// If an active (not expired) timer with the `name` exists.
     fn timer_exists(&self, name: &Ustr) -> bool;
 
     /// Register a default event handler for the clock. If a timer
@@ -608,7 +608,7 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns whether the timer `name` exists.
+    /// Returns whether an active (not expired) timer `name` exists.
     ///
     /// # Panics
     ///
@@ -1060,7 +1060,9 @@ impl Clock for TestClock {
     }
 
     fn timer_exists(&self, name: &Ustr) -> bool {
-        self.timers.contains_key(name)
+        self.timers
+            .get(name)
+            .is_some_and(|timer| !timer.is_expired())
     }
 
     fn register_default_handler(&mut self, callback: TimeEventCallback) {
@@ -1695,6 +1697,34 @@ mod tests {
             .unwrap();
 
         assert!(test_clock.timer_exists(&name));
+    }
+
+    #[rstest]
+    fn test_timer_exists_consistent_with_names_and_count_after_expiry(mut test_clock: TestClock) {
+        let name = Ustr::from("expiring_timer");
+        let start_time = test_clock.timestamp_ns();
+
+        test_clock
+            .set_timer_ns(
+                name.as_str(),
+                1_000,
+                Some(start_time),
+                Some(start_time + 2_500),
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert!(test_clock.timer_exists(&name));
+        assert_eq!(test_clock.timer_count(), 1);
+
+        test_clock.advance_time(start_time + 10_000, true);
+
+        // All three introspection surfaces must agree the timer is gone
+        assert!(!test_clock.timer_exists(&name));
+        assert_eq!(test_clock.timer_count(), 0);
+        assert!(test_clock.timer_names().is_empty());
     }
 
     #[rstest]
