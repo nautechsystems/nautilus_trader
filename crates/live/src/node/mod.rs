@@ -79,6 +79,7 @@
 
 use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
+use anyhow::Context;
 use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
@@ -611,8 +612,7 @@ impl LiveNode {
 
         for client_id in client_ids {
             if start.elapsed() > timeout {
-                log::warn!("Reconciliation timeout reached, stopping early");
-                break;
+                anyhow::bail!("Startup reconciliation timeout reached");
             }
 
             log_info!(
@@ -673,13 +673,13 @@ impl LiveNode {
                     }
                 }
                 Ok(None) => {
-                    log::warn!(
+                    anyhow::bail!(
                         "No mass status available from {client_id} \
                          (likely adapter error when generating reports)"
                     );
                 }
                 Err(e) => {
-                    log::warn!("Failed to get mass status from {client_id}: {e}");
+                    return Err(e).context(format!("Failed to get mass status from {client_id}"));
                 }
             }
         }
