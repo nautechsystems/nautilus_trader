@@ -18,7 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, LocalResult, NaiveDateTime, Utc};
 use chrono_tz::Tz;
 use ibapi::orders::{Execution, OrderStatus};
 use nautilus_core::UnixNanos;
@@ -381,8 +381,9 @@ fn decimal_from_f64(value: f64) -> anyhow::Result<Decimal> {
 ///
 /// # Errors
 ///
-/// Returns an error if the execution timestamp is malformed, uses an
-/// unrecognized timezone, or is ambiguous / non-existent in its timezone.
+/// Returns an error if the timestamp is malformed, the timezone is
+/// unrecognized, or the local time is non-existent (a DST spring-forward gap).
+/// DST fall-back folds resolve to the earliest matching instant.
 pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
     const NAIVE_FORMAT: &str = "%Y%m%d %H:%M:%S";
 
@@ -420,12 +421,7 @@ pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
 /// Localize a naive timestamp against an IB timezone token and convert to UTC.
 ///
 /// `Z` is normalized to `UTC`; everything else is resolved through the IANA tz
-/// database via `chrono-tz`.
-///
-/// # Errors
-///
-/// Returns an error if the timezone is unrecognized, or the wall-clock time is
-/// ambiguous or non-existent in that timezone (e.g. inside a DST fold/gap).
+/// database via `chrono-tz`. Error and fold behavior is documented on [`parse_execution_time`].
 fn localize_with_zone(
     dt: NaiveDateTime,
     tz_str: &str,
@@ -438,10 +434,12 @@ fn localize_with_zone(
     };
 
     match Tz::from_str(tz_name) {
-        Ok(zone) => match dt.and_local_timezone(zone).single() {
-            Some(local) => Ok(local.with_timezone(&Utc)),
-            None => anyhow::bail!(
-                "Execution timestamp '{time_str}' is ambiguous or non-existent in timezone '{tz_str}'"
+        Ok(zone) => match dt.and_local_timezone(zone) {
+            LocalResult::Single(local) => Ok(local.with_timezone(&Utc)),
+            // Fall-back fold: take the earliest instant (worst case ~1h skew).
+            LocalResult::Ambiguous(earliest, _) => Ok(earliest.with_timezone(&Utc)),
+            LocalResult::None => anyhow::bail!(
+                "Execution timestamp '{time_str}' is non-existent in timezone '{tz_str}'"
             ),
         },
         Err(_) => anyhow::bail!(
@@ -523,6 +521,33 @@ mod tests {
         let summer_utc = parse_execution_time("20230715 00:43:36 Universal").unwrap();
         assert_eq!(winter.as_i64(), winter_utc.as_i64() + 5 * 3_600_000_000_000); // EST
         assert_eq!(summer.as_i64(), summer_utc.as_i64() + 4 * 3_600_000_000_000); // EDT
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_dst_fall_back_fold_resolves_to_earliest() {
+        // CME US/Central account (bebop23's case): on 2023-11-05 fall-back night
+        // 01:30 America/Chicago occurs twice. Resolve to earliest (CDT, 06:30 UTC),
+        // don't drop the fill.
+        let fold = parse_execution_time("20231105 01:30:00 America/Chicago").unwrap();
+        assert_eq!(
+            fold.as_i64(),
+            parse_execution_time("20231105 06:30:00 Universal")
+                .unwrap()
+                .as_i64()
+        );
+        assert_ne!(
+            fold.as_i64(),
+            parse_execution_time("20231105 07:30:00 Universal")
+                .unwrap()
+                .as_i64()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_dst_spring_forward_gap_errors() {
+        // 02:30 America/Chicago never exists on 2023-03-12 spring-forward night.
+        let gap = parse_execution_time("20230312 02:30:00 America/Chicago");
+        assert!(gap.is_err());
     }
 
     #[rstest]
