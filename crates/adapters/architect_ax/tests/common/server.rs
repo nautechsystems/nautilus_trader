@@ -187,6 +187,10 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                             .get("level")
                             .and_then(|v| v.as_str())
                             .unwrap_or("LEVEL_1");
+                        let include_trades = value
+                            .get("trades")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(true);
                         let key = format!("{symbol}:{level}");
 
                         let fail_list = state.fail_next_subscriptions.lock().await.clone();
@@ -205,29 +209,33 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                             }
                         }
 
-                        let book_msg = match level {
-                            "LEVEL_1" => load_test_data("ws_md_book_l1.json"),
-                            "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
-                            "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
-                            _ => load_test_data("ws_md_book_l1.json"),
-                        };
+                        if level != "TRADES" {
+                            let book_msg = match level {
+                                "LEVEL_1" => load_test_data("ws_md_book_l1.json"),
+                                "LEVEL_2" => load_test_data("ws_md_book_l2.json"),
+                                "LEVEL_3" => load_test_data("ws_md_book_l3.json"),
+                                _ => load_test_data("ws_md_book_l1.json"),
+                            };
 
-                        if socket
-                            .send(Message::Text(book_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
+                            if socket
+                                .send(Message::Text(book_msg.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
 
-                        let trade_msg = load_test_data("ws_md_trade.json");
+                        if level == "TRADES" || include_trades {
+                            let trade_msg = load_test_data("ws_md_trade.json");
 
-                        if socket
-                            .send(Message::Text(trade_msg.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
+                            if socket
+                                .send(Message::Text(trade_msg.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
                     }
                     Some("unsubscribe") => {
@@ -546,13 +554,13 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/instruments", get(handle_get_instruments))
         .route("/balances", get(handle_get_balances))
         .route("/positions", get(handle_positions))
-        .route("/cancel_all_orders", post(handle_cancel_all_orders))
+        .route("/cancel-all-orders", post(handle_cancel_all_orders))
         .route(
             "/preview-aggressive-limit-order",
             post(handle_preview_aggressive_limit_order),
         )
-        .route("/replace_order", post(handle_replace_order))
-        .route("/open_orders", get(handle_open_orders))
+        .route("/replace-order", post(handle_replace_order))
+        .route("/open-orders", get(handle_open_orders))
         .route("/fills", get(handle_fills))
         .with_state(state)
 }

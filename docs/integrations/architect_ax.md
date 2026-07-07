@@ -175,16 +175,45 @@ for historical data backfill.
 | Order book (L1)   | `QuoteTick`          | Best bid/ask top‑of‑book from L1 book subscription.                |
 | Order book (L2)   | `OrderBookDelta`     | Aggregated price levels.                                           |
 | Order book (L3)   | `OrderBookDelta`     | Individual order quantities.                                       |
-| Trades            | `TradeTick`          | Real‑time trade events from L1 subscription.                       |
+| Trades            | `TradeTick`          | Real‑time trade events from trade‑only WebSocket subscription.     |
 | Mark price        | `MarkPriceUpdate`    | Extracted from L1 ticker subscription.                             |
 | Bars/candles      | `Bar`                | OHLCV data (total volume only, no buy/sell breakdown).             |
-| Funding rates     | `FundingRateUpdate`  | Polled via HTTP (not real‑time WebSocket); interval configurable.  |
+| Funding rates     | `FundingRateUpdate`  | Polled via HTTP; interval configurable.                            |
 | Instrument status | `InstrumentStatus`   | State changes (open, halted, closed) from L1 ticker subscription.  |
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
 data is available via WebSocket L1 book subscriptions.
 :::
+
+### WebSocket subscription behavior
+
+AX market data WebSocket subscriptions use one active stream per symbol. The adapter selects the
+smallest stream that covers the active Nautilus subscriptions:
+
+- `subscribe_trades` uses AX `level: "TRADES"`, which delivers trade prints only.
+- Book-only and quote-only subscriptions set AX `trades: false` and `ticker: false` to suppress
+  unrequested trade and ticker events.
+- Mark price and instrument status subscriptions require AX ticker events, so the adapter enables
+  ticker delivery on the L1 stream when either data type is active.
+- If multiple Nautilus data types are active for a symbol, the adapter resubscribes only when the
+  required AX level or delivery flags change.
+
+AX release notes also describe estimated funding rates on ticker events and an order WebSocket
+estimated-funding request. Nautilus currently exposes settled funding-rate updates through HTTP
+polling; the adapter does not parse or emit the venue's estimated funding fields as a separate
+Nautilus data type.
+
+### HTTP API behavior
+
+- `GET /tickers` returns limit/offset page metadata and supports `limit`, `offset`, and `sort`
+  query parameters.
+- `GET /ticker` returns the ticker under a top-level `ticker` response field.
+- `GET /orders` returns cursor page metadata and supports `order_id`, `order_ids`, `account_id`,
+  and optional timestamp filters.
+- `GET /transactions` requires `start_timestamp_ns` and `end_timestamp_ns` with a range no wider
+  than 7 days.
+- `GET /order-status` can include `reject_reason` and `reject_message` for rejected orders.
 
 ### Bar intervals
 
@@ -240,7 +269,7 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 
 | Feature            | Supported | Notes                                                              |
 |--------------------|-----------|--------------------------------------------------------------------|
-| Order modification | ✓         | Atomic replace via `POST /replace_order`. Returns a new order ID.  |
+| Order modification | ✓         | Atomic replace via `POST /replace-order`. Returns a new order ID.  |
 | Cancel order       | ✓         | Single order cancellation.                                         |
 | Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
 | Batch cancel       | -         | *Not supported by AX Exchange*. Individual cancels used instead.   |
@@ -315,23 +344,28 @@ from market data endpoints. This is handled automatically by the adapter configu
 
 ### Execution client configuration options
 
-| Option                    | Default   | Description                                                         |
-|---------------------------|-----------|---------------------------------------------------------------------|
-| `api_key`                 | `None`    | API key; loaded from `AX_API_KEY` env var when omitted.             |
-| `api_secret`              | `None`    | API secret; loaded from `AX_API_SECRET` env var when omitted.       |
-| `environment`             | `SANDBOX` | Trading environment (`SANDBOX` or `PRODUCTION`).                    |
-| `base_url_http`           | `None`    | Override for the REST base URL.                                     |
-| `base_url_orders`         | `None`    | Override for the orders REST base URL.                              |
-| `base_url_ws_private`     | `None`    | Override for the orders WebSocket URL.                              |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.               |
-| `http_timeout_secs`       | `60`      | Timeout (seconds) for REST requests.                                |
-| `max_retries`             | `3`       | Maximum retry attempts for REST requests.                           |
-| `retry_delay_initial_ms`  | `1000`    | Initial delay (milliseconds) between retries.                       |
-| `retry_delay_max_ms`      | `10000`   | Maximum delay (milliseconds) between retries (exponential backoff). |
-| `heartbeat_interval_secs` | `30`      | Heartbeat interval (seconds) for WebSocket connections.             |
-| `recv_window_ms`          | `5000`    | Receive window (milliseconds) for signed requests.                  |
-| `cancel_on_disconnect`    | `false`   | Cancel all open orders when the orders WebSocket disconnects.       |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                        |
+| Option                    | Default      | Description                                                                     |
+|---------------------------|--------------|---------------------------------------------------------------------------------|
+| `trader_id`               | `TRADER-001` | Trader ID for the client.                                                       |
+| `account_id`              | `AX-001`     | Account ID for execution events and reconciliation.                             |
+| `api_key`                 | `None`       | API key; loaded from `AX_API_KEY` env var when omitted.                         |
+| `api_secret`              | `None`       | API secret; loaded from `AX_API_SECRET` env var when omitted.                   |
+| `environment`             | `SANDBOX`    | Trading environment (`SANDBOX` or `PRODUCTION`).                                |
+| `base_url_http`           | `None`       | Override for the REST base URL.                                                 |
+| `base_url_orders`         | `None`       | Override for the orders REST base URL.                                          |
+| `base_url_ws_private`     | `None`       | Override for the orders WebSocket URL.                                          |
+| `proxy_url`               | `None`       | Optional proxy URL for HTTP and WebSocket transports.                           |
+| `http_timeout_secs`       | `60`         | Timeout (seconds) for REST requests.                                            |
+| `max_retries`             | `3`          | Maximum retry attempts for REST requests.                                       |
+| `retry_delay_initial_ms`  | `1000`       | Initial delay (milliseconds) between retries.                                   |
+| `retry_delay_max_ms`      | `10000`      | Maximum delay (milliseconds) between retries (exponential backoff).             |
+| `heartbeat_interval_secs` | `30`         | Heartbeat interval (seconds) for WebSocket connections.                         |
+| `recv_window_ms`          | `5000`       | Receive window (milliseconds) for signed requests.                              |
+| `cancel_on_disconnect`    | `false`      | Cancel all open orders when the orders WebSocket disconnects.                   |
+| `transport_backend`       | `Sockudo`    | WebSocket transport backend.                                                    |
+
+The `transport_backend` default is `Sockudo` when the `transport-sockudo` Cargo feature is
+enabled. It falls back to `Tungstenite` when that feature is disabled.
 
 The most common use case is to configure a live `TradingNode` to include AX Exchange
 data and execution clients. To achieve this, add an `AX` section to your client
@@ -405,7 +439,7 @@ credentials are valid and have trading permissions.
   automatic exponential backoff on rate limit responses.
 - **Market orders**: AX does not support native market orders. The adapter uses a preview endpoint
   to determine the take-through price and submits an aggressive IOC limit order.
-- **Order modification**: AX supports atomic order replacement via `POST /replace_order`. The
+- **Order modification**: AX supports atomic order replacement via `POST /replace-order`. The
   adapter maps `modify_order` to this endpoint. The exchange cancels the original order and
   creates a new one with the updated fields, returning a new order ID.
 - **Cancel on disconnect**: Set `cancel_on_disconnect=True` in the execution client config

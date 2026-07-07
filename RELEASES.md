@@ -46,34 +46,46 @@ releases as feedback arrives, before the final `2.0.0` release.
 
 ### Fixes
 - Fixed mixed-instrument backtest `SubmitOrderList` fills to use each leg's own book (#4392), thanks for reporting @gtalknitin
-- Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
-- Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
-- Fixed Python v2 subclassable PyO3 stubs marked as final (#4384), thanks @bebop23
+- Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
+- Fixed v2 wranglers to detect raw fixed-point overflow before Arrow conversion (#4372), thanks @MandalorianBatman
 - Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu
 - Fixed indicator rolling-window bounds and averages past capacity (#4351), thanks @Martingale42
+- Fixed Rust RSI moving-average selection and max-value regression (#4382), thanks @bebop23
 - Fixed v2 matching engine queue position for per-order deltas in L3 books (#4370), thanks for reporting @warmi024
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
+- Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
+- Fixed Python v2 subclassable PyO3 stubs marked as final (#4384), thanks @bebop23
+- Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
+- Fixed live reconciliation real-time gates to use the monotonic clock (#4376), thanks @folknor
+- Fixed live missing-order reconciliation to use monotonic receipt time (#4387), thanks @folknor
 - Fixed live execution engine position activity to stamp receipt time instead of venue `ts_event`
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
+- Fixed Binance Spot instrument loading after the venue SBE schema `3:5` rollout
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
 - Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
+- Fixed Architect AX market data subscriptions to use trade-only streams and suppress unrequested trade/ticker events
+- Fixed Architect AX `/transactions` requests to include the required bounded time range
+- Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
-- Fixed Interactive Brokers `contract_details_to_dict` crash when `contractDetails.ineligibilityReasonList` contains non-serializable `IneligibilityReason` objects
-- Fixed Interactive Brokers futures/options parsing for legacy `US/*` time zones
+- Fixed Hyperliquid PyO3 order book depth subscriptions (#4381), thanks @graceyangfan
+- Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
+- Fixed Interactive Brokers market order update price normalization (#4383), thanks @faysou
+- Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
 
 ### Internal Improvements
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
+- Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Rust (MSRV) to 1.96.1
@@ -82,6 +94,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
+- Updated Architect AX integration docs for current market-data, REST schema, and funding-rate behavior
 - Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
 - Added canonical references and doc comments for portfolio statistics
 - Fixed Lighter get-started Python v2 development wheel link

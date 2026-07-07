@@ -236,6 +236,74 @@ class HyperliquidHttpClient:
     assert "include_outcomes: bool = False" in updated
 
 
+def test_signature_defaults_ignore_var_kwargs_when_filtering_safe_defaults(tmp_path):
+    rust_file = tmp_path / "crates" / "common" / "src" / "python" / "actor.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl DataActorConfig {
+    #[new]
+    #[pyo3(signature = (actor_id=None, log_events=true, log_commands=true, **_kwargs))]
+    fn py_new(
+        actor_id: Option<ActorId>,
+        log_events: bool,
+        log_commands: bool,
+        _kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> Self {
+        todo!()
+    }
+}
+""".strip(),
+    )
+    content = """
+class DataActorConfig:
+    def __init__(
+        self,
+        actor_id: model.ActorId | None,
+        log_events: bool,
+        log_commands: bool,
+        _kwargs: dict | None = ...,
+    ) -> None: ...
+""".strip()
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_signature_defaults(content, fixups)
+
+    assert "actor_id: model.ActorId | None = None" in updated
+    assert "log_events: bool = True" in updated
+    assert "log_commands: bool = True" in updated
+    assert "_kwargs: dict | None = ..." in updated
+
+
+def test_signature_defaults_replace_stale_stub_defaults(tmp_path):
+    rust_file = tmp_path / "crates" / "trading" / "src" / "python" / "strategy.rs"
+    rust_file.parent.mkdir(parents=True)
+    rust_file.write_text(
+        """
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl StrategyConfig {
+    #[new]
+    #[pyo3(signature = (log_events=false))]
+    fn py_new(log_events: bool) -> Self {
+        todo!()
+    }
+}
+""".strip(),
+    )
+    content = """
+class StrategyConfig:
+    def __init__(self, log_events: bool = True) -> None: ...
+""".strip()
+
+    fixups = generate_stubs.collect_rust_class_fixups(tmp_path)
+    updated = generate_stubs.apply_signature_defaults(content, fixups)
+
+    assert "log_events: bool = False" in updated
+
+
 def test_collect_rust_class_fixups_reads_custom_data_stub_module(tmp_path):
     # Arrange
     rust_file = tmp_path / "crates" / "adapters" / "hyperliquid" / "src" / "data_types.rs"
@@ -523,6 +591,49 @@ class Sample:
     assert "    @staticmethod\n    def get_metadata(\n        value: builtins.str" in updated
     assert "def from_str(self, value: builtins.str)" not in updated
     assert "def get_metadata(\n        self, value: builtins.str" not in updated
+
+
+def test_apply_rust_class_fixups_rewrites_setters_as_property_setters():
+    # Arrange
+    content = """
+class DataActorConfig:
+    @property
+    def actor_id(self) -> model.ActorId | None: ...
+    def set_actor_id(self, actor_id: model.ActorId | None = ...) -> None: ...
+""".strip()
+    fixups = {
+        "DataActorConfig": generate_stubs.ClassMethodFixup(
+            getters={"actor_id"},
+            setters={"set_actor_id": "actor_id"},
+        ),
+    }
+
+    # Act
+    updated = generate_stubs.apply_rust_class_fixups(content, fixups)
+
+    # Assert
+    assert "    @actor_id.setter\n    def actor_id(" in updated
+    assert "actor_id: model.ActorId | None) -> None: ..." in updated
+    assert "def set_actor_id" not in updated
+
+
+def test_add_optional_defaults_skips_property_setters():
+    # Arrange
+    content = """
+class DataActorConfig:
+    def __init__(self, actor_id: model.ActorId | None) -> None: ...
+    @property
+    def actor_id(self) -> model.ActorId | None: ...
+    @actor_id.setter
+    def actor_id(self, actor_id: model.ActorId | None) -> None: ...
+""".strip()
+
+    # Act
+    updated = generate_stubs.add_optional_defaults(content)
+
+    # Assert
+    assert "def __init__(self, actor_id: model.ActorId | None = ...) -> None: ..." in updated
+    assert "def actor_id(self, actor_id: model.ActorId | None) -> None: ..." in updated
 
 
 def test_apply_rust_class_fixups_injects_missing_deserializers():
@@ -1126,6 +1237,25 @@ STUB_ROOT = WORKSPACE_ROOT / "python" / "nautilus_trader"
 
 STUB_ENUM_CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*(?:enum\.)?Enum\s*\)\s*:")
 STUB_VARIANT_RE = re.compile(r"^\s+([A-Za-z_]\w*)\s*=\s*\.\.\.")
+STUB_CONFIG_CLASS_RE = re.compile(r"^class\s+([A-Za-z_]\w*Config)\b", re.MULTILINE)
+RUST_STRUCT_FIELD_RE = re.compile(r"^\s*pub\s+([A-Za-z_]\w*)\s*:", re.MULTILINE)
+PYO3_SIGNATURE_RE = re.compile(r"#\[pyo3\(signature\s*=\s*\((.*?)\)\)\]", re.DOTALL)
+PYO3_GETTER_RE = re.compile(r"#\[getter\]\s*\n\s*fn\s+([A-Za-z_]\w*)\s*\(", re.MULTILINE)
+
+AUTHORING_CONFIG_BINDINGS = {
+    "DataActorConfig": (
+        WORKSPACE_ROOT / "crates" / "common" / "src" / "actor" / "data_actor.rs",
+        WORKSPACE_ROOT / "crates" / "common" / "src" / "python" / "actor.rs",
+    ),
+    "ExecutionAlgorithmConfig": (
+        WORKSPACE_ROOT / "crates" / "trading" / "src" / "algorithm" / "config.rs",
+        WORKSPACE_ROOT / "crates" / "trading" / "src" / "python" / "algorithm.rs",
+    ),
+    "StrategyConfig": (
+        WORKSPACE_ROOT / "crates" / "trading" / "src" / "strategy" / "config.rs",
+        WORKSPACE_ROOT / "crates" / "trading" / "src" / "python" / "strategy.rs",
+    ),
+}
 
 
 def _parse_stub_enum_variants(stub_root: Path) -> dict[str, list[str]]:
@@ -1191,6 +1321,111 @@ def test_live_stub_exposes_builder_engine_config_methods():
         "def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )
+
+
+def test_generated_config_stubs_include_signature_defaults():
+    rust_fixups = generate_stubs.collect_rust_class_fixups(WORKSPACE_ROOT)
+    renamed_enums = generate_stubs.collect_renamed_enums(WORKSPACE_ROOT)
+    mismatches = []
+
+    for stub_file in sorted(STUB_ROOT.rglob("*.pyi")):
+        content = stub_file.read_text()
+        config_fixups = _config_constructor_fixups_for_stub(content, rust_fixups)
+        if not config_fixups:
+            continue
+
+        updated = generate_stubs.apply_signature_defaults(content, config_fixups)
+        updated = generate_stubs.fix_enum_defaults_in_signatures(updated, renamed_enums)
+        updated = generate_stubs.elide_forward_class_defaults_in_signatures(updated)
+
+        if updated != content:
+            mismatches.append(stub_file.relative_to(WORKSPACE_ROOT).as_posix())
+
+    assert mismatches == [], "Run `make py-stubs-v2`; stale config defaults in " + ", ".join(
+        mismatches,
+    )
+
+
+def test_authoring_config_py_new_and_getters_match_rust_fields():
+    mismatches = []
+
+    for class_name, (struct_path, binding_path) in AUTHORING_CONFIG_BINDINGS.items():
+        rust_fields = _rust_struct_field_names(struct_path, class_name)
+        binding_content = binding_path.read_text()
+        binding_block = _rust_block_after_marker(binding_content, f"impl {class_name}")
+        constructor_params = _pyo3_signature_param_names(binding_block)
+        getter_names = set(PYO3_GETTER_RE.findall(binding_block))
+
+        missing_constructor_params = sorted(rust_fields - constructor_params)
+        extra_constructor_params = sorted(constructor_params - rust_fields)
+        missing_getters = sorted(rust_fields - getter_names)
+        extra_getters = sorted(getter_names - rust_fields)
+
+        details = [
+            f"missing constructor params {missing_constructor_params}"
+            if missing_constructor_params
+            else "",
+            f"extra constructor params {extra_constructor_params}"
+            if extra_constructor_params
+            else "",
+            f"missing getters {missing_getters}" if missing_getters else "",
+            f"extra getters {extra_getters}" if extra_getters else "",
+        ]
+        details = [detail for detail in details if detail]
+        if details:
+            mismatches.append(f"{class_name}: {', '.join(details)}")
+
+    assert mismatches == [], "Rust/PyO3 authoring config drift:\n" + "\n".join(mismatches)
+
+
+def _config_constructor_fixups_for_stub(
+    content: str,
+    rust_fixups: dict[str, generate_stubs.ClassMethodFixup],
+) -> dict[str, generate_stubs.ClassMethodFixup]:
+    config_class_names = set(STUB_CONFIG_CLASS_RE.findall(content))
+    config_fixups = {}
+
+    for rust_class, fixup in rust_fixups.items():
+        python_class = fixup.python_name or rust_class
+        init_defaults = fixup.signature_defaults.get("__init__")
+        if python_class not in config_class_names or init_defaults is None:
+            continue
+
+        config_fixups[rust_class] = generate_stubs.ClassMethodFixup(
+            python_name=fixup.python_name,
+            signature_defaults={"__init__": init_defaults},
+        )
+
+    return config_fixups
+
+
+def _rust_struct_field_names(path: Path, class_name: str) -> set[str]:
+    block = _rust_block_after_marker(path.read_text(), f"pub struct {class_name}")
+    return set(RUST_STRUCT_FIELD_RE.findall(block))
+
+
+def _rust_block_after_marker(content: str, marker: str) -> str:
+    start = content.index(marker)
+    open_brace = content.index("{", start)
+    depth = 0
+
+    for pos in range(open_brace, len(content)):
+        if content[pos] == "{":
+            depth += 1
+        elif content[pos] == "}":
+            depth -= 1
+            if depth == 0:
+                return content[open_brace + 1 : pos]
+
+    raise AssertionError(f"Could not find Rust block for {marker}")
+
+
+def _pyo3_signature_param_names(binding_block: str) -> set[str]:
+    match = PYO3_SIGNATURE_RE.search(binding_block)
+    assert match is not None
+
+    params = generate_stubs._resolve_signature_params(match.group(1))
+    return {name for name, _ in params}
 
 
 def test_package_stub_exports_portfolio_module():

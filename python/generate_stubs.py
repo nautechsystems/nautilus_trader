@@ -121,6 +121,7 @@ class ClassMethodFixup:
     python_name: str | None = None
     subclass: bool = False
     getters: set[str] = field(default_factory=set)
+    setters: dict[str, str] = field(default_factory=dict)
     staticmethods: set[str] = field(default_factory=set)
     classmethods: set[str] = field(default_factory=set)
     renames: dict[str, str] = field(default_factory=dict)
@@ -564,7 +565,7 @@ def _resolve_signature_params(
 
     for raw_param in _split_signature_params(params_str):
         param = raw_param.strip()
-        if not param or param == "*":
+        if not param or param.startswith("*"):
             continue
         if "=" not in param:
             params.append((param, None))
@@ -1360,6 +1361,7 @@ def register_rust_method_fixup(
     params = method_match.group(2)
 
     is_getter = any(attr.startswith("#[getter") for attr in attrs)
+    is_setter = any(attr.startswith("#[setter") for attr in attrs)
     is_staticmethod = any(attr.startswith("#[staticmethod") for attr in attrs)
     is_classmethod = any(attr.startswith("#[classmethod") for attr in attrs)
     python_name = _python_exposed_name(rust_name, attrs, is_getter)
@@ -1379,6 +1381,9 @@ def register_rust_method_fixup(
     if is_getter:
         fixup.getters.update(method_names)
 
+    if is_setter:
+        register_rust_setter_fixup(rust_name, attrs, method_names, fixup)
+
     _extract_method_signature_defaults(attrs, python_name, fixup)
 
     if is_classmethod:
@@ -1396,6 +1401,31 @@ def register_rust_method_fixup(
     rendered = render_missing_staticmethod_stub(class_name, python_name, params)
     if rendered is not None:
         fixup.injected_staticmethods[python_name] = rendered
+
+
+def register_rust_setter_fixup(
+    rust_name: str,
+    attrs: list[str],
+    method_names: set[str],
+    fixup: ClassMethodFixup,
+) -> None:
+    setter_name = _setter_property_name(rust_name, attrs)
+    if setter_name is None:
+        return
+
+    for method_name in method_names:
+        fixup.setters[method_name] = setter_name
+
+
+def _setter_property_name(rust_name: str, attrs: list[str]) -> str | None:
+    for attr in attrs:
+        name_match = PYO3_NAME_RE.search(attr)
+        if name_match:
+            return name_match.group(1)
+
+    if rust_name.startswith("set_"):
+        return rust_name[4:]
+    return None
 
 
 def _extract_method_signature_defaults(
@@ -1564,8 +1594,13 @@ def apply_class_block_fixups(
         seen_methods.add(method_name)
         seen_methods.add(resolved_name)
         is_suppressed = method_name in SUPPRESSED_METHODS or resolved_name in SUPPRESSED_METHODS
+        setter_property = fixup.setters.get(method_name) or fixup.setters.get(resolved_name)
         if not is_duplicate and not is_suppressed:
-            result.extend(rewrite_stub_method_block(method_name, method_block, fixup))
+            rewritten = rewrite_stub_method_block(method_name, method_block, fixup)
+            if setter_property:
+                result.extend(render_stub_property_setter(setter_property, rewritten))
+            else:
+                result.extend(rewritten)
         i = next_index
 
     missing = [
@@ -1714,6 +1749,7 @@ def rewrite_stub_method_block(
     """
     needs_fixup = (
         method_name in fixup.getters
+        or method_name in fixup.setters
         or method_name in fixup.staticmethods
         or method_name in fixup.classmethods
         or method_name in fixup.renames
@@ -1749,6 +1785,26 @@ def rewrite_stub_method_block(
         decorators.append("    @property")
 
     return decorators + signature_text.split("\n") + remainder
+
+
+def render_stub_property_setter(property_name: str, method_block: list[str]) -> list[str]:
+    decorators, signature_text, remainder = split_method_block(method_block)
+    decorators = [decorator for decorator in decorators if decorator.strip() != "@property"]
+    signature_text = re.sub(
+        r"\bdef\s+\w+\(",
+        f"def {property_name}(",
+        signature_text,
+        count=1,
+    )
+    signature_text = drop_stub_param_default(signature_text, property_name)
+    return [f"    @{property_name}.setter", *decorators, *signature_text.split("\n"), *remainder]
+
+
+def drop_stub_param_default(signature_text: str, param_name: str) -> str:
+    pattern = re.compile(
+        rf"(\b{re.escape(param_name)}\s*:[^,)\n=]*?\S)\s*=\s*(?:\.\.\.|[^,)\n]+)",
+    )
+    return pattern.sub(r"\1", signature_text, count=1)
 
 
 def drop_stub_method_receiver(signature_text: str) -> str:
@@ -2295,6 +2351,11 @@ def _fix_optional_defaults_in_line(line: str) -> str:
     return line[: paren_start + 1] + ", ".join(params) + line[paren_end:]
 
 
+def _is_property_setter_decorator(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("@") and stripped.endswith(".setter")
+
+
 def add_optional_defaults(content: str) -> str:
     """
     Add ``= ...`` to trailing Optional parameters that lack a default value.
@@ -2311,8 +2372,23 @@ def add_optional_defaults(content: str) -> str:
     """
     lines = content.split("\n")
     result = []
+    after_property_setter = False
 
     for line in lines:
+        stripped = line.strip()
+        if _is_property_setter_decorator(line):
+            result.append(line)
+            after_property_setter = True
+            continue
+
+        if after_property_setter and "def " in line:
+            result.append(line)
+            after_property_setter = False
+            continue
+
+        if stripped and not stripped.startswith("@"):
+            after_property_setter = False
+
         if "def " in line and ("Optional" in line or "| None" in line):
             result.append(_fix_optional_defaults_in_line(line))
         else:
@@ -2398,8 +2474,8 @@ def _apply_defaults_to_line(line: str, defaults: dict[str, str]) -> str:
     """
     Apply known defaults to parameter declarations on a single line.
 
-    Handles both:
-    - Replacing ``= ...`` with the actual default
+    Handles:
+    - Replacing stale defaults with the actual default
     - Adding ``= <default>`` to parameters that have no default in the stub
 
     """
@@ -2421,6 +2497,9 @@ def _apply_defaults_to_line(line: str, defaults: dict[str, str]) -> str:
             after_dots = line[eq_pos:]
             after_dots = re.sub(r"=\s*(?:\w+\.)?\.\.\.", f"= {qualified}", after_dots, count=1)
             line = before_eq + " " + after_dots
+        elif eq_pos >= 0:
+            before_eq = line[:eq_pos].rstrip()
+            line = before_eq + f" = {qualified}" + line[end_pos:]
         elif eq_pos < 0:
             line = line[:end_pos] + f" = {qualified}" + line[end_pos:]
 
@@ -2438,7 +2517,7 @@ def _scan_param_type(line: str, start: int) -> tuple[int, int, bool]:
 
     """
     depth = 0
-    end_pos = len(line)
+
     for i in range(start, len(line)):
         ch = line[i]
         if ch in "([":
@@ -2451,12 +2530,49 @@ def _scan_param_type(line: str, start: int) -> tuple[int, int, bool]:
         elif ch == "," and depth == 0:
             return i, -1, False
         elif ch == "=" and depth == 0:
-            rest = line[i + 1 :].lstrip()
+            end_pos = _scan_param_default_end(line, i + 1)
+            default_text = line[i + 1 : end_pos].strip()
+            return end_pos, i, _is_ellipsis_default(default_text)
+    return len(line), -1, False
 
-            # Match both plain `...` and pyo3-stub-gen's malformed `model....`
-            is_ellipsis = rest.startswith("...") or re.match(r"\w+\.\.\.\.", rest)
-            return end_pos, i, bool(is_ellipsis)
-    return end_pos, -1, False
+
+def _scan_param_default_end(line: str, start: int) -> int:
+    depth = 0
+    quote: str | None = None
+    escaped = False
+
+    for i in range(start, len(line)):
+        ch = line[i]
+        if quote is not None:
+            quote, escaped = _advance_quoted_default(ch, quote, escaped)
+            continue
+
+        if ch in ("'", '"'):
+            quote = ch
+        elif ch in "([":
+            depth += 1
+        elif ch in ")]":
+            if depth > 0:
+                depth -= 1
+            else:
+                return i
+        elif ch == "," and depth == 0:
+            return i
+    return len(line)
+
+
+def _advance_quoted_default(ch: str, quote: str, escaped: bool) -> tuple[str | None, bool]:
+    if escaped:
+        return quote, False
+    if ch == "\\":
+        return quote, True
+    if ch == quote:
+        return None, False
+    return quote, False
+
+
+def _is_ellipsis_default(default_text: str) -> bool:
+    return default_text.startswith("...") or bool(re.match(r"\w+\.\.\.\.", default_text))
 
 
 def _qualify_enum_default(py_default: str, type_text: str) -> str:

@@ -132,6 +132,26 @@ def test_execution_algorithm_authoring_surface_parameters(method_name, parameter
     assert list(inspect.signature(method).parameters) == parameter_names
 
 
+def test_execution_algorithm_config_defaults():
+    config = ExecutionAlgorithmConfig()
+
+    assert config.exec_algorithm_id is None
+    assert config.log_events is True
+    assert config.log_commands is True
+
+
+def test_execution_algorithm_config_with_explicit_values():
+    config = ExecutionAlgorithmConfig(
+        exec_algorithm_id=ExecAlgorithmId("TWAP-001"),
+        log_events=False,
+        log_commands=False,
+    )
+
+    assert config.exec_algorithm_id == ExecAlgorithmId("TWAP-001")
+    assert config.log_events is False
+    assert config.log_commands is False
+
+
 def test_add_native_exec_algorithm_rejects_unknown_type():
     engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
     config = ExecutionAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("TWAP-UNKNOWN-TYPE"))

@@ -171,7 +171,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::websocket::messages::{AxMdMessage, AxOrdersWsFrame, AxWsOrderResponse};
+    use crate::websocket::messages::{
+        AxMdMessage, AxOrdersWsFrame, AxWsOrderEvent, AxWsOrderResponse,
+    };
 
     #[rstest]
     fn test_parse_md_message_unknown_tag_errors() {
@@ -247,5 +249,24 @@ mod tests {
             msg,
             AxOrdersWsFrame::Response(AxWsOrderResponse::List(_))
         ));
+    }
+
+    #[rstest]
+    fn test_parse_order_message_replaced_live_shape() {
+        let raw = include_str!("../../test_data/ws_order_replaced_live.json");
+        let msg = parse_order_message(raw).expect("should parse live replaced event");
+
+        let AxOrdersWsFrame::Event(event) = msg else {
+            panic!("expected Event frame");
+        };
+        let AxWsOrderEvent::Replaced(replaced) = *event else {
+            panic!("expected Replaced event");
+        };
+        let order = replaced
+            .updated_order()
+            .expect("replacement should expose updated order");
+
+        assert_eq!(order.oid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
+        assert_eq!(order.rq, 100);
     }
 }

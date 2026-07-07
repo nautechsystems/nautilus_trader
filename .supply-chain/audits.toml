@@ -219,6 +219,12 @@ criteria = "safe-to-deploy"
 delta = "1.18.0 -> 1.18.1"
 notes = "SIMD decode optimizations, serde alloc gate removal. No new deps, no build script changes."
 
+[[audits.crossbeam-epoch]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.9.18 -> 0.9.20"
+notes = "Reviewed 0.9.18 to 0.9.20 diff: fixes fmt::Pointer invalid pointer dereference, adds tests and a build script that only emits cfg based on CARGO_CFG_SANITIZE; no new dependencies, network behavior, binary assets, or external filesystem access."
+
 [[audits.databento]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -409,6 +415,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.12.0 -> 0.12.1"
 notes = "Decompressor safety: adds offset-zero and offset-OOB checks, removes uninitialized data workaround. No new unsafe."
+
+[[audits.num-bigint]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.7 -> 0.4.8"
+notes = "Reviewed 0.4.7 to 0.4.8 diff: fixes Burnikel-Ziegler division regression with targeted tests; no new dependencies, build script, network behavior, binary assets, or external filesystem access."
 
 [[audits.num_enum]]
 who = "Nautech Systems <info@nautechsystems.io>"

@@ -16,15 +16,27 @@
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.objects import FIXED_PRECISION
+from nautilus_trader.model.objects import FIXED_PRECISION_BYTES
 from nautilus_trader.persistence.wranglers_v2 import RAW_BYTE_ORDER
+from nautilus_trader.persistence.wranglers_v2 import BarDataWranglerV2
+from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import OrderBookDepth10DataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+_RAW_VALUE_BITS = FIXED_PRECISION_BYTES * 8
+_FIXED_SCALE = 10**FIXED_PRECISION
+_PRICE_OVERFLOW_SOURCE = (2 ** (_RAW_VALUE_BITS - 1) - 1) // _FIXED_SCALE + 1
+_SIZE_OVERFLOW_SOURCE = (2**_RAW_VALUE_BITS - 1) // _FIXED_SCALE + 1
+_TS_EVENT = pd.to_datetime(["2026-01-01 00:00:00"], utc=True)
 
 
 def test_quote_tick_data_wrangler() -> None:
@@ -118,3 +130,290 @@ def test_order_book_depth10_data_wrangler_round_trip() -> None:
         assert depth.asks[i].price.as_decimal() == expected_ask_prices[i]
         assert depth.bids[i].size.as_decimal() == expected_bid_sizes[i]
         assert depth.asks[i].size.as_decimal() == expected_ask_sizes[i]
+
+
+def test_bar_wrangler_normal_values_still_work() -> None:
+    # Arrange
+    wrangler = BarDataWranglerV2(
+        bar_type="AAPL.XNAS-1-MINUTE-LAST-EXTERNAL",
+        price_precision=2,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "open": [3812.25],
+            "high": [3813.0],
+            "low": [3811.0],
+            "close": [3811.0],
+            "volume": [100.0],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    bars = wrangler.from_pandas(df)
+
+    # Assert
+    assert len(bars) == 1
+    bar = bars[0]
+    assert bar.open.as_decimal() == Decimal("3812.25")
+    assert bar.high.as_decimal() == Decimal("3813.00")
+    assert bar.low.as_decimal() == Decimal("3811.00")
+    assert bar.close.as_decimal() == Decimal("3811.00")
+    assert bar.volume.as_decimal() == Decimal(100)
+
+
+def test_bar_wrangler_price_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = BarDataWranglerV2(
+        bar_type="AAPL.XNAS-1-MINUTE-LAST-EXTERNAL",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "open": [_PRICE_OVERFLOW_SOURCE],
+            "high": [1],
+            "low": [1],
+            "close": [1],
+            "volume": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "price column 'open'" in message
+    assert "price_precision=0" in message
+
+
+def test_bar_wrangler_size_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = BarDataWranglerV2(
+        bar_type="AAPL.XNAS-1-MINUTE-LAST-EXTERNAL",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "open": [1],
+            "high": [1],
+            "low": [1],
+            "close": [1],
+            "volume": [_SIZE_OVERFLOW_SOURCE],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "size column 'volume'" in message
+    assert "size_precision=0" in message
+
+
+def test_bar_wrangler_negative_size_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = BarDataWranglerV2(
+        bar_type="AAPL.XNAS-1-MINUTE-LAST-EXTERNAL",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "open": [1],
+            "high": [1],
+            "low": [1],
+            "close": [1],
+            "volume": [-1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "size column 'volume'" in message
+    assert "unsigned" in message
+    assert "size_precision=0" in message
+
+
+def test_quote_wrangler_price_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = QuoteTickDataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "bid_price": [_PRICE_OVERFLOW_SOURCE],
+            "ask_price": [1],
+            "bid_size": [1],
+            "ask_size": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "price column 'bid_price'" in message
+    assert "price_precision=0" in message
+
+
+def test_trade_wrangler_price_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = TradeTickDataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "price": [_PRICE_OVERFLOW_SOURCE],
+            "size": [1],
+            "aggressor_side": [True],
+            "trade_id": ["1"],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "price column 'price'" in message
+    assert "price_precision=0" in message
+
+
+def test_order_book_depth10_wrangler_price_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = OrderBookDepth10DataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "bid_price_0": [_PRICE_OVERFLOW_SOURCE],
+            "ask_price_0": [1],
+            "bid_size_0": [1],
+            "ask_size_0": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "price column 'bid_price_0'" in message
+    assert "price_precision=0" in message
+
+
+def test_order_book_delta_wrangler_fractional_values_still_work() -> None:
+    # Arrange
+    wrangler = OrderBookDeltaDataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=2,
+        size_precision=1,
+    )
+    df = pd.DataFrame(
+        {
+            "price": [100.25],
+            "size": [1.5],
+            "order_id": [1],
+            "action": [1],
+            "aggressor_side": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    deltas = wrangler.from_pandas(df)
+
+    # Assert
+    assert len(deltas) == 1
+    delta = deltas[0]
+    assert delta.order.price.as_decimal() == Decimal("100.25")
+    assert delta.order.size.as_decimal() == Decimal("1.5")
+
+
+def test_order_book_delta_wrangler_price_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = OrderBookDeltaDataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "price": [_PRICE_OVERFLOW_SOURCE],
+            "size": [1],
+            "order_id": [1],
+            "aggressor_side": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "price column 'price'" in message
+    assert "price_precision=0" in message
+
+
+def test_order_book_delta_wrangler_size_raw_overflow_identifies_column() -> None:
+    # Arrange
+    wrangler = OrderBookDeltaDataWranglerV2(
+        instrument_id="AAPL.XNAS",
+        price_precision=0,
+        size_precision=0,
+    )
+    df = pd.DataFrame(
+        {
+            "price": [1],
+            "size": [_SIZE_OVERFLOW_SOURCE],
+            "order_id": [1],
+            "aggressor_side": [1],
+            "ts_event": _TS_EVENT,
+        },
+    )
+
+    # Act
+    with pytest.raises(ValueError) as excinfo:
+        wrangler.from_pandas(df)
+
+    # Assert
+    message = str(excinfo.value)
+    assert "Wrangler overflow" in message
+    assert "size column 'size'" in message
+    assert "size_precision=0" in message

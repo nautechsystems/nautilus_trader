@@ -39,7 +39,10 @@ use nautilus_network::{
 };
 use ustr::Ustr;
 
-use super::handler::{AxMdWsFeedHandler, HandlerCommand};
+use super::{
+    AxMdSubscriptionSpec,
+    handler::{AxMdWsFeedHandler, HandlerCommand},
+};
 use crate::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::messages::AxDataWsMessage,
@@ -81,14 +84,32 @@ pub struct SymbolDataTypes {
 }
 
 impl SymbolDataTypes {
-    pub fn effective_level(&self) -> Option<AxMarketDataLevel> {
-        if let Some(level) = self.book_level {
-            return Some(level);
+    fn effective_subscription(&self) -> Option<AxMdSubscriptionSpec> {
+        let ticker = self.mark_prices || self.instrument_status;
+        let book_level = self.book_level.or({
+            if self.quotes || ticker {
+                Some(AxMarketDataLevel::Level1)
+            } else {
+                None
+            }
+        });
+
+        if let Some(level) = book_level {
+            return Some(AxMdSubscriptionSpec::new(
+                level,
+                Some(self.trades),
+                Some(ticker),
+            ));
         }
 
-        if self.quotes || self.trades || self.mark_prices || self.instrument_status {
-            return Some(AxMarketDataLevel::Level1);
+        if self.trades {
+            return Some(AxMdSubscriptionSpec::new(
+                AxMarketDataLevel::Trades,
+                None,
+                None,
+            ));
         }
+
         None
     }
 
@@ -457,12 +478,12 @@ impl AxMdWebSocketClient {
             return Ok(());
         }
 
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.book_level = Some(level);
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -490,12 +511,12 @@ impl AxMdWebSocketClient {
             .get(symbol)
             .cloned()
             .unwrap_or_default();
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.quotes = true;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -522,12 +543,12 @@ impl AxMdWebSocketClient {
             .get(symbol)
             .cloned()
             .unwrap_or_default();
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.trades = true;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -552,12 +573,12 @@ impl AxMdWebSocketClient {
             log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe book deltas");
             return Ok(());
         };
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.book_level = None;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -587,12 +608,12 @@ impl AxMdWebSocketClient {
             log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe quotes");
             return Ok(());
         };
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.quotes = false;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -622,12 +643,12 @@ impl AxMdWebSocketClient {
             log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe trades");
             return Ok(());
         };
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.trades = false;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -659,12 +680,12 @@ impl AxMdWebSocketClient {
             .get(symbol)
             .cloned()
             .unwrap_or_default();
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.mark_prices = true;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -689,12 +710,12 @@ impl AxMdWebSocketClient {
             log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe mark prices");
             return Ok(());
         };
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.mark_prices = false;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -726,12 +747,12 @@ impl AxMdWebSocketClient {
             .get(symbol)
             .cloned()
             .unwrap_or_default();
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.instrument_status = true;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -756,12 +777,12 @@ impl AxMdWebSocketClient {
             log::debug!("Symbol {symbol} not subscribed, skipping unsubscribe instrument status");
             return Ok(());
         };
-        let old_level = current.effective_level();
+        let old_spec = current.effective_subscription();
         let mut next = current.clone();
         next.instrument_status = false;
-        let new_level = next.effective_level();
+        let new_spec = next.effective_subscription();
 
-        self.update_data_subscription(symbol, old_level, new_level)
+        self.update_data_subscription(symbol, old_spec, new_spec)
             .await?;
 
         self.symbol_data_types.rcu(|m| {
@@ -783,35 +804,33 @@ impl AxMdWebSocketClient {
     async fn update_data_subscription(
         &self,
         symbol: &str,
-        old_level: Option<AxMarketDataLevel>,
-        new_level: Option<AxMarketDataLevel>,
+        old_spec: Option<AxMdSubscriptionSpec>,
+        new_spec: Option<AxMdSubscriptionSpec>,
     ) -> AxWsResult<()> {
-        if old_level == new_level {
+        if old_spec == new_spec {
             return Ok(());
         }
 
-        match (old_level, new_level) {
-            (None, Some(level)) => {
-                log::debug!("Subscribing {symbol} at {level:?}");
-                self.send_subscribe(symbol, level).await
+        match (old_spec, new_spec) {
+            (None, Some(spec)) => {
+                log::debug!("Subscribing {symbol} at {spec:?}");
+                self.send_subscribe(symbol, spec).await
             }
-            (Some(_), None) => {
+            (Some(old), None) => {
                 log::debug!("Unsubscribing {symbol} (no remaining data types)");
-                self.send_unsubscribe(symbol).await
+                self.send_unsubscribe(symbol, old).await
             }
             (Some(old), Some(new)) => {
                 log::debug!("Resubscribing {symbol}: {old:?} -> {new:?}");
-                self.send_unsubscribe(symbol).await?;
+                self.send_unsubscribe(symbol, old).await?;
                 if let Err(e) = self.send_subscribe(symbol, new).await {
                     log::warn!("Resubscribe failed for {symbol} at {new:?}: {e}");
                     if let Err(restore_err) = self.send_subscribe(symbol, old).await {
-                        // Channel dead, mark old topic for reconnection replay
                         log::error!(
                             "Failed to restore {symbol} at {old:?}: {restore_err}, \
                              reconnection required"
                         );
-                        let old_topic = format!("{symbol}:{old:?}");
-                        self.subscriptions.mark_subscribe(&old_topic);
+                        self.subscriptions.mark_subscribe(&old.topic(symbol));
                     }
                     return Err(e);
                 }
@@ -821,8 +840,8 @@ impl AxMdWebSocketClient {
         }
     }
 
-    async fn send_subscribe(&self, symbol: &str, level: AxMarketDataLevel) -> AxWsResult<()> {
-        let topic = format!("{symbol}:{level:?}");
+    async fn send_subscribe(&self, symbol: &str, spec: AxMdSubscriptionSpec) -> AxWsResult<()> {
+        let topic = spec.topic(symbol);
         let request_id = self.next_request_id();
 
         self.subscriptions.mark_subscribe(&topic);
@@ -831,7 +850,7 @@ impl AxMdWebSocketClient {
             .send_cmd(HandlerCommand::Subscribe {
                 request_id,
                 symbol: Ustr::from(symbol),
-                level,
+                spec,
             })
             .await
         {
@@ -842,7 +861,7 @@ impl AxMdWebSocketClient {
         Ok(())
     }
 
-    async fn send_unsubscribe(&self, symbol: &str) -> AxWsResult<()> {
+    async fn send_unsubscribe(&self, symbol: &str, spec: AxMdSubscriptionSpec) -> AxWsResult<()> {
         let request_id = self.next_request_id();
 
         self.send_cmd(HandlerCommand::Unsubscribe {
@@ -851,10 +870,13 @@ impl AxMdWebSocketClient {
         })
         .await?;
 
+        self.subscriptions.mark_unsubscribe(&spec.topic(symbol));
+
         for level in [
             AxMarketDataLevel::Level1,
             AxMarketDataLevel::Level2,
             AxMarketDataLevel::Level3,
+            AxMarketDataLevel::Trades,
         ] {
             let topic = format!("{symbol}:{level:?}");
             self.subscriptions.mark_unsubscribe(&topic);
@@ -986,33 +1008,67 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_effective_level_empty_returns_none() {
+    fn test_effective_subscription_empty_returns_none() {
         let sdt = SymbolDataTypes::default();
-        assert_eq!(sdt.effective_level(), None);
+        assert_eq!(sdt.effective_subscription(), None);
         assert!(sdt.is_empty());
     }
 
     #[rstest]
-    fn test_effective_level_book_level_takes_precedence() {
+    fn test_effective_subscription_book_level_takes_precedence() {
         let sdt = SymbolDataTypes {
             book_level: Some(AxMarketDataLevel::Level2),
             quotes: true,
             ..Default::default()
         };
-        assert_eq!(sdt.effective_level(), Some(AxMarketDataLevel::Level2));
+        assert_eq!(
+            sdt.effective_subscription(),
+            Some(AxMdSubscriptionSpec::new(
+                AxMarketDataLevel::Level2,
+                Some(false),
+                Some(false),
+            ))
+        );
         assert!(!sdt.is_empty());
     }
 
     #[rstest]
-    #[case(true, false, false, false)]
-    #[case(false, true, false, false)]
-    #[case(false, false, true, false)]
-    #[case(false, false, false, true)]
-    fn test_effective_level_any_flag_returns_level1(
+    #[case(
+        true,
+        false,
+        false,
+        false,
+        AxMarketDataLevel::Level1,
+        Some(false),
+        Some(false)
+    )]
+    #[case(false, true, false, false, AxMarketDataLevel::Trades, None, None)]
+    #[case(
+        false,
+        false,
+        true,
+        false,
+        AxMarketDataLevel::Level1,
+        Some(false),
+        Some(true)
+    )]
+    #[case(
+        false,
+        false,
+        false,
+        true,
+        AxMarketDataLevel::Level1,
+        Some(false),
+        Some(true)
+    )]
+    fn test_effective_subscription_for_single_data_type(
         #[case] quotes: bool,
         #[case] trades: bool,
         #[case] mark_prices: bool,
         #[case] instrument_status: bool,
+        #[case] level: AxMarketDataLevel,
+        #[case] include_trades: Option<bool>,
+        #[case] include_ticker: Option<bool>,
     ) {
         let sdt = SymbolDataTypes {
             quotes,
@@ -1021,7 +1077,14 @@ mod tests {
             instrument_status,
             book_level: None,
         };
-        assert_eq!(sdt.effective_level(), Some(AxMarketDataLevel::Level1));
+        assert_eq!(
+            sdt.effective_subscription(),
+            Some(AxMdSubscriptionSpec::new(
+                level,
+                include_trades,
+                include_ticker,
+            ))
+        );
         assert!(!sdt.is_empty());
     }
 }

@@ -81,8 +81,14 @@ pub struct AxMdSubscribe {
     pub msg_type: AxMdRequestType,
     /// Instrument symbol.
     pub symbol: Ustr,
-    /// Market data level (LEVEL_1, LEVEL_2, LEVEL_3).
+    /// Market data level (LEVEL_1, LEVEL_2, LEVEL_3, TRADES).
     pub level: AxMarketDataLevel,
+    /// Whether book-level subscriptions should include trade prints.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trades: Option<bool>,
+    /// Whether book-level subscriptions should include ticker updates.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticker: Option<bool>,
 }
 
 /// Unsubscribe request for market data.
@@ -756,8 +762,29 @@ pub struct AxWsOrderReplaced {
     pub tn: i64,
     /// Event ID.
     pub eid: String,
-    /// Order details.
-    pub o: AxWsOrder,
+    /// Legacy order details shape.
+    #[serde(default)]
+    pub o: Option<Box<AxWsOrder>>,
+    /// Replaced order details.
+    #[serde(default)]
+    pub ro: Option<Box<AxWsOrder>>,
+    /// New order ID assigned to the replacement order.
+    #[serde(default)]
+    pub noid: Option<String>,
+    /// New order details.
+    #[serde(default)]
+    pub no: Option<Box<AxWsOrder>>,
+}
+
+impl AxWsOrderReplaced {
+    /// Returns the order details representing the active replacement order.
+    #[must_use]
+    pub(crate) fn updated_order(&self) -> Option<&AxWsOrder> {
+        self.no
+            .as_deref()
+            .or(self.o.as_deref())
+            .or(self.ro.as_deref())
+    }
 }
 
 /// Order done for day event.
@@ -979,6 +1006,8 @@ mod tests {
             msg_type: AxMdRequestType::Subscribe,
             symbol: Ustr::from("EURUSD-PERP"),
             level: AxMarketDataLevel::Level2,
+            trades: None,
+            ticker: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -987,6 +1016,50 @@ mod tests {
         assert_eq!(parsed["type"], "subscribe");
         assert_eq!(parsed["symbol"], "EURUSD-PERP");
         assert_eq!(parsed["level"], "LEVEL_2");
+        assert!(parsed.get("trades").is_none());
+        assert!(parsed.get("ticker").is_none());
+    }
+
+    #[rstest]
+    fn test_md_subscribe_book_only_serialization() {
+        let msg = AxMdSubscribe {
+            rid: 2,
+            msg_type: AxMdRequestType::Subscribe,
+            symbol: Ustr::from("EURUSD-PERP"),
+            level: AxMarketDataLevel::Level2,
+            trades: Some(false),
+            ticker: Some(false),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["rid"], 2);
+        assert_eq!(parsed["type"], "subscribe");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
+        assert_eq!(parsed["level"], "LEVEL_2");
+        assert_eq!(parsed["trades"], false);
+        assert_eq!(parsed["ticker"], false);
+    }
+
+    #[rstest]
+    fn test_md_subscribe_trades_serialization() {
+        let msg = AxMdSubscribe {
+            rid: 2,
+            msg_type: AxMdRequestType::Subscribe,
+            symbol: Ustr::from("EURUSD-PERP"),
+            level: AxMarketDataLevel::Trades,
+            trades: None,
+            ticker: None,
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["rid"], 2);
+        assert_eq!(parsed["type"], "subscribe");
+        assert_eq!(parsed["symbol"], "EURUSD-PERP");
+        assert_eq!(parsed["level"], "TRADES");
+        assert!(parsed.get("trades").is_none());
+        assert!(parsed.get("ticker").is_none());
     }
 
     #[rstest]
@@ -1279,7 +1352,26 @@ mod tests {
     fn test_load_order_replaced_from_file() {
         let json = include_str!("../../test_data/ws_order_replaced.json");
         let msg: AxWsOrderReplaced = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.o.p, dec!(50500.00));
+        assert_eq!(msg.updated_order().unwrap().p, dec!(50500.00));
+    }
+
+    #[rstest]
+    fn test_load_order_replaced_live_shape_from_file() {
+        let json = include_str!("../../test_data/ws_order_replaced_live.json");
+        let msg: AxWsOrderReplaced = serde_json::from_str(json).unwrap();
+        let order = msg.updated_order().unwrap();
+
+        assert_eq!(msg.noid.as_deref(), Some("O-01KWY01WX8JT4DABKC6FRS5NT4"));
+        assert_eq!(order.oid, "O-01KWY01WX8JT4DABKC6FRS5NT4");
+        assert_eq!(order.p, dec!(1.0926));
+    }
+
+    #[rstest]
+    fn test_load_order_replaced_without_order_from_file() {
+        let json = include_str!("../../test_data/ws_order_replaced_without_order.json");
+        let msg: AxWsOrderReplaced = serde_json::from_str(json).unwrap();
+
+        assert!(msg.updated_order().is_none());
     }
 
     #[rstest]

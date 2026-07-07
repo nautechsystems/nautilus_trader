@@ -123,11 +123,23 @@ class CustomData:
 class DataActorConfig:
     def __init__(
         self,
-        actor_id: model.ActorId | None,
-        log_events: bool,
-        log_commands: bool,
+        actor_id: model.ActorId | None = None,
+        log_events: bool = True,
+        log_commands: bool = True,
         _kwargs: dict | None = ...,
     ) -> None: ...
+    @property
+    def actor_id(self) -> model.ActorId | None: ...
+    @actor_id.setter
+    def actor_id(self, actor_id: model.ActorId | None) -> None: ...
+    @property
+    def log_events(self) -> bool: ...
+    @log_events.setter
+    def log_events(self, log_events: bool) -> None: ...
+    @property
+    def log_commands(self) -> bool: ...
+    @log_commands.setter
+    def log_commands(self, log_commands: bool) -> None: ...
 
 @typing.final
 class FileWriterConfig:

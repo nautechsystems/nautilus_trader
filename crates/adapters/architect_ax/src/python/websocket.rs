@@ -986,8 +986,13 @@ fn handle_order_event(
             }
         }
         AxWsOrderEvent::Replaced(msg) => {
+            let Some(order) = msg.updated_order() else {
+                log::warn!("Received AX replace event without order details");
+                return;
+            };
+
             if let Some(event) =
-                create_order_accepted(&msg.o, msg.ts, msg.tn, caches, account_id, clock)
+                create_order_accepted(order, msg.ts, msg.tn, caches, account_id, clock)
             {
                 call_python_with_event(call_soon, callback, move |py| event.into_py_any(py));
             }

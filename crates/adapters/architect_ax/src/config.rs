@@ -75,7 +75,9 @@ pub struct AxDataClientConfig {
     /// Funding rate poll interval in minutes.
     #[builder(default = 15)]
     pub funding_rate_poll_interval_mins: u64,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend.
+    ///
+    /// Defaults to `Sockudo` when `transport-sockudo` is enabled, otherwise `Tungstenite`.
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -184,7 +186,9 @@ pub struct AxExecClientConfig {
     /// Cancel all open orders when the orders WebSocket disconnects.
     #[builder(default)]
     pub cancel_on_disconnect: bool,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend.
+    ///
+    /// Defaults to `Sockudo` when `transport-sockudo` is enabled, otherwise `Tungstenite`.
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }

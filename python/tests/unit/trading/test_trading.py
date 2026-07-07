@@ -780,50 +780,40 @@ def _historical_request_time(request_time):
 
 
 def test_strategy_config_defaults():
-    config = StrategyConfig(
-        None,
-        None,
-        None,
-        None,
-        False,
-        False,
-        False,
-        100,
-        100,
-        TimeInForce.GTC,
-        False,
-        True,
-        True,
-        True,
-        True,
-        False,
-    )
+    config = StrategyConfig()
 
     assert config.strategy_id is None
     assert config.order_id_tag is None
     assert config.oms_type is None
+    assert config.external_order_claims is None
     assert config.manage_contingent_orders is False
     assert config.manage_gtd_expiry is False
-    assert config.use_uuid_client_order_ids is True
+    assert config.manage_stop is False
+    assert config.market_exit_interval_ms == 100
+    assert config.market_exit_max_attempts == 100
+    assert config.market_exit_time_in_force == TimeInForce.GTC
+    assert config.market_exit_reduce_only is True
+    assert config.use_uuid_client_order_ids is False
     assert config.use_hyphens_in_client_order_ids is True
     assert config.log_events is True
     assert config.log_commands is True
-    assert config.log_rejected_due_post_only_as_warning is False
+    assert config.log_rejected_due_post_only_as_warning is True
 
 
 def test_strategy_config_with_explicit_values():
+    external_order_claims = [InstrumentId.from_str("ETH/USDT.BINANCE")]
     config = StrategyConfig(
         StrategyId("S-002"),
         "002",
-        None,
-        None,
+        OmsType.HEDGING,
+        external_order_claims,
         True,
         True,
-        False,
+        True,
         500,
         5,
         TimeInForce.IOC,
-        True,
+        False,
         False,
         False,
         False,
@@ -833,8 +823,15 @@ def test_strategy_config_with_explicit_values():
 
     assert config.strategy_id == StrategyId("S-002")
     assert config.order_id_tag == "002"
+    assert config.oms_type == OmsType.HEDGING
+    assert config.external_order_claims == external_order_claims
     assert config.manage_contingent_orders is True
     assert config.manage_gtd_expiry is True
+    assert config.manage_stop is True
+    assert config.market_exit_interval_ms == 500
+    assert config.market_exit_max_attempts == 5
+    assert config.market_exit_time_in_force == TimeInForce.IOC
+    assert config.market_exit_reduce_only is False
     assert config.use_uuid_client_order_ids is False
     assert config.use_hyphens_in_client_order_ids is False
     assert config.log_events is False

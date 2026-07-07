@@ -100,6 +100,36 @@ impl DataActorConfig {
             log_commands,
         }
     }
+
+    #[getter]
+    fn actor_id(&self) -> Option<ActorId> {
+        self.actor_id
+    }
+
+    #[setter]
+    fn set_actor_id(&mut self, actor_id: Option<ActorId>) {
+        self.actor_id = actor_id;
+    }
+
+    #[getter]
+    fn log_events(&self) -> bool {
+        self.log_events
+    }
+
+    #[setter]
+    fn set_log_events(&mut self, log_events: bool) {
+        self.log_events = log_events;
+    }
+
+    #[getter]
+    fn log_commands(&self) -> bool {
+        self.log_commands
+    }
+
+    #[setter]
+    fn set_log_commands(&mut self, log_commands: bool) {
+        self.log_commands = log_commands;
+    }
 }
 
 #[pyo3::pymethods]

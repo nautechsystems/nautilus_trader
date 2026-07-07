@@ -22,10 +22,35 @@
 //! Parameter structs are built using the builder pattern and then passed to
 //! `AxRawHttpClient` methods where they are automatically serialized.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 use crate::common::enums::{AxCandleWidth, AxOrderStatus};
+
+/// Parameters for the GET /tickers endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-tickers>
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct GetTickersParams {
+    /// Maximum number of tickers to return.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub limit: Option<i32>,
+    /// Number of sorted tickers to skip.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub offset: Option<i32>,
+    /// Sort order. Currently AX supports `symbol`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sort: Option<String>,
+}
+
+impl GetTickersParams {
+    /// Creates a new empty [`GetTickersParams`].
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
 
 /// Parameters for the GET /ticker endpoint.
 ///
@@ -174,17 +199,47 @@ impl GetFillsParams {
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/portfolio-management/get-transactions>
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct GetTransactionsParams {
     /// Transaction types to filter by.
     pub transaction_types: Vec<String>,
+    /// Start timestamp in nanoseconds.
+    pub start_timestamp_ns: i64,
+    /// End timestamp in nanoseconds.
+    pub end_timestamp_ns: i64,
+}
+
+impl Serialize for GetTransactionsParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut query = Vec::with_capacity(3);
+
+        if !self.transaction_types.is_empty() {
+            query.push(("transaction_types", self.transaction_types.join(",")));
+        }
+
+        query.push(("start_timestamp_ns", self.start_timestamp_ns.to_string()));
+        query.push(("end_timestamp_ns", self.end_timestamp_ns.to_string()));
+
+        query.serialize(serializer)
+    }
 }
 
 impl GetTransactionsParams {
     /// Creates a new [`GetTransactionsParams`].
     #[must_use]
-    pub fn new(transaction_types: Vec<String>) -> Self {
-        Self { transaction_types }
+    pub fn new(
+        transaction_types: Vec<String>,
+        start_timestamp_ns: i64,
+        end_timestamp_ns: i64,
+    ) -> Self {
+        Self {
+            transaction_types,
+            start_timestamp_ns,
+            end_timestamp_ns,
+        }
     }
 }
 
@@ -270,26 +325,91 @@ impl GetOrderStatusParams {
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/get-orders>
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct GetOrdersParams {
     /// Filter by trading symbol.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<Ustr>,
     /// Beginning of time range (ISO 8601).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<String>,
     /// End of time range (ISO 8601).
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub end_time: Option<String>,
+    /// Start timestamp in nanoseconds.
+    pub start_timestamp_ns: Option<i64>,
+    /// End timestamp in nanoseconds.
+    pub end_timestamp_ns: Option<i64>,
     /// Maximum results returned.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<i32>,
     /// Pagination offset.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<i32>,
     /// Filter by order state.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub order_state: Option<AxOrderStatus>,
+    /// Filter by a single order ID.
+    pub order_id: Option<String>,
+    /// Filter by multiple order IDs.
+    pub order_ids: Vec<String>,
+    /// Filter by account ID.
+    pub account_id: Option<String>,
+    /// Cursor for the next page.
+    pub cursor: Option<String>,
+}
+
+impl Serialize for GetOrdersParams {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut query = Vec::new();
+
+        if let Some(symbol) = self.symbol {
+            query.push(("symbol", symbol.to_string()));
+        }
+
+        if let Some(start_time) = &self.start_time {
+            query.push(("start_time", start_time.clone()));
+        }
+
+        if let Some(end_time) = &self.end_time {
+            query.push(("end_time", end_time.clone()));
+        }
+
+        if let Some(start_timestamp_ns) = self.start_timestamp_ns {
+            query.push(("start_timestamp_ns", start_timestamp_ns.to_string()));
+        }
+
+        if let Some(end_timestamp_ns) = self.end_timestamp_ns {
+            query.push(("end_timestamp_ns", end_timestamp_ns.to_string()));
+        }
+
+        if let Some(limit) = self.limit {
+            query.push(("limit", limit.to_string()));
+        }
+
+        if let Some(offset) = self.offset {
+            query.push(("offset", offset.to_string()));
+        }
+
+        if let Some(order_state) = self.order_state {
+            query.push(("order_states", order_state.to_string()));
+        }
+
+        if let Some(order_id) = &self.order_id {
+            query.push(("order_id", order_id.clone()));
+        }
+
+        if !self.order_ids.is_empty() {
+            query.push(("order_ids", self.order_ids.join(",")));
+        }
+
+        if let Some(account_id) = &self.account_id {
+            query.push(("account_id", account_id.clone()));
+        }
+
+        if let Some(cursor) = &self.cursor {
+            query.push(("cursor", cursor.clone()));
+        }
+
+        query.serialize(serializer)
+    }
 }
 
 impl GetOrdersParams {
@@ -312,6 +432,20 @@ mod tests {
         let params = GetTickerParams::new(Ustr::from("GBPUSD-PERP"));
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert_eq!(qs, "symbol=GBPUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_get_tickers_params_serialization() {
+        let params = GetTickersParams {
+            limit: Some(50),
+            offset: Some(10),
+            sort: Some("symbol".to_string()),
+        };
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(qs.contains("limit=50"));
+        assert!(qs.contains("offset=10"));
+        assert!(qs.contains("sort=symbol"));
     }
 
     #[rstest]
@@ -362,6 +496,20 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_transactions_params_serialization() {
+        let params = GetTransactionsParams::new(
+            vec!["FUNDING".to_string(), "TRADE".to_string()],
+            1000000000,
+            2000000000,
+        );
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(qs.contains("transaction_types=FUNDING%2CTRADE"));
+        assert!(qs.contains("start_timestamp_ns=1000000000"));
+        assert!(qs.contains("end_timestamp_ns=2000000000"));
+    }
+
+    #[rstest]
     fn test_get_trades_params_serialization() {
         let params = GetTradesParams::new(Ustr::from("BTC-PERP"), Some(50));
         let qs = serde_urlencoded::to_string(&params).unwrap();
@@ -396,5 +544,32 @@ mod tests {
         let params = GetOrderStatusParams::by_client_order_id(12345);
         let qs = serde_urlencoded::to_string(&params).unwrap();
         assert_eq!(qs, "cid=12345");
+    }
+
+    #[rstest]
+    fn test_get_orders_params_serialization() {
+        let params = GetOrdersParams {
+            symbol: Some(Ustr::from("EURUSD-PERP")),
+            order_state: Some(AxOrderStatus::Filled),
+            order_id: Some("ORD-1".to_string()),
+            order_ids: vec!["ORD-2".to_string(), "ORD-3".to_string()],
+            account_id: Some("account-1".to_string()),
+            cursor: Some("next".to_string()),
+            start_timestamp_ns: Some(1000000000),
+            end_timestamp_ns: Some(2000000000),
+            limit: Some(100),
+            ..Default::default()
+        };
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+
+        assert!(qs.contains("symbol=EURUSD-PERP"));
+        assert!(qs.contains("order_states=FILLED"));
+        assert!(qs.contains("order_id=ORD-1"));
+        assert!(qs.contains("order_ids=ORD-2%2CORD-3"));
+        assert!(qs.contains("account_id=account-1"));
+        assert!(qs.contains("cursor=next"));
+        assert!(qs.contains("start_timestamp_ns=1000000000"));
+        assert!(qs.contains("end_timestamp_ns=2000000000"));
+        assert!(qs.contains("limit=100"));
     }
 }

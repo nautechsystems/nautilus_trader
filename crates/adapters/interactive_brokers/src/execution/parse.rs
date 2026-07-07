@@ -18,6 +18,8 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use chrono::{DateTime, LocalResult, NaiveDateTime, Utc};
+use chrono_tz::Tz;
 use ibapi::orders::{Execution, OrderStatus};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -31,7 +33,6 @@ use nautilus_model::{
     types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
-use time::{PrimitiveDateTime, macros::format_description};
 
 use crate::{
     common::{
@@ -367,56 +368,93 @@ fn decimal_from_f64(value: f64) -> anyhow::Result<Decimal> {
 /// Supported IB formats:
 /// - "20230223 00:43:36 Universal"
 /// - "20230223 00:43:36 UTC"
+/// - "20230223 00:43:36 MET"
+/// - "20230223 00:43:36 America/New_York"
 /// - "20230223 00:43:36" (assumed UTC)
 /// - "20250225-15:15:00" (assumed UTC)
 ///
+/// Timezones are resolved through the IANA tz database (via `chrono-tz`), so any
+/// region abbreviation or name that IB stamps the execution with (e.g. `MET`,
+/// `EST`, `America/New_York`) is honored, matching the v1 pandas-based parser.
+/// This matters because some IB accounts (e.g. European paper accounts) report a
+/// server timezone such as `MET` that the gateway cannot be coerced out of.
+///
 /// # Errors
 ///
-/// Returns an error if the execution timestamp is malformed or uses a non-UTC timezone.
+/// Returns an error if the timestamp is malformed, the timezone is
+/// unrecognized, or the local time is non-existent (a DST spring-forward gap).
+/// DST fall-back folds resolve to the earliest matching instant.
 pub fn parse_execution_time(time_str: &str) -> anyhow::Result<UnixNanos> {
-    fn parse_utc(
-        time_str: &str,
-        format: &[time::format_description::FormatItem<'_>],
-    ) -> anyhow::Result<UnixNanos> {
-        let dt = PrimitiveDateTime::parse(time_str, format).map_err(|e| {
+    const NAIVE_FORMAT: &str = "%Y%m%d %H:%M:%S";
+
+    // Hyphenated, space-less form (e.g. "20250225-15:15:00") is always UTC.
+    if !time_str.contains(' ') {
+        let normalized = time_str.replace('-', " ");
+        let dt = NaiveDateTime::parse_from_str(&normalized, NAIVE_FORMAT).map_err(|e| {
             anyhow::anyhow!("Failed to parse execution timestamp '{time_str}': {e}")
         })?;
-        let nanos: u64 = dt
-            .assume_utc()
-            .unix_timestamp_nanos()
-            .try_into()
-            .map_err(|_| {
-                anyhow::anyhow!("Execution timestamp '{time_str}' was before Unix epoch")
-            })?;
-        Ok(UnixNanos::new(nanos))
+        return datetime_to_unix_nanos(dt.and_utc(), time_str);
     }
 
-    if time_str.contains('-') && !time_str.contains(' ') {
-        let format = format_description!("[year][month][day]-[hour]:[minute]:[second]");
-        return parse_utc(time_str, format);
-    }
-
-    let parts: Vec<&str> = time_str.split(' ').collect();
-
-    if parts.len() < 2 {
+    // Split into at most three parts: date, time, and optional timezone token.
+    // The timezone token itself never contains a space, so `splitn(3, ' ')`
+    // correctly groups IANA names such as "America/New_York".
+    let mut parts = time_str.splitn(3, ' ');
+    let (Some(date), Some(time)) = (parts.next(), parts.next()) else {
         anyhow::bail!("Invalid execution time format: {time_str}");
+    };
+    let tz_str = parts.next().unwrap_or("").trim();
+
+    let naive_str = format!("{date} {time}");
+    let dt = NaiveDateTime::parse_from_str(&naive_str, NAIVE_FORMAT)
+        .map_err(|e| anyhow::anyhow!("Failed to parse execution timestamp '{time_str}': {e}"))?;
+
+    let utc = if tz_str.is_empty() {
+        dt.and_utc()
+    } else {
+        localize_with_zone(dt, tz_str, time_str)?
+    };
+
+    datetime_to_unix_nanos(utc, time_str)
+}
+
+/// Localize a naive timestamp against an IB timezone token and convert to UTC.
+///
+/// `Z` is normalized to `UTC`; everything else is resolved through the IANA tz
+/// database via `chrono-tz`. Error and fold behavior is documented on [`parse_execution_time`].
+fn localize_with_zone(
+    dt: NaiveDateTime,
+    tz_str: &str,
+    time_str: &str,
+) -> anyhow::Result<DateTime<Utc>> {
+    let tz_name = if tz_str.eq_ignore_ascii_case("Z") {
+        "UTC"
+    } else {
+        tz_str
+    };
+
+    match Tz::from_str(tz_name) {
+        Ok(zone) => match dt.and_local_timezone(zone) {
+            LocalResult::Single(local) => Ok(local.with_timezone(&Utc)),
+            // Fall-back fold: take the earliest instant (worst case ~1h skew).
+            LocalResult::Ambiguous(earliest, _) => Ok(earliest.with_timezone(&Utc)),
+            LocalResult::None => anyhow::bail!(
+                "Execution timestamp '{time_str}' is non-existent in timezone '{tz_str}'"
+            ),
+        },
+        Err(_) => anyhow::bail!(
+            "Unrecognised execution timezone '{tz_str}' in '{time_str}'. Configure TWS / IB Gateway to emit a standard timezone (e.g. UTC)"
+        ),
     }
+}
 
-    let format = format_description!("[year][month][day] [hour]:[minute]:[second]");
-    let date_str = format!("{} {}", parts[0], parts[1]);
-
-    if parts.len() == 2 {
-        return parse_utc(&date_str, format);
-    }
-
-    let timezone = parts[2];
-    if !matches!(timezone, "Universal" | "UTC" | "Etc/UTC" | "GMT" | "Z") {
-        anyhow::bail!(
-            "Unsupported non-UTC execution timezone '{timezone}' in '{time_str}'. Configure TWS / IB Gateway to emit UTC timestamps"
-        );
-    }
-
-    parse_utc(&date_str, format)
+fn datetime_to_unix_nanos(dt: DateTime<Utc>, time_str: &str) -> anyhow::Result<UnixNanos> {
+    let nanos: u64 = dt
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("Execution timestamp '{time_str}' was before Unix epoch"))?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Execution timestamp '{time_str}' was before Unix epoch"))?;
+    Ok(UnixNanos::new(nanos))
 }
 
 #[cfg(test)]
@@ -459,8 +497,70 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_execution_time_with_unsupported_non_utc_timezone() {
-        let time_str = "20230223 00:43:36 America/New_York";
+    fn test_parse_execution_time_with_met_timezone() {
+        // Regression for European paper accounts that IB stamps with `MET`.
+        // MET (CET) in February observes standard time (UTC+1).
+        let met = parse_execution_time("20230223 00:43:36 MET").unwrap();
+        let utc = parse_execution_time("20230223 00:43:36 Universal").unwrap();
+        // Local 00:43:36 MET == 2023-02-22 23:43:36 UTC, i.e. 1 hour before UTC.
+        assert_eq!(
+            met.as_i64(),
+            utc.as_i64() - 3_600_000_000_000,
+            "MET (CET) should be 1h ahead of UTC in February"
+        );
+        assert!(met.as_i64() > 0);
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_applies_dst_for_regional_timezone() {
+        // Same zone, two seasons: EST (UTC-5) in winter vs EDT (UTC-4) in summer.
+        // Equal offsets would mean DST is NOT being applied — a real regression.
+        let winter = parse_execution_time("20230223 00:43:36 America/New_York").unwrap();
+        let summer = parse_execution_time("20230715 00:43:36 America/New_York").unwrap();
+        let winter_utc = parse_execution_time("20230223 00:43:36 Universal").unwrap();
+        let summer_utc = parse_execution_time("20230715 00:43:36 Universal").unwrap();
+        assert_eq!(winter.as_i64(), winter_utc.as_i64() + 5 * 3_600_000_000_000); // EST
+        assert_eq!(summer.as_i64(), summer_utc.as_i64() + 4 * 3_600_000_000_000); // EDT
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_dst_fall_back_fold_resolves_to_earliest() {
+        // CME US/Central account (bebop23's case): on 2023-11-05 fall-back night
+        // 01:30 America/Chicago occurs twice. Resolve to earliest (CDT, 06:30 UTC),
+        // don't drop the fill.
+        let fold = parse_execution_time("20231105 01:30:00 America/Chicago").unwrap();
+        assert_eq!(
+            fold.as_i64(),
+            parse_execution_time("20231105 06:30:00 Universal")
+                .unwrap()
+                .as_i64()
+        );
+        assert_ne!(
+            fold.as_i64(),
+            parse_execution_time("20231105 07:30:00 Universal")
+                .unwrap()
+                .as_i64()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_dst_spring_forward_gap_errors() {
+        // 02:30 America/Chicago never exists on 2023-03-12 spring-forward night.
+        let gap = parse_execution_time("20230312 02:30:00 America/Chicago");
+        assert!(gap.is_err());
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_fixed_offset_zone_without_dst() {
+        // Asia/Tokyo is JST (UTC+9) year-round — guards the no-DST path.
+        let tokyo = parse_execution_time("20230223 00:43:36 Asia/Tokyo").unwrap();
+        let utc = parse_execution_time("20230223 00:43:36 Universal").unwrap();
+        assert_eq!(tokyo.as_i64(), utc.as_i64() - 9 * 3_600_000_000_000);
+    }
+
+    #[rstest]
+    fn test_parse_execution_time_with_unrecognised_timezone_errors() {
+        let time_str = "20230223 00:43:36 Mars/Olympus";
         let result = parse_execution_time(time_str);
         assert!(result.is_err());
     }

@@ -179,6 +179,11 @@ impl StrategyConfig {
     }
 
     #[getter]
+    fn external_order_claims(&self) -> Option<Vec<InstrumentId>> {
+        self.external_order_claims.clone()
+    }
+
+    #[getter]
     fn manage_contingent_orders(&self) -> bool {
         self.manage_contingent_orders
     }
@@ -186,6 +191,31 @@ impl StrategyConfig {
     #[getter]
     fn manage_gtd_expiry(&self) -> bool {
         self.manage_gtd_expiry
+    }
+
+    #[getter]
+    fn manage_stop(&self) -> bool {
+        self.manage_stop
+    }
+
+    #[getter]
+    fn market_exit_interval_ms(&self) -> u64 {
+        self.market_exit_interval_ms
+    }
+
+    #[getter]
+    fn market_exit_max_attempts(&self) -> u64 {
+        self.market_exit_max_attempts
+    }
+
+    #[getter]
+    fn market_exit_time_in_force(&self) -> TimeInForce {
+        self.market_exit_time_in_force
+    }
+
+    #[getter]
+    fn market_exit_reduce_only(&self) -> bool {
+        self.market_exit_reduce_only
     }
 
     #[getter]

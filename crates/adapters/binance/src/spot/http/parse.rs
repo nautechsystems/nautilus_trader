@@ -16,7 +16,7 @@
 //! SBE decode functions for Binance Spot HTTP responses.
 //!
 //! Each function decodes raw SBE bytes into domain types, validating the
-//! message header (schema ID, version, template ID) before extracting fields.
+//! message header (schema ID and template ID) before extracting fields.
 
 use super::{
     error::SbeDecodeError,
@@ -30,8 +30,7 @@ use super::{
 use crate::spot::sbe::{
     cursor::SbeCursor,
     spot::{
-        SBE_SCHEMA_ID, SBE_SCHEMA_VERSION,
-        account_response_codec::SBE_TEMPLATE_ID as ACCOUNT_TEMPLATE_ID,
+        SBE_SCHEMA_ID, account_response_codec::SBE_TEMPLATE_ID as ACCOUNT_TEMPLATE_ID,
         account_trades_response_codec::SBE_TEMPLATE_ID as ACCOUNT_TRADES_TEMPLATE_ID,
         account_type::AccountType, bool_enum::BoolEnum,
         cancel_open_orders_response_codec::SBE_TEMPLATE_ID as CANCEL_OPEN_ORDERS_TEMPLATE_ID,
@@ -57,34 +56,44 @@ struct MessageHeader {
     block_length: u16,
     template_id: u16,
     schema_id: u16,
-    version: u16,
 }
 
 impl MessageHeader {
     /// Decode message header using cursor.
     fn decode_cursor(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
         cursor.require(HEADER_LENGTH)?;
+        let block_length = cursor.read_u16_le()?;
+        let template_id = cursor.read_u16_le()?;
+        let schema_id = cursor.read_u16_le()?;
+        let _version = cursor.read_u16_le()?; // Consumed to advance the cursor; not enforced, see validate().
         Ok(Self {
-            block_length: cursor.read_u16_le()?,
-            template_id: cursor.read_u16_le()?,
-            schema_id: cursor.read_u16_le()?,
-            version: cursor.read_u16_le()?,
+            block_length,
+            template_id,
+            schema_id,
         })
     }
 
-    /// Validate schema ID and version.
+    /// Validate the message schema ID.
+    ///
+    /// The exact schema version is intentionally not enforced, matching the
+    /// WebSocket SBE path. Binance evolves the schema additively within a schema ID
+    /// and rolls new versions out gradually, so a single client sees both the current
+    /// and next version during a rollout: 3:4 and 3:5 share identical block layouts,
+    /// differing only by an added `symbolStatus` enum value, and unknown enum values
+    /// decode to their null variant. Enforcing an exact version would hard-fail
+    /// instrument loading on a server-side bump. A different schema ID is a breaking
+    /// change and is still rejected.
+    ///
+    /// The decoders assume block layouts are stable within a schema ID.
+    /// `decode_exchange_info` verifies the symbol block length and fails loudly on a
+    /// mismatch; the market-data decoders read groups at a fixed offset, so a future
+    /// version that adds fixed-block fields to those messages would need them updated
+    /// to advance past the added bytes via `block_length`.
     fn validate(&self) -> Result<(), SbeDecodeError> {
         if self.schema_id != SBE_SCHEMA_ID {
             return Err(SbeDecodeError::SchemaMismatch {
                 expected: SBE_SCHEMA_ID,
                 actual: self.schema_id,
-            });
-        }
-
-        if self.version != SBE_SCHEMA_VERSION {
-            return Err(SbeDecodeError::VersionMismatch {
-                expected: SBE_SCHEMA_VERSION,
-                actual: self.version,
             });
         }
         Ok(())
@@ -1102,6 +1111,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::spot::sbe::spot::SBE_SCHEMA_VERSION;
 
     /// Schema v1 block length for new order full response (template 302).
     const NEW_ORDER_FULL_BLOCK_LENGTH: usize = 153;
@@ -1192,15 +1202,22 @@ mod tests {
         assert!(matches!(err, SbeDecodeError::UnknownTemplateId(101)));
     }
 
+    // Any version within the schema ID must decode. During a rollout one client sees
+    // both the older version (un-migrated server) and the newer version; future
+    // additive bumps must keep decoding too.
     #[rstest]
-    fn test_decode_server_time_version_mismatch() {
-        let header = create_header(8, SERVER_TIME_TEMPLATE_ID, SBE_SCHEMA_ID, 99);
+    #[case(SBE_SCHEMA_VERSION - 1)]
+    #[case(SBE_SCHEMA_VERSION)]
+    #[case(SBE_SCHEMA_VERSION + 1)]
+    #[case(99)]
+    fn test_decode_server_time_accepts_any_version(#[case] version: u16) {
+        let header = create_header(8, SERVER_TIME_TEMPLATE_ID, SBE_SCHEMA_ID, version);
         let mut buf = Vec::with_capacity(16);
         buf.extend_from_slice(&header);
-        buf.extend_from_slice(&0i64.to_le_bytes());
+        buf.extend_from_slice(&1_700_000_000_000i64.to_le_bytes());
 
-        let err = decode_server_time(&buf).unwrap_err();
-        assert!(matches!(err, SbeDecodeError::VersionMismatch { .. }));
+        let result = decode_server_time(&buf).unwrap();
+        assert_eq!(result, 1_700_000_000_000);
     }
 
     fn create_group_header(block_length: u16, count: u32) -> [u8; 6] {

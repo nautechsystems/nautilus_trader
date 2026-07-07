@@ -28,8 +28,9 @@ use nautilus_network::websocket::{SubscriptionState, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
+use super::AxMdSubscriptionSpec;
 use crate::{
-    common::enums::{AxCandleWidth, AxMarketDataLevel, AxMdRequestType},
+    common::enums::{AxCandleWidth, AxMdRequestType},
     websocket::{
         messages::{
             AxDataWsMessage, AxMdMessage, AxMdSubscribe, AxMdSubscribeCandles, AxMdUnsubscribe,
@@ -54,8 +55,8 @@ pub enum HandlerCommand {
         request_id: i64,
         /// Instrument symbol.
         symbol: Ustr,
-        /// Market data level.
-        level: AxMarketDataLevel,
+        /// Market data subscription options.
+        spec: AxMdSubscriptionSpec,
     },
     /// Unsubscribe from market data for a symbol.
     Unsubscribe {
@@ -139,7 +140,7 @@ impl AxMdWsFeedHandler {
         for topic in topics {
             self.subscriptions.mark_subscribe(&topic);
 
-            // Topic format: "symbol:Level" or "candles:symbol:Width"
+            // Topic format: "symbol:Level:trades:ticker" or "candles:symbol:Width"
             if let Some(rest) = topic.strip_prefix("candles:") {
                 if let Some((symbol, width_str)) = rest.rsplit_once(':') {
                     if let Some(width) = Self::parse_candle_width(width_str) {
@@ -155,32 +156,16 @@ impl AxMdWsFeedHandler {
                 } else {
                     log::warn!("Invalid candle topic format: {topic}");
                 }
-            } else if let Some((symbol, level_str)) = topic.rsplit_once(':') {
-                if let Some(level) = Self::parse_market_data_level(level_str) {
-                    let request_id = self.next_replay_request_id();
-                    log::debug!(
-                        "Replaying market data subscription: symbol={symbol}, level={level:?}"
-                    );
-                    self.send_subscribe(request_id, Ustr::from(symbol), level)
-                        .await;
-                } else {
-                    log::warn!("Failed to parse market data level from topic: {topic}");
-                }
+            } else if let Some((symbol, spec)) = AxMdSubscriptionSpec::parse_topic(&topic) {
+                let request_id = self.next_replay_request_id();
+                log::debug!("Replaying market data subscription: symbol={symbol}, spec={spec:?}");
+                self.send_subscribe(request_id, symbol, spec).await;
             } else {
-                log::warn!("Unknown topic format: {topic}");
+                log::warn!("Failed to parse market data subscription topic: {topic}");
             }
         }
 
         log::debug!("Subscription replay completed");
-    }
-
-    fn parse_market_data_level(s: &str) -> Option<AxMarketDataLevel> {
-        match s {
-            "Level1" => Some(AxMarketDataLevel::Level1),
-            "Level2" => Some(AxMarketDataLevel::Level2),
-            "Level3" => Some(AxMarketDataLevel::Level3),
-            _ => None,
-        }
     }
 
     fn parse_candle_width(s: &str) -> Option<AxCandleWidth> {
@@ -275,14 +260,14 @@ impl AxMdWsFeedHandler {
             HandlerCommand::Subscribe {
                 request_id,
                 symbol,
-                level,
+                spec,
             } => {
                 log::debug!(
-                    "Subscribe command received: request_id={request_id}, symbol={symbol}, level={level:?}"
+                    "Subscribe command received: request_id={request_id}, symbol={symbol}, spec={spec:?}"
                 );
-                let topic = format!("{symbol}:{level:?}");
+                let topic = spec.topic(symbol.as_str());
                 self.pending_subscribe_requests.insert(request_id, topic);
-                self.send_subscribe(request_id, symbol, level).await;
+                self.send_subscribe(request_id, symbol, spec).await;
             }
             HandlerCommand::Unsubscribe { request_id, symbol } => {
                 log::debug!(
@@ -318,12 +303,14 @@ impl AxMdWsFeedHandler {
         }
     }
 
-    async fn send_subscribe(&mut self, request_id: i64, symbol: Ustr, level: AxMarketDataLevel) {
+    async fn send_subscribe(&mut self, request_id: i64, symbol: Ustr, spec: AxMdSubscriptionSpec) {
         let msg = AxMdSubscribe {
             rid: request_id,
             msg_type: AxMdRequestType::Subscribe,
             symbol,
-            level,
+            level: spec.level,
+            trades: spec.trades,
+            ticker: spec.ticker,
         };
 
         if let Err(e) = self.send_json(&msg).await {

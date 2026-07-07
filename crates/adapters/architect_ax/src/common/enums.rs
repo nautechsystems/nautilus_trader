@@ -630,6 +630,10 @@ pub enum AxMarketDataLevel {
     #[serde(rename = "LEVEL_3")]
     #[strum(serialize = "LEVEL_3")]
     Level3,
+    /// Trade prints only.
+    #[serde(rename = "TRADES")]
+    #[strum(serialize = "TRADES")]
+    Trades,
 }
 
 /// Candle/bar width for market data subscriptions.
@@ -1127,6 +1131,7 @@ mod tests {
     #[case(AxMarketDataLevel::Level1, "\"LEVEL_1\"")]
     #[case(AxMarketDataLevel::Level2, "\"LEVEL_2\"")]
     #[case(AxMarketDataLevel::Level3, "\"LEVEL_3\"")]
+    #[case(AxMarketDataLevel::Trades, "\"TRADES\"")]
     fn test_market_data_level_serialization(
         #[case] level: AxMarketDataLevel,
         #[case] expected: &str,

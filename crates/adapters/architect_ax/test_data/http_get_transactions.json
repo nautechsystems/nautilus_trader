@@ -1,21 +1,26 @@
 {
+  "limit": 100,
+  "next_cursor": null,
+  "total_count": 2,
   "transactions": [
     {
+      "account_id": "account-1",
       "amount": "10000.00",
       "event_id": "evt-01ARZ3NDEKTSV4RRFFQ69G5FAV",
       "symbol": "USD",
       "timestamp": "2024-01-15T09:00:00Z",
       "transaction_type": "deposit",
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "initiated_by_user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
       "reference_id": "ref-deposit-001"
     },
     {
+      "account_id": "account-1",
       "amount": "-0.54225",
       "event_id": "evt-01ARZ3NDEKTSV4RRFFQ69G5FBW",
       "symbol": "USD",
       "timestamp": "2024-01-15T10:30:45Z",
       "transaction_type": "fee",
-      "user_id": "3c90c3cc-0d44-4b50-8888-8dd25736052a",
+      "initiated_by_user_id": null,
       "reference_id": null
     }
   ]

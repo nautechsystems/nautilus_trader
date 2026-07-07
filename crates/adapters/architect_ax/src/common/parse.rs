@@ -20,9 +20,10 @@ use std::sync::LazyLock;
 use ahash::RandomState;
 use nautilus_core::nanos::UnixNanos;
 pub use nautilus_core::serialization::{
-    deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
-    deserialize_optional_decimal_or_zero, deserialize_optional_decimal_str, parse_decimal,
-    parse_optional_decimal, serialize_decimal_as_str, serialize_optional_decimal_as_str,
+    deserialize_decimal_or_zero, deserialize_optional_decimal,
+    deserialize_optional_decimal_from_str, deserialize_optional_decimal_or_zero,
+    deserialize_optional_decimal_str, parse_decimal, parse_optional_decimal,
+    serialize_decimal_as_str, serialize_optional_decimal_as_str,
 };
 use nautilus_model::{
     data::BarSpecification,

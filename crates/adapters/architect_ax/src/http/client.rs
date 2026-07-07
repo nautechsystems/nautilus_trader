@@ -60,7 +60,7 @@ use super::{
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
         AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
         AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
-        AxRiskSnapshotResponse, AxTicker, AxTickersResponse, AxTradesResponse,
+        AxRiskSnapshotResponse, AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse,
         AxTransactionsResponse, AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest,
         PlaceOrderRequest, PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
@@ -72,7 +72,7 @@ use super::{
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
         GetInstrumentParams, GetOrderStatusParams, GetOrdersParams, GetTickerParams,
-        GetTradesParams, GetTransactionsParams,
+        GetTickersParams, GetTradesParams, GetTransactionsParams,
     },
 };
 use crate::common::{
@@ -506,6 +506,22 @@ impl AxRawHttpClient {
             .await
     }
 
+    /// Fetches tickers with optional pagination and sorting.
+    ///
+    /// # Endpoint
+    /// `GET /tickers`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_tickers_with_params(
+        &self,
+        params: &GetTickersParams,
+    ) -> Result<AxTickersResponse, AxHttpError> {
+        self.send_request::<AxTickersResponse, _>(Method::GET, "/tickers", Some(params), None, true)
+            .await
+    }
+
     /// Fetches a single ticker by symbol.
     ///
     /// # Endpoint
@@ -516,8 +532,9 @@ impl AxRawHttpClient {
     /// Returns an error if the request fails or the response cannot be parsed.
     pub async fn get_ticker(&self, symbol: Ustr) -> Result<AxTicker, AxHttpError> {
         let params = GetTickerParams::new(symbol);
-        self.send_request::<AxTicker, _>(Method::GET, "/ticker", Some(&params), None, true)
+        self.send_request::<AxTickerResponse, _>(Method::GET, "/ticker", Some(&params), None, true)
             .await
+            .map(|response| response.ticker)
     }
 
     /// Fetches a single instrument by symbol.
@@ -601,7 +618,7 @@ impl AxRawHttpClient {
     /// Places a new order.
     ///
     /// # Endpoint
-    /// `POST /place_order` (orders base URL)
+    /// `POST /place-order` (orders base URL)
     ///
     /// # Errors
     ///
@@ -615,7 +632,7 @@ impl AxRawHttpClient {
         self.send_request_to_url::<AxPlaceOrderResponse, ()>(
             &self.orders_base_url,
             Method::POST,
-            "/place_order",
+            "/place-order",
             None,
             Some(body),
             true,
@@ -626,7 +643,7 @@ impl AxRawHttpClient {
     /// Cancels an existing order.
     ///
     /// # Endpoint
-    /// `POST /cancel_order` (orders base URL)
+    /// `POST /cancel-order` (orders base URL)
     ///
     /// # Errors
     ///
@@ -638,7 +655,7 @@ impl AxRawHttpClient {
         self.send_request_to_url::<AxCancelOrderResponse, ()>(
             &self.orders_base_url,
             Method::POST,
-            "/cancel_order",
+            "/cancel-order",
             None,
             Some(body),
             true,
@@ -652,7 +669,7 @@ impl AxRawHttpClient {
     /// updated fields. Unspecified optional fields inherit from the original.
     ///
     /// # Endpoint
-    /// `POST /replace_order` (orders base URL)
+    /// `POST /replace-order` (orders base URL)
     ///
     /// # Errors
     ///
@@ -666,7 +683,7 @@ impl AxRawHttpClient {
         self.send_request_to_url::<AxReplaceOrderResponse, ()>(
             &self.orders_base_url,
             Method::POST,
-            "/replace_order",
+            "/replace-order",
             None,
             Some(body),
             true,
@@ -677,7 +694,7 @@ impl AxRawHttpClient {
     /// Cancels all open orders, optionally filtered by symbol or venue.
     ///
     /// # Endpoint
-    /// `POST /cancel_all_orders` (orders base URL)
+    /// `POST /cancel-all-orders` (orders base URL)
     ///
     /// # Errors
     ///
@@ -691,7 +708,7 @@ impl AxRawHttpClient {
         self.send_request_to_url::<AxCancelAllOrdersResponse, ()>(
             &self.orders_base_url,
             Method::POST,
-            "/cancel_all_orders",
+            "/cancel-all-orders",
             None,
             Some(body),
             true,
@@ -702,7 +719,7 @@ impl AxRawHttpClient {
     /// Fetches all open orders.
     ///
     /// # Endpoint
-    /// `GET /open_orders` (orders base URL)
+    /// `GET /open-orders` (orders base URL)
     ///
     /// # Errors
     ///
@@ -711,7 +728,7 @@ impl AxRawHttpClient {
         self.send_request_to_url::<AxOpenOrdersResponse, ()>(
             &self.orders_base_url,
             Method::GET,
-            "/open_orders",
+            "/open-orders",
             None,
             None,
             true,
@@ -899,8 +916,11 @@ impl AxRawHttpClient {
     pub async fn get_transactions(
         &self,
         transaction_types: Vec<String>,
+        start_timestamp_ns: i64,
+        end_timestamp_ns: i64,
     ) -> Result<AxTransactionsResponse, AxHttpError> {
-        let params = GetTransactionsParams::new(transaction_types);
+        let params =
+            GetTransactionsParams::new(transaction_types, start_timestamp_ns, end_timestamp_ns);
         self.send_request::<AxTransactionsResponse, _>(
             Method::GET,
             "/transactions",

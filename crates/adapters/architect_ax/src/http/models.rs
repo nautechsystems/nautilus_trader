@@ -28,8 +28,9 @@ use crate::common::{
         AxTimeInForce,
     },
     parse::{
-        deserialize_decimal_or_zero, deserialize_optional_decimal_from_str,
-        serialize_decimal_as_str, serialize_optional_decimal_as_str,
+        deserialize_decimal_or_zero, deserialize_optional_decimal,
+        deserialize_optional_decimal_from_str, serialize_decimal_as_str,
+        serialize_optional_decimal_as_str,
     },
 };
 
@@ -219,34 +220,102 @@ pub struct AxPositionsResponse {
 #[serde(rename_all = "snake_case")]
 pub struct AxTicker {
     /// Instrument symbol.
+    #[serde(alias = "s")]
     pub symbol: Ustr,
     /// Best bid price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "bp",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub bid: Option<Decimal>,
     /// Best ask price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "ap",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub ask: Option<Decimal>,
     /// Last trade price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "p",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub last: Option<Decimal>,
     /// Mark price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "m",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub mark: Option<Decimal>,
     /// Index price.
     #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
     pub index: Option<Decimal>,
     /// 24-hour volume.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "v",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub volume_24h: Option<Decimal>,
     /// 24-hour high price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "h",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub high_24h: Option<Decimal>,
     /// 24-hour low price.
-    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    #[serde(
+        default,
+        alias = "l",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
     pub low_24h: Option<Decimal>,
     /// Ticker timestamp.
     #[serde(default)]
     pub timestamp: Option<DateTime<Utc>>,
+    /// Timestamp seconds.
+    #[serde(default)]
+    pub ts: Option<i64>,
+    /// Timestamp nanosecond component.
+    #[serde(default)]
+    pub tn: Option<i64>,
+    /// Last trade quantity.
+    #[serde(default, alias = "q")]
+    pub last_quantity: Option<u64>,
+    /// Open interest.
+    #[serde(default, alias = "oi")]
+    pub open_interest: Option<i64>,
+    /// Instrument state.
+    #[serde(default, alias = "i")]
+    pub instrument_state: Option<AxInstrumentState>,
+    /// Price band lower limit.
+    #[serde(
+        default,
+        alias = "pl",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub price_band_lower: Option<Decimal>,
+    /// Price band upper limit.
+    #[serde(
+        default,
+        alias = "pu",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub price_band_upper: Option<Decimal>,
+    /// Last settlement price.
+    #[serde(
+        default,
+        alias = "lsp",
+        deserialize_with = "deserialize_optional_decimal"
+    )]
+    pub last_settlement_price: Option<Decimal>,
+    /// Last settlement time as epoch seconds.
+    #[serde(default, alias = "lst")]
+    pub last_settlement_time: Option<i64>,
 }
 
 /// Response payload returned by `GET /tickers`.
@@ -258,6 +327,23 @@ pub struct AxTicker {
 pub struct AxTickersResponse {
     /// List of tickers.
     pub tickers: Vec<AxTicker>,
+    /// Total matching records.
+    pub total_count: i64,
+    /// Applied limit.
+    pub limit: i32,
+    /// Applied offset.
+    pub offset: i32,
+}
+
+/// Response payload returned by `GET /ticker`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-ticker>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AxTickerResponse {
+    /// The ticker data.
+    pub ticker: AxTicker,
 }
 
 /// Response payload returned by `POST /authenticate`.
@@ -271,7 +357,7 @@ pub struct AxAuthenticateResponse {
     pub token: String,
 }
 
-/// Response payload returned by `POST /place_order`.
+/// Response payload returned by `POST /place-order`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/place-order>
@@ -281,7 +367,7 @@ pub struct AxPlaceOrderResponse {
     pub oid: String,
 }
 
-/// Response payload returned by `POST /cancel_order`.
+/// Response payload returned by `POST /cancel-order`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/cancel-order>
@@ -387,6 +473,12 @@ pub struct AxOrderStatusDetail {
     /// Remaining quantity.
     #[serde(default)]
     pub remaining_quantity: Option<i64>,
+    /// Reject reason.
+    #[serde(default)]
+    pub reject_reason: Option<AxOrderRejectReason>,
+    /// Reject message.
+    #[serde(default)]
+    pub reject_message: Option<String>,
 }
 
 /// Response payload returned by `GET /order-status`.
@@ -435,6 +527,9 @@ pub struct AxOrderDetail {
     pub tn: i64,
     /// Order ID.
     pub oid: String,
+    /// Account ID.
+    #[serde(default)]
+    pub aid: Option<String>,
     /// User ID.
     pub u: String,
     /// Symbol.
@@ -480,11 +575,17 @@ pub struct AxOrdersResponse {
     /// List of order details.
     pub orders: Vec<AxOrderDetail>,
     /// Total matching records (for pagination).
-    pub total_count: i64,
+    #[serde(default)]
+    pub total_count: Option<i64>,
     /// Applied limit.
-    pub limit: i32,
+    #[serde(default)]
+    pub limit: Option<i32>,
     /// Applied offset.
-    pub offset: i32,
+    #[serde(default)]
+    pub offset: Option<i32>,
+    /// Next page cursor.
+    #[serde(default)]
+    pub next_cursor: Option<String>,
 }
 
 /// Response payload returned by `POST /initial-margin-requirement`.
@@ -540,7 +641,7 @@ pub struct AxOpenOrder {
     pub po: bool,
 }
 
-/// Response payload returned by `GET /open_orders`.
+/// Response payload returned by `GET /open-orders`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/get-open-orders>
@@ -777,6 +878,9 @@ pub struct AxRiskSnapshotResponse {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct AxTransaction {
+    /// Account identifier.
+    #[serde(default)]
+    pub account_id: Option<Ustr>,
     /// Transaction amount.
     #[serde(deserialize_with = "deserialize_decimal_or_zero")]
     pub amount: Decimal,
@@ -788,8 +892,12 @@ pub struct AxTransaction {
     pub timestamp: DateTime<Utc>,
     /// Type of transaction.
     pub transaction_type: Ustr,
-    /// User identifier.
-    pub user_id: String,
+    /// User who initiated the transaction, when available.
+    #[serde(default)]
+    pub initiated_by_user_id: Option<String>,
+    /// Legacy user identifier.
+    #[serde(default)]
+    pub user_id: Option<String>,
     /// Optional reference identifier.
     #[serde(default)]
     pub reference_id: Option<String>,
@@ -804,6 +912,15 @@ pub struct AxTransaction {
 pub struct AxTransactionsResponse {
     /// List of transactions.
     pub transactions: Vec<AxTransaction>,
+    /// Total matching records.
+    #[serde(default)]
+    pub total_count: Option<i64>,
+    /// Applied limit.
+    #[serde(default)]
+    pub limit: Option<i32>,
+    /// Next page cursor.
+    #[serde(default)]
+    pub next_cursor: Option<String>,
 }
 
 /// Request body for `POST /authenticate` using API key and secret.
@@ -868,7 +985,7 @@ impl AuthenticateUserRequest {
     }
 }
 
-/// Request body for `POST /place_order`.
+/// Request body for `POST /place-order`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/place-order>
@@ -1014,7 +1131,7 @@ pub struct AxPreviewAggressiveLimitOrderResponse {
     pub vwap: Option<Decimal>,
 }
 
-/// Request body for `POST /cancel_order`.
+/// Request body for `POST /cancel-order`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/cancel-order>
@@ -1034,7 +1151,7 @@ impl CancelOrderRequest {
     }
 }
 
-/// Request body for `POST /replace_order`.
+/// Request body for `POST /replace-order`.
 ///
 /// Replaces (amends) an existing order. Unspecified optional fields inherit
 /// from the original order. The exchange returns a new order ID.
@@ -1106,7 +1223,7 @@ impl ReplaceOrderRequest {
     }
 }
 
-/// Response payload returned by `POST /replace_order`.
+/// Response payload returned by `POST /replace-order`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/replace-order>
@@ -1116,7 +1233,7 @@ pub struct AxReplaceOrderResponse {
     pub oid: String,
 }
 
-/// Request body for `POST /cancel_all_orders`.
+/// Request body for `POST /cancel-all-orders`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/place-order>
@@ -1152,7 +1269,7 @@ impl CancelAllOrdersRequest {
     }
 }
 
-/// Response payload returned by `POST /cancel_all_orders`.
+/// Response payload returned by `POST /cancel-all-orders`.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/order-management/place-order>
@@ -1210,6 +1327,9 @@ mod tests {
         let json = include_str!("../../test_data/http_get_tickers.json");
         let response: AxTickersResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.tickers.len(), 3);
+        assert_eq!(response.total_count, 3);
+        assert_eq!(response.limit, 100);
+        assert_eq!(response.offset, 0);
         assert_eq!(response.tickers[0].symbol, "EURUSD-PERP");
         assert!(response.tickers[0].bid.is_some());
         assert!(response.tickers[2].bid.is_none());
@@ -1283,7 +1403,14 @@ mod tests {
         let json = include_str!("../../test_data/http_get_transactions.json");
         let response: AxTransactionsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.transactions.len(), 2);
+        assert_eq!(response.total_count, Some(2));
+        assert_eq!(response.limit, Some(100));
+        assert_eq!(
+            response.transactions[0].account_id,
+            Some(Ustr::from("account-1"))
+        );
         assert_eq!(response.transactions[0].transaction_type, "deposit");
+        assert!(response.transactions[0].initiated_by_user_id.is_some());
         assert!(response.transactions[1].reference_id.is_none());
     }
 
@@ -1349,6 +1476,8 @@ mod tests {
         assert_eq!(response.status.clord_id, Some(12345));
         assert_eq!(response.status.filled_quantity, Some(300));
         assert_eq!(response.status.remaining_quantity, Some(700));
+        assert_eq!(response.status.reject_reason, None);
+        assert_eq!(response.status.reject_message, None);
     }
 
     #[rstest]
@@ -1356,7 +1485,10 @@ mod tests {
         let json = include_str!("../../test_data/http_get_orders.json");
         let response: AxOrdersResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.orders.len(), 2);
-        assert_eq!(response.total_count, 2);
+        assert_eq!(response.total_count, Some(2));
+        assert_eq!(response.limit, Some(100));
+        assert_eq!(response.next_cursor, None);
+        assert_eq!(response.orders[0].aid.as_deref(), Some("account-1"));
         assert_eq!(response.orders[0].o, AxOrderStatus::PartiallyFilled);
         assert_eq!(response.orders[0].xq, 300);
         assert_eq!(response.orders[1].o, AxOrderStatus::Filled);

@@ -6710,6 +6710,7 @@ class AxMarketDataLevel(Enum):
     LEVEL1 = "LEVEL1"
     LEVEL2 = "LEVEL2"
     LEVEL3 = "LEVEL3"
+    TRADES = "TRADES"
 
     @classmethod
     def from_str(cls, value: str) -> AxMarketDataLevel: ...

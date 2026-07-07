@@ -5,6 +5,8 @@
     "state": "PARTIALLY_FILLED",
     "clord_id": 12345,
     "filled_quantity": 300,
-    "remaining_quantity": 700
+    "remaining_quantity": 700,
+    "reject_reason": null,
+    "reject_message": null
   }
 }

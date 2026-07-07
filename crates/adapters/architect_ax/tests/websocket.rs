@@ -271,6 +271,87 @@ async fn test_md_subscribe_l3() {
 
 #[rstest]
 #[tokio::test]
+async fn test_md_subscribe_trades_uses_trades_level() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client.subscribe_trades("EURUSD-PERP").await.unwrap();
+
+    wait_until_async(
+        || async { !state.subscriptions.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let subscribe = messages
+        .iter()
+        .find(|m| m.get("type").and_then(|v| v.as_str()) == Some("subscribe"))
+        .expect("expected subscribe message");
+
+    assert_eq!(subscribe["symbol"], "EURUSD-PERP");
+    assert_eq!(subscribe["level"], "TRADES");
+    assert!(subscribe.get("trades").is_none());
+    assert!(subscribe.get("ticker").is_none());
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_md_book_subscription_suppresses_unrequested_streams() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_book_deltas("EURUSD-PERP", AxMarketDataLevel::Level2)
+        .await
+        .unwrap();
+
+    wait_until_async(
+        || async { !state.subscriptions.lock().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let subscribe = messages
+        .iter()
+        .find(|m| m.get("type").and_then(|v| v.as_str()) == Some("subscribe"))
+        .expect("expected subscribe message");
+
+    assert_eq!(subscribe["symbol"], "EURUSD-PERP");
+    assert_eq!(subscribe["level"], "LEVEL_2");
+    assert_eq!(subscribe["trades"], false);
+    assert_eq!(subscribe["ticker"], false);
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_md_subscribe_multiple_symbols() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
@@ -693,8 +774,53 @@ async fn test_md_subscribe_quotes_then_book_l2_resubscribes() {
 #[rstest]
 #[tokio::test]
 async fn test_md_subscribe_same_level_is_idempotent() {
-    // Subscribing quotes and then mark_prices leaves effective level at L1;
-    // update_data_subscription should short-circuit without additional traffic.
+    // Mark price and instrument status both require ticker delivery on L1;
+    // update_data_subscription should short-circuit when the payload does not change.
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/md/ws");
+
+    let mut client = AxMdWebSocketClient::new(
+        ws_url,
+        "test_token".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect().await.unwrap();
+    wait_for_connection(&state).await;
+
+    client
+        .subscribe_mark_prices("EURUSD-PERP")
+        .await
+        .expect("Subscribe mark prices failed");
+
+    wait_until_async(
+        || async { !state.subscription_events().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let initial_event_count = state.subscription_events().await.len();
+    client
+        .subscribe_instrument_status("EURUSD-PERP")
+        .await
+        .expect("Subscribe instrument status failed");
+
+    // Give the handler a moment to (not) send anything
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let events_after = state.subscription_events().await;
+    assert_eq!(
+        events_after.len(),
+        initial_event_count,
+        "no new subscribe traffic expected, events_after={events_after:?}",
+    );
+
+    client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_md_subscribe_quotes_then_mark_prices_resubscribes_ticker() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/md/ws");
 
@@ -719,19 +845,43 @@ async fn test_md_subscribe_same_level_is_idempotent() {
     )
     .await;
 
-    let initial_event_count = state.subscription_events().await.len();
     client
         .subscribe_mark_prices("EURUSD-PERP")
         .await
         .expect("Subscribe mark prices failed");
 
-    // Give the handler a moment to (not) send anything
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    let events_after = state.subscription_events().await;
-    assert_eq!(
-        events_after.len(),
-        initial_event_count,
-        "no new subscribe traffic expected, events_after={events_after:?}",
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .filter(|m| m.get("type").and_then(|v| v.as_str()) == Some("subscribe"))
+                .count()
+                >= 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let subscribes: Vec<&serde_json::Value> = messages
+        .iter()
+        .filter(|m| m.get("type").and_then(|v| v.as_str()) == Some("subscribe"))
+        .collect();
+
+    assert_eq!(subscribes.len(), 2);
+    assert_eq!(subscribes[0]["level"], "LEVEL_1");
+    assert_eq!(subscribes[0]["trades"], false);
+    assert_eq!(subscribes[0]["ticker"], false);
+    assert_eq!(subscribes[1]["level"], "LEVEL_1");
+    assert_eq!(subscribes[1]["trades"], false);
+    assert_eq!(subscribes[1]["ticker"], true);
+    assert!(
+        messages
+            .iter()
+            .any(|m| m.get("type").and_then(|v| v.as_str()) == Some("unsubscribe")),
+        "expected an unsubscribe during ticker option change",
     );
 
     client.close().await;

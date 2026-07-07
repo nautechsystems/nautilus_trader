@@ -119,6 +119,31 @@ def test_data_actor_config_accepts_explicit_kwargs():
     )
 
     assert isinstance(config, DataActorConfig)
+    assert config.actor_id == ActorId("ACTOR-001")
+    assert config.log_events is False
+    assert config.log_commands is True
+
+
+def test_data_actor_config_defaults_are_readable():
+    config = DataActorConfig()
+
+    assert config.actor_id is None
+    assert config.log_events is True
+    assert config.log_commands is True
+
+
+def test_data_actor_config_fields_are_writable_from_python_subclasses():
+    class PythonDataActorConfig(DataActorConfig):
+        def __init__(self):
+            self.actor_id = ActorId("ACTOR-002")
+            self.log_events = False
+            self.log_commands = False
+
+    config = PythonDataActorConfig()
+
+    assert config.actor_id == ActorId("ACTOR-002")
+    assert config.log_events is False
+    assert config.log_commands is False
 
 
 def test_file_writer_config_construction(tmp_path):

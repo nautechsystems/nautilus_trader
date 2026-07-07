@@ -69,6 +69,7 @@ class TestAxMarketDataLevel:
             (AxMarketDataLevel.LEVEL1, "LEVEL_1"),
             (AxMarketDataLevel.LEVEL2, "LEVEL_2"),
             (AxMarketDataLevel.LEVEL3, "LEVEL_3"),
+            (AxMarketDataLevel.TRADES, "TRADES"),
         ],
     )
     def test_variant_name(self, variant, expected_name):
@@ -80,6 +81,7 @@ class TestAxMarketDataLevel:
             (AxMarketDataLevel.LEVEL1, 0),
             (AxMarketDataLevel.LEVEL2, 1),
             (AxMarketDataLevel.LEVEL3, 2),
+            (AxMarketDataLevel.TRADES, 3),
         ],
     )
     def test_variant_value(self, variant, expected_value):
@@ -92,6 +94,8 @@ class TestAxMarketDataLevel:
             ("level_1", AxMarketDataLevel.LEVEL1),
             ("LEVEL_2", AxMarketDataLevel.LEVEL2),
             ("LEVEL_3", AxMarketDataLevel.LEVEL3),
+            ("TRADES", AxMarketDataLevel.TRADES),
+            ("trades", AxMarketDataLevel.TRADES),
         ],
     )
     def test_from_str(self, input_str, expected):
@@ -101,6 +105,7 @@ class TestAxMarketDataLevel:
         assert str(AxMarketDataLevel.LEVEL1) == "LEVEL_1"
         assert str(AxMarketDataLevel.LEVEL2) == "LEVEL_2"
         assert str(AxMarketDataLevel.LEVEL3) == "LEVEL_3"
+        assert str(AxMarketDataLevel.TRADES) == "TRADES"
 
     def test_hashable(self):
         level_set = {AxMarketDataLevel.LEVEL1, AxMarketDataLevel.LEVEL2}

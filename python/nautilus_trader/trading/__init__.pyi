@@ -856,22 +856,22 @@ class Strategy:
 class StrategyConfig:
     def __init__(
         self,
-        strategy_id: model.StrategyId | None,
-        order_id_tag: str | None,
-        oms_type: model.OmsType | None,
-        external_order_claims: typing.Sequence[model.InstrumentId] | None,
-        manage_contingent_orders: bool,
-        manage_gtd_expiry: bool,
-        manage_stop: bool,
-        market_exit_interval_ms: int,
-        market_exit_max_attempts: int,
-        market_exit_time_in_force: model.TimeInForce,
-        market_exit_reduce_only: bool,
-        use_uuid_client_order_ids: bool,
-        use_hyphens_in_client_order_ids: bool,
-        log_events: bool,
-        log_commands: bool,
-        log_rejected_due_post_only_as_warning: bool,
+        strategy_id: model.StrategyId | None = None,
+        order_id_tag: str | None = None,
+        oms_type: model.OmsType | None = None,
+        external_order_claims: typing.Sequence[model.InstrumentId] | None = None,
+        manage_contingent_orders: bool = False,
+        manage_gtd_expiry: bool = False,
+        manage_stop: bool = False,
+        market_exit_interval_ms: int = 100,
+        market_exit_max_attempts: int = 100,
+        market_exit_time_in_force: model.TimeInForce = model.TimeInForce.GTC,
+        market_exit_reduce_only: bool = True,
+        use_uuid_client_order_ids: bool = False,
+        use_hyphens_in_client_order_ids: bool = True,
+        log_events: bool = True,
+        log_commands: bool = True,
+        log_rejected_due_post_only_as_warning: bool = True,
         _kwargs: dict | None = ...,
     ) -> None: ...
     @property
@@ -881,9 +881,21 @@ class StrategyConfig:
     @property
     def oms_type(self) -> model.OmsType | None: ...
     @property
+    def external_order_claims(self) -> list[model.InstrumentId] | None: ...
+    @property
     def manage_contingent_orders(self) -> bool: ...
     @property
     def manage_gtd_expiry(self) -> bool: ...
+    @property
+    def manage_stop(self) -> bool: ...
+    @property
+    def market_exit_interval_ms(self) -> int: ...
+    @property
+    def market_exit_max_attempts(self) -> int: ...
+    @property
+    def market_exit_time_in_force(self) -> model.TimeInForce: ...
+    @property
+    def market_exit_reduce_only(self) -> bool: ...
     @property
     def use_uuid_client_order_ids(self) -> bool: ...
     @property

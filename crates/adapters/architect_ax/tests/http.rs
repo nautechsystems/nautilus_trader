@@ -97,14 +97,21 @@ fn create_router() -> Router {
             "/tickers",
             get(|| async {
                 Json(json!({
+                    "limit": 100,
+                    "offset": 0,
+                    "total_count": 1,
                     "tickers": [
                         {
-                            "symbol": "BTC-PERP",
-                            "bid": "45000.00",
-                            "ask": "45001.00",
-                            "last": "45000.50",
-                            "mark": "45000.25",
-                            "volume_24h": "1000000.00"
+                            "s": "BTC-PERP",
+                            "bp": "45000.00",
+                            "ap": "45001.00",
+                            "p": "45000.50",
+                            "m": "45000.25",
+                            "q": 1,
+                            "v": 1000000,
+                            "oi": 10,
+                            "ts": 1705314600,
+                            "tn": 0
                         }
                     ]
                 }))
@@ -114,12 +121,18 @@ fn create_router() -> Router {
             "/ticker",
             get(|| async {
                 Json(json!({
-                    "symbol": "BTC-PERP",
-                    "bid": "45000.00",
-                    "ask": "45001.00",
-                    "last": "45000.50",
-                    "mark": "45000.25",
-                    "volume_24h": "1000000.00"
+                    "ticker": {
+                        "s": "BTC-PERP",
+                        "bp": "45000.00",
+                        "ap": "45001.00",
+                        "p": "45000.50",
+                        "m": "45000.25",
+                        "q": 1,
+                        "v": 1000000,
+                        "oi": 10,
+                        "ts": 1705314600,
+                        "tn": 0
+                    }
                 }))
             }),
         )
@@ -258,6 +271,7 @@ async fn test_raw_http_get_tickers_returns_data() {
     let response = client.get_tickers().await.unwrap();
 
     assert_eq!(response.tickers.len(), 1);
+    assert_eq!(response.total_count, 1);
     let ticker = &response.tickers[0];
     assert_eq!(ticker.symbol.as_str(), "BTC-PERP");
     assert_eq!(ticker.bid, Some(dec!(45000.00)));

@@ -1140,12 +1140,17 @@ fn dispatch_order_event(
             cleanup_terminal_order_tracking(&msg.o, caches);
         }
         AxWsOrderEvent::Replaced(msg) => {
+            let Some(order) = msg.updated_order() else {
+                log::warn!("Received AX replace event without order details");
+                return;
+            };
+
             if let Some(event) =
-                create_order_updated(&msg.o, msg.ts, msg.tn, caches, account_id, clock)
+                create_order_updated(order, msg.ts, msg.tn, caches, account_id, clock)
             {
                 emitter.send_order_event(OrderEventAny::Updated(event));
             } else if let Some(report) = create_order_status_report(
-                &msg.o,
+                order,
                 OrderStatus::Accepted,
                 msg.ts,
                 msg.tn,
