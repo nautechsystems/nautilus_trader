@@ -23,6 +23,8 @@ use ibapi::{
     client::Client,
     contracts::Contract,
     market_data::{IgnoreSize, TradingHours, historical},
+    prelude::StreamExt,
+    subscriptions::SubscriptionItem,
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -581,7 +583,21 @@ impl HistoricalInteractiveBrokersClient {
 
                         let mut batch_ticks = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(SubscriptionItem::Data(tick)) => tick,
+                                Ok(SubscriptionItem::Notice(notice)) => {
+                                    tracing::debug!(
+                                        "IB historical trade tick notice: {} - {}",
+                                        notice.code,
+                                        notice.message
+                                    );
+                                    continue;
+                                }
+                                Err(e) => {
+                                    return Err(e).context("Historical trade tick stream failed");
+                                }
+                            };
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
@@ -682,7 +698,21 @@ impl HistoricalInteractiveBrokersClient {
 
                         let mut batch_ticks = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(SubscriptionItem::Data(tick)) => tick,
+                                Ok(SubscriptionItem::Notice(notice)) => {
+                                    tracing::debug!(
+                                        "IB historical bid/ask tick notice: {} - {}",
+                                        notice.code,
+                                        notice.message
+                                    );
+                                    continue;
+                                }
+                                Err(e) => {
+                                    return Err(e).context("Historical bid/ask tick stream failed");
+                                }
+                            };
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
