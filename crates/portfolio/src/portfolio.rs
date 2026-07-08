@@ -23,7 +23,7 @@ use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
 use nautilus_analysis::{analyzer::PortfolioAnalyzer, snapshot::PortfolioStatistics};
 use nautilus_common::{
-    cache::{AccountLookupError, Cache},
+    cache::{AccountLookupError, AccountRef, Cache},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
@@ -819,7 +819,13 @@ impl Portfolio {
             let cache = self.cache.borrow();
             let account = match account_id {
                 Some(id) => cache.account(id),
-                None => cache.account_for_venue(venue),
+                None => cache.account_for_venue(venue).or_else(|| {
+                    cache
+                        .positions_open(Some(venue), None, None, None, None)
+                        .into_iter()
+                        .next()
+                        .and_then(|p| cache.account(&p.account_id))
+                }),
             };
 
             match account {
@@ -1231,7 +1237,9 @@ impl Portfolio {
         };
         let valuation_account = match account_id {
             Some(id) => cache.account(id),
-            None => cache.account_for_venue(&venue),
+            None => cache
+                .account_for_venue(&venue)
+                .or_else(|| positions.first().and_then(|p| cache.account(&p.account_id))),
         };
         let mut xrate_cache: AHashMap<Currency, Option<Decimal>> = AHashMap::new();
 
@@ -1510,7 +1518,9 @@ impl Portfolio {
         for (instrument, orders_open) in &orders_and_instruments {
             let account = {
                 let cache = self.cache.borrow();
-                if let Some(account) = cache.account_for_venue(&instrument.id().venue) {
+                if let Some(account) =
+                    resolve_account_for_instrument(&cache, &instrument.id(), None)
+                {
                     account.clone()
                 } else {
                     log::error!(
@@ -1624,7 +1634,9 @@ impl Portfolio {
             }
 
             let cache = self.cache.borrow();
-            let Some(account) = cache.account_for_venue_owned(&instrument_id.venue) else {
+            let Some(account) =
+                resolve_account_for_instrument(&cache, &instrument_id, None).map(|a| a.cloned())
+            else {
                 log::error!(
                     "Cannot update maintenance (position) margin: no account registered for {}",
                     instrument_id.venue
@@ -1791,10 +1803,7 @@ impl Portfolio {
         account_id: Option<&AccountId>,
     ) -> Option<Money> {
         let cache = self.cache.borrow();
-        let account = match account_id {
-            Some(id) => cache.account(id),
-            None => cache.account_for_venue(&instrument_id.venue),
-        };
+        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -2109,10 +2118,7 @@ impl Portfolio {
         self.ensure_snapshot_pnls_cached_for(instrument_id);
 
         let cache = self.cache.borrow();
-        let account = match account_id {
-            Some(id) => cache.account(id),
-            None => cache.account_for_venue(&instrument_id.venue),
-        };
+        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -2609,6 +2615,26 @@ fn update_bar(
     update_instrument_id(cache, clock, inner, config, &instrument_id);
 }
 
+/// Account for an instrument. For broker-routed instruments the account lives
+/// under the broker venue (e.g. `IB`) while the instrument carries the exchange
+/// MIC (e.g. `IBIS`); on venue miss, fall back to the position-owning account.
+fn resolve_account_for_instrument<'a>(
+    cache: &'a Cache,
+    instrument_id: &InstrumentId,
+    account_id: Option<&AccountId>,
+) -> Option<AccountRef<'a>> {
+    match account_id {
+        Some(id) => cache.account(id),
+        None => cache.account_for_venue(&instrument_id.venue).or_else(|| {
+            cache
+                .positions(None, Some(instrument_id), None, None, None)
+                .into_iter()
+                .next()
+                .and_then(|p| cache.account(&p.account_id))
+        }),
+    }
+}
+
 fn update_instrument_id(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
@@ -2630,7 +2656,9 @@ fn update_instrument_id(
     // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
     let (account, instrument, orders_open, positions_open) = {
         let cache_ref = cache.borrow();
-        let account = if let Some(account) = cache_ref.account_for_venue(&instrument_id.venue) {
+        let account = if let Some(account) =
+            resolve_account_for_instrument(&cache_ref, instrument_id, None)
+        {
             account.clone()
         } else {
             log::error!(

@@ -529,6 +529,69 @@ fn test_realized_pnl_for_venue_when_no_account_returns_empty_dict(
 }
 
 #[rstest]
+fn test_pnl_resolves_account_via_position_when_venue_mismatches(
+    mut simple_cache: Cache,
+    clock: TestClock,
+) {
+    // Broker-routed instrument: account registered under broker venue `IB`
+    // while the instrument carries the exchange MIC `IBIS`.
+    let account_id = AccountId::new("IB-DUN433229");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("1.00000"),
+        PositionId::new("P-BROKER-ROUTED"),
+    );
+    let position = Position::new(&instrument, fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let quote = get_quote_tick(&instrument, 1.0010, 1.0011, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    portfolio.initialize_positions();
+    assert!(
+        portfolio.is_initialized(),
+        "position init should resolve via the position-owning account"
+    );
+
+    assert!(
+        portfolio.unrealized_pnl(&instrument_id).is_some(),
+        "unrealized PnL should resolve via the position-owning account"
+    );
+    assert!(
+        portfolio.realized_pnl(&instrument_id).is_some(),
+        "realized PnL should resolve via the position-owning account"
+    );
+
+    let equity = portfolio.equity(&Venue::new("IBIS"), None);
+    assert!(
+        !equity.is_empty(),
+        "equity should resolve via the position-owning account"
+    );
+}
+
+#[rstest]
 fn test_net_position_when_no_positions_returns_zero(
     portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
