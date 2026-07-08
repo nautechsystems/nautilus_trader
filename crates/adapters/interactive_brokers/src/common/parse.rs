@@ -73,7 +73,7 @@ pub fn ib_contract_to_instrument_id_simplified(
                 }
             }
             SecurityType::ForexPair => Venue::from("IDEALPRO"),
-            SecurityType::Crypto => Venue::from("PAXOS"),
+            SecurityType::Crypto => derive_crypto_venue(contract),
             SecurityType::Stock => Venue::from("SMART"),
             SecurityType::Option | SecurityType::FuturesOption => {
                 if !contract.exchange.as_str().is_empty() && contract.exchange.as_str() != "SMART" {
@@ -234,7 +234,7 @@ pub fn ib_contract_to_instrument_id_raw(
 ) -> anyhow::Result<InstrumentId> {
     let venue = venue.unwrap_or_else(|| match contract.security_type {
         SecurityType::ForexPair => Venue::from("IDEALPRO"),
-        SecurityType::Crypto => Venue::from("PAXOS"),
+        SecurityType::Crypto => derive_crypto_venue(contract),
         SecurityType::Stock => Venue::from("SMART"),
         SecurityType::Option => Venue::from("SMART"),
         SecurityType::FuturesOption => Venue::from("SMART"),
@@ -357,6 +357,30 @@ pub static VENUE_MEMBERS: LazyLock<HashMap<&'static str, Vec<&'static str>>> =
         map
     });
 
+/// Returns `true` if the contract is a cryptocurrency contract.
+///
+/// Centralizes the crypto check used to gate crypto-specific request handling
+/// (e.g. the `AGGTRADES` `whatToShow` rule — see
+/// [`crate::data::convert::price_type_to_ib_what_to_show_for_security`]).
+#[must_use]
+pub fn is_crypto_contract(contract: &Contract) -> bool {
+    matches!(contract.security_type, SecurityType::Crypto)
+}
+
+/// Derives the venue for a crypto contract.
+///
+/// IB routes crypto to multiple venues; both PAXOS and ZEROHASH are live (which one
+/// applies depends on the account/region). Uses the contract's actual exchange when
+/// set (e.g. ZEROHASH or PAXOS), falling back to PAXOS when it is unspecified.
+#[must_use]
+pub fn derive_crypto_venue(contract: &Contract) -> Venue {
+    if !contract.exchange.as_str().is_empty() && contract.exchange.as_str() != "SMART" {
+        Venue::from(contract.exchange.as_str())
+    } else {
+        Venue::from("PAXOS")
+    }
+}
+
 #[must_use]
 pub fn possible_exchanges_for_venue(venue: &str) -> Vec<String> {
     if let Some(exchanges) = VENUE_MEMBERS.get(venue) {
@@ -371,7 +395,9 @@ pub fn possible_exchanges_for_venue(venue: &str) -> Vec<String> {
 
 /// Venue lists for different asset classes
 const VENUES_CASH: &[&str] = &["IDEALPRO"];
-const VENUES_CRYPTO: &[&str] = &["PAXOS"];
+// IB routes crypto to both PAXOS and ZEROHASH (which one applies depends on the
+// account/region); accept both.
+const VENUES_CRYPTO: &[&str] = &["PAXOS", "ZEROHASH"];
 const VENUES_OPT: &[&str] = &["SMART", "EUREX"];
 const VENUES_FUT: &[&str] = &[
     "BELFOX",
@@ -1363,6 +1389,86 @@ mod tests {
         assert_eq!(contract.symbol.as_str(), "DOGE");
         assert_eq!(contract.currency.as_str(), "USD");
         assert_eq!(contract.local_symbol.as_str(), "DOGE.USD");
+    }
+
+    #[rstest]
+    fn test_instrument_id_to_ib_contract_parses_zerohash_crypto_symbol() {
+        // ZEROHASH is one of IB's crypto venues (alongside PAXOS).
+        let instrument_id = InstrumentId::from("BTC/USD.ZEROHASH");
+
+        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+
+        assert_eq!(contract.security_type, SecurityType::Crypto);
+        assert_eq!(contract.exchange.as_str(), "ZEROHASH");
+        assert_eq!(contract.symbol.as_str(), "BTC");
+        assert_eq!(contract.currency.as_str(), "USD");
+        assert_eq!(contract.local_symbol.as_str(), "BTC.USD");
+    }
+
+    #[rstest]
+    fn test_ib_contract_to_instrument_id_simplified_derives_zerohash_crypto_venue() {
+        // Contract -> InstrumentId derives the venue from the ZEROHASH exchange.
+        let contract = Contract {
+            symbol: Symbol::from("BTC"),
+            security_type: SecurityType::Crypto,
+            exchange: Exchange::from("ZEROHASH"),
+            currency: Currency::from("USD"),
+            local_symbol: "BTC.USD".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from("BTC/USD.ZEROHASH"));
+    }
+
+    #[rstest]
+    fn test_ib_contract_to_instrument_id_simplified_falls_back_to_paxos_crypto_venue() {
+        // Contract -> InstrumentId falls back to PAXOS when no exchange is set,
+        // preserving backwards compatibility.
+        let contract = Contract {
+            symbol: Symbol::from("DOGE"),
+            security_type: SecurityType::Crypto,
+            currency: Currency::from("USD"),
+            local_symbol: "DOGE.USD".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from("DOGE/USD.PAXOS"));
+    }
+
+    #[rstest]
+    fn test_instrument_id_to_ib_contract_parses_paxos_crypto_symbol() {
+        // PAXOS remains a live IB crypto venue alongside ZEROHASH.
+        let instrument_id = InstrumentId::from("BTC/USD.PAXOS");
+
+        let contract = instrument_id_to_ib_contract(instrument_id, None).unwrap();
+
+        assert_eq!(contract.security_type, SecurityType::Crypto);
+        assert_eq!(contract.exchange.as_str(), "PAXOS");
+        assert_eq!(contract.symbol.as_str(), "BTC");
+        assert_eq!(contract.currency.as_str(), "USD");
+        assert_eq!(contract.local_symbol.as_str(), "BTC.USD");
+    }
+
+    #[rstest]
+    fn test_ib_contract_to_instrument_id_simplified_derives_paxos_crypto_venue() {
+        // A PAXOS contract derives the PAXOS venue from its exchange (not via the
+        // fallback), proving both venues are honored when explicitly set.
+        let contract = Contract {
+            symbol: Symbol::from("BTC"),
+            security_type: SecurityType::Crypto,
+            exchange: Exchange::from("PAXOS"),
+            currency: Currency::from("USD"),
+            local_symbol: "BTC.USD".to_string(),
+            ..Default::default()
+        };
+
+        let instrument_id = ib_contract_to_instrument_id_simplified(&contract, None).unwrap();
+
+        assert_eq!(instrument_id, InstrumentId::from("BTC/USD.PAXOS"));
     }
 
     #[rstest]

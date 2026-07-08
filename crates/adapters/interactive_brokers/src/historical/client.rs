@@ -23,6 +23,7 @@ use ibapi::{
     client::Client,
     contracts::Contract,
     market_data::{IgnoreSize, TradingHours, historical},
+    prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -42,7 +43,7 @@ use crate::{
     data::convert::{
         apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
         chrono_to_ib_datetime, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos,
-        price_type_to_ib_what_to_show,
+        price_type_to_ib_what_to_show_for_security,
     },
     providers::instruments::InteractiveBrokersInstrumentProvider,
 };
@@ -357,9 +358,13 @@ impl HistoricalInteractiveBrokersClient {
                 let bar_type_with_id =
                     BarType::new(instrument_id, bar_spec, AggregationSource::External);
 
-                // Convert bar type to IB parameters
+                // Convert bar type to IB parameters. Crypto trade-price bars must
+                // request AGGTRADES, not TRADES (TWS rejects TRADES for crypto,
+                // error 10299) — same rule as the live data client's historical path.
                 let ib_bar_size = bar_type_to_ib_bar_size(&bar_type_with_id)?;
-                let ib_what_to_show = price_type_to_ib_what_to_show(bar_spec.price_type);
+                let is_crypto = crate::common::parse::is_crypto_contract(&contract);
+                let ib_what_to_show =
+                    price_type_to_ib_what_to_show_for_security(bar_spec.price_type, is_crypto);
 
                 // Calculate duration segments
                 let segments =
@@ -564,7 +569,7 @@ impl HistoricalInteractiveBrokersClient {
                 IbHistoricalTickType::Trades => {
                     loop {
                         // Make request for this batch
-                        let mut subscription = tokio::time::timeout(
+                        let subscription = tokio::time::timeout(
                             std::time::Duration::from_secs(timeout),
                             self.ib_client
                                 .historical_ticks(&contract, 1000)
@@ -579,9 +584,17 @@ impl HistoricalInteractiveBrokersClient {
                             timeout
                         ))??;
 
+                        let mut subscription = subscription.filter_data();
                         let mut batch_ticks = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(tick) => tick,
+                                Err(e) => {
+                                    tracing::warn!("Historical trade ticks stream error: {e:?}");
+                                    continue;
+                                }
+                            };
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {
@@ -665,7 +678,7 @@ impl HistoricalInteractiveBrokersClient {
                 IbHistoricalTickType::BidAsk => {
                     loop {
                         // Make request for this batch
-                        let mut subscription = tokio::time::timeout(
+                        let subscription = tokio::time::timeout(
                             std::time::Duration::from_secs(timeout),
                             self.ib_client
                                 .historical_ticks(&contract, 1000)
@@ -680,9 +693,17 @@ impl HistoricalInteractiveBrokersClient {
                             timeout
                         ))??;
 
+                        let mut subscription = subscription.filter_data();
                         let mut batch_ticks = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(tick) => tick,
+                                Err(e) => {
+                                    tracing::warn!("Historical bid/ask ticks stream error: {e:?}");
+                                    continue;
+                                }
+                            };
                             let ts_event = ib_timestamp_to_unix_nanos(&tick.timestamp);
 
                             if ts_event < start_date_time_ns || ts_event > end_date_time_ns {

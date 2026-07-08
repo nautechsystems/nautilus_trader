@@ -580,6 +580,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     bar_type: BarType,
     bar_type_str: String,
     _instrument_id: InstrumentId,
+    what_to_show: RealtimeWhatToShow,
     price_precision: u8,
     size_precision: u8,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
@@ -599,7 +600,7 @@ pub(super) async fn handle_realtime_bars_subscription(
 
     let mut subscription = client
         .realtime_bars(&contract)
-        .what_to_show(RealtimeWhatToShow::Trades)
+        .what_to_show(what_to_show)
         .trading_hours(trading_hours)
         .subscribe()
         .await

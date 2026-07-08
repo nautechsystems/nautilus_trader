@@ -338,7 +338,7 @@ dydx-proto = "0.4.0"
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.9"
 hypersync-client = { version = "1.4.0" }
-ibapi = "=3.0.1"
+ibapi = "=3.2.0"
 itoa = "1.0.18"
 ryu = "1.0.23"
 serde_repr = "0.1.20"
