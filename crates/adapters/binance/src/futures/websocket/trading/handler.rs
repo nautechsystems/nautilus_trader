@@ -44,7 +44,7 @@ use super::{
     },
 };
 use crate::{
-    common::credential::SigningCredential,
+    common::credential::{SigningCredential, canonical_ws_query_string},
     futures::http::query::{
         BinanceCancelOrderParams, BinanceModifyOrderParams, BinanceNewOrderParams,
     },
@@ -255,8 +255,17 @@ impl BinanceFuturesWsTradingHandler {
             );
         }
 
-        let query_string = serde_urlencoded::to_string(&params)
-            .map_err(|e| BinanceFuturesWsApiError::ClientError(e.to_string()))?;
+        // Sign over a key-sorted query string: Binance's WS API verifies the
+        // signature against the parameters sorted by key, which must not depend
+        // on serde_json's Map iteration order (issue #4410).
+        let query_string = canonical_ws_query_string(
+            params
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(k, v)| (k.as_str(), v)),
+        )
+        .map_err(|e| BinanceFuturesWsApiError::ClientError(e.to_string()))?;
         let signature = self.credential.sign(&query_string);
 
         if let Some(obj) = params.as_object_mut() {

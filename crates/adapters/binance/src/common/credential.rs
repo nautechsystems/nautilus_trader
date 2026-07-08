@@ -386,6 +386,38 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
+/// Builds the canonical query string that Binance's WebSocket API signs.
+///
+/// The WS API verifies a request's signature over its parameters **sorted by
+/// key**, so the signed query string must be key-sorted regardless of the order
+/// the parameters happen to iterate in. `serde_json`'s object backend is a
+/// sorted `BTreeMap` by default, but it silently becomes an insertion-ordered
+/// `IndexMap` if *any* crate anywhere in the build graph enables
+/// `serde_json/preserve_order` — a global Cargo feature-unification effect the
+/// adapter cannot control (e.g. a transitive `mongodb`/`bson` dependency).
+/// Signing the object in its raw iteration order therefore breaks intermittently
+/// with `-1022 Signature for this request is not valid` depending on unrelated
+/// dependencies. Sorting the keys here makes WS signing independent of that
+/// ambient feature.
+///
+/// This is not needed for the REST/HTTP path, which signs the exact query string
+/// it sends (Binance verifies REST signatures over the received order); only the
+/// WS API re-sorts before verifying.
+///
+/// See <https://github.com/nautechsystems/nautilus_trader/issues/4410>.
+pub(crate) fn canonical_ws_query_string<'a, I>(
+    params: I,
+) -> Result<String, serde_urlencoded::ser::Error>
+where
+    I: IntoIterator<Item = (&'a str, &'a serde_json::Value)>,
+{
+    // Collecting into a `BTreeMap` sorts by key regardless of the source order,
+    // and `serde_urlencoded` percent-encodes each value exactly as it would the
+    // original `serde_json::Value`.
+    let sorted: std::collections::BTreeMap<&str, &serde_json::Value> = params.into_iter().collect();
+    serde_urlencoded::to_string(sorted)
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -413,6 +445,34 @@ mod tests {
         let expected = "c8db56825ae71d6d79447849e617115f4a920fa2acdcab2b053c4b2838bd6b71";
 
         assert_eq!(cred.sign(message), expected);
+    }
+
+    #[rstest]
+    fn test_canonical_ws_query_string_is_key_sorted_regardless_of_input_order() {
+        // Parameters in a deliberately non-alphabetical order — exactly what a
+        // `serde_json/preserve_order` (IndexMap) build yields, and what broke WS
+        // signing with -1022 (issue #4410). Binance verifies the WS signature
+        // over the *sorted* parameters, so the query string must come out
+        // key-sorted whatever order the caller supplied them in.
+        let symbol = serde_json::json!("LTCBTC");
+        let side = serde_json::json!("BUY");
+        let quantity = serde_json::json!("1");
+        let timestamp = serde_json::json!(1_499_827_319_559i64);
+        let api_key = serde_json::json!("mykey");
+        let unsorted = [
+            ("symbol", &symbol),
+            ("side", &side),
+            ("quantity", &quantity),
+            ("timestamp", &timestamp),
+            ("apiKey", &api_key),
+        ];
+
+        let query = canonical_ws_query_string(unsorted).unwrap();
+
+        assert_eq!(
+            query,
+            "apiKey=mykey&quantity=1&side=BUY&symbol=LTCBTC&timestamp=1499827319559"
+        );
     }
 
     #[rstest]
