@@ -623,7 +623,9 @@ impl LiveNode {
             if elapsed >= timeout {
                 anyhow::bail!("Startup reconciliation timeout reached");
             }
-            let remaining = timeout - elapsed;
+            let remaining = timeout
+                .checked_sub(elapsed)
+                .expect("elapsed checked against reconciliation timeout");
 
             log_info!(
                 "Requesting mass status from {}...",
