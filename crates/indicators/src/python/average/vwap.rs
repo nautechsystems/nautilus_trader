@@ -58,13 +58,8 @@ impl VolumeWeightedAveragePrice {
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        let typical_price =
-            (bar.close.as_f64() + bar.high.as_f64() + bar.low.as_f64()) / 3.0;
-        self.py_update_raw(
-            typical_price,
-            (&bar.volume).into(),
-            bar.ts_init.as_f64(),
-        );
+        let typical_price = (bar.close.as_f64() + bar.high.as_f64() + bar.low.as_f64()) / 3.0;
+        self.py_update_raw(typical_price, (&bar.volume).into(), bar.ts_init.as_f64());
     }
 
     #[pyo3(name = "reset")]
@@ -77,4 +72,3 @@ impl VolumeWeightedAveragePrice {
         self.update_raw(value, volume, ts);
     }
 }
-
