@@ -48,7 +48,7 @@ use nautilus_trading::examples::{
     },
 };
 use nautilus_trading::{
-    ImportableExecAlgorithmConfig, ImportableStrategyConfig,
+    ImportableControllerConfig, ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     python::{
         algorithm::PyExecutionAlgorithm,
         strategy::{PyStrategy, PyStrategyInner},
@@ -1097,6 +1097,19 @@ impl LiveNodeBuilderPy {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             *inner_ref = Some(builder.with_reconciliation(reconciliation));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_controller")]
+    fn py_with_controller(&self, controller: ImportableControllerConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_controller(controller));
             Ok(Self {
                 inner: self.inner.clone(),
             })
