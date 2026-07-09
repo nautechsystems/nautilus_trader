@@ -35,7 +35,7 @@ impl RelativeStrengthIndex {
     }
 
     fn __repr__(&self) -> String {
-        format!("RelativeStrengthIndex({},{})", self.period, self.ma_type)
+        format!("RelativeStrengthIndex({}, {})", self.period, self.ma_type)
     }
 
     #[getter]

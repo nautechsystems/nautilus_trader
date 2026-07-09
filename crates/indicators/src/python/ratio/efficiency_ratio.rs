@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::{
-    data::Bar,
-    enums::PriceType,
-};
+use nautilus_model::{data::Bar, enums::PriceType};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};

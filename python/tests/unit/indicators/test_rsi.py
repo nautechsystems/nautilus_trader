@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.indicators import RelativeStrengthIndex
-from nautilus_trader.model import PriceType
 from tests.stubs import TestDataProviderPyo3
 
 

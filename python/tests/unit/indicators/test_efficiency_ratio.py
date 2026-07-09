@@ -16,7 +16,6 @@
 import pytest
 
 from nautilus_trader.indicators import EfficiencyRatio
-from nautilus_trader.model import PriceType
 from tests.stubs import TestDataProviderPyo3
 
 
@@ -56,7 +55,7 @@ def test_initialized_with_required_inputs_returns_true(er: EfficiencyRatio) -> N
 
 def test_handle_bar_updates_indicator(er: EfficiencyRatio) -> None:
     # Arrange
-    er= EfficiencyRatio(10)
+    er = EfficiencyRatio(10)
 
     bar = TestDataProviderPyo3.bar_5decimal()
 
@@ -101,6 +100,7 @@ def test_value_with_efficient_lower_inputs(er: EfficiencyRatio) -> None:
     # Assert
     assert er.value == 1.0
 
+
 def test_value_with_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None:
     # Arrange
     er.update_raw(1.00000)
@@ -112,6 +112,7 @@ def test_value_with_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None
     # Act, Assert
     assert er.value == 0.0
 
+
 def test_value_with_half_oscillating_inputs_returns_zero(er: EfficiencyRatio) -> None:
     # Arrange
     er.update_raw(1.00000)
@@ -122,6 +123,7 @@ def test_value_with_half_oscillating_inputs_returns_zero(er: EfficiencyRatio) ->
 
     # Act, Assert
     assert er.value == 0.3333333333333333
+
 
 def test_value_with_noisy_inputs(er: EfficiencyRatio) -> None:
     # Arrange
@@ -135,6 +137,7 @@ def test_value_with_noisy_inputs(er: EfficiencyRatio) -> None:
 
     # Act, Assert
     assert er.value == 0.42857142857215363
+
 
 def test_reset_successfully_returns_indicator_to_fresh_state(er: EfficiencyRatio) -> None:
     # Arrange
