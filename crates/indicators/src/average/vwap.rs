@@ -242,7 +242,7 @@ mod tests {
     #[rstest]
     #[case(10.0e9, 11.0e9)]
     #[case(43_200.123e9, 86_399.999e9)]
-    fn test_no_reset_for_same_epoch_day(#[case] t1: f64, #[case] t2: f64) { 
+    fn test_no_reset_for_same_epoch_day(#[case] t1: f64, #[case] t2: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
 
         vwap.update_raw(100.0, 10.0, t1);
