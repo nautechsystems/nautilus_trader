@@ -36,6 +36,8 @@ use nautilus_model::identifiers::{
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
+
+use crate::node::config::RoutingConfig;
 #[cfg(feature = "examples")]
 use nautilus_testkit::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 #[cfg(feature = "examples")]
@@ -1217,13 +1219,14 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    #[pyo3(name = "add_data_client")]
+    #[pyo3(name = "add_data_client", signature = (name, factory, config, routing=None))]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_data_client(
         &self,
         name: Option<String>,
         factory: Py<PyAny>,
         config: Py<PyAny>,
+        routing: Option<RoutingConfig>,
     ) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
@@ -1242,7 +1245,17 @@ impl LiveNodeBuilderPy {
                 let client_name = name.unwrap_or(factory_name);
 
                 // Add the data client to the builder using boxed trait objects
-                match builder.add_data_client(Some(client_name), boxed_factory, boxed_config) {
+                let result = match routing {
+                    Some(routing) => builder.add_data_client_with_routing(
+                        Some(client_name),
+                        boxed_factory,
+                        boxed_config,
+                        routing,
+                    ),
+                    None => builder.add_data_client(Some(client_name), boxed_factory, boxed_config),
+                };
+
+                match result {
                     Ok(updated_builder) => {
                         *inner_ref = Some(updated_builder);
                         Ok(Self {
@@ -1257,13 +1270,14 @@ impl LiveNodeBuilderPy {
         }
     }
 
-    #[pyo3(name = "add_exec_client")]
+    #[pyo3(name = "add_exec_client", signature = (name, factory, config, routing=None))]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_exec_client(
         &self,
         name: Option<String>,
         factory: Py<PyAny>,
         config: Py<PyAny>,
+        routing: Option<RoutingConfig>,
     ) -> PyResult<Self> {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
@@ -1279,7 +1293,17 @@ impl LiveNodeBuilderPy {
                     .extract::<String>(py)?;
                 let client_name = name.unwrap_or(factory_name);
 
-                match builder.add_exec_client(Some(client_name), boxed_factory, boxed_config) {
+                let result = match routing {
+                    Some(routing) => builder.add_exec_client_with_routing(
+                        Some(client_name),
+                        boxed_factory,
+                        boxed_config,
+                        routing,
+                    ),
+                    None => builder.add_exec_client(Some(client_name), boxed_factory, boxed_config),
+                };
+
+                match result {
                     Ok(updated_builder) => {
                         *inner_ref = Some(updated_builder);
                         Ok(Self {
@@ -1592,6 +1616,7 @@ mod tests {
     use rstest::rstest;
 
     use super::LiveNode;
+    use crate::node::config::RoutingConfig;
 
     #[derive(Clone, Copy, Debug)]
     enum ShutdownRunPath {
@@ -1637,7 +1662,6 @@ mod tests {
             Ok(())
         }
     }
-
     #[derive(Debug, Default)]
     struct TestDataClientConfig;
 
@@ -1795,6 +1819,82 @@ mod tests {
         async fn disconnect(&mut self) -> anyhow::Result<()> {
             self.connected.store(false, Ordering::Relaxed);
             anyhow::bail!("test disconnect failed")
+        }
+    }
+
+    struct VenueLessDataClient {
+        client_id: ClientId,
+    }
+
+    impl VenueLessDataClient {
+        fn new(client_id: ClientId) -> Self {
+            Self { client_id }
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for VenueLessDataClient {
+        fn client_id(&self) -> ClientId {
+            self.client_id
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            true
+        }
+
+        fn is_disconnected(&self) -> bool {
+            false
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct VenueLessDataClientFactory;
+
+    impl DataClientFactory for VenueLessDataClientFactory {
+        fn create(
+            &self,
+            name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(VenueLessDataClient::new(ClientId::from(name))))
+        }
+
+        fn name(&self) -> &'static str {
+            "VENUE_LESS"
+        }
+
+        fn config_type(&self) -> &'static str {
+            "TestDataClientConfig"
         }
     }
 
@@ -2314,6 +2414,53 @@ class ClaimsStrategy(Strategy):
             acquired_before_stop.load(Ordering::SeqCst),
             "worker thread should acquire the GIL while LiveNode::run is blocked"
         );
+    }
+
+    #[rstest]
+    fn test_build_routes_venue_less_data_client_with_venue_routing() {
+        Python::initialize();
+
+        let routing = RoutingConfig::builder()
+            .venues(vec!["IBIS".to_string()])
+            .build();
+        let node = LiveNode::builder(TraderId::from("TEST-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_timeout_connection(1)
+            .add_data_client_with_routing(
+                Some("IB".to_string()),
+                Box::new(VenueLessDataClientFactory),
+                Box::new(TestDataClientConfig),
+                routing,
+            )
+            .unwrap()
+            .build();
+
+        assert!(node.is_ok(), "build should succeed: {:?}", node.err());
+    }
+
+    #[rstest]
+    fn test_build_routes_venue_less_data_client_with_default_and_venues() {
+        Python::initialize();
+
+        let routing = RoutingConfig::builder()
+            .default(true)
+            .venues(vec!["IBIS".to_string()])
+            .build();
+        let node = LiveNode::builder(TraderId::from("TEST-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_timeout_connection(1)
+            .add_data_client_with_routing(
+                Some("IB".to_string()),
+                Box::new(VenueLessDataClientFactory),
+                Box::new(TestDataClientConfig),
+                routing,
+            )
+            .unwrap()
+            .build();
+
+        assert!(node.is_ok(), "build should succeed: {:?}", node.err());
     }
 
     #[rstest]

@@ -778,6 +778,153 @@ fn test_execute_subscribe_book_deltas(
 }
 
 #[rstest]
+fn test_execute_subscribe_routes_to_default_client_when_no_client_id(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let broker_venue = Venue::new("IB");
+    let broker_client_id = ClientId::new("IB");
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        broker_client_id,
+        Some(broker_venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(
+        broker_client_id,
+        Some(broker_venue),
+        true,
+        true,
+        Box::new(client),
+    );
+    data_engine.register_default_client(adapter);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        audusd_sim.id,
+        BookType::L3_MBO,
+        None,
+        Some(audusd_sim.id.venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_register_venue_routing_routes_exchange_venue_to_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let broker_client_id = ClientId::new("IB");
+    let exchange_venue = Venue::new("IBIS");
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        broker_client_id,
+        None,
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(broker_client_id, None, true, true, Box::new(client));
+    data_engine.register_client(adapter, None);
+    data_engine
+        .register_venue_routing(broker_client_id, exchange_venue)
+        .unwrap();
+
+    let instrument_id = InstrumentId::new(Symbol::new("VWCE"), exchange_venue);
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L3_MBO,
+        None,
+        Some(exchange_venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        true,
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_default_and_venue_routing_apply_independently_for_venue_less_client(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+
+    let broker_client_id = ClientId::new("IB");
+    let exchange_venue = Venue::new("IBIS");
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        broker_client_id,
+        None,
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(broker_client_id, None, true, true, Box::new(client));
+    data_engine.register_client(adapter, None);
+    data_engine.set_default_client(broker_client_id).unwrap();
+    data_engine
+        .register_venue_routing(broker_client_id, exchange_venue)
+        .unwrap();
+
+    let routed_id = InstrumentId::new(Symbol::new("VWCE"), exchange_venue);
+    let routed_cmd =
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            routed_id,
+            BookType::L3_MBO,
+            None,
+            Some(exchange_venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        )));
+    data_engine.execute(routed_cmd.clone());
+
+    let unmapped_venue = Venue::new("UNKNOWN");
+    let default_cmd =
+        DataCommand::Subscribe(SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            InstrumentId::new(Symbol::new("XYZ"), unmapped_venue),
+            BookType::L3_MBO,
+            None,
+            Some(unmapped_venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            true,
+            None,
+            None,
+        )));
+    data_engine.execute(default_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[routed_cmd, default_cmd]);
+}
+
+#[rstest]
 fn test_unsubscribe_book_deltas_removes_book_updater(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
