@@ -58,6 +58,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Changed v2 order-event serialization to carry `activation_price` on `OrderInitialized`/`OrderSnapshot` and `info` on `OrderFilled`; catalog data written before this change cannot be read
 - Changed v2 `TrailingStopMarketOrder`/`TrailingStopLimitOrder`, `OrderInitialized`, and `OrderFilled` Python and PyO3 constructors to accept `activation_price`/`info` parameters
 - Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
+- Changed option settlement for an index underlying to read the index price (`IndexPriceUpdate`) rather than `PriceType::Last`; feed the index level via `IndexPriceUpdate` (an index does not trade) instead of a `TradeTick` (#4430)
 
 ### Fixes
 - Fixed v2 composite bar aggregation (`@` source) to deliver aggregated bars to subscribed actors and strategies

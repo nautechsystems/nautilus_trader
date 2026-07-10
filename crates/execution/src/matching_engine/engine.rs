@@ -2462,12 +2462,9 @@ impl OrderMatchingEngine {
         };
         let underlying_id = InstrumentId::from(format!("{underlying}.{}", self.venue).as_str());
 
-        let (underlying_instrument, underlying_price) = {
+        let underlying_instrument = {
             let cache = self.cache.borrow();
-            (
-                cache.instrument(&underlying_id).cloned(),
-                cache.price(&underlying_id, PriceType::Last),
-            )
+            cache.instrument(&underlying_id).cloned()
         };
 
         let underlying_instrument = match underlying_instrument {
@@ -2475,6 +2472,19 @@ impl OrderMatchingEngine {
             None => {
                 log::error!("No underlying instrument for option {instrument_id}");
                 return;
+            }
+        };
+
+        // Resolve the underlying price by the underlying's instrument type. An index
+        // is disseminated via `IndexPriceUpdate` (it does not trade), so its level is
+        // held in the cache's index-price store rather than the trade/quote `price(...)`
+        // store; a tradeable underlying (e.g. an equity) keeps the `Last` trade lookup.
+        let underlying_price = {
+            let cache = self.cache.borrow();
+            if matches!(underlying_instrument, InstrumentAny::IndexInstrument(_)) {
+                cache.index_price(&underlying_id).map(|ip| ip.value)
+            } else {
+                cache.price(&underlying_id, PriceType::Last)
             }
         };
 
