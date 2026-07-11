@@ -134,9 +134,21 @@ Full details in `docs/developer_guide/`. Key rules summarized below.
 
 ### Commits
 
-- ≤60 char subject, imperative voice, capitalize, no period
-- Body ≤100 char width
+- Subject: ≤60 chars, imperative voice, capitalize, no period
+- Body: bullet list of what changed, each line starting with `- ` and a verb (Add, Fix, Remove, Cover, etc.)
+- Keep it short — 2–4 bullets max. No essays, no implementation details.
+- Reference issues with `- Resolves #NNNN` as the last bullet when applicable
 - Branch model: `develop` → `nightly` → `master`
+
+Example:
+
+```
+Fix v2 matching engine quote-bar execution parity
+
+- Honor bar_adaptive_high_low_ordering on the quote-bar path
+- Clear cached bid/ask bars on reset to prevent stale pairs
+- Assert OHLC sanity at process_bar entry
+```
 
 ### General design rules
 
