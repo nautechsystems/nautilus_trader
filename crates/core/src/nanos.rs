@@ -1210,19 +1210,17 @@ mod tests {
             nanos2 in unix_nanos_strategy(),
             nanos3 in unix_nanos_strategy(),
         ) {
-            // Addition should be associative when no overflow occurs
-            if let (Some(sum1), Some(sum2)) = (
-                nanos1.as_u64().checked_add(nanos2.as_u64()),
-                nanos2.as_u64().checked_add(nanos3.as_u64())
-            )
-                && let (Some(left), Some(right)) = (
-                    sum1.checked_add(nanos3.as_u64()),
-                    nanos1.as_u64().checked_add(sum2)
-                ) {
-                    let left_result = UnixNanos::from(left);
-                    let right_result = UnixNanos::from(right);
-                    prop_assert_eq!(left_result, right_result, "Addition should be associative");
-                }
+            let expected = nanos1
+                .as_u64()
+                .checked_add(nanos2.as_u64())
+                .and_then(|sum| sum.checked_add(nanos3.as_u64()));
+
+            if let Some(expected) = expected {
+                let left = (nanos1 + nanos2) + nanos3;
+                let right = nanos1 + (nanos2 + nanos3);
+                prop_assert_eq!(left.as_u64(), expected);
+                prop_assert_eq!(right.as_u64(), expected);
+            }
         }
 
         #[rstest]

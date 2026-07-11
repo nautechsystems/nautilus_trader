@@ -990,11 +990,13 @@ cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI perfor
 
 .PHONY: docker-build
 docker-build: clean  #-- Build Docker image for NautilusTrader
-	docker pull $(IMAGE_FULL) || docker pull $(IMAGE):nightly || true
+	bash scripts/ci/docker-pull-retry.sh $(IMAGE_FULL) || bash scripts/ci/docker-pull-retry.sh $(IMAGE):nightly || true
+	bash scripts/ci/docker-pull-retry.sh --from-dockerfile .docker/nautilus_trader.dockerfile
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t $(IMAGE_FULL) .
 
 .PHONY: docker-build-force
 docker-build-force:  #-- Force rebuild Docker image without cache
+	bash scripts/ci/docker-pull-retry.sh --from-dockerfile .docker/nautilus_trader.dockerfile
 	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t $(IMAGE_FULL) .
 
 .PHONY: docker-push
@@ -1020,6 +1022,9 @@ init-services:  #-- Initialize development services eg. for integration tests (s
 .PHONY: start-services
 start-services:  #-- Start development services (without reinitializing database)
 	$(info $(M) Starting development services...)
+	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/postgres
+	bash scripts/ci/docker-pull-retry.sh dpage/pgadmin4
+	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/redis
 	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services

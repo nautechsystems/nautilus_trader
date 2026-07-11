@@ -68,7 +68,7 @@ use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::{AccountState, OrderEventAny},
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny, StopMarketOrder},
+    orders::{Order, OrderAny, OrderTestBuilder},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -1273,156 +1273,7 @@ fn add_limit_order_to_cache(
     client_order_id: ClientOrderId,
     time_in_force: TimeInForce,
 ) -> OrderAny {
-    let order = LimitOrder::new(
-        test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        OrderSide::Buy,
-        Quantity::from("1"),
-        Price::from("50000.0"),
-        time_in_force,
-        None,
-        true,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    );
-
-    let order_any = OrderAny::Limit(order);
-    cache
-        .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
-        .unwrap();
-    order_any
-}
-
-fn add_market_order_to_cache(
-    cache: &Rc<RefCell<Cache>>,
-    client_order_id: ClientOrderId,
-    time_in_force: TimeInForce,
-) -> OrderAny {
-    let order = MarketOrder::new(
-        test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        OrderSide::Buy,
-        Quantity::from("1"),
-        time_in_force,
-        UUID4::new(),
-        UnixNanos::default(),
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-
-    let order_any = OrderAny::Market(order);
-    cache
-        .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
-        .unwrap();
-    order_any
-}
-
-fn add_stop_market_order_to_cache(
-    cache: &Rc<RefCell<Cache>>,
-    client_order_id: ClientOrderId,
-    time_in_force: TimeInForce,
-) -> OrderAny {
-    let order = StopMarketOrder::new(
-        test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        OrderSide::Buy,
-        Quantity::from("1"),
-        Price::from("49000.0"),
-        TriggerType::LastPrice,
-        time_in_force,
-        None,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    );
-
-    let order_any = OrderAny::StopMarket(order);
-    cache
-        .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
-        .unwrap();
-    order_any
-}
-
-fn add_market_if_touched_order_to_cache(
-    cache: &Rc<RefCell<Cache>>,
-    client_order_id: ClientOrderId,
-    time_in_force: TimeInForce,
-) -> OrderAny {
-    let order = MarketIfTouchedOrder::new(
-        test_trader_id(),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        OrderSide::Buy,
-        Quantity::from("1"),
-        Price::from("51000.0"),
-        TriggerType::LastPrice,
-        time_in_force,
-        None,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    );
-
-    let order_any = OrderAny::MarketIfTouched(order);
-    cache
-        .borrow_mut()
-        .add_order(order_any.clone(), None, None, false)
-        .unwrap();
-    order_any
+    add_order_to_cache(cache, client_order_id, OrderType::Limit, time_in_force)
 }
 
 fn add_order_to_cache(
@@ -1431,17 +1282,40 @@ fn add_order_to_cache(
     order_type: OrderType,
     time_in_force: TimeInForce,
 ) -> OrderAny {
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .time_in_force(time_in_force);
+
     match order_type {
-        OrderType::Limit => add_limit_order_to_cache(cache, client_order_id, time_in_force),
-        OrderType::Market => add_market_order_to_cache(cache, client_order_id, time_in_force),
+        OrderType::Limit => {
+            builder.price(Price::from("50000.0")).post_only(true);
+        }
+        OrderType::Market => {}
         OrderType::StopMarket => {
-            add_stop_market_order_to_cache(cache, client_order_id, time_in_force)
+            builder
+                .trigger_price(Price::from("49000.0"))
+                .trigger_type(TriggerType::LastPrice);
         }
         OrderType::MarketIfTouched => {
-            add_market_if_touched_order_to_cache(cache, client_order_id, time_in_force)
+            builder
+                .trigger_price(Price::from("51000.0"))
+                .trigger_type(TriggerType::LastPrice);
         }
         _ => panic!("Unsupported test order type {order_type:?}"),
     }
+
+    let order = builder.build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    order
 }
 
 fn find_command_request_params(requests: &[Value], client_order_id: ClientOrderId) -> &Value {

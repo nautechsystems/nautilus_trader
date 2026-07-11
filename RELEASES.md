@@ -26,45 +26,47 @@ releases as feedback arrives, before the final `2.0.0` release.
 ### Enhancements
 - Added opt-in `mimalloc` allocator feature, enabled by default for Python wheels (#4358), thanks @ivannp
 - Added `LiveNode` metrics for Rust live runner metrics
+- Added `LiveNodeBuilder.with_controller` for runtime controller configuration (#4427), thanks @bebop23
 - Added returns skewness and kurtosis portfolio statistics (#4334), thanks @Martingale42
 - Added WebSocket transport backend selection for Python and PyO3 configs (#4342), thanks @graceyangfan
 - Added Up/Down Capture ratio portfolio statistics (#4354), thanks @mahimn01
 - Added Ulcer Index, Omega Ratio, VaR, and Expected Shortfall portfolio statistics (#4352), thanks @Martingale42
 - Added Tail Ratio portfolio statistic (#4341), thanks @Martingale42
+- Added v2 `info` fill metadata to `OrderFilled`
+- Added v2 `activation_price` to `OrderInitialized` and `OrderSnapshot` so trailing-stop activation survives event and dict reconstruction
+- Added v2 `activation_price` to `OrderStatusReport`, populated from OKX and Binance Futures trailing-stop execution reports so activation survives execution reconciliation
+- Added v2 support for trailing-stop orders with no trigger or activation price, which activate at market and materialize the trigger (and trailing-stop-limit price) from the trailing offset on the first update
+- Added v2 Cap'n Proto round-trip for order-event `activation_price` and `OrderFilled` `info`, and SQL persistence for order-event `activation_price`
+- Added v2 Polymarket fill `info` metadata carrying the raw venue trade fields
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
+- Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
-- Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
+- Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
 - Added Polymarket v2 WS `hash` and `transaction_hash` field decoding (#4377), thanks for reporting @SebastianPartarrieu
 - Added Tardis MEXC spot and futures market data support
-- Added v2 support for trailing-stop orders with no trigger or activation price, which activate at market and materialize the trigger (and trailing-stop-limit price) from the trailing offset on the first update
-- Added `activation_price` to v2 `OrderInitialized` and `OrderSnapshot` so trailing-stop activation survives event and dict reconstruction
-- Added `info` fill metadata to v2 `OrderFilled`
-- Added `activation_price` to v2 `OrderStatusReport`, populated from OKX and Binance Futures trailing-stop execution reports so activation survives execution reconciliation
-- Added v2 Cap'n Proto round-trip for order-event `activation_price` and `OrderFilled` `info`, and SQL persistence for order-event `activation_price`
-- Added v2 Polymarket fill `info` metadata carrying the raw venue trade fields
 
 ### Breaking Changes
-- Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 - Changed v2 order-event serialization to carry `activation_price` on `OrderInitialized`/`OrderSnapshot` and `info` on `OrderFilled`; catalog data written before this change cannot be read
 - Changed v2 `TrailingStopMarketOrder`/`TrailingStopLimitOrder`, `OrderInitialized`, and `OrderFilled` Python and PyO3 constructors to accept `activation_price`/`info` parameters
 - Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
+- Changed index option settlement to require `IndexPriceUpdate` for underlying levels (#4430, #4431), thanks @taozle
+- Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
 - Fixed v2 composite bar aggregation (`@` source) to deliver aggregated bars to subscribed actors and strategies
 - Fixed v2 internal bar aggregation to include the first tick when aggregating from ticks, quotes, or trades in backtests
 - Fixed v2 quote extraction and quote-fed indicators to raise a clear error for a `Last` price type instead of panicking across the Python boundary
 - Fixed mixed-instrument backtest `SubmitOrderList` fills to use each leg's own book (#4392), thanks for reporting @gtalknitin
-- Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed v2 wranglers to detect raw fixed-point overflow before Arrow conversion (#4372), thanks @MandalorianBatman
 - Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu
@@ -74,6 +76,8 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
+- Fixed Python v2 indicator handlers to delegate to Rust core semantics, including VWAP typical-price and Aroon quote, trade, and high/low bar handling (#4421), thanks for reporting @a1zb2yc3z
+- Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
 - Fixed Python v2 subclassable PyO3 stubs marked as final (#4384), thanks @bebop23
 - Fixed Python v2 `Strategy` close-position and close-all-position commands to accept and forward `params`
@@ -103,6 +107,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
+- Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
@@ -118,7 +123,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
-- Upgraded Rust (MSRV) to 1.96.1
+- Upgraded Rust (MSRV) to 1.97.0
 - Upgraded Cython to v3.2.8
 - Upgraded `capnp` to v0.26.2 and `py-clob-client-v2` to v1.0.2
 - Upgraded `databento` crate to v0.54.0
@@ -127,6 +132,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
 - Updated Architect AX integration docs for current market-data, REST schema, and funding-rate behavior
+- Updated Polymarket v2 examples and integration docs for current markets, order modes, and configuration
 - Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
 - Added canonical references and doc comments for portfolio statistics
 - Fixed Lighter get-started Python v2 development wheel link

@@ -6254,6 +6254,7 @@ dependencies = [
  "arraydeque",
  "nautilus-core",
  "nautilus-model",
+ "proptest",
  "pyo3",
  "pyo3-stub-gen",
  "rstest",

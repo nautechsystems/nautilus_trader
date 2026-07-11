@@ -1567,6 +1567,7 @@ mod tests {
 
     #[cfg(test)]
     mod property_tests {
+        use ahash::AHashMap;
         use proptest::prelude::*;
 
         use super::*;
@@ -1650,9 +1651,9 @@ mod tests {
                 check_invariants(&state, "Final state");
             }
 
-            /// Property: Reference counting is always consistent.
+            /// Reference-count operations match an independent count model.
             #[rstest]
-            fn prop_reference_counting_consistency(
+            fn prop_reference_counting_matches_reference(
                 ops in prop::collection::vec(
                     topic_strategy().prop_flat_map(|t| {
                         prop_oneof![
@@ -1664,13 +1665,32 @@ mod tests {
                 )
             ) {
                 let state = SubscriptionState::new('.');
+                let mut expected = AHashMap::new();
 
                 for op in &ops {
-                    apply_operation(&state, op);
+                    match op {
+                        Operation::AddReference(topic) => {
+                            let count = expected.entry(topic.clone()).or_insert(0usize);
+                            let should_subscribe = *count == 0;
+                            *count += 1;
+                            prop_assert_eq!(state.add_reference(topic), should_subscribe);
+                        }
+                        Operation::RemoveReference(topic) => {
+                            let count = expected.get(topic).copied().unwrap_or(0);
+                            let should_unsubscribe = count == 1;
+                            if should_unsubscribe {
+                                expected.remove(topic);
+                            } else if count > 1 {
+                                *expected.get_mut(topic).unwrap() -= 1;
+                            }
+                            prop_assert_eq!(state.remove_reference(topic), should_unsubscribe);
+                        }
+                        _ => unreachable!("reference-count strategy only generates reference operations"),
+                    }
 
-                    // All reference counts must be >= 0 (NonZeroUsize or absent)
-                    for entry in state.reference_counts.iter() {
-                        assert!(entry.value().get() > 0);
+                    prop_assert_eq!(state.reference_counts.len(), expected.len());
+                    for (topic, count) in &expected {
+                        prop_assert_eq!(state.get_reference_count(topic), *count);
                     }
                 }
             }

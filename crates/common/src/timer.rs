@@ -913,11 +913,7 @@ mod tests {
         assert_eq!(*callback_seen.borrow(), vec![event]);
     }
 
-    ////////////////////////////////////////////////////////////////////////////////
-    // Property-based testing
-    ////////////////////////////////////////////////////////////////////////////////
-
-    use proptest::prelude::*;
+    use proptest::{prelude::*, test_runner::TestCaseResult};
 
     #[derive(Clone, Debug)]
     enum TimerOperation {
@@ -949,11 +945,10 @@ mod tests {
         )
     }
 
-    #[expect(clippy::needless_collect)] // Collect needed for indexing and .is_empty()
     fn test_timer_with_operations(
         operations: Vec<TimerOperation>,
         (interval_ns, start_time_ns, stop_time_ns, fire_immediately): (u64, u64, Option<u64>, bool),
-    ) {
+    ) -> TestCaseResult {
         let mut timer = TestTimer::new(
             Ustr::from("PROP_TEST_TIMER"),
             NonZeroU64::new(interval_ns).unwrap(),
@@ -963,104 +958,102 @@ mod tests {
         );
 
         let mut current_time = start_time_ns;
+        let mut expected_next = if fire_immediately {
+            start_time_ns
+        } else {
+            start_time_ns + interval_ns
+        };
+        let mut expected_expired = false;
 
         for operation in operations {
-            if timer.is_expired() {
+            if expected_expired {
                 break;
             }
 
             match operation {
                 TimerOperation::AdvanceTime(delta) => {
                     let to_time = current_time + delta;
-                    let events: Vec<TimeEvent> = timer.advance(UnixNanos::from(to_time)).collect();
+                    let actual: Vec<u64> = timer
+                        .advance(UnixNanos::from(to_time))
+                        .map(|event| event.ts_event.as_u64())
+                        .collect();
+                    let expected = expected_event_times(
+                        to_time,
+                        interval_ns,
+                        stop_time_ns,
+                        &mut expected_next,
+                        &mut expected_expired,
+                    );
                     current_time = to_time;
 
-                    // Verify event ordering and timing
-                    for (i, event) in events.iter().enumerate() {
-                        // Event timestamps should be in order
-                        if i > 0 {
-                            assert!(
-                                event.ts_event >= events[i - 1].ts_event,
-                                "Events should be in chronological order"
-                            );
-                        }
-
-                        // Event timestamp should be within reasonable bounds
-                        assert!(
-                            event.ts_event.as_u64() >= start_time_ns,
-                            "Event timestamp should not be before start time"
-                        );
-
-                        assert!(
-                            event.ts_event.as_u64() <= to_time,
-                            "Event timestamp should not be after advance time"
-                        );
-
-                        // If there's a stop time, event should not exceed it
-                        if let Some(stop_time_ns) = stop_time_ns {
-                            assert!(
-                                event.ts_event.as_u64() <= stop_time_ns,
-                                "Event timestamp should not exceed stop time"
-                            );
-                        }
-                    }
+                    prop_assert_eq!(actual, expected);
                 }
                 TimerOperation::Cancel => {
                     timer.cancel();
-                    assert!(timer.is_expired(), "Timer should be expired after cancel");
+                    expected_expired = true;
                 }
             }
 
-            // Timer invariants
-            if !timer.is_expired() {
-                // Next time should be properly spaced
-                let expected_interval_multiple = if fire_immediately {
-                    timer.next_time_ns().as_u64() >= start_time_ns
-                } else {
-                    timer.next_time_ns().as_u64() >= start_time_ns + interval_ns
-                };
-                assert!(
-                    expected_interval_multiple,
-                    "Next time should respect interval spacing"
-                );
-
-                // If timer has stop time, check if it should be considered logically expired
-                // Note: Timer only becomes actually expired when advance() or next() is called
-                if let Some(stop_time_ns) = stop_time_ns
-                    && timer.next_time_ns().as_u64() > stop_time_ns
-                {
-                    // The timer should expire on the next advance/iteration
-                    let mut test_timer = timer.clone();
-                    let events: Vec<TimeEvent> = test_timer
-                        .advance(UnixNanos::from(stop_time_ns + 1))
-                        .collect();
-                    assert!(
-                        events.is_empty() || test_timer.is_expired(),
-                        "Timer should not generate events beyond stop time"
-                    );
-                }
+            prop_assert_eq!(timer.is_expired(), expected_expired);
+            if !expected_expired {
+                prop_assert_eq!(timer.next_time_ns().as_u64(), expected_next);
             }
         }
 
-        // Final consistency check: if timer is not expired and we haven't hit stop time,
-        // advancing far enough should eventually expire it
-        if !timer.is_expired()
-            && let Some(stop_time_ns) = stop_time_ns
-        {
-            let events: Vec<TimeEvent> = timer
-                .advance(UnixNanos::from(stop_time_ns + 1000))
+        if !expected_expired && let Some(stop_time_ns) = stop_time_ns {
+            let to_time = stop_time_ns.saturating_add(interval_ns);
+            let actual: Vec<u64> = timer
+                .advance(UnixNanos::from(to_time))
+                .map(|event| event.ts_event.as_u64())
                 .collect();
-            assert!(
-                timer.is_expired() || events.is_empty(),
-                "Timer should eventually expire or stop generating events"
+            let expected = expected_event_times(
+                to_time,
+                interval_ns,
+                Some(stop_time_ns),
+                &mut expected_next,
+                &mut expected_expired,
             );
+            prop_assert_eq!(actual, expected);
+            prop_assert!(expected_expired);
+            prop_assert!(timer.is_expired());
         }
+
+        Ok(())
+    }
+
+    fn expected_event_times(
+        to_time: u64,
+        interval_ns: u64,
+        stop_time_ns: Option<u64>,
+        next_time: &mut u64,
+        is_expired: &mut bool,
+    ) -> Vec<u64> {
+        let mut events = Vec::new();
+
+        while !*is_expired && *next_time <= to_time {
+            if let Some(stop_time_ns) = stop_time_ns
+                && *next_time > stop_time_ns
+            {
+                *is_expired = true;
+                break;
+            }
+
+            events.push(*next_time);
+            if Some(*next_time) == stop_time_ns {
+                *is_expired = true;
+                break;
+            }
+
+            *next_time += interval_ns;
+        }
+
+        events
     }
 
     proptest! {
         #[rstest]
         fn prop_timer_advance_operations((operations, config) in timer_test_strategy()) {
-            test_timer_with_operations(operations, config);
+            test_timer_with_operations(operations, config)?;
         }
 
         #[rstest]

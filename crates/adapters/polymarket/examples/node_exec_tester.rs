@@ -15,7 +15,7 @@
 
 //! Example demonstrating live execution testing with the Polymarket adapter.
 //!
-//! Uses `EventSlugFilter` to load only instruments for a specific event (avoiding
+//! Uses an event-scoped instrument provider to load only the configured event (avoiding
 //! loading all 71K+ instruments) and `SignatureType::PolyGnosisSafe` for Gnosis
 //! Safe proxy wallet authentication.
 //!
@@ -28,20 +28,20 @@
 //! - `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_PASSPHRASE`.
 //! - `POLYMARKET_FUNDER` (Gnosis Safe proxy address).
 
-use std::sync::Arc;
-
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
 use nautilus_model::{
+    enums::TimeInForce,
     identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
     types::Quantity,
 };
 use nautilus_polymarket::{
     common::{consts::POLYMARKET_CLIENT_ID, enums::SignatureType},
-    config::{PolymarketDataClientConfig, PolymarketExecClientConfig},
+    config::{
+        PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
+    },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
-    filters::EventSlugFilter,
 };
 use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
@@ -50,11 +50,11 @@ const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "POLYMARKET-001";
 const NODE_NAME: &str = "POLYMARKET-EXEC-TESTER-001";
 const STRATEGY_ID: &str = "EXEC_TESTER-001";
-const EVENT_SLUG: &str = "gta-vi-released-before-june-2026";
+const EVENT_SLUG: &str = "fed-decision-in-september-762";
 
-// GTA VI Released Before June 2026 (Yes)
-// https://polymarket.com/event/gta-vi-released-before-june-2026
-const INSTRUMENT_ID: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET";
+// Fed Decision in September (No)
+// https://polymarket.com/event/fed-decision-in-september-762
+const INSTRUMENT_ID: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-28239418772633645184924651434956000849078365566842629564562475378531350731731.POLYMARKET";
 const ORDER_QTY: &str = "5"; // Polymarket min_qty = 5 shares
 
 #[tokio::main]
@@ -68,12 +68,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_id = *POLYMARKET_CLIENT_ID;
     let instrument_id = InstrumentId::from(INSTRUMENT_ID);
 
-    // Use EventSlugFilter to load only instruments for this event
-    let event_slugs = vec![EVENT_SLUG.to_string()];
-    let data_filter = EventSlugFilter::from_slugs(event_slugs);
-
     let data_config = PolymarketDataClientConfig {
-        filters: vec![Arc::new(data_filter)],
+        instrument_config: Some(PolymarketInstrumentProviderConfig {
+            event_slugs: Some(vec![EVENT_SLUG.to_string()]),
+            ..Default::default()
+        }),
         ..Default::default()
     };
     let data_factory = PolymarketDataClientFactory;
@@ -92,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
     let exec_engine_config = LiveExecEngineConfig {
+        reconciliation_instrument_ids: Some(vec![instrument_id.to_string()]),
         open_check_interval_secs: Some(10.0),
         position_check_interval_secs: Some(30.0),
         ..Default::default()
@@ -115,11 +115,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .base(StrategyConfig {
             strategy_id: Some(StrategyId::from(STRATEGY_ID)),
             external_order_claims: Some(vec![instrument_id]),
+            use_uuid_client_order_ids: true,
             ..Default::default()
         })
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
+        // Uncomment both lines to exercise a quote-denominated market buy
         // .open_position_on_start_qty(order_qty.as_decimal())
         // .use_quote_quantity(true)
         .use_post_only(true)
@@ -128,6 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .enable_stop_buys(false) // Polymarket doesn't support stop orders
         .enable_stop_sells(false)
         .reduce_only_on_stop(false) // Polymarket does not support reduce-only orders
+        .close_positions_time_in_force(TimeInForce::Ioc)
         .log_data(false)
         .build()?;
 

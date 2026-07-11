@@ -149,11 +149,12 @@ mod tests {
         data::{QuoteTick, TradeTick},
         enums::PriceType,
     };
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::MAX_PERIOD;
     use crate::{
-        average::sma::SimpleMovingAverage,
+        average::{sma::SimpleMovingAverage, wma::WeightedMovingAverage},
         indicator::{Indicator, MovingAverage},
         stubs::*,
     };
@@ -294,6 +295,34 @@ mod tests {
                 expect_avg[i],
                 sma.value()
             );
+        }
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_sma_matches_windowed_reference(
+            period in 1usize..=32,
+            inputs in prop::collection::vec(0i64..=1_000_000i64, 1..=96),
+        ) {
+            let mut sma = SimpleMovingAverage::new(period, None);
+            let mut equal_weight_wma = WeightedMovingAverage::new(period, vec![1.0; period], None);
+
+            for (index, input) in inputs.iter().enumerate() {
+                let value = *input as f64;
+                let window_start = index.saturating_add(1).saturating_sub(period);
+                let window = &inputs[window_start..=index];
+                let expected = window.iter().sum::<i64>() as f64 / window.len() as f64;
+
+                sma.update_raw(value);
+                equal_weight_wma.update_raw(value);
+
+                prop_assert_eq!(sma.value(), expected);
+                prop_assert_eq!(equal_weight_wma.value(), expected);
+                prop_assert_eq!(sma.count(), window.len());
+                prop_assert_eq!(equal_weight_wma.count(), window.len());
+                prop_assert_eq!(sma.initialized(), index + 1 >= period);
+                prop_assert_eq!(equal_weight_wma.initialized(), index + 1 >= period);
+            }
         }
     }
 

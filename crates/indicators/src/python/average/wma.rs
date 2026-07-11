@@ -75,21 +75,17 @@ impl WeightedMovingAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
-        let price = quote
-            .extract_price(self.price_type)
-            .map_err(to_pyvalue_err)?;
-        self.py_update_raw(price.into());
-        Ok(())
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
-        self.update_raw((&trade.price).into());
+        self.handle_trade(trade);
     }
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.handle_bar(bar);
     }
 
     #[pyo3(name = "reset")]

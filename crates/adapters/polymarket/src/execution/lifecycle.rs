@@ -135,6 +135,27 @@ impl PolymarketExecutionClient {
         }
     }
 
+    pub(super) async fn await_pending_tasks(&self) {
+        loop {
+            let tasks: Vec<_> = self
+                .pending_tasks
+                .lock()
+                .expect(MUTEX_POISONED)
+                .drain(..)
+                .collect();
+
+            if tasks.is_empty() {
+                break;
+            }
+
+            for handle in tasks {
+                if let Err(e) = handle.await {
+                    log::warn!("Pending execution task failed to join during disconnect: {e}");
+                }
+            }
+        }
+    }
+
     pub(super) async fn refresh_account_state(&self) -> anyhow::Result<()> {
         fetch_and_emit_account_state(
             &self.http_client,
@@ -351,7 +372,6 @@ impl PolymarketExecutionClient {
             handle.abort();
         }
 
-        self.abort_pending_tasks();
         self.ws_client.abort();
 
         self.core.set_disconnected();
@@ -415,6 +435,7 @@ impl PolymarketExecutionClient {
         log::info!("Disconnecting Polymarket execution client");
 
         self.stopping.store(true, Ordering::Release);
+        self.await_pending_tasks().await;
         self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
@@ -424,7 +445,6 @@ impl PolymarketExecutionClient {
             handle.abort();
         }
 
-        self.abort_pending_tasks();
         self.core.set_disconnected();
 
         log::info!("Disconnected: client_id={}", self.core.client_id);

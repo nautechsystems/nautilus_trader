@@ -15,22 +15,23 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::UUID4;
 use rstest::fixture;
 use ustr::Ustr;
 
 use crate::{
-    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{ContingencyType, OrderType, TriggerType},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated,
         order::spec::{
-            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderDeniedSpec, OrderEmulatedSpec,
-            OrderExpiredSpec, OrderFilledSpec, OrderInitializedSpec, OrderModifyRejectedSpec,
-            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderReleasedSpec,
-            OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
+            OrderEmulatedSpec, OrderExpiredSpec, OrderFilledSpec, OrderInitializedSpec,
+            OrderModifyRejectedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderRejectedSpec, OrderReleasedSpec, OrderSubmittedSpec, OrderTriggeredSpec,
+            OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -393,24 +394,11 @@ pub fn order_expired(
         .build()
 }
 
-// TestDefault implementations for order events
-// These provide test-only default values for use in tests and stubs.
-
 impl TestDefault for OrderAccepted {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        }
+        OrderAcceptedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -422,19 +410,9 @@ impl Default for OrderAccepted {
 
 impl TestDefault for OrderCanceled {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: None,
-            causation_id: None,
-        }
+        OrderCanceledSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -446,20 +424,9 @@ impl Default for OrderCanceled {
 
 impl TestDefault for OrderCancelRejected {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            reason: Ustr::from("TEST"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: None,
-            causation_id: None,
-        }
+        OrderCancelRejectedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -471,17 +438,9 @@ impl Default for OrderCancelRejected {
 
 impl TestDefault for OrderDenied {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            reason: Ustr::from("TEST"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        }
+        OrderDeniedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -493,16 +452,9 @@ impl Default for OrderDenied {
 
 impl TestDefault for OrderEmulated {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        }
+        OrderEmulatedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -514,19 +466,9 @@ impl Default for OrderEmulated {
 
 impl TestDefault for OrderExpired {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: None,
-            causation_id: None,
-        }
+        OrderExpiredSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -538,43 +480,9 @@ impl Default for OrderExpired {
 
 impl TestDefault for OrderInitialized {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            quantity: Quantity::new(100_000.0, 0),
-            price: Option::default(),
-            activation_price: Option::default(),
-            trigger_price: Option::default(),
-            trigger_type: Option::default(),
-            time_in_force: TimeInForce::Day,
-            expire_time: Option::default(),
-            post_only: bool::default(),
-            reduce_only: bool::default(),
-            display_qty: Option::default(),
-            quote_quantity: bool::default(),
-            limit_offset: Option::default(),
-            trailing_offset: Option::default(),
-            trailing_offset_type: Option::default(),
-            emulation_trigger: Option::default(),
-            trigger_instrument_id: Option::default(),
-            contingency_type: Option::default(),
-            order_list_id: Option::default(),
-            linked_order_ids: Option::default(),
-            parent_order_id: Option::default(),
-            exec_algorithm_id: Option::default(),
-            exec_algorithm_params: Option::default(),
-            exec_spawn_id: Option::default(),
-            tags: Option::default(),
-            reconciliation: false,
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        }
+        OrderInitializedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -586,20 +494,9 @@ impl Default for OrderInitialized {
 
 impl TestDefault for OrderModifyRejected {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            reason: Ustr::from("TEST"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: None,
-            causation_id: None,
-        }
+        OrderModifyRejectedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -611,19 +508,10 @@ impl Default for OrderModifyRejected {
 
 impl TestDefault for OrderPendingCancel {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: Some(AccountId::test_default()),
-            causation_id: None,
-        }
+        OrderPendingCancelSpec::builder()
+            .event_id(UUID4::default())
+            .account_id(AccountId::test_default())
+            .build()
     }
 }
 
@@ -635,19 +523,10 @@ impl Default for OrderPendingCancel {
 
 impl TestDefault for OrderPendingUpdate {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: Some(AccountId::test_default()),
-            causation_id: None,
-        }
+        OrderPendingUpdateSpec::builder()
+            .event_id(UUID4::default())
+            .account_id(AccountId::test_default())
+            .build()
     }
 }
 
@@ -659,20 +538,9 @@ impl Default for OrderPendingUpdate {
 
 impl TestDefault for OrderRejected {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            account_id: AccountId::test_default(),
-            reason: Ustr::from("TEST"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            due_post_only: false,
-            causation_id: None,
-        }
+        OrderRejectedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -684,17 +552,9 @@ impl Default for OrderRejected {
 
 impl TestDefault for OrderReleased {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            released_price: Price::from("1.00000"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        }
+        OrderReleasedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -706,17 +566,9 @@ impl Default for OrderReleased {
 
 impl TestDefault for OrderSubmitted {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            account_id: AccountId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        }
+        OrderSubmittedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -728,19 +580,9 @@ impl Default for OrderSubmitted {
 
 impl TestDefault for OrderTriggered {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            venue_order_id: None,
-            account_id: None,
-            causation_id: None,
-        }
+        OrderTriggeredSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 
@@ -752,24 +594,9 @@ impl Default for OrderTriggered {
 
 impl TestDefault for OrderUpdated {
     fn test_default() -> Self {
-        Self {
-            trader_id: TraderId::test_default(),
-            strategy_id: StrategyId::test_default(),
-            instrument_id: InstrumentId::test_default(),
-            client_order_id: ClientOrderId::test_default(),
-            venue_order_id: None,
-            account_id: None,
-            quantity: Quantity::new(100_000.0, 0),
-            price: None,
-            trigger_price: None,
-            protection_price: None,
-            is_quote_quantity: false,
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        }
+        OrderUpdatedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
     }
 }
 

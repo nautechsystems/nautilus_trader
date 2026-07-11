@@ -1931,18 +1931,17 @@ mod property_tests {
             let q_b = Quantity::new(b, precision);
             let q_c = Quantity::new(c, precision);
 
-            // Check if we can perform the operations without overflow using raw arithmetic
-            let ab_raw = q_a.raw.checked_add(q_b.raw);
-            let bc_raw = q_b.raw.checked_add(q_c.raw);
+            let expected = q_a
+                .raw
+                .checked_add(q_b.raw)
+                .and_then(|sum| sum.checked_add(q_c.raw))
+                .filter(|sum| *sum <= QUANTITY_RAW_MAX);
 
-            if let (Some(ab_raw), Some(bc_raw)) = (ab_raw, bc_raw) {
-                let ab_c_raw = ab_raw.checked_add(q_c.raw);
-                let a_bc_raw = q_a.raw.checked_add(bc_raw);
-
-                if let (Some(ab_c_raw), Some(a_bc_raw)) = (ab_c_raw, a_bc_raw) {
-                    // (a + b) + c == a + (b + c) using raw arithmetic (exact)
-                    prop_assert_eq!(ab_c_raw, a_bc_raw, "Associativity failed in raw arithmetic");
-                }
+            if let Some(expected) = expected {
+                let left = (q_a + q_b) + q_c;
+                let right = q_a + (q_b + q_c);
+                prop_assert_eq!(left.raw, expected);
+                prop_assert_eq!(right.raw, expected);
             }
         }
 
@@ -1956,12 +1955,14 @@ mod property_tests {
             let q_base = Quantity::new(base, precision);
             let q_delta = Quantity::new(delta, precision);
 
-            // Use raw arithmetic to avoid floating-point precision issues
-            if let Some(added_raw) = q_base.raw.checked_add(q_delta.raw)
-                && let Some(result_raw) = added_raw.checked_sub(q_delta.raw) {
-                    // (base + delta) - delta should equal base exactly using raw arithmetic
-                    prop_assert_eq!(result_raw, q_base.raw, "Inverse operation failed in raw arithmetic");
-                }
+            let expected = q_base
+                .raw
+                .checked_add(q_delta.raw)
+                .filter(|sum| *sum <= QUANTITY_RAW_MAX);
+
+            if expected.is_some() {
+                prop_assert_eq!((q_base + q_delta) - q_delta, q_base);
+            }
         }
 
         /// Property: checked_add agrees with raw checked_add when result is in bounds and
@@ -2038,34 +2039,6 @@ mod property_tests {
             let round_trip = parsed.to_string();
             let expected_value = format!("{integral}.{fractional_str}");
             prop_assert_eq!(round_trip, expected_value);
-        }
-
-        /// Property: Quantity with higher precision should contain more or equal information
-        #[rstest]
-        fn prop_quantity_precision_information_preservation(
-            value in quantity_value_strategy().prop_filter("Reasonable values", |&x| x < 1e6),
-            precision1 in precision_strategy_non_zero(),
-            precision2 in precision_strategy_non_zero()
-        ) {
-            // Skip cases where precisions are equal (trivial case)
-            prop_assume!(precision1 != precision2);
-
-            let _q1 = Quantity::new(value, precision1);
-            let _q2 = Quantity::new(value, precision2);
-
-            // When both quantities are created from the same value with different precisions,
-            // converting both to the lower precision should yield the same result
-            let min_precision = precision1.min(precision2);
-
-            // Round the original value to the minimum precision first
-            let scale = 10.0_f64.powi(i32::from(min_precision));
-            let rounded_value = (value * scale).round() / scale;
-
-            let q1_reduced = Quantity::new(rounded_value, min_precision);
-            let q2_reduced = Quantity::new(rounded_value, min_precision);
-
-            // They should be exactly equal when created from the same rounded value
-            prop_assert_eq!(q1_reduced.raw, q2_reduced.raw, "Precision reduction inconsistent");
         }
 
         /// Property: Quantity arithmetic should never produce invalid values

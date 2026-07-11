@@ -70,7 +70,7 @@ inside the same event-driven runtime.
 
 ## Prerequisites
 
-- A Rust toolchain (MSRV 1.96.1 or newer).
+- A Rust toolchain (MSRV 1.97.0 or newer).
 - A Cargo project with the Nautilus, Lighter, and Databento crates as
   dependencies (see [Project setup](#project-setup)).
 - Python 3.12+ to regenerate the rendered panels.

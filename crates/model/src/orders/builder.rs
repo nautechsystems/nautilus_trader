@@ -22,14 +22,10 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
-    },
+    enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     events::{OrderEventAny, order::spec::OrderSubmittedSpec},
     identifiers::{
-        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TradeId,
-        TraderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
         Order, OrderAny, limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder,
@@ -39,7 +35,7 @@ use crate::{
         trailing_stop_market::TrailingStopMarketOrder,
     },
     stubs::TestDefault,
-    types::{Currency, Price, Quantity},
+    types::{Price, Quantity},
 };
 
 #[derive(Debug)]
@@ -49,8 +45,6 @@ pub struct OrderTestBuilder {
     strategy_id: Option<StrategyId>,
     instrument_id: Option<InstrumentId>,
     client_order_id: Option<ClientOrderId>,
-    trade_id: Option<TradeId>,
-    currency: Option<Currency>,
     side: Option<OrderSide>,
     quantity: Option<Quantity>,
     price: Option<Price>,
@@ -65,9 +59,7 @@ pub struct OrderTestBuilder {
     reduce_only: Option<bool>,
     post_only: Option<bool>,
     quote_quantity: Option<bool>,
-    reconciliation: Option<bool>,
     display_qty: Option<Quantity>,
-    liquidity_side: Option<LiquiditySide>,
     emulation_trigger: Option<TriggerType>,
     trigger_instrument_id: Option<InstrumentId>,
     order_list_id: Option<OrderListId>,
@@ -93,8 +85,6 @@ impl OrderTestBuilder {
             strategy_id: None,
             instrument_id: None,
             client_order_id: None,
-            trade_id: None,
-            currency: None,
             side: None,
             quantity: None,
             price: None,
@@ -110,9 +100,7 @@ impl OrderTestBuilder {
             reduce_only: None,
             post_only: None,
             quote_quantity: None,
-            reconciliation: None,
             display_qty: None,
-            liquidity_side: None,
             emulation_trigger: None,
             trigger_instrument_id: None,
             linked_order_ids: None,
@@ -176,26 +164,6 @@ impl OrderTestBuilder {
     fn get_client_order_id(&self) -> ClientOrderId {
         self.client_order_id
             .unwrap_or_else(ClientOrderId::test_default)
-    }
-
-    // ----------- TradeId ----------
-    pub fn trade_id(&mut self, trade_id: TradeId) -> &mut Self {
-        self.trade_id = Some(trade_id);
-        self
-    }
-
-    fn get_trade_id(&self) -> TradeId {
-        self.trade_id.unwrap_or_else(TradeId::test_default)
-    }
-
-    // ----------- Currency ----------
-    pub fn currency(&mut self, currency: Currency) -> &mut Self {
-        self.currency = Some(currency);
-        self
-    }
-
-    fn get_currency(&self) -> Currency {
-        self.currency.unwrap_or(Currency::from("USDT"))
     }
 
     // ----------- OrderSide ----------
@@ -317,16 +285,6 @@ impl OrderTestBuilder {
 
     fn get_display_qty(&self) -> Option<Quantity> {
         self.display_qty
-    }
-
-    // ----------- LiquiditySide ----------
-    pub fn liquidity_side(&mut self, liquidity_side: LiquiditySide) -> &mut Self {
-        self.liquidity_side = Some(liquidity_side);
-        self
-    }
-
-    fn get_liquidity_side(&self) -> LiquiditySide {
-        self.liquidity_side.unwrap_or(LiquiditySide::Maker)
     }
 
     // ----------- EmulationTrigger ----------
@@ -472,25 +430,14 @@ impl OrderTestBuilder {
         self.quote_quantity.unwrap_or(false)
     }
 
-    // ----------- Reconciliation ----------
-    pub fn reconciliation(&mut self, reconciliation: bool) -> &mut Self {
-        self.reconciliation = Some(reconciliation);
-        self
-    }
-
-    fn get_reconciliation(&self) -> bool {
-        self.reconciliation.unwrap_or(false)
-    }
-
     // ----------- ContingencyType ----------
     pub fn contingency_type(&mut self, contingency_type: ContingencyType) -> &mut Self {
         self.contingency_type = Some(contingency_type);
         self
     }
 
-    fn get_contingency_type(&self) -> ContingencyType {
+    fn get_contingency_type(&self) -> Option<ContingencyType> {
         self.contingency_type
-            .unwrap_or(ContingencyType::NoContingency)
     }
 
     /// Builds the order, consuming the provided parameters.
@@ -514,7 +461,7 @@ impl OrderTestBuilder {
                 self.get_ts_init(),
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -539,7 +486,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -566,7 +513,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -595,7 +542,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -619,7 +566,7 @@ impl OrderTestBuilder {
                 self.get_reduce_only(),
                 self.get_quote_quantity(),
                 self.get_display_qty(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -645,7 +592,7 @@ impl OrderTestBuilder {
                 self.get_quote_quantity(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -674,7 +621,7 @@ impl OrderTestBuilder {
                 self.get_display_qty(),
                 self.get_emulation_trigger(),
                 self.get_trigger_instrument_id(),
-                Some(self.get_contingency_type()),
+                self.get_contingency_type(),
                 self.get_order_list_id(),
                 self.get_linked_order_ids(),
                 self.get_parent_order_id(),
@@ -707,7 +654,7 @@ impl OrderTestBuilder {
                     self.get_display_qty(),
                     self.get_emulation_trigger(),
                     self.get_trigger_instrument_id(),
-                    Some(self.get_contingency_type()),
+                    self.get_contingency_type(),
                     self.get_order_list_id(),
                     self.get_linked_order_ids(),
                     self.get_parent_order_id(),
@@ -743,7 +690,7 @@ impl OrderTestBuilder {
                     self.get_display_qty(),
                     self.get_emulation_trigger(),
                     self.get_trigger_instrument_id(),
-                    Some(self.get_contingency_type()),
+                    self.get_contingency_type(),
                     self.get_order_list_id(),
                     self.get_linked_order_ids(),
                     self.get_parent_order_id(),
@@ -770,5 +717,52 @@ impl OrderTestBuilder {
         }
 
         order
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::orders::Order;
+
+    #[rstest]
+    fn normalizes_an_absent_contingency_type() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::test_default())
+            .quantity(Quantity::from(1))
+            .price(Price::from("1"))
+            .build();
+
+        assert_eq!(
+            order.contingency_type(),
+            Some(ContingencyType::NoContingency)
+        );
+        assert!(order.is_contingency());
+    }
+
+    #[rstest]
+    fn preserves_a_configured_contingency_type() {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::test_default())
+            .quantity(Quantity::from(1))
+            .price(Price::from("1"))
+            .contingency_type(ContingencyType::Oto)
+            .build();
+
+        assert_eq!(order.contingency_type(), Some(ContingencyType::Oto));
+        assert!(order.is_contingency());
+    }
+
+    #[rstest]
+    fn submits_to_the_account_issuer() {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::test_default())
+            .quantity(Quantity::from(1))
+            .submit(true)
+            .build();
+
+        assert_eq!(order.account_id(), Some(AccountId::from("ACCOUNT-001")));
     }
 }

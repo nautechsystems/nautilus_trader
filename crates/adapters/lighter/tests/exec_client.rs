@@ -92,10 +92,7 @@ use nautilus_model::{
         TraderId, VenueOrderId,
     },
     instruments::{CryptoPerpetual, CurrencyPair, InstrumentAny},
-    orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketIfTouchedOrder, MarketOrder, Order, OrderAny,
-        OrderList, StopLimitOrder, StopMarketOrder,
-    },
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -940,33 +937,18 @@ fn make_limit_order(
     post_only: bool,
     reduce_only: bool,
 ) -> OrderAny {
-    OrderAny::Limit(LimitOrder::new(
-        trader_id(),
-        strategy_id(),
-        eth_perp_id(),
-        ClientOrderId::from(id),
-        side,
-        qty,
-        price,
-        tif,
-        None,
-        post_only,
-        reduce_only,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    ))
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id())
+        .strategy_id(strategy_id())
+        .instrument_id(eth_perp_id())
+        .client_order_id(ClientOrderId::from(id))
+        .side(side)
+        .quantity(qty)
+        .price(price)
+        .time_in_force(tif)
+        .post_only(post_only)
+        .reduce_only(reduce_only)
+        .build()
 }
 
 fn make_limit_order_with_quantity_options(
@@ -974,57 +956,34 @@ fn make_limit_order_with_quantity_options(
     quote_quantity: bool,
     display_qty: Option<Quantity>,
 ) -> OrderAny {
-    OrderAny::Limit(LimitOrder::new(
-        trader_id(),
-        strategy_id(),
-        eth_perp_id(),
-        ClientOrderId::from(id),
-        OrderSide::Buy,
-        Quantity::from("0.0050"),
-        Price::from("2361.31"),
-        TimeInForce::Gtc,
-        None,
-        false,
-        false,
-        quote_quantity,
-        display_qty,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    ))
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(trader_id())
+        .strategy_id(strategy_id())
+        .instrument_id(eth_perp_id())
+        .client_order_id(ClientOrderId::from(id))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.0050"))
+        .price(Price::from("2361.31"))
+        .quote_quantity(quote_quantity);
+
+    if let Some(display_qty) = display_qty {
+        builder.display_qty(display_qty);
+    }
+
+    builder.build()
 }
 
 fn make_market_order(id: &str, side: OrderSide, qty: Quantity) -> OrderAny {
-    OrderAny::Market(MarketOrder::new(
-        trader_id(),
-        strategy_id(),
-        eth_perp_id(),
-        ClientOrderId::from(id),
-        side,
-        qty,
-        TimeInForce::Ioc,
-        UUID4::new(),
-        UnixNanos::default(),
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
+    OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id())
+        .strategy_id(strategy_id())
+        .instrument_id(eth_perp_id())
+        .client_order_id(ClientOrderId::from(id))
+        .side(side)
+        .quantity(qty)
+        .time_in_force(TimeInForce::Ioc)
+        .build()
 }
 
 fn make_stop_market_order(id: &str, side: OrderSide, qty: Quantity, trigger: Price) -> OrderAny {
@@ -1048,122 +1007,29 @@ fn make_conditional_order_for(
     trigger: Price,
     tif: TimeInForce,
 ) -> OrderAny {
-    let price = Price::from("2401.00");
+    assert!(
+        matches!(
+            order_type,
+            OrderType::StopMarket
+                | OrderType::StopLimit
+                | OrderType::MarketIfTouched
+                | OrderType::LimitIfTouched
+        ),
+        "expected conditional order type, was {order_type:?}",
+    );
 
-    match order_type {
-        OrderType::StopMarket => OrderAny::StopMarket(StopMarketOrder::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id,
-            ClientOrderId::from(id),
-            side,
-            qty,
-            trigger,
-            TriggerType::Default,
-            tif,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-        )),
-        OrderType::StopLimit => OrderAny::StopLimit(StopLimitOrder::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id,
-            ClientOrderId::from(id),
-            side,
-            qty,
-            price,
-            trigger,
-            TriggerType::Default,
-            tif,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-        )),
-        OrderType::MarketIfTouched => OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id,
-            ClientOrderId::from(id),
-            side,
-            qty,
-            trigger,
-            TriggerType::Default,
-            tif,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-        )),
-        OrderType::LimitIfTouched => OrderAny::LimitIfTouched(LimitIfTouchedOrder::new(
-            trader_id(),
-            strategy_id(),
-            instrument_id,
-            ClientOrderId::from(id),
-            side,
-            qty,
-            price,
-            trigger,
-            TriggerType::Default,
-            tif,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::new(),
-            UnixNanos::default(),
-        )),
-        other => panic!("expected conditional order type, was {other:?}"),
-    }
+    OrderTestBuilder::new(order_type)
+        .trader_id(trader_id())
+        .strategy_id(strategy_id())
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from(id))
+        .side(side)
+        .quantity(qty)
+        .price(Price::from("2401.00"))
+        .trigger_price(trigger)
+        .trigger_type(TriggerType::Default)
+        .time_in_force(tif)
+        .build()
 }
 
 fn make_stop_market_order_with_tif(

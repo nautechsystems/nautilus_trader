@@ -503,7 +503,6 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
         let pending_tasks = self.pending_tasks.clone();
-        let stopping = self.stopping.clone();
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
@@ -586,7 +585,6 @@ impl PolymarketExecutionClient {
                                 &order_identities,
                                 &pending_cancels,
                                 &pending_tasks,
-                                &stopping,
                                 account_id,
                             )
                             .await;

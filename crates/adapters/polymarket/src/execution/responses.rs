@@ -14,10 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -57,7 +54,6 @@ pub(super) async fn handle_batch_order_responses(
     order_identities: &OrderIdentityRegistry,
     pending_cancels: &PendingCancelTracker,
     pending_tasks: &Arc<Mutex<Vec<JoinHandle<()>>>>,
-    stopping: &Arc<AtomicBool>,
     account_id: AccountId,
 ) {
     let response_len = responses.len();
@@ -103,9 +99,6 @@ pub(super) async fn handle_batch_order_responses(
     if !deferred.is_empty() {
         let mut tasks = pending_tasks.lock().expect(MUTEX_POISONED);
 
-        if stopping.load(Ordering::Acquire) {
-            return;
-        }
         tasks.retain(|handle| !handle.is_finished());
 
         for (order, order_id_str, venue_order_id) in deferred {

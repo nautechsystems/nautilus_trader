@@ -43,6 +43,7 @@ use nautilus_system::{
     event_store::{EventStoreFactory, KernelEventStore},
     kernel::{NautilusKernel, NautilusKernelDependencies},
 };
+use nautilus_trading::ImportableControllerConfig;
 
 use super::{
     LiveNode,
@@ -215,6 +216,20 @@ impl LiveNodeBuilder {
     #[must_use]
     pub const fn with_save_state(mut self, save_state: bool) -> Self {
         self.config.save_state = save_state;
+        self
+    }
+
+    /// Set the importable controller configuration for the node.
+    ///
+    /// The controller is instantiated and registered with the trader during
+    /// [`LiveNodeBuilder::build`], enabling runtime strategy/actor management
+    /// (create, start, stop, remove) without restarting the node. This mirrors
+    /// the `controller` field on [`LiveNodeConfig`] used by the config-based
+    /// [`LiveNode::build`] path, so a builder that also registers client
+    /// factories can host a controller in a single node.
+    #[must_use]
+    pub fn with_controller(mut self, controller: ImportableControllerConfig) -> Self {
+        self.config.controller = Some(controller);
         self
     }
 
@@ -663,5 +678,32 @@ impl ExternalMessageBusIngress {
 
     pub(crate) fn close(&mut self) {
         self.0.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use nautilus_common::enums::Environment;
+    use nautilus_model::identifiers::TraderId;
+    use nautilus_trading::ImportableControllerConfig;
+    use rstest::rstest;
+
+    use super::LiveNodeBuilder;
+
+    #[rstest]
+    fn test_with_controller_sets_config_controller() {
+        let controller = ImportableControllerConfig {
+            controller_path: "module:Controller".to_string(),
+            config_path: "module:ControllerConfig".to_string(),
+            config: HashMap::new(),
+        };
+
+        let builder = LiveNodeBuilder::new(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .with_controller(controller);
+
+        assert!(builder.config.controller.is_some());
     }
 }

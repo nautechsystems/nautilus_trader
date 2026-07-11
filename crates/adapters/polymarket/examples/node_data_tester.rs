@@ -28,28 +28,26 @@
 //! - `POLYMARKET_API_SECRET`.
 //! - `POLYMARKET_PASSPHRASE`.
 
-use std::sync::Arc;
-
 use log::LevelFilter;
 use nautilus_common::{enums::Environment, logging::logger::LoggerConfig};
 use nautilus_live::node::LiveNode;
 use nautilus_model::identifiers::{InstrumentId, TraderId};
 use nautilus_polymarket::{
-    common::consts::POLYMARKET_CLIENT_ID, config::PolymarketDataClientConfig,
-    factories::PolymarketDataClientFactory, filters::EventSlugFilter,
+    common::consts::POLYMARKET_CLIENT_ID,
+    config::{PolymarketDataClientConfig, PolymarketInstrumentProviderConfig},
+    factories::PolymarketDataClientFactory,
 };
 use nautilus_testkit::testers::{DataTester, DataTesterConfig};
 
 const TRADER_ID: &str = "TESTER-001";
 const NODE_NAME: &str = "POLYMARKET-DATA-TESTER-001";
-const EVENT_SLUG: &str = "gta-vi-released-before-june-2026";
+const EVENT_SLUG: &str = "fed-decision-in-september-762";
 
-// GTA VI Released Before June 2026 (Yes/No)
-// https://polymarket.com/event/gta-vi-released-before-june-2026
-// These instrument IDs are discovered via the Gamma API; in practice you'd
-// use an InstrumentProvider to resolve slugs into IDs dynamically.
-const INSTRUMENT_ID_YES: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-8441400852834915183759801017793514978104486628517653995211751018945988243154.POLYMARKET";
-const INSTRUMENT_ID_NO: &str = "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-109289569086508934142323222102974769075074494425163878721602922903101062859033.POLYMARKET";
+// Fed Decision in September (Yes/No)
+// https://polymarket.com/event/fed-decision-in-september-762
+// These IDs select both outcomes; the provider loads their metadata at startup
+const INSTRUMENT_ID_YES: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-57748138085022719760345772310040703848567377822400132842014290209986511882046.POLYMARKET";
+const INSTRUMENT_ID_NO: &str = "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-28239418772633645184924651434956000849078365566842629564562475378531350731731.POLYMARKET";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -64,13 +62,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         InstrumentId::from(INSTRUMENT_ID_NO),
     ];
 
-    // Use EventSlugFilter so bootstrap loads only this event's instruments
-    // instead of walking the full Gamma catalog.
-    let event_slugs = vec![EVENT_SLUG.to_string()];
-    let data_filter = EventSlugFilter::from_slugs(event_slugs);
-
     let polymarket_config = PolymarketDataClientConfig {
-        filters: vec![Arc::new(data_filter)],
+        instrument_config: Some(PolymarketInstrumentProviderConfig {
+            event_slugs: Some(vec![EVENT_SLUG.to_string()]),
+            ..Default::default()
+        }),
         ..Default::default()
     };
     let client_factory = PolymarketDataClientFactory;

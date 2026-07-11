@@ -2,6 +2,9 @@
 #
 # From nautilus project's root folder:
 #
+# Pull base images with bounded retry:
+# bash scripts/ci/docker-pull-retry.sh --from-dockerfile .docker/DockerfileUbuntu
+#
 # Build the image:
 # docker build -f .docker/DockerfileUbuntu -t nautilus-dev .
 #
@@ -14,10 +17,10 @@
 # Remove the image
 # docker image rm nautilus-dev
 
-FROM rust:1.96.1-slim-bookworm@sha256:e18a79fc84dfcfc3ab5ba72290398a644c135c97eaa881447fddc354ee4701a3 AS rust-toolchain
+FROM public.ecr.aws/docker/library/rust:1.97.0-slim-bookworm@sha256:cfbb0e0ef7a73e736386bfa346f1cb0503c6d162969dc9426fb37834f3f64c25 AS rust-toolchain
 
 # Pin to specific digest for supply-chain security (ubuntu:22.04 as of 2026-04-30)
-FROM ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
+FROM public.ecr.aws/docker/library/ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV BUILD_MODE=release

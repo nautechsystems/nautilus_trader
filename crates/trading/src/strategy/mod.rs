@@ -2251,7 +2251,10 @@ mod tests {
         },
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
-            order::spec::OrderFilledSpec,
+            order::spec::{
+                OrderAcceptedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFilledSpec,
+                OrderRejectedSpec,
+            },
         },
         identifiers::{
             AccountId, ActorId, ClientOrderId, ComponentId, InstrumentId, OrderListId, PositionId,
@@ -2420,94 +2423,76 @@ mod tests {
     }
 
     fn make_filled(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Filled(OrderFilled {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::from("ACC-001"),
-            trade_id: TradeId::test_default(),
-            position_id: None,
-            order_side: OrderSide::Buy,
-            order_type: OrderType::Market,
-            last_qty: Quantity::default(),
-            last_px: Price::default(),
-            currency: Currency::from("USD"),
-            liquidity_side: LiquiditySide::Taker,
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            commission: None,
-            info: None,
-            causation_id: None,
-        })
+        OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .venue_order_id(VenueOrderId::test_default())
+                .account_id(AccountId::from("ACC-001"))
+                .trade_id(TradeId::test_default())
+                .last_qty(Quantity::default())
+                .last_px(Price::default())
+                .currency(Currency::from("USD"))
+                .liquidity_side(LiquiditySide::Taker)
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_canceled(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Canceled(OrderCanceled {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: None,
-            account_id: Some(AccountId::from("ACC-001")),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Canceled(
+            OrderCanceledSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_rejected(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Rejected(OrderRejected {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            account_id: AccountId::from("ACC-001"),
-            reason: "Test rejection".into(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            due_post_only: false,
-            causation_id: None,
-        })
+        OrderEventAny::Rejected(
+            OrderRejectedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .reason("Test rejection".into())
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_expired(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Expired(OrderExpired {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: None,
-            account_id: Some(AccountId::from("ACC-001")),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Expired(
+            OrderExpiredSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_accepted(client_order_id: ClientOrderId) -> OrderEventAny {
-        OrderEventAny::Accepted(OrderAccepted {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id,
-            venue_order_id: VenueOrderId::test_default(),
-            account_id: AccountId::from("ACC-001"),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        })
+        OrderEventAny::Accepted(
+            OrderAcceptedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .venue_order_id(VenueOrderId::test_default())
+                .account_id(AccountId::from("ACC-001"))
+                .event_id(UUID4::default())
+                .build(),
+        )
     }
 
     fn make_accepted_market_order(client_order_id: &str) -> OrderAny {
@@ -2769,20 +2754,7 @@ mod tests {
         register_strategy(&mut strategy);
         start_strategy(&mut strategy);
 
-        let event = OrderEventAny::Rejected(OrderRejected {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("TEST-001"),
-            instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
-            client_order_id: ClientOrderId::from("O-001"),
-            account_id: AccountId::from("ACC-001"),
-            reason: "Test rejection".into(),
-            event_id: UUID4::default(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            due_post_only: false,
-            causation_id: None,
-        });
+        let event = make_rejected(ClientOrderId::from("O-001"));
 
         strategy.handle_order_event(event);
 

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::QuoteTick, identifiers::InstrumentId};
 use pyo3::prelude::*;
 
@@ -72,8 +73,7 @@ impl SpreadAnalyzer {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
-        self.handle_quote(quote)
-            .map_err(nautilus_core::python::to_pyvalue_err)
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "reset")]

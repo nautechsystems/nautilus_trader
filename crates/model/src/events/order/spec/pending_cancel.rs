@@ -37,8 +37,7 @@ pub struct OrderPendingCancelSpec {
     pub instrument_id: InstrumentId,
     #[builder(default = ClientOrderId::test_default())]
     pub client_order_id: ClientOrderId,
-    #[builder(default = AccountId::test_default())]
-    pub account_id: AccountId,
+    pub account_id: Option<AccountId>,
     #[builder(default = test_uuid())]
     pub event_id: UUID4,
     #[builder(default = UnixNanos::default())]
@@ -60,7 +59,7 @@ impl<S: order_pending_cancel_spec_builder::IsComplete> OrderPendingCancelSpecBui
             spec.strategy_id,
             spec.instrument_id,
             spec.client_order_id,
-            Some(spec.account_id),
+            spec.account_id,
             spec.event_id,
             spec.ts_event,
             spec.ts_init,
@@ -86,7 +85,7 @@ mod tests {
         assert_eq!(event.strategy_id, StrategyId::test_default());
         assert_eq!(event.instrument_id, InstrumentId::test_default());
         assert_eq!(event.client_order_id, ClientOrderId::test_default());
-        assert_eq!(event.account_id, Some(AccountId::test_default()));
+        assert_eq!(event.account_id, None);
         assert_eq!(event.ts_event, UnixNanos::default());
         assert_eq!(event.ts_init, UnixNanos::default());
         assert!(!event.reconciliation);
@@ -96,13 +95,24 @@ mod tests {
     #[rstest]
     fn overrides_apply_through_constructor() {
         let event = OrderPendingCancelSpec::builder()
+            .account_id(AccountId::from("SIM-002"))
             .venue_order_id(VenueOrderId::from("V-1"))
             .reconciliation(true)
             .build();
 
+        assert_eq!(event.account_id, Some(AccountId::from("SIM-002")));
         assert_eq!(event.venue_order_id, Some(VenueOrderId::from("V-1")));
         assert!(event.reconciliation);
         assert_eq!(event.trader_id, TraderId::test_default());
+    }
+
+    #[rstest]
+    fn accepts_an_absent_account_id() {
+        let event = OrderPendingCancelSpec::builder()
+            .maybe_account_id(None)
+            .build();
+
+        assert_eq!(event.account_id, None);
     }
 
     #[rstest]

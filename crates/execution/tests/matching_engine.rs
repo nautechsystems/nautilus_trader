@@ -38,8 +38,8 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, InstrumentClose, OptionGreeks, QuoteTick, TradeTick,
-        stubs::OrderBookDeltaTestBuilder,
+        Bar, BarType, BookOrder, IndexPriceUpdate, InstrumentClose, OptionGreeks, QuoteTick,
+        TradeTick, stubs::OrderBookDeltaTestBuilder,
     },
     enums::{
         AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
@@ -12564,12 +12564,12 @@ fn option_contract(
     kind: OptionKind,
 ) -> OptionContract {
     let symbol = match kind {
-        OptionKind::Call => "AAPL211217C00150000",
-        OptionKind::Put => "AAPL211217P00150000",
+        OptionKind::Call => format!("{underlying}211217C00150000"),
+        OptionKind::Put => format!("{underlying}211217P00150000"),
     };
     OptionContract::new(
         InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
+        Symbol::from(symbol.as_str()),
         AssetClass::Equity,
         Some(Ustr::from(venue)),
         Ustr::from(underlying),
@@ -12634,8 +12634,8 @@ fn crypto_option_call_btc(venue: &str, expiration_ns: UnixNanos, strike: Price) 
 
 fn underlying_index(venue: &str) -> IndexInstrument {
     IndexInstrument::new(
-        InstrumentId::from(format!("AAPL.{venue}").as_str()),
-        Symbol::from("AAPL"),
+        InstrumentId::from(format!("SPX.{venue}").as_str()),
+        Symbol::from("SPX"),
         Currency::USD(),
         2,
         0,
@@ -12732,7 +12732,7 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -12748,12 +12748,9 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     // ITM call: spot 160 > strike 149 -> cash payout 11.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -13159,7 +13156,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Put,
@@ -13175,12 +13172,9 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     // ITM put: spot 140 < strike 149 -> cash payout 9.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("140.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -13636,7 +13630,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -13650,12 +13644,9 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
         .unwrap();
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -14089,12 +14080,9 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     // ITM call: spot 51000 > strike 50000 -> cash payout 1000.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("51000.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -14317,7 +14305,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -14332,12 +14320,9 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
 
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
