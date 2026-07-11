@@ -37,7 +37,7 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -450,6 +450,15 @@ impl PyDataActorInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -1011,6 +1020,11 @@ impl DataActor for PyDataActorInner {
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
     }
 
+    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        self.dispatch_on_book_depth(depth)
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+    }
+
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
             .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
@@ -1475,6 +1489,10 @@ impl PyDataActor {
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_book_depth")]
+    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
     fn py_on_book(&mut self, book: &OrderBook) {}
 
@@ -1570,6 +1588,33 @@ impl PyDataActor {
         let params = dict_to_params(py, params)?;
         let depth = depth.and_then(NonZeroUsize::new);
         DataActor::subscribe_book_deltas(
+            self.inner_mut(),
+            instrument_id,
+            book_type,
+            depth,
+            client_id,
+            managed,
+            params,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_subscribe_book_depth10(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<usize>,
+        client_id: Option<ClientId>,
+        managed: bool,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        let depth = depth.and_then(NonZeroUsize::new);
+        DataActor::subscribe_book_depth10(
             self.inner_mut(),
             instrument_id,
             book_type,
@@ -1819,6 +1864,20 @@ impl PyDataActor {
     ) -> PyResult<()> {
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_book_deltas(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_book_depth10(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 

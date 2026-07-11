@@ -55,7 +55,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -696,6 +696,15 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -1097,6 +1106,11 @@ impl DataActor for PyStrategyInner {
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.dispatch_on_book_deltas(deltas)
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
+    }
+
+    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        self.dispatch_on_book_depth(depth)
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
     }
 
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
@@ -2040,6 +2054,10 @@ impl PyStrategy {
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_book_depth")]
+    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
     fn py_on_book(&mut self, book: &OrderBook) {}
 
@@ -2282,6 +2300,36 @@ impl PyStrategy {
         })?;
         let depth = depth.and_then(NonZeroUsize::new);
         DataActor::subscribe_book_deltas(
+            self.inner_mut(),
+            instrument_id,
+            book_type,
+            depth,
+            client_id,
+            managed,
+            params_map,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, book_type, depth=None, client_id=None, managed=false, params=None))]
+    fn py_subscribe_book_depth10(
+        &mut self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: Option<usize>,
+        client_id: Option<ClientId>,
+        managed: bool,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        let depth = depth.and_then(NonZeroUsize::new);
+        DataActor::subscribe_book_depth10(
             self.inner_mut(),
             instrument_id,
             book_type,
@@ -2598,6 +2646,24 @@ impl PyStrategy {
             }
         })?;
         DataActor::unsubscribe_book_deltas(self.inner_mut(), instrument_id, client_id, params_map);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_book_depth10(
+        &mut self,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params_map = Python::attach(|py| -> PyResult<Option<Params>> {
+            match params {
+                Some(dict) => from_pydict(py, &dict),
+                None => Ok(None),
+            }
+        })?;
+        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params_map);
         Ok(())
     }
 
@@ -3172,10 +3238,13 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+            MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick,
+            TradeTick,
             close::InstrumentClose,
+            depth::DEPTH10_LEN,
             greeks::OptionGreekValues,
             option_chain::{OptionChainSlice, OptionGreeks},
+            order::BookOrder,
             stubs::stub_custom_data,
         },
         enums::{
@@ -3233,6 +3302,7 @@ class TrackingStrategy:
         "on_trade",
         "on_bar",
         "on_book_deltas",
+        "on_book_depth",
         "on_book",
         "on_mark_price",
         "on_index_price",
@@ -3507,6 +3577,21 @@ class IndicatorEventStrategy:
         let delta =
             OrderBookDelta::clear(instrument.id, 0, UnixNanos::default(), UnixNanos::default());
         OrderBookDeltas::new(instrument.id, vec![delta])
+    }
+
+    fn sample_book_depth10() -> OrderBookDepth10 {
+        let instrument = sample_instrument();
+        OrderBookDepth10::new(
+            instrument.id,
+            [BookOrder::default(); DEPTH10_LEN],
+            [BookOrder::default(); DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            [0; DEPTH10_LEN],
+            0,
+            0,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
     }
 
     fn sample_mark_price() -> MarkPriceUpdate {
@@ -4532,6 +4617,7 @@ class IndicatorEventStrategy:
     #[case("on_trade")]
     #[case("on_bar")]
     #[case("on_book_deltas")]
+    #[case("on_book_depth")]
     #[case("on_book")]
     #[case("on_mark_price")]
     #[case("on_index_price")]
@@ -4582,6 +4668,10 @@ class IndicatorEventStrategy:
                 "on_book_deltas" => {
                     let deltas = sample_book_deltas();
                     rust_strategy.inner_mut().on_book_deltas(&deltas)
+                }
+                "on_book_depth" => {
+                    let depth = sample_book_depth10();
+                    rust_strategy.inner_mut().on_book_depth(&depth)
                 }
                 "on_book" => {
                     let book = sample_book();

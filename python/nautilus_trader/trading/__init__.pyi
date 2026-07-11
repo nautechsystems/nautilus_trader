@@ -536,6 +536,7 @@ class Strategy:
     def on_trade(self, trade: model.TradeTick) -> None: ...
     def on_bar(self, bar: model.Bar) -> None: ...
     def on_book_deltas(self, deltas: model.OrderBookDeltas) -> None: ...
+    def on_book_depth(self, depth: model.OrderBookDepth10) -> None: ...
     def on_book(self, book: model.OrderBook) -> None: ...
     def on_mark_price(self, mark_price: model.MarkPriceUpdate) -> None: ...
     def on_index_price(self, index_price: model.IndexPriceUpdate) -> None: ...
@@ -600,6 +601,15 @@ class Strategy:
         params: dict | None = None,
     ) -> None: ...
     def subscribe_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        book_type: model.BookType,
+        depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        managed: bool = False,
+        params: dict | None = None,
+    ) -> None: ...
+    def subscribe_book_depth10(
         self,
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
@@ -699,6 +709,12 @@ class Strategy:
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def unsubscribe_book_depth10(
         self,
         instrument_id: model.InstrumentId,
         client_id: model.ClientId | None = None,
