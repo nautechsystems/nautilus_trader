@@ -888,11 +888,7 @@ impl DatabentoFeedHandler {
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
                     if let Some(Data::Delta(delta)) = &data1 {
                         initialized_books.insert(delta.instrument_id);
-                    } else {
-                        continue;
-                    }
 
-                    if let Some(Data::Delta(delta)) = &data1 {
                         log::trace!(
                             "Buffering delta: {} {buffering_start:?} flags={}",
                             delta.ts_event,
@@ -904,10 +900,36 @@ impl DatabentoFeedHandler {
                             msg.flags.raw(),
                             &mut buffering_start,
                             &mut buffered_deltas,
-                        )? {
+                        ) {
                             Some(deltas) => data1 = Some(Data::Deltas(deltas)),
                             None => continue,
                         }
+                    } else {
+                        // Records that decode to no delta (`Action::Fill`
+                        // attribution, `Action::None` status, or trades) may
+                        // still carry the match-event boundary: honor the raw
+                        // `F_LAST` flag or a buffered partial event is
+                        // stranded and merged into the next event (e.g. a
+                        // non-terminal 'C' followed by 'N' | F_LAST).
+                        let instrument_id = update_instrument_id_map(
+                            &record,
+                            &symbol_map,
+                            &self.publisher_venue_map,
+                            &self.symbol_venue_map,
+                            &mut instrument_id_map,
+                        )?;
+
+                        if let Some(deltas) = flush_mbo_event_boundary(
+                            instrument_id,
+                            msg.ts_recv.into(),
+                            msg.flags.raw(),
+                            &mut buffering_start,
+                            &mut buffered_deltas,
+                        ) {
+                            self.send_msg(DatabentoMessage::Data(Data::Deltas(deltas)));
+                        }
+
+                        continue;
                     }
                 }
 
@@ -1298,7 +1320,7 @@ fn process_mbo_delta(
     flags: u8,
     buffering_start: &mut Option<UnixNanos>,
     buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
-) -> anyhow::Result<Option<OrderBookDeltas_API>> {
+) -> Option<OrderBookDeltas_API> {
     let is_last = RecordFlag::F_LAST.matches(flags);
     let is_snapshot = RecordFlag::F_SNAPSHOT.matches(flags);
 
@@ -1309,37 +1331,58 @@ fn process_mbo_delta(
         && !buffered_deltas.contains_key(&delta.instrument_id)
     {
         let deltas = OrderBookDeltas::new(delta.instrument_id, vec![delta]);
-        return Ok(Some(OrderBookDeltas_API::new(deltas)));
+        return Some(OrderBookDeltas_API::new(deltas));
     }
 
     let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
     buffer.push(delta);
 
-    if !is_last {
-        return Ok(None);
+    if is_snapshot {
+        return None;
     }
 
-    if is_snapshot {
-        return Ok(None);
+    flush_mbo_event_boundary(
+        delta.instrument_id,
+        delta.ts_event,
+        flags,
+        buffering_start,
+        buffered_deltas,
+    )
+}
+
+/// Flushes the buffered deltas for `instrument_id` when `flags` marks a
+/// non-snapshot match-event boundary (`F_LAST`).
+///
+/// Databento documents that records which decode to no delta (`Action::Fill`,
+/// `Action::None`) may carry `F_LAST`, so the boundary must be processed
+/// independently of the decoded payload or a buffered partial event is
+/// stranded (follow-up to #4445).
+fn flush_mbo_event_boundary(
+    instrument_id: InstrumentId,
+    ts_event: UnixNanos,
+    flags: u8,
+    buffering_start: &mut Option<UnixNanos>,
+    buffered_deltas: &mut AHashMap<InstrumentId, Vec<OrderBookDelta>>,
+) -> Option<OrderBookDeltas_API> {
+    if !RecordFlag::F_LAST.matches(flags) || RecordFlag::F_SNAPSHOT.matches(flags) {
+        return None;
     }
 
     if let Some(start_ns) = *buffering_start {
-        if delta.ts_event <= start_ns {
-            return Ok(None);
+        if ts_event <= start_ns {
+            return None;
         }
         *buffering_start = None;
     }
 
-    let buffer = buffered_deltas
-        .remove(&delta.instrument_id)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Internal error: no buffered deltas for instrument {id}",
-                id = delta.instrument_id
-            )
-        })?;
-    let deltas = OrderBookDeltas::new(delta.instrument_id, buffer);
-    Ok(Some(OrderBookDeltas_API::new(deltas)))
+    let buffer = buffered_deltas.remove(&instrument_id)?;
+
+    if buffer.is_empty() {
+        return None;
+    }
+
+    let deltas = OrderBookDeltas::new(instrument_id, buffer);
+    Some(OrderBookDeltas_API::new(deltas))
 }
 
 #[cfg(test)]
@@ -1352,6 +1395,131 @@ mod tests {
     use time::macros::datetime;
 
     use super::*;
+
+    fn stub_delta(instrument_id: InstrumentId, ts: u64) -> OrderBookDelta {
+        use nautilus_model::{
+            data::BookOrder,
+            enums::{BookAction, OrderSide},
+            types::{Price, Quantity},
+        };
+
+        OrderBookDelta::new(
+            instrument_id,
+            BookAction::Delete,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("100.00"),
+                Quantity::from("5"),
+                42,
+            ),
+            0, // non-terminal: no F_LAST
+            1,
+            ts.into(),
+            ts.into(),
+        )
+    }
+
+    #[rstest]
+    fn test_boundary_flag_on_recordless_message_flushes_buffered_event() {
+        // A non-terminal 'C' delta buffers; the event terminates on an 'N'
+        // record carrying F_LAST which decodes to no delta — the raw flag
+        // must still flush the buffer (follow-up to #4445).
+        let instrument_id = InstrumentId::from("TEST.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+
+        let buffered_result = process_mbo_delta(
+            stub_delta(instrument_id, 1),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(buffered_result.is_none());
+
+        let flushed = flush_mbo_event_boundary(
+            instrument_id,
+            2.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(flushed.is_some());
+        assert!(buffered.is_empty());
+    }
+
+    #[rstest]
+    fn test_boundary_flag_with_empty_buffer_is_noop() {
+        // A pure-fill event ([T, F | F_LAST]) has no buffered deltas
+        let mut buffering_start = None;
+        let mut buffered: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
+
+        let flushed = flush_mbo_event_boundary(
+            InstrumentId::from("TEST.GLBX"),
+            2.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(flushed.is_none());
+    }
+
+    #[rstest]
+    fn test_boundary_flag_respects_replay_buffering_gate() {
+        let instrument_id = InstrumentId::from("TEST.GLBX");
+        let mut buffering_start = Some(UnixNanos::from(10));
+        let mut buffered = AHashMap::new();
+        let _ = process_mbo_delta(
+            stub_delta(instrument_id, 1),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        );
+
+        // Boundary inside the replay gate: keep buffering
+        let flushed = flush_mbo_event_boundary(
+            instrument_id,
+            5.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(flushed.is_none());
+        assert!(!buffered.is_empty());
+
+        // Boundary past the gate: flush and clear the gate
+        let flushed = flush_mbo_event_boundary(
+            instrument_id,
+            11.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(flushed.is_some());
+        assert!(buffering_start.is_none());
+    }
+
+    #[rstest]
+    fn test_boundary_snapshot_flag_never_flushes() {
+        let instrument_id = InstrumentId::from("TEST.GLBX");
+        let mut buffering_start = None;
+        let mut buffered = AHashMap::new();
+        let _ = process_mbo_delta(
+            stub_delta(instrument_id, 1),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        );
+
+        let flags = RecordFlag::F_LAST as u8 | RecordFlag::F_SNAPSHOT as u8;
+        let flushed = flush_mbo_event_boundary(
+            instrument_id,
+            2.into(),
+            flags,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        assert!(flushed.is_none());
+    }
 
     fn create_test_handler(reconnect_timeout_mins: Option<u64>) -> DatabentoFeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1529,7 +1697,7 @@ mod tests {
         let mut buffering_start = None;
         let mut buffered = AHashMap::new();
 
-        let result = process_mbo_delta(delta, 0, &mut buffering_start, &mut buffered).unwrap();
+        let result = process_mbo_delta(delta, 0, &mut buffering_start, &mut buffered);
 
         assert!(result.is_none());
         assert_eq!(buffered[&instrument_id].len(), 1);
@@ -1545,8 +1713,7 @@ mod tests {
         let mut buffering_start = None;
         let mut buffered = AHashMap::new();
 
-        let result =
-            process_mbo_delta(delta, delta.flags, &mut buffering_start, &mut buffered).unwrap();
+        let result = process_mbo_delta(delta, delta.flags, &mut buffering_start, &mut buffered);
 
         let emitted = result.expect("single F_LAST delta should emit");
         assert_eq!(emitted.instrument_id, instrument_id);
@@ -1568,21 +1735,19 @@ mod tests {
         let mut buffering_start = None;
         let mut buffered = AHashMap::new();
 
-        process_mbo_delta(
+        let _ = process_mbo_delta(
             test_delta(instrument_id, 1_000_000_000),
             0,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         let result = process_mbo_delta(
             test_delta(instrument_id, 2_000_000_000),
             128, // F_LAST
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().deltas.len(), 2);
@@ -1600,8 +1765,7 @@ mod tests {
             128 | 32, // F_LAST | F_SNAPSHOT
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         assert!(result.is_none());
         assert_eq!(buffered[&instrument_id].len(), 1);
@@ -1619,8 +1783,7 @@ mod tests {
             128, // F_LAST
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
         assert!(result.is_none());
 
         let result = process_mbo_delta(
@@ -1628,8 +1791,7 @@ mod tests {
             128,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
         assert!(result.is_none());
 
         // Delta past start: emits and clears buffering_start
@@ -1638,8 +1800,7 @@ mod tests {
             128,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
         assert!(result.is_some());
         assert!(buffering_start.is_none());
     }
@@ -1656,8 +1817,7 @@ mod tests {
                 0,
                 &mut buffering_start,
                 &mut buffered,
-            )
-            .unwrap();
+            );
         }
 
         let result = process_mbo_delta(
@@ -1665,8 +1825,7 @@ mod tests {
             128,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().deltas.len(), 6);
@@ -1684,15 +1843,13 @@ mod tests {
             0,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
         process_mbo_delta(
             test_delta(id_b, 1_000_000_000),
             0,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         // F_LAST for A: only A's deltas emitted, B remains
         let result = process_mbo_delta(
@@ -1700,8 +1857,7 @@ mod tests {
             128,
             &mut buffering_start,
             &mut buffered,
-        )
-        .unwrap();
+        );
 
         assert!(result.is_some());
         assert_eq!(result.unwrap().instrument_id, id_a);
@@ -1731,7 +1887,7 @@ mod tests {
                         0, // No F_LAST
                         &mut buffering_start,
                         &mut buffered,
-                    ).unwrap();
+                    );
                     prop_assert!(result.is_none());
                 }
 
@@ -1740,7 +1896,7 @@ mod tests {
                     128, // F_LAST
                     &mut buffering_start,
                     &mut buffered,
-                ).unwrap();
+                );
 
                 prop_assert!(result.is_some());
                 let emitted = result.unwrap();
@@ -1762,7 +1918,7 @@ mod tests {
                         128 | 32, // F_LAST | F_SNAPSHOT
                         &mut buffering_start,
                         &mut buffered,
-                    ).unwrap();
+                    );
                     prop_assert!(result.is_none());
                 }
 
@@ -1786,7 +1942,7 @@ mod tests {
                         128, // F_LAST
                         &mut buffering_start,
                         &mut buffered,
-                    ).unwrap();
+                    );
                     prop_assert!(result.is_none());
                 }
 
@@ -1795,7 +1951,7 @@ mod tests {
                     128,
                     &mut buffering_start,
                     &mut buffered,
-                ).unwrap();
+                );
 
                 prop_assert!(result.is_some());
                 prop_assert!(buffering_start.is_none());
