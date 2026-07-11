@@ -1118,6 +1118,17 @@ impl BinanceFuturesOrder {
                 )
             }
         };
+        let avg_px = if filled_qty > Decimal::ZERO {
+            self.avg_price
+                .as_deref()
+                .filter(|price| !price.is_empty())
+                .map(|price| parse_positive_price_at_precision(price, price_precision, "avg_price"))
+                .transpose()?
+                .flatten()
+                .map(|price| price.as_decimal())
+        } else {
+            None
+        };
 
         let mut report = OrderStatusReport::new(
             account_id,
@@ -1141,6 +1152,8 @@ impl BinanceFuturesOrder {
         if let Some(price) = price {
             report = report.with_price(price);
         }
+
+        report.avg_px = avg_px;
 
         Ok(report)
     }
@@ -2125,6 +2138,58 @@ mod tests {
             .unwrap();
 
         assert_eq!(report.price, None);
+    }
+
+    #[rstest]
+    fn test_order_to_report_sets_avg_px_for_filled_market_order() {
+        let mut order = order_with_price("0");
+        order.status = BinanceOrderStatus::Filled;
+        order.executed_qty = "0.001".to_string();
+        order.cum_quote = "50.00".to_string();
+        order.avg_price = Some("50000.00".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
+            .unwrap();
+
+        assert_eq!(report.price, None);
+        assert_eq!(
+            report.avg_px,
+            Some(Decimal::from_str_exact("50000.00").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_order_to_report_omits_avg_px_without_fills() {
+        let mut order = order_with_price("0");
+        order.avg_price = Some("50000.00".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init)
+            .unwrap();
+
+        assert_eq!(report.avg_px, None);
+    }
+
+    #[rstest]
+    fn test_order_to_report_rejects_invalid_avg_px_for_filled_order() {
+        let mut order = order_with_price("0");
+        order.executed_qty = "0.001".to_string();
+        order.avg_price = Some("not-a-number".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let result = order.to_order_status_report(account_id, instrument_id, 2, 3, false, ts_init);
+
+        let error = result.unwrap_err().to_string();
+        assert!(error.contains("avg_price"));
     }
 
     #[rstest]
