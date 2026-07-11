@@ -962,22 +962,95 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # Get directory for file operations
         directory = self._make_path(data_cls, identifier)
-        existing_files = sorted(self.fs.glob(os.path.join(directory, "*.parquet")))
+        globbed_files = sorted(self.fs.glob(os.path.join(directory, "*.parquet")))
 
-        # Track files to remove and maintain existing_files list
-        existing_files = list(existing_files)  # Make it mutable
+        # Dict insertion order preserves glob order while allowing skipped targets to be removed
+        # without rescanning every remaining file.
+        existing_files = dict.fromkeys(globbed_files)
+        canonical_files = {self.fs._strip_protocol(file): file for file in globbed_files}
+        file_intervals = {
+            file: interval
+            for file in globbed_files
+            if (interval := _parse_filename_timestamps(file)) is not None
+        }
+        interval_components = []
+        for file, interval in sorted(file_intervals.items(), key=lambda item: item[1]):
+            if interval_components and interval[0] <= interval_components[-1][1]:
+                component_start, component_end, component_files = interval_components[-1]
+                component_files.append(file)
+                interval_components[-1] = (
+                    component_start,
+                    max(component_end, interval[1]),
+                    component_files,
+                )
+            else:
+                interval_components.append((interval[0], interval[1], [file]))
+
+        # Overlapping intervals can be left behind by an interrupted consolidation. Treat each
+        # connected overlap component as read-only for this pass so discovering an existing
+        # target cannot happen after an earlier period has already been rewritten.
+        protected_components = [
+            (component_start, component_end)
+            for component_start, component_end, component_files in interval_components
+            if len(component_files) > 1
+        ]
+        protected_files = {
+            file
+            for _, _, component_files in interval_components
+            if len(component_files) > 1
+            for file in component_files
+        }
+
+        def exclude_existing_target(target_filename: str) -> None:
+            canonical_target = self.fs._strip_protocol(target_filename)
+            target_file = canonical_files.get(canonical_target)
+            if target_file is not None:
+                existing_files.pop(target_file, None)
 
         # Phase 2: Execute queries, write, and delete
         file_start_ns = None  # Track contiguity across periods
 
         for query_info in queries_to_execute:
+            query_is_protected = any(
+                component_start <= query_info["query_end"]
+                and component_end >= query_info["query_start"]
+                for component_start, component_end in protected_components
+            )
+            if query_is_protected:
+                # Skipping a query means none of its input files were rewritten. Protect every
+                # component intersecting that query, and let extended components propagate the
+                # read-only range to later queries.
+                for component_start, component_end, component_files in interval_components:
+                    if component_start > query_info["query_end"]:
+                        break
+                    if component_end >= query_info["query_start"]:
+                        component_range = (component_start, component_end)
+                        if component_range not in protected_components:
+                            protected_components.append(component_range)
+                        protected_files.update(component_files)
+                continue
+
+            # Boundary target names are known before loading data. Check them here so every
+            # existing target is protected without repeatedly querying the remaining files.
+            if query_info["use_period_boundaries"]:
+                target_filename = os.path.join(
+                    directory,
+                    _timestamps_to_filename(
+                        query_info["query_start"],
+                        query_info["query_end"],
+                    ),
+                )
+                if self.fs.exists(target_filename):
+                    exclude_existing_target(target_filename)
+                    continue
+
             # Query data for this period using existing files
             period_data = self.query(
                 data_cls=data_cls,
                 identifiers=[identifier] if identifier is not None else None,
                 start=query_info["query_start"],
                 end=query_info["query_end"],
-                files=existing_files,
+                files=list(existing_files),
                 optimize_file_loading=False,
             )
 
@@ -1009,7 +1082,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
             if self.fs.exists(target_filename):
-                # Skip if target file already exists
+                # Keep a skipped target out of later cleanup sweeps. Filesystems may return a
+                # protocol-stripped path from glob.
+                exclude_existing_target(target_filename)
+                del period_data
                 continue
 
             # Write consolidated data for this period
@@ -1025,14 +1101,14 @@ class ParquetDataCatalog(BaseDataCatalog):
             del period_data
 
             # Identify files that are completely covered by this period
-            for file in existing_files[:]:  # Use slice copy to avoid modification during iteration
-                interval = _parse_filename_timestamps(file)
+            for file in list(existing_files):
+                interval = file_intervals.get(file)
 
-                if interval and (
+                if file not in protected_files and interval and (
                     interval[1] <= query_info["query_end"]
                     and interval[0] >= queries_to_execute[0]["query_start"]
                 ):
-                    existing_files.remove(file)
+                    existing_files.pop(file)
                     self.fs.rm(file)
 
     def _prepare_consolidation_queries(  # noqa: C901
@@ -1054,7 +1130,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         2. Groups intervals into contiguous groups
         3. Identifies and creates split operations for data preservation
         4. Generates period-based consolidation queries
-        5. Checks for existing target files
+        5. Leaves existing-target checks to execution so skipped files can be protected
 
         Parameters
         ----------
@@ -1154,8 +1230,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                     },
                 )
 
-        directory = self._make_path(data_cls, identifier)
-
         # Generate period-based consolidation queries for each contiguous group
         for group in contiguous_groups:
             # Get overall time range for this contiguous group
@@ -1193,18 +1267,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                 # Adjust end to not exceed the group end timestamp
                 if current_end_ns > group_end_ts:
                     current_end_ns = group_end_ts
-
-                # Create target filename to check if it already exists (only for period boundaries)
-                if ensure_contiguous_files:
-                    target_filename = os.path.join(
-                        directory,
-                        _timestamps_to_filename(current_start_ns, current_end_ns),
-                    )
-
-                    # Skip if target file already exists
-                    if self.fs.exists(target_filename):
-                        current_start_ns += period_in_ns
-                        continue
 
                 # Add query to execution list
                 queries_to_execute.append(
