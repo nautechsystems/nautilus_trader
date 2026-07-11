@@ -241,6 +241,8 @@ impl From<std::io::Error> for NautilusError {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
     use super::*;
 
     #[test]
