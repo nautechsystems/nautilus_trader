@@ -21,8 +21,8 @@ use nautilus_model::{
 
 /// Represents a `SetFeeProtocol` event that changes a pool's protocol-fee configuration.
 ///
-/// Only the new per-token denominators are retained; the previous values carried by the event are
-/// not needed to rebuild pool state.
+/// Only the new per-token values are retained; the previous values carried by the event are not
+/// needed to rebuild pool state.
 #[derive(Debug, Clone)]
 pub struct FeeProtocolUpdateEvent {
     /// The decentralized exchange where the event happened.
@@ -37,10 +37,10 @@ pub struct FeeProtocolUpdateEvent {
     pub transaction_index: u32,
     /// The position of this event log within the transaction.
     pub log_index: u32,
-    /// The new protocol-fee denominator for token0.
-    pub fee_protocol0_new: u8,
-    /// The new protocol-fee denominator for token1.
-    pub fee_protocol1_new: u8,
+    /// The new token0 protocol-fee value.
+    pub fee_protocol0_new: u32,
+    /// The new token1 protocol-fee value.
+    pub fee_protocol1_new: u32,
 }
 
 impl FeeProtocolUpdateEvent {
@@ -54,8 +54,8 @@ impl FeeProtocolUpdateEvent {
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        fee_protocol0_new: u8,
-        fee_protocol1_new: u8,
+        fee_protocol0_new: u32,
+        fee_protocol1_new: u32,
     ) -> Self {
         Self {
             dex,

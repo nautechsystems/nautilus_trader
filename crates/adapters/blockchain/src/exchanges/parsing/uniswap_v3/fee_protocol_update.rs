@@ -91,8 +91,8 @@ pub fn parse_fee_protocol_update_event_hypersync(
             extract_transaction_hash(log)?,
             extract_transaction_index(log)?,
             extract_log_index(log)?,
-            decoded.fee_protocol0_new,
-            decoded.fee_protocol1_new,
+            u32::from(decoded.fee_protocol0_new),
+            u32::from(decoded.fee_protocol1_new),
         ))
     } else {
         anyhow::bail!("Missing data in SetFeeProtocol event log");
@@ -135,8 +135,8 @@ pub fn parse_fee_protocol_update_event_rpc(
         rpc_helpers::extract_transaction_hash(log)?,
         rpc_helpers::extract_transaction_index(log)?,
         rpc_helpers::extract_log_index(log)?,
-        decoded.fee_protocol0_new,
-        decoded.fee_protocol1_new,
+        u32::from(decoded.fee_protocol0_new),
+        u32::from(decoded.fee_protocol1_new),
     ))
 }
 

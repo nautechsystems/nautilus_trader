@@ -125,7 +125,7 @@ def test_position_to_from_dict():
                 "commission": "2.00 USD",
                 "currency": "USD",
                 "event_id": "2d89666b-1a1e-4a75-b193-4eb3b454c758",
-                "info": {},
+                "info": None,
                 "instrument_id": "AUD/USD.SIM",
                 "last_px": "1.00001",
                 "last_qty": "100000",

@@ -196,8 +196,8 @@ pub fn exchange_weight(action: &ExchangeAction) -> u32 {
 pub fn exec_action_weight(action: &HyperliquidExecAction) -> u32 {
     let batch_size = match action {
         HyperliquidExecAction::Order { orders, .. } => orders.len(),
-        HyperliquidExecAction::Cancel { cancels } => cancels.len(),
-        HyperliquidExecAction::CancelByCloid { cancels } => cancels.len(),
+        HyperliquidExecAction::Cancel { cancels, .. } => cancels.len(),
+        HyperliquidExecAction::CancelByCloid { cancels, .. } => cancels.len(),
         HyperliquidExecAction::Modify { .. } => 1,
         HyperliquidExecAction::BatchModify { modifies } => modifies.len(),
         HyperliquidExecAction::UpdateLeverage { .. }
@@ -321,6 +321,7 @@ mod tests {
                     oid: i as u64,
                 })
                 .collect(),
+            fast: None,
         };
 
         assert_eq!(exec_action_weight(&action), expected_weight);
@@ -338,6 +339,7 @@ mod tests {
     ) {
         let action = HyperliquidExecAction::CancelByCloid {
             cancels: (0..array_len).map(|_| exec_cancel_by_cloid()).collect(),
+            fast: None,
         };
 
         assert_eq!(exec_action_weight(&action), expected_weight);
@@ -387,7 +389,10 @@ mod tests {
 
         let action = ExchangeAction {
             action_type: ExchangeActionType::Cancel,
-            params: ExchangeActionParams::Cancel(CancelParams { cancels }),
+            params: ExchangeActionParams::Cancel(CancelParams {
+                cancels,
+                fast: None,
+            }),
         };
         assert_eq!(exchange_weight(&action), 2);
     }

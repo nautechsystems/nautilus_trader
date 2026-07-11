@@ -25,8 +25,9 @@ use crate::{
 
 /// Represents a protocol-fee configuration change in a Uniswap V3-style pool.
 ///
-/// Emitted by `SetFeeProtocol`, this carries the new protocol-fee denominators for each token.
-/// Only the new values are kept; the previous values in the event are not needed to rebuild state.
+/// Emitted by `SetFeeProtocol`, this carries the new protocol-fee values for each token. Uniswap
+/// V3 uses 4-bit denominators, while PancakeSwap V3 uses `uint32` basis-point shares. Only the new
+/// values are kept; the previous values in the event are not needed to rebuild state.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -53,10 +54,10 @@ pub struct PoolFeeProtocolUpdate {
     pub transaction_index: u32,
     /// The index position of the protocol-fee change event log within the transaction.
     pub log_index: u32,
-    /// The new protocol-fee denominator for token0 (lower nibble of the packed `fee_protocol`).
-    pub fee_protocol0_new: u8,
-    /// The new protocol-fee denominator for token1 (upper nibble of the packed `fee_protocol`).
-    pub fee_protocol1_new: u8,
+    /// The new token0 protocol-fee value.
+    pub fee_protocol0_new: u32,
+    /// The new token1 protocol-fee value.
+    pub fee_protocol1_new: u32,
     /// UNIX timestamp (nanoseconds) when the protocol-fee change event occurred.
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
@@ -76,8 +77,8 @@ impl PoolFeeProtocolUpdate {
         transaction_hash: String,
         transaction_index: u32,
         log_index: u32,
-        fee_protocol0_new: u8,
-        fee_protocol1_new: u8,
+        fee_protocol0_new: u32,
+        fee_protocol1_new: u32,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
@@ -97,12 +98,17 @@ impl PoolFeeProtocolUpdate {
         }
     }
 
-    /// Returns the new protocol-fee setting packed into a single byte, matching `slot0.feeProtocol`.
+    /// Returns the new Uniswap V3 protocol-fee setting packed into a single byte.
     ///
-    /// The token0 denominator occupies the lower four bits and token1 the upper four bits.
+    /// The token0 denominator occupies the lower four bits and token1 the upper four bits. Returns
+    /// `None` when either value does not fit the Uniswap V3 nibble layout.
     #[must_use]
-    pub const fn packed(&self) -> u8 {
-        self.fee_protocol0_new | (self.fee_protocol1_new << 4)
+    pub fn uniswap_v3_packed(&self) -> Option<u8> {
+        if self.fee_protocol0_new < 16 && self.fee_protocol1_new < 16 {
+            Some((self.fee_protocol0_new | (self.fee_protocol1_new << 4)) as u8)
+        } else {
+            None
+        }
     }
 }
 

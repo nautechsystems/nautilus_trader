@@ -6,7 +6,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 UV_VERSION="$(bash "${REPO_ROOT}/scripts/uv-version.sh")"
 RUST_VERSION="$(bash "${REPO_ROOT}/scripts/rust-toolchain.sh")"
 EXPECTED_UV_PREFIX="ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:"
-EXPECTED_RUST_PREFIX="rust:${RUST_VERSION}-slim-bookworm@sha256:"
+EXPECTED_RUST_PREFIX="public.ecr.aws/docker/library/rust:${RUST_VERSION}-slim-bookworm@sha256:"
+EXPECTED_UBUNTU_PREFIX="public.ecr.aws/docker/library/ubuntu@sha256:"
 
 status=0
 
@@ -55,10 +56,10 @@ check_python_alignment() {
   local pyproject="pyproject.toml"
   local base_ref py_version minor digest requires lower upper ref found
 
-  base_ref="$(grep -Eo 'python:3\.[0-9]+-slim@sha256:[0-9a-f]+' "${REPO_ROOT}/${nautilus_df}" | head -n1 || true)"
+  base_ref="$(grep -Eo 'public\.ecr\.aws/docker/library/python:3\.[0-9]+-slim@sha256:[0-9a-f]+' "${REPO_ROOT}/${nautilus_df}" | head -n1 || true)"
   if [[ -z "$base_ref" ]]; then
     echo "Error: ${nautilus_df} has no version-tagged, digest-pinned python base image" >&2
-    echo "       Expected: FROM python:<major>.<minor>-slim@sha256:<digest>" >&2
+    echo "       Expected: FROM public.ecr.aws/docker/library/python:<major>.<minor>-slim@sha256:<digest>" >&2
     status=1
     return
   fi
@@ -123,9 +124,16 @@ check_refs \
   "Rust ${RUST_VERSION}" \
   "rust-toolchain.toml [toolchain].version" \
   "$EXPECTED_RUST_PREFIX" \
-  'rust:[^[:space:]\\]+@sha256:[0-9a-f]+' \
+  'public\.ecr\.aws/docker/library/rust:[^[:space:]\\]+@sha256:[0-9a-f]+' \
   ".docker/DockerfileUbuntu" \
   ".docker/nautilus_trader.dockerfile"
+
+check_refs \
+  "Ubuntu from AWS Public ECR" \
+  "AWS Public ECR" \
+  "$EXPECTED_UBUNTU_PREFIX" \
+  'public\.ecr\.aws/docker/library/ubuntu@sha256:[0-9a-f]+' \
+  ".docker/DockerfileUbuntu"
 
 check_python_alignment
 

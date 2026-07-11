@@ -87,8 +87,9 @@ impl Indicator for AdaptiveMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -282,7 +283,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, stub_quote: QuoteTick) {
-        indicator_ama_10.handle_quote(&stub_quote);
+        indicator_ama_10.handle_quote(&stub_quote).unwrap();
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1501.0);

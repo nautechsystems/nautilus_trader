@@ -77,19 +77,18 @@ impl PyParquetDataCatalog {
     /// - `compression`: Optional compression type (0=UNCOMPRESSED, 1=SNAPPY, 2=GZIP, 3=LZO, 4=BROTLI, 5=LZ4, 6=ZSTD)
     /// - `max_row_group_size`: Optional maximum row group size (default: 5000)
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the underlying [`ParquetDataCatalog`] cannot be created.
+    /// Returns an error if the underlying [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
-    #[must_use]
     pub fn new(
         base_path: &str,
         storage_options: Option<HashMap<String, String>>,
         batch_size: Option<usize>,
         compression: Option<u8>,
         max_row_group_size: Option<usize>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let compression = compression.map(|c| match c {
             0 => parquet::basic::Compression::UNCOMPRESSED,
             // For GZIP, LZO, BROTLI, LZ4, ZSTD we need to use the default level
@@ -114,7 +113,7 @@ impl PyParquetDataCatalog {
         // Convert HashMap to AHashMap for internal use
         let storage_options = storage_options.map(|m| m.into_iter().collect());
 
-        Self {
+        Ok(Self {
             inner: ParquetDataCatalog::from_uri(
                 base_path,
                 storage_options,
@@ -122,8 +121,8 @@ impl PyParquetDataCatalog {
                 compression,
                 max_row_group_size,
             )
-            .expect("Failed to create ParquetDataCatalog"),
-        }
+            .map_err(|e| PyIOError::new_err(format!("Failed to create ParquetDataCatalog: {e}")))?,
+        })
     }
 
     // TODO: Cannot pass mixed data across pyo3 as a single type

@@ -195,7 +195,7 @@ impl OrderManager {
             OrderEventAny::Canceled(event) => self.handle_order_canceled(*event),
             OrderEventAny::Expired(event) => self.handle_order_expired(*event),
             OrderEventAny::Updated(event) => self.handle_order_updated(*event),
-            OrderEventAny::Filled(event) => self.handle_order_filled(*event),
+            OrderEventAny::Filled(event) => self.handle_order_filled(event),
             _ => Vec::new(),
         }
     }
@@ -287,7 +287,7 @@ impl OrderManager {
         Vec::new()
     }
 
-    pub fn handle_order_filled(&mut self, filled: OrderFilled) -> Vec<OrderManagerAction> {
+    pub fn handle_order_filled(&mut self, filled: &OrderFilled) -> Vec<OrderManagerAction> {
         let order = if let Some(order) = self
             .cache
             .borrow()
@@ -593,7 +593,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{ContingencyType, OrderSide, OrderType, TriggerType},
-        events::{OrderAccepted, OrderSubmitted},
+        events::order::spec::{OrderAcceptedSpec, OrderSubmittedSpec},
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
             VenueOrderId,
@@ -610,30 +610,25 @@ mod tests {
     /// Previously, unhandled events would hit a todo!() panic.
     #[rstest]
     fn test_handle_event_unhandled_events_are_noop() {
-        let submitted = OrderEventAny::Submitted(OrderSubmitted {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("STRATEGY-001"),
-            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
-            client_order_id: ClientOrderId::from("O-001"),
-            account_id: AccountId::from("ACCOUNT-001"),
-            event_id: UUID4::new(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        });
-        let accepted = OrderEventAny::Accepted(OrderAccepted {
-            trader_id: TraderId::from("TRADER-001"),
-            strategy_id: StrategyId::from("STRATEGY-001"),
-            instrument_id: InstrumentId::from("BTC-USDT.OKX"),
-            client_order_id: ClientOrderId::from("O-001"),
-            venue_order_id: VenueOrderId::from("V-001"),
-            account_id: AccountId::from("ACCOUNT-001"),
-            event_id: UUID4::new(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            reconciliation: false,
-            causation_id: None,
-        });
+        let submitted = OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("STRATEGY-001"))
+                .instrument_id(InstrumentId::from("BTC-USDT.OKX"))
+                .client_order_id(ClientOrderId::from("O-001"))
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .build(),
+        );
+        let accepted = OrderEventAny::Accepted(
+            OrderAcceptedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("STRATEGY-001"))
+                .instrument_id(InstrumentId::from("BTC-USDT.OKX"))
+                .client_order_id(ClientOrderId::from("O-001"))
+                .venue_order_id(VenueOrderId::from("V-001"))
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .build(),
+        );
 
         match submitted {
             OrderEventAny::Rejected(_) => panic!("Should not match"),
@@ -871,17 +866,15 @@ mod tests {
         let (clock, cache) = create_test_components();
         let mut manager = OrderManager::new(clock, cache, true);
         let order = create_test_stop_order();
-        let event = OrderEventAny::Submitted(OrderSubmitted {
-            trader_id: order.trader_id(),
-            strategy_id: order.strategy_id(),
-            instrument_id: order.instrument_id(),
-            client_order_id: order.client_order_id(),
-            account_id: AccountId::from("ACCOUNT-001"),
-            event_id: UUID4::new(),
-            ts_event: UnixNanos::default(),
-            ts_init: UnixNanos::default(),
-            causation_id: None,
-        });
+        let event = OrderEventAny::Submitted(
+            OrderSubmittedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(AccountId::from("ACCOUNT-001"))
+                .build(),
+        );
 
         let actions = manager.handle_event(&event);
 
@@ -938,7 +931,7 @@ mod tests {
             event => panic!("expected OrderFilled, was {event:?}"),
         };
 
-        let actions = manager.handle_order_filled(filled);
+        let actions = manager.handle_order_filled(&filled);
 
         assert!(matches!(
             actions.as_slice(),
@@ -1056,7 +1049,7 @@ mod tests {
             event => panic!("expected OrderFilled, was {event:?}"),
         };
 
-        let actions = manager.handle_order_filled(filled);
+        let actions = manager.handle_order_filled(&filled);
 
         assert_eq!(actions.len(), 2);
         assert!(matches!(

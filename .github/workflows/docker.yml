@@ -39,12 +39,14 @@ jobs:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
+            public.ecr.aws:443
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
@@ -76,14 +78,25 @@ jobs:
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
 
+      - name: Pull local registry with retry
+        run: bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/registry:2
+
       - name: Start local registry
-        run: docker run -d -p 5000:5000 --name registry registry:2
+        run: docker run -d -p 5000:5000 --name registry public.ecr.aws/docker/library/registry:2
+
+      - name: Pull BuildKit with retry
+        run: bash scripts/ci/docker-pull-retry.sh moby/buildkit:buildx-stable-1
 
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
         with:
           driver-opts: network=host
+
+      - name: Preload Dockerfile images with retry
+        run: >-
+          bash scripts/ci/preload-buildx-base-image-retry.sh
+          "${{ matrix.platform }}" --from-dockerfile .docker/nautilus_trader.dockerfile
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
@@ -106,6 +119,7 @@ jobs:
           context: .
           file: .docker/nautilus_trader.dockerfile
           platforms: ${{ matrix.platform }}
+          pull: false
           push: true
           tags: localhost:5000/nautilus_trader:test-${{ steps.platform-slug.outputs.slug }}
           cache-from: type=gha,scope=nautilus_trader-test-${{ steps.platform-slug.outputs.slug }}
@@ -124,6 +138,7 @@ jobs:
           context: .
           file: .docker/jupyterlab.dockerfile
           platforms: ${{ matrix.platform }}
+          pull: false
           push: true
           tags: localhost:5000/jupyterlab:test-${{ steps.platform-slug.outputs.slug }}
           cache-from: type=gha,scope=jupyterlab-test-${{ steps.platform-slug.outputs.slug }}
@@ -157,12 +172,14 @@ jobs:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
+            public.ecr.aws:443
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
@@ -194,9 +211,17 @@ jobs:
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
 
+      - name: Pull BuildKit with retry
+        run: bash scripts/ci/docker-pull-retry.sh moby/buildkit:buildx-stable-1
+
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Preload Dockerfile images with retry
+        run: >-
+          bash scripts/ci/preload-buildx-base-image-retry.sh
+          "${{ matrix.platform }}" --from-dockerfile .docker/nautilus_trader.dockerfile
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
@@ -234,6 +259,7 @@ jobs:
           context: .
           file: .docker/nautilus_trader.dockerfile
           platforms: ${{ matrix.platform }}
+          pull: false
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=nautilus_trader-${{ steps.platform-slug.outputs.slug }}
@@ -270,6 +296,7 @@ jobs:
       - uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
         with:
           egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          # Docker Buildx still pulls its Moby BuildKit image from Docker Hub.
           allowed-endpoints: >-
             ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
             ${{ vars.CI_ALLOWED_ENDPOINTS }}
@@ -396,6 +423,7 @@ jobs:
             registry-1.docker.io:443
             auth.docker.io:443
             production.cloudflare.docker.com:443
+            public.ecr.aws:443
             ghcr.io:443
             deb.debian.org:443
             security.debian.org:443
@@ -427,9 +455,26 @@ jobs:
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
 
+      - name: Pull BuildKit with retry
+        run: bash scripts/ci/docker-pull-retry.sh moby/buildkit:buildx-stable-1
+
       - name: Set up Docker Buildx
         # https://github.com/docker/setup-buildx-action
         uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4.1.0
+
+      - name: Preload JupyterLab base images with retry
+        env:
+          BASE_IMAGE_REPOSITORY: ghcr.io/${{ github.repository_owner }}/nautilus_trader
+          BASE_IMAGE_DIGEST: ${{ needs.merge-nautilus-trader.outputs.digest_hex }}
+        run: >-
+          bash scripts/ci/preload-buildx-base-image-retry.sh
+          "${{ matrix.platform }}" --image
+          "${BASE_IMAGE_REPOSITORY}@sha256:${BASE_IMAGE_DIGEST}"
+
+      - name: Preload JupyterLab copy images with retry
+        run: >-
+          bash scripts/ci/preload-buildx-base-image-retry.sh
+          "${{ matrix.platform }}" --from-dockerfile .docker/jupyterlab.dockerfile
 
       - name: Login to GHCR
         # https://github.com/docker/login-action
@@ -476,6 +521,7 @@ jobs:
           context: .
           file: .docker/jupyterlab.dockerfile
           platforms: ${{ matrix.platform }}
+          pull: false
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}
           cache-to: type=gha,mode=max,scope=jupyterlab-${{ steps.platform-slug.outputs.slug }}

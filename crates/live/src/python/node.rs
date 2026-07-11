@@ -48,7 +48,7 @@ use nautilus_trading::examples::{
     },
 };
 use nautilus_trading::{
-    ImportableExecAlgorithmConfig, ImportableStrategyConfig,
+    ImportableControllerConfig, ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     python::{
         algorithm::PyExecutionAlgorithm,
         strategy::{PyStrategy, PyStrategyInner},
@@ -96,6 +96,10 @@ impl LiveNode {
     }
 
     /// Creates a new `LiveNodeBuilder` for fluent configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the environment is invalid for live trading.
     #[staticmethod]
     #[pyo3(name = "builder")]
     fn py_builder(
@@ -777,6 +781,10 @@ impl LiveNode {
     }
 
     /// Rejects plug-in registration when host support is not linked.
+    ///
+    /// # Errors
+    ///
+    /// Always returns an error explaining that host-side support is required.
     #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
     fn py_add_plugin(
         &mut self,
@@ -1097,6 +1105,19 @@ impl LiveNodeBuilderPy {
         let mut inner_ref = self.inner.borrow_mut();
         if let Some(builder) = inner_ref.take() {
             *inner_ref = Some(builder.with_reconciliation(reconciliation));
+            Ok(Self {
+                inner: self.inner.clone(),
+            })
+        } else {
+            Err(to_pyruntime_err("Builder already consumed"))
+        }
+    }
+
+    #[pyo3(name = "with_controller")]
+    fn py_with_controller(&self, controller: ImportableControllerConfig) -> PyResult<Self> {
+        let mut inner_ref = self.inner.borrow_mut();
+        if let Some(builder) = inner_ref.take() {
+            *inner_ref = Some(builder.with_controller(controller));
             Ok(Self {
                 inner: self.inner.clone(),
             })
@@ -1537,25 +1558,33 @@ mod tests {
 
     use async_trait::async_trait;
     use nautilus_common::{
+        actor::DataActor,
         cache::CacheView,
         clients::DataClient,
         clock::Clock,
         enums::Environment,
         factories::{ClientConfig, DataClientFactory},
-        live::runner::get_data_event_sender,
+        live::{runner::get_data_event_sender, runtime::get_runtime},
         messages::{
             DataEvent, DataResponse,
             data::{BarsResponse, RequestBars},
+            execution::{CancelAllOrders, TradingCommand},
         },
         msgbus::get_message_bus,
+        runner::get_trading_cmd_sender,
     };
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Bar, BarType},
+        enums::OrderSide,
         identifiers::{ClientId, InstrumentId, StrategyId, TraderId, Venue},
         types::{Price, Quantity},
     };
-    use nautilus_trading::{ImportableStrategyConfig, python::strategy::PyStrategy};
+    use nautilus_trading::{
+        ImportableStrategyConfig, nautilus_strategy,
+        python::strategy::PyStrategy,
+        strategy::{StrategyConfig, StrategyCore},
+    };
     use pyo3::{
         Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
@@ -1563,6 +1592,52 @@ mod tests {
     use rstest::rstest;
 
     use super::LiveNode;
+
+    #[derive(Clone, Copy, Debug)]
+    enum ShutdownRunPath {
+        Native,
+        PyO3,
+    }
+
+    #[derive(Debug)]
+    struct ShutdownCancelStrategy {
+        core: StrategyCore,
+        instrument_id: InstrumentId,
+    }
+
+    impl ShutdownCancelStrategy {
+        fn new(instrument_id: InstrumentId) -> Self {
+            Self {
+                core: StrategyCore::new(StrategyConfig {
+                    strategy_id: Some(StrategyId::from("SHUTDOWN-CANCEL-001")),
+                    ..Default::default()
+                }),
+                instrument_id,
+            }
+        }
+    }
+
+    nautilus_strategy!(ShutdownCancelStrategy);
+
+    impl DataActor for ShutdownCancelStrategy {
+        fn on_stop(&mut self) -> anyhow::Result<()> {
+            get_trading_cmd_sender().execute(TradingCommand::CancelAllOrders(
+                CancelAllOrders::new(
+                    TraderId::from("TESTER-001"),
+                    None,
+                    StrategyId::from("SHUTDOWN-CANCEL-001"),
+                    self.instrument_id,
+                    OrderSide::NoOrderSide,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ),
+            ));
+            Ok(())
+        }
+    }
+
     #[derive(Debug, Default)]
     struct TestDataClientConfig;
 
@@ -2148,6 +2223,55 @@ class ClaimsStrategy(Strategy):
 
             assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
         });
+    }
+
+    #[rstest]
+    #[case(ShutdownRunPath::Native)]
+    #[case(ShutdownRunPath::PyO3)]
+    fn test_native_and_python_shutdown_paths_drain_cancel_command(
+        #[case] run_path: ShutdownRunPath,
+    ) {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(1)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        node.add_strategy(ShutdownCancelStrategy::new(InstrumentId::from(
+            "TEST.POLYMARKET",
+        )))
+        .unwrap();
+
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+
+        let stop_thread = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while !stop_handle.is_running() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            stop_handle.stop();
+        });
+
+        match run_path {
+            ShutdownRunPath::Native => get_runtime()
+                .block_on(node.run())
+                .expect("native LiveNode run should stop cleanly"),
+            ShutdownRunPath::PyO3 => Python::attach(|py| {
+                super::run_live_node_detached(py, &mut node)
+                    .expect("Python LiveNode run should stop cleanly");
+            }),
+        }
+
+        stop_thread.join().expect("stop thread should join");
+        let metrics = handle.metrics_snapshot();
+
+        assert_eq!(metrics.exec_commands.dispatched, 1);
+        assert_eq!(metrics.exec_commands.queue_depth, 0);
+        assert!(!handle.is_running());
     }
 
     #[rstest]

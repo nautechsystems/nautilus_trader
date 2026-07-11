@@ -134,6 +134,14 @@ pub fn parse_futures_order_update_to_order_status(
         report.trailing_offset_type = TrailingOffsetType::BasisPoints;
     }
 
+    if let Some(activation_price) = order
+        .activation_price
+        .as_deref()
+        .and_then(|raw| parse_optional_positive_price_at_precision(raw, price_precision))
+    {
+        report.activation_price = Some(activation_price);
+    }
+
     if let Some(avg) = avg_px {
         report.avg_px = Some(avg.as_decimal());
     }
@@ -602,6 +610,26 @@ mod tests {
         assert_eq!(report.order_type, OrderType::TrailingStopMarket);
         assert_eq!(report.venue_order_id, VenueOrderId::new("8886774"));
         assert_eq!(report.client_order_id, Some(ClientOrderId::from("TEST")));
+    }
+
+    #[rstest]
+    fn test_parse_order_update_to_order_status_captures_activation_price() {
+        let mut msg: BinanceFuturesOrderUpdateMsg = load_user_data_fixture("order_update_new.json");
+        msg.order.activation_price = Some("1650.50".to_string());
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = parse_futures_order_update_to_order_status(
+            &msg,
+            instrument_id(),
+            PRICE_PRECISION,
+            SIZE_PRECISION,
+            account_id(),
+            false,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(report.activation_price, Some(Price::from("1650.50")));
     }
 
     #[rstest]

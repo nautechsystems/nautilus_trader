@@ -138,8 +138,9 @@ impl Indicator for WeightedMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {

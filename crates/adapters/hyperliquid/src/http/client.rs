@@ -1827,6 +1827,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         cloid,
                     }],
+                    fast: None,
                 }
             } else if let Some(oid) = venue_order_id {
                 let oid_u64 = oid
@@ -1838,6 +1839,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         oid: oid_u64,
                     }],
+                    fast: None,
                 }
             } else {
                 let cloid = self.get_or_generate_client_order_id_cloid(client_order_id);
@@ -1846,6 +1848,7 @@ impl HyperliquidHttpClient {
                         asset: asset_id,
                         cloid,
                     }],
+                    fast: None,
                 }
             }
         } else if let Some(oid) = venue_order_id {
@@ -1858,6 +1861,7 @@ impl HyperliquidHttpClient {
                     asset: asset_id,
                     oid: oid_u64,
                 }],
+                fast: None,
             }
         } else {
             return Err(Error::bad_request(
@@ -2548,9 +2552,10 @@ impl HyperliquidHttpClient {
     /// Request account state (balances and margins) for a user.
     ///
     /// Fetches perp and spot clearinghouse state from Hyperliquid and merges them
-    /// into a single [`AccountState`]. USDC is taken from the perp margin summary
-    /// when present (to avoid double-counting combined `withdrawable`); non-USDC
-    /// tokens are appended from the spot balances.
+    /// into a single [`AccountState`]. USDC comes from the perp margin summary only
+    /// when that summary reflects non-zero collateral, margin used, or withdrawable
+    /// balance; if the summary is absent or zeroed, spot USDC is used instead. Non-USDC
+    /// tokens are always appended from the spot balances.
     ///
     /// # Errors
     ///

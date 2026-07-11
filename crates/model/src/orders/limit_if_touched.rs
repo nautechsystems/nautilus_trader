@@ -142,6 +142,7 @@ impl LimitIfTouchedOrder {
             ts_init,
             ts_init,
             Some(price),
+            None,
             Some(trigger_price),
             Some(trigger_type),
             None,

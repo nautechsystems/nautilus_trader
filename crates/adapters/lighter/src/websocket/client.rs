@@ -41,7 +41,9 @@ use nautilus_network::{
 
 use crate::{
     common::{
-        consts::{HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF},
+        consts::{
+            DISCONNECT_TIMEOUT, HEARTBEAT_INTERVAL, RECONNECT_BASE_BACKOFF, RECONNECT_MAX_BACKOFF,
+        },
         enums::{LighterCandleResolution, LighterEnvironment},
         rate_limit::ws_message_rate_limiter,
         symbol::MarketRegistry,
@@ -57,7 +59,6 @@ use crate::{
 const RECONNECT_TIMEOUT_MS: u64 = 15_000;
 const RECONNECT_JITTER_MS: u64 = 200;
 const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
-const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Outer Lighter WebSocket client.
 ///

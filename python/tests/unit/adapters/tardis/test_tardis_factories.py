@@ -17,10 +17,14 @@ import pytest
 from unit.adapters.example_modules import capture_data_tester_main
 from unit.adapters.example_modules import load_example_module
 
+from nautilus_trader.adapters.tardis import ReplayNormalizedRequestOptions
+from nautilus_trader.adapters.tardis import StreamNormalizedRequestOptions
 from nautilus_trader.adapters.tardis import TardisDataClientConfig
 from nautilus_trader.adapters.tardis import TardisDataClientFactory
+from nautilus_trader.adapters.tardis import TardisInstrumentMiniInfo
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
+from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import TraderId
 
 
@@ -57,3 +61,29 @@ def test_tardis_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> N
     assert kwargs["subscribe_funding_rates"] is True
     assert "exec_client_args" not in captured
     assert "run_called" not in captured
+
+
+def test_tardis_instrument_mini_info_rejects_invalid_exchange() -> None:
+    with pytest.raises(ValueError, match="Matching variant not found"):
+        TardisInstrumentMiniInfo(
+            InstrumentId.from_str("BTC-USDT.BINANCE"),
+            "BTC-USDT",
+            "not-an-exchange",
+            2,
+            6,
+        )
+
+
+@pytest.mark.parametrize(
+    "options_type",
+    [
+        ReplayNormalizedRequestOptions,
+        StreamNormalizedRequestOptions,
+    ],
+)
+def test_tardis_request_options_reject_invalid_json(options_type: type) -> None:
+    with pytest.raises(ValueError, match="EOF while parsing"):
+        options_type.from_json(b"{")
+
+    with pytest.raises(ValueError, match="EOF while parsing"):
+        options_type.from_json_array(b"[")

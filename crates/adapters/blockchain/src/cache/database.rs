@@ -1507,8 +1507,8 @@ impl BlockchainCacheDatabase {
         let mut transaction_hashes: Vec<String> = Vec::with_capacity(len);
         let mut transaction_indices: Vec<i32> = Vec::with_capacity(len);
         let mut log_indices: Vec<i32> = Vec::with_capacity(len);
-        let mut fee_protocol0s: Vec<i16> = Vec::with_capacity(len);
-        let mut fee_protocol1s: Vec<i16> = Vec::with_capacity(len);
+        let mut fee_protocol0s: Vec<i32> = Vec::with_capacity(len);
+        let mut fee_protocol1s: Vec<i32> = Vec::with_capacity(len);
 
         // Fill vectors from updates
         for update in updates {
@@ -1519,8 +1519,18 @@ impl BlockchainCacheDatabase {
             transaction_hashes.push(update.transaction_hash.clone());
             transaction_indices.push(update.transaction_index as i32);
             log_indices.push(update.log_index as i32);
-            fee_protocol0s.push(i16::from(update.fee_protocol0_new));
-            fee_protocol1s.push(i16::from(update.fee_protocol1_new));
+            fee_protocol0s.push(i32::try_from(update.fee_protocol0_new).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid fee_protocol0_new '{}': {e}",
+                    update.fee_protocol0_new
+                )
+            })?);
+            fee_protocol1s.push(i32::try_from(update.fee_protocol1_new).map_err(|e| {
+                anyhow::anyhow!(
+                    "Invalid fee_protocol1_new '{}': {e}",
+                    update.fee_protocol1_new
+                )
+            })?);
         }
 
         // Execute batch insert with UNNEST
@@ -1535,7 +1545,7 @@ impl BlockchainCacheDatabase {
                 log_index, fee_protocol0_new, fee_protocol1_new
             FROM UNNEST(
                 $1::INT[], $2::TEXT[], $3::TEXT[], $4::INT[], $5::TEXT[], $6::INT[],
-                $7::INT[], $8::SMALLINT[], $9::SMALLINT[]
+                $7::INT[], $8::INT[], $9::INT[]
             ) AS t(chain_id, dex_name, pool_identifier, block, transaction_hash, transaction_index,
                    log_index, fee_protocol0_new, fee_protocol1_new)
             ON CONFLICT (chain_id, transaction_hash, log_index) DO NOTHING
@@ -1658,6 +1668,7 @@ impl BlockchainCacheDatabase {
                 chain_id, dex_name, pool_identifier, block, transaction_index, log_index, transaction_hash,
                 current_tick, price_sqrt_ratio_x96, liquidity,
                 protocol_fees_token0, protocol_fees_token1, fee_protocol,
+                fee_protocol0_basis_points, fee_protocol1_basis_points,
                 fee_growth_global_0, fee_growth_global_1,
                 total_amount0_deposited, total_amount1_deposited,
                 total_amount0_collected, total_amount1_collected,
@@ -1665,9 +1676,9 @@ impl BlockchainCacheDatabase {
                 liquidity_utilization_rate
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7,
-                $8, $9::U160, $10::U128, $11::U256, $12::U256, $13,
-                $14::U256, $15::U256, $16::U256, $17::U256, $18::U256, $19::U256,
-                $20, $21, $22, $23, $24, $25
+                $8, $9::U160, $10::U128, $11::U256, $12::U256, $13, $14, $15,
+                $16::U256, $17::U256, $18::U256, $19::U256, $20::U256, $21::U256,
+                $22, $23, $24, $25, $26, $27
             )
             ON CONFLICT (chain_id, pool_identifier, block, transaction_index, log_index)
             DO NOTHING
@@ -1686,6 +1697,8 @@ impl BlockchainCacheDatabase {
         .bind(snapshot.state.protocol_fees_token0.to_string())
         .bind(snapshot.state.protocol_fees_token1.to_string())
         .bind(snapshot.state.fee_protocol as i16)
+        .bind(snapshot.state.fee_protocol0_basis_points.map(|v| v as i32))
+        .bind(snapshot.state.fee_protocol1_basis_points.map(|v| v as i32))
         .bind(snapshot.state.fee_growth_global_0.to_string())
         .bind(snapshot.state.fee_growth_global_1.to_string())
         .bind(snapshot.analytics.total_amount0_deposited.to_string())
@@ -1960,6 +1973,7 @@ impl BlockchainCacheDatabase {
                 block, transaction_index, log_index, transaction_hash,
                 current_tick, price_sqrt_ratio_x96::TEXT, liquidity::TEXT,
                 protocol_fees_token0::TEXT, protocol_fees_token1::TEXT, fee_protocol,
+                fee_protocol0_basis_points, fee_protocol1_basis_points,
                 fee_growth_global_0::TEXT, fee_growth_global_1::TEXT,
                 total_amount0_deposited::TEXT, total_amount1_deposited::TEXT,
                 total_amount0_collected::TEXT, total_amount1_collected::TEXT,
@@ -2018,6 +2032,12 @@ impl BlockchainCacheDatabase {
                 protocol_fees_token0: row.get::<String, _>("protocol_fees_token0").parse()?,
                 protocol_fees_token1: row.get::<String, _>("protocol_fees_token1").parse()?,
                 fee_protocol: row.get::<i16, _>("fee_protocol") as u8,
+                fee_protocol0_basis_points: row
+                    .get::<Option<i32>, _>("fee_protocol0_basis_points")
+                    .map(|value| value as u32),
+                fee_protocol1_basis_points: row
+                    .get::<Option<i32>, _>("fee_protocol1_basis_points")
+                    .map(|value| value as u32),
                 fee_growth_global_0: row.get::<String, _>("fee_growth_global_0").parse()?,
                 fee_growth_global_1: row.get::<String, _>("fee_growth_global_1").parse()?,
             };
@@ -2346,8 +2366,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2382,8 +2402,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2418,8 +2438,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_collect_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2454,8 +2474,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                fee_protocol0_new::SMALLINT,
-                fee_protocol1_new::SMALLINT
+                fee_protocol0_new::INTEGER,
+                fee_protocol1_new::INTEGER
             FROM pool_fee_protocol_update_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2490,8 +2510,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_fee_protocol_collect_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2526,8 +2546,8 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT as flash_amount1,
                 paid0::TEXT as flash_paid0,
                 paid1::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_flash_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND ($3::BIGINT IS NULL OR block <= $3))
@@ -2564,8 +2584,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_swap_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
@@ -2601,8 +2621,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_liquidity_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
@@ -2638,8 +2658,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_collect_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
@@ -2675,8 +2695,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                fee_protocol0_new::SMALLINT,
-                fee_protocol1_new::SMALLINT
+                fee_protocol0_new::INTEGER,
+                fee_protocol1_new::INTEGER
             FROM pool_fee_protocol_update_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
@@ -2712,8 +2732,8 @@ impl BlockchainCacheDatabase {
                 NULL::TEXT as flash_amount1,
                 NULL::TEXT as flash_paid0,
                 NULL::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_fee_protocol_collect_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))
@@ -2749,8 +2769,8 @@ impl BlockchainCacheDatabase {
                 amount1::TEXT as flash_amount1,
                 paid0::TEXT as flash_paid0,
                 paid1::TEXT as flash_paid1,
-                NULL::SMALLINT as fee_protocol0_new,
-                NULL::SMALLINT as fee_protocol1_new
+                NULL::INTEGER as fee_protocol0_new,
+                NULL::INTEGER as fee_protocol1_new
             FROM pool_flash_event
             WHERE chain_id = $1 AND pool_identifier = $2
             AND (block > $3 OR (block = $3 AND transaction_index > $4) OR (block = $3 AND transaction_index = $4 AND log_index > $5))

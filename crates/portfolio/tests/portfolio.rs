@@ -829,7 +829,7 @@ fn test_margin_fill_endpoint_then_position_publishes_account_state_once(
     );
     msgbus::send_order_event(
         MessagingSwitchboard::portfolio_update_order(),
-        OrderEventAny::Filled(fill),
+        OrderEventAny::Filled(fill.clone()),
     );
 
     let position = Position::new(&instrument_audusd, fill);
@@ -1209,7 +1209,7 @@ fn test_cash_fill_endpoint_then_position_publishes_account_state_once(
     );
     msgbus::send_order_event(
         MessagingSwitchboard::portfolio_update_order(),
-        OrderEventAny::Filled(fill),
+        OrderEventAny::Filled(fill.clone()),
     );
 
     let position = Position::new(&instrument_audusd, fill);
@@ -1341,7 +1341,7 @@ fn test_exceed_free_balance_single_currency_raises_account_balance_negative_exce
     portfolio.update_order(&OrderEventAny::Submitted(submitted));
 
     let fill = fill_order(&order);
-    order.apply(OrderEventAny::Filled(fill)).unwrap();
+    order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
     portfolio.update_order(&OrderEventAny::Filled(fill));
 }
 
@@ -3139,7 +3139,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_close(
 
     msgbus::send_order_event(
         MessagingSwitchboard::portfolio_update_order(),
-        OrderEventAny::Filled(fill2),
+        OrderEventAny::Filled(fill2.clone()),
     );
 
     assert_eq!(
@@ -3267,7 +3267,7 @@ fn test_order_fill_endpoint_updates_account_balance_before_position_reverse(
 
     msgbus::send_order_event(
         MessagingSwitchboard::portfolio_update_order(),
-        OrderEventAny::Filled(fill2),
+        OrderEventAny::Filled(fill2.clone()),
     );
 
     assert_eq!(

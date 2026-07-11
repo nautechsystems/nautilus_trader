@@ -168,9 +168,17 @@ pub enum ActionRequest {
         grouping: String,
     },
     /// Cancel orders.
-    Cancel { cancels: Vec<CancelRequest> },
+    Cancel {
+        cancels: Vec<CancelRequest>,
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
+    },
     /// Cancel orders by client order ID.
-    CancelByCloid { cancels: Vec<CancelByCloidRequest> },
+    CancelByCloid {
+        cancels: Vec<CancelByCloidRequest>,
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
+    },
     /// Modify orders.
     Modify { modifies: Vec<ModifyRequest> },
 }
@@ -199,7 +207,10 @@ impl ActionRequest {
     /// ]);
     /// ```
     pub fn cancel(cancels: Vec<CancelRequest>) -> Self {
-        Self::Cancel { cancels }
+        Self::Cancel {
+            cancels,
+            fast: None,
+        }
     }
 
     /// Create a cancel-by-cloid action
@@ -211,7 +222,10 @@ impl ActionRequest {
     /// ]);
     /// ```
     pub fn cancel_by_cloid(cancels: Vec<CancelByCloidRequest>) -> Self {
-        Self::CancelByCloid { cancels }
+        Self::CancelByCloid {
+            cancels,
+            fast: None,
+        }
     }
 
     /// Create a modify action for multiple orders

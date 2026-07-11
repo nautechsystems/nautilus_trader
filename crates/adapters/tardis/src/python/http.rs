@@ -62,6 +62,12 @@ impl TardisHttpClient {
     }
 
     /// Returns all Nautilus instrument definitions for the given `exchange`, and filter params.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching instrument info or parsing into domain types fails.
+    ///
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "instruments")]
     #[pyo3(signature = (exchange, symbol=None, base_currency=None, quote_currency=None, instrument_type=None, contract_type=None, active=None, start=None, end=None, available_offset=None, effective=None, ts_init=None))]

@@ -47,7 +47,7 @@ sol! {
             uint16 observationIndex;
             uint16 observationCardinality;
             uint16 observationCardinalityNext;
-            uint8 feeProtocol;
+            uint32 feeProtocol;
             bool unlocked;
         }
 
@@ -83,6 +83,17 @@ sol! {
         function ticks(int24 tick) external view returns (TickInfo memory);
         function positions(bytes32 key) external view returns (PositionInfo memory);
     }
+}
+
+const PANCAKESWAP_V3_PROTOCOL_FEE_LANE_SIZE: u32 = 65_536;
+
+/// Protocol-fee encoding used by the pool's `slot0.feeProtocol` field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeeProtocolEncoding {
+    /// Uniswap V3 packs two 4-bit denominators into one byte.
+    UniswapV3Packed,
+    /// PancakeSwap V3 packs two 16-bit basis-point shares into one `uint32`.
+    PancakeSwapV3BasisPoints,
 }
 
 /// Represents errors that can occur when interacting with UniswapV3Pool contract.
@@ -136,6 +147,7 @@ impl UniswapV3PoolContract {
         &self,
         pool_address: &Address,
         block: Option<u64>,
+        fee_protocol_encoding: FeeProtocolEncoding,
     ) -> Result<PoolState, UniswapV3PoolError> {
         let calls = vec![
             ContractCall {
@@ -226,16 +238,39 @@ impl UniswapV3PoolContract {
             raw_data: hex::encode(&results[4].returnData),
         })?;
 
-        Ok(PoolState {
+        let mut state = PoolState {
             current_tick: slot0.tick.as_i32(),
             price_sqrt_ratio_x96: slot0.sqrtPriceX96,
             liquidity,
             protocol_fees_token0: U256::from(protocol_fees.token0),
             protocol_fees_token1: U256::from(protocol_fees.token1),
-            fee_protocol: slot0.feeProtocol,
+            fee_protocol: 0,
+            fee_protocol0_basis_points: None,
+            fee_protocol1_basis_points: None,
             fee_growth_global_0: fee_growth_0,
             fee_growth_global_1: fee_growth_1,
-        })
+        };
+
+        match fee_protocol_encoding {
+            FeeProtocolEncoding::UniswapV3Packed => {
+                let fee_protocol = u8::try_from(slot0.feeProtocol).map_err(|e| {
+                    UniswapV3PoolError::DecodingError {
+                        field: "slot0.feeProtocol".to_string(),
+                        pool: *pool_address,
+                        reason: e.to_string(),
+                        raw_data: slot0.feeProtocol.to_string(),
+                    }
+                })?;
+                state.set_uniswap_v3_fee_protocol(fee_protocol);
+            }
+            FeeProtocolEncoding::PancakeSwapV3BasisPoints => {
+                let (fee_protocol0, fee_protocol1) =
+                    split_pancakeswap_v3_fee_protocol(slot0.feeProtocol);
+                state.set_protocol_fee_basis_points(fee_protocol0, fee_protocol1);
+            }
+        }
+
+        Ok(state)
     }
 
     /// Gets tick data for a specific tick.
@@ -449,10 +484,13 @@ impl UniswapV3PoolContract {
         block_position: BlockPosition,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        fee_protocol_encoding: FeeProtocolEncoding,
     ) -> Result<PoolSnapshot, UniswapV3PoolError> {
         // Fetch all data at the specified block
         let block = Some(block_position.number);
-        let global_state = self.get_global_state(pool_address, block).await?;
+        let global_state = self
+            .get_global_state(pool_address, block, fee_protocol_encoding)
+            .await?;
         let ticks_map = self
             .batch_get_ticks(pool_address, tick_values, block)
             .await?;
@@ -470,5 +508,30 @@ impl UniswapV3PoolContract {
             ts_event,
             ts_init,
         ))
+    }
+}
+
+const fn split_pancakeswap_v3_fee_protocol(fee_protocol: u32) -> (u32, u32) {
+    (
+        fee_protocol % PANCAKESWAP_V3_PROTOCOL_FEE_LANE_SIZE,
+        fee_protocol >> 16,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn split_pancakeswap_v3_fee_protocol_returns_token_basis_points() {
+        let fee_protocol = 3_200 + (4_000 << 16);
+
+        assert_eq!(
+            split_pancakeswap_v3_fee_protocol(fee_protocol),
+            (3_200, 4_000)
+        );
+        assert_eq!(split_pancakeswap_v3_fee_protocol(0), (0, 0));
     }
 }

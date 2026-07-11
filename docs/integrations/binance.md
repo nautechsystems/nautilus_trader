@@ -224,8 +224,14 @@ formula does not account for contract size. Configure `default_taker_fee` on
 
 When `use_position_ids` is enabled (default), exchange-generated fill reports
 include a `venue_position_id` derived from the instrument and position side
-(e.g. `ETHUSDT-PERP.BINANCE-LONG`). Set `use_position_ids` to false on
-`BinanceExecClientConfig` for virtual positions with `OmsType.HEDGING`.
+(e.g. `ETHUSDT-PERP.BINANCE-LONG`). Keep this enabled for Binance dual-side
+positions. Set `use_position_ids` to false only for virtual positions with
+`OmsType.HEDGING`, where the engine manages position identity.
+
+For Futures accounts using the Rust adapter in dual-side position mode, set
+`oms_type=OmsType::Hedging`. Its Python bindings use `OmsType.HEDGING`. The
+Rust adapter defaults to `OmsType::Netting` for one-way position mode. Leave
+`use_position_ids` enabled to track Binance's separate long and short sides.
 
 :::note
 The status report and fill report are emitted bundled as a single
@@ -795,6 +801,7 @@ definitive list of Rust config options.
 | `futures_leverages`                     | `None`    | Mapping of `BinanceSymbol` to initial leverage for futures accounts. |
 | `futures_margin_types`                  | `None`    | Mapping of `BinanceSymbol` to futures margin type (isolated/cross). |
 | `use_ws_trading`                        | `True`    | Use the WebSocket trading API for order operations (Spot and USD-M Futures). When `False`, HTTP is used. |
+| `oms_type`                              | `None`    | *Rust only.* Set to `Hedging` for Futures accounts in dual‑side position mode; `None` uses `Netting`. |
 | `default_taker_fee`                     | `0.0004`  | Default taker fee rate for commission estimation on exchange‑generated fills (liquidation, ADL, settlement). |
 | `bnfcr_currency`                        | `USDT`    | USD-M Futures Credits Trading Mode: currency that `BNFCR` balances and fees resolve to. See [Futures Credits Trading Mode (BNFCR)](#futures-credits-trading-mode-bnfcr). |
 | `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors. |
@@ -1163,6 +1170,11 @@ instrument_provider=InstrumentProviderConfig(
 
 Binance Futures Hedge mode allows holding both long and short positions on the
 same instrument simultaneously.
+
+The steps below apply to the Python adapter. For the Rust adapter, including
+its Python bindings, configure hedge mode on Binance and set `oms_type` to
+`OmsType::Hedging` in Rust or `OmsType.HEDGING` in Python. Keep
+`use_position_ids` enabled to track both venue position sides.
 
 To use hedge mode:
 

@@ -123,6 +123,7 @@ impl LimitOrder {
             None,
             None,
             None,
+            None,
             expire_time,
             display_qty,
             emulation_trigger,

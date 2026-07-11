@@ -1031,6 +1031,7 @@ fn fill_report_to_order_filled(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     )
 }
 

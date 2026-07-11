@@ -820,6 +820,183 @@ def _market_order(side=OrderSide.BUY, qty=100_000, client_order_id="O-001"):
     )
 
 
+def _limit_order(client_order_id="O-002"):
+    return LimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(50_000),
+        price=Price.from_str("1.00010"),
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+        expire_time=0,
+        display_qty=None,
+    )
+
+
+def _stop_market_order(client_order_id="O-003"):
+    return StopMarketOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99500"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _stop_limit_order(client_order_id="O-004"):
+    return StopLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("1.00100"),
+        trigger_price=Price.from_str("1.00050"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _market_if_touched_order(client_order_id="O-005"):
+    return MarketIfTouchedOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _limit_if_touched_order(client_order_id="O-006"):
+    return LimitIfTouchedOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("1.00500"),
+        trigger_price=Price.from_str("1.01000"),
+        trigger_type=TriggerType.DEFAULT,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _market_to_limit_order(client_order_id="O-007"):
+    return MarketToLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _trailing_stop_market_order(client_order_id="O-008"):
+    return TrailingStopMarketOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        trailing_offset=Decimal("0.00100"),
+        trailing_offset_type=TrailingOffsetType.PRICE,
+        time_in_force=TimeInForce.GTC,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+def _trailing_stop_limit_order(client_order_id="O-009"):
+    return TrailingStopLimitOrder(
+        trader_id=TRADER_ID,
+        strategy_id=STRATEGY_ID,
+        instrument_id=AUDUSD_SIM,
+        client_order_id=ClientOrderId(client_order_id),
+        order_side=OrderSide.SELL,
+        quantity=Quantity.from_int(100_000),
+        price=Price.from_str("0.98900"),
+        trigger_price=Price.from_str("0.99000"),
+        trigger_type=TriggerType.DEFAULT,
+        limit_offset=Decimal("0.00100"),
+        trailing_offset=Decimal("0.00200"),
+        trailing_offset_type=TrailingOffsetType.PRICE,
+        time_in_force=TimeInForce.GTC,
+        post_only=False,
+        reduce_only=False,
+        quote_quantity=False,
+        init_id=UUID4(),
+        ts_init=0,
+    )
+
+
+@pytest.mark.parametrize(
+    "order_factory",
+    [
+        _market_order,
+        _limit_order,
+        _stop_market_order,
+        _stop_limit_order,
+        _market_if_touched_order,
+        _limit_if_touched_order,
+        _market_to_limit_order,
+        _trailing_stop_market_order,
+        _trailing_stop_limit_order,
+    ],
+)
+def test_apply_rejects_unsupported_event(order_factory):
+    order = order_factory()
+
+    with pytest.raises(ValueError, match="OrderEventAny"):
+        order.apply(object())
+
+
 def test_apply_submitted():
     order = _market_order()
     submitted = OrderSubmitted(

@@ -909,7 +909,7 @@ impl DatabaseQueries {
             return Ok(None);
         };
 
-        let mut position = Position::new(&instrument, *first_fill);
+        let mut position = Position::new(&instrument, first_fill.clone());
         for fill in remaining_fills {
             if position.trade_ids().contains(&fill.trade_id) {
                 anyhow::bail!(

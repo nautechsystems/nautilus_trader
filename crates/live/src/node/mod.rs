@@ -79,6 +79,7 @@
 
 use std::{collections::HashSet, fmt::Debug, future::Future, pin::Pin, time::Duration};
 
+use anyhow::Context;
 use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
@@ -422,7 +423,15 @@ impl LiveNode {
             }
         }
 
-        self.perform_startup_reconciliation().await?;
+        if let Err(e) = self.perform_startup_reconciliation().await {
+            if let Err(finalize_err) = self.abort_startup("Startup reconciliation failed").await {
+                anyhow::bail!(
+                    "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
+                );
+            }
+
+            return Err(e);
+        }
 
         self.kernel.start_trader();
         #[cfg(feature = "plugin")]
@@ -610,10 +619,13 @@ impl LiveNode {
         let client_ids = self.kernel.exec_engine.borrow().client_ids();
 
         for client_id in client_ids {
-            if start.elapsed() > timeout {
-                log::warn!("Reconciliation timeout reached, stopping early");
-                break;
+            let elapsed = start.elapsed();
+            if elapsed >= timeout {
+                anyhow::bail!("Startup reconciliation timeout reached");
             }
+            let remaining = timeout
+                .checked_sub(elapsed)
+                .expect("elapsed checked against reconciliation timeout");
 
             log_info!(
                 "Requesting mass status from {}...",
@@ -621,12 +633,19 @@ impl LiveNode {
                 color = LogColor::Blue
             );
 
-            let mass_status_result = self
-                .kernel
-                .exec_engine
-                .borrow_mut()
-                .generate_mass_status(&client_id, lookback_mins)
-                .await;
+            let mass_status_result = tokio::time::timeout(remaining, async {
+                self.kernel
+                    .exec_engine
+                    .borrow_mut()
+                    .generate_mass_status(&client_id, lookback_mins)
+                    .await
+            })
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "Startup reconciliation timeout reached while requesting mass status from {client_id}"
+                )
+            })?;
 
             match mass_status_result {
                 Ok(Some(mass_status)) => {
@@ -673,13 +692,13 @@ impl LiveNode {
                     }
                 }
                 Ok(None) => {
-                    log::warn!(
+                    anyhow::bail!(
                         "No mass status available from {client_id} \
                          (likely adapter error when generating reports)"
                     );
                 }
                 Err(e) => {
-                    log::warn!("Failed to get mass status from {client_id}: {e}");
+                    return Err(e).context(format!("Failed to get mass status from {client_id}"));
                 }
             }
         }
@@ -852,7 +871,25 @@ impl LiveNode {
 
         if engine_connection_status == EngineConnectionStatus::Connected {
             // Run reconciliation now that instruments are in cache and start trader
-            self.perform_startup_reconciliation().await?;
+            if let Err(e) = self.perform_startup_reconciliation().await {
+                let result = self.abort_startup("Startup reconciliation failed").await;
+                Self::drain_channels(
+                    &mut time_evt_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+
+                if let Err(finalize_err) = result {
+                    anyhow::bail!(
+                        "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
+                    );
+                }
+
+                return Err(e);
+            }
             self.kernel.start_trader();
             #[cfg(feature = "plugin")]
             if let Err(e) = self.plugins.start_controllers() {

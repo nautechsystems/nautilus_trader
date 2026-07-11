@@ -1473,6 +1473,10 @@ impl Cache {
     /// `override_existing`: If the added order should 'override' any existing order and replace
     /// it in the cache. This is currently used for emulated orders which are
     /// being released and transformed into another type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,
@@ -1635,6 +1639,10 @@ impl Cache {
     }
 
     /// Adds the `position` to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the position to the backing database fails.
     #[pyo3(name = "add_position")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_add_position(

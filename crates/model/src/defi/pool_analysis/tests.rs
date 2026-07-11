@@ -28,7 +28,8 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 
 use crate::defi::{
-    Chain, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap, Token,
+    Chain, DexType, Pool, PoolIdentifier, PoolLiquidityUpdate, PoolLiquidityUpdateType, PoolSwap,
+    Token,
     data::{
         DexPoolData, PoolFeeCollect, PoolFeeProtocolCollect, PoolFeeProtocolUpdate, PoolFlash,
         block::BlockPosition,
@@ -110,6 +111,16 @@ pub fn pool_definition(
         initial_sqrt_price,
         get_tick_at_sqrt_ratio(initial_sqrt_price),
     );
+    pool
+}
+
+fn pancakeswap_pool_definition(
+    fee: Option<u32>,
+    tick_spacing: Option<i32>,
+    initial_sqrt_price_x96: Option<U160>,
+) -> Pool {
+    let mut pool = pool_definition(fee, tick_spacing, initial_sqrt_price_x96);
+    Arc::make_mut(&mut pool.dex).name = DexType::PancakeSwapV3;
     pool
 }
 
@@ -212,8 +223,8 @@ fn create_collect_event(
 }
 
 fn create_fee_protocol_update(
-    fee_protocol0_new: u8,
-    fee_protocol1_new: u8,
+    fee_protocol0_new: u32,
+    fee_protocol1_new: u32,
 ) -> PoolFeeProtocolUpdate {
     let pool_definition = pool_definition(None, None, None);
     PoolFeeProtocolUpdate::new(
@@ -230,6 +241,15 @@ fn create_fee_protocol_update(
         UnixNanos::default(),
         UnixNanos::default(),
     )
+}
+
+fn create_pancakeswap_fee_protocol_update(
+    fee_protocol0_new: u32,
+    fee_protocol1_new: u32,
+) -> PoolFeeProtocolUpdate {
+    let mut update = create_fee_protocol_update(fee_protocol0_new, fee_protocol1_new);
+    Arc::make_mut(&mut update.dex).name = DexType::PancakeSwapV3;
+    update
 }
 
 fn create_flash_event(paid0: U256, paid1: U256) -> PoolFlash {
@@ -998,6 +1018,161 @@ fn test_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
         .unwrap();
     assert_eq!(profiler.state.protocol_fees_token0, U256::from(25u32));
     assert_eq!(profiler.state.protocol_fees_token1, U256::from(25u32));
+}
+
+#[rstest]
+fn test_pancakeswap_set_fee_protocol_applies_basis_points_to_state_and_snapshot(
+    mut profiler: PoolProfiler,
+) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(
+            create_pancakeswap_fee_protocol_update(3_200, 4_000),
+        ))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+
+    assert_eq!(profiler.state.fee_protocol, 0);
+    assert_eq!(profiler.state.fee_protocol0_basis_points, Some(3_200));
+    assert_eq!(profiler.state.fee_protocol1_basis_points, Some(4_000));
+    assert_eq!(snapshot.state.fee_protocol, 0);
+    assert_eq!(snapshot.state.fee_protocol0_basis_points, Some(3_200));
+    assert_eq!(snapshot.state.fee_protocol1_basis_points, Some(4_000));
+}
+
+#[rstest]
+#[case(100, 3_300)]
+#[case(500, 3_400)]
+#[case(2_500, 3_200)]
+#[case(10_000, 3_200)]
+#[case(12_345, 3_200)]
+fn test_pancakeswap_profiler_seeds_default_fee_protocol_from_pool_fee(
+    #[case] pool_fee: u32,
+    #[case] expected_fee_protocol: u32,
+) {
+    let pool =
+        pancakeswap_pool_definition(Some(pool_fee), Some(10), Some(encode_sqrt_ratio_x96(1, 1)));
+    let profiler = PoolProfiler::new(Arc::new(pool));
+
+    assert_eq!(profiler.state.fee_protocol, 0);
+    assert_eq!(
+        profiler.state.fee_protocol0_basis_points,
+        Some(expected_fee_protocol)
+    );
+    assert_eq!(
+        profiler.state.fee_protocol1_basis_points,
+        Some(expected_fee_protocol)
+    );
+}
+
+#[rstest]
+fn test_pancakeswap_default_fee_protocol_changes_flash_fee_split() {
+    let pool = pancakeswap_pool_definition(Some(500), Some(10), Some(encode_sqrt_ratio_x96(1, 1)));
+    let mut profiler = PoolProfiler::new(Arc::new(pool));
+    profiler.initialize(encode_sqrt_ratio_x96(1, 1)).unwrap();
+
+    let min_tick = PoolTick::get_min_tick(10);
+    let max_tick = PoolTick::get_max_tick(10);
+    profiler
+        .execute_mint(
+            lp_address(),
+            create_block_position(),
+            min_tick,
+            max_tick,
+            10_000,
+        )
+        .unwrap();
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(1_000u32),
+            U256::from(1_000u32),
+        )))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+
+    assert_eq!(profiler.state.fee_protocol0_basis_points, Some(3_400));
+    assert_eq!(profiler.state.fee_protocol1_basis_points, Some(3_400));
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(340u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(340u32));
+    assert_eq!(snapshot.state.fee_protocol0_basis_points, Some(3_400));
+    assert_eq!(snapshot.state.fee_protocol1_basis_points, Some(3_400));
+}
+
+#[rstest]
+fn test_pancakeswap_set_fee_protocol_changes_flash_fee_split(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(
+            create_pancakeswap_fee_protocol_update(3_200, 4_000),
+        ))
+        .unwrap();
+
+    profiler
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(1_000u32),
+            U256::from(1_000u32),
+        )))
+        .unwrap();
+
+    assert_eq!(profiler.state.protocol_fees_token0, U256::from(320u32));
+    assert_eq!(profiler.state.protocol_fees_token1, U256::from(400u32));
+}
+
+#[rstest]
+fn test_pancakeswap_snapshot_restore_preserves_fee_model_for_replay(mut profiler: PoolProfiler) {
+    let min_tick = PoolTick::get_min_tick(TICK_SPACING);
+    let max_tick = PoolTick::get_max_tick(TICK_SPACING);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(create_mint_event(
+            lp_address(),
+            min_tick,
+            max_tick,
+            10_000,
+        )))
+        .unwrap();
+    profiler
+        .process(&DexPoolData::FeeProtocolUpdate(
+            create_pancakeswap_fee_protocol_update(3_200, 4_000),
+        ))
+        .unwrap();
+
+    let snapshot = profiler.extract_snapshot().unwrap();
+    let mut restored = PoolProfiler::new(profiler.pool.clone());
+    restored.restore_from_snapshot(snapshot).unwrap();
+    restored
+        .process(&DexPoolData::Flash(create_flash_event(
+            U256::from(1_000u32),
+            U256::from(1_000u32),
+        )))
+        .unwrap();
+
+    assert_eq!(restored.state.fee_protocol, 0);
+    assert_eq!(restored.state.fee_protocol0_basis_points, Some(3_200));
+    assert_eq!(restored.state.fee_protocol1_basis_points, Some(4_000));
+    assert_eq!(restored.state.protocol_fees_token0, U256::from(320u32));
+    assert_eq!(restored.state.protocol_fees_token1, U256::from(400u32));
 }
 
 #[rstest]
@@ -3269,6 +3444,34 @@ fn test_swap_protocol_fee_split_matches_fee_protocol(mut medium_fee_pool_profile
         with_protocol.lp_fee,
         total_fee - total_fee / U256::from(4u8)
     );
+    assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
+}
+
+#[rstest]
+fn test_pancakeswap_swap_protocol_fee_split_uses_basis_points(
+    mut medium_fee_pool_profiler: PoolProfiler,
+) {
+    let amount = I256::from_str("1000000000").unwrap();
+
+    let no_protocol = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap();
+    let total_fee = no_protocol.lp_fee;
+    assert!(total_fee > U256::ZERO);
+    assert!(no_protocol.crossed_ticks.is_empty());
+
+    medium_fee_pool_profiler
+        .process(&DexPoolData::FeeProtocolUpdate(
+            create_pancakeswap_fee_protocol_update(3_200, 4_000),
+        ))
+        .unwrap();
+    let with_protocol = medium_fee_pool_profiler
+        .quote_swap(amount, true, None)
+        .unwrap();
+    let expected_protocol_fee = total_fee * U256::from(3_200u32) / U256::from(10_000u32);
+
+    assert_eq!(with_protocol.protocol_fee, expected_protocol_fee);
+    assert_eq!(with_protocol.lp_fee, total_fee - expected_protocol_fee);
     assert_eq!(with_protocol.protocol_fee + with_protocol.lp_fee, total_fee);
 }
 

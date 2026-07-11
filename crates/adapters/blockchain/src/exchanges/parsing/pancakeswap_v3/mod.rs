@@ -15,9 +15,8 @@
 
 //! PancakeSwap V3 event parsers.
 //!
-//! PancakeSwap V3 is a Uniswap V3 fork; every event except Swap is byte-identical, so those
-//! reuse the [`uniswap_v3`](super::uniswap_v3) parsers. The Swap event appends
-//! protocolFeesToken0/1 to the Uniswap V3 layout and hashes to a distinct topic0, so it has its
-//! own parser here.
+//! PancakeSwap V3 is a Uniswap V3 fork; Swap appends protocolFeesToken0/1, and
+//! SetFeeProtocol uses `uint32` fee shares instead of Uniswap V3's `uint8` denominators.
 
+pub mod fee_protocol_update;
 pub mod swap;

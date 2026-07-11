@@ -514,6 +514,15 @@ impl KrakenSpotHttpClient {
     /// Submits a new order to the Kraken Spot exchange.
     ///
     /// Returns the venue order ID on success. WebSocket handles all execution events.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The instrument is not found in cache.
+    /// - The order type or time in force is not supported.
+    /// - The request fails.
+    /// - The order is rejected.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, expire_time=None, price=None, trigger_price=None, trigger_type=None, trailing_offset=None, limit_offset=None, reduce_only=false, post_only=false, quote_quantity=false, display_qty=None, leverage=None, account_type=AccountType::Cash))]
     #[expect(clippy::too_many_arguments)]
@@ -586,6 +595,14 @@ impl KrakenSpotHttpClient {
     }
 
     /// Cancels an order on the Kraken Spot exchange.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - Neither client_order_id nor venue_order_id is provided.
+    /// - The request fails.
+    /// - The order cancellation is rejected.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -642,6 +659,13 @@ impl KrakenSpotHttpClient {
     ///
     /// Uses the AmendOrder endpoint which modifies the order in-place,
     /// keeping the same order ID and queue position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Neither `client_order_id` nor `venue_order_id` is provided.
+    /// - The instrument is not found in cache.
+    /// - The request fails.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None, quantity=None, price=None, trigger_price=None))]
     #[expect(clippy::too_many_arguments)]

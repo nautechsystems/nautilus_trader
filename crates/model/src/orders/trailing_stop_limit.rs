@@ -54,8 +54,8 @@ use crate::{
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
     pub activation_price: Option<Price>,
-    pub price: Price,
-    pub trigger_price: Price,
+    pub price: Option<Price>,
+    pub trigger_price: Option<Price>,
     pub trigger_type: TriggerType,
     pub limit_offset: Decimal,
     pub trailing_offset: Decimal,
@@ -86,8 +86,9 @@ impl TrailingStopLimitOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
-        trigger_price: Price,
+        activation_price: Option<Price>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
         trigger_type: TriggerType,
         limit_offset: Decimal,
         trailing_offset: Decimal,
@@ -131,8 +132,9 @@ impl TrailingStopLimitOrder {
             init_id,
             ts_init,
             ts_init,
-            Some(price),
-            Some(trigger_price),
+            price,
+            activation_price,
+            trigger_price,
             Some(trigger_type),
             Some(limit_offset),
             Some(trailing_offset),
@@ -153,7 +155,7 @@ impl TrailingStopLimitOrder {
 
         Ok(Self {
             core: OrderCore::new(init_order),
-            activation_price: None,
+            activation_price,
             price,
             trigger_price,
             trigger_type,
@@ -184,6 +186,7 @@ impl TrailingStopLimitOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
+        activation_price: Option<Price>,
         price: Price,
         trigger_price: Price,
         trigger_type: TriggerType,
@@ -216,8 +219,9 @@ impl TrailingStopLimitOrder {
             client_order_id,
             order_side,
             quantity,
-            price,
-            trigger_price,
+            activation_price,
+            Some(price),
+            Some(trigger_price),
             trigger_type,
             limit_offset,
             trailing_offset,
@@ -347,11 +351,11 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn price(&self) -> Option<Price> {
-        Some(self.price)
+        self.price
     }
 
     fn trigger_price(&self) -> Option<Price> {
-        Some(self.trigger_price)
+        self.trigger_price
     }
 
     fn trigger_type(&self) -> Option<TriggerType> {
@@ -375,7 +379,9 @@ impl Order for TrailingStopLimitOrder {
     }
 
     fn has_price(&self) -> bool {
-        true
+        // The limit price may be unset until it materializes from `limit_offset` on the first
+        // trail update; own-book and price-dependent paths must not assume a price is present.
+        self.price.is_some()
     }
 
     fn display_qty(&self) -> Option<Quantity> {
@@ -514,20 +520,20 @@ impl Order for TrailingStopLimitOrder {
             self.ts_triggered = ts_event;
         }
 
-        if is_order_filled {
-            self.core.set_slippage(self.price);
+        if is_order_filled && let Some(price) = self.price {
+            self.core.set_slippage(price);
         }
 
         Ok(())
     }
 
     fn update(&mut self, event: &OrderUpdated) {
-        if let Some(price) = event.price {
-            self.price = price;
+        if event.price.is_some() {
+            self.price = event.price;
         }
 
-        if let Some(trigger_price) = event.trigger_price {
-            self.trigger_price = trigger_price;
+        if event.trigger_price.is_some() {
+            self.trigger_price = event.trigger_price;
         }
         self.quantity = event.quantity;
         self.leaves_qty = self.quantity.saturating_sub(self.filled_qty);
@@ -601,20 +607,6 @@ impl TryFrom<OrderInitialized> for TrailingStopLimitOrder {
     type Error = OrderError;
 
     fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
-        let price = event
-            .price
-            .ok_or_else(|| CorrectnessError::PredicateViolation {
-                message: "`price` is required for `TrailingStopLimitOrder` initialization"
-                    .to_string(),
-            })?;
-        let trigger_price =
-            event
-                .trigger_price
-                .ok_or_else(|| CorrectnessError::PredicateViolation {
-                    message:
-                        "`trigger_price` is required for `TrailingStopLimitOrder` initialization"
-                            .to_string(),
-                })?;
         let trigger_type =
             event
                 .trigger_type
@@ -656,8 +648,9 @@ impl TryFrom<OrderInitialized> for TrailingStopLimitOrder {
             event.client_order_id,
             event.order_side,
             event.quantity,
-            price,
-            trigger_price,
+            event.activation_price,
+            event.price,
+            event.trigger_price,
             trigger_type,
             limit_offset,
             trailing_offset,
@@ -844,6 +837,63 @@ mod tests {
     }
 
     #[rstest]
+    fn test_activation_price_round_trips_through_event(audusd_sim: CurrencyPair) {
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .activation_price(Price::from("0.68500"))
+            .price(Price::from("0.67500"))
+            .trigger_price(Price::from("0.68000"))
+            .limit_offset(dec!(5))
+            .trailing_offset(dec!(10))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.activation_price(), Some(Price::from("0.68500")));
+
+        let init = order.init_event().clone();
+        assert_eq!(init.activation_price, Some(Price::from("0.68500")));
+
+        let rebuilt: TrailingStopLimitOrder = init.try_into().unwrap();
+        assert_eq!(rebuilt.activation_price, Some(Price::from("0.68500")));
+        assert_eq!(rebuilt.price, Some(Price::from("0.67500")));
+        assert_eq!(rebuilt.trigger_price, Some(Price::from("0.68000")));
+    }
+
+    #[rstest]
+    fn test_has_price_false_until_limit_materializes(audusd_sim: CurrencyPair) {
+        // A trailing-stop-limit with no explicit limit price has no price until it materializes
+        // from `limit_offset`; own-book/price-dependent paths gate on `has_price()`.
+        let order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .limit_offset(dec!(5))
+            .trailing_offset(dec!(10))
+            .quantity(Quantity::from(1))
+            .build();
+
+        assert_eq!(order.price(), None);
+        assert!(!order.has_price());
+    }
+
+    #[rstest]
+    fn test_reconstruct_with_price_trigger_and_activation_none() {
+        let init = OrderInitializedSpec::builder()
+            .order_type(OrderType::TrailingStopLimit)
+            .trigger_type(TriggerType::Default)
+            .limit_offset(dec!(5))
+            .trailing_offset(dec!(10))
+            .trailing_offset_type(TrailingOffsetType::Price)
+            .build();
+
+        let order: TrailingStopLimitOrder = init.try_into().unwrap();
+
+        assert_eq!(order.price(), None);
+        assert_eq!(order.trigger_price(), None);
+        assert_eq!(order.activation_price(), None);
+    }
+
+    #[rstest]
     fn test_trailing_stop_limit_order_from_order_initialized() {
         let order_initialized = OrderInitializedSpec::builder()
             .order_type(OrderType::TrailingStopLimit)
@@ -863,11 +913,8 @@ mod tests {
         assert_eq!(order.client_order_id(), order_initialized.client_order_id);
         assert_eq!(order.order_side(), order_initialized.order_side);
         assert_eq!(order.quantity(), order_initialized.quantity);
-        assert_eq!(order.price, order_initialized.price.unwrap());
-        assert_eq!(
-            order.trigger_price,
-            order_initialized.trigger_price.unwrap()
-        );
+        assert_eq!(order.price, order_initialized.price);
+        assert_eq!(order.trigger_price, order_initialized.trigger_price);
         assert_eq!(order.trigger_type, order_initialized.trigger_type.unwrap());
         assert_eq!(order.limit_offset, order_initialized.limit_offset.unwrap());
         assert_eq!(

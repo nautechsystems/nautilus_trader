@@ -169,6 +169,12 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `OrderBookDelta` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "book_deltas_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -183,6 +189,12 @@ pub fn py_book_deltas_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `OrderBookDepth10` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "book_depth10_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -197,6 +209,12 @@ pub fn py_book_depth10_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `QuoteTick` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "quotes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -211,6 +229,12 @@ pub fn py_quotes_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `TradeTick` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "trades_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -242,6 +266,12 @@ pub fn py_bars_to_arrow_record_batch_bytes(py: Python, data: Vec<Bar>) -> PyResu
 }
 
 /// Converts a vector of `MarkPriceUpdate` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "mark_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -256,6 +286,12 @@ pub fn py_mark_prices_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `IndexPriceUpdate` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "index_prices_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -270,6 +306,12 @@ pub fn py_index_prices_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `InstrumentStatus` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "instrument_status_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -284,6 +326,12 @@ pub fn py_instrument_status_to_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `OptionGreeks` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "option_greeks_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]
@@ -351,6 +399,12 @@ pub fn py_instrument_status_from_arrow_record_batch_bytes(
 }
 
 /// Converts a vector of `InstrumentClose` into an Arrow `RecordBatch`.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - `data` is empty: `EncodingError::EmptyData`.
+/// - Encoding fails: `EncodingError::ArrowError`.
 #[pyfunction(name = "instrument_closes_to_arrow_record_batch_bytes")]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.serialization")]
 #[expect(clippy::needless_pass_by_value)]

@@ -286,6 +286,7 @@ pub fn parse_futures_ws_order_status_report(
         contingency_type: ContingencyType::NoContingency,
         expire_time: None,
         price: None,
+        activation_price: None,
         trigger_price: None,
         trigger_type: None,
         limit_offset: None,

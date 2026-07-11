@@ -674,7 +674,7 @@ mod serial_tests {
         ) else {
             unreachable!();
         };
-        let reopened_position = Position::new(&instrument, reopen_fill);
+        let reopened_position = Position::new(&instrument, reopen_fill.clone());
         pg_cache.add_position(&reopened_position).unwrap();
 
         wait_until_async(
@@ -858,7 +858,7 @@ mod serial_tests {
         ) else {
             unreachable!();
         };
-        let good_position = Position::new(&instrument, good_fill);
+        let good_position = Position::new(&instrument, good_fill.clone());
 
         let OrderEventAny::Filled(corrupt_fill) = TestOrderEventStubs::filled(
             &corrupt_order,

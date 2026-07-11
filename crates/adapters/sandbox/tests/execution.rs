@@ -2418,6 +2418,28 @@ fn test_account_id(execution_client: SandboxExecutionClient, account_id: Account
 }
 
 #[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_returns_empty_report(
+    execution_client: SandboxExecutionClient,
+    client_id: ClientId,
+    account_id: AccountId,
+    venue: Venue,
+) {
+    let mass_status = execution_client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass_status.client_id, client_id);
+    assert_eq!(mass_status.account_id, account_id);
+    assert_eq!(mass_status.venue, venue);
+    assert!(mass_status.order_reports().is_empty());
+    assert!(mass_status.fill_reports().is_empty());
+    assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
 fn test_config_accessor(execution_client: SandboxExecutionClient, venue: Venue) {
     let config = execution_client.config();
 

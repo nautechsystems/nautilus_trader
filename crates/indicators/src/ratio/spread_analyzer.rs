@@ -67,9 +67,9 @@ impl Indicator for SpreadAnalyzer {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         if quote.instrument_id != self.instrument_id {
-            return;
+            return Ok(());
         }
 
         // Check initialization
@@ -102,6 +102,7 @@ impl Indicator for SpreadAnalyzer {
         // evicted oldest value, so the average freezes for non-constant spreads.
         // Recomputing from the bounded window is O(capacity) and always correct.
         self.average = fast_mean(&self.spreads);
+        Ok(())
     }
 
     fn reset(&mut self) {
@@ -168,14 +169,18 @@ mod tests {
         ];
 
         for i in 1..10 {
-            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
+            spread_analyzer_10
+                .handle_quote(&stub_quote(bid_price[i], ask_price[i]))
+                .unwrap();
         }
         assert!(!spread_analyzer_10.initialized);
     }
 
     #[rstest]
     fn test_value_with_one_input(mut spread_analyzer_10: SpreadAnalyzer) {
-        spread_analyzer_10.handle_quote(&stub_quote("100.50", "100.55"));
+        spread_analyzer_10
+            .handle_quote(&stub_quote("100.50", "100.55"))
+            .unwrap();
         assert_eq!(spread_analyzer_10.average, 0.049_999_999_999_997_16);
     }
 
@@ -194,7 +199,9 @@ mod tests {
         ];
 
         for i in 0..10 {
-            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
+            spread_analyzer_10
+                .handle_quote(&stub_quote(bid_price[i], ask_price[i]))
+                .unwrap();
         }
 
         assert_eq!(spread_analyzer_10.average, 0.050_000_000_000_001_42);
@@ -219,7 +226,9 @@ mod tests {
         ];
 
         for i in 0..15 {
-            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
+            spread_analyzer_10
+                .handle_quote(&stub_quote(bid_price[i], ask_price[i]))
+                .unwrap();
         }
 
         assert!(spread_analyzer_10.initialized());
@@ -241,7 +250,9 @@ mod tests {
         ];
 
         for i in 0..15 {
-            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
+            spread_analyzer_10
+                .handle_quote(&stub_quote(bid_price[i], ask_price[i]))
+                .unwrap();
         }
 
         assert_eq!(spread_analyzer_10.spreads.len(), 10);
@@ -252,7 +263,9 @@ mod tests {
     fn test_reset_successfully_returns_indicator_to_fresh_state(
         mut spread_analyzer_10: SpreadAnalyzer,
     ) {
-        spread_analyzer_10.handle_quote(&stub_quote("100.50", "100.55"));
+        spread_analyzer_10
+            .handle_quote(&stub_quote("100.50", "100.55"))
+            .unwrap();
         spread_analyzer_10.reset();
         assert!(!spread_analyzer_10.initialized());
         assert_eq!(spread_analyzer_10.current, 0.0);

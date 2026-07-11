@@ -146,6 +146,10 @@ impl BybitRawHttpClient {
 
     /// Fetches open orders (requires authentication).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/order/open-order>
@@ -275,6 +279,13 @@ impl BybitHttpClient {
 
     /// Sets margin mode (requires authentication).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    ///
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/account/set-margin-mode>
@@ -323,6 +334,13 @@ impl BybitHttpClient {
 
     /// Sets leverage for a symbol (requires authentication).
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
+    ///
     /// # References
     ///
     /// - <https://bybit-exchange.github.io/docs/v5/position/leverage>
@@ -349,6 +367,13 @@ impl BybitHttpClient {
     }
 
     /// Switches position mode (requires authentication).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     ///
     /// # References
     ///
@@ -382,6 +407,13 @@ impl BybitHttpClient {
     /// # Parameters
     ///
     /// - `coin`: The coin to check (e.g., "BTC", "ETH")
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The coin is not found in the wallet.
     #[pyo3(name = "get_spot_borrow_amount")]
     fn py_get_spot_borrow_amount<'py>(
         &self,
@@ -408,6 +440,13 @@ impl BybitHttpClient {
     ///
     /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
     /// - `amount`: Optional amount to borrow. If None, repays all outstanding borrows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Insufficient collateral for the borrow.
     #[pyo3(name = "borrow_spot")]
     #[pyo3(signature = (coin, amount))]
     fn py_borrow_spot<'py>(
@@ -436,6 +475,14 @@ impl BybitHttpClient {
     ///
     /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
     /// - `amount`: Optional amount to repay. If None, repays all outstanding borrows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Called between 04:00-05:30 UTC (interest calculation window).
+    /// - Insufficient spot balance for repayment.
     #[pyo3(name = "repay_spot_borrow")]
     #[pyo3(signature = (coin, amount=None))]
     fn py_repay_spot_borrow<'py>(
@@ -461,6 +508,10 @@ impl BybitHttpClient {
     /// When `base_coin` is provided, the request is narrowed to that base coin.
     /// This is required for `Option`: Bybit's API returns only `BTC` options when
     /// `baseCoin` is omitted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
     #[pyo3(name = "request_instruments")]
     #[pyo3(signature = (product_type, symbol=None, base_coin=None))]
     fn py_request_instruments<'py>(
@@ -498,6 +549,10 @@ impl BybitHttpClient {
     /// Paginates through the instruments endpoint collecting only
     /// `(InstrumentId, MarketStatusAction)` pairs. This avoids fee-rate
     /// fetching and full instrument parsing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_instrument_statuses")]
     fn py_request_instrument_statuses<'py>(
         &self,
@@ -530,6 +585,10 @@ impl BybitHttpClient {
     /// Fetches ticker data from Bybit's `/v5/market/tickers` endpoint and returns
     /// a unified `BybitTickerData` structure compatible with all product types.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or parsing fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/market/tickers>
@@ -559,6 +618,15 @@ impl BybitHttpClient {
     }
 
     /// Submit a new order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Order validation fails.
+    /// - The order is rejected.
+    /// - The API returns an error.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         account_id,
@@ -653,6 +721,15 @@ impl BybitHttpClient {
     }
 
     /// Modify an existing order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The order is already closed.
+    /// - The API returns an error.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         account_id,
@@ -696,6 +773,14 @@ impl BybitHttpClient {
     }
 
     /// Cancel an order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The order doesn't exist.
+    /// - The API returns an error.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -726,6 +811,13 @@ impl BybitHttpClient {
     }
 
     /// Cancel all orders for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     #[pyo3(name = "cancel_all_orders")]
     fn py_cancel_all_orders<'py>(
         &self,
@@ -754,6 +846,13 @@ impl BybitHttpClient {
     }
 
     /// Query a single order by client order ID or venue order ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     #[pyo3(name = "query_order")]
     #[pyo3(signature = (account_id, product_type, instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_query_order<'py>(
@@ -794,6 +893,13 @@ impl BybitHttpClient {
     /// **Note**: For historical trade data with time ranges, use the klines endpoint instead.
     /// The Bybit public API does not support fetching historical trades by time range.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/market/recent-trade>
@@ -826,6 +932,13 @@ impl BybitHttpClient {
     }
 
     /// Request funding rate history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
     ///
     /// # References
     ///
@@ -870,6 +983,13 @@ impl BybitHttpClient {
     /// - Linear & Inverse: `1..=500` (default: `25`)
     /// - Options: `1..=25` (default: `1`)
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/market/orderbook>
@@ -895,6 +1015,13 @@ impl BybitHttpClient {
     }
 
     /// Request bar/kline history for a given symbol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The instrument is not found in cache.
+    /// - The request fails.
+    /// - Parsing fails.
     ///
     /// # References
     ///
@@ -938,6 +1065,12 @@ impl BybitHttpClient {
 
     /// Requests trading fee rates for the specified product type and optional filters.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
@@ -971,6 +1104,12 @@ impl BybitHttpClient {
 
     /// Requests the current account state for the specified account type.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/account/wallet-balance>
@@ -996,6 +1135,13 @@ impl BybitHttpClient {
     /// Request multiple order status reports.
     ///
     /// Orders for instruments not currently loaded in cache will be skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API returns an error.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, product_type, instrument_id=None, open_only=false, start=None, end=None, limit=None))]
     #[expect(clippy::too_many_arguments)]
@@ -1041,6 +1187,10 @@ impl BybitHttpClient {
     ///
     /// Executions for instruments not currently loaded in cache will be skipped.
     ///
+    /// # Errors
+    ///
+    /// This function returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/order/execution>
@@ -1079,6 +1229,10 @@ impl BybitHttpClient {
     /// Fetches position information for the account and returns a list of `PositionStatusReport`s.
     ///
     /// Positions for instruments not currently loaded in cache will be skipped.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the request fails.
     ///
     /// # References
     ///

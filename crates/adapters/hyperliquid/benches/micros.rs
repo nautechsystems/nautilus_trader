@@ -289,6 +289,7 @@ fn bench_event_filled_construct(c: &mut Criterion) {
                 false,
                 None,
                 Some(commission),
+                None,
             );
             black_box(filled);
         });

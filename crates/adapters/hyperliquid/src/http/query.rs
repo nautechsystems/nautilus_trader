@@ -67,6 +67,8 @@ pub struct OrderParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct CancelParams {
     pub cancels: Vec<HyperliquidExecCancelByCloidRequest>,
+    #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+    pub fast: Option<bool>,
 }
 
 /// Parameters for modifying an order.
@@ -419,7 +421,10 @@ impl ExchangeAction {
     pub fn cancel(cancels: Vec<HyperliquidExecCancelByCloidRequest>) -> Self {
         Self {
             action_type: ExchangeActionType::Cancel,
-            params: ExchangeActionParams::Cancel(CancelParams { cancels }),
+            params: ExchangeActionParams::Cancel(CancelParams {
+                cancels,
+                fast: None,
+            }),
         }
     }
 
@@ -427,7 +432,10 @@ impl ExchangeAction {
     pub fn cancel_by_cloid(cancels: Vec<HyperliquidExecCancelByCloidRequest>) -> Self {
         Self {
             action_type: ExchangeActionType::CancelByCloid,
-            params: ExchangeActionParams::Cancel(CancelParams { cancels }),
+            params: ExchangeActionParams::Cancel(CancelParams {
+                cancels,
+                fast: None,
+            }),
         }
     }
 

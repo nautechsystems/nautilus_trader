@@ -27,7 +27,7 @@ use crate::{
     identifiers::InstrumentId,
     instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
     orderbook::OrderBook,
-    orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{builder::OrderTestBuilder, stubs::OrderFilledTestBuilder},
     position::Position,
     types::{Money, Price, Quantity},
 };
@@ -136,18 +136,9 @@ pub fn stub_position_long(audusd_sim: CurrencyPair) -> Position {
         .side(OrderSide::Buy)
         .quantity(Quantity::from(1))
         .build();
-    let filled = TestOrderEventStubs::filled(
-        &order,
-        &audusd_sim,
-        None,
-        None,
-        Some(Price::from("1.0002")),
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let filled = OrderFilledTestBuilder::new(&order, &audusd_sim)
+        .last_px(Price::from("1.0002"))
+        .build();
     Position::new(&audusd_sim, filled.into())
 }
 
@@ -159,18 +150,9 @@ pub fn stub_position_short(audusd_sim: CurrencyPair) -> Position {
         .side(OrderSide::Sell)
         .quantity(Quantity::from(1))
         .build();
-    let filled = TestOrderEventStubs::filled(
-        &order,
-        &audusd_sim,
-        None,
-        None,
-        Some(Price::from("22000.0")),
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let filled = OrderFilledTestBuilder::new(&order, &audusd_sim)
+        .last_px(Price::from("22000.0"))
+        .build();
     Position::new(&audusd_sim, filled.into())
 }
 

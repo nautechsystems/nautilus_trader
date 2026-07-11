@@ -74,11 +74,12 @@ impl Indicator for BollingerBands {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         let bid = quote.bid_price.raw as f64;
         let ask = quote.ask_price.raw as f64;
         let mid = f64::midpoint(bid, ask);
         self.update_raw(ask, bid, mid);
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {

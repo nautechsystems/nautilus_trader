@@ -4994,6 +4994,7 @@ async fn test_submit_order_closed_order_returns_silently() {
         false,
         None,
         Some(Money::new(0.0, Currency::USD())),
+        None,
     );
     order.apply(OrderEventAny::Filled(filled)).unwrap();
     assert!(order.is_closed(), "order should be terminal before submit");
@@ -5222,6 +5223,7 @@ fn open_limit_order_with_filled_qty(
             false,
             None,
             Some(Money::new(0.0, Currency::USD())),
+            None,
         );
         order = cache
             .borrow_mut()

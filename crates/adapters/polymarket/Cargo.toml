@@ -72,6 +72,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }

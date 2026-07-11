@@ -269,6 +269,10 @@ impl OrderEvent for OrderUpdated {
         None
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         self.trigger_price
     }

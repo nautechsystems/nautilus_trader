@@ -66,7 +66,7 @@ impl AccountsManager {
         &self,
         mut account: AccountAny,
         instrument: &InstrumentAny,
-        fill: OrderFilled,
+        fill: &OrderFilled,
     ) -> (AccountAny, AccountState) {
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
@@ -87,7 +87,7 @@ impl AccountsManager {
 
         let position = self.cache.borrow().position_owned(&position_id);
 
-        let pnls = account.calculate_pnls(instrument, &fill, position);
+        let pnls = account.calculate_pnls(instrument, fill, position);
 
         // Calculate final PnL including commissions
         match account.base_currency() {
@@ -102,11 +102,11 @@ impl AccountsManager {
                     },
                 );
 
-                self.update_balance_single_currency(&mut account, &fill, pnl);
+                self.update_balance_single_currency(&mut account, fill, pnl);
             }
             None => {
                 if let Ok(mut pnl_list) = pnls {
-                    self.update_balance_multi_currency(&mut account, &fill, &mut pnl_list);
+                    self.update_balance_multi_currency(&mut account, fill, &mut pnl_list);
                 }
             }
         }
@@ -1844,7 +1844,7 @@ mod tests {
         let _state = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            fill2,
+            &fill2,
         );
 
         let account_after = cache
@@ -2075,7 +2075,10 @@ mod tests {
             .position_id(PositionId::new("P-001"))
             .commission(Money::new(20.0, usd))
             .build();
-        let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
+        let position = Position::new(
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            fill.clone(),
+        );
         cache
             .borrow_mut()
             .add_position(&position, OmsType::Netting)
@@ -2084,7 +2087,7 @@ mod tests {
         let (updated, state) = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            fill,
+            &fill,
         );
 
         // Buy 100k at 0.80 → 80,000 USD cost, 20 USD commission, expect 919,980 USD
@@ -2433,7 +2436,10 @@ mod tests {
         let manager = AccountsManager::new(clock, cache.clone());
         let instrument = audusd_sim();
         let fill = buy_audusd_fill("10000", "0.80000", 20.0);
-        let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
+        let position = Position::new(
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            fill.clone(),
+        );
         cache
             .borrow_mut()
             .add_position(&position, OmsType::Netting)
@@ -2442,7 +2448,7 @@ mod tests {
         let (updated, _state) = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            fill,
+            &fill,
         );
 
         match updated {
@@ -2474,7 +2480,10 @@ mod tests {
         let manager = AccountsManager::new(clock, cache.clone());
         let instrument = audusd_sim();
         let fill = buy_audusd_fill("10000", "0.80000", 20.0);
-        let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
+        let position = Position::new(
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            fill.clone(),
+        );
         cache
             .borrow_mut()
             .add_position(&position, OmsType::Netting)
@@ -2483,7 +2492,7 @@ mod tests {
         let (updated, _state) = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            fill,
+            &fill,
         );
 
         // Rejected by `cash.update_balances`: original balances preserved
@@ -2529,7 +2538,10 @@ mod tests {
         // Buy AUD/USD on an AUD-only account: produces negative USD pnl on a missing currency,
         // which the documented Python-parity branch rejects even with `allow_borrowing=true`.
         let fill = buy_audusd_fill("10000", "0.80000", 0.0);
-        let position = Position::new(&InstrumentAny::CurrencyPair(instrument.clone()), fill);
+        let position = Position::new(
+            &InstrumentAny::CurrencyPair(instrument.clone()),
+            fill.clone(),
+        );
         cache
             .borrow_mut()
             .add_position(&position, OmsType::Netting)
@@ -2538,7 +2550,7 @@ mod tests {
         let (updated, _state) = manager.update_balances(
             AccountAny::Cash(account),
             &InstrumentAny::CurrencyPair(instrument),
-            fill,
+            &fill,
         );
 
         // Rejected at the no-existing-balance + negative-pnl branch (Python parity)

@@ -133,6 +133,11 @@ impl DeribitWebSocketClient {
     /// to the environment variable for the given `environment`:
     /// - Testnet: `DERIBIT_TESTNET_API_KEY` and `DERIBIT_TESTNET_API_SECRET`
     /// - Mainnet: `DERIBIT_API_KEY` and `DERIBIT_API_SECRET`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if neither the argument nor the environment variable
+    /// provides a credential.
     #[staticmethod]
     #[pyo3(name = "with_credentials", signature = (environment, api_key = None, api_secret = None, account_id = None, proxy_url = None))]
     fn py_with_credentials(
@@ -238,6 +243,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Connects to the Deribit WebSocket API.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection fails.
     #[pyo3(name = "connect")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_connect<'py>(
@@ -398,6 +407,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Waits until the client is active or timeout expires.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout expires before the client becomes active.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -443,6 +456,13 @@ impl DeribitWebSocketClient {
     ///   When provided, uses `session:<name>` scope which allows skipping `access_token`
     ///   in subsequent private requests. When `None`, uses default `connection` scope.
     ///   Recommended to use session scope for order execution compatibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No credentials are configured
+    /// - The authentication request fails
+    /// - The authentication times out
     #[pyo3(name = "authenticate")]
     #[pyo3(signature = (session_name=None))]
     fn py_authenticate<'py>(
@@ -465,6 +485,10 @@ impl DeribitWebSocketClient {
     ///
     /// Use `DERIBIT_DATA_SESSION_NAME` for data clients and
     /// `DERIBIT_EXECUTION_SESSION_NAME` for execution clients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if authentication fails.
     #[pyo3(name = "authenticate_session")]
     fn py_authenticate_session<'py>(
         &self,
@@ -492,6 +516,10 @@ impl DeribitWebSocketClient {
     ///
     /// * `instrument_id` - The instrument to subscribe to
     /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or raw is requested without authentication.
     #[pyo3(name = "subscribe_trades")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_subscribe_trades<'py>(
@@ -511,6 +539,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from trade updates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_trades")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_unsubscribe_trades<'py>(
@@ -535,6 +567,10 @@ impl DeribitWebSocketClient {
     ///
     /// * `instrument_id` - The instrument to subscribe to
     /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or raw is requested without authentication.
     #[pyo3(name = "subscribe_book")]
     #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_subscribe_book<'py>(
@@ -562,6 +598,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from order book updates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_book")]
     #[pyo3(signature = (instrument_id, interval=None, depth=None))]
     fn py_unsubscribe_book<'py>(
@@ -593,6 +633,10 @@ impl DeribitWebSocketClient {
     /// Uses the Deribit grouped book channel format: `book.{instrument}.{group}.{depth}.{interval}`
     ///
     /// Depth is normalized to Deribit supported values: 1, 10, or 20.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or raw is requested without authentication.
     #[pyo3(name = "subscribe_book_grouped")]
     #[pyo3(signature = (instrument_id, group, depth, interval=None))]
     fn py_subscribe_book_grouped<'py>(
@@ -616,6 +660,10 @@ impl DeribitWebSocketClient {
     /// Unsubscribes from grouped (depth-limited) order book updates for an instrument.
     ///
     /// Depth is normalized to Deribit supported values: 1, 10, or 20.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_book_grouped")]
     #[pyo3(signature = (instrument_id, group, depth, interval=None))]
     fn py_unsubscribe_book_grouped<'py>(
@@ -642,6 +690,10 @@ impl DeribitWebSocketClient {
     ///
     /// * `instrument_id` - The instrument to subscribe to
     /// * `interval` - Update interval. Defaults to `Ms100` (100ms). `Raw` requires authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails or raw is requested without authentication.
     #[pyo3(name = "subscribe_ticker")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_subscribe_ticker<'py>(
@@ -661,6 +713,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from ticker updates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_ticker")]
     #[pyo3(signature = (instrument_id, interval=None))]
     fn py_unsubscribe_ticker<'py>(
@@ -820,6 +876,10 @@ impl DeribitWebSocketClient {
     /// Subscribes to quote (best bid/ask) updates for an instrument.
     ///
     /// Note: Quote channel does not support interval parameter.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     #[pyo3(name = "subscribe_quotes")]
     fn py_subscribe_quotes<'py>(
         &self,
@@ -837,6 +897,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from quote updates for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_quotes")]
     fn py_unsubscribe_quotes<'py>(
         &self,
@@ -958,6 +1022,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Subscribes to multiple channels at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     #[pyo3(name = "subscribe")]
     fn py_subscribe<'py>(
         &self,
@@ -972,6 +1040,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from multiple channels at once.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe")]
     fn py_unsubscribe<'py>(
         &self,
@@ -1024,6 +1096,10 @@ impl DeribitWebSocketClient {
     /// Subscribes to instrument status changes for lifecycle notifications.
     ///
     /// Channel format: `instrument.state.{kind}.{currency}`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     #[pyo3(name = "subscribe_instrument_status")]
     fn py_subscribe_instrument_status<'py>(
         &self,
@@ -1042,6 +1118,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from instrument status changes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_instrument_status")]
     fn py_unsubscribe_instrument_status<'py>(
         &self,
@@ -1062,6 +1142,10 @@ impl DeribitWebSocketClient {
     /// Subscribes to volatility index updates for the given index name.
     ///
     /// Channel format: `deribit_volatility_index.{index_name}`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     #[pyo3(name = "subscribe_volatility_index")]
     fn py_subscribe_volatility_index<'py>(
         &self,
@@ -1079,6 +1163,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from volatility index updates for the given index name.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_volatility_index")]
     fn py_unsubscribe_volatility_index<'py>(
         &self,
@@ -1102,6 +1190,10 @@ impl DeribitWebSocketClient {
     /// * `instrument_id` - The instrument to subscribe to
     /// * `resolution` - Bar resolution: "1", "3", "5", "10", "15", "30", "60", "120", "180",
     ///   "360", "720", "1D" (minutes or 1D for daily)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if subscription fails.
     #[pyo3(name = "subscribe_chart")]
     fn py_subscribe_chart<'py>(
         &self,
@@ -1120,6 +1212,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from chart/OHLC bar updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if unsubscription fails.
     #[pyo3(name = "unsubscribe_chart")]
     fn py_unsubscribe_chart<'py>(
         &self,
@@ -1141,6 +1237,10 @@ impl DeribitWebSocketClient {
     ///
     /// Converts the BarType to the nearest supported Deribit resolution and subscribes
     /// to the chart channel.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -1158,6 +1258,10 @@ impl DeribitWebSocketClient {
     }
 
     /// Unsubscribes from bar updates for an instrument using a BarType specification.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,
@@ -1178,6 +1282,12 @@ impl DeribitWebSocketClient {
     ///
     /// Routes to `private/buy` or `private/sell` JSON-RPC method based on order side.
     /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         order_side,
@@ -1260,6 +1370,12 @@ impl DeribitWebSocketClient {
     ///
     /// The order parameters are sent using the `private/edit` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
     #[pyo3(name = "modify_order")]
     #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -1296,6 +1412,12 @@ impl DeribitWebSocketClient {
     ///
     /// The order is cancelled using the `private/cancel` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
     #[pyo3(name = "cancel_order")]
     fn py_cancel_order<'py>(
         &self,
@@ -1327,6 +1449,12 @@ impl DeribitWebSocketClient {
     ///
     /// Uses the `private/cancel_all_by_instrument` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
     #[pyo3(name = "cancel_all_orders")]
     #[pyo3(signature = (instrument_id, order_type=None))]
     fn py_cancel_all_orders<'py>(
@@ -1350,6 +1478,12 @@ impl DeribitWebSocketClient {
     ///
     /// Uses the `private/get_order_state` JSON-RPC method.
     /// Requires authentication (call `authenticate_session()` first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The client is not authenticated
+    /// - The command fails to send
     #[pyo3(name = "query_order")]
     fn py_query_order<'py>(
         &self,

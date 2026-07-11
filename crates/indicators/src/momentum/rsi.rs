@@ -68,8 +68,9 @@ impl Indicator for RelativeStrengthIndex {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(PriceType::Mid).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(PriceType::Mid)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -241,7 +242,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, stub_quote: QuoteTick) {
-        rsi_10.handle_quote(&stub_quote);
+        rsi_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(rsi_10.count, 1);
         assert_eq!(rsi_10.value, 1.0);
     }

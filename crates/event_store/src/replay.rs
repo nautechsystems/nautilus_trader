@@ -1185,7 +1185,7 @@ pub fn apply_cache_replay_entry(
                     "OrderFilled.order_side must be Buy or Sell, was NoOrderSide",
                 ));
             }
-            let event = OrderEventAny::Filled(fill);
+            let event = OrderEventAny::Filled(fill.clone());
             apply_result(entry, cache.update_order(&event))?;
             apply_fill_to_position(cache, entry, &fill)?;
         }
@@ -1311,7 +1311,7 @@ fn apply_fill_to_position(
         return Ok(());
     };
 
-    let position = Position::new(&instrument, *fill);
+    let position = Position::new(&instrument, fill.clone());
     apply_result(entry, cache.add_position(&position, OmsType::Unspecified))?;
     Ok(())
 }
@@ -3147,7 +3147,7 @@ mod tests {
             .position_id(position_id)
             .commission(Money::from("1 USD"))
             .build();
-        let filled_event = OrderEventAny::Filled(filled);
+        let filled_event = OrderEventAny::Filled(filled.clone());
         let reader = reader_with_entries(
             "run-order-replay",
             &[
@@ -3172,7 +3172,7 @@ mod tests {
         assert_eq!(order.event_count(), 4);
         assert_eq!(order.last_event(), &filled_event);
         assert_eq!(position.event_count(), 1);
-        assert_eq!(position.last_event(), Some(filled));
+        assert_eq!(position.last_event(), Some(filled.clone()));
         assert_eq!(position.trade_ids(), vec![filled.trade_id]);
         assert_eq!(position.commissions(), vec![Money::from("1 USD")]);
     }
@@ -3190,7 +3190,7 @@ mod tests {
             .last_qty(Quantity::from("1"))
             .last_px(Price::from("1.00000"))
             .build();
-        let mut live_position = Position::new(&instrument, opened_fill);
+        let mut live_position = Position::new(&instrument, opened_fill.clone());
         let opened = PositionOpened::create(
             &live_position,
             &opened_fill,
@@ -3289,7 +3289,7 @@ mod tests {
             .instrument_id(instrument.id())
             .position_id(position_id)
             .build();
-        let position = Position::new(&instrument, fill);
+        let position = Position::new(&instrument, fill.clone());
         let adjustment = PositionAdjusted::new(
             fill.trader_id,
             fill.strategy_id,
@@ -3329,7 +3329,7 @@ mod tests {
             .instrument_id(instrument.id())
             .position_id(position_id)
             .build();
-        let position = Position::new(&instrument, fill);
+        let position = Position::new(&instrument, fill.clone());
         let opened = PositionOpened::create(&position, &fill, UUID4::new(), UnixNanos::from(10));
         let entry = append_position_event(1, &PositionEvent::PositionOpened(opened)).entry;
         let mut cache = Cache::default();
@@ -3374,8 +3374,8 @@ mod tests {
             .position_id(position_id)
             .commission(Money::from("1 USD"))
             .build();
-        let position = Position::new(&instrument, fill);
-        let entry = append_order_event(1, &OrderEventAny::Filled(fill)).entry;
+        let position = Position::new(&instrument, fill.clone());
+        let entry = append_order_event(1, &OrderEventAny::Filled(fill.clone())).entry;
         let mut cache = Cache::default();
         cache
             .add_position(&position, OmsType::Unspecified)

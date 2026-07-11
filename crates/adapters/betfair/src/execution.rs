@@ -660,6 +660,7 @@ impl BetfairExecutionClient {
                     false,
                     fill_report.venue_position_id,
                     Some(fill_report.commission),
+                    None,
                 );
                 emitter.send_order_event(OrderEventAny::Filled(filled));
             }

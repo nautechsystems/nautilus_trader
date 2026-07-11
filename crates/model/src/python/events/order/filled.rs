@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::{
     UUID4,
     python::{IntoPyObjectNautilusExt, serialization::from_dict_pyo3},
@@ -26,6 +27,7 @@ use crate::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
+    orders::str_indexmap_to_ustr,
     types::{Currency, Money, Price, Quantity},
 };
 
@@ -35,7 +37,7 @@ impl OrderFilled {
     /// Creates a new `OrderFilled` instance.
     #[expect(clippy::too_many_arguments)]
     #[new]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, venue_order_id, account_id, trade_id, order_side, order_type, last_qty, last_px, currency, liquidity_side, event_id, ts_event, ts_init, reconciliation, position_id=None, commission=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, venue_order_id, account_id, trade_id, order_side, order_type, last_qty, last_px, currency, liquidity_side, event_id, ts_event, ts_init, reconciliation, position_id=None, commission=None, info=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -56,6 +58,7 @@ impl OrderFilled {
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
+        info: Option<IndexMap<String, String>>,
     ) -> Self {
         Self::new(
             trader_id,
@@ -77,6 +80,7 @@ impl OrderFilled {
             reconciliation,
             position_id,
             commission,
+            info.map(str_indexmap_to_ustr),
         )
     }
 
@@ -217,6 +221,14 @@ impl OrderFilled {
     }
 
     #[getter]
+    #[pyo3(name = "info")]
+    fn py_info(&self) -> Option<IndexMap<&str, &str>> {
+        self.info
+            .as_ref()
+            .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
+    }
+
+    #[getter]
     #[pyo3(name = "order_type")]
     fn py_order_type(&self) -> OrderType {
         self.order_type
@@ -259,7 +271,18 @@ impl OrderFilled {
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         dict.set_item("reconciliation", self.reconciliation)?;
-        dict.set_item("info", PyDict::new(py))?;
+
+        match &self.info {
+            Some(info) => {
+                let py_info = PyDict::new(py);
+                for (key, value) in info {
+                    py_info.set_item(key.to_string(), value.to_string())?;
+                }
+                dict.set_item("info", py_info)?;
+            }
+            None => dict.set_item("info", py.None())?,
+        }
+
         match self.position_id {
             Some(position_id) => dict.set_item("position_id", position_id.to_string())?,
             None => dict.set_item("position_id", py.None())?,

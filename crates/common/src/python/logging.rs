@@ -133,6 +133,10 @@ impl FileWriterConfig {
 ///
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
+///
+/// # Errors
+///
+/// Returns an error if the logging subsystem fails to initialize.
 #[pyfunction]
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.common")]
 #[pyo3(name = "init_logging")]

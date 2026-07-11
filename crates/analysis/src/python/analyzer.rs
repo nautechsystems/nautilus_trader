@@ -112,6 +112,14 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets all PnL-related performance statistics.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL calculations fail, for example due to:
+    ///
+    /// - No currency specified for a multi-currency portfolio.
+    /// - Unrealized PnL currency not matching the specified currency.
+    /// - Specified currency not found in account balances.
     #[pyo3(name = "get_performance_stats_pnls")]
     fn py_get_performance_stats_pnls(
         &self,
@@ -547,6 +555,13 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates total PnL including unrealized PnL if provided.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     #[pyo3(name = "total_pnl")]
     fn py_total_pnl(
         &self,
@@ -558,6 +573,13 @@ impl PortfolioAnalyzer {
     }
 
     /// Calculates total PnL as a percentage of starting balance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No currency is specified in a multi-currency portfolio.
+    /// - The specified currency is not found in account balances.
+    /// - The unrealized PnL currency does not match the specified currency.
     #[pyo3(name = "total_pnl_percentage")]
     fn py_total_pnl_percentage(
         &self,
@@ -569,6 +591,10 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets formatted PnL statistics as strings.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if PnL statistics calculation fails.
     #[pyo3(name = "get_stats_pnls_formatted")]
     fn py_get_stats_pnls_formatted(
         &self,

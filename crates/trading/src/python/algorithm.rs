@@ -931,7 +931,7 @@ impl PyExecutionAlgorithm {
     #[pyo3(name = "on_order_updated")]
     fn py_on_order_updated(&mut self, event: OrderUpdated) {}
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
     fn py_on_order_filled(&mut self, event: OrderFilled) {}
 

@@ -62,6 +62,9 @@ const ORDER_INITIALIZED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8_json("exec_algorithm_params", true),
     JsonFieldSpec::utf8("exec_spawn_id", true),
     JsonFieldSpec::utf8_json("tags", true),
+    // Appended (not inserted) so older batches without this column fail with a clean
+    // `MissingColumn` error rather than silently reading a shifted column.
+    JsonFieldSpec::utf8("activation_price", true),
 ];
 
 const ORDER_DENIED_FIELDS: &[JsonFieldSpec] = &[
@@ -128,7 +131,7 @@ const ORDER_PENDING_CANCEL_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("strategy_id", false),
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
-    JsonFieldSpec::utf8("account_id", false),
+    JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
@@ -194,7 +197,7 @@ const ORDER_PENDING_UPDATE_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("strategy_id", false),
     JsonFieldSpec::utf8("instrument_id", false),
     JsonFieldSpec::utf8("client_order_id", false),
-    JsonFieldSpec::utf8("account_id", false),
+    JsonFieldSpec::utf8("account_id", true),
     JsonFieldSpec::utf8("event_id", false),
     JsonFieldSpec::u64("ts_event", false),
     JsonFieldSpec::u64("ts_init", false),
@@ -265,6 +268,7 @@ const ORDER_FILLED_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::boolean("reconciliation", false),
     JsonFieldSpec::utf8("position_id", true),
     JsonFieldSpec::utf8("commission", true),
+    JsonFieldSpec::utf8_json("info", true),
 ];
 
 fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
@@ -377,7 +381,7 @@ mod tests {
     fn test_order_filled_round_trip(order_filled: OrderFilled) {
         let event = order_filled;
         let metadata = event.metadata();
-        let batch = OrderFilled::encode_batch(&metadata, &[event]).unwrap();
+        let batch = OrderFilled::encode_batch(&metadata, std::slice::from_ref(&event)).unwrap();
         let decoded = OrderFilled::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
 
         assert_eq!(decoded, vec![event]);
@@ -445,8 +449,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_pending_update_none_account_round_trip(order_pending_update: OrderPendingUpdate) {
+        roundtrip(OrderPendingUpdate {
+            account_id: None,
+            ..order_pending_update
+        });
+    }
+
+    #[rstest]
     fn test_order_pending_cancel_round_trip(order_pending_cancel: OrderPendingCancel) {
         roundtrip(order_pending_cancel);
+    }
+
+    #[rstest]
+    fn test_order_pending_cancel_none_account_round_trip(order_pending_cancel: OrderPendingCancel) {
+        roundtrip(OrderPendingCancel {
+            account_id: None,
+            ..order_pending_cancel
+        });
     }
 
     #[rstest]

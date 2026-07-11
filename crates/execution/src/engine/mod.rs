@@ -1162,6 +1162,7 @@ impl ExecutionEngine {
             ts_now,
             ts_now,
             report.price,
+            report.activation_price,
             report.trigger_price,
             report.trigger_type,
             report.limit_offset,
@@ -1251,6 +1252,7 @@ impl ExecutionEngine {
             ts_now,
             ts_now,
             None, // price
+            None, // activation_price
             None, // trigger_price
             None, // trigger_type
             None, // limit_offset
@@ -2536,7 +2538,7 @@ impl ExecutionEngine {
                         fill.instrument_id
                     );
                     drop(cache);
-                    self.handle_leg_fill_without_order(*fill);
+                    self.handle_leg_fill_without_order(fill.clone());
                     return;
                 }
 
@@ -2561,7 +2563,7 @@ impl ExecutionEngine {
                         fill.instrument_id
                     );
                     drop(cache);
-                    self.handle_leg_fill_without_order(*fill);
+                    self.handle_leg_fill_without_order(fill.clone());
                     return;
                 }
 
@@ -2596,16 +2598,16 @@ impl ExecutionEngine {
                 };
                 let oms_type = self.determine_oms_type(fill);
                 let position_id =
-                    self.determine_position_id(*fill, oms_type, Some(&order_before_fill));
+                    self.determine_position_id(fill, oms_type, Some(&order_before_fill));
 
-                let mut fill = *fill;
+                let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
 
                 if self
                     .validate_fill_for_order(&order_before_fill, &fill)
                     .is_ok()
                 {
-                    let event = OrderEventAny::Filled(fill);
+                    let event = OrderEventAny::Filled(fill.clone());
                     let Some(order) = self.update_cached_order(client_order_id, &event) else {
                         return;
                     };
@@ -2641,11 +2643,11 @@ impl ExecutionEngine {
         }
 
         let oms_type = self.determine_oms_type(&fill);
-        let position_id = self.determine_leg_fill_position_id(fill, oms_type);
+        let position_id = self.determine_leg_fill_position_id(&fill, oms_type);
         fill.position_id = Some(position_id);
         let duplicate_position_fill = self.position_contains_trade_id(position_id, fill.trade_id);
 
-        let event = OrderEventAny::Filled(fill);
+        let event = OrderEventAny::Filled(fill.clone());
         let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
         msgbus::send_order_event(portfolio_endpoint, event.clone());
 
@@ -2666,7 +2668,7 @@ impl ExecutionEngine {
 
     fn determine_leg_fill_position_id(
         &mut self,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         oms_type: OmsType,
     ) -> PositionId {
         let cache = self.cache.borrow();
@@ -2771,7 +2773,7 @@ impl ExecutionEngine {
 
     fn determine_position_id(
         &mut self,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         oms_type: OmsType,
         order: Option<&OrderAny>,
     ) -> PositionId {
@@ -2861,7 +2863,7 @@ impl ExecutionEngine {
 
     fn determine_hedging_position_id(
         &mut self,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         order: Option<&OrderAny>,
     ) -> PositionId {
         // Check if position ID already exists
@@ -2910,7 +2912,7 @@ impl ExecutionEngine {
         position_id
     }
 
-    fn determine_netting_position_id(&self, fill: OrderFilled) -> PositionId {
+    fn determine_netting_position_id(&self, fill: &OrderFilled) -> PositionId {
         PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
@@ -3180,13 +3182,13 @@ impl ExecutionEngine {
         // Combo fills are only used for order management, not portfolio updates
         if !instrument.is_spread() && is_margin_account {
             let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
-            msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(fill));
+            msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(fill.clone()));
         }
 
         let (position, position_events) = if instrument.is_spread() {
             (None, Vec::new())
         } else {
-            let position_events = self.handle_position_update(&instrument, fill, oms_type);
+            let position_events = self.handle_position_update(&instrument, fill.clone(), oms_type);
             let position_id = fill.position_id.unwrap();
             (
                 self.cache.borrow().position_owned(&position_id),
@@ -3239,8 +3241,8 @@ impl ExecutionEngine {
             // but without position linkage (since no position is created for spreads)
         }
 
-        let event = OrderEventAny::Filled(fill);
         let topic = switchboard::get_order_filled_topic(fill.instrument_id);
+        let event = OrderEventAny::Filled(fill);
         msgbus::publish_order_event(topic, &event);
 
         position_events
@@ -3282,10 +3284,10 @@ impl ExecutionEngine {
                     .unwrap_or_default()
             }
             Some(mut pos) => {
-                if self.will_flip_position(&pos, fill) {
-                    self.flip_position(instrument, &mut pos, fill, oms_type)
+                if self.will_flip_position(&pos, &fill) {
+                    self.flip_position(instrument, &mut pos, &fill, oms_type)
                 } else {
-                    self.update_position(&mut pos, fill).into_iter().collect()
+                    self.update_position(&mut pos, &fill).into_iter().collect()
                 }
             }
         }
@@ -3340,6 +3342,10 @@ impl ExecutionEngine {
         true
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "takes the opening fill by value to seed the new position"
+    )]
     fn open_position(
         &self,
         instrument: &InstrumentAny,
@@ -3362,7 +3368,7 @@ impl ExecutionEngine {
             self.reopen_position(position, oms_type)?;
         }
 
-        let position = Position::new(instrument, fill);
+        let position = Position::new(instrument, fill.clone());
         self.cache.borrow_mut().add_position(&position, oms_type)?;
 
         if self.config.snapshot_positions {
@@ -3415,9 +3421,13 @@ impl ExecutionEngine {
         }
     }
 
-    fn update_position(&self, position: &mut Position, fill: OrderFilled) -> Option<PositionEvent> {
+    fn update_position(
+        &self,
+        position: &mut Position,
+        fill: &OrderFilled,
+    ) -> Option<PositionEvent> {
         // Apply the fill to the position
-        position.apply(&fill);
+        position.apply(fill);
 
         // Check if position is closed after applying the fill
         let is_closed = position.is_closed();
@@ -3441,15 +3451,15 @@ impl ExecutionEngine {
         let ts_init = self.clock.borrow().timestamp_ns();
 
         if is_closed {
-            let event = PositionClosed::create(position, &fill, UUID4::new(), ts_init);
+            let event = PositionClosed::create(position, fill, UUID4::new(), ts_init);
             Some(PositionEvent::PositionClosed(event))
         } else {
-            let event = PositionChanged::create(position, &fill, UUID4::new(), ts_init);
+            let event = PositionChanged::create(position, fill, UUID4::new(), ts_init);
             Some(PositionEvent::PositionChanged(event))
         }
     }
 
-    fn will_flip_position(&self, position: &Position, fill: OrderFilled) -> bool {
+    fn will_flip_position(&self, position: &Position, fill: &OrderFilled) -> bool {
         position.is_opposite_side(fill.order_side) && (fill.last_qty.raw > position.quantity.raw)
     }
 
@@ -3480,7 +3490,7 @@ impl ExecutionEngine {
         &mut self,
         instrument: &InstrumentAny,
         position: &mut Position,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
@@ -3535,9 +3545,12 @@ impl ExecutionEngine {
                 fill.reconciliation,
                 fill.position_id,
                 commission1,
+                None,
             ));
 
-            if let Some(position_event) = self.update_position(position, fill_split1.unwrap()) {
+            if let Some(position_event) =
+                self.update_position(position, fill_split1.as_ref().unwrap())
+            {
                 position_events.push(position_event);
             }
 
@@ -3589,6 +3602,7 @@ impl ExecutionEngine {
             fill.reconciliation,
             position_id_flip,
             commission2,
+            None,
         );
 
         if oms_type == OmsType::Hedging

@@ -30,8 +30,10 @@ use dashmap::DashMap;
 use nautilus_common::{live::get_runtime, messages::DataEvent};
 use nautilus_core::{AtomicMap, AtomicSet, time::AtomicTime};
 use nautilus_model::{
-    data::{Data as NautilusData, InstrumentStatus, OrderBookDeltas_API, QuoteTick},
-    enums::{BookType, MarketStatusAction},
+    data::{
+        Data as NautilusData, InstrumentStatus, OrderBookDeltas, OrderBookDeltas_API, QuoteTick,
+    },
+    enums::{BookType, MarketStatusAction, RecordFlag},
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -248,7 +250,9 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                 }
             };
 
-            // Each change may belong to a different asset, so resolve per-change
+            let mut resolved = Vec::with_capacity(quotes.price_changes.len());
+            let mut groups: Vec<(TokenMeta, Vec<_>)> = Vec::new();
+
             for change in &quotes.price_changes {
                 let token_id = Ustr::from(change.asset_id.as_str());
                 let meta = match ctx.token_meta.get(&token_id) {
@@ -258,30 +262,66 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                         continue;
                     }
                 };
+                resolved.push((meta, change));
+
+                match groups
+                    .iter_mut()
+                    .find(|(existing, _)| existing.instrument_id == meta.instrument_id)
+                {
+                    Some((_, changes)) => changes.push(change.clone()),
+                    None => groups.push((meta, vec![change.clone()])),
+                }
+            }
+
+            for (meta, change) in resolved {
                 let instrument_id = meta.instrument_id;
-                let pending = ctx
-                    .pending_snapshot_after_tick_change
-                    .contains(&instrument_id);
+                let group = groups
+                    .iter_mut()
+                    .find(|(existing, _)| existing.instrument_id == instrument_id)
+                    .map(|(_, changes)| std::mem::take(changes));
 
-                if pending && ctx.active_delta_subs.contains(&instrument_id) {
-                    log::debug!(
-                        "Dropping book delta for {instrument_id}: awaiting snapshot after tick size change",
-                    );
-                } else if ctx.active_delta_subs.contains(&instrument_id) {
-                    let per_asset = PolymarketQuotes {
-                        market: quotes.market,
-                        price_changes: vec![change.clone()],
-                        timestamp: quotes.timestamp.clone(),
-                    };
+                if let Some(changes) = group.filter(|changes| !changes.is_empty())
+                    && ctx.active_delta_subs.contains(&instrument_id)
+                {
+                    if ctx
+                        .pending_snapshot_after_tick_change
+                        .contains(&instrument_id)
+                    {
+                        log::debug!(
+                            "Dropping book deltas for {instrument_id}: awaiting snapshot after tick size change",
+                        );
+                    } else {
+                        let mut parsed = Vec::with_capacity(changes.len());
 
-                    match parse_book_deltas(
-                        &per_asset,
-                        instrument_id,
-                        meta.price_precision,
-                        meta.size_precision,
-                        ts_init,
-                    ) {
-                        Ok(deltas) => {
+                        for change in changes {
+                            let per_asset = PolymarketQuotes {
+                                market: quotes.market,
+                                price_changes: vec![change],
+                                timestamp: quotes.timestamp.clone(),
+                            };
+
+                            match parse_book_deltas(
+                                &per_asset,
+                                instrument_id,
+                                meta.price_precision,
+                                meta.size_precision,
+                                ts_init,
+                            ) {
+                                Ok(mut deltas) => parsed.append(&mut deltas.deltas),
+                                Err(e) => log::error!(
+                                    "Failed to parse book delta for {instrument_id}: {e}"
+                                ),
+                            }
+                        }
+
+                        if !parsed.is_empty() {
+                            for delta in &mut parsed {
+                                delta.flags &= !(RecordFlag::F_LAST as u8);
+                            }
+                            parsed.last_mut().expect("parsed not empty").flags |=
+                                RecordFlag::F_LAST as u8;
+
+                            let deltas = OrderBookDeltas::new(instrument_id, parsed);
                             if let Some(mut book) = ctx.order_books.get_mut(&instrument_id)
                                 && let Err(e) = book.apply_deltas(&deltas)
                             {
@@ -289,12 +329,10 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                             }
 
                             let data: NautilusData = OrderBookDeltas_API::new(deltas).into();
-
                             if let Err(e) = ctx.data_sender.send(DataEvent::Data(data)) {
                                 log::error!("Failed to emit book deltas: {e}");
                             }
                         }
-                        Err(e) => log::error!("Failed to parse book deltas: {e}"),
                     }
                 }
 
@@ -3382,6 +3420,211 @@ mod tests {
         let book = ctx.order_books.get(&instrument_id).expect("book entry");
         assert_eq!(book.best_bid_price(), Some(Price::from("0.50")));
         assert_eq!(book.best_bid_size(), Some(Quantity::from("20.00")));
+    }
+
+    #[rstest]
+    fn price_change_batches_interleaved_changes_by_instrument() {
+        let asset_a = "0xTOKEN-A";
+        let asset_b = "0xTOKEN-B";
+        let market = Ustr::from("0xMARKET");
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_a =
+            seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
+        let instrument_b =
+            seed_instrument(&ctx, asset_b, Price::from("0.001"), Quantity::from("0.01")).id();
+        ctx.active_delta_subs.insert(instrument_a);
+        ctx.active_delta_subs.insert(instrument_b);
+        ctx.active_quote_subs.insert(instrument_a);
+        ctx.active_quote_subs.insert(instrument_b);
+
+        handle_market_message(
+            make_snapshot(
+                market.as_str(),
+                asset_a,
+                &[("0.003", "10"), ("0.005", "10")],
+            ),
+            &ctx,
+        );
+        handle_market_message(
+            make_snapshot(
+                market.as_str(),
+                asset_b,
+                &[("0.993", "10"), ("0.995", "10")],
+            ),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
+
+        let price_changes = vec![
+            (asset_a, "0.007", PolymarketOrderSide::Buy, "20"),
+            (asset_b, "0.997", PolymarketOrderSide::Buy, "20"),
+            (asset_a, "0.005", PolymarketOrderSide::Sell, "0"),
+            (asset_b, "0.995", PolymarketOrderSide::Sell, "0"),
+            (asset_a, "0.009", PolymarketOrderSide::Sell, "30"),
+            (asset_b, "0.999", PolymarketOrderSide::Sell, "30"),
+        ]
+        .into_iter()
+        .map(|(asset_id, price, side, size)| PolymarketQuote {
+            asset_id: Ustr::from(asset_id),
+            price: price.to_string(),
+            side,
+            size: size.to_string(),
+            hash: String::new(),
+            best_bid: Some(
+                if asset_id == asset_a {
+                    "0.007"
+                } else {
+                    "0.997"
+                }
+                .to_string(),
+            ),
+            best_ask: Some(
+                if asset_id == asset_a {
+                    "0.009"
+                } else {
+                    "0.999"
+                }
+                .to_string(),
+            ),
+        })
+        .collect();
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market,
+                price_changes,
+                timestamp: "1700000003000".to_string(),
+            }),
+            &ctx,
+        );
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let batches: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+                _ => None,
+            })
+            .collect();
+        let quote_instruments: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Quote(quote)) => Some(quote.instrument_id),
+                _ => None,
+            })
+            .collect();
+        let book_a = ctx.order_books.get(&instrument_a).expect("book A");
+        let book_b = ctx.order_books.get(&instrument_b).expect("book B");
+
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].instrument_id, instrument_a);
+        assert_eq!(batches[0].deltas.len(), 3);
+        assert_eq!(batches[1].instrument_id, instrument_b);
+        assert_eq!(batches[1].deltas.len(), 3);
+        assert_eq!(
+            quote_instruments,
+            vec![instrument_a, instrument_b, instrument_a, instrument_b]
+        );
+        assert_eq!(book_a.best_bid_price(), Some(Price::from("0.007")));
+        assert_eq!(book_a.best_ask_price(), Some(Price::from("0.009")));
+        assert_eq!(book_b.best_bid_price(), Some(Price::from("0.997")));
+        assert_eq!(book_b.best_ask_price(), Some(Price::from("0.999")));
+        assert!(nautilus_model::orderbook::analysis::book_check_integrity(&book_a).is_ok());
+        assert!(nautilus_model::orderbook::analysis::book_check_integrity(&book_b).is_ok());
+    }
+
+    #[rstest]
+    fn malformed_price_change_entry_preserves_other_updates() {
+        let asset_a = "0xTOKEN-BAD";
+        let asset_b = "0xTOKEN-GOOD";
+        let market = Ustr::from("0xMARKET");
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let instrument_a =
+            seed_instrument(&ctx, asset_a, Price::from("0.001"), Quantity::from("0.01")).id();
+        let instrument_b =
+            seed_instrument(&ctx, asset_b, Price::from("0.001"), Quantity::from("0.01")).id();
+        ctx.active_delta_subs.insert(instrument_a);
+        ctx.active_delta_subs.insert(instrument_b);
+
+        handle_market_message(
+            make_snapshot(
+                market.as_str(),
+                asset_a,
+                &[("0.003", "10"), ("0.005", "10")],
+            ),
+            &ctx,
+        );
+        handle_market_message(
+            make_snapshot(
+                market.as_str(),
+                asset_b,
+                &[("0.993", "10"), ("0.995", "10")],
+            ),
+            &ctx,
+        );
+
+        while data_rx.try_recv().is_ok() {}
+
+        let price_changes = vec![
+            PolymarketQuote {
+                asset_id: Ustr::from(asset_a),
+                price: "0.004".to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: "20".to_string(),
+                hash: String::new(),
+                best_bid: None,
+                best_ask: None,
+            },
+            PolymarketQuote {
+                asset_id: Ustr::from(asset_b),
+                price: "0.994".to_string(),
+                side: PolymarketOrderSide::Buy,
+                size: "20".to_string(),
+                hash: String::new(),
+                best_bid: None,
+                best_ask: None,
+            },
+            PolymarketQuote {
+                asset_id: Ustr::from(asset_a),
+                price: "invalid".to_string(),
+                side: PolymarketOrderSide::Sell,
+                size: "0".to_string(),
+                hash: String::new(),
+                best_bid: None,
+                best_ask: None,
+            },
+        ];
+        handle_market_message(
+            MarketWsMessage::PriceChange(PolymarketQuotes {
+                market,
+                price_changes,
+                timestamp: "1700000003000".to_string(),
+            }),
+            &ctx,
+        );
+
+        let events: Vec<DataEvent> = std::iter::from_fn(|| data_rx.try_recv().ok()).collect();
+        let batches: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::Deltas(deltas)) => Some(deltas),
+                _ => None,
+            })
+            .collect();
+        let book_a = ctx.order_books.get(&instrument_a).expect("book A");
+        let book_b = ctx.order_books.get(&instrument_b).expect("book B");
+
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[0].instrument_id, instrument_a);
+        assert_eq!(batches[0].deltas.len(), 1);
+        assert_eq!(batches[1].instrument_id, instrument_b);
+        assert_eq!(batches[1].deltas.len(), 1);
+        assert_eq!(book_a.best_bid_price(), Some(Price::from("0.004")));
+        assert_eq!(book_b.best_bid_price(), Some(Price::from("0.994")));
+        assert!(
+            !ctx.pending_snapshot_after_tick_change
+                .contains(&instrument_a)
+        );
     }
 
     #[rstest]

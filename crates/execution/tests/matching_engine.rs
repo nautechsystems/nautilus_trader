@@ -38,8 +38,8 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, InstrumentClose, OptionGreeks, QuoteTick, TradeTick,
-        stubs::OrderBookDeltaTestBuilder,
+        Bar, BarType, BookOrder, IndexPriceUpdate, InstrumentClose, OptionGreeks, QuoteTick,
+        TradeTick, stubs::OrderBookDeltaTestBuilder,
     },
     enums::{
         AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
@@ -4106,6 +4106,145 @@ fn test_updating_of_trailing_stop_market_order_with_no_trigger_price_set(
 }
 
 #[rstest]
+fn test_trailing_stop_market_activates_at_market_and_materializes_trigger(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    // TrailingStopMarket with neither trigger_price nor activation_price: it activates at
+    // market and its trigger materializes from `trailing_offset` on the first update.
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing_stop_market = OrderTestBuilder::new(OrderType::TrailingStopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .trigger_type(TriggerType::LastPrice)
+        .trailing_offset(dec!(1))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+
+    assert_eq!(trailing_stop_market.trigger_price(), None);
+    assert_eq!(trailing_stop_market.activation_price(), None);
+
+    engine_l2.process_order(&mut trailing_stop_market, account_id);
+
+    let tick = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1480.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Seller,
+        TradeId::from("1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine_l2.process_trade_tick(&tick);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let accepted = match saved_messages.first().unwrap() {
+        OrderEventAny::Accepted(accepted) => accepted,
+        other => panic!("Expected OrderAccepted, was {other:?}"),
+    };
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let updated = match saved_messages.get(1).unwrap() {
+        OrderEventAny::Updated(updated) => updated,
+        other => panic!("Expected OrderUpdated, was {other:?}"),
+    };
+    assert_eq!(updated.client_order_id, client_order_id);
+    // Trigger materializes at last (1480) + trailing_offset (1) for a BUY
+    assert_eq!(updated.trigger_price.unwrap(), Price::from("1481.00"));
+}
+
+#[rstest]
+fn test_trailing_stop_limit_activates_at_market_and_materializes_prices(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let mut engine_l2 =
+        get_order_matching_engine_l2(instrument_eth_usdt.clone(), None, None, None, None);
+
+    let orderbook_delta_sell = OrderBookDeltaTestBuilder::new(instrument_eth_usdt.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1500.00"),
+            Quantity::from("1.000"),
+            1,
+        ))
+        .build();
+    engine_l2
+        .process_order_book_delta(&orderbook_delta_sell)
+        .unwrap();
+
+    // TrailingStopLimit with neither trigger_price nor limit price nor activation_price: both
+    // trigger and limit materialize from the offsets on the first update after activation.
+    let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut trailing_stop_limit = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(client_order_id)
+        .trigger_type(TriggerType::LastPrice)
+        .trailing_offset(dec!(1))
+        .limit_offset(dec!(2))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+
+    assert_eq!(trailing_stop_limit.trigger_price(), None);
+    assert_eq!(trailing_stop_limit.price(), None);
+    assert_eq!(trailing_stop_limit.activation_price(), None);
+
+    engine_l2.process_order(&mut trailing_stop_limit, account_id);
+
+    let tick = TradeTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1480.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Seller,
+        TradeId::from("1"),
+        UnixNanos::default(),
+        UnixNanos::default(),
+    );
+    engine_l2.process_trade_tick(&tick);
+
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    assert_eq!(saved_messages.len(), 2);
+    let accepted = match saved_messages.first().unwrap() {
+        OrderEventAny::Accepted(accepted) => accepted,
+        other => panic!("Expected OrderAccepted, was {other:?}"),
+    };
+    assert_eq!(accepted.client_order_id, client_order_id);
+    let updated = match saved_messages.get(1).unwrap() {
+        OrderEventAny::Updated(updated) => updated,
+        other => panic!("Expected OrderUpdated, was {other:?}"),
+    };
+    assert_eq!(updated.client_order_id, client_order_id);
+    // Trigger materializes at last (1480) + trailing_offset (1); limit at last + limit_offset (2)
+    assert_eq!(updated.trigger_price.unwrap(), Price::from("1481.00"));
+    assert_eq!(updated.price.unwrap(), Price::from("1482.00"));
+}
+
+#[rstest]
 #[case(ContingencyType::Oco)]
 #[case(ContingencyType::Ouo)]
 fn test_updating_of_contingent_orders(
@@ -4486,7 +4625,9 @@ fn test_hedging_reduce_only_fallback_scopes_open_position_to_order_strategy(
     let fill = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .find_map(|event| match event {
-            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some(fill.clone())
+            }
             _ => None,
         })
         .expect("Expected strategy B reduce-only order to fill");
@@ -4543,7 +4684,9 @@ fn test_hedging_non_reduce_only_market_order_keeps_empty_position_id(
     let fill = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .find_map(|event| match event {
-            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some(fill.clone())
+            }
             _ => None,
         })
         .expect("Expected hedging market order to fill");
@@ -4631,7 +4774,9 @@ fn test_hedging_reduce_only_fallback_covers_short_position(
     let fill = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .find_map(|event| match event {
-            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some(fill.clone())
+            }
             _ => None,
         })
         .expect("Expected reduce-only short cover to fill");
@@ -4740,7 +4885,9 @@ fn test_hedging_reduce_only_uses_cached_position_id_before_open_position_scan(
     let fill = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .find_map(|event| match event {
-            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some(fill.clone())
+            }
             _ => None,
         })
         .expect("Expected reduce-only order with cached position id to fill");
@@ -8115,7 +8262,7 @@ fn test_no_aggressor_trade_fills_resting_limit_at_trade_price(
     let fills: Vec<_> = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .filter_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(*f),
+            OrderEventAny::Filled(f) => Some(f.clone()),
             _ => None,
         })
         .collect();
@@ -8423,6 +8570,142 @@ fn test_bar_adaptive_ordering_fills_low_side_first(
         "SELL should fill first (low processed before high)"
     );
     assert_eq!(fills[1].client_order_id, buy_id, "BUY should fill second");
+}
+
+#[rstest]
+fn test_quote_bar_adaptive_ordering_fills_low_side_first(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        bar_adaptive_high_low_ordering: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    // Set initial market
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine.process_quote_tick(&quote);
+
+    let buy_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut buy_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1510.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(buy_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut buy_stop, account_id);
+
+    let sell_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(sell_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut sell_stop, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // BID/ASK bar pair with open closer to low: |H-O|=22 > |L-O|=18 -> L processed first
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    // With adaptive ordering the low leg processes before the high leg, so the
+    // SELL stop (triggered on the low) fills before the BUY stop (v1 parity)
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2, "Both stops should fill");
+    assert_eq!(
+        fills[0].client_order_id, sell_id,
+        "SELL should fill first (low processed before high)"
+    );
+    assert_eq!(fills[1].client_order_id, buy_id, "BUY should fill second");
+}
+
+#[rstest]
+fn test_reset_clears_cached_quote_bars(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let _ = order_event_handler;
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, None, Some(config));
+
+    // Cache one side of a quote-bar pair, then reset
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&bid_bar);
+    engine.reset();
+
+    // The opposite side arriving with the same timestamp must not pair with the
+    // stale pre-reset bid bar
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1499.00"),
+        high: Price::from("1521.00"),
+        low: Price::from("1481.00"),
+        close: Price::from("1501.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&ask_bar);
+
+    assert_eq!(engine.best_bid_price(), None);
 }
 
 // L2 engine with trade_execution=false does not iterate on trade ticks
@@ -8812,7 +9095,7 @@ fn test_settlement_price_used_on_contract_expiration(
     let mut fill = messages
         .iter()
         .find_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(*f),
+            OrderEventAny::Filled(f) => Some(f.clone()),
             _ => None,
         })
         .expect("Expected a fill event from the market order");
@@ -8859,7 +9142,7 @@ fn test_settlement_price_used_on_contract_expiration(
     let expiration_fill = messages
         .iter()
         .find_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(*f),
+            OrderEventAny::Filled(f) => Some(f.clone()),
             _ => None,
         })
         .expect("Expected a fill event from contract expiration");
@@ -9728,7 +10011,7 @@ fn test_l1_queue_position_at_bbo_trades_decrement_queue(
     let fills: Vec<_> = get_order_event_handler_messages(&handler)
         .iter()
         .filter_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(*f),
+            OrderEventAny::Filled(f) => Some(f.clone()),
             _ => None,
         })
         .collect();
@@ -9967,7 +10250,7 @@ fn test_l1_queue_position_full_example(account_id: AccountId, instrument_eth_usd
     let fills: Vec<_> = get_order_event_handler_messages(&handler)
         .iter()
         .filter_map(|e| match e {
-            OrderEventAny::Filled(f) => Some(*f),
+            OrderEventAny::Filled(f) => Some(f.clone()),
             _ => None,
         })
         .collect();
@@ -12237,7 +12520,7 @@ fn test_update_instrument_normalizes_tick_compatible_resting_order_fill(
     let filled_events: Vec<_> = get_order_event_handler_messages(&order_event_handler)
         .iter()
         .filter_map(|event| match event {
-            OrderEventAny::Filled(filled) => Some(*filled),
+            OrderEventAny::Filled(filled) => Some(filled.clone()),
             _ => None,
         })
         .collect();
@@ -12417,12 +12700,12 @@ fn option_contract(
     kind: OptionKind,
 ) -> OptionContract {
     let symbol = match kind {
-        OptionKind::Call => "AAPL211217C00150000",
-        OptionKind::Put => "AAPL211217P00150000",
+        OptionKind::Call => format!("{underlying}211217C00150000"),
+        OptionKind::Put => format!("{underlying}211217P00150000"),
     };
     OptionContract::new(
         InstrumentId::from(format!("{symbol}.{venue}").as_str()),
-        Symbol::from(symbol),
+        Symbol::from(symbol.as_str()),
         AssetClass::Equity,
         Some(Ustr::from(venue)),
         Ustr::from(underlying),
@@ -12487,8 +12770,8 @@ fn crypto_option_call_btc(venue: &str, expiration_ns: UnixNanos, strike: Price) 
 
 fn underlying_index(venue: &str) -> IndexInstrument {
     IndexInstrument::new(
-        InstrumentId::from(format!("AAPL.{venue}").as_str()),
-        Symbol::from("AAPL"),
+        InstrumentId::from(format!("SPX.{venue}").as_str()),
+        Symbol::from("SPX"),
         Currency::USD(),
         2,
         0,
@@ -12585,7 +12868,7 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -12601,12 +12884,9 @@ fn test_option_cash_settlement_at_intrinsic_value(account_id: AccountId) {
     // ITM call: spot 160 > strike 149 -> cash payout 11.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -13012,7 +13292,7 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Put,
@@ -13028,12 +13308,9 @@ fn test_option_cash_settlement_put_pays_strike_minus_spot(account_id: AccountId)
     // ITM put: spot 140 < strike 149 -> cash payout 9.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("140.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -13489,7 +13766,7 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -13503,12 +13780,9 @@ fn test_check_instrument_expiration_idempotent_after_processed(account_id: Accou
         .unwrap();
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -13942,12 +14216,9 @@ fn test_crypto_option_cash_settlement(account_id: AccountId) {
     // ITM call: spot 51000 > strike 50000 -> cash payout 1000.00
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("51000.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -14170,7 +14441,7 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
     let venue = "OPRA";
     let expiration_ns = UnixNanos::from(2_000_000_000_000_000_000u64);
     let option = InstrumentAny::OptionContract(option_contract(
-        "AAPL",
+        "SPX",
         venue,
         expiration_ns,
         OptionKind::Call,
@@ -14185,12 +14456,9 @@ fn test_option_cash_settlement_with_custom_settlement_price(account_id: AccountI
 
     cache
         .borrow_mut()
-        .add_trade(TradeTick::new(
+        .add_index_price(IndexPriceUpdate::new(
             underlying.id(),
             Price::from("160.00"),
-            Quantity::from(1),
-            AggressorSide::NoAggressor,
-            TradeId::from("U-1"),
             UnixNanos::from(1),
             UnixNanos::from(1),
         ))
@@ -14372,7 +14640,9 @@ fn test_reduce_only_l1_market_order_slip_caps_remaining_position(
     let fills: Vec<OrderFilled> = messages
         .iter()
         .filter_map(|event| match event {
-            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => Some(*fill),
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some(fill.clone())
+            }
             _ => None,
         })
         .collect();

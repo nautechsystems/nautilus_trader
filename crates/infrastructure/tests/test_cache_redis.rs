@@ -1371,7 +1371,7 @@ mod serial_tests {
         ) else {
             unreachable!();
         };
-        let reopened_position = Position::new(&instrument, reopen_fill);
+        let reopened_position = Position::new(&instrument, reopen_fill.clone());
         adapter.add_position(&reopened_position).unwrap();
 
         let key = format!(

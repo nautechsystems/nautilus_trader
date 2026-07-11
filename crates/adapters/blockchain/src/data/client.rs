@@ -195,10 +195,15 @@ impl BlockchainDataClient {
                     }
                     data = hypersync_rx.recv() => {
                         if let Some(msg) = data {
-                            let block_number = match &msg {
-                                BlockchainMessage::Block(block) => Some(block.number),
-                                _ => None,
+                            let is_block = matches!(&msg, BlockchainMessage::Block(_));
+                            let Some(msg) = Self::ready_live_blockchain_message(
+                                msg,
+                                &core_client.cache,
+                                &mut pending_pool_messages,
+                            ) else {
+                                continue;
                             };
+
                             let data_event =
                                 Self::data_event_from_blockchain_message(msg, &mut core_client)
                                     .await;
@@ -207,7 +212,7 @@ impl BlockchainDataClient {
                                 core_client.send_data(event);
                             }
 
-                            if let Some(block_number) = block_number {
+                            if is_block {
                                 for data in Self::drain_pending_pool_messages(
                                     &mut core_client,
                                     &mut pending_pool_messages,
@@ -215,24 +220,6 @@ impl BlockchainDataClient {
                                 .await
                                 {
                                     core_client.send_data(data);
-                                }
-
-                                for dex in core_client.cache.get_registered_dexes() {
-                                    let addresses = core_client
-                                        .subscription_manager
-                                        .get_subscribed_dex_contract_addresses(&dex);
-                                    let event_signatures = core_client
-                                        .subscription_manager
-                                        .get_active_subscribed_dex_event_signatures(&dex);
-
-                                    if !addresses.is_empty() && !event_signatures.is_empty() {
-                                        core_client.hypersync_client.process_block_dex_contract_events(
-                                            &dex,
-                                            block_number,
-                                            &addresses,
-                                            event_signatures,
-                                        );
-                                    }
                                 }
                             }
                         } else {
@@ -251,21 +238,13 @@ impl BlockchainDataClient {
                             Ok(msg) => {
                                 let is_block = matches!(&msg, BlockchainMessage::Block(_));
 
-                                if let Some(block_number) =
-                                    Self::pool_event_missing_block_timestamp(
-                                        &msg,
-                                        &core_client.cache,
-                                    )
-                                {
-                                    log::debug!(
-                                        "Deferring live pool event until block {block_number} timestamp is cached"
-                                    );
-                                    Self::queue_pending_pool_message(
-                                        &mut pending_pool_messages,
-                                        msg,
-                                    );
+                                let Some(msg) = Self::ready_live_blockchain_message(
+                                    msg,
+                                    &core_client.cache,
+                                    &mut pending_pool_messages,
+                                ) else {
                                     continue;
-                                }
+                                };
 
                                 if let Some(data) =
                                     Self::data_event_from_blockchain_message(msg, &mut core_client)
@@ -355,6 +334,20 @@ impl BlockchainDataClient {
         }
 
         pending_pool_messages.push_back(msg);
+    }
+
+    fn ready_live_blockchain_message(
+        msg: BlockchainMessage,
+        cache: &BlockchainCache,
+        pending_pool_messages: &mut VecDeque<BlockchainMessage>,
+    ) -> Option<BlockchainMessage> {
+        if let Some(block_number) = Self::pool_event_missing_block_timestamp(&msg, cache) {
+            log::debug!("Deferring live pool event until block {block_number} timestamp is cached");
+            Self::queue_pending_pool_message(pending_pool_messages, msg);
+            None
+        } else {
+            Some(msg)
+        }
     }
 
     fn pool_event_missing_block_timestamp(
@@ -627,6 +620,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_fee_protocol_collects(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
 
                     log::debug!(
                         "Subscribed to all pool events for {} at address {}",
@@ -661,6 +655,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_swaps(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -688,6 +683,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_mints(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -715,6 +711,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_collects(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -742,6 +739,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .subscribe_flashes(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -815,6 +813,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_fee_protocol_collects(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
 
                     log::debug!(
                         "Unsubscribed from all pool events for {} at address {}",
@@ -842,6 +841,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_swaps(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -869,6 +869,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_mints(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -896,6 +897,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_collects(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -920,6 +922,7 @@ impl BlockchainDataClient {
                         .subscription_manager
                         .unsubscribe_flashes(dex, pool_address);
                     Self::update_rpc_pool_event_subscriptions(core_client, dex).await?;
+                    Self::update_hypersync_pool_event_stream(core_client, dex).await;
                 } else {
                     anyhow::bail!(
                         "Invalid venue {}, expected Blockchain DEX format",
@@ -1020,6 +1023,32 @@ impl BlockchainDataClient {
         }
 
         Ok(())
+    }
+
+    async fn update_hypersync_pool_event_stream(
+        core_client: &mut BlockchainDataClientCore,
+        dex: DexType,
+    ) {
+        if core_client.rpc_client.is_some() {
+            return;
+        }
+
+        let addresses = core_client
+            .subscription_manager
+            .get_subscribed_dex_contract_addresses(&dex);
+        let event_signatures = core_client
+            .subscription_manager
+            .get_active_subscribed_dex_event_signatures(&dex);
+
+        if !addresses.is_empty() && !event_signatures.is_empty() {
+            core_client.hypersync_client.subscribe_blocks();
+            tokio::task::yield_now().await;
+        }
+
+        core_client
+            .hypersync_client
+            .update_dex_event_stream(dex, addresses, event_signatures)
+            .await;
     }
 
     fn has_active_pool_event_subscriptions(core_client: &BlockchainDataClientCore) -> bool {
@@ -1318,14 +1347,14 @@ impl DataClient for BlockchainDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{sync::Arc, time::Duration};
 
     use alloy::primitives::{I256, U160, U256, address};
     use nautilus_common::defi::RequestPoolSnapshot;
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
-        defi::{Chain, DexType, Pool, PoolIdentifier, Token},
-        identifiers::ClientId,
+        defi::{Block, Blockchain, Chain, DexType, Pool, PoolIdentifier, Token},
+        identifiers::{ClientId, InstrumentId},
     };
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
@@ -1492,6 +1521,156 @@ mod tests {
             Some(41)
         );
         assert!(pending.is_empty());
+    }
+
+    #[rstest]
+    fn ready_live_blockchain_message_queues_until_block_timestamp_is_cached() {
+        let chain = Arc::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+        );
+        let mut cache = BlockchainCache::new(chain);
+        let mut pending = VecDeque::new();
+
+        let message = BlockchainDataClient::ready_live_blockchain_message(
+            flash_message(42),
+            &cache,
+            &mut pending,
+        );
+
+        assert!(message.is_none());
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            BlockchainDataClient::pool_event_block_number(pending.front().unwrap()),
+            Some(42)
+        );
+
+        cache.cache_block_timestamp(42, UnixNanos::from(1_700_000_000_000_000_000));
+        let block = Block::new(
+            "0x1".to_string(),
+            "0x0".to_string(),
+            42,
+            Ustr::from("0x0000000000000000000000000000000000000000"),
+            30_000_000,
+            21_000,
+            UnixNanos::from(1_700_000_000_000_000_000),
+            Some(Blockchain::Ethereum),
+        );
+
+        let message = BlockchainDataClient::ready_live_blockchain_message(
+            BlockchainMessage::Block(block),
+            &cache,
+            &mut pending,
+        );
+        let ready_messages =
+            BlockchainDataClient::drain_pending_pool_messages_with_cached_timestamps(
+                &mut pending,
+                &cache,
+            );
+
+        assert!(matches!(message, Some(BlockchainMessage::Block(_))));
+        assert_eq!(ready_messages.len(), 1);
+        assert_eq!(
+            BlockchainDataClient::pool_event_block_number(&ready_messages[0]),
+            Some(42)
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "requires ENVIO_API_TOKEN and live HyperSync access"]
+    async fn live_hypersync_pool_swap_subscription_receives_tip_event_and_unsubscribes() {
+        std::env::var("ENVIO_API_TOKEN").expect("ENVIO_API_TOKEN must be set");
+
+        let chain = Arc::new(
+            Chain::from_chain_id(42161)
+                .expect("Arbitrum chain should exist")
+                .clone(),
+        );
+        let dex_extended = get_dex_extended(chain.name, &DexType::UniswapV3)
+            .expect("Arbitrum UniswapV3 should be registered");
+        let pool_address = address!("C31E54c7A869B9FcBEcc14363CF510d1c41fa443");
+        let instrument_id_value = format!("{}.Arbitrum:UniswapV3", pool_address.to_checksum(None));
+        let instrument_id = InstrumentId::from(instrument_id_value.as_str());
+        let expected_pool_id = PoolIdentifier::from_address(pool_address);
+        let (hypersync_tx, mut hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
+        let config = BlockchainDataClientConfig::builder()
+            .chain(chain)
+            .dex_ids(vec![DexType::UniswapV3])
+            .http_rpc_url("http://127.0.0.1:9".to_string())
+            .use_hypersync_for_live_data(true)
+            .build();
+        let mut core = BlockchainDataClientCore::new(
+            config,
+            Some(hypersync_tx),
+            None,
+            CancellationToken::new(),
+        );
+        core.cache
+            .add_dex(dex_extended.dex.clone())
+            .await
+            .expect("DEX should be added to in-memory cache");
+        core.subscription_manager.register_dex_for_subscriptions(
+            DexType::UniswapV3,
+            dex_extended.swap_created_event.as_ref(),
+            dex_extended.mint_created_event.as_ref(),
+            dex_extended.burn_created_event.as_ref(),
+            dex_extended.collect_created_event.as_ref(),
+            dex_extended.flash_created_event.as_deref(),
+        );
+        core.subscription_manager.register_dex_fee_protocol_events(
+            DexType::UniswapV3,
+            dex_extended.fee_protocol_update_event.as_deref(),
+            dex_extended.fee_protocol_collect_event.as_deref(),
+        );
+
+        BlockchainDataClient::handle_subscribe_command(
+            DefiSubscribeCommand::PoolSwaps(SubscribePoolSwaps::new(
+                instrument_id,
+                Some(ClientId::new("BLOCKCHAIN")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )),
+            &mut core,
+        )
+        .await
+        .expect("live HyperSync pool swap subscribe should succeed");
+
+        let event = tokio::time::timeout(Duration::from_secs(240), async {
+            loop {
+                let msg = hypersync_rx
+                    .recv()
+                    .await
+                    .expect("HyperSync live stream channel should stay open");
+
+                if let BlockchainMessage::SwapEvent(event) = msg
+                    && event.pool_identifier == expected_pool_id
+                {
+                    break event;
+                }
+            }
+        })
+        .await
+        .expect("expected a live Arbitrum UniswapV3 swap within 240s");
+
+        BlockchainDataClient::handle_unsubscribe_command(
+            DefiUnsubscribeCommand::PoolSwaps(UnsubscribePoolSwaps::new(
+                instrument_id,
+                Some(ClientId::new("BLOCKCHAIN")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            )),
+            &mut core,
+        )
+        .await
+        .expect("live HyperSync pool swap unsubscribe should succeed");
+        core.disconnect().await;
+
+        assert_eq!(event.pool_identifier, expected_pool_id);
+        assert!(event.block_number > 0);
     }
 
     fn swap_message(block_number: u64) -> BlockchainMessage {

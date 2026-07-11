@@ -1021,7 +1021,7 @@ mod tests {
     use nautilus_model::defi::{
         AmmType, Block, Blockchain, Chain, Dex, PoolProfiler, SharedChain, SharedDex, Token,
         data::{DexPoolData, block::BlockPosition},
-        pool_analysis::snapshot::{PoolAnalytics, PoolState},
+        pool_analysis::snapshot::{PoolAnalytics, PoolSnapshot, PoolState},
     };
     use rstest::rstest;
     use sqlx::{
@@ -1189,6 +1189,62 @@ mod tests {
 
                 if observed != (12, 13, 4, 6, ts) {
                     anyhow::bail!("unexpected fee protocol round-trip: {observed:?}");
+                }
+            }
+            other => anyhow::bail!("unexpected stream events: {other:?}"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn stream_pool_events_round_trips_fee_protocol_update_integer_width() -> anyhow::Result<()>
+    {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = pancakeswap_v3(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+        let instrument_id = Pool::create_instrument_id(chain.name, &dex, pool_identifier.as_str());
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(13, ts)])
+            .await?;
+        let update = PoolFeeProtocolUpdate::new(
+            chain.clone(),
+            dex.clone(),
+            instrument_id,
+            pool_identifier,
+            13,
+            "0x00000000000000000000000000000000000000000000000000000000000000ac".to_string(),
+            0,
+            0,
+            40_000,
+            65_535,
+            ts,
+            ts,
+        );
+        database
+            .add_pool_fee_protocol_updates_batch(chain.chain_id, std::slice::from_ref(&update))
+            .await?;
+
+        let events_result = database
+            .stream_pool_events(chain, dex, instrument_id, pool_identifier, None, Some(13))
+            .try_collect::<Vec<_>>()
+            .await;
+
+        drop(database);
+        schema.cleanup().await?;
+
+        let events = events_result?;
+        match events.as_slice() {
+            [DexPoolData::FeeProtocolUpdate(fp)] => {
+                let observed = (fp.fee_protocol0_new, fp.fee_protocol1_new, fp.ts_event);
+
+                if observed != (40_000, 65_535, ts) {
+                    anyhow::bail!("unexpected integer-width fee protocol round-trip: {observed:?}");
                 }
             }
             other => anyhow::bail!("unexpected stream events: {other:?}"),
@@ -1523,6 +1579,83 @@ mod tests {
             );
         }
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn load_latest_pool_snapshot_round_trips_fee_protocol_basis_points() -> anyhow::Result<()>
+    {
+        let Some((database, schema)) = connect_cache_test_database().await? else {
+            return Ok(());
+        };
+        let chain = arbitrum();
+        let dex = pancakeswap_v3(&chain);
+        let token0 = weth(&chain);
+        let token1 = usdc(&chain);
+        let pool_address = address!("0xd13040d4fe917EE704158CfCB3338dCd2838B245");
+        let pool_identifier = PoolIdentifier::from_address(pool_address);
+
+        let pool = Pool::new(
+            chain.clone(),
+            dex.clone(),
+            pool_address,
+            pool_identifier,
+            10,
+            token0.clone(),
+            token1.clone(),
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument_id = pool.instrument_id;
+        let mut cache = BlockchainCache::new(chain.clone());
+        cache.database = Some(database);
+        cache.add_dex(dex).await?;
+        cache.add_token(token0).await?;
+        cache.add_token(token1).await?;
+        cache.add_pool(pool).await?;
+
+        let ts = UnixNanos::from(1_700_000_000_000_000_000);
+        let database = cache.database.as_ref().expect("cache database must be set");
+        database
+            .add_pool_event_blocks_batch(chain.chain_id, &[test_block(100, ts)])
+            .await?;
+
+        let mut state = PoolState::default();
+        state.set_protocol_fee_basis_points(3_200, 4_000);
+        let snapshot = PoolSnapshot::new(
+            instrument_id,
+            state,
+            Vec::new(),
+            Vec::new(),
+            PoolAnalytics::default(),
+            BlockPosition::new(100, "0xabc".to_string(), 0, 0),
+            ts,
+            ts,
+        );
+        cache
+            .add_pool_snapshot(&DexType::PancakeSwapV3, &pool_identifier, &snapshot)
+            .await?;
+
+        let loaded = database
+            .load_latest_pool_snapshot(chain.chain_id, &pool_identifier, None, false)
+            .await?;
+
+        cache.database = None;
+        schema.cleanup().await?;
+
+        let Some(loaded) = loaded else {
+            anyhow::bail!("expected snapshot to load");
+        };
+        let observed = (
+            loaded.state.fee_protocol,
+            loaded.state.fee_protocol0_basis_points,
+            loaded.state.fee_protocol1_basis_points,
+        );
+
+        if observed != (0, Some(3_200), Some(4_000)) {
+            anyhow::bail!("unexpected snapshot fee protocol state: {observed:?}");
+        }
         Ok(())
     }
 
@@ -1993,8 +2126,8 @@ mod tests {
                     transaction_hash TEXT NOT NULL,
                     transaction_index INTEGER NOT NULL,
                     log_index INTEGER NOT NULL,
-                    fee_protocol0_new SMALLINT NOT NULL,
-                    fee_protocol1_new SMALLINT NOT NULL,
+                    fee_protocol0_new INTEGER NOT NULL,
+                    fee_protocol1_new INTEGER NOT NULL,
                     UNIQUE(chain_id, transaction_hash, log_index)
                 )
                 "#
@@ -2033,6 +2166,8 @@ mod tests {
                     protocol_fees_token0 NUMERIC NOT NULL,
                     protocol_fees_token1 NUMERIC NOT NULL,
                     fee_protocol SMALLINT NOT NULL,
+                    fee_protocol0_basis_points INTEGER,
+                    fee_protocol1_basis_points INTEGER,
                     fee_growth_global_0 NUMERIC NOT NULL,
                     fee_growth_global_1 NUMERIC NOT NULL,
                     total_amount0_deposited NUMERIC NOT NULL,
@@ -2194,6 +2329,21 @@ mod tests {
             (**chain).clone(),
             DexType::UniswapV3,
             "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            0,
+            AmmType::CLAMM,
+            "PoolCreated",
+            "Swap",
+            "Mint",
+            "Burn",
+            "Collect",
+        ))
+    }
+
+    fn pancakeswap_v3(chain: &SharedChain) -> SharedDex {
+        Arc::new(Dex::new(
+            (**chain).clone(),
+            DexType::PancakeSwapV3,
+            "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
             0,
             AmmType::CLAMM,
             "PoolCreated",

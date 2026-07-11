@@ -73,7 +73,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     common::{
         consts::{
-            LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
+            DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
             LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
         },
         credential::{Credential, scrub_auth},
@@ -156,7 +156,6 @@ const AUTH_TOKEN_REFRESH_BACKOFF: AuthTokenRefreshBackoff = AuthTokenRefreshBack
     max_delay: AUTH_TOKEN_REFRESH_RETRY_MAX_DELAY,
     window: AUTH_TOKEN_REFRESH_RETRY_WINDOW,
 };
-const WS_CONSUMER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 // Bounds the informational tier-detection call so a slow or failing
 // `/account` endpoint cannot stall connect for the HTTP retry budget.
 const ACCOUNT_TIER_DETECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -3015,7 +3014,7 @@ impl ExecutionClient for LighterExecutionClient {
                             "Lighter execution consumer task error during connect teardown: {join_err}"
                         ),
                     },
-                    () = tokio::time::sleep(WS_CONSUMER_SHUTDOWN_TIMEOUT) => {
+                    () = tokio::time::sleep(DISCONNECT_TIMEOUT) => {
                         log::warn!(
                             "Timeout waiting for Lighter execution consumer during connect teardown, aborting",
                         );
@@ -3056,7 +3055,7 @@ impl ExecutionClient for LighterExecutionClient {
 
         if let Some(handle) = ws_stream_handle {
             let abort_handle = handle.abort_handle();
-            match tokio::time::timeout(WS_CONSUMER_SHUTDOWN_TIMEOUT, handle).await {
+            match tokio::time::timeout(DISCONNECT_TIMEOUT, handle).await {
                 Ok(Ok(())) => log::debug!("Lighter execution consumer task completed"),
                 Ok(Err(e)) if e.is_cancelled() => {
                     log::debug!("Lighter execution consumer task cancelled");
@@ -4830,7 +4829,7 @@ mod tests {
             strategy_id(),
             instrument_id,
             client_order_id,
-            account_id(),
+            Some(account_id()),
             UUID4::new(),
             UnixNanos::default(),
             UnixNanos::default(),

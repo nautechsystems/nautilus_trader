@@ -1496,6 +1496,11 @@ pub fn parse_algo_order_status_report(
             report.trailing_offset = Some(Decimal::from_str(&msg.callback_spread)?);
             report.trailing_offset_type = TrailingOffsetType::Price;
         }
+
+        if !msg.active_px.is_empty() {
+            report.activation_price =
+                Some(parse_price(&msg.active_px, instrument.price_precision())?);
+        }
     }
 
     if msg.reduce_only == "true" {
@@ -6543,6 +6548,23 @@ mod tests {
         assert_eq!(report.trailing_offset, Some(dec!(100)));
         assert_eq!(report.trailing_offset_type, TrailingOffsetType::BasisPoints,);
         assert_eq!(report.trigger_price, Some(Price::from("95000.00")));
+    }
+
+    #[rstest]
+    fn test_parse_algo_order_trailing_stop_captures_activation_price() {
+        let instrument = create_stub_instrument();
+        let inst = InstrumentAny::CryptoPerpetual(instrument);
+        let account_id = AccountId::new("OKX-001");
+
+        let mut msg = stub_algo_order_msg(OKXAlgoOrderType::MoveOrderStop);
+        msg.callback_ratio = "0.01".to_string();
+        msg.active_px = "94000.5".to_string();
+
+        let report =
+            parse_algo_order_status_report(&msg, &inst, account_id, UnixNanos::default()).unwrap();
+
+        assert_eq!(report.order_type, OrderType::TrailingStopMarket);
+        assert_eq!(report.activation_price, Some(Price::from("94000.50")));
     }
 
     #[rstest]

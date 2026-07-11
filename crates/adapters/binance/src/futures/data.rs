@@ -1582,7 +1582,7 @@ impl DataClient for BinanceFuturesDataClient {
         let _ = self.ws_client.close().await;
         let _ = self.ws_public_client.close().await;
 
-        let handles: Vec<_> = self.tasks.drain(..).collect();
+        let handles: Vec<_> = std::mem::take(&mut self.tasks);
         for handle in handles {
             if let Err(e) = handle.await {
                 log::error!("Error joining WebSocket task: {e}");

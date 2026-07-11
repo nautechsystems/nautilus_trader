@@ -2366,11 +2366,11 @@ fn update_order(
 
     if let OrderEventAny::Filled(order_filled) = event {
         if !instrument.is_spread() {
-            let (post_balance, _state) = inner.borrow().accounts.update_balances(
-                working_account,
-                &instrument,
-                *order_filled,
-            );
+            let (post_balance, _state) =
+                inner
+                    .borrow()
+                    .accounts
+                    .update_balances(working_account, &instrument, order_filled);
             working_account = post_balance;
         }
 

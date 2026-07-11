@@ -193,6 +193,7 @@ class MessageBusConfig:
         timestamps_as_iso8601: bool | None = None,
         buffer_interval_ms: int | None = None,
         autotrim_mins: int | None = None,
+        autotrim_maxlen: int | None = None,
         use_trader_prefix: bool | None = None,
         use_trader_id: bool | None = None,
         use_instance_id: bool | None = None,
@@ -214,6 +215,8 @@ class MessageBusConfig:
     def buffer_interval_ms(self) -> int | None: ...
     @property
     def autotrim_mins(self) -> int | None: ...
+    @property
+    def autotrim_maxlen(self) -> int | None: ...
     @property
     def use_trader_prefix(self) -> bool: ...
     @property
@@ -1364,7 +1367,7 @@ class OrderFactory:
         instrument_id: model.InstrumentId,
         order_side: model.OrderSide,
         quantity: model.Quantity,
-        price: model.Price,
+        price: model.Price | None,
         limit_offset: decimal.Decimal,
         trailing_offset: decimal.Decimal,
         trailing_offset_type: model.TrailingOffsetType | None = None,

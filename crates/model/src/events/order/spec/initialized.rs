@@ -71,6 +71,7 @@ pub struct OrderInitializedSpec {
     #[builder(default = UnixNanos::default())]
     pub ts_init: UnixNanos,
     pub price: Option<Price>,
+    pub activation_price: Option<Price>,
     pub trigger_price: Option<Price>,
     pub trigger_type: Option<TriggerType>,
     pub limit_offset: Option<Decimal>,
@@ -112,6 +113,7 @@ impl<S: order_initialized_spec_builder::IsComplete> OrderInitializedSpecBuilder<
             spec.ts_event,
             spec.ts_init,
             spec.price,
+            spec.activation_price,
             spec.trigger_price,
             spec.trigger_type,
             spec.limit_offset,

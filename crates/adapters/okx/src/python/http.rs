@@ -239,6 +239,10 @@ impl OKXHttpClient {
     ///
     /// Defaults to NetMode if no position mode is provided.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the position mode cannot be set.
+    ///
     /// # Note
     ///
     /// This endpoint only works for accounts with derivatives trading enabled.
@@ -262,6 +266,10 @@ impl OKXHttpClient {
     }
 
     /// Requests all instruments for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or instrument parsing fails.
     ///
     /// # Returns
     ///
@@ -308,6 +316,10 @@ impl OKXHttpClient {
     }
 
     /// Requests spread instruments from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or spread parsing fails.
     #[pyo3(name = "request_spread_instruments")]
     #[pyo3(signature = (base_currency=None, instrument_id=None, spread_id=None, state=None))]
     fn py_request_spread_instruments<'py>(
@@ -344,6 +356,13 @@ impl OKXHttpClient {
     /// Requests a single instrument by `instrument_id` from OKX.
     ///
     /// Fetches the instrument from the API, caches it, and returns it.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if:
+    /// - The API request fails.
+    /// - The instrument is not found.
+    /// - Failed to parse instrument data.
     #[pyo3(name = "request_instrument")]
     fn py_request_instrument<'py>(
         &self,
@@ -363,6 +382,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event contract series metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[pyo3(name = "request_event_contract_series")]
     #[pyo3(signature = (series_id=None))]
     fn py_request_event_contract_series<'py>(
@@ -383,6 +406,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event metadata for an event contract series from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "request_event_contract_events")]
     #[pyo3(signature = (series_id, event_id=None, state=None, limit=None, before=None, after=None))]
@@ -416,6 +443,10 @@ impl OKXHttpClient {
     }
 
     /// Requests event contract market metadata from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be deserialized.
     #[expect(clippy::too_many_arguments)]
     #[pyo3(name = "request_event_contract_markets")]
     #[pyo3(signature = (series_id, event_id=None, inst_id=None, state=None, limit=None, before=None, after=None))]
@@ -451,6 +482,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the account state for the `account_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no account state is returned.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -470,6 +505,10 @@ impl OKXHttpClient {
     }
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or trade parsing fails.
     #[pyo3(name = "request_trades")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trades<'py>(
@@ -499,6 +538,10 @@ impl OKXHttpClient {
     ///
     /// The aggregation source must be `EXTERNAL`. Time range validation ensures start < end.
     /// Returns bars sorted oldest to newest.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # Endpoint Selection
     ///
@@ -558,6 +601,10 @@ impl OKXHttpClient {
     }
 
     /// Requests an order book snapshot as `OrderBookDeltas` for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_orderbook_snapshot")]
     #[pyo3(signature = (instrument_id, depth=None))]
     fn py_request_orderbook_snapshot<'py>(
@@ -579,6 +626,10 @@ impl OKXHttpClient {
     }
 
     /// Requests historical funding rates for the `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(
@@ -605,6 +656,10 @@ impl OKXHttpClient {
     }
 
     /// Requests forward prices for OKX options using the option summary endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no usable instrument family can be resolved.
     #[pyo3(name = "request_forward_prices")]
     #[pyo3(signature = (underlying, instrument_id=None))]
     fn py_request_forward_prices<'py>(
@@ -634,6 +689,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the latest mark price for the `instrument_type` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no mark price is returned.
     #[pyo3(name = "request_mark_price")]
     fn py_request_mark_price<'py>(
         &self,
@@ -653,6 +712,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the current price limits for the `instrument_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no price limit is returned.
     #[pyo3(name = "request_price_limit")]
     fn py_request_price_limit<'py>(
         &self,
@@ -675,6 +738,10 @@ impl OKXHttpClient {
     }
 
     /// Requests the latest index price for the `instrument_id` from OKX.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or no index price is returned.
     #[pyo3(name = "request_index_price")]
     fn py_request_index_price<'py>(
         &self,
@@ -694,6 +761,10 @@ impl OKXHttpClient {
     }
 
     /// Requests historical order status reports for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -738,6 +809,10 @@ impl OKXHttpClient {
     }
 
     /// Requests algo order status reports.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_algo_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_type=None, instrument_id=None, algo_id=None, algo_client_order_id=None, state=None, limit=None))]
     #[expect(clippy::too_many_arguments)]
@@ -777,6 +852,10 @@ impl OKXHttpClient {
     }
 
     /// Requests an algo order status report by client order identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "request_algo_order_status_report")]
     fn py_request_algo_order_status_report<'py>(
         &self,
@@ -801,6 +880,10 @@ impl OKXHttpClient {
     }
 
     /// Requests fill reports (transaction details) for the given parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -859,6 +942,10 @@ impl OKXHttpClient {
     /// - Allows holding simultaneous long and short positions on the same instrument
     /// - Position IDs are suffixed with `-LONG` or `-SHORT` for uniqueness
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#trading-account-rest-api-get-positions>
@@ -888,6 +975,10 @@ impl OKXHttpClient {
     }
 
     /// Places a regular order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1000,6 +1091,10 @@ impl OKXHttpClient {
 
     /// Places an algo order via HTTP.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
@@ -1094,6 +1189,10 @@ impl OKXHttpClient {
 
     /// Cancels an algo order via HTTP.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    ///
     /// # References
     ///
     /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-cancel-algo-order>
@@ -1128,6 +1227,10 @@ impl OKXHttpClient {
     }
 
     /// Cancels an order via HTTP, routing spread instruments to the spread endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or if no order identifier is supplied.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (instrument_id, client_order_id=None, venue_order_id=None))]
     fn py_cancel_order<'py>(
@@ -1171,6 +1274,10 @@ impl OKXHttpClient {
     }
 
     /// Cancels all open orders for an instrument via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     #[pyo3(name = "cancel_all_orders")]
     fn py_cancel_all_orders<'py>(
         &self,
@@ -1217,6 +1324,10 @@ impl OKXHttpClient {
     }
 
     /// Amends an algo order via HTTP.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///
@@ -1299,6 +1410,10 @@ impl OKXHttpClient {
     ///
     /// Items with non-zero `sCode` are logged as warnings but do not
     /// fail the entire batch.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     ///
     /// # References
     ///

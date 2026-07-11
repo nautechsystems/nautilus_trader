@@ -578,7 +578,7 @@ impl DataClient for TardisDataClient {
         self.cancellation_token.cancel();
         self.cancellation_token = CancellationToken::new();
 
-        let handles: Vec<_> = self.tasks.drain(..).collect();
+        let handles: Vec<_> = std::mem::take(&mut self.tasks);
         if !handles.is_empty() {
             for handle in handles {
                 if let Err(e) = handle.await {

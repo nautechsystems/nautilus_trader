@@ -51,7 +51,7 @@ impl OrderInitialized {
         reason = "domain event constructor requires multiple boolean flags"
     )]
     #[new]
-    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, post_only, reduce_only, quote_quantity, reconciliation, event_id, ts_event, ts_init, price=None, trigger_price=None, trigger_type=None, limit_offset=None, trailing_offset=None, trailing_offset_type=None, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, post_only, reduce_only, quote_quantity, reconciliation, event_id, ts_event, ts_init, price=None, activation_price=None, trigger_price=None, trigger_type=None, limit_offset=None, trailing_offset=None, trailing_offset_type=None, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -69,6 +69,7 @@ impl OrderInitialized {
         ts_event: u64,
         ts_init: u64,
         price: Option<Price>,
+        activation_price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_offset: Option<Decimal>,
@@ -104,6 +105,7 @@ impl OrderInitialized {
             ts_event.into(),
             ts_init.into(),
             price,
+            activation_price,
             trigger_price,
             trigger_type,
             limit_offset,
@@ -183,6 +185,13 @@ impl OrderInitialized {
         match self.price {
             Some(price) => dict.set_item("price", price.to_string())?,
             None => dict.set_item("price", py.None())?,
+        }
+
+        match self.activation_price {
+            Some(activation_price) => {
+                dict.set_item("activation_price", activation_price.to_string())?;
+            }
+            None => dict.set_item("activation_price", py.None())?,
         }
 
         match self.trigger_price {

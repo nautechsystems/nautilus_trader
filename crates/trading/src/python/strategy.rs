@@ -583,7 +583,11 @@ impl PyStrategyInner {
     fn dispatch_on_order_filled(&self, event: &OrderFilled) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_filled", ((*event).into_py_any_unwrap(py),))
+                py_self.call_method1(
+                    py,
+                    "on_order_filled",
+                    (event.clone().into_py_any_unwrap(py),),
+                )
             })?;
         }
         Ok(())
@@ -2137,7 +2141,7 @@ impl PyStrategy {
     #[pyo3(name = "on_order_canceled")]
     fn py_on_order_canceled(&mut self, event: OrderCanceled) {}
 
-    #[allow(unused_variables)]
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
     fn py_on_order_filled(&mut self, event: OrderFilled) {}
 

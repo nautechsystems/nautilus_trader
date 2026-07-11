@@ -767,6 +767,10 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Subscribes to bar/OHLC updates for the given bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar aggregation is not supported by Kraken.
     #[pyo3(name = "subscribe_bars")]
     fn py_subscribe_bars<'py>(
         &self,
@@ -861,6 +865,10 @@ impl KrakenSpotWebSocketClient {
     }
 
     /// Unsubscribes from bar/OHLC updates for the given bar type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the bar aggregation is not supported by Kraken.
     #[pyo3(name = "unsubscribe_bars")]
     fn py_unsubscribe_bars<'py>(
         &self,

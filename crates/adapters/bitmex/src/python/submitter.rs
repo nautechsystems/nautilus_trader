@@ -127,6 +127,10 @@ impl SubmitBroadcaster {
     ///
     /// - `Ok(report)` if successfully submitted with a report.
     /// - `Err` if all requests failed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if all submit requests fail or no healthy clients are available.
     #[pyo3(name = "broadcast_submit")]
     #[pyo3(signature = (
         instrument_id,

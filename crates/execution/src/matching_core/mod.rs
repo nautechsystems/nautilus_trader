@@ -190,7 +190,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                 let limit_price = match stop {
                     StopOrderAny::LimitIfTouched(o) => Some(o.price),
                     StopOrderAny::StopLimit(o) => Some(o.price),
-                    StopOrderAny::TrailingStopLimit(o) => Some(o.price),
+                    StopOrderAny::TrailingStopLimit(o) => o.price,
                     StopOrderAny::MarketIfTouched(_)
                     | StopOrderAny::StopMarket(_)
                     | StopOrderAny::TrailingStopMarket(_) => None,
@@ -204,7 +204,7 @@ impl From<&PassiveOrderAny> for RestingOrder {
                     client_order_id: stop.client_order_id(),
                     order_side: stop.order_side_specified(),
                     order_type: stop.order_type(),
-                    trigger_price: Some(stop.stop_px()),
+                    trigger_price: stop.stop_px(),
                     limit_price,
                     is_activated,
                 }

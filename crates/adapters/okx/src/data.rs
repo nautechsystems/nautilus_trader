@@ -1155,7 +1155,7 @@ impl DataClient for OKXDataClient {
             let _result = ws.close().await;
         }
 
-        let handles: Vec<_> = self.tasks.drain(..).collect();
+        let handles: Vec<_> = std::mem::take(&mut self.tasks);
 
         for handle in handles {
             if let Err(e) = handle.await {

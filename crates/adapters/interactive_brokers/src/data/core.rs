@@ -32,6 +32,7 @@ use anyhow::Context;
 use ibapi::{
     contracts::{Contract, Currency as IBCurrency, Exchange as IBExchange, SecurityType, Symbol},
     market_data::{IgnoreSize, historical::ToDuration},
+    prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
     clients::DataClient,
@@ -71,7 +72,8 @@ use super::{
     convert::{
         apply_bar_price_magnifier, apply_price_magnifier, bar_type_to_ib_bar_size,
         calculate_duration, calculate_duration_segments, chrono_to_ib_datetime,
-        ib_bar_to_nautilus_bar, price_type_to_ib_what_to_show,
+        ib_bar_to_nautilus_bar, price_type_to_ib_realtime_what_to_show_for_security,
+        price_type_to_ib_what_to_show_for_security,
     },
 };
 use crate::{
@@ -308,10 +310,6 @@ impl InteractiveBrokersDataClient {
             last_bars: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             bar_timeout_tasks: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
         })
-    }
-
-    fn venue_id(&self) -> Venue {
-        *IB_VENUE
     }
 
     fn cancel_active_subscriptions(&self) -> anyhow::Result<()> {
@@ -568,7 +566,12 @@ impl DataClient for InteractiveBrokersDataClient {
     }
 
     fn venue(&self) -> Option<Venue> {
-        Some(self.venue_id())
+        // Interactive Brokers is a multi-venue adapter (SMART, IDEALPRO, ZEROHASH, CME, etc.),
+        // so the data client must register for default routing rather than a single venue:
+        // subscriptions and requests are routed by the command's venue (derived from the
+        // instrument ID), which would otherwise never match and be dropped by the data engine.
+        // Mirrors the other multi-venue adapters (Tardis, Databento).
+        None
     }
 
     fn start(&mut self) -> anyhow::Result<()> {
@@ -1260,6 +1263,12 @@ impl DataClient for InteractiveBrokersDataClient {
         let handle_revised_bars = self.config.handle_revised_bars;
         let use_rth = self.config.use_regular_trading_hours;
         let start_ns = parse_start_ns(cmd.params.as_ref());
+        // Crypto (ZEROHASH/PAXOS) trade-price bars must request AGGTRADES, not
+        // TRADES (TWS rejects TRADES for crypto, error 10299) — on BOTH the
+        // realtime (reqRealTimeBars) and historical (reqHistoricalData) paths, per
+        // the Java engine's whatToShowFor rule. Capture the flag before `contract`
+        // is moved into the subscription task below.
+        let is_crypto = crate::common::parse::is_crypto_contract(&contract);
 
         // Create subscription-specific cancellation token
         let subscription_token = self.cancellation_token.child_token();
@@ -1276,6 +1285,10 @@ impl DataClient for InteractiveBrokersDataClient {
                     bar_type,
                     bar_type_str,
                     instrument_id,
+                    price_type_to_ib_realtime_what_to_show_for_security(
+                        bar_type.spec().price_type,
+                        is_crypto,
+                    ),
                     price_precision,
                     size_precision,
                     data_sender,
@@ -1292,7 +1305,10 @@ impl DataClient for InteractiveBrokersDataClient {
                     client_clone,
                     contract,
                     bar_type,
-                    price_type_to_ib_what_to_show(bar_type.spec().price_type),
+                    price_type_to_ib_what_to_show_for_security(
+                        bar_type.spec().price_type,
+                        is_crypto,
+                    ),
                     price_precision,
                     size_precision,
                     use_rth,
@@ -1853,10 +1869,18 @@ impl DataClient for InteractiveBrokersDataClient {
                 }
 
                 match builder.bid_ask(IgnoreSize::No).await {
-                    Ok(mut subscription) => {
+                    Ok(subscription) => {
+                        let mut subscription = subscription.filter_data();
                         let mut batch_quotes = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(tick) => tick,
+                                Err(e) => {
+                                    tracing::warn!("Historical quote ticks stream error: {e:?}");
+                                    continue;
+                                }
+                            };
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
@@ -2034,10 +2058,18 @@ impl DataClient for InteractiveBrokersDataClient {
                 }
 
                 match builder.trade().await {
-                    Ok(mut subscription) => {
+                    Ok(subscription) => {
+                        let mut subscription = subscription.filter_data();
                         let mut batch_trades = Vec::new();
 
-                        while let Some(tick) = subscription.next().await {
+                        while let Some(tick_result) = subscription.next().await {
+                            let tick = match tick_result {
+                                Ok(tick) => tick,
+                                Err(e) => {
+                                    tracing::warn!("Historical trade ticks stream error: {e:?}");
+                                    continue;
+                                }
+                            };
                             let ts_event =
                                 super::convert::ib_timestamp_to_unix_nanos(&tick.timestamp);
                             let ts_init = clock.get_time_ns();
@@ -2162,7 +2194,11 @@ impl DataClient for InteractiveBrokersDataClient {
         // Convert bar type to IB formats
         let ib_bar_size = bar_type_to_ib_bar_size(&cmd.bar_type)
             .context("Failed to convert bar type to IB bar size")?;
-        let ib_what_to_show = price_type_to_ib_what_to_show(cmd.bar_type.spec().price_type);
+        // Crypto trade-price bars require AGGTRADES (TWS rejects TRADES for crypto,
+        // error 10299); mirror the Java engine's whatToShowFor rule.
+        let is_crypto = crate::common::parse::is_crypto_contract(&contract);
+        let ib_what_to_show =
+            price_type_to_ib_what_to_show_for_security(cmd.bar_type.spec().price_type, is_crypto);
 
         // Calculate segments to break down the request if needed
         let segments = if let (Some(start), Some(end)) = (cmd.start, cmd.end) {
@@ -2368,6 +2404,23 @@ mod tests {
         let dt = chrono::DateTime::from_timestamp(1, 2).unwrap();
 
         assert_eq!(datetime_to_unix_nanos(dt), UnixNanos::from(1_000_000_002));
+    }
+
+    #[rstest]
+    fn test_venue_is_none_for_default_routing() {
+        // IB is a multi-venue adapter: `venue()` must be `None` so the data engine registers
+        // the client for default routing. A `Some(venue)` here means venue-routed subscribe
+        // commands (e.g. `BTC/USD.ZEROHASH` bars, `AAPL.NASDAQ` quotes) never reach the client.
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::replace_data_event_sender(sender);
+
+        let config = InteractiveBrokersDataClientConfig::default();
+        let provider = Arc::new(InteractiveBrokersInstrumentProvider::new(
+            config.instrument_provider.clone(),
+        ));
+        let client = InteractiveBrokersDataClient::new(*IB_CLIENT_ID, config, provider).unwrap();
+
+        assert_eq!(client.venue(), None);
     }
 
     #[rstest]

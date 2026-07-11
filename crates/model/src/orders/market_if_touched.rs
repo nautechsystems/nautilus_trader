@@ -115,6 +115,7 @@ impl MarketIfTouchedOrder {
             ts_init,
             ts_init,
             None,
+            None,
             Some(trigger_price),
             Some(trigger_type),
             None,

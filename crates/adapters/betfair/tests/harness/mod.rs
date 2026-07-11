@@ -339,9 +339,7 @@ impl Harness {
             cached.strategy_id(),
             cached.instrument_id(),
             cached.client_order_id(),
-            cached
-                .account_id()
-                .expect("accepted order must have an account_id"),
+            cached.account_id(),
             UUID4::new(),
             ts_now,
             ts_now,

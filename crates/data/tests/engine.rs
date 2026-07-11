@@ -1824,8 +1824,12 @@ fn test_request_scoped_composite_bar_aggregator_handles_bar_response(
         Some(params),
     )));
 
+    // Aggregated bars are cached under the standard bar type (v1 parity)
     assert_eq!(
-        cache.borrow().bar(&composite).map(|bar| bar.ts_event),
+        cache
+            .borrow()
+            .bar(&composite.standard())
+            .map(|bar| bar.ts_event),
         Some(UnixNanos::from(1_000)),
     );
 }
@@ -2334,11 +2338,12 @@ fn test_continuous_future_request_preserves_bar_type_chain(
         child.params,
     )));
 
-    let first_level = cache.borrow().bar(&bar_type_1).copied().unwrap();
+    // Aggregated bars are cached under the standard bar type (v1 parity)
+    let first_level = cache.borrow().bar(&bar_type_1.standard()).copied().unwrap();
     assert_eq!(first_level.open, Price::from("97.00"));
     assert_eq!(first_level.close, Price::from("98.00"));
     assert_eq!(first_level.volume, Quantity::from(2));
-    let second_level = cache.borrow().bar(&bar_type_2).copied().unwrap();
+    let second_level = cache.borrow().bar(&bar_type_2.standard()).copied().unwrap();
     assert_eq!(second_level.open, Price::from("92.00"));
     assert_eq!(second_level.high, Price::from("98.00"));
     assert_eq!(second_level.low, Price::from("92.00"));
@@ -7802,7 +7807,8 @@ fn test_composite_bar_aggregator_source_bar_subscription_uses_default_priority(
     let bar_type = BarType::from("AUD/USD.SIM-1-TICK-LAST-INTERNAL@1-TICK-EXTERNAL");
     let source_bar_type = bar_type.composite();
     let source_topic = switchboard::get_bars_topic(source_bar_type);
-    let target_topic = switchboard::get_bars_topic(bar_type);
+    // Aggregated bars are emitted with the standard bar type (v1 parity)
+    let target_topic = switchboard::get_bars_topic(bar_type.standard());
 
     let dispatch_order: Rc<RefCell<Vec<&'static str>>> = Rc::new(RefCell::new(Vec::new()));
 
@@ -21760,4 +21766,126 @@ fn test_book_deltas_replay_respects_cache_ownership(
         after_count, owned_count,
         "replayed snapshot must not mutate a cache book owned by a live subscription"
     );
+}
+
+#[rstest]
+fn test_unsubscribe_external_bars_stays_local_with_remaining_exact_subscribers(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    // One actor unsubscribing must not forward the client unsubscribe while
+    // other exact subscribers remain on the bars topic (v1 parity)
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let bar_topic = switchboard::get_bars_topic(bar_type);
+    let (handler, _saver) =
+        get_typed_message_saving_handler::<Bar>(Some(Ustr::from("remaining-bar-subscriber")));
+    msgbus::subscribe_bars(bar_topic.into(), handler.clone(), None);
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    data_engine.execute(sub_cmd);
+    assert_eq!(recorder.borrow().len(), 1);
+
+    // Unsubscribe while the exact subscriber remains: no client forwarding
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+        UnsubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+    assert_eq!(recorder.borrow().len(), 1);
+
+    // After the last subscriber detaches, the unsubscribe reaches the client
+    msgbus::unsubscribe_bars(bar_topic.into(), &handler);
+    data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::Bars(
+        UnsubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    let recorded = recorder.borrow();
+    assert_eq!(recorded.len(), 2);
+    assert!(matches!(
+        &recorded[1],
+        DataCommand::Unsubscribe(UnsubscribeCommand::Bars(_))
+    ));
+}
+
+#[rstest]
+fn test_subscribed_bars_includes_internal_aggregations(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let inst_any = InstrumentAny::CurrencyPair(audusd_sim);
+    data_engine.process(&inst_any as &dyn Any);
+
+    let bar_type = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-INTERNAL");
+    data_engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(
+        SubscribeBars::new(
+            bar_type,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    )));
+
+    // Internally aggregated subscriptions never reach a client, but must still
+    // be reported (v1 parity)
+    assert!(data_engine.subscribed_bars().contains(&bar_type));
 }

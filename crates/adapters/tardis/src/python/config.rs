@@ -37,17 +37,15 @@ impl TardisInstrumentMiniInfo {
         exchange: &str,
         price_precision: u8,
         size_precision: u8,
-    ) -> Self {
-        let exchange: TardisExchange = exchange
-            .parse()
-            .expect("`exchange` should be Tardis convention");
-        Self::new(
+    ) -> PyResult<Self> {
+        let exchange: TardisExchange = exchange.parse().map_err(to_pyvalue_err)?;
+        Ok(Self::new(
             instrument_id,
             Some(Ustr::from(raw_symbol)),
             exchange,
             price_precision,
             size_precision,
-        )
+        ))
     }
 
     #[getter]

@@ -274,6 +274,11 @@ impl BybitWebSocketClient {
     }
 
     /// Establishes the WebSocket connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying WebSocket connection cannot be established,
+    /// after retrying multiple times with exponential backoff.
     #[pyo3(name = "connect")]
     #[expect(clippy::needless_pass_by_value)] // PyO3 extracted parameter
     fn py_connect<'py>(
@@ -484,6 +489,10 @@ impl BybitWebSocketClient {
 
     /// Subscribes to orderbook updates for a specific instrument.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>
@@ -526,6 +535,10 @@ impl BybitWebSocketClient {
 
     /// Subscribes to public trade updates for a specific instrument.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://bybit-exchange.github.io/docs/v5/websocket/public/trade>
@@ -565,6 +578,10 @@ impl BybitWebSocketClient {
     }
 
     /// Subscribes to ticker updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -641,6 +658,10 @@ impl BybitWebSocketClient {
     }
 
     /// Subscribes to kline/candlestick updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -821,6 +842,10 @@ impl BybitWebSocketClient {
     }
 
     /// Waits until the WebSocket client becomes active or times out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the timeout is exceeded before the client becomes active.
     #[pyo3(name = "wait_until_active")]
     fn py_wait_until_active<'py>(
         &self,
@@ -839,6 +864,10 @@ impl BybitWebSocketClient {
     }
 
     /// Submits an order using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if order submission fails or if not authenticated.
     #[pyo3(name = "submit_order")]
     #[pyo3(signature = (
         product_type,
@@ -940,6 +969,10 @@ impl BybitWebSocketClient {
     }
 
     /// Modifies an existing order using Nautilus domain objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if modification fails or if not authenticated.
     #[pyo3(name = "modify_order")]
     #[pyo3(signature = (
         product_type,
@@ -995,6 +1028,10 @@ impl BybitWebSocketClient {
     }
 
     /// Cancels an order via WebSocket, returning the request ID for correlation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cancel request fails or if not authenticated.
     #[pyo3(name = "cancel_order")]
     #[pyo3(signature = (
         product_type,
@@ -1125,6 +1162,10 @@ impl BybitWebSocketClient {
     }
 
     /// Batch cancels multiple orders via WebSocket, returning the request ID for correlation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch request fails or if not authenticated.
     #[pyo3(name = "batch_cancel_orders")]
     fn py_batch_cancel_orders<'py>(
         &self,
@@ -1185,6 +1226,11 @@ impl BybitWebSocketClient {
     }
 
     /// Builds order params for canceling an order via WebSocket.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if symbol parsing fails or if neither venue_order_id
+    /// nor client_order_id is provided.
     #[pyo3(name = "build_cancel_order_params")]
     fn py_build_cancel_order_params(
         &self,
@@ -1235,6 +1281,10 @@ impl BybitWebSocketClient {
     }
 
     /// Batch creates multiple orders via WebSocket, returning the request ID for correlation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the batch request fails or if not authenticated.
     #[pyo3(name = "batch_place_orders")]
     fn py_batch_place_orders<'py>(
         &self,

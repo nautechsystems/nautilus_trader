@@ -69,8 +69,9 @@ impl Indicator for HullMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -231,7 +232,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut indicator_hma_10: HullMovingAverage, stub_quote: QuoteTick) {
-        indicator_hma_10.handle_quote(&stub_quote);
+        indicator_hma_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(indicator_hma_10.value, 1501.0);
     }
 

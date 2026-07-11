@@ -507,8 +507,15 @@ message_bus = MessageBusConfig(
 
 ### Stream auto-trimming
 
-The `autotrim_mins` configuration parameter allows you to specify the lookback window in minutes for automatic stream trimming in your message streams.
-Automatic stream trimming helps manage the size of your message streams by removing older messages, ensuring that the streams remain manageable in terms of storage and performance.
+The `autotrim_maxlen` option is available only on the v2 Rust/PyO3 `MessageBusConfig`.
+
+Use `autotrim_mins` to set a lookback window in minutes and `autotrim_maxlen` to set an
+approximate maximum number of entries for each Redis stream. You can configure either policy or
+both. When both are set, the message bus removes entries that exceed either the time window or the
+entry-count threshold.
+
+Redis applies `autotrim_maxlen` with approximate trimming for better write performance, so a stream
+may contain slightly more entries than the configured threshold.
 
 :::info
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).

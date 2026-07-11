@@ -85,6 +85,8 @@ pub struct OrderInitialized {
     pub ts_init: UnixNanos,
     /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order activation price for trailing-stop orders.
+    pub activation_price: Option<Price>,
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
@@ -149,6 +151,7 @@ impl OrderInitialized {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         price: Option<Price>,
+        activation_price: Option<Price>,
         trigger_price: Option<Price>,
         trigger_type: Option<TriggerType>,
         limit_offset: Option<Decimal>,
@@ -184,6 +187,7 @@ impl OrderInitialized {
             ts_event,
             ts_init,
             price,
+            activation_price,
             trigger_price,
             trigger_type,
             limit_offset,
@@ -467,6 +471,10 @@ impl OrderEvent for OrderInitialized {
         None
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        self.activation_price
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         self.trigger_price
     }
@@ -593,6 +601,21 @@ mod test {
         let original = OrderInitialized::default();
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: OrderInitialized = serde_json::from_str(&json).unwrap();
+        assert_eq!(original, deserialized);
+    }
+
+    #[rstest]
+    fn test_order_initialized_serialization_preserves_activation_price() {
+        use crate::types::Price;
+
+        let original = OrderInitialized {
+            activation_price: Some(Price::from("0.68500")),
+            ..OrderInitialized::default()
+        };
+        let json = serde_json::to_string(&original).unwrap();
+        let deserialized: OrderInitialized = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.activation_price, Some(Price::from("0.68500")));
         assert_eq!(original, deserialized);
     }
 }

@@ -274,9 +274,7 @@ pub trait ExecutionAlgorithm: DataActor {
             order.strategy_id(),
             order.instrument_id(),
             order.client_order_id(),
-            order
-                .account_id()
-                .expect("Order must have account_id for pending update"),
+            order.account_id(),
             UUID4::new(),
             ts_now,
             ts_now,
@@ -299,9 +297,7 @@ pub trait ExecutionAlgorithm: DataActor {
             order.strategy_id(),
             order.instrument_id(),
             order.client_order_id(),
-            order
-                .account_id()
-                .expect("Order must have account_id for pending cancel"),
+            order.account_id(),
             UUID4::new(),
             ts_now,
             ts_now,
@@ -1173,7 +1169,7 @@ pub trait ExecutionAlgorithm: DataActor {
             OrderEventAny::ModifyRejected(e) => self.on_order_modify_rejected(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
-            OrderEventAny::Filled(e) => self.on_algo_order_filled(*e),
+            OrderEventAny::Filled(e) => self.on_algo_order_filled(e.clone()),
         }
 
         self.on_order_event(event);

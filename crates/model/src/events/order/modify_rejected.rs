@@ -237,6 +237,10 @@ impl OrderEvent for OrderModifyRejected {
         None
     }
 
+    fn activation_price(&self) -> Option<Price> {
+        None
+    }
+
     fn trigger_price(&self) -> Option<Price> {
         None
     }

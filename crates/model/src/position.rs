@@ -107,6 +107,10 @@ impl Position {
     /// - The `fill.order_side` is `NoOrderSide`.
     /// - The `fill.position_id` is `None`.
     #[must_use]
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "constructor takes the opening fill by value as the position's seed event"
+    )]
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> Self {
         check_equal(
             &instrument.id(),
@@ -176,7 +180,7 @@ impl Position {
             .events
             .iter()
             .filter(|e| e.client_order_id != client_order_id)
-            .copied()
+            .cloned()
             .collect();
 
         // Preserve non-commission adjustments (funding, manual adjustments, etc.)
@@ -310,7 +314,7 @@ impl Position {
             self.realized_pnl = None;
         }
 
-        self.events.push(*fill);
+        self.events.push(fill.clone());
         self.trade_ids.insert(fill.trade_id);
 
         // Calculate cumulative commissions
@@ -898,7 +902,7 @@ impl Position {
     /// Returns the last `OrderFilled` event for the position (if any after purging).
     #[must_use]
     pub fn last_event(&self) -> Option<OrderFilled> {
-        self.events.last().copied()
+        self.events.last().cloned()
     }
 
     /// Returns the last `TradeId` for the position (if any after purging).
@@ -3080,7 +3084,7 @@ mod tests {
             _ => unreachable!(),
         };
 
-        let position = Position::new(&btc_usdt, fill);
+        let position = Position::new(&btc_usdt, fill.clone());
         let replayed_position = Position::new(&btc_usdt, fill);
 
         // Position quantity should be 1.0 - 0.001 = 0.999 BTC

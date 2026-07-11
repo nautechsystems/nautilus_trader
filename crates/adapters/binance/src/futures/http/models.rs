@@ -1491,6 +1491,18 @@ impl BinanceFuturesAlgoOrder {
                 .with_trailing_offset_type(TrailingOffsetType::BasisPoints);
         }
 
+        if let Some(activation_price) = self
+            .activate_price
+            .as_deref()
+            .map(|price| {
+                parse_positive_price_at_precision(price, price_precision, "activate_price")
+            })
+            .transpose()?
+            .flatten()
+        {
+            report = report.with_activation_price(activation_price);
+        }
+
         Ok(report)
     }
 

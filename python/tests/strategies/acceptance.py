@@ -440,6 +440,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         "trailing_offset_type",
         "trigger_type",
         "emulation_trigger",
+        "activate_at_market",
     )
 
     def __new__(cls, *args, **kwargs):
@@ -459,6 +460,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         trailing_offset_type: str = "PRICE",
         trigger_type: str = "BID_ASK",
         emulation_trigger: str = "BID_ASK",
+        activate_at_market: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -472,6 +474,7 @@ class EMACrossTrailingStopConfig(StrategyConfig):
         self.trailing_offset_type = trailing_offset_type
         self.trigger_type = trigger_type
         self.emulation_trigger = emulation_trigger
+        self.activate_at_market = activate_at_market
 
 
 class _EMACrossTrailingWorkflow(Strategy):
@@ -489,6 +492,8 @@ class _EMACrossTrailingWorkflow(Strategy):
         self._trailing_offset_type = TrailingOffsetType.from_str(config.trailing_offset_type)
         self._trigger_type = TriggerType.from_str(config.trigger_type)
         self._emulation_trigger = TriggerType.from_str(config.emulation_trigger)
+        # Shared by both entry-trail and trailing-stop configs; only the latter exposes the flag.
+        self._activate_at_market = getattr(config, "activate_at_market", False)
 
         self._instrument = None
         self._tick_size = Decimal(0)
@@ -568,13 +573,15 @@ class _EMACrossTrailingWorkflow(Strategy):
 
         offset = self._atr * self._trailing_atr_multiple
         trailing_offset = Decimal(f"{offset:.{self._instrument.price_precision}f}")
+        # When activating at market, submit with neither trigger nor activation price: the
+        # order activates at market and its trigger materializes from `trailing_offset`.
         order = self.order_factory.trailing_stop_market(
             instrument_id=self._instrument_id,
             order_side=side,
             quantity=self._instrument.make_qty(self._trade_size),
             trailing_offset=trailing_offset,
             trailing_offset_type=self._trailing_offset_type,
-            activation_price=activation_price,
+            activation_price=None if self._activate_at_market else activation_price,
             trigger_type=self._trigger_type,
             reduce_only=True,
             emulation_trigger=self._emulation_trigger,

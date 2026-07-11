@@ -2660,6 +2660,7 @@ impl ExecutionManager {
             ts_now,
             ts_now,
             report.price,
+            report.activation_price,
             report.trigger_price,
             report.trigger_type,
             report.limit_offset,
@@ -3003,6 +3004,7 @@ impl ExecutionManager {
             false,
             fill.venue_position_id,
             Some(fill.commission),
+            None,
         )))
     }
 }

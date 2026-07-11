@@ -1381,18 +1381,30 @@ mod tests {
         }
     }
 
-    // Property: bid(value, 0) < ask(value, 0) when value is between ticks
     proptest! {
         #[rstest]
-        fn prop_tiered_bid_less_than_ask_off_grid(value in 0.15f64..99_999.0) {
+        fn prop_tiered_bid_ask_match_adjacent_ticks(
+            raw_index in any::<usize>(),
+            offset in 0usize..=4,
+        ) {
             let scheme = TieredTickScheme::topix100();
+            let ticks = scheme.ticks();
+            let index = raw_index % (ticks.len() - 1);
+            let lower = ticks[index];
+            let upper = ticks[index + 1];
+            let value = f64::midpoint(lower.as_f64(), upper.as_f64());
+            let steps = i32::try_from(offset).unwrap();
 
-            if let (Some(bid), Some(ask)) = (
-                scheme.next_bid_price(value, 0, 4),
-                scheme.next_ask_price(value, 0, 4),
-            ) {
-                prop_assert!(bid <= ask);
-            }
+            let expected_bid = index
+                .checked_sub(offset)
+                .map(|target| ticks[target]);
+            let expected_ask = index
+                .checked_add(offset + 1)
+                .filter(|target| *target < ticks.len())
+                .map(|target| ticks[target]);
+
+            prop_assert_eq!(scheme.next_bid_price(value, steps, 4), expected_bid);
+            prop_assert_eq!(scheme.next_ask_price(value, steps, 4), expected_ask);
         }
     }
 

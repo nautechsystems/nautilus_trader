@@ -1,4 +1,5 @@
 [build]
+warnings = "deny"
 rustdocflags = ["--cfg", "docsrs", "-D", "warnings"]
 
 [target.'cfg(all())']

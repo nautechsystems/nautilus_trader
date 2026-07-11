@@ -317,15 +317,23 @@ impl QuoteTick {
     }
 
     /// Returns the `Price` for this quote depending on the given `price_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `price_type` is not `Bid`, `Ask`, or `Mid` (a quote has no `Last` price).
     #[pyo3(name = "extract_price")]
-    fn py_extract_price(&self, price_type: PriceType) -> Price {
-        self.extract_price(price_type)
+    fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
+        self.extract_price(price_type).map_err(to_pyvalue_err)
     }
 
     /// Returns the `Quantity` for this quote depending on the given `price_type`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `price_type` is not `Bid`, `Ask`, or `Mid` (a quote has no `Last` size).
     #[pyo3(name = "extract_size")]
-    fn py_extract_size(&self, price_type: PriceType) -> Quantity {
-        self.extract_size(price_type)
+    fn py_extract_size(&self, price_type: PriceType) -> PyResult<Quantity> {
+        self.extract_size(price_type).map_err(to_pyvalue_err)
     }
 
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.

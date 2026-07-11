@@ -232,12 +232,12 @@ impl CashAccount {
     fn py_calculate_pnls(
         &self,
         instrument: Py<PyAny>,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         position: Option<Position>,
         py: Python,
     ) -> PyResult<Vec<Money>> {
         let instrument = pyobject_to_instrument_any(py, instrument)?;
-        self.calculate_pnls(&instrument, &fill, position)
+        self.calculate_pnls(&instrument, fill, position)
             .map_err(to_pyvalue_err)
     }
 

@@ -151,6 +151,10 @@ impl DatabentoDataLoader {
     ///
     /// When `skip_on_error` is true, instruments that fail to decode are logged
     /// as warnings and skipped. When false (default), any decode error is propagated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading instruments fails.
     #[pyo3(name = "load_instruments")]
     #[pyo3(signature = (filepath, use_exchange_as_venue, skip_on_error=false, expiration_overrides=None))]
     fn py_load_instruments(
@@ -187,6 +191,10 @@ impl DatabentoDataLoader {
     /// Loads order book delta messages from a DBN MBO schema file.
     ///
     /// Cannot include trades.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading order book deltas fails.
     #[pyo3(name = "load_order_book_deltas")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_deltas(
@@ -223,6 +231,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads order book depth10 snapshots from a DBN MBP-10 schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading order book depth10 fails.
     #[pyo3(name = "load_order_book_depth10")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_depth10(
@@ -252,6 +264,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads quote tick messages from a DBN MBP-1 or TBBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading quotes fails.
     #[pyo3(name = "load_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_quotes(
@@ -288,6 +304,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads best bid/offer quote messages from a DBN BBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading BBO quotes fails.
     #[pyo3(name = "load_bbo_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bbo_quotes(
@@ -317,6 +337,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads consolidated MBP-1 quote messages from a DBN CMBP-1 schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading consolidated MBP-1 quotes fails.
     #[pyo3(name = "load_cmbp_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_cmbp_quotes(
@@ -353,6 +377,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads consolidated best bid/offer quote messages from a DBN CBBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading consolidated BBO quotes fails.
     #[pyo3(name = "load_cbbo_quotes")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_cbbo_quotes(
@@ -382,6 +410,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads trade messages from a DBN TBBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading TBBO trades fails.
     #[pyo3(name = "load_tbbo_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tbbo_trades(
@@ -411,6 +443,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads trade messages from a DBN TCBBO schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading TCBBO trades fails.
     #[pyo3(name = "load_tcbbo_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tcbbo_trades(
@@ -440,6 +476,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads trade messages from a DBN TRADES schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading trades fails.
     #[pyo3(name = "load_trades")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_trades(
@@ -469,6 +509,10 @@ impl DatabentoDataLoader {
     }
 
     /// Loads OHLCV bar messages from a DBN OHLCV schema file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading bars fails.
     #[pyo3(name = "load_bars")]
     #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, timestamp_on_close=true))]
     fn py_load_bars(

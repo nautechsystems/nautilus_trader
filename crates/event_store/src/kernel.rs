@@ -3327,7 +3327,7 @@ mod tests {
             .ts_init(UnixNanos::from(11))
             .commission(Money::new(0.10, Currency::USDT()))
             .build();
-        let event = OrderEventAny::Filled(filled);
+        let event = OrderEventAny::Filled(filled.clone());
 
         let topic: MStr<msgbus::Topic> = MStr::from("events.order.ETHUSDT-PERP.BINANCE");
         msgbus::publish_order_event(topic, &event);

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{Bar, QuoteTick, TradeTick};
 use pyo3::prelude::*;
 
@@ -93,13 +94,13 @@ impl VolatilityRatio {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    const fn py_handle_quote_tick(&mut self, _quote: &QuoteTick) {
-        // Function body intentionally left blank.
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) -> PyResult<()> {
+        self.handle_quote(quote).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    const fn py_handle_trade_tick(&mut self, _trade: &TradeTick) {
-        // Function body intentionally left blank.
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.handle_trade(trade);
     }
 
     #[pyo3(name = "handle_bar")]

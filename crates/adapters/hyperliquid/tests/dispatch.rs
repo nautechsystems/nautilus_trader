@@ -1208,3 +1208,130 @@ fn test_buffered_fills_cleared_on_cleanup_terminal() {
     state.cleanup_terminal(&cid);
     assert_eq!(state.buffered_fill_count(&cid), 0);
 }
+
+/// Stage 5: two rapid modifies under one stable CLOID queue as a chain. Each
+/// replacement promotes to `OrderUpdated` carrying its own target quantity, and
+/// both old legs' cancels are suppressed, so no spurious `OrderCanceled`
+/// reaches the strategy even though the second modify was queued before the
+/// first replacement acked.
+#[rstest]
+fn test_chained_cancel_replace_emits_two_updates_no_spurious_cancel() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-CHAIN-001");
+    state.register_identity(cid, identity(OrderType::Limit));
+
+    // Order accepted at V0
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("9000"));
+
+    // Two rapid modifies fired before either replacement acked; both read the
+    // same stale old leg (V0) from cache.
+    state.mark_pending_modify(cid, VenueOrderId::new("9000"), Quantity::from("0.00020"));
+    state.mark_pending_modify(cid, VenueOrderId::new("9000"), Quantity::from("0.00030"));
+
+    let canceled_v0 = make_status_report(
+        Some("O-CHAIN-001"),
+        "9000",
+        OrderStatus::Canceled,
+        Some("56730.0"),
+        "0.00020",
+    );
+    let accepted_v1 = make_status_report(
+        Some("O-CHAIN-001"),
+        "9001",
+        OrderStatus::Accepted,
+        Some("53000.0"),
+        "0.00020",
+    );
+    let canceled_v1 = make_status_report(
+        Some("O-CHAIN-001"),
+        "9001",
+        OrderStatus::Canceled,
+        Some("53000.0"),
+        "0.00020",
+    );
+    let accepted_v2 = make_status_report(
+        Some("O-CHAIN-001"),
+        "9002",
+        OrderStatus::Accepted,
+        Some("52000.0"),
+        "0.00030",
+    );
+
+    // Venue order: CANCELED(V0), ACCEPTED(V1), CANCELED(V1), ACCEPTED(V2)
+    let o1 = dispatch_order_event(&canceled_v0, &state, &emitter, UnixNanos::default());
+    let o2 = dispatch_order_event(&accepted_v1, &state, &emitter, UnixNanos::default());
+    let o3 = dispatch_order_event(&canceled_v1, &state, &emitter, UnixNanos::default());
+    let o4 = dispatch_order_event(&accepted_v2, &state, &emitter, UnixNanos::default());
+
+    assert_eq!(o1, DispatchOutcome::Skip); // old leg of first modify
+    assert_eq!(o2, DispatchOutcome::Tracked); // first replacement
+    assert_eq!(o3, DispatchOutcome::Skip); // old leg of second modify
+    assert_eq!(o4, DispatchOutcome::Tracked); // second replacement
+
+    let events = drain_events(&mut rx);
+    assert_event_types(&events, &["Updated", "Updated"]);
+
+    // Each Updated carries its own target quantity and replacement id
+    if let ExecutionEvent::Order(OrderEventAny::Updated(u1)) = &events[0] {
+        assert_eq!(u1.venue_order_id, Some(VenueOrderId::new("9001")));
+        assert_eq!(u1.quantity, Quantity::from("0.00020"));
+    } else {
+        panic!("expected OrderEventAny::Updated");
+    }
+
+    if let ExecutionEvent::Order(OrderEventAny::Updated(u2)) = &events[1] {
+        assert_eq!(u2.venue_order_id, Some(VenueOrderId::new("9002")));
+        assert_eq!(u2.quantity, Quantity::from("0.00030"));
+    } else {
+        panic!("expected OrderEventAny::Updated");
+    }
+
+    // Chain drained; cached voi advanced to the final replacement
+    assert!(!state.has_pending_modify(&cid));
+    assert_eq!(
+        state.cached_venue_order_id(&cid),
+        Some(VenueOrderId::new("9002")),
+    );
+    assert!(state.lookup_identity(&cid).is_some());
+    assert!(!state.filled_orders.contains(&cid));
+}
+
+/// Stage 5: once the modify chain drains, a genuine cancel of the live leg is
+/// not mistaken for an old-leg cancel and still emits `OrderCanceled`.
+#[rstest]
+fn test_user_cancel_after_modify_chain_drains_emits_canceled() {
+    let (emitter, mut rx) = test_emitter();
+    let state = Arc::new(WsDispatchState::new());
+    let cid = ClientOrderId::new("O-CHAIN-002");
+    state.register_identity(cid, identity(OrderType::Limit));
+    state.insert_accepted(cid);
+    state.record_venue_order_id(cid, VenueOrderId::new("8000"));
+
+    // One modify promotes and drains the chain
+    state.mark_pending_modify(cid, VenueOrderId::new("8000"), Quantity::from("0.00020"));
+    let accepted_new = make_status_report(
+        Some("O-CHAIN-002"),
+        "8001",
+        OrderStatus::Accepted,
+        Some("53000.0"),
+        "0.00020",
+    );
+    dispatch_order_event(&accepted_new, &state, &emitter, UnixNanos::default());
+    assert!(!state.has_pending_modify(&cid));
+
+    // A real user cancel of the current live leg (8001) must emit Canceled
+    let canceled_live = make_status_report(
+        Some("O-CHAIN-002"),
+        "8001",
+        OrderStatus::Canceled,
+        Some("53000.0"),
+        "0.00020",
+    );
+    let outcome = dispatch_order_event(&canceled_live, &state, &emitter, UnixNanos::default());
+    assert_eq!(outcome, DispatchOutcome::Tracked);
+
+    let events = drain_events(&mut rx);
+    assert_event_types(&events, &["Updated", "Canceled"]);
+}

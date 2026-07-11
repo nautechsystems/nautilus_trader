@@ -145,7 +145,12 @@ async fn cancel_open_orders(
     }
 
     log::info!("Cancelling {} open perp order(s)", cancels.len());
-    let action = HyperliquidExecAction::Cancel { cancels };
+    // Flatten cancels a mixed bag of order types (trigger orders can't be fast-cancelled)
+    // and the frontend open-orders parse does not track type, so omit the fast flag here.
+    let action = HyperliquidExecAction::Cancel {
+        cancels,
+        fast: None,
+    };
     let response = client
         .post_action_exec(&action)
         .await

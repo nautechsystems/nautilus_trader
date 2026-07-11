@@ -1482,7 +1482,6 @@ impl OrderEmulator {
         let (new_trigger_px, new_limit_px) = match trailing_stop_calculate(
             price_increment,
             order.trigger_price(),
-            order.activation_price(),
             order,
             bid,
             ask,

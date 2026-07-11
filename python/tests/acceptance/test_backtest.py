@@ -439,6 +439,50 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         assert any(order.status == OrderStatus.FILLED for order in trailing_stops)
         assert self.engine.cache.positions_closed_count() > 0
 
+    def test_run_ema_cross_trailing_stop_activates_at_market(self):
+        # Regression for v1 parity: a trailing stop submitted with neither trigger_price nor
+        # activation_price activates at market and its trigger materializes from trailing_offset
+        # on the first update, so it can still trail and fill.
+        self.engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path=EMA_CROSS_TRAILING_STOP_STRATEGY,
+                config_path=EMA_CROSS_TRAILING_STOP_CONFIG,
+                config={
+                    "instrument_id": str(self.gbpusd.id),
+                    "bar_type": "GBP/USD.SIM-1-MINUTE-BID-INTERNAL",
+                    "trade_size": "1000000",
+                    "fast_ema_period": 10,
+                    "slow_ema_period": 20,
+                    "atr_period": 20,
+                    "trailing_atr_multiple": 0.01,
+                    "trailing_offset_type": "PRICE",
+                    "trigger_type": "BID_ASK",
+                    "emulation_trigger": "NO_TRIGGER",
+                    "activate_at_market": True,
+                },
+            ),
+        )
+
+        self.engine.run()
+        result = self.engine.get_result()
+        trailing_stops = [
+            order
+            for order in self.engine.cache.orders()
+            if order.tags and EMA_CROSS_TRAILING_STOP_TAG in order.tags
+        ]
+
+        assert result.iterations > 0
+        assert result.total_orders > 0
+        assert trailing_stops
+        # Submitted with no trigger/activation; at least one still activates and fills.
+        assert any(order.status == OrderStatus.FILLED for order in trailing_stops)
+        # Every filled trailing stop had its trigger materialized (never stays None).
+        assert all(
+            order.trigger_price is not None
+            for order in trailing_stops
+            if order.status == OrderStatus.FILLED
+        )
+
 
 class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
     def setup_method(self):

@@ -627,16 +627,44 @@ def test_create_tearsheet_end_to_end_real_engine():
     engine = _run_backtest_with_fills()
 
     try:
+        result = engine.get_result()
+        orders = engine.generate_orders_report()
+        order_fills = engine.generate_order_fills_report()
+        fills = engine.generate_fills_report()
+        positions = engine.generate_positions_report()
+        account = engine.generate_account_report(venue=engine.list_venues()[0])
         account_info = tearsheet._collect_account_info(engine=engine)
         returns = tearsheet._resolve_tearsheet_returns(engine=engine)
         html = create_tearsheet(engine, output_path=None, title="E2E Tearsheet")
     finally:
         engine.dispose()
 
+    assert result.iterations == 6
+    assert result.total_orders == 2
+    assert result.total_positions == 1
+    assert result.summary["orders.open"] == "0"
+    assert result.summary["positions.open"] == "0"
+    assert result.stats_pnls["USD"]["PnL (total)"] == pytest.approx(47.2)
+    assert result.stats_returns["Average (Return)"] == pytest.approx(0.0007142857142857943)
+    assert result.stats_general == {"Long Ratio": 1.0}
+    assert len(orders) == result.total_orders
+    assert orders["status"].tolist() == ["FILLED", "FILLED"]
+    assert len(order_fills) == 2
+    assert order_fills["filled_qty"].tolist() == ["100000", "100000"]
+    assert len(fills) == 2
+    assert set(fills["order_side"]) == {"BUY", "SELL"}
+    assert fills["last_qty"].tolist() == ["100000", "100000"]
+    assert len(positions) == result.total_positions
+    assert positions["side"].tolist() == ["FLAT"]
+    assert positions["realized_pnl"].tolist() == ["47.20 USD"]
+    assert account["currency"].tolist() == ["USD", "USD", "USD"]
+    assert account["total"].tolist() == ["1000000.00", "999998.60", "1000047.20"]
     assert any(key.startswith("Starting balance") for key in account_info)
     assert isinstance(returns, pd.Series)
-    assert html is not None
     assert "plotly" in html.lower()
+    assert "PnL Statistics (USD)" in html
+    assert engine.cache.orders_open_count() == 0
+    assert engine.cache.positions_open_count() == 0
 
 
 def test_to_returns_series_normalizes_inputs():

@@ -83,6 +83,8 @@ pub struct OrderStatusReport {
     pub expire_time: Option<UnixNanos>,
     /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order activation price (trailing stop).
+    pub activation_price: Option<Price>,
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
@@ -149,6 +151,7 @@ impl OrderStatusReport {
             contingency_type: ContingencyType::default(),
             expire_time: None,
             price: None,
+            activation_price: None,
             trigger_price: None,
             trigger_type: None,
             limit_offset: None,
@@ -228,6 +231,13 @@ impl OrderStatusReport {
                 anyhow::anyhow!("Failed to convert avg_px to Decimal: {avg_px} ({e})")
             })?);
         Ok(self)
+    }
+
+    /// Sets the activation price.
+    #[must_use]
+    pub const fn with_activation_price(mut self, activation_price: Price) -> Self {
+        self.activation_price = Some(activation_price);
+        self
     }
 
     /// Sets the trigger price.
@@ -370,6 +380,7 @@ impl Display for OrderStatusReport {
                 contingency_type={}, \
                 expire_time={:?}, \
                 price={:?}, \
+                activation_price={:?}, \
                 trigger_price={:?}, \
                 trigger_type={:?}, \
                 limit_offset={:?}, \
@@ -403,6 +414,7 @@ impl Display for OrderStatusReport {
             self.contingency_type,
             self.expire_time,
             self.price,
+            self.activation_price,
             self.trigger_price,
             self.trigger_type,
             self.limit_offset,

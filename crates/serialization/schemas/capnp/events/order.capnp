@@ -76,6 +76,7 @@ struct OrderInitialized {
     execAlgorithmParams @30 :Base.StringMap;
     execSpawnId @31 :Identifiers.ClientOrderId;
     tags @32 :List(Text);
+    activationPrice @33 :Types.Price;
 }
 
 # OrderDenied - order denied by system
@@ -291,4 +292,5 @@ struct OrderFilled {
     reconciliation @16 :Bool;
     positionId @17 :Identifiers.PositionId;
     commission @18 :Types.Money;
+    info @19 :Base.StringMap;
 }

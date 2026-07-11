@@ -71,8 +71,9 @@ impl Indicator for DoubleExponentialMovingAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -198,7 +199,7 @@ mod tests {
         mut indicator_dema_10: DoubleExponentialMovingAverage,
         stub_quote: QuoteTick,
     ) {
-        indicator_dema_10.handle_quote(&stub_quote);
+        indicator_dema_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(indicator_dema_10.value, 1501.0);
     }
 
@@ -305,7 +306,7 @@ mod tests {
     ) {
         assert_eq!(indicator_dema_10.count(), 0);
 
-        indicator_dema_10.handle_quote(&stub_quote);
+        indicator_dema_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(indicator_dema_10.count(), 1);
         assert_eq!(indicator_dema_10.ema1.count(), 1);
         assert_eq!(indicator_dema_10.ema2.count(), 1);

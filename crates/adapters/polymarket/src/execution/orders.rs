@@ -54,6 +54,13 @@ impl PolymarketExecutionClient {
             None => return,
         };
 
+        if let Err(reason) =
+            PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
+        {
+            self.emitter.emit_order_denied(&order, &reason);
+            return;
+        }
+
         let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_decimals = instrument.price_precision() as u32;
@@ -461,6 +468,13 @@ impl PolymarketExecutionClient {
                 None => continue,
             };
 
+            if let Err(reason) =
+                PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
+            {
+                self.emitter.emit_order_denied(&order, &reason);
+                continue;
+            }
+
             let price = order
                 .price()
                 .expect("validated limit order must have a price");
@@ -503,7 +517,6 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
         let pending_tasks = self.pending_tasks.clone();
-        let stopping = self.stopping.clone();
         let account_id = self.core.account_id;
 
         self.spawn_task("submit_order_list", async move {
@@ -586,7 +599,6 @@ impl PolymarketExecutionClient {
                                 &order_identities,
                                 &pending_cancels,
                                 &pending_tasks,
-                                &stopping,
                                 account_id,
                             )
                             .await;

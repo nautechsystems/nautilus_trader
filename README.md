@@ -16,10 +16,10 @@
 
 | Platform           | Rust   | Python    |
 | :----------------- | :----- | :-------- |
-| `Linux (x86_64)`   | 1.96.1 | 3.12-3.14 |
-| `Linux (ARM64)`    | 1.96.1 | 3.12-3.14 |
-| `macOS (ARM64)`    | 1.96.1 | 3.12-3.14 |
-| `Windows (x86_64)` | 1.96.1 | 3.12-3.14 |
+| `Linux (x86_64)`   | 1.97.0 | 3.12-3.14 |
+| `Linux (ARM64)`    | 1.97.0 | 3.12-3.14 |
+| `macOS (ARM64)`    | 1.97.0 | 3.12-3.14 |
+| `Windows (x86_64)` | 1.97.0 | 3.12-3.14 |
 
 - **Docs**: <https://nautilustrader.io/docs/>
 - **Website**: <https://nautilustrader.io>
@@ -582,9 +582,15 @@ See the [Developer Guide](https://nautilustrader.io/docs/latest/developer_guide/
 >
 > Run `make build-debug` to compile after changes to Rust or Cython code for the most efficient development workflow.
 
-After changes to v2 PyO3 bindings or wrapped Rust docs, run `make py-stubs-v2` and commit the
-generated `.pyi` files and wrapper docstrings. See
-[Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
+After changes to v2 PyO3 bindings, stub annotations, or wrapped Rust docs, regenerate the
+generated Python artifacts from the repository root:
+
+```bash
+make py-stubs-v2
+```
+
+Commit the generated `.pyi` files and PyO3 wrapper doc comments changed by this target. See
+[Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts) for details.
 
 ### Testing with Rust
 

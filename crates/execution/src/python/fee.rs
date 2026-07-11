@@ -176,6 +176,10 @@ fn has_method_override_before_base(
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl FixedFeeModel {
     /// Creates a new `FixedFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `commission` is negative.
     #[new]
     #[pyo3(signature = (commission, charge_commission_once=None, change_commission_once=None))]
     fn py_new(
@@ -266,6 +270,10 @@ impl ProbabilityPriceFeeModel {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl CappedOptionFeeModel {
     /// Creates a new `CappedOptionFeeModel` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any supplied rate is negative.
     #[new]
     #[pyo3(signature = (maker_rate=None, taker_rate=None, cap_rate=None))]
     fn py_new(

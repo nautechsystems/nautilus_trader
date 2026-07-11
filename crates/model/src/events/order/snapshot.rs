@@ -67,6 +67,8 @@ pub struct OrderSnapshot {
     pub quantity: Quantity,
     /// The order price (LIMIT).
     pub price: Option<Price>,
+    /// The order activation price for trailing-stop orders.
+    pub activation_price: Option<Price>,
     /// The order trigger price (STOP).
     pub trigger_price: Option<Price>,
     /// The trigger type for the order.
@@ -147,6 +149,7 @@ impl From<OrderAny> for OrderSnapshot {
             order_side: order.order_side(),
             quantity: order.quantity(),
             price: order.price(),
+            activation_price: order.activation_price(),
             trigger_price: order.trigger_price(),
             trigger_type: order.trigger_type(),
             limit_offset: order.limit_offset(),

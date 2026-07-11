@@ -29,6 +29,8 @@ from nautilus_trader.adapters.polymarket import SignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveRiskEngineConfig
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import TraderId
 
 
@@ -117,31 +119,58 @@ def test_live_node_builder_accepts_polymarket_exec_factory() -> None:
 def test_polymarket_data_tester_builds_offline(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = capture_data_tester_main(monkeypatch, polymarket_data_tester, [])
     kwargs = captured["data_tester_kwargs"]
+    data_client_config = captured["data_client_args"][2]
 
     assert isinstance(kwargs, dict)
+    assert kwargs["instrument_ids"] == [
+        InstrumentId.from_str(polymarket_data_tester.DEFAULT_INSTRUMENT),
+    ]
     assert kwargs["subscribe_trades"] is True
+    assert 'event_slugs: Some(["fed-decision-in-september-762"])' in repr(data_client_config)
     assert "run_called" not in captured
 
 
 @pytest.mark.parametrize(
-    ("extra_args", "expected_dry_run", "expected_limit_sells"),
+    (
+        "extra_args",
+        "expected_dry_run",
+        "expected_limit_buys",
+        "expected_quote_quantity",
+    ),
     [
-        ([], True, False),
-        (["--live-orders", "--limit-sells"], False, True),
+        ([], True, False, False),
+        (["--live-orders"], False, False, True),
+        (["--limit-orders"], False, True, False),
     ],
 )
-def test_polymarket_exec_tester_gates_live_orders(
+def test_polymarket_exec_tester_selects_one_live_order_mode(
     monkeypatch: pytest.MonkeyPatch,
     extra_args: list[str],
     expected_dry_run: bool,
-    expected_limit_sells: bool,
+    expected_limit_buys: bool,
+    expected_quote_quantity: bool,
 ) -> None:
     captured = capture_exec_tester_main(monkeypatch, polymarket_exec_tester, extra_args)
     kwargs = captured["exec_tester_kwargs"]
+    exec_engine_config = captured["exec_engine_config"]
+    exec_engine_repr = repr(exec_engine_config)
 
     assert isinstance(kwargs, dict)
+    assert (
+        f'reconciliation_instrument_ids: Some(["{polymarket_exec_tester.DEFAULT_INSTRUMENT}"])'
+        in exec_engine_repr
+    )
+    assert "open_check_interval_secs: Some(10.0)" in exec_engine_repr
+    assert "position_check_interval_secs: Some(30.0)" in exec_engine_repr
+    assert kwargs["use_uuid_client_order_ids"] is True
     assert kwargs["dry_run"] is expected_dry_run
-    assert kwargs["enable_limit_sells"] is expected_limit_sells
+    assert kwargs["enable_limit_buys"] is expected_limit_buys
+    assert kwargs["enable_limit_sells"] is False
+    assert kwargs["use_post_only"] is expected_limit_buys
+    assert kwargs["use_quote_quantity"] is expected_quote_quantity
+    assert kwargs["cancel_orders_on_stop"] is not expected_dry_run
+    assert kwargs["close_positions_on_stop"] is expected_quote_quantity
+    assert kwargs["close_positions_time_in_force"] == TimeInForce.IOC
     assert kwargs["enable_stop_buys"] is False
     assert kwargs["enable_stop_sells"] is False
     assert "run_called" not in captured

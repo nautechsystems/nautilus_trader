@@ -620,7 +620,7 @@ impl PyOrderFactory {
         instrument_id: InstrumentId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
+        price: Option<Price>,
         limit_offset: Decimal,
         trailing_offset: Decimal,
         trailing_offset_type: Option<TrailingOffsetType>,

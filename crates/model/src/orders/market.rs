@@ -110,6 +110,7 @@ impl MarketOrder {
             ts_init,
             None,
             None,
+            None,
             Some(TriggerType::NoTrigger),
             None,
             None,

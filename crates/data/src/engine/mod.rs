@@ -513,8 +513,11 @@ impl DataEngine {
             }
         }
 
-        for aggregator in self.bar_aggregators.values() {
-            if aggregator.borrow().bar_type().spec().is_time_aggregated() {
+        for ((_, request_id), aggregator) in &self.bar_aggregators {
+            // Request-scoped or historical aggregators run on private clocks;
+            // re-arming them here would perturb an in-flight request's timer state
+            let is_live = request_id.is_none() && !aggregator.borrow().is_historical();
+            if is_live && aggregator.borrow().bar_type().spec().is_time_aggregated() {
                 aggregator
                     .borrow_mut()
                     .start_timer(Some(aggregator.clone()));
@@ -637,6 +640,34 @@ impl DataEngine {
         for client in self.get_clients_mut() {
             if let Err(e) = client.dispose() {
                 log::error!("{e}");
+            }
+        }
+
+        // Continuous-future source handlers live outside bar_aggregator_handlers,
+        // so release them before dropping the aggregators
+        let mut cf_sources = Vec::new();
+
+        for state in self.continuous_future_subscriptions.values_mut() {
+            if let Some(name) = state.timer_name.take() {
+                self.clock.borrow_mut().cancel_timer(&name);
+            }
+
+            if let Some(subscription) = state.active_source_subscription.take() {
+                cf_sources.push((state.target_bar_type, subscription));
+            }
+        }
+
+        for (target_bar_type, subscription) in cf_sources {
+            self.unsubscribe_continuous_future_source(target_bar_type, subscription);
+        }
+        self.continuous_future_subscriptions.clear();
+
+        // Unsubscribe aggregator msgbus handlers so the typed routers don't keep
+        // entries pointing at dropped aggregators
+        let keys: Vec<BarAggregatorKey> = self.bar_aggregators.keys().copied().collect();
+        for (bar_type, request_id) in keys {
+            if let Err(e) = self.stop_bar_aggregator(bar_type, request_id) {
+                log::error!("Error stopping bar aggregator during dispose for {bar_type}: {e}");
             }
         }
 
@@ -875,10 +906,18 @@ impl DataEngine {
         self.subscribed_synthetic_trades.iter().copied().collect()
     }
 
-    /// Returns all bar types currently subscribed across all clients.
+    /// Returns all bar types currently subscribed across all clients,
+    /// including internally aggregated subscriptions (v1 parity).
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
-        self.collect_subscriptions(|client| &client.subscriptions_bars)
+        let mut subscribed = self.collect_subscriptions(|client| &client.subscriptions_bars);
+        subscribed.extend(
+            self.bar_aggregators
+                .keys()
+                .filter(|(_, request_id)| request_id.is_none())
+                .map(|(bar_type, _)| *bar_type),
+        );
+        subscribed
     }
 
     /// Returns all instrument IDs for which mark price subscriptions exist.
@@ -1072,7 +1111,11 @@ impl DataEngine {
                     .continuous_future_subscriptions
                     .contains_key(&cmd.bar_type.standard()) =>
             {
-                self.unsubscribe_continuous_future_bars(cmd);
+                // Don't tear down the chain while other actors remain subscribed
+                let topic = switchboard::get_bars_topic(cmd.bar_type.standard());
+                if msgbus::exact_subscriber_count_bars(topic) == 0 {
+                    self.unsubscribe_continuous_future_bars(cmd);
+                }
                 return Ok(());
             }
             UnsubscribeCommand::Bars(cmd) => {
@@ -1164,6 +1207,10 @@ impl DataEngine {
             UnsubscribeCommand::OptionGreeks(c) => {
                 let topic = switchboard::get_option_greeks_topic(c.instrument_id);
                 msgbus::exact_subscriber_count_option_greeks(topic) > 0
+            }
+            UnsubscribeCommand::Bars(c) => {
+                let topic = switchboard::get_bars_topic(c.bar_type.standard());
+                msgbus::exact_subscriber_count_bars(topic) > 0
             }
             _ => false,
         }
@@ -1550,11 +1597,18 @@ impl DataEngine {
         let aggregator_request_id = state.aggregator_request_id(request_id);
 
         for bar_type in &state.bar_types {
-            self.create_bar_aggregator_for_key(*bar_type, aggregator_request_id)?;
+            self.create_bar_aggregator_for_key(
+                *bar_type,
+                aggregator_request_id,
+                state.skip_first_non_full_bar,
+            )?;
             self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
 
             let key = bar_aggregator_key(*bar_type, aggregator_request_id);
             if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                if state.disable_build_with_no_updates {
+                    aggregator.borrow_mut().set_build_with_no_updates(false);
+                }
                 aggregator.borrow_mut().set_is_running(true);
             }
         }
@@ -3366,9 +3420,23 @@ impl DataEngine {
                 && self
                     .bar_aggregators
                     .contains_key(&bar_aggregator_key(source_type, None))
-                && let Err(e) = self.stop_bar_aggregator(source_type, None)
             {
-                log::error!("Error stopping source bar aggregator for {source_type}: {e}");
+                match self.stop_bar_aggregator(source_type, None) {
+                    // Release the underlying client subscription too, otherwise the
+                    // venue stream keeps flowing with no consumer
+                    Ok(()) => self.unsubscribe_bar_aggregator(&UnsubscribeBars::new(
+                        source_type,
+                        cmd.client_id,
+                        cmd.venue,
+                        UUID4::new(),
+                        cmd.ts_init,
+                        Some(cmd.command_id),
+                        cmd.params.clone(),
+                    )),
+                    Err(e) => {
+                        log::error!("Error stopping source bar aggregator for {source_type}: {e}");
+                    }
+                }
             }
         }
     }
@@ -4122,6 +4190,7 @@ impl DataEngine {
         &self,
         instrument: &InstrumentAny,
         bar_type: BarType,
+        skip_first_non_full_bar: Option<bool>,
     ) -> Box<dyn BarAggregator> {
         let cache = self.cache.clone();
         let validate_sequence = self.config.validate_data_sequence;
@@ -4153,7 +4222,7 @@ impl DataEngine {
                 config.time_bars_interval_type,
                 time_bars_origin_offset,
                 config.time_bars_build_delay,
-                config.time_bars_skip_first_non_full_bar,
+                skip_first_non_full_bar.unwrap_or(config.time_bars_skip_first_non_full_bar),
             ))
         } else {
             match bar_type.spec().aggregation {
@@ -4229,6 +4298,7 @@ impl DataEngine {
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         if self.bar_aggregators.contains_key(&key) {
@@ -4247,7 +4317,12 @@ impl DataEngine {
                 })?
                 .clone()
         };
-        let aggregator = self.create_bar_aggregator(&instrument, bar_type);
+        let aggregator = self.create_bar_aggregator(&instrument, bar_type, skip_first_non_full_bar);
+        debug_assert_eq!(
+            aggregator.bar_type(),
+            key.0,
+            "aggregator bar type must match its standardized key"
+        );
         self.bar_aggregators
             .insert(key, Rc::new(RefCell::new(aggregator)));
 
@@ -4270,7 +4345,11 @@ impl DataEngine {
             return Ok(());
         }
 
-        self.start_bar_aggregator(cmd.bar_type, None)?;
+        let skip_first_non_full_bar = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("skip_first_non_full_bar"));
+        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar)?;
         self.subscribe_bar_aggregator(cmd);
 
         Ok(())
@@ -4280,11 +4359,12 @@ impl DataEngine {
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         let bar_type_std = bar_type.standard();
 
-        self.create_bar_aggregator_for_key(bar_type, request_id)?;
+        self.create_bar_aggregator_for_key(bar_type, request_id, skip_first_non_full_bar)?;
         let aggregator = self
             .bar_aggregators
             .get(&key)
@@ -4573,7 +4653,7 @@ impl DataEngine {
             return Ok(());
         }
 
-        self.create_bar_aggregator_for_key(target_bar_type, None)?;
+        self.create_bar_aggregator_for_key(target_bar_type, None, None)?;
         self.setup_bar_aggregator(target_bar_type, false, None)?;
 
         let now_ns = self.clock.borrow().timestamp_ns().as_u64();
@@ -5303,6 +5383,11 @@ fn process_engine_bar(
     publish: bool,
     bar: Bar,
 ) {
+    debug_assert!(
+        bar.bar_type.is_standard(),
+        "bars must be published and cached under the standard bar type"
+    );
+
     if !validate_bar_sequence(cache, validate_sequence, &bar) {
         return;
     }

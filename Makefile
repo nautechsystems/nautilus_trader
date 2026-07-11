@@ -30,6 +30,9 @@ UV_V2_REQUIRED_VERSION := $(patsubst ==%,%,$(UV_V2_REQUIRED_SPEC))
 V = 0  # 0 / 1 - verbose mode
 Q = $(if $(filter 1,$V),,@) # Quiet mode, suppress command output
 M = $(shell printf "\033[0;34m>\033[0m") # Message prefix for commands
+empty :=
+space := $(empty) $(empty)
+comma := ,
 
 # Verbose options for specific targets (defaults to true, can be overridden)
 VERBOSE ?= true
@@ -169,13 +172,15 @@ CARGO_FEATURES := $(BASE_FEATURES),$(EXTRA_FEATURES)
 else
 CARGO_FEATURES := $(BASE_FEATURES)
 endif
+CORE_SELECTED_FEATURE_LIST := $(filter-out hypersync,$(subst $(comma),$(space),$(CARGO_FEATURES)))
+CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEATURE_LIST)))
 
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features cargo-test \
-	cargo-test-extras cargo-test-core-local cargo-test-core cargo-test-adapters \
-	cargo-test-sim cargo-test-core-debug \
+	cargo-test-extras cargo-test-core-local cargo-test-core-selected \
+	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
 	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
 	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
 	cargo-test-coverage-crate-% cargo-test-coverage-html \
@@ -184,7 +189,7 @@ CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	install-cli
 
 NEXTEST_ENV_TARGETS := cargo-test cargo-test-extras cargo-test-core-local \
-	cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
+	cargo-test-core-selected cargo-test-core cargo-test-adapters cargo-test-sim cargo-test-core-debug \
 	cargo-test-core-local-debug cargo-test-lib cargo-test-standard-precision \
 	cargo-test-debug cargo-test-coverage cargo-test-crate-% \
 	cargo-test-coverage-crate-% cargo-test-coverage-html \
@@ -736,16 +741,21 @@ cargo-test-core-local: check-nextest-installed
 cargo-test-core-local:  #-- Run Rust tests for core crates only with direct package selection (fast local compile)
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Rust tests for core crates with direct package selection...)
-	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --verbose
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CORE_SELECTED_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --verbose
 else
 	$(info $(M) Running Rust tests for core crates with direct package selection (showing summary and failures only)...)
-	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CORE_SELECTED_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 endif
+
+.PHONY: cargo-test-core-selected
+# CI uses direct package selection so core jobs do not compile adapter test binaries.
+# This intentionally avoids workspace feature unification from adapter crates.
+cargo-test-core-selected: cargo-test-core-local  #-- Run Rust tests for core crates with direct package selection
 
 .PHONY: cargo-test-core
 cargo-test-core: export RUST_BACKTRACE=1
 cargo-test-core: check-nextest-installed
-cargo-test-core:  #-- Run Rust tests for core crates only (excludes adapters)
+cargo-test-core:  #-- Run Rust tests for core crates with workspace compilation
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Rust tests for core crates...)
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(CORE_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --verbose
@@ -757,7 +767,7 @@ endif
 .PHONY: cargo-test-adapters
 cargo-test-adapters: export RUST_BACKTRACE=1
 cargo-test-adapters: check-nextest-installed
-cargo-test-adapters:  #-- Run Rust tests for adapter crates only
+cargo-test-adapters:  #-- Run Rust tests for adapter crates with workspace compilation
 ifeq ($(VERBOSE),true)
 	$(info $(M) Running Rust tests for adapter crates...)
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --verbose
@@ -805,7 +815,7 @@ cargo-test-core-debug:  #-- Run Rust tests for core crates (debug profile)
 cargo-test-core-local-debug: export RUST_BACKTRACE=1
 cargo-test-core-local-debug: check-nextest-installed
 cargo-test-core-local-debug:  #-- Run Rust tests for core crates with direct package selection (debug profile)
-	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CARGO_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
+	cargo nextest run $(foreach crate,$(CORE_CRATES),-p $(crate)) --lib --tests --features "$(CORE_SELECTED_FEATURES)" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
 
 .PHONY: cargo-test-lib
 cargo-test-lib: export RUST_BACKTRACE=1
@@ -1010,11 +1020,13 @@ docker-dev: docker-build-dev docker-start-dev  #-- Build dev image and start con
 
 .PHONY: docker-build
 docker-build: clean  #-- Build Docker image for NautilusTrader
-	docker pull $(IMAGE_FULL) || docker pull $(IMAGE):nightly || true
+	bash scripts/ci/docker-pull-retry.sh $(IMAGE_FULL) || bash scripts/ci/docker-pull-retry.sh $(IMAGE):nightly || true
+	bash scripts/ci/docker-pull-retry.sh --from-dockerfile .docker/nautilus_trader.dockerfile
 	docker build -f .docker/nautilus_trader.dockerfile --platform linux/x86_64 -t $(IMAGE_FULL) .
 
 .PHONY: docker-build-force
 docker-build-force:  #-- Force rebuild Docker image without cache
+	bash scripts/ci/docker-pull-retry.sh --from-dockerfile .docker/nautilus_trader.dockerfile
 	docker build --no-cache -f .docker/nautilus_trader.dockerfile -t $(IMAGE_FULL) .
 
 .PHONY: docker-push
@@ -1040,6 +1052,9 @@ init-services:  #-- Initialize development services eg. for integration tests (s
 .PHONY: start-services
 start-services:  #-- Start development services (without reinitializing database)
 	$(info $(M) Starting development services...)
+	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/postgres
+	bash scripts/ci/docker-pull-retry.sh dpage/pgadmin4
+	bash scripts/ci/docker-pull-retry.sh public.ecr.aws/docker/library/redis
 	docker compose -f .docker/docker-compose.yml up -d
 
 .PHONY: stop-services

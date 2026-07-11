@@ -322,7 +322,9 @@ mod tests {
             bytes.len(),
         );
         bytes
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|chunk| {
                 let mut buf = [0u8; 8];
                 buf.copy_from_slice(chunk);

@@ -120,10 +120,8 @@ mod tests {
         let help = render_snapshot_help();
 
         assert!(help.contains("UniswapV3 *")); // Replay-ready
-        assert!(help.contains("PancakeSwapV3"));
+        assert!(help.contains("PancakeSwapV3 *"));
         assert!(help.contains("AerodromeSlipstream +")); // Analysis only, not discoverable
-        // PancakeSwapV3 lacks SetFeeProtocol, so it is not replay-ready.
-        assert!(!help.contains("PancakeSwapV3 *"));
         // Discovery-only and unsupported DEXes are absent.
         assert!(!help.contains("UniswapV2"));
         assert!(!help.contains("SushiSwapV2"));

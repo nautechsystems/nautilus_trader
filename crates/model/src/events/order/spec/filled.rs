@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use indexmap::IndexMap;
 use nautilus_core::{UUID4, UnixNanos};
+use ustr::Ustr;
 
 use crate::{
     enums::{LiquiditySide, OrderSide, OrderType},
@@ -70,6 +72,7 @@ pub struct OrderFilledSpec {
     pub reconciliation: bool,
     pub position_id: Option<PositionId>,
     pub commission: Option<Money>,
+    pub info: Option<IndexMap<Ustr, Ustr>>,
 }
 
 impl<S: order_filled_spec_builder::IsComplete> OrderFilledSpecBuilder<S> {
@@ -97,6 +100,7 @@ impl<S: order_filled_spec_builder::IsComplete> OrderFilledSpecBuilder<S> {
             spec.reconciliation,
             spec.position_id,
             spec.commission,
+            spec.info,
         )
     }
 }

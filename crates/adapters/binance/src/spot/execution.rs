@@ -2294,6 +2294,7 @@ fn dispatch_tracked_execution_report(
                 false,
                 None,
                 Some(commission_money),
+                None,
             );
 
             state.insert_filled(client_order_id);

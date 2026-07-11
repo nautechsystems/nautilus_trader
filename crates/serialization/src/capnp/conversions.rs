@@ -2015,7 +2015,11 @@ impl<'a> ToCapnp<'a> for BarSpecification {
     type Builder = market_capnp::bar_spec::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        builder.set_step(self.step.get() as u32);
+        debug_assert!(
+            u32::try_from(self.step.get()).is_ok(),
+            "step exceeds u32 range for capnp encoding"
+        );
+        builder.set_step(u32::try_from(self.step.get()).unwrap_or(u32::MAX));
         builder.set_aggregation(bar_aggregation_to_capnp(self.aggregation));
         builder.set_price_type(price_type_to_capnp(self.price_type));
     }
@@ -2044,14 +2048,17 @@ impl<'a> FromCapnp<'a> for BarSpecification {
 impl<'a> ToCapnp<'a> for BarType {
     type Builder = market_capnp::bar_type::Builder<'a>;
 
+    /// Encodes the standard form only: the composite chain is a local aggregation
+    /// detail and wire representations carry the standard bar type.
     fn to_capnp(&self, mut builder: Self::Builder) {
+        let standard = self.standard();
         let instrument_id_builder = builder.reborrow().init_instrument_id();
-        self.instrument_id().to_capnp(instrument_id_builder);
+        standard.instrument_id().to_capnp(instrument_id_builder);
 
         let spec_builder = builder.reborrow().init_spec();
-        self.spec().to_capnp(spec_builder);
+        standard.spec().to_capnp(spec_builder);
 
-        builder.set_aggregation_source(aggregation_source_to_capnp(self.aggregation_source()));
+        builder.set_aggregation_source(aggregation_source_to_capnp(standard.aggregation_source()));
     }
 }
 
@@ -3140,8 +3147,10 @@ impl<'a> ToCapnp<'a> for OrderPendingUpdate {
             venue_order_id.to_capnp(venue_order_id_builder);
         }
 
-        let account_id_builder = builder.reborrow().init_account_id();
-        self.account_id.to_capnp(account_id_builder);
+        if let Some(ref account_id) = self.account_id {
+            let account_id_builder = builder.reborrow().init_account_id();
+            account_id.to_capnp(account_id_builder);
+        }
 
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
@@ -3179,8 +3188,12 @@ impl<'a> FromCapnp<'a> for OrderPendingUpdate {
             None
         };
 
-        let account_id_reader = reader.get_account_id()?;
-        let account_id = AccountId::from_capnp(account_id_reader)?;
+        let account_id = if reader.has_account_id() {
+            let account_id_reader = reader.get_account_id()?;
+            Some(AccountId::from_capnp(account_id_reader)?)
+        } else {
+            None
+        };
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -3231,8 +3244,10 @@ impl<'a> ToCapnp<'a> for OrderPendingCancel {
             venue_order_id.to_capnp(venue_order_id_builder);
         }
 
-        let account_id_builder = builder.reborrow().init_account_id();
-        self.account_id.to_capnp(account_id_builder);
+        if let Some(ref account_id) = self.account_id {
+            let account_id_builder = builder.reborrow().init_account_id();
+            account_id.to_capnp(account_id_builder);
+        }
 
         let event_id_builder = builder.reborrow().init_event_id();
         self.event_id.to_capnp(event_id_builder);
@@ -3270,8 +3285,12 @@ impl<'a> FromCapnp<'a> for OrderPendingCancel {
             None
         };
 
-        let account_id_reader = reader.get_account_id()?;
-        let account_id = AccountId::from_capnp(account_id_reader)?;
+        let account_id = if reader.has_account_id() {
+            let account_id_reader = reader.get_account_id()?;
+            Some(AccountId::from_capnp(account_id_reader)?)
+        } else {
+            None
+        };
 
         let event_id_reader = reader.get_event_id()?;
         let event_id = nautilus_core::UUID4::from_capnp(event_id_reader)?;
@@ -3676,6 +3695,16 @@ impl<'a> ToCapnp<'a> for OrderFilled {
             let commission_builder = builder.reborrow().init_commission();
             commission.to_capnp(commission_builder);
         }
+
+        if let Some(info) = &self.info {
+            let mut info_builder = builder.reborrow().init_info();
+            let mut entries_builder = info_builder.reborrow().init_entries(info.len() as u32);
+            for (i, (key, value)) in info.iter().enumerate() {
+                let mut entry_builder = entries_builder.reborrow().get(i as u32);
+                entry_builder.set_key(key.as_str());
+                entry_builder.set_value(value.as_str());
+            }
+        }
     }
 }
 
@@ -3743,6 +3772,20 @@ impl<'a> FromCapnp<'a> for OrderFilled {
             None
         };
 
+        let info = if reader.has_info() {
+            let info_reader = reader.get_info()?;
+            let entries_reader = info_reader.get_entries()?;
+            let mut map = IndexMap::with_capacity(entries_reader.len() as usize);
+            for entry_reader in entries_reader {
+                let key = Ustr::from(entry_reader.get_key()?.to_str()?);
+                let value = Ustr::from(entry_reader.get_value()?.to_str()?);
+                map.insert(key, value);
+            }
+            Some(map)
+        } else {
+            None
+        };
+
         Ok(Self {
             trader_id,
             strategy_id,
@@ -3763,6 +3806,7 @@ impl<'a> FromCapnp<'a> for OrderFilled {
             reconciliation,
             position_id,
             commission,
+            info,
             causation_id: None,
         })
     }
@@ -3810,6 +3854,11 @@ impl<'a> ToCapnp<'a> for OrderInitialized {
         if let Some(price) = self.price {
             let price_builder = builder.reborrow().init_price();
             price.to_capnp(price_builder);
+        }
+
+        if let Some(activation_price) = self.activation_price {
+            let activation_price_builder = builder.reborrow().init_activation_price();
+            activation_price.to_capnp(activation_price_builder);
         }
 
         if let Some(trigger_price) = self.trigger_price {
@@ -3950,6 +3999,13 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
         let price = if reader.has_price() {
             let price_reader = reader.get_price()?;
             Some(Price::from_capnp(price_reader)?)
+        } else {
+            None
+        };
+
+        let activation_price = if reader.has_activation_price() {
+            let activation_price_reader = reader.get_activation_price()?;
+            Some(Price::from_capnp(activation_price_reader)?)
         } else {
             None
         };
@@ -4098,6 +4154,7 @@ impl<'a> FromCapnp<'a> for OrderInitialized {
             ts_event: ts_event.into(),
             ts_init: ts_init.into(),
             price,
+            activation_price,
             trigger_price,
             trigger_type,
             limit_offset,
@@ -5161,6 +5218,37 @@ mod tests {
         order_capnp::order_initialized::Builder,
         order_capnp::order_initialized::Reader
     );
+    #[rstest]
+    fn order_initialized_activation_price_capnp_roundtrip(
+        order_initialized_buy_limit: OrderInitialized,
+    ) {
+        let initialized = OrderInitialized {
+            activation_price: Some(Price::from("21000")),
+            ..order_initialized_buy_limit
+        };
+        assert_capnp_roundtrip!(
+            initialized,
+            order_capnp::order_initialized::Builder,
+            order_capnp::order_initialized::Reader,
+            OrderInitialized
+        );
+    }
+    #[rstest]
+    fn order_filled_info_capnp_roundtrip(order_filled: OrderFilled) {
+        let mut info = IndexMap::new();
+        info.insert(Ustr::from("liquidation"), Ustr::from("true"));
+        info.insert(Ustr::from("maker_order_id"), Ustr::from("ABC-123"));
+        let filled = OrderFilled {
+            info: Some(info),
+            ..order_filled
+        };
+        assert_capnp_roundtrip!(
+            filled,
+            order_capnp::order_filled::Builder,
+            order_capnp::order_filled::Reader,
+            OrderFilled
+        );
+    }
     order_fixture_roundtrip_test!(
         order_submitted_capnp_roundtrip,
         order_submitted,
@@ -5210,6 +5298,32 @@ mod tests {
         order_capnp::order_pending_cancel::Builder,
         order_capnp::order_pending_cancel::Reader
     );
+    #[rstest]
+    fn order_pending_update_none_account_capnp_roundtrip(order_pending_update: OrderPendingUpdate) {
+        let event = OrderPendingUpdate {
+            account_id: None,
+            ..order_pending_update
+        };
+        assert_capnp_roundtrip!(
+            event,
+            order_capnp::order_pending_update::Builder,
+            order_capnp::order_pending_update::Reader,
+            OrderPendingUpdate
+        );
+    }
+    #[rstest]
+    fn order_pending_cancel_none_account_capnp_roundtrip(order_pending_cancel: OrderPendingCancel) {
+        let event = OrderPendingCancel {
+            account_id: None,
+            ..order_pending_cancel
+        };
+        assert_capnp_roundtrip!(
+            event,
+            order_capnp::order_pending_cancel::Builder,
+            order_capnp::order_pending_cancel::Reader,
+            OrderPendingCancel
+        );
+    }
     order_fixture_roundtrip_test!(
         order_modify_rejected_capnp_roundtrip,
         order_modify_rejected,

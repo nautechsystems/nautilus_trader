@@ -34,7 +34,10 @@ use nautilus_network::websocket::TransportBackend;
 use crate::{
     cache::BlockchainCache,
     config::BlockchainDataClientConfig,
-    contracts::{erc20::Erc20Contract, uniswap_v3_pool::UniswapV3PoolContract},
+    contracts::{
+        erc20::Erc20Contract,
+        uniswap_v3_pool::{FeeProtocolEncoding, UniswapV3PoolContract},
+    },
     data::subscription::DefiDataSubscriptionManager,
     events::{
         burn::BurnEvent, collect::CollectEvent, fee_protocol_collect::FeeProtocolCollectEvent,
@@ -1476,6 +1479,9 @@ impl BlockchainDataClientCore {
         let protocol_update_event_signature = dex_extended.fee_protocol_update_event.as_deref();
         let protocol_update_sig_bytes = protocol_update_event_signature
             .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
+        let protocol_collect_event_signature = dex_extended.fee_protocol_collect_event.as_deref();
+        let protocol_collect_sig_bytes = protocol_collect_event_signature
+            .map(|s| hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default());
 
         let from_block = from_position.map_or(profiler.pool.creation_block, |block_position| {
             block_position.number
@@ -1500,6 +1506,10 @@ impl BlockchainDataClientCore {
         ];
 
         if let Some(event) = protocol_update_event_signature {
+            event_signatures.push(event);
+        }
+
+        if let Some(event) = protocol_collect_event_signature {
             event_signatures.push(event);
         }
 
@@ -1585,6 +1595,24 @@ impl BlockchainDataClientCore {
                         )
                     })?;
                 profiler.process(&DexPoolData::FeeProtocolUpdate(update))?;
+            } else if protocol_collect_sig_bytes
+                .as_ref()
+                .is_some_and(|sig| sig.as_slice() == event_sig_bytes)
+            {
+                let fee_protocol_collect_event =
+                    dex_extended.parse_fee_protocol_collect_event_hypersync(&log)?;
+                let collect = self
+                    .process_pool_fee_protocol_collect_event(
+                        &fee_protocol_collect_event,
+                        &profiler.pool,
+                    )
+                    .with_context(|| {
+                        format!(
+                            "failed to process CollectProtocol event at block {}",
+                            fee_protocol_collect_event.block_number
+                        )
+                    })?;
+                profiler.process(&DexPoolData::FeeProtocolCollect(collect))?;
             } else {
                 let event_signature = hex::encode(event_sig_bytes);
                 anyhow::bail!(
@@ -1747,11 +1775,15 @@ impl BlockchainDataClientCore {
         profiler: &PoolProfiler,
         block_position: BlockPosition,
     ) -> anyhow::Result<PoolSnapshot> {
-        // PancakeSwap V3 shares the Uniswap V3 pool read ABI, so it hydrates through the same contract
+        // PancakeSwap V3 shares the Uniswap V3 pool read ABI except slot0.feeProtocol width.
         if matches!(
             profiler.pool.dex.name,
             DexType::UniswapV3 | DexType::PancakeSwapV3
         ) {
+            let fee_protocol_encoding = match profiler.pool.dex.name {
+                DexType::PancakeSwapV3 => FeeProtocolEncoding::PancakeSwapV3BasisPoints,
+                _ => FeeProtocolEncoding::UniswapV3Packed,
+            };
             let timestamp = Self::timestamp_for_on_chain_snapshot(
                 profiler,
                 self.cache
@@ -1768,6 +1800,7 @@ impl BlockchainDataClientCore {
                     block_position,
                     timestamp, // ts_event
                     timestamp, // ts_init (same block timestamp)
+                    fee_protocol_encoding,
                 )
                 .await?;
 

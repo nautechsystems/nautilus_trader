@@ -124,6 +124,37 @@ def test_quote_extract_size(audusd_id):
     assert quote.extract_size(PriceType.BID) == Quantity.from_int(500_000)
 
 
+def test_quote_extract_price_last_raises(audusd_id):
+    quote = QuoteTick(
+        instrument_id=audusd_id,
+        bid_price=Price.from_str("1.00000"),
+        ask_price=Price.from_str("1.00001"),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # A quote has no `Last` price: extraction raises a clean `ValueError` (not a panic)
+    with pytest.raises(ValueError, match="price type LAST"):
+        quote.extract_price(PriceType.LAST)
+
+
+def test_quote_extract_size_last_raises(audusd_id):
+    quote = QuoteTick(
+        instrument_id=audusd_id,
+        bid_price=Price.from_str("1.00000"),
+        ask_price=Price.from_str("1.00001"),
+        bid_size=Quantity.from_int(1),
+        ask_size=Quantity.from_int(1),
+        ts_event=0,
+        ts_init=0,
+    )
+
+    with pytest.raises(ValueError, match="price type LAST"):
+        quote.extract_size(PriceType.LAST)
+
+
 def test_quote_to_dict(audusd_id):
     quote = QuoteTick(
         instrument_id=audusd_id,

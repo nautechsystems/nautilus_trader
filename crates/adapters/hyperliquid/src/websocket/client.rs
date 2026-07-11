@@ -728,6 +728,7 @@ impl HyperliquidWebSocketClient {
             if let Some(cloid) = signer.cached_client_order_id_cloid(&client_order_id) {
                 HyperliquidExecAction::CancelByCloid {
                     cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                    fast: None,
                 }
             } else if let Some(oid) = venue_order_id {
                 let oid = oid
@@ -736,11 +737,13 @@ impl HyperliquidWebSocketClient {
                     .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
                 HyperliquidExecAction::Cancel {
                     cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
+                    fast: None,
                 }
             } else {
                 let cloid = signer.get_or_generate_client_order_id_cloid(client_order_id);
                 HyperliquidExecAction::CancelByCloid {
                     cancels: vec![HyperliquidExecCancelByCloidRequest { asset, cloid }],
+                    fast: None,
                 }
             }
         } else if let Some(oid) = venue_order_id {
@@ -750,6 +753,7 @@ impl HyperliquidWebSocketClient {
                 .map_err(|_| HyperliquidError::bad_request("Invalid venue order ID format"))?;
             HyperliquidExecAction::Cancel {
                 cancels: vec![HyperliquidExecCancelOrderRequest { asset, oid }],
+                fast: None,
             }
         } else {
             return Err(HyperliquidError::bad_request(
@@ -810,6 +814,7 @@ impl HyperliquidWebSocketClient {
         if !cloid_requests.is_empty() {
             let action = HyperliquidExecAction::CancelByCloid {
                 cancels: cloid_requests,
+                fast: None,
             };
             let errors = self
                 .post_cancel_action_errors(signer, &action, cloid_indices.len())
@@ -823,6 +828,7 @@ impl HyperliquidWebSocketClient {
         if !oid_requests.is_empty() {
             let action = HyperliquidExecAction::Cancel {
                 cancels: oid_requests,
+                fast: None,
             };
             let errors = self
                 .post_cancel_action_errors(signer, &action, oid_indices.len())

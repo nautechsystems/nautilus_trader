@@ -86,6 +86,10 @@ pub const RECONNECT_MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// Default HTTP request timeout.
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Grace period a client waits for its background tasks to finish during
+/// teardown before aborting them.
+pub const DISCONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Maximum subscribe messages awaiting venue acknowledgement at once.
 ///
 /// Held below Lighter's 50-per-IP inflight cap; see the WebSocket rate-limit

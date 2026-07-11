@@ -48,8 +48,13 @@ pub trait Indicator {
         panic!("`handle_book_mbo` {IMPL_ERR} `{}`", self.name());
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        panic!("`handle_quote_tick` {IMPL_ERR} `{}`", self.name());
+    /// Updates the indicator with the given quote tick.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured price type cannot be extracted from the quote.
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        anyhow::bail!("`handle_quote_tick` {IMPL_ERR} `{}`", self.name());
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {

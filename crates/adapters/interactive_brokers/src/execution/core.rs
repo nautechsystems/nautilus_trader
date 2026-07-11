@@ -2181,7 +2181,7 @@ impl InteractiveBrokersExecutionClient {
             strategy_id,
             instrument_id,
             client_order_id,
-            account_id,
+            Some(account_id),
             UUID4::new(),
             ts_init,
             ts_init,

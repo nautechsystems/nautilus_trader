@@ -965,6 +965,7 @@ pub(crate) fn parse_lighter_order_filled(
         false, // reconciliation
         None,  // venue_position_id: Lighter perps run NETTING
         Some(commission),
+        None,
     )))
 }
 

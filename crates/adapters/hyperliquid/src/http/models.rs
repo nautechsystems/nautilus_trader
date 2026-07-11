@@ -1061,6 +1061,53 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cancel_action_serializes_fast_flag() {
+        let action = HyperliquidExecAction::Cancel {
+            cancels: vec![HyperliquidExecCancelOrderRequest {
+                asset: 0,
+                oid: 12345,
+            }],
+            fast: Some(true),
+        };
+
+        let value = serde_json::to_value(action).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "type": "cancel",
+                "cancels": [{"a": 0, "o": 12345}],
+                "f": true,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_cancel_by_cloid_action_serializes_fast_flag() {
+        let action = HyperliquidExecAction::CancelByCloid {
+            cancels: vec![HyperliquidExecCancelByCloidRequest {
+                asset: 0,
+                cloid: Cloid::from_hex("0x00000000000000000000000000000000").unwrap(),
+            }],
+            fast: Some(true),
+        };
+
+        let value = serde_json::to_value(action).unwrap();
+
+        assert_eq!(
+            value,
+            json!({
+                "type": "cancelByCloid",
+                "cancels": [{
+                    "asset": 0,
+                    "cloid": "0x00000000000000000000000000000000",
+                }],
+                "f": true,
+            })
+        );
+    }
+
+    #[rstest]
     fn test_order_response_normal_tpsl_with_waiting_children() {
         // `normalTpsl` bracket: the entry rests with an oid, while the SL/TP
         // children come back as bare strings until the parent fills or the
@@ -1618,6 +1665,9 @@ pub enum HyperliquidExecAction {
     Cancel {
         /// Orders to cancel.
         cancels: Vec<HyperliquidExecCancelOrderRequest>,
+        /// Optional fast-cancel flag.
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
     },
 
     /// Cancel orders by client order ID.
@@ -1625,6 +1675,9 @@ pub enum HyperliquidExecAction {
     CancelByCloid {
         /// Orders to cancel by CLOID.
         cancels: Vec<HyperliquidExecCancelByCloidRequest>,
+        /// Optional fast-cancel flag.
+        #[serde(rename = "f", skip_serializing_if = "Option::is_none")]
+        fast: Option<bool>,
     },
 
     /// Modify a single order.

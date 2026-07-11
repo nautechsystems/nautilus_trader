@@ -22,9 +22,9 @@ comment on the underlying Rust item, and writes it as the wrapper's
 doc comment.
 
 Copies section headers (# Errors, # Safety) as-is for clippy
-compatibility. Drops # Panics sections with a warning since panics
-must not cross the FFI boundary. Strips Rust intra-doc link brackets
-and converts :: to . for Python conventions.
+compatibility. Drops # Panics sections since panics must not cross the
+FFI boundary. Strips Rust intra-doc link brackets and converts :: to .
+for Python conventions.
 
 Usage:
     python generate_docstrings.py [--dry-run] [--crate NAME]
@@ -210,7 +210,7 @@ def transform_doc(
     strip_errors: bool = False,
 ) -> list[str]:
     """
-    Copy doc lines, dropping ``# Panics`` sections.
+    Copy doc lines, dropping sections that do not belong on the Python wrapper.
 
     Section headers like ``# Errors`` and ``# Safety`` are kept as-is
     for clippy compatibility. The numpydoc transformation happens later
@@ -230,10 +230,6 @@ def transform_doc(
 
             dropped = DROPPED_SECTIONS | ({"Errors"} if strip_errors else set())
             if section in dropped:
-                print(
-                    f"  WARNING: # {section} in {fn_name} ({source_file})",
-                    file=sys.stderr,
-                )
                 skip_section = True
                 i += 1
                 if i < len(doc_lines) and doc_lines[i] == "":
@@ -329,6 +325,7 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
         fn_m = re.match(r"\s*(?:pub\s+)?(?:const\s+)?fn\s+(py_\w+)", line)
         if fn_m:
             insert = first_attr_line if first_attr_line is not None else i
+            fn_signature = rust_fn_signature(lines, i)
 
             if doc_start is not None:
                 insert = doc_start
@@ -337,6 +334,7 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
                 {
                     "fn_name": fn_m.group(1),
                     "fn_line": i,
+                    "fn_signature": fn_signature,
                     "impl_type": impl_type,
                     "is_constructor": has_new,
                     "in_pymethods": in_pymethods,
@@ -353,6 +351,32 @@ def parse_pyo3_items(lines: list[str]) -> list[dict]:  # noqa: C901
             has_new = False
 
     return items
+
+
+def rust_fn_signature(lines: list[str], start: int) -> str:
+    """
+    Return a Rust function signature starting at ``start``.
+    """
+    signature_lines: list[str] = []
+
+    for line in lines[start:]:
+        signature_lines.append(line.strip())
+        if "{" in line:
+            break
+
+    return " ".join(signature_lines)
+
+
+def rust_fn_returns_result(signature: str) -> bool:
+    """
+    Return whether a Rust function signature returns a Result-like type.
+    """
+    match = re.search(r"\)\s*->\s*(.*?)\s*\{", signature)
+    if match is None:
+        return False
+
+    return_type = match.group(1).split(" where ", maxsplit=1)[0].strip()
+    return re.search(r"(?:^|::)\w*Result\b", return_type) is not None
 
 
 def process_crate(  # noqa: C901
@@ -410,9 +434,7 @@ def process_crate(  # noqa: C901
             if not source_doc:
                 continue
 
-            # Check if function returns Result/PyResult
-            fn_line_str = file_lines[item["fn_line"]]
-            returns_result = "Result" in fn_line_str
+            returns_result = rust_fn_returns_result(item["fn_signature"])
 
             transformed = transform_doc(
                 source_doc,

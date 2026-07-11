@@ -28,3 +28,21 @@ def test_exec_tester_config_disables_hyphens_in_client_order_ids() -> None:
 
     # Venues such as OKX reject hyphenated clOrdId; the option must reach the base config
     assert "use_hyphens_in_client_order_ids: false" in repr(config)
+
+
+def test_exec_tester_config_uses_uuid_client_order_ids() -> None:
+    config = ExecTesterConfig(use_uuid_client_order_ids=True)
+
+    assert "use_uuid_client_order_ids: true" in repr(config)
+
+
+def test_exec_tester_config_uses_quote_quantity() -> None:
+    config = ExecTesterConfig(use_quote_quantity=True)
+
+    assert "use_quote_quantity: true" in repr(config)
+
+
+def test_exec_tester_config_uses_individual_cancels_on_stop() -> None:
+    config = ExecTesterConfig(use_individual_cancels_on_stop=True)
+
+    assert "use_individual_cancels_on_stop: true" in repr(config)

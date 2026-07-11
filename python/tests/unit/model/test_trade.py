@@ -111,6 +111,14 @@ def test_trade_pickle_roundtrip(audusd_id):
     assert unpickled == trade
 
 
+def test_trade_setstate_rejects_invalid_aggressor_side(trade):
+    state = list(trade.__getstate__())
+    state[5] = 99
+
+    with pytest.raises(ValueError, match="Invalid aggressor_side value: 99"):
+        trade.__setstate__(tuple(state))
+
+
 def test_trade_to_dict(audusd_id):
     trade = TradeTick(
         instrument_id=audusd_id,

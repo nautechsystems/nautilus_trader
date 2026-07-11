@@ -1164,7 +1164,14 @@ impl ExecutionClient for SandboxExecutionClient {
         &self,
         _lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        // Sandbox doesn't need reconciliation
-        Ok(None)
+        let core = self.core.borrow();
+        let ts_init = self.clock.borrow().timestamp_ns();
+        Ok(Some(ExecutionMassStatus::new(
+            core.client_id,
+            core.account_id,
+            core.venue,
+            ts_init,
+            None,
+        )))
     }
 }

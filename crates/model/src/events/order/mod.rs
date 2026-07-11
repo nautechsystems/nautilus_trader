@@ -101,6 +101,7 @@ pub trait OrderEvent: 'static + Send {
     fn price(&self) -> Option<Price>;
     fn last_px(&self) -> Option<Price>;
     fn last_qty(&self) -> Option<Quantity>;
+    fn activation_price(&self) -> Option<Price>;
     fn trigger_price(&self) -> Option<Price>;
     fn trigger_type(&self) -> Option<TriggerType>;
     fn limit_offset(&self) -> Option<Decimal>;

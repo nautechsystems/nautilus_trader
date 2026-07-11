@@ -1147,6 +1147,13 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .context("failed to query hedge mode")?;
         self.is_hedge_mode.store(is_hedge_mode, Ordering::Release);
         log::info!("Hedge mode (dual side position): {is_hedge_mode}");
+        if is_hedge_mode != (self.core.oms_type == OmsType::Hedging) {
+            log::warn!(
+                "Binance Futures account position mode does not match the configured OMS type: \
+                 dual_side_position={is_hedge_mode}, oms_type={:?}; set oms_type to match the account position mode",
+                self.core.oms_type,
+            );
+        }
 
         // Load instruments if not already done
         let _instruments = if self.core.instruments_initialized() {
@@ -1881,6 +1888,29 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     )?;
 
                     emitter.send_order_status_report(report);
+                }
+                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                    // Untriggered algo orders (STOP_MARKET, STOP_LIMIT, MIT, LIT,
+                    // TRAILING_STOP_MARKET) live in the Binance Futures Algo Service
+                    // and return -2013 on the regular order endpoint. Mirror the
+                    // reconciliation path (`generate_order_status_report`) so live
+                    // inflight checks resolve them instead of exhausting retries into
+                    // `OrderRejected(reason='INFLIGHT_TIMEOUT')`.
+                    match http_client.query_algo_order(command.client_order_id).await {
+                        Ok(algo_order) => {
+                            let ts_init = clock.get_time_ns();
+                            let report = algo_order.to_order_status_report(
+                                account_id,
+                                command.instrument_id,
+                                price_precision,
+                                size_precision,
+                                ts_init,
+                            )?;
+
+                            emitter.send_order_status_report(report);
+                        }
+                        Err(e) => log::warn!("Algo order query also failed: {e}"),
+                    }
                 }
                 Err(e) => log::warn!("Failed to query order status: {e}"),
             }

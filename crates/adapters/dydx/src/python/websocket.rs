@@ -180,6 +180,10 @@ impl DydxWebSocketClient {
     ///
     /// Additional slots are spawned lazily by `subscribe_*` methods once the
     /// per-channel limit is reached on every existing slot.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established.
     #[pyo3(name = "connect")]
     #[pyo3(signature = (loop_, instruments, callback, trader_id=None))]
     #[expect(clippy::needless_pass_by_value)]
@@ -881,6 +885,10 @@ impl DydxWebSocketClient {
 
     /// Subscribes to public trade updates for a specific instrument.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
+    ///
     /// # References
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#trades-channel>
@@ -901,6 +909,10 @@ impl DydxWebSocketClient {
     }
 
     /// Unsubscribes from public trade updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_trades")]
     fn py_unsubscribe_trades<'py>(
         &self,
@@ -918,6 +930,10 @@ impl DydxWebSocketClient {
     }
 
     /// Subscribes to orderbook updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription request fails.
     ///
     /// # References
     ///
@@ -939,6 +955,10 @@ impl DydxWebSocketClient {
     }
 
     /// Unsubscribes from orderbook updates for a specific instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_orderbook")]
     fn py_unsubscribe_orderbook<'py>(
         &self,
@@ -1054,6 +1074,11 @@ impl DydxWebSocketClient {
     /// above realistic per-process usage and keeps related fill/position events
     /// on a single in-order stream.
     ///
+    /// # Errors
+    ///
+    /// Returns an error if the client was not created with credentials or if the
+    /// subscription request fails.
+    ///
     /// # References
     ///
     /// <https://docs.dydx.trade/developers/indexer/websockets#subaccounts-channel>
@@ -1075,6 +1100,10 @@ impl DydxWebSocketClient {
     }
 
     /// Unsubscribes from subaccount updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscription request fails.
     #[pyo3(name = "unsubscribe_subaccount")]
     fn py_unsubscribe_subaccount<'py>(
         &self,

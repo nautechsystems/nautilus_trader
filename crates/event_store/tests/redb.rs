@@ -1417,7 +1417,7 @@ fn apply_live_fill_to_position(cache: &mut Cache, fill: &OrderFilled) {
         return;
     };
 
-    let position = Position::new(&instrument, *fill);
+    let position = Position::new(&instrument, fill.clone());
     cache
         .add_position(&position, OmsType::Unspecified)
         .expect("add position");

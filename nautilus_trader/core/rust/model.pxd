@@ -96,6 +96,9 @@ cdef extern from "../includes/model.h":
     # The minimum valid quantity value that can be represented.
     const double QUANTITY_MIN # = 0.0
 
+    # Protocol-fee denominator for basis-point fee shares.
+    const uint32_t PROTOCOL_FEE_BASIS_POINTS_DENOMINATOR # = 10000
+
     # Minimum valid tick value for Uniswap V3 pools.
     const int32_t PoolTick_MIN_TICK # = -887272
 
@@ -637,6 +640,9 @@ cdef extern from "../includes/model.h":
     #
     # Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
     # its specialized structure and limited depth use case.
+    #
+    # Per-level [`BookOrder::order_id`] values are non-semantic for this aggregated MBP data.
+    # Parquet catalog decoding canonicalizes them to zero.
     cdef struct OrderBookDepth10_t:
         # The instrument ID for the book.
         InstrumentId_t instrument_id;

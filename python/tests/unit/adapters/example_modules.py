@@ -60,6 +60,10 @@ class _CaptureBuilder:
         self._captured["reconciliation"] = reconciliation
         return self
 
+    def with_exec_engine_config(self, config: object) -> "_CaptureBuilder":
+        self._captured["exec_engine_config"] = config
+        return self
+
     def with_risk_engine_config(self, config: object) -> "_CaptureBuilder":
         self._captured["risk_engine_config"] = config
         return self

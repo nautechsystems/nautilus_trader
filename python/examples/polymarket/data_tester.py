@@ -38,8 +38,8 @@ from nautilus_trader.testkit import DataTesterConfig
 
 POLYMARKET = "POLYMARKET"
 DEFAULT_INSTRUMENT = (
-    "0xcccb7e7613a087c132b69cbf3a02bece3fdcb824c1da54ae79acc8d4a562d902-"
-    f"8441400852834915183759801017793514978104486628517653995211751018945988243154.{POLYMARKET}"
+    "0xac02cbb049e46d6a3627c0fdf52fa554982a9025d45968207b362acb6ca4b830-"
+    f"28239418772633645184924651434956000849078365566842629564562475378531350731731.{POLYMARKET}"
 )
 
 
@@ -86,7 +86,7 @@ def parse_args() -> argparse.Namespace:
         description="Build or run the Polymarket Python v2 data tester.",
     )
     parser.add_argument("--trader-id", default="TESTER-001")
-    parser.add_argument("--event-slug", default="gta-vi-released-before-june-2026")
+    parser.add_argument("--event-slug", default="fed-decision-in-september-762")
     parser.add_argument("--instrument", default=DEFAULT_INSTRUMENT)
     parser.add_argument("--run", action="store_true")
     return parser.parse_args()

@@ -35,7 +35,7 @@ let order = self.order().trailing_stop_market(
     Decimal::from(100),                    // trailing_offset
     Some(TrailingOffsetType::BasisPoints), // optional (default PRICE)
     Some(Price::from("5000")),             // activation_price
-    None,                                  // trigger_price (falls back to activation_price)
+    None,                                  // trigger_price (materializes from the offset on the first trail)
     Some(TriggerType::LastPrice),          // optional (default DEFAULT)
     Some(TimeInForce::Gtc),                // optional (default GTC)
     None,                                  // expire_time
@@ -77,6 +77,9 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     tags=["TRAILING_STOP-1"],  # <-- optional (default None)
 )
 ```
+
+If both `activation_price` and `trigger_price` are omitted, the order activates immediately at the
+current market and its trigger price materializes from `trailing_offset` on the first update.
 
 See the [`TrailingStopMarketOrder` API Reference](/docs/python-api-latest/model/orders.html#nautilus_trader.model.orders.trailing_stop_market.TrailingStopMarketOrder) for further details.
 

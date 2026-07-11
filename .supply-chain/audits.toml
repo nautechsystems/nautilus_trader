@@ -267,6 +267,12 @@ criteria = "safe-to-deploy"
 delta = "0.52.0 -> 0.53.0"
 notes = "Adds BatchClient::get_job_details on the existing historical API client and bumps dbn to 0.59.0. No new dependencies beyond dbn, build script, filesystem, or new network mechanism."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.53.0 -> 0.54.0"
+notes = "Crate code unchanged; only bumps dbn to 0.62.0 with changelog and CI workflow updates. No source logic, build script, feature, or network behavior changes in databento itself."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -297,6 +303,12 @@ criteria = "safe-to-deploy"
 delta = "0.58.0 -> 0.59.0"
 notes = "Adds vectored DBN encode APIs with ts_out variants plus publisher constants. Reviewed new unsafe MaybeUninit to IoSlice conversions in sync and async encoders; initialized slice counts are bounded by chunk length, with no new build script, filesystem, or network behavior."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.59.0 -> 0.62.0"
+notes = "Adds RecordDecoder::seek_to and dynamic-reader is_compressed helpers, MatchAlgorithm::Allocation and StatType MWCB/auction-collar variants, renames the CGIF venue/dataset/publisher to MAIN plus new Cboe Titanium publishers, and sets the default record size field to 0. No new unsafe, build script, filesystem, or network behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -326,6 +338,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.58.0 -> 0.59.0"
 notes = "Version bump only. Published source only updates package version metadata."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.59.0 -> 0.62.0"
+notes = "No source changes; version bump only to stay in lockstep with dbn 0.62.0."
 
 [[audits.enum-ordinalize]]
 who = "Nautech Systems <info@nautechsystems.io>"

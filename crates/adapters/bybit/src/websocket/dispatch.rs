@@ -760,6 +760,7 @@ fn parse_order_filled(
         false,
         identity.venue_position_id,
         Some(commission),
+        None,
     ))
 }
 

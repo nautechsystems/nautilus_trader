@@ -230,14 +230,14 @@ Pool discovery:
 
 ### Live data
 
-- `use_hypersync_for_live_data = true`: subscribe to blocks through HyperSync, then fetch matching
-  DEX events for subscribed pools.
+- `use_hypersync_for_live_data = true`: subscribe to blocks through HyperSync for live timestamps
+  and hold one open-ended HyperSync DEX-event stream per subscribed DEX filter.
 - `use_hypersync_for_live_data = false`: use WSS RPC block and pool-log subscriptions for live
   swaps, liquidity updates, fee collections, flash events, and fee-protocol events.
 
 ### Snapshot bootstrap
 
-For Uniswap V3 snapshots, bootstrap:
+For Uniswap V3-compatible snapshots, bootstrap:
 
 - Replay historical Initialize, Mint, and Burn events from HyperSync to rebuild ticks and
   positions.
@@ -248,9 +248,9 @@ Bootstrap modes:
 
 - Default: store the full pool event history up to the target block, then bootstrap from the
   database.
-- `--snapshot-from-rpc`: skip full swap storage, stream Initialize, Mint, Burn, and fee-protocol
-  updates from HyperSync to enumerate ticks and positions, then hydrate the exact checkpoint block
-  from RPC.
+- `--snapshot-from-rpc`: skip full swap storage, stream Initialize, Mint, Burn, SetFeeProtocol, and
+  CollectProtocol events from HyperSync to enumerate ticks and positions, then hydrate the exact
+  checkpoint block from RPC.
 
 Use `--snapshot-from-rpc` for old high-volume pools when the required output is the final snapshot,
 not a stored swap history. It cannot be combined with `--from-block`, `--reset`, or
@@ -411,12 +411,13 @@ whose token metadata is malformed, raw bytes, or empty.
 - Very large pools may need a stronger provider or future chunked/minimal hydration.
 
 PancakeSwap V3 reuses the Uniswap V3 read contract because `slot0`, `ticks`, `positions`,
-`liquidity`, and fee-growth reads share the same ABI. One difference remains:
+`liquidity`, and fee-growth reads share the same ABI. Fee-protocol encoding differs:
 
-- PancakeSwap V3 returns `slot0.feeProtocol` as `uint32`.
-- The Uniswap V3 binding decodes the low byte as `uint8`.
-- Fee-protocol-only mismatches are non-blocking, so structural state can still validate to
-  `on_chain`.
+- Uniswap V3 packs two 4-bit fee denominators into one `uint8`.
+- PancakeSwap V3 stores two 16-bit basis-point shares in `slot0.feeProtocol` and emits
+  `SetFeeProtocol(uint32,uint32,uint32,uint32)`.
+- PancakeSwap V3 snapshots store `fee_protocol0_basis_points` and
+  `fee_protocol1_basis_points`, and replay computes protocol fees as `fee * basis_points / 10000`.
 
 ## Smoke tests
 
@@ -492,13 +493,14 @@ A DEX can be registered for a chain yet lack the parsers a command needs. The CL
 
 - `sync-dex` (discovery) needs a `PoolCreated` parser.
 - `analyze-pool(s)` (snapshots) need Initialize, Swap, Mint, Burn, and Collect parsers.
-- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps `fee_protocol` correct.
+- Replay-ready DEXes additionally parse `SetFeeProtocol`, so replay keeps fee-protocol settings
+  correct.
+- DEXes that also parse `CollectProtocol` can replay protocol-fee balance withdrawals.
 
 Current support:
 
 - Uniswap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC.
-- PancakeSwap V3 is snapshot-capable on the same chains, but not replay-ready because it has no
-  `SetFeeProtocol` parser.
+- PancakeSwap V3 is replay-ready on Ethereum, Base, Arbitrum, and BSC.
 - Aerodrome Slipstream is snapshot-capable on Base, but has no `PoolCreated` parser. Register pools
   another way before `analyze-pool(s)`.
 - Uniswap V2/V4, Camelot, and Fluid currently support discovery only.

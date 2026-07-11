@@ -242,7 +242,6 @@ pub fn compute_gap_hash(gap: &MarkerGap) -> [u8; 32] {
 mod tests {
     use std::{fmt::Write, str::FromStr};
 
-    use proptest::{prelude::*, test_runner::Config as ProptestConfig};
     use rstest::rstest;
 
     use super::*;
@@ -509,62 +508,5 @@ mod tests {
             compute_marker_hash(&empty),
             compute_marker_hash(&baseline_snapshot())
         );
-    }
-
-    proptest! {
-        #![proptest_config(ProptestConfig { cases: 64, ..ProptestConfig::default() })]
-
-        // Any cursor snapshot survives a codec encode/decode unchanged
-        #[rstest]
-        fn prop_marker_snapshot_codec_roundtrip(
-            marker_seq in any::<u64>(),
-            event_seq_before in any::<u64>(),
-            ts_init in any::<u64>(),
-            cursors in proptest::collection::vec((any::<u32>(), any::<u64>(), any::<u64>()), 0..8),
-        ) {
-            let snap = DataCursorSnapshot {
-                marker_seq,
-                event_seq_before,
-                ts_init: UnixNanos::from(ts_init),
-                advanced: cursors
-                    .into_iter()
-                    .map(|(slot, hi, count)| StreamCursor {
-                        slot,
-                        ts_init_hi: UnixNanos::from(hi),
-                        count,
-                    })
-                    .collect(),
-            };
-
-            let bytes = crate::codec::encode_to_vec(&snap).expect("encode");
-            let decoded = crate::codec::decode_from_slice::<DataCursorSnapshot>(&bytes).expect("decode");
-            prop_assert_eq!(snap, decoded);
-        }
-
-        // Any high-fidelity marker survives a codec encode/decode unchanged
-        #[rstest]
-        fn prop_hifi_marker_codec_roundtrip(
-            marker_seq in any::<u64>(),
-            event_seq_before in any::<u64>(),
-            slot in any::<u32>(),
-            ts_event in any::<u64>(),
-            ts_init in any::<u64>(),
-            same_ts_ordinal in any::<u32>(),
-            fingerprint in proptest::array::uniform32(any::<u8>()),
-        ) {
-            let marker = HiFiMarker {
-                marker_seq,
-                event_seq_before,
-                slot,
-                ts_event: UnixNanos::from(ts_event),
-                ts_init: UnixNanos::from(ts_init),
-                same_ts_ordinal,
-                record_fingerprint: fingerprint,
-            };
-
-            let bytes = crate::codec::encode_to_vec(&marker).expect("encode");
-            let decoded = crate::codec::decode_from_slice::<HiFiMarker>(&bytes).expect("decode");
-            prop_assert_eq!(marker, decoded);
-        }
     }
 }

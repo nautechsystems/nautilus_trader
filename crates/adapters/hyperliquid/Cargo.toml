@@ -213,6 +213,13 @@ path = "examples/node_outcome_exec_tester.rs"
 required-features = ["examples"]
 doc = false
 
+# Run with `cargo run --example hyperliquid-chained-modify-smoke --package nautilus-hyperliquid --features examples`.
+[[example]]
+name = "hyperliquid-chained-modify-smoke"
+path = "examples/chained_modify_smoke.rs"
+required-features = ["examples"]
+doc = false
+
 [[test]]
 name = "python"
 path = "tests/python.rs"

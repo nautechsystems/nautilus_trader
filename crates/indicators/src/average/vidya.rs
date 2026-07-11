@@ -67,8 +67,9 @@ impl Indicator for VariableIndexDynamicAverage {
         self.initialized
     }
 
-    fn handle_quote(&mut self, quote: &QuoteTick) {
-        self.update_raw(quote.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        self.update_raw(quote.extract_price(self.price_type)?.into());
+        Ok(())
     }
 
     fn handle_trade(&mut self, trade: &TradeTick) {
@@ -218,7 +219,7 @@ mod tests {
         mut indicator_vidya_10: VariableIndexDynamicAverage,
         stub_quote: QuoteTick,
     ) {
-        indicator_vidya_10.handle_quote(&stub_quote);
+        indicator_vidya_10.handle_quote(&stub_quote).unwrap();
         assert_eq!(indicator_vidya_10.value, 0.0);
     }
 

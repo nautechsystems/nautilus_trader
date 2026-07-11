@@ -2267,6 +2267,7 @@ fn emit_tracked_fill(
         false,
         report.venue_position_id,
         Some(report.commission),
+        None,
     );
     emitter.send_order_event(OrderEventAny::Filled(filled));
 }

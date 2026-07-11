@@ -27,6 +27,7 @@
 
 use std::str::FromStr;
 
+use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
@@ -195,7 +196,7 @@ fn dispatch_order_update(
 
     for fill in buffered_fills {
         match identity {
-            Some(identity) => emit_order_filled(&identity, &fill, ctx),
+            Some(identity) => emit_order_filled(&identity, &fill, None, ctx),
             None => ctx.emitter.send_fill_report(fill),
         }
     }
@@ -219,7 +220,7 @@ fn dispatch_order_update(
             ts_init,
         ) {
             match ctx.order_identities.get(&venue_order_id) {
-                Some(identity) => emit_order_filled(&identity, &dust_fill, ctx),
+                Some(identity) => emit_order_filled(&identity, &dust_fill, None, ctx),
                 None => ctx.emitter.send_fill_report(dust_fill),
             }
         }
@@ -298,6 +299,7 @@ fn dispatch_maker_fills(
     }
 
     let instruments = ctx.token_instruments.load();
+    let fill_info = trade_fill_info(trade);
 
     for mo in user_orders {
         let asset_id = Ustr::from(mo.asset_id.as_str());
@@ -334,7 +336,7 @@ fn dispatch_maker_fills(
             .accept_or_buffer_fill(maker_venue_order_id, report)
         {
             match ctx.order_identities.get(&maker_venue_order_id) {
-                Some(identity) => emit_order_filled(&identity, &report, ctx),
+                Some(identity) => emit_order_filled(&identity, &report, fill_info.clone(), ctx),
                 None => ctx.emitter.send_fill_report(report),
             }
             reemit_terminal_cancel(maker_venue_order_id, state, ctx);
@@ -379,7 +381,7 @@ fn dispatch_taker_fill(
         .accept_or_buffer_fill(venue_order_id, report)
     {
         match ctx.order_identities.get(&venue_order_id) {
-            Some(identity) => emit_order_filled(&identity, &report, ctx),
+            Some(identity) => emit_order_filled(&identity, &report, trade_fill_info(trade), ctx),
             None => ctx.emitter.send_fill_report(report),
         }
         reemit_terminal_cancel(venue_order_id, state, ctx);
@@ -578,7 +580,15 @@ fn ensure_accepted(
 }
 
 /// Builds and emits an `OrderFilled` event for a tracked order, synthesizing acceptance first.
-fn emit_order_filled(identity: &OrderIdentity, fill: &FillReport, ctx: &WsDispatchContext<'_>) {
+///
+/// `info` carries the venue fill metadata (the raw trade fields) for trade-sourced fills, and is
+/// `None` for order-path and dust-residual fills that have no originating trade payload.
+fn emit_order_filled(
+    identity: &OrderIdentity,
+    fill: &FillReport,
+    info: Option<IndexMap<Ustr, Ustr>>,
+    ctx: &WsDispatchContext<'_>,
+) {
     ensure_accepted(identity, fill.venue_order_id, fill.ts_event, ctx);
 
     if let Some(new_qty) = ctx.fill_tracker.buy_overfill_bump(&fill.venue_order_id) {
@@ -605,8 +615,27 @@ fn emit_order_filled(identity: &OrderIdentity, fill: &FillReport, ctx: &WsDispat
         false,
         fill.venue_position_id,
         Some(fill.commission),
+        info,
     );
     ctx.emitter.send_order_event(OrderEventAny::Filled(filled));
+}
+
+/// Flattens a user trade into a string map of venue fill metadata for `OrderFilled.info`.
+///
+/// Mirrors the v1 adapter, which attaches the full raw trade to each fill it generates. Scalar
+/// fields map to their string form; nested fields (such as `maker_orders`) become their JSON text.
+fn trade_fill_info(trade: &PolymarketUserTrade) -> Option<IndexMap<Ustr, Ustr>> {
+    let value = serde_json::to_value(trade).ok()?;
+    let object = value.as_object()?;
+    let mut info = IndexMap::with_capacity(object.len());
+    for (key, val) in object {
+        let val_str = match val {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        info.insert(Ustr::from(key.as_str()), Ustr::from(val_str.as_str()));
+    }
+    Some(info)
 }
 
 /// Emits an `OrderUpdated` raising the order quantity to the actual BUY fill, before the fill.
@@ -828,6 +857,31 @@ mod tests {
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(report.ts_event, ts_event);
         assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    fn test_trade_fill_info_flattens_raw_trade() {
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+
+        let info = trade_fill_info(&trade).expect("info should be present");
+
+        // Every raw trade field is captured (mirrors v1 info=msg.to_dict()).
+        assert_eq!(info.len(), 20);
+        assert_eq!(info[&Ustr::from("id")], Ustr::from("trade-0xabcdef1234"));
+        assert_eq!(info[&Ustr::from("fee_rate_bps")], Ustr::from("0"));
+        // Numeric fields flatten to their string form.
+        assert_eq!(info[&Ustr::from("bucket_index")], Ustr::from("1"));
+        assert_eq!(info[&Ustr::from("size")], Ustr::from("25.0"));
+        assert_eq!(
+            info[&Ustr::from("taker_order_id")],
+            Ustr::from("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
+        );
+        // The `type` serde-rename key is preserved.
+        assert_eq!(info[&Ustr::from("type")], Ustr::from("TRADE"));
+        // Nested fields become their JSON text.
+        let maker_orders = info[&Ustr::from("maker_orders")].as_str();
+        assert!(maker_orders.starts_with('['));
+        assert!(maker_orders.contains("order_id"));
     }
 
     #[rstest]

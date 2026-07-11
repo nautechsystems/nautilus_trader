@@ -74,6 +74,10 @@ impl DatabentoDataClientFactory {
     }
 
     /// Creates a new `DatabentoDataClient` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client cannot be created or publisher configuration cannot be loaded.
     #[staticmethod]
     #[pyo3(signature = (client_id, api_key, publishers_filepath, use_exchange_as_venue = true, bars_timestamp_on_close = true))]
     pub fn py_create_live_data_client(

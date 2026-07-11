@@ -407,6 +407,7 @@ pub fn reconcile_fill_report(
         true, // reconciliation
         report.venue_position_id,
         Some(report.commission),
+        None,
     )))
 }
 
@@ -685,6 +686,7 @@ pub(super) fn create_inferred_fill(
         true, // reconciliation
         report.venue_position_id,
         commission,
+        None,
     )))
 }
 
@@ -767,6 +769,7 @@ pub fn create_incremental_inferred_fill(
         true, // reconciliation
         None, // venue_position_id
         commission,
+        None,
     )))
 }
 
@@ -856,6 +859,7 @@ pub fn create_inferred_fill_for_qty(
         true, // reconciliation
         None, // venue_position_id
         commission,
+        None,
     )))
 }
 

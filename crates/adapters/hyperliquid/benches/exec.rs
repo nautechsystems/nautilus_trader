@@ -266,6 +266,7 @@ fn bench_cancel(c: &mut Criterion) {
                     asset: BTC_ASSET_INDEX,
                     cloid,
                 }],
+                fast: Some(true),
             };
             let bytes = sign_action(&signer, black_box(&action));
             black_box(bytes);

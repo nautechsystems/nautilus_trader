@@ -2107,7 +2107,7 @@ fn test_process_duplicate_leg_fill_without_order_does_not_reapply_position(
 
     let (_instrument, fill, expected_position_id) =
         prepare_leg_fill_without_order(&execution_engine);
-    let event = OrderEventAny::Filled(fill);
+    let event = OrderEventAny::Filled(fill.clone());
 
     execution_engine.process(&event);
     execution_engine.process(&event);

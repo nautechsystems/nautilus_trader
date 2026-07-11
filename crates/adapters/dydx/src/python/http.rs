@@ -84,6 +84,11 @@ impl DydxHttpClient {
     ///
     /// This method does NOT automatically cache results. Use `fetch_and_cache_instruments()`
     /// for automatic caching, or call `cache_instruments()` manually with the results.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request or parsing fails.
+    /// Individual instrument parsing errors are logged as warnings.
     #[pyo3(name = "request_instruments")]
     fn py_request_instruments<'py>(
         &self,
@@ -278,6 +283,10 @@ impl DydxHttpClient {
     ///
     /// Fetches orders from the dYdX Indexer API and converts them to Nautilus
     /// `OrderStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_order_status_reports<'py>(
@@ -312,6 +321,10 @@ impl DydxHttpClient {
     ///
     /// Fetches fills from the dYdX Indexer API and converts them to Nautilus
     /// `FillReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_fill_reports<'py>(
@@ -341,6 +354,10 @@ impl DydxHttpClient {
     ///
     /// Fetches positions from the dYdX Indexer API and converts them to Nautilus
     /// `PositionStatusReport` objects.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (address, subaccount_number, account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(
@@ -375,6 +392,10 @@ impl DydxHttpClient {
     ///
     /// Fetches the subaccount from the dYdX Indexer API and converts it to a Nautilus
     /// `AccountState` with balances and margin calculations.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
     #[pyo3(name = "request_account_state")]
     fn py_request_account_state<'py>(
         &self,
@@ -404,6 +425,13 @@ impl DydxHttpClient {
     /// filtered out.
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The bar type uses unsupported aggregation/price type.
+    /// - The HTTP request fails or response cannot be parsed.
+    /// - The instrument is not found in the cache.
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, timestamp_on_close=true))]
     fn py_request_bars<'py>(
@@ -437,6 +465,11 @@ impl DydxHttpClient {
     /// and client-side time filtering (the dYdX API has no timestamp filter).
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
     #[pyo3(name = "request_trade_ticks")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_trade_ticks<'py>(
@@ -469,6 +502,10 @@ impl DydxHttpClient {
     /// `FundingRateUpdate` objects.
     ///
     /// Results are returned in chronological order (oldest first).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or response cannot be parsed.
     #[pyo3(name = "request_funding_rates")]
     #[pyo3(signature = (instrument_id, start=None, end=None, limit=None))]
     fn py_request_funding_rates<'py>(
@@ -504,6 +541,11 @@ impl DydxHttpClient {
     /// Fetches order book data from the dYdX Indexer API and converts it to Nautilus
     /// `OrderBookDeltas`. The snapshot is represented as a sequence of deltas starting
     /// with a CLEAR action followed by ADD actions for each level.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails, response cannot be parsed,
+    /// or the instrument is not found in the cache.
     #[pyo3(name = "request_orderbook_snapshot")]
     fn py_request_orderbook_snapshot<'py>(
         &self,

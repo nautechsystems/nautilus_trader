@@ -37,7 +37,7 @@ let order = self.order().trailing_stop_limit(
     dec!(0.00100),                   // trailing_offset
     Some(TrailingOffsetType::Price), // optional (default PRICE)
     Some(Price::from("0.72000")),    // activation_price
-    None,                            // trigger_price (falls back to activation_price)
+    None,                            // trigger_price (materializes from the offset on the first trail)
     Some(TriggerType::BidAsk),       // optional (default DEFAULT)
     Some(TimeInForce::Gtc),          // optional (default GTC)
     None,                            // expire_time

@@ -82,9 +82,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
         VenueOrderId,
     },
-    orders::{
-        LimitIfTouchedOrder, LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder,
-    },
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     reports::{OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Money, Price, Quantity},
 };
@@ -1097,34 +1095,17 @@ fn build_limit_order_with_time_in_force(
     time_in_force: TimeInForce,
     post_only: bool,
 ) -> OrderAny {
-    let init_id = UUID4::new();
-    OrderAny::Limit(LimitOrder::new(
-        TraderId::from("TRADER-001"),
-        StrategyId::from("S-1"),
-        instrument_id,
-        client_order_id,
-        side,
-        quantity,
-        price,
-        time_in_force,
-        None,
-        post_only,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        init_id,
-        UnixNanos::default(),
-    ))
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(quantity)
+        .price(price)
+        .time_in_force(time_in_force)
+        .post_only(post_only)
+        .build()
 }
 
 fn build_reduce_only_limit_order(
@@ -1134,34 +1115,16 @@ fn build_reduce_only_limit_order(
     price: Price,
     quantity: Quantity,
 ) -> OrderAny {
-    let init_id = UUID4::new();
-    OrderAny::Limit(LimitOrder::new(
-        TraderId::from("TRADER-001"),
-        StrategyId::from("S-1"),
-        instrument_id,
-        client_order_id,
-        side,
-        quantity,
-        price,
-        TimeInForce::Gtc,
-        None,
-        false,
-        true,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        init_id,
-        UnixNanos::default(),
-    ))
+    OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(quantity)
+        .price(price)
+        .reduce_only(true)
+        .build()
 }
 
 fn build_market_order(
@@ -1170,28 +1133,14 @@ fn build_market_order(
     side: OrderSide,
     quantity: Quantity,
 ) -> OrderAny {
-    let init_id = UUID4::new();
-    OrderAny::Market(MarketOrder::new(
-        TraderId::from("TRADER-001"),
-        StrategyId::from("S-1"),
-        instrument_id,
-        client_order_id,
-        side,
-        quantity,
-        TimeInForce::Gtc,
-        init_id,
-        UnixNanos::default(),
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
+    OrderTestBuilder::new(OrderType::Market)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(quantity)
+        .build()
 }
 
 fn build_stop_market_order(
@@ -1201,33 +1150,16 @@ fn build_stop_market_order(
     trigger_price: Price,
     quantity: Quantity,
 ) -> OrderAny {
-    OrderAny::StopMarket(StopMarketOrder::new(
-        TraderId::from("TRADER-001"),
-        StrategyId::from("S-1"),
-        instrument_id,
-        client_order_id,
-        side,
-        quantity,
-        trigger_price,
-        TriggerType::MarkPrice,
-        TimeInForce::Gtc,
-        None,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    ))
+    OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(quantity)
+        .trigger_price(trigger_price)
+        .trigger_type(TriggerType::MarkPrice)
+        .build()
 }
 
 fn build_limit_if_touched_order(
@@ -1238,35 +1170,17 @@ fn build_limit_if_touched_order(
     trigger_price: Price,
     quantity: Quantity,
 ) -> OrderAny {
-    OrderAny::LimitIfTouched(LimitIfTouchedOrder::new(
-        TraderId::from("TRADER-001"),
-        StrategyId::from("S-1"),
-        instrument_id,
-        client_order_id,
-        side,
-        quantity,
-        price,
-        trigger_price,
-        TriggerType::MarkPrice,
-        TimeInForce::Gtc,
-        None,
-        false,
-        false,
-        false,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-    ))
+    OrderTestBuilder::new(OrderType::LimitIfTouched)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(quantity)
+        .price(price)
+        .trigger_price(trigger_price)
+        .trigger_type(TriggerType::MarkPrice)
+        .build()
 }
 
 fn submit_cmd(order: &OrderAny) -> SubmitOrder {

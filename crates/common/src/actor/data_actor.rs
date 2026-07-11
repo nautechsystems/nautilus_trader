@@ -1513,7 +1513,8 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_bars_topic(bar_type);
+        // Aggregators publish emitted bars under the standard type, so subscribe on that topic
+        let topic = get_bars_topic(bar_type.standard());
 
         let handler = TypedHandler::from(move |bar: &Bar| {
             get_actor_unchecked::<Self>(&actor_id).handle_bar(bar);
@@ -4228,7 +4229,8 @@ impl DataActorCore {
     ) {
         self.check_registered();
 
-        let topic = get_bars_topic(bar_type);
+        // Match the standard topic used at subscribe time (see `subscribe_bars`)
+        let topic = get_bars_topic(bar_type.standard());
         self.remove_bar_subscription(topic);
 
         let command = UnsubscribeCommand::Bars(UnsubscribeBars {
@@ -4757,6 +4759,12 @@ impl DataActorCore {
         handler: ShareableMessageHandler,
     ) -> anyhow::Result<UUID4> {
         self.check_registered();
+
+        anyhow::ensure!(
+            bar_type.is_standard(),
+            "Composite bar types are not supported for `request_bars`, was {bar_type}; \
+             request aggregation via the `bar_types` params instead",
+        );
 
         let now = self.clock_ref().utc_now();
         check_timestamps(now, start, end)?;

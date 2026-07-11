@@ -220,6 +220,7 @@ impl From<FromUtf8Error> for DecodeError {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
@@ -513,6 +514,17 @@ mod tests {
         out
     }
 
+    fn malformed_percent_sequence() -> impl Strategy<Value = Vec<u8>> {
+        prop_oneof![
+            Just(vec![b'%']),
+            (any::<u8>(), any::<u8>())
+                .prop_filter("contains a non-hex byte", |(hi, lo)| {
+                    !hi.is_ascii_hexdigit() || !lo.is_ascii_hexdigit()
+                })
+                .prop_map(|(hi, lo)| vec![b'%', hi, lo]),
+        ]
+    }
+
     proptest::proptest! {
         #[rstest]
         fn prop_encode_matches_reference(input: Vec<u8>) {
@@ -523,6 +535,21 @@ mod tests {
 
         #[rstest]
         fn prop_decode_matches_reference(input: Vec<u8>) {
+            let actual = decode_bytes(&input);
+            let expected = reference_decode(&input);
+            proptest::prop_assert_eq!(actual.as_ref(), expected.as_slice());
+        }
+
+        #[rstest]
+        fn prop_malformed_percent_sequences_match_reference(
+            prefix in proptest::collection::vec(any::<u8>(), 0..16),
+            malformed in malformed_percent_sequence(),
+            suffix in proptest::collection::vec(any::<u8>(), 0..16),
+        ) {
+            let mut input = prefix;
+            input.extend(malformed);
+            input.extend(suffix);
+
             let actual = decode_bytes(&input);
             let expected = reference_decode(&input);
             proptest::prop_assert_eq!(actual.as_ref(), expected.as_slice());

@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS "order" (
     order_side TEXT NOT NULL,
     quantity TEXT NOT NULL,
     price TEXT,
+    activation_price TEXT,
     trigger_price TEXT,
     trigger_type TEXT,
     limit_offset TEXT,
@@ -118,6 +119,8 @@ CREATE TABLE IF NOT EXISTS "order" (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before trailing-stop activation-price persistence forward
+ALTER TABLE "order" ADD COLUMN IF NOT EXISTS activation_price TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_event" (
     id TEXT PRIMARY KEY NOT NULL,
@@ -142,6 +145,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     price TEXT,
     last_px TEXT,
     last_qty TEXT,
+    activation_price TEXT,
     trigger_price TEXT,
     trigger_type TEXT,
     limit_offset TEXT,
@@ -168,6 +172,8 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+-- Bring databases created before trailing-stop activation-price persistence forward
+ALTER TABLE "order_event" ADD COLUMN IF NOT EXISTS activation_price TEXT;
 
 CREATE TABLE IF NOT EXISTS "order_position_index" (
     client_order_id TEXT PRIMARY KEY NOT NULL,
@@ -473,14 +479,16 @@ CREATE TABLE IF NOT EXISTS "pool_fee_protocol_update_event" (
     transaction_hash TEXT NOT NULL,
     transaction_index INTEGER NOT NULL,
     log_index INTEGER NOT NULL,
-    fee_protocol0_new SMALLINT NOT NULL,
-    fee_protocol1_new SMALLINT NOT NULL,
+    fee_protocol0_new INTEGER NOT NULL,
+    fee_protocol1_new INTEGER NOT NULL,
     FOREIGN KEY (chain_id, dex_name, pool_identifier) REFERENCES pool(chain_id, dex_name, pool_identifier),
 --     FOREIGN KEY (chain_id, block) REFERENCES block(chain_id, number),  // TODO temporarily disabled not to be blocked by full block sync
     UNIQUE(chain_id, transaction_hash, log_index)
 );
 CREATE INDEX IF NOT EXISTS idx_pool_fee_protocol_update_event_lookup
     ON pool_fee_protocol_update_event(chain_id, pool_identifier, block, transaction_index, log_index);
+ALTER TABLE "pool_fee_protocol_update_event" ALTER COLUMN fee_protocol0_new TYPE INTEGER;
+ALTER TABLE "pool_fee_protocol_update_event" ALTER COLUMN fee_protocol1_new TYPE INTEGER;
 
 CREATE TABLE IF NOT EXISTS "pool_fee_protocol_collect_event" (
     id BIGSERIAL PRIMARY KEY,
@@ -538,6 +546,8 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
     protocol_fees_token0 U256 NOT NULL,
     protocol_fees_token1 U256 NOT NULL,
     fee_protocol SMALLINT NOT NULL,
+    fee_protocol0_basis_points INTEGER,
+    fee_protocol1_basis_points INTEGER,
     fee_growth_global_0 U256 NOT NULL,
     fee_growth_global_1 U256 NOT NULL,
     total_amount0_deposited U256 NOT NULL,
@@ -558,6 +568,8 @@ CREATE TABLE IF NOT EXISTS "pool_snapshot" (
 -- Bring databases created before snapshot validation states forward. Existing rows become 'replay'
 -- (usable as replay start points) until a later analyze-pool run re-validates them to 'on_chain' or 'invalid'.
 ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS validation_state TEXT NOT NULL DEFAULT 'replay';
+ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS fee_protocol0_basis_points INTEGER;
+ALTER TABLE "pool_snapshot" ADD COLUMN IF NOT EXISTS fee_protocol1_basis_points INTEGER;
 
 CREATE TABLE IF NOT EXISTS "pool_position" (
     chain_id INTEGER NOT NULL,

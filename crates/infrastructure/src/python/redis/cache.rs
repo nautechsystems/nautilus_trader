@@ -42,6 +42,13 @@ use crate::redis::{
 #[pymethods]
 impl RedisCacheDatabase {
     /// Creates a new `RedisCacheDatabase` instance for the given `trader_id`, `instance_id`, and `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The database configuration is missing in `config`.
+    /// - Establishing the Redis connection fails.
+    /// - The command processing task cannot be spawned.
     #[new]
     #[pyo3(signature = (trader_id, instance_id, config_json, database_config_json=None))]
     fn py_new(
@@ -282,6 +289,10 @@ impl RedisCacheDatabase {
     /// Spawns the async query on the global Nautilus runtime and blocks until
     /// the result arrives via a channel. Safe from any thread context (Python,
     /// test runtimes, plain threads).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or the reply channel is closed.
     #[pyo3(name = "load_custom_data")]
     #[expect(clippy::needless_pass_by_value)]
     fn py_load_custom_data(

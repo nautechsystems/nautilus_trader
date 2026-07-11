@@ -53,10 +53,6 @@ use crate::{
 impl TradeTick {
     /// Creates a new [`TradeTick`] from a Python object.
     ///
-    /// # Panics
-    ///
-    /// Panics if converting `aggressor_side_u8` to `AggressorSide` fails.
-    ///
     /// # Errors
     ///
     /// Returns a `PyErr` if attribute extraction or type conversion fails.
@@ -83,7 +79,9 @@ impl TradeTick {
 
         let aggressor_side_obj: Bound<'_, PyAny> = obj.getattr("aggressor_side")?.extract()?;
         let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
-        let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
+        let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).ok_or_else(|| {
+            to_pyvalue_err(format!("Invalid aggressor_side value: {aggressor_side_u8}"))
+        })?;
 
         let trade_id_obj: Bound<'_, PyAny> = obj.getattr("trade_id")?.extract()?;
         let trade_id_str: String = trade_id_obj.getattr("value")?.extract()?;
@@ -154,7 +152,9 @@ impl TradeTick {
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec);
         self.size = Quantity::from_raw(size_raw, size_prec);
-        self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
+        self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).ok_or_else(|| {
+            to_pyvalue_err(format!("Invalid aggressor_side value: {aggressor_side_u8}"))
+        })?;
         self.trade_id = TradeId::from(trade_id_str);
         self.ts_event = ts_event.into();
         self.ts_init = ts_init.into();
@@ -379,7 +379,10 @@ impl TradeTick {
 #[cfg(test)]
 mod tests {
     use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{
+        Python,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
     use rstest::rstest;
 
     use crate::{
@@ -445,6 +448,59 @@ mod tests {
             let tick_pyobject = trade.into_py_any_unwrap(py);
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);
+        });
+    }
+
+    #[rstest]
+    fn test_from_pyobject_rejects_invalid_aggressor_side() {
+        Python::initialize();
+        Python::attach(|py| {
+            let namespace = py
+                .import("types")
+                .unwrap()
+                .getattr("SimpleNamespace")
+                .unwrap();
+
+            let instrument_id_kwargs = PyDict::new(py);
+            instrument_id_kwargs
+                .set_item("value", "ETHUSDT-PERP.BINANCE")
+                .unwrap();
+            let instrument_id = namespace.call((), Some(&instrument_id_kwargs)).unwrap();
+
+            let price_kwargs = PyDict::new(py);
+            price_kwargs.set_item("raw", 100_000_000_i64).unwrap();
+            price_kwargs.set_item("precision", 4_u8).unwrap();
+            let price = namespace.call((), Some(&price_kwargs)).unwrap();
+
+            let size_kwargs = PyDict::new(py);
+            size_kwargs.set_item("raw", 100_000_000_i64).unwrap();
+            size_kwargs.set_item("precision", 8_u8).unwrap();
+            let size = namespace.call((), Some(&size_kwargs)).unwrap();
+
+            let aggressor_side_kwargs = PyDict::new(py);
+            aggressor_side_kwargs.set_item("value", 99_u8).unwrap();
+            let aggressor_side = namespace.call((), Some(&aggressor_side_kwargs)).unwrap();
+
+            let trade_id_kwargs = PyDict::new(py);
+            trade_id_kwargs.set_item("value", "123456789").unwrap();
+            let trade_id = namespace.call((), Some(&trade_id_kwargs)).unwrap();
+
+            let tick_kwargs = PyDict::new(py);
+            tick_kwargs
+                .set_item("instrument_id", instrument_id)
+                .unwrap();
+            tick_kwargs.set_item("price", price).unwrap();
+            tick_kwargs.set_item("size", size).unwrap();
+            tick_kwargs
+                .set_item("aggressor_side", aggressor_side)
+                .unwrap();
+            tick_kwargs.set_item("trade_id", trade_id).unwrap();
+            tick_kwargs.set_item("ts_event", 0_u64).unwrap();
+            tick_kwargs.set_item("ts_init", 1_u64).unwrap();
+            let tick = namespace.call((), Some(&tick_kwargs)).unwrap();
+
+            let err = TradeTick::from_pyobject(&tick).unwrap_err();
+            assert!(err.to_string().contains("Invalid aggressor_side value: 99"));
         });
     }
 }

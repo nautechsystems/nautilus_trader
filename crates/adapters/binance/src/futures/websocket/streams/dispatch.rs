@@ -496,6 +496,7 @@ pub(crate) fn dispatch_order_update(
                                 false,
                                 None,
                                 commission,
+                                None,
                             );
 
                             dispatch_state.insert_filled(client_order_id);
@@ -1069,6 +1070,7 @@ pub(crate) fn dispatch_trade_lite(
         ts_event,
         ts_init,
         false,
+        None,
         None,
         None,
     );

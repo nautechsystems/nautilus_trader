@@ -303,7 +303,9 @@ impl LimitOrderAny {
             Self::Limit(order) => order.price,
             Self::MarketToLimit(order) => order.price.expect("MarketToLimit order price not set"),
             Self::StopLimit(order) => order.price,
-            Self::TrailingStopLimit(order) => order.price,
+            Self::TrailingStopLimit(order) => {
+                order.price.expect("TrailingStopLimit order price not set")
+            }
             Self::MarketOrderWithProtection(order) => {
                 order.protection_price.expect("No price for order")
             }
@@ -338,14 +340,14 @@ pub enum StopOrderAny {
 
 impl StopOrderAny {
     #[must_use]
-    pub fn stop_px(&self) -> Price {
+    pub fn stop_px(&self) -> Option<Price> {
         match self {
-            Self::LimitIfTouched(o) => o.trigger_price,
-            Self::MarketIfTouched(o) => o.trigger_price,
-            Self::StopLimit(o) => o.trigger_price,
-            Self::StopMarket(o) => o.trigger_price,
-            Self::TrailingStopLimit(o) => o.activation_price.unwrap_or(o.trigger_price),
-            Self::TrailingStopMarket(o) => o.activation_price.unwrap_or(o.trigger_price),
+            Self::LimitIfTouched(o) => Some(o.trigger_price),
+            Self::MarketIfTouched(o) => Some(o.trigger_price),
+            Self::StopLimit(o) => Some(o.trigger_price),
+            Self::StopMarket(o) => Some(o.trigger_price),
+            Self::TrailingStopLimit(o) => o.activation_price.or(o.trigger_price),
+            Self::TrailingStopMarket(o) => o.activation_price.or(o.trigger_price),
         }
     }
 }
@@ -655,22 +657,6 @@ mod tests {
         ),
         "`trigger_type` is required for `MarketIfTouchedOrder`"
     )]
-    #[case::tsl_missing_price(
-        make_init_with_optional_fields(
-            OrderType::TrailingStopLimit,
-            None, Some(Price::from("99.00")), Some(TriggerType::LastPrice),
-            Some(dec!(1)), Some(dec!(1)), Some(TrailingOffsetType::Price),
-        ),
-        "`price` is required for `TrailingStopLimitOrder`",
-    )]
-    #[case::tsl_missing_trigger_price(
-        make_init_with_optional_fields(
-            OrderType::TrailingStopLimit,
-            Some(Price::from("100.00")), None, Some(TriggerType::LastPrice),
-            Some(dec!(1)), Some(dec!(1)), Some(TrailingOffsetType::Price),
-        ),
-        "`trigger_price` is required for `TrailingStopLimitOrder`",
-    )]
     #[case::tsl_missing_trigger_type(
         make_init_with_optional_fields(
             OrderType::TrailingStopLimit,
@@ -702,14 +688,6 @@ mod tests {
             Some(dec!(1)), Some(dec!(1)), None,
         ),
         "`trailing_offset_type` is required for `TrailingStopLimitOrder`",
-    )]
-    #[case::tsm_missing_trigger_price(
-        make_init_with_optional_fields(
-            OrderType::TrailingStopMarket,
-            None, None, Some(TriggerType::LastPrice),
-            None, Some(dec!(1)), Some(TrailingOffsetType::Price),
-        ),
-        "`trigger_price` is required for `TrailingStopMarketOrder`",
     )]
     #[case::tsm_missing_trigger_type(
         make_init_with_optional_fields(
@@ -892,7 +870,7 @@ mod tests {
 
         // Check stop price accessor
         let stop_px = stop_order_any.stop_px();
-        assert_eq!(stop_px, Price::new(100.0, 2));
+        assert_eq!(stop_px, Some(Price::new(100.0, 2)));
     }
 
     #[rstest]

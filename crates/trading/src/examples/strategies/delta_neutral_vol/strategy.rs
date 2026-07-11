@@ -742,7 +742,7 @@ impl DataActor for DeltaNeutralVol {
     fn on_stop(&mut self) -> anyhow::Result<()> {
         self.clock().cancel_timer(REHEDGE_TIMER);
 
-        let ids: Vec<InstrumentId> = self.subscribed_greeks.drain(..).collect();
+        let ids: Vec<InstrumentId> = std::mem::take(&mut self.subscribed_greeks);
         let client_id = self.config.client_id;
 
         for instrument_id in ids {

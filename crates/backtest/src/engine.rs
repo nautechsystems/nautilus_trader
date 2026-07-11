@@ -750,6 +750,12 @@ impl BacktestEngine {
             }
             self.kernel.start_trader();
 
+            // Drain on_start data subscriptions so aggregators subscribe before the first data
+            // point, else internal aggregation drops the first tick. Trading/exec stay queued
+            while !data_cmd_queue_is_empty() {
+                drain_data_cmd_queue();
+            }
+
             self.log_pre_run();
         }
 

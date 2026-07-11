@@ -32,10 +32,13 @@ impl MarketSbeMessage for BarType {
     const TEMPLATE_ID: u16 = template_id::BAR_TYPE;
     const BLOCK_LENGTH: u16 = BAR_TYPE_BLOCK_LENGTH;
 
+    /// Encodes the standard form only: the composite chain is a local aggregation
+    /// detail and wire representations carry the standard bar type.
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
-        encode_bar_specification_fields(writer, self.spec())?;
-        writer.write_u8(self.aggregation_source() as u8);
-        encode_instrument_id(writer, &self.instrument_id())
+        let standard = self.standard();
+        encode_bar_specification_fields(writer, standard.spec())?;
+        writer.write_u8(standard.aggregation_source() as u8);
+        encode_instrument_id(writer, &standard.instrument_id())
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {
@@ -56,8 +59,10 @@ impl MarketSbeMessage for Bar {
         BAR_TYPE_BLOCK_LENGTH + (PRICE_BLOCK_LENGTH * 4) + QUANTITY_BLOCK_LENGTH + 16;
 
     fn encode_body(&self, writer: &mut SbeWriter<'_>) -> Result<(), SbeEncodeError> {
-        encode_bar_specification_fields(writer, self.bar_type.spec())?;
-        writer.write_u8(self.bar_type.aggregation_source() as u8);
+        // Wire form carries the standard bar type (see BarType::encode_body)
+        let standard = self.bar_type.standard();
+        encode_bar_specification_fields(writer, standard.spec())?;
+        writer.write_u8(standard.aggregation_source() as u8);
         encode_price(writer, &self.open);
         encode_price(writer, &self.high);
         encode_price(writer, &self.low);
@@ -65,7 +70,7 @@ impl MarketSbeMessage for Bar {
         encode_quantity(writer, &self.volume);
         encode_unix_nanos(writer, self.ts_event);
         encode_unix_nanos(writer, self.ts_init);
-        encode_instrument_id(writer, &self.bar_type.instrument_id())
+        encode_instrument_id(writer, &standard.instrument_id())
     }
 
     fn decode_body(cursor: &mut SbeCursor<'_>) -> Result<Self, SbeDecodeError> {

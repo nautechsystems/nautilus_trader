@@ -67,6 +67,9 @@ const ORDER_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("init_id", false),
     JsonFieldSpec::u64("ts_init", false),
     JsonFieldSpec::u64("ts_last", false),
+    // Appended (not inserted) so older batches without this column fail with a clean
+    // `MissingColumn` error rather than silently reading a shifted column.
+    JsonFieldSpec::utf8("activation_price", true),
 ];
 
 const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[

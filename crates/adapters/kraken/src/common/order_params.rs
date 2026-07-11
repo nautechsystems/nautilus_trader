@@ -296,6 +296,7 @@ mod tests {
             cl_ord_id,
             OrderSide::Buy,
             Quantity::from("0.01"),
+            None,
             Price::from("50000.00"),
             TriggerType::LastPrice,
             Decimal::new(100, 0),

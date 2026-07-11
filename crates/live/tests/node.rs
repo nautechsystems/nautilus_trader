@@ -58,7 +58,7 @@ use nautilus_model::{
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-    reports::{OrderStatusReport, PositionStatusReport},
+    reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use nautilus_trading::{
@@ -229,6 +229,170 @@ fn test_builder_accepts_live() {
 
 mod serial_tests {
     use super::*;
+
+    #[derive(Clone, Debug, Default)]
+    struct StartupMassStatusClientState {
+        connected: Arc<AtomicBool>,
+        mass_status_requested: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum StartupMassStatusBehavior {
+        Unavailable,
+        Error,
+        Pending,
+    }
+
+    struct StartupMassStatusExecutionClient {
+        state: StartupMassStatusClientState,
+        behavior: StartupMassStatusBehavior,
+    }
+
+    impl StartupMassStatusExecutionClient {
+        const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
+
+        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    #[derive(Debug)]
+    struct StartupMassStatusExecutionClientConfig;
+
+    impl ClientConfig for StartupMassStatusExecutionClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    #[derive(Debug)]
+    struct StartupMassStatusExecutionClientFactory {
+        state: StartupMassStatusClientState,
+        behavior: StartupMassStatusBehavior,
+    }
+
+    impl StartupMassStatusExecutionClientFactory {
+        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(StartupMassStatusExecutionClient::new(
+                self.state.clone(),
+                self.behavior,
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "startup-mass-status"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(StartupMassStatusExecutionClientConfig)
+        }
+    }
+
+    fn live_node_with_startup_mass_status_client(
+        name: &str,
+        config: LiveNodeConfig,
+        behavior: StartupMassStatusBehavior,
+    ) -> (LiveNode, StartupMassStatusClientState) {
+        let state = StartupMassStatusClientState::default();
+        let factory = StartupMassStatusExecutionClientFactory::new(state.clone(), behavior);
+
+        let node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_exec_client(
+                Some("startup-mass-status".to_string()),
+                Box::new(factory),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        (node, state)
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for StartupMassStatusExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from(Self::CLIENT_ID)
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("STARTUP-MASS-STATUS-001")
+        }
+
+        fn venue(&self) -> Venue {
+            crypto_perpetual_ethusdt().id().venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connected.store(true, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+
+        async fn generate_mass_status(
+            &self,
+            _lookback_mins: Option<u64>,
+        ) -> anyhow::Result<Option<ExecutionMassStatus>> {
+            self.state
+                .mass_status_requested
+                .store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                StartupMassStatusBehavior::Unavailable => Ok(None),
+                StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
+                StartupMassStatusBehavior::Pending => {
+                    std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
+                }
+            }
+        }
+    }
 
     struct BlockingReportExecutionClient {
         connected: Cell<bool>,
@@ -794,6 +958,162 @@ mod serial_tests {
             "run() should complete within 5 seconds after stop"
         );
         assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_aborts_startup_when_mass_status_unavailable() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusUnavailableNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+
+        let err = node.start().await.expect_err("start should fail");
+
+        assert!(
+            err.to_string().contains("No mass status available"),
+            "unexpected error: {err:#}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_aborts_startup_when_mass_status_unavailable() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "RunStartupMassStatusUnavailableNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+
+        let err = node.run().await.expect_err("run should fail");
+
+        assert!(
+            err.to_string().contains("No mass status available"),
+            "unexpected error: {err:#}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_aborts_startup_when_mass_status_errors() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartStartupMassStatusErrorNode",
+            config,
+            StartupMassStatusBehavior::Error,
+        );
+        let handle = node.handle();
+
+        let err = node.start().await.expect_err("start should fail");
+        let err = format!("{err:#}");
+
+        assert!(
+            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_run_aborts_startup_when_mass_status_errors() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusErrorNode",
+            config,
+            StartupMassStatusBehavior::Error,
+        );
+        let handle = node.handle();
+
+        let err = node.run().await.expect_err("run should fail");
+        let err = format!("{err:#}");
+
+        assert!(
+            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_startup_reconciliation_times_out_waiting_for_mass_status() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StartupMassStatusTimeoutNode",
+            config,
+            StartupMassStatusBehavior::Pending,
+        );
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "startup reconciliation timeout should fire before the test timeout"
+        );
+        let err = result
+            .unwrap()
+            .expect_err("run should fail on startup reconciliation timeout");
+        let err = format!("{err:#}");
+        assert!(
+            err.contains("Startup reconciliation timeout reached"),
+            "unexpected error: {err}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
     }
 
     // The maintenance dispatcher is a single `select!` arm in `LiveNode::run`

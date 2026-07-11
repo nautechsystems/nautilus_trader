@@ -299,10 +299,10 @@ pub trait Order: 'static + Send {
     fn time_in_force(&self) -> TimeInForce;
     fn expire_time(&self) -> Option<UnixNanos>;
     fn price(&self) -> Option<Price>;
-    fn trigger_price(&self) -> Option<Price>;
     fn activation_price(&self) -> Option<Price> {
         None
     }
+    fn trigger_price(&self) -> Option<Price>;
     fn trigger_type(&self) -> Option<TriggerType>;
     fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn is_post_only(&self) -> bool;
@@ -550,6 +550,10 @@ pub trait Order: 'static + Send {
             report = report.with_price(price);
         }
 
+        if let Some(activation_price) = self.activation_price() {
+            report = report.with_activation_price(activation_price);
+        }
+
         if let Some(trigger_price) = self.trigger_price() {
             report = report.with_trigger_price(trigger_price);
         }
@@ -656,6 +660,7 @@ where
             order_type: order.order_type(),
             quantity: order.quantity(),
             price: order.price(),
+            activation_price: order.activation_price(),
             trigger_price: order.trigger_price(),
             trigger_type: order.trigger_type(),
             time_in_force: order.time_in_force(),
@@ -2250,6 +2255,7 @@ mod tests {
             .side(OrderSide::Sell)
             .quantity(Quantity::from(100_000))
             .price(Price::from("0.99500"))
+            .activation_price(Price::from("1.00500"))
             .trigger_price(Price::from("1.00000"))
             .trigger_type(TriggerType::LastPrice)
             .limit_offset(dec!(0.0001))
@@ -2260,6 +2266,7 @@ mod tests {
 
         let report = accepted.to_order_status_report(None).unwrap();
 
+        assert_eq!(report.activation_price, Some(Price::from("1.00500")));
         assert_eq!(report.limit_offset, Some(dec!(0.0001)));
         assert_eq!(report.trailing_offset, Some(dec!(0.0002)));
         assert_eq!(report.trailing_offset_type, TrailingOffsetType::Price);

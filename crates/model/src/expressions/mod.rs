@@ -273,53 +273,129 @@ mod prop_tests {
         ]
     }
 
-    #[rstest]
-    fn prop_arithmetic_never_panics() {
-        let bindings = bindings_with_xy();
-        let formulas = [
-            "x + y",
-            "x - y",
-            "x * y",
-            "x / y",
-            "x % y",
-            "(x + y) * (x - y)",
-            "x + y + x + y",
-        ];
-
-        proptest!(|(a in finite_f64(), b in finite_f64())| {
-            for formula in &formulas {
-                if let Ok(compiled) = compile_numeric(formula, &bindings) {
-                    let _ = compiled.eval_number(&[a, b]);
-                }
-            }
-        });
+    #[derive(Clone, Copy, Debug)]
+    enum NumericExpression {
+        Add,
+        Subtract,
+        Multiply,
+        Divide,
+        Remainder,
+        Composite,
     }
 
-    #[rstest]
-    fn prop_comparison_returns_zero_or_one() {
-        let bindings = bindings_with_xy();
-        let formulas = ["x < y", "x <= y", "x > y", "x >= y", "x == y", "x != y"];
-
-        proptest!(|(a in finite_f64(), b in finite_f64())| {
-            for formula in &formulas {
-                let compiled = compile(formula, &bindings).unwrap();
-                let value = compiled.eval_number(&[a, b]).unwrap();
-                prop_assert!(value == 0.0 || value == 1.0, "returned {value} for {formula}");
+    impl NumericExpression {
+        fn formula(self) -> &'static str {
+            match self {
+                Self::Add => "x + y",
+                Self::Subtract => "x - y",
+                Self::Multiply => "x * y",
+                Self::Divide => "x / y",
+                Self::Remainder => "x % y",
+                Self::Composite => "(x + y) * (x - y) / (abs(x) + 1)",
             }
-        });
+        }
+
+        fn evaluate(self, x: f64, y: f64) -> f64 {
+            match self {
+                Self::Add => x + y,
+                Self::Subtract => x - y,
+                Self::Multiply => x * y,
+                Self::Divide => x / y,
+                Self::Remainder => x % y,
+                Self::Composite => (x + y) * (x - y) / (x.abs() + 1.0),
+            }
+        }
     }
 
-    #[rstest]
-    fn prop_compile_eval_roundtrip_is_deterministic() {
-        let bindings = bindings_with_xy();
-        let formula = "(x + y) * (x - y) / (abs(x) + 1)";
-        let compiled = compile_numeric(formula, &bindings).unwrap();
+    fn numeric_expression_strategy() -> impl Strategy<Value = NumericExpression> {
+        prop_oneof![
+            Just(NumericExpression::Add),
+            Just(NumericExpression::Subtract),
+            Just(NumericExpression::Multiply),
+            Just(NumericExpression::Divide),
+            Just(NumericExpression::Remainder),
+            Just(NumericExpression::Composite),
+        ]
+    }
 
-        proptest!(|(a in finite_f64(), b in finite_f64())| {
-            let r1 = compiled.eval_number(&[a, b]).unwrap();
-            let r2 = compiled.eval_number(&[a, b]).unwrap();
-            prop_assert_eq!(r1.to_bits(), r2.to_bits());
-        });
+    #[derive(Clone, Copy, Debug)]
+    enum ComparisonExpression {
+        Less,
+        LessEqual,
+        Greater,
+        GreaterEqual,
+        Equal,
+        NotEqual,
+    }
+
+    impl ComparisonExpression {
+        fn formula(self) -> &'static str {
+            match self {
+                Self::Less => "x < y",
+                Self::LessEqual => "x <= y",
+                Self::Greater => "x > y",
+                Self::GreaterEqual => "x >= y",
+                Self::Equal => "x == y",
+                Self::NotEqual => "x != y",
+            }
+        }
+
+        fn evaluate(self, x: f64, y: f64) -> f64 {
+            if match self {
+                Self::Less => x < y,
+                Self::LessEqual => x <= y,
+                Self::Greater => x > y,
+                Self::GreaterEqual => x >= y,
+                Self::Equal => x == y,
+                Self::NotEqual => x != y,
+            } {
+                1.0
+            } else {
+                0.0
+            }
+        }
+    }
+
+    fn comparison_expression_strategy() -> impl Strategy<Value = ComparisonExpression> {
+        prop_oneof![
+            Just(ComparisonExpression::Less),
+            Just(ComparisonExpression::LessEqual),
+            Just(ComparisonExpression::Greater),
+            Just(ComparisonExpression::GreaterEqual),
+            Just(ComparisonExpression::Equal),
+            Just(ComparisonExpression::NotEqual),
+        ]
+    }
+
+    proptest! {
+        #[rstest]
+        fn prop_numeric_expressions_match_native_evaluation(
+            expression in numeric_expression_strategy(),
+            x in finite_f64(),
+            y in finite_f64().prop_filter("non-zero divisor", |value| *value != 0.0),
+        ) {
+            let bindings = bindings_with_xy();
+            let actual = compile_numeric(expression.formula(), &bindings)
+                .unwrap()
+                .eval_number(&[x, y])
+                .unwrap();
+            let expected = expression.evaluate(x, y);
+            prop_assert_eq!(actual.to_bits(), expected.to_bits());
+        }
+
+        #[rstest]
+        fn prop_comparisons_match_native_evaluation(
+            expression in comparison_expression_strategy(),
+            x in finite_f64(),
+            y in finite_f64(),
+        ) {
+            let bindings = bindings_with_xy();
+            let actual = compile(expression.formula(), &bindings)
+                .unwrap()
+                .eval_number(&[x, y])
+                .unwrap();
+            prop_assert_eq!(actual, expression.evaluate(x, y));
+        }
     }
 
     #[rstest]

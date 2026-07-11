@@ -18,6 +18,7 @@
 use std::collections::HashMap;
 
 use nautilus_model::{
+    enums::OmsType,
     identifiers::{AccountId, TraderId},
     types::Currency,
 };
@@ -99,6 +100,7 @@ impl BinanceExecClientConfig {
         base_url_ws_trading = None,
         use_ws_trading = true,
         use_position_ids = true,
+        oms_type = None,
         default_taker_fee = None,
         api_key = None,
         api_secret = None,
@@ -120,6 +122,7 @@ impl BinanceExecClientConfig {
         base_url_ws_trading: Option<String>,
         use_ws_trading: bool,
         use_position_ids: bool,
+        oms_type: Option<OmsType>,
         default_taker_fee: Option<f64>,
         api_key: Option<String>,
         api_secret: Option<String>,
@@ -141,6 +144,7 @@ impl BinanceExecClientConfig {
             base_url_ws_trading: base_url_ws_trading.or(defaults.base_url_ws_trading),
             use_ws_trading,
             use_position_ids,
+            oms_type,
             default_taker_fee: default_taker_fee
                 .map_or_else(|| Ok(defaults.default_taker_fee), Decimal::try_from)
                 .unwrap_or(defaults.default_taker_fee),
@@ -222,7 +226,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
             trader_id, account_id, None, None, None, None, None, true, true, None, None, None,
-            None, None, false, false, None, None,
+            None, None, None, false, false, None, None,
         );
         let defaults = BinanceExecClientConfig::default();
 
@@ -233,6 +237,7 @@ mod tests {
         assert_eq!(config.base_url_http, defaults.base_url_http);
         assert_eq!(config.base_url_ws, defaults.base_url_ws);
         assert_eq!(config.base_url_ws_trading, defaults.base_url_ws_trading);
+        assert_eq!(config.oms_type, defaults.oms_type);
         assert_eq!(config.default_taker_fee, defaults.default_taker_fee);
         assert_eq!(config.api_key, defaults.api_key);
         assert_eq!(config.api_secret, defaults.api_secret);
@@ -265,6 +270,7 @@ mod tests {
             Some("wss://trade.example".to_string()),
             false,
             false,
+            Some(OmsType::Hedging),
             Some(0.0015),
             Some("api-key".to_string()),
             Some("api-secret".to_string()),
@@ -289,6 +295,7 @@ mod tests {
         );
         assert!(!config.use_ws_trading);
         assert!(!config.use_position_ids);
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
         assert_eq!(config.default_taker_fee, Decimal::try_from(0.0015).unwrap());
         assert_eq!(config.api_key.as_deref(), Some("api-key"));
         assert_eq!(config.api_secret.as_deref(), Some("api-secret"));
@@ -312,6 +319,7 @@ mod tests {
             None,
             true,
             true,
+            None,
             Some(f64::NAN),
             None,
             None,

@@ -98,6 +98,10 @@ fn call_python(py: Python, callback: &Py<PyAny>, py_obj: Py<PyAny>) {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DatabentoLiveClient {
     /// Creates a new `DatabentoLiveClient` instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading or parsing the publishers file fails.
     #[new]
     #[pyo3(signature = (key, dataset, publishers_filepath, use_exchange_as_venue, bars_timestamp_on_close=None, reconnect_timeout_mins=None))]
     pub fn py_new(
@@ -135,6 +139,11 @@ impl DatabentoLiveClient {
     }
 
     /// Subscribes to Databento live data for the requested instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if symbology, schema, timestamp, or precision inputs are invalid,
+    /// or if the command cannot be sent to the feed handler.
     #[pyo3(name = "subscribe")]
     #[pyo3(signature = (schema, instrument_ids, start=None, snapshot=None, price_precisions=None, stype_in=None))]
     fn py_subscribe(
@@ -165,6 +174,10 @@ impl DatabentoLiveClient {
     }
 
     /// Starts the live feed handler and returns its message receiver.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is already closed, already running, or cannot start.
     #[pyo3(name = "start")]
     fn py_start<'py>(
         &mut self,
