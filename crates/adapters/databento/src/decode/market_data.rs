@@ -175,6 +175,17 @@ pub fn decode_mbo_msg(
         return Ok((None, None));
     }
 
+    // `Action::Fill` and `Action::None` never affect the book: a fill is
+    // attribution for a resting order, and its book impact arrives as the
+    // explicit Cancel/Modify records of the same match event (CME MDP3
+    // semantics as normalized by Databento). Decoding fills as deltas
+    // corrupts the book — an iceberg hidden-part fill carries an order ID
+    // that was never Added, so `BookAction::Update` materializes a phantom
+    // order which nothing ever deletes (observed as a crossed book on GLBX).
+    if matches!(msg.action(), Ok(dbn::Action::Fill | dbn::Action::None)) {
+        return Ok((None, None));
+    }
+
     let action = parse_book_action(msg.action)?;
     let price = decode_price_or_undef(msg.price, price_precision);
     let size = decode_quantity(msg.size as u64);

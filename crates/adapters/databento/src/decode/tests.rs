@@ -226,7 +226,7 @@ mod cmbp_trade_id_property_tests {
 #[rstest]
 #[case('A' as c_char, Ok(BookAction::Add))]
 #[case('C' as c_char, Ok(BookAction::Delete))]
-#[case('F' as c_char, Ok(BookAction::Update))]
+#[case('F' as c_char, Err("Invalid `BookAction`, was 'F'"))]
 #[case('M' as c_char, Ok(BookAction::Update))]
 #[case('R' as c_char, Ok(BookAction::Clear))]
 #[case('X' as c_char, Err("Invalid `BookAction`, was 'X'"))]
@@ -590,6 +590,90 @@ fn test_decode_mbo_msg_price_undef_with_precision() {
     assert!(delta.order.price.is_undefined());
     assert_eq!(delta.order.price.precision, 0);
     assert_eq!(delta.order.price.raw, PRICE_UNDEF);
+}
+
+fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
+    let ts_recv = 1_609_160_400_000_000_000;
+    dbn::MboMsg {
+        hd: dbn::RecordHeader::new::<dbn::MboMsg>(1, 1, ts_recv as u32, 0),
+        order_id: 6_879_427_951_347, // never Added (iceberg hidden part)
+        price: 4_800_250_000_000,
+        size: 2, // filled amount, NOT remaining size
+        flags,
+        channel_id: 1,
+        action,
+        side: 'A' as c_char,
+        ts_recv,
+        ts_in_delta: 0,
+        sequence: 1_000_000,
+    }
+}
+
+#[rstest]
+#[case('F' as c_char, true)] // Fill: attribution only — book impact arrives as explicit C/M
+#[case('F' as c_char, false)]
+#[case('N' as c_char, true)] // None: status record, no book impact
+#[case('N' as c_char, false)]
+fn test_decode_mbo_msg_fill_and_none_produce_nothing(
+    #[case] action: c_char,
+    #[case] include_trades: bool,
+) {
+    // An iceberg hidden-part fill is the lethal case: its 'F' carries an
+    // order ID that was never Added, so decoding it as a delta materializes
+    // a phantom order which nothing ever deletes (crossed book on GLBX).
+    // With include_trades=true it must not become a TradeTick either — the
+    // trade is already conveyed by the 'T' record of the same event.
+    let msg = mbo_msg_with_action(action, dbn::FlagSet::empty());
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) =
+        decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), include_trades).unwrap();
+
+    assert!(delta.is_none());
+    assert!(trade.is_none());
+}
+
+#[rstest]
+#[case('F' as c_char)]
+#[case('N' as c_char)]
+fn test_decode_mbo_msg_fill_and_none_with_last_flag_still_produce_nothing(#[case] action: c_char) {
+    // A pure-fill match event (e.g. [T, F]) carries F_LAST on its final
+    // record; flags do not promote 'F'/'N' into book actions.
+    let msg = mbo_msg_with_action(action, dbn::FlagSet::empty().set_last());
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), true).unwrap();
+
+    assert!(delta.is_none());
+    assert!(trade.is_none());
+}
+
+#[rstest]
+fn test_decode_mbo_msg_trade_event_sequence_book_records_only() {
+    // A full match event as GLBX publishes it — [A, T, F, C] — must yield
+    // exactly the Add and Delete deltas plus one TradeTick: the F is
+    // attribution and produces nothing.
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let seq = [
+        ('A' as c_char, 'A' as c_char),
+        ('T' as c_char, 'B' as c_char), // aggressor buy
+        ('F' as c_char, 'A' as c_char), // fill attribution on the resting ask
+        ('C' as c_char, 'A' as c_char), // explicit removal of the eaten order
+    ];
+    let mut deltas = Vec::new();
+    let mut trades = Vec::new();
+
+    for (action, side) in seq {
+        let mut msg = mbo_msg_with_action(action, dbn::FlagSet::empty());
+        msg.side = side;
+        let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 2, Some(0.into()), true).unwrap();
+        deltas.extend(delta);
+        trades.extend(trade);
+    }
+    assert_eq!(deltas.len(), 2);
+    assert_eq!(deltas[0].action, BookAction::Add);
+    assert_eq!(deltas[1].action, BookAction::Delete);
+    assert_eq!(trades.len(), 1);
 }
 
 #[rstest]
