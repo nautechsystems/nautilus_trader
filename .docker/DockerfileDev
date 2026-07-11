@@ -1,0 +1,154 @@
+# syntax=docker/dockerfile:1.7
+
+# Full development environment with tools and source code baked in.
+#
+# Build (fresh clone, PowerShell):
+#   docker build --secret id=github_token,env=GH_TOKEN --build-arg CACHEBUST=$(Get-Date -Format yyyyMMddHHmmss) -f .docker/DockerfileDev -t nautilus-dev:full .
+#
+# Build (fresh clone, Bash):
+#   docker build --secret id=github_token,env=GH_TOKEN --build-arg CACHEBUST=$(date +%s) -f .docker/DockerfileDev -t nautilus-dev:full .
+#
+# Build (cached, no source update):
+#   docker build -f .docker/DockerfileDev -t nautilus-dev:full .
+#
+# Run:
+#   docker rm -f nautilus-dev 2>/dev/null
+#   docker run -d --name nautilus-dev --network docker_nautilus-network nautilus-dev:full sleep infinity
+#   docker exec -it nautilus-dev bash
+#
+# VS Code:
+#   Ctrl+Shift+P -> "Dev Containers: Attach to Running Container" -> nautilus-dev
+
+# Base images (pinned digests for supply-chain security)
+FROM rust:1.96.1-slim-bookworm@sha256:e18a79fc84dfcfc3ab5ba72290398a644c135c97eaa881447fddc354ee4701a3 AS rust-toolchain
+FROM ubuntu@sha256:962f6cadeae0ea6284001009daa4cc9a8c37e75d1f5191cf0eb83fe565b63dd7
+
+# Environment
+ENV DEBIAN_FRONTEND=noninteractive \
+    BUILD_MODE=release \
+    RUST_BACKTRACE=1 \
+    CC="clang" \
+    CXX="clang++"
+
+
+# System dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    capnproto \
+    clang \
+    curl \
+    gcc-aarch64-linux-gnu \
+    git \
+    libcapnp-dev \
+    libssl-dev \
+    lld \
+    make \
+    openssh-client \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+
+# Rust (copied from pinned image)
+COPY --from=rust-toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=rust-toolchain /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME="/usr/local/cargo" \
+    RUSTUP_HOME="/usr/local/rustup" \
+    PATH="/usr/local/cargo/bin:${PATH}"
+
+
+# uv + Python 3.13
+COPY --from=ghcr.io/astral-sh/uv:0.11.26@sha256:3d868e555f8f1dbc324afa005066cd11e1053fc4743b9808ca8025283e65efa5 \
+    /uv /uvx /root/.local/bin/
+ENV PATH="/root/.local/bin:${PATH}"
+RUN uv python install 3.13
+
+
+# cargo-binstall (downloads pre-built binaries instead of compiling)
+RUN cargo install cargo-binstall --locked
+
+
+# Clone source code (pass CACHEBUST to force this layer to refresh)
+ARG CACHEBUST=1
+WORKDIR /workspace/nautilus_trader
+RUN echo "CACHEBUST=${CACHEBUST}" > /tmp/nautilus-cachebust \
+    && git clone --branch develop https://github.com/allenanswerzq/nautilus_trader.git .
+
+WORKDIR /workspace/nautilus_agents
+RUN git clone https://github.com/allenanswerzq/nautilus_agents.git .
+
+
+# Rust toolchain (from project's rust-toolchain.toml, must precede tool install)
+WORKDIR /workspace/nautilus_trader
+RUN bash scripts/rust-toolchain.sh > /tmp/toolchain.txt \
+    && TOOLCHAIN=$(cat /tmp/toolchain.txt) \
+    && rustup toolchain install "$TOOLCHAIN" \
+    && rustup default "$TOOLCHAIN" \
+    && rustup component add clippy rustfmt
+
+
+# Dev tools (pre-built binaries from the codebase Makefile target).
+# GH_TOKEN is mounted as a BuildKit secret so GitHub API requests do not hit anonymous rate limits.
+RUN --mount=type=secret,id=github_token,required=true \
+    export GH_TOKEN="$(cat /run/secrets/github_token)"; \
+    export GITHUB_TOKEN="$GH_TOKEN"; \
+    make binstall-tools
+
+
+# sccache configuration
+ENV RUSTC_WRAPPER="sccache" \
+    CARGO_INCREMENTAL=0
+
+
+# Git config. HTTPS remotes use GH_TOKEN at runtime via GIT_ASKPASS.
+RUN git config --global user.name "allenanswerzq" \
+    && git config --global user.email "allenanswerzq@gmail.com" \
+    && printf '%s\n' \
+        '#!/bin/sh' \
+        'case "$1" in' \
+        '  *Username*) echo x-access-token ;;' \
+        '  *Password*) echo "$GH_TOKEN" ;;' \
+        '  *) echo ;;' \
+        'esac' \
+        > /usr/local/bin/git-askpass \
+    && chmod +x /usr/local/bin/git-askpass
+ENV GIT_ASKPASS="/usr/local/bin/git-askpass"
+
+# Keep remotes on HTTPS. Pass GH_TOKEN when running the container to enable push/pull:
+#   docker run -e GH_TOKEN=... nautilus-dev:full
+RUN cd /workspace/nautilus_trader && git remote set-url origin https://github.com/allenanswerzq/nautilus_trader.git \
+    && cd /workspace/nautilus_agents && git remote set-url origin https://github.com/allenanswerzq/nautilus_agents.git
+
+
+# Shell aliases
+RUN printf '\n\
+# Git\n\
+alias gs="git status"\n\
+alias ga="git add"\n\
+alias gaa="git add -A"\n\
+alias gc="git commit"\n\
+alias gcm="git commit -m"\n\
+alias gco="git checkout"\n\
+alias gd="git diff"\n\
+alias gdc="git diff --staged"\n\
+alias gl="git log --oneline -20"\n\
+alias gp="git push"\n\
+alias gpl="git pull"\n\
+alias gb="git branch"\n\
+alias gst="git stash"\n\
+\n\
+# Cargo\n\
+alias cb="cargo build"\n\
+alias ct="cargo nextest run"\n\
+alias cc="cargo check"\n\
+alias cr="cargo run"\n\
+alias cf="cargo fmt"\n\
+alias cl="cargo clippy"\n\
+' >> ~/.bashrc
+
+
+# Pre-fetch cargo dependencies
+WORKDIR /workspace/nautilus_trader
+RUN cargo fetch
+
+
+CMD ["/bin/bash"]

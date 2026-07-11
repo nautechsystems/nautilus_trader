@@ -6138,6 +6138,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-error"
+version = "0.61.0"
+dependencies = [
+ "anyhow",
+ "rstest",
+ "strum 0.28.0",
+]
+
+[[package]]
 name = "nautilus-event-store"
 version = "0.61.0"
 dependencies = [

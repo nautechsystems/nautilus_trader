@@ -28,6 +28,7 @@ members = [
   "crates/core",
   "crates/cryptography",
   "crates/data",
+  "crates/error",
   "crates/event_store",
   "crates/execution",
   "crates/indicators",
@@ -76,6 +77,7 @@ nautilus-common = { path = "crates/common", version = "0.61.0" }
 nautilus-core = { path = "crates/core", version = "0.61.0" }
 nautilus-cryptography = { path = "crates/cryptography", version = "0.61.0" }
 nautilus-data = { path = "crates/data", version = "0.61.0" }
+nautilus-error = { path = "crates/error", version = "0.61.0" }
 nautilus-execution = { path = "crates/execution", version = "0.61.0" }
 nautilus-indicators = { path = "crates/indicators", version = "0.61.0" }
 nautilus-infrastructure = { path = "crates/infrastructure", version = "0.61.0" }

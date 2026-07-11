@@ -487,6 +487,23 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& cargo binstall prek --version $(PREK_VERSION) --no-confirm --locked \
 	&& bash scripts/install-osv-scanner.sh
 
+.PHONY: binstall-tools
+binstall-tools: check-binstall-installed  #-- Install dev tools using pre-built binaries (fast, no version pins, latest)
+	cargo binstall --no-confirm --disable-strategies compile \
+		cargo-deny \
+		cargo-edit \
+		cargo-fuzz \
+		cargo-machete \
+		cargo-nextest \
+		cargo-llvm-cov \
+		cargo-audit \
+		cargo-vet \
+		flamegraph \
+		lychee \
+		prek \
+		sccache \
+	&& bash scripts/install-osv-scanner.sh
+
 #== Security
 
 # Run an audit step: capture stdout+stderr, only display on failure.
@@ -977,6 +994,19 @@ cargo-ci-benches:  #-- Run Rust benches for the crates included in the CI perfor
 	done
 
 #== Docker
+
+.PHONY: docker-build-dev
+docker-build-dev:  #-- Build full development Docker image (tools + source code)
+	docker build -f .docker/DockerfileDev -t nautilus-dev:full .
+
+.PHONY: docker-start-dev
+docker-start-dev:  #-- Start the development container (removes existing, starts fresh)
+	-docker rm -f nautilus-dev 2>/dev/null
+	docker run -d --name nautilus-dev --network docker_nautilus-network nautilus-dev:full sleep infinity
+	@printf "$(GREEN)Container 'nautilus-dev' started. Run: docker exec -it nautilus-dev bash$(RESET)\n"
+
+.PHONY: docker-dev
+docker-dev: docker-build-dev docker-start-dev  #-- Build dev image and start container (one-shot setup)
 
 .PHONY: docker-build
 docker-build: clean  #-- Build Docker image for NautilusTrader
