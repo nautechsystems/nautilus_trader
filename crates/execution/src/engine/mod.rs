@@ -2902,6 +2902,30 @@ impl ExecutionEngine {
                 }
             }
         }
+        // Check if this is a reduce_only order that should reduce an existing opposite-side position
+        if let Some(order) = order {
+            if order.is_reduce_only() {
+                let positions_open = cache.positions_open(
+                    None,
+                    Some(&fill.instrument_id),
+                    None,
+                    Some(&fill.account_id),
+                    None,
+                );
+                for pos in &positions_open {
+                    if pos.is_opposite_side(fill.order_side) && !pos.is_closed() {
+                        if self.config.debug {
+                            log::debug!(
+                                "Reduce-only fill assigned to opposite-side position {} for {}",
+                                pos.id,
+                                fill.client_order_id()
+                            );
+                        }
+                        return pos.id;
+                    }
+                }
+            }
+        }
 
         // Generate new position ID
         let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
@@ -3832,5 +3856,45 @@ mod tests {
             .build();
 
         Position::new(instrument, fill)
+    }
+    #[rstest]
+    fn determine_hedging_position_id_reduce_only_returns_opposite_side_position_id() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let account_id = AccountId::from("SIM-001");
+        let strategy_id = StrategyId::from("S-001");
+
+        // Create an existing SHORT position (opened by a SELL order)
+        let short_position = position_for_account(
+            &instrument,
+            account_id,
+            strategy_id,
+            PositionId::from("P-SHORT-001"),
+            OrderSide::Sell,
+            Quantity::from(1),
+        );
+
+        let mut cache = Cache::default();
+        cache
+            .add_position(&short_position, OmsType::Hedging)
+            .unwrap();
+
+        // A BUY reduce_only fill should find the SHORT position on the opposite side
+        let buy_fill_side = OrderSide::Buy;
+        let positions_open =
+            cache.positions_open(None, Some(&instrument.id()), None, Some(&account_id), None);
+
+        let matched = positions_open
+            .iter()
+            .find(|pos| pos.is_opposite_side(buy_fill_side) && !pos.is_closed());
+
+        assert!(
+            matched.is_some(),
+            "reduce_only BUY fill should find existing SHORT position"
+        );
+        assert_eq!(
+            matched.unwrap().id,
+            short_position.id,
+            "should reuse SHORT position ID instead of generating a new one"
+        );
     }
 }
