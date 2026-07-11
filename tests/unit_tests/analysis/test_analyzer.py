@@ -217,7 +217,7 @@ class TestPortfolioAnalyzer:
         assert list(stat.last_returns_input.values()) == [0.05]
 
     @pytest.mark.parametrize("cls", [MaxDrawdown, CAGR, CalmarRatio])
-    def test_returns_based_pyo3_statistics_skip_pnl_and_position_calls(self, cls):
+    def test_returns_based_pyo3_statistics_skip_pnl_and_position_calls(self, cls: MaxDrawdown | CAGR | CalmarRatio):
         # Returns-based pyo3 statistics must implement the full PortfolioStatistic
         # surface (returning None for non-applicable inputs) so registering them
         # does not raise AttributeError during backtest end.
@@ -593,6 +593,39 @@ class TestPortfolioAnalyzer:
         # Assert
         assert portfolio_returns.notna().all()
         assert portfolio_returns.loc[pd.Timestamp("2024-01-31", tz="UTC")] == pytest.approx(0.05)
+
+    def test_append_pnl_record_is_linear_not_quadratic(self):
+        # Arrange - record a large number of trades and measure time
+        import time
+
+        n_trades = 5_000
+        analyzer_small = PortfolioAnalyzer()
+        analyzer_large = PortfolioAnalyzer()
+
+        # Act - time n_trades records
+        start = time.perf_counter()
+        for i in range(n_trades):
+            analyzer_small.record_trade(PositionId(f"P-{i}"), Money(100.0, USD))
+        small_elapsed = time.perf_counter() - start
+
+        # Act - time 2*n_trades records
+        start = time.perf_counter()
+        for i in range(n_trades * 2):
+            analyzer_large.record_trade(PositionId(f"P-{i}"), Money(100.0, USD))
+        large_elapsed = time.perf_counter() - start
+
+        # Assert - doubling trade count should less than 4x the time (linear, not quadratic)
+        # O(n²) would make large_elapsed ~4x small_elapsed; O(n) keeps it ~2x
+        assert large_elapsed < small_elapsed * 4, (
+            f"O(n²) behavior detected: {n_trades} trades took {small_elapsed:.3f}s, "
+            f"{n_trades * 2} trades took {large_elapsed:.3f}s "
+            f"(ratio: {large_elapsed / small_elapsed:.1f}x)"
+        )
+
+        # Assert - verify correctness: all trades recorded
+        pnls = analyzer_small.realized_pnls(USD)
+        assert pnls is not None
+        assert len(pnls) == n_trades
 
 
 def _create_cash_account(events: list[tuple[str, float]], currency=USD) -> CashAccount:

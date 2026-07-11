@@ -48,10 +48,10 @@ class PortfolioAnalyzer:
         self._account_balances_starting: dict[Currency, Money] = {}
         self._account_balances: dict[Currency, Money] = {}
         self._positions: list[Position] = []
-        self._realized_pnls: dict[Currency, pd.Series] = {}
-        self._realized_pnl_timestamps: dict[Currency, pd.Series] = {}
-        self._recorded_realized_pnls: dict[Currency, pd.Series] = {}
-        self._recorded_realized_pnl_timestamps: dict[Currency, pd.Series] = {}
+        self._realized_pnls: dict[Currency, list[tuple[str, float]]] = {}
+        self._realized_pnl_timestamps: dict[Currency, list[int | None]] = {}
+        self._recorded_realized_pnls: dict[Currency, list[tuple[str, float]]] = {}
+        self._recorded_realized_pnl_timestamps: dict[Currency, list[int | None]] = {}
         self._position_returns: pd.Series = self._empty_returns()
         self._portfolio_returns: pd.Series = self._empty_returns()
         self._returns: pd.Series = self._empty_returns()
@@ -272,34 +272,19 @@ class PortfolioAnalyzer:
 
     def _append_pnl_record(
         self,
-        pnls: dict[Currency, pd.Series],
-        timestamps: dict[Currency, pd.Series],
+        pnls: dict[Currency, list[tuple[str, float]]],
+        timestamps: dict[Currency, list[int | None]],
         position_id: PositionId,
         realized_pnl: Money,
         ts_event: int | None,
     ) -> None:
         currency = realized_pnl.currency
-        trade_pnl = pd.Series(
-            [realized_pnl.as_double()],
-            index=[position_id.value],
-            dtype=float64,
-        )
-        existing_pnls = pnls.get(currency)
-        pnls[currency] = (
-            trade_pnl if existing_pnls is None else pd.concat([existing_pnls, trade_pnl])
-        )
+        if currency not in pnls:
+            pnls[currency] = []
+            timestamps[currency] = []
+        pnls[currency].append((position_id.value, realized_pnl.as_double()))
+        timestamps[currency].append(int(ts_event) if ts_event is not None else None)
 
-        trade_timestamp = pd.Series(
-            [int(ts_event) if ts_event is not None else None],
-            index=[position_id.value],
-            dtype=object,
-        )
-        existing_timestamps = timestamps.get(currency)
-        timestamps[currency] = (
-            trade_timestamp
-            if existing_timestamps is None
-            else pd.concat([existing_timestamps, trade_timestamp])
-        )
 
     def add_position_return(self, timestamp: datetime, value: float) -> None:
         """
@@ -365,10 +350,15 @@ class PortfolioAnalyzer:
 
                 currency = next(iter(currencies))
 
-        realized_pnls = self._realized_pnls.get(currency)
-        recorded_realized_pnls = self._recorded_realized_pnls.get(currency)
-        realized_timestamps = self._realized_pnl_timestamps.get(currency)
-        recorded_timestamps = self._recorded_realized_pnl_timestamps.get(currency)
+        realized_pnl_records = self._realized_pnls.get(currency)
+        recorded_pnl_records = self._recorded_realized_pnls.get(currency)
+        realized_ts_records = self._realized_pnl_timestamps.get(currency)
+        recorded_ts_records = self._recorded_realized_pnl_timestamps.get(currency)
+
+        realized_pnls = self._materialize_pnl_series(realized_pnl_records)
+        recorded_realized_pnls = self._materialize_pnl_series(recorded_pnl_records)
+        realized_timestamps = self._materialize_ts_series(realized_pnl_records, realized_ts_records)
+        recorded_timestamps = self._materialize_ts_series(recorded_pnl_records, recorded_ts_records)
 
         if realized_pnls is None:
             return recorded_realized_pnls
@@ -391,6 +381,28 @@ class PortfolioAnalyzer:
 
         output = realized_pnls.loc[unrecorded]
         return pd.concat([output, recorded_realized_pnls])
+
+    @staticmethod
+    def _materialize_pnl_series(
+        records: list[tuple[str, float]] | None,
+    ) -> pd.Series | None:
+        if not records:
+            return None
+        index, values = zip(*records)
+        return pd.Series(list(values), index=list(index), dtype=float64)
+
+    @staticmethod
+    def _materialize_ts_series(
+        records: list[tuple[str, float]] | None,
+        timestamps: list[int | None] | None,
+    ) -> pd.Series | None:
+        if not records or not timestamps:
+            return None
+        index = [pos_id for pos_id, _ in records]
+        return pd.Series(timestamps, index=index, dtype=object)
+
+
+
 
     @classmethod
     def _pnl_record_keys(
