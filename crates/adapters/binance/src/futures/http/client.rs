@@ -2290,6 +2290,7 @@ impl BinanceFuturesHttpClient {
             let Some(client_order_id) = client_order_id else {
                 return Ok(None);
             };
+
             match self.query_algo_order(client_order_id).await {
                 Ok(order) => Some(order),
                 Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => None,
@@ -2314,6 +2315,7 @@ impl BinanceFuturesHttpClient {
                 orig_client_order_id: None,
                 recv_window: None,
             };
+
             match self.inner.query_order(&params).await {
                 Ok(actual) => Some(actual),
                 Err(
