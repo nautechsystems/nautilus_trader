@@ -1523,8 +1523,8 @@ impl BinanceFuturesAlgoOrder {
     /// Converts this algo order to a report enriched with matching-engine execution details.
     ///
     /// The algo order remains the source of client identity and conditional-order metadata.
-    /// The matching-engine order is authoritative for status, fills, average price, venue order
-    /// identity, and the last update time.
+    /// The matching-engine order is authoritative for status, quantity, fills, average price,
+    /// venue order identity, and the last update time.
     ///
     /// # Errors
     ///
@@ -1587,6 +1587,7 @@ impl BinanceFuturesAlgoOrder {
         )?;
         report.venue_order_id = actual_report.venue_order_id;
         report.order_status = actual_report.order_status;
+        report.quantity = actual_report.quantity;
         report.filled_qty = actual_report.filled_qty;
         report.avg_px = actual_report.avg_px.or(report.avg_px);
         report.ts_last = actual_report.ts_last;
@@ -2287,10 +2288,11 @@ mod tests {
     }
 
     #[rstest]
-    fn test_algo_order_report_with_actual_preserves_algo_metadata_and_execution_state() {
+    fn test_close_all_algo_report_with_actual_uses_matching_engine_quantity() {
         let mut algo = algo_order_with_price(None);
         algo.order_type = BinanceFuturesOrderType::StopMarket;
-        algo.quantity = Some("0.002".to_string());
+        algo.quantity = None;
+        algo.close_position = Some(true);
         algo.algo_status = Some(BinanceAlgoStatus::Finished);
         algo.actual_order_id = Some("987654321".to_string());
         algo.executed_qty = Some("0.002".to_string());

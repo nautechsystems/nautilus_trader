@@ -1576,6 +1576,33 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let ts_init = self.clock.get_time_ns();
         let algo_lookup = self.resolve_algo_lookup(cmd.client_order_id, cmd.params.as_ref());
 
+        if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+            let algo_order = self
+                .http_client
+                .query_algo_order_with_history(
+                    instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                )
+                .await?;
+
+            return match algo_order {
+                Some(result) => Ok(Some(create_algo_order_status_report(
+                    &result,
+                    self.core.account_id,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    self.config.treat_expired_as_canceled,
+                    ts_init,
+                )?)),
+                None => {
+                    log::debug!("Algo order query returned no matching order");
+                    Ok(None)
+                }
+            };
+        }
+
         match self.http_client.query_order(&params).await {
             Ok(order) => {
                 let report = order.to_order_status_report(
@@ -1951,6 +1978,34 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
 
         self.spawn_task("query_order", async move {
+            if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                match http_client
+                    .query_algo_order_with_history(
+                        command.instrument_id,
+                        Some(command.client_order_id),
+                        command.venue_order_id,
+                    )
+                    .await
+                {
+                    Ok(Some(result)) => {
+                        let report = create_algo_order_status_report(
+                            &result,
+                            account_id,
+                            command.instrument_id,
+                            price_precision,
+                            size_precision,
+                            treat_expired_as_canceled,
+                            clock.get_time_ns(),
+                        )?;
+                        emitter.send_order_status_report(report);
+                    }
+                    Ok(None) => log::warn!("Algo order query returned no matching order"),
+                    Err(e) => log::warn!("Failed to query algo order status: {e}"),
+                }
+
+                return Ok(());
+            }
+
             let mut builder = BinanceOrderQueryParamsBuilder::default();
             builder.symbol(symbol.clone());
 

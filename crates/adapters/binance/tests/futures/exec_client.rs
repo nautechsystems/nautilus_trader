@@ -2296,15 +2296,9 @@ async fn test_query_order_uses_binance_symbol_for_futures_symbol() {
 
 #[rstest]
 #[tokio::test]
-async fn test_historical_algo_report_falls_back_by_venue_order_id() {
+async fn test_historical_algo_report_bypasses_regular_order_id_collision() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
-        CommandResponses {
-            submit: CommandResponse::VenueReject {
-                code: -2013,
-                msg: "Order does not exist.",
-            },
-            ..Default::default()
-        },
+        CommandResponses::default(),
         ReportFixtureMode::Populated,
     )
     .await;
@@ -2362,6 +2356,13 @@ async fn test_historical_algo_report_falls_back_by_venue_order_id() {
         Some("1")
     );
     assert!(!history_query.query.contains_key("page"));
+    let queries = captured_queries.lock().unwrap();
+    assert!(queries.iter().all(|query| {
+        query.path != "order" || query.query.get("orderId").map(String::as_str) != Some("123456789")
+    }));
+    assert!(queries.iter().any(|query| {
+        query.path == "order" && query.query.get("orderId").map(String::as_str) == Some("22542179")
+    }));
 }
 
 #[rstest]
@@ -2792,15 +2793,9 @@ async fn test_cached_algo_actual_order_id_uses_client_id_fallback() {
 
 #[rstest]
 #[tokio::test]
-async fn test_query_order_falls_back_by_algo_venue_order_id() {
+async fn test_query_order_bypasses_regular_order_id_collision() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
-        CommandResponses {
-            submit: CommandResponse::VenueReject {
-                code: -2013,
-                msg: "Order does not exist.",
-            },
-            ..Default::default()
-        },
+        CommandResponses::default(),
         ReportFixtureMode::Populated,
     )
     .await;
@@ -2864,6 +2859,13 @@ async fn test_query_order_falls_back_by_algo_venue_order_id() {
         history_query.query.get("limit").map(String::as_str),
         Some("1")
     );
+    let queries = captured_queries.lock().unwrap();
+    assert!(queries.iter().all(|query| {
+        query.path != "order" || query.query.get("orderId").map(String::as_str) != Some("123456789")
+    }));
+    assert!(queries.iter().any(|query| {
+        query.path == "order" && query.query.get("orderId").map(String::as_str) == Some("22542179")
+    }));
 }
 
 #[rstest]
