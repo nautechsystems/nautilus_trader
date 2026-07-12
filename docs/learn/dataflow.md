@@ -6,7 +6,12 @@ Visual diagrams of message, event, and command flow through the system.
 
 ## System component overview
 
-> **Legend:** Solid blue = pub/sub via MessageBus, Solid red = direct command/endpoint, Dashed green = execution events back, Dotted gray = cache access
+> **Legend:**
+> - `pub:` / `sub:` = Pub/sub via MessageBus topics (blue)
+> - `send:` / `recv:` = Point-to-point command via MessageBus endpoint (red)
+> - `req:` / `resp:` = Request/response via MessageBus correlation ID (purple)
+> - `chan:` = Direct tokio channel, bypasses MessageBus (green)
+> - Dotted gray = cache read/write
 
 ```mermaid
 graph LR
@@ -24,7 +29,14 @@ graph LR
         ME[MatchingEngine - backtest only]
     end
 
+    CLK((LiveClock))
     MB((MessageBus))
+
+    subgraph Timers
+        T1[/"stop_check (100ms)"/]
+        T2[/"maintenance (100ms)"/]
+        T3[/"shutdown_deadline"/]
+    end
 
     subgraph Users
         S[Strategy]
@@ -34,8 +46,21 @@ graph LR
 
     CA[(Cache)]
 
-    %% ====== PUB/SUB via MessageBus (blue, links 0-12) ======
-    DC -->|"DataEvent channel"| DE
+    %% ====== TIME EVENTS via channel (green, links 0-1) ======
+    CLK -.->|"chan: TimeEventHandler"| S
+    CLK -.->|"chan: TimeEventHandler"| OE
+
+    %% ====== SYSTEM TIMERS (green, links 2-8) ======
+    T1 -.->|"check stop signal"| EE
+    T2 -.->|"reconcile inflight/open"| EE
+    T2 -.->|"purge closed orders"| EE
+    T2 -.->|"purge closed positions"| EE
+    T2 -.->|"audit own books"| CA
+    T2 -.->|"prune recent fills"| EE
+    T3 -.->|"break select! loop"| EE
+
+    %% ====== PUB/SUB via MessageBus (blue, links 1-14) ======
+    DC -->|"chan: DataEvent"| DE
     DE -->|"pub: data.quotes/trades/bars"| MB
     DE -->|"pub: data.instrument.*"| MB
     MB -->|"sub: data.quotes/trades/bars"| S
@@ -50,72 +75,99 @@ graph LR
     MB -->|"sub: events.order.SID"| EA
     MB -->|"sub: events.order.SID"| OE
 
-    %% ====== DIRECT COMMANDS (red, links 14-22) ======
-    S ==>|"SubmitOrder -> RE.queue_execute"| RE
-    S ==>|"CancelOrder -> EE.queue_execute"| EE
-    S ==>|"emulated -> OE.execute"| OE
-    S ==>|"algo -> ALGO.execute"| EA
-    S ==>|"DataCmd -> DE.queue_execute"| DE
-    RE ==>|"approved -> EE.queue_execute"| EE
-    RE ==>|"OrderDenied -> EE.process"| EE
-    OE ==>|"released -> RE.queue_execute"| RE
-    EA ==>|"child -> RE.queue_execute"| RE
+    %% ====== POINT-TO-POINT COMMANDS (red, links 14-22) ======
+    %% Arrows show logical direction; internally routed via msgbus endpoints
+    S ==>|"send: SubmitOrder"| RE
+    S ==>|"send: CancelOrder"| EE
+    S ==>|"send: emulated order"| OE
+    S ==>|"send: algo order"| EA
+    S ==>|"send: Subscribe/Unsub"| DE
+    RE ==>|"send: approved"| EE
+    RE ==>|"send: OrderDenied"| EE
+    OE ==>|"send: released"| RE
+    EA ==>|"send: child order"| RE
 
-    %% ====== EXECUTION + EVENTS BACK (green, links 23-28) ======
-    EE -.->|"client.submit/cancel/modify"| EC
-    EE -.->|"client.submit/cancel/modify"| ME
-    EC -.->|"ExecutionEvent channel"| EE
-    ME -.->|"OrderEventAny"| EE
-    EE -.->|"OrderFilled -> PE.update_order"| PE
-    EC -.->|"AccountState -> PE.update_account"| PE
+    %% ====== REQUEST/RESPONSE (purple, links 23-27) ======
+    %% Arrows show logical direction; internally uses msgbus correlation_id
+    S -.->|"req: RequestBars"| DE
+    S -.->|"req: RequestInstruments"| DE
+    DE -.->|"req: forward to client"| DC
+    DC -.->|"resp: BarsResponse"| DE
+    DE -.->|"resp: correlation_id callback"| S
 
-    %% ====== CACHE (gray, links 29-32) ======
+    %% ====== EXECUTION via channels (green, links 28-33) ======
+    EE -.->|"chan: submit/cancel/modify"| EC
+    EE -.->|"chan: submit/cancel/modify"| ME
+    EC -.->|"chan: ExecutionEvent"| EE
+    ME -.->|"chan: OrderEventAny"| EE
+    EE -.->|"send: OrderFilled"| PE
+    EC -.->|"chan: AccountState"| PE
+
+    %% ====== CACHE (gray, links 34-37) ======
     EE -.-> CA
     DE -.-> CA
     PE -.-> CA
     RE -.-> CA
 
     %% ====== STYLES ======
-    %% Blue: pub/sub via MessageBus (links 0-13)
-    linkStyle 0 stroke:#2196F3,stroke-width:2px
-    linkStyle 1 stroke:#2196F3,stroke-width:2px
-    linkStyle 2 stroke:#2196F3,stroke-width:2px
-    linkStyle 3 stroke:#2196F3,stroke-width:2px
-    linkStyle 4 stroke:#2196F3,stroke-width:2px
-    linkStyle 5 stroke:#2196F3,stroke-width:2px
-    linkStyle 6 stroke:#2196F3,stroke-width:2px
-    linkStyle 7 stroke:#2196F3,stroke-width:2px
-    linkStyle 8 stroke:#2196F3,stroke-width:2px
-    linkStyle 9 stroke:#2196F3,stroke-width:2px
+    %% Green: timers + channels (links 0-9)
+    linkStyle 0 stroke:#4CAF50,stroke-width:2px
+    linkStyle 1 stroke:#4CAF50,stroke-width:2px
+    linkStyle 2 stroke:#4CAF50,stroke-width:1px
+    linkStyle 3 stroke:#4CAF50,stroke-width:1px
+    linkStyle 4 stroke:#4CAF50,stroke-width:1px
+    linkStyle 5 stroke:#4CAF50,stroke-width:1px
+    linkStyle 6 stroke:#4CAF50,stroke-width:1px
+    linkStyle 7 stroke:#4CAF50,stroke-width:1px
+    linkStyle 8 stroke:#4CAF50,stroke-width:1px
+    %% Green: DC channel (link 9)
+    linkStyle 9 stroke:#4CAF50,stroke-width:2px
+    %% Blue: pub/sub (links 10-22)
     linkStyle 10 stroke:#2196F3,stroke-width:2px
     linkStyle 11 stroke:#2196F3,stroke-width:2px
     linkStyle 12 stroke:#2196F3,stroke-width:2px
     linkStyle 13 stroke:#2196F3,stroke-width:2px
+    linkStyle 14 stroke:#2196F3,stroke-width:2px
+    linkStyle 15 stroke:#2196F3,stroke-width:2px
+    linkStyle 16 stroke:#2196F3,stroke-width:2px
+    linkStyle 17 stroke:#2196F3,stroke-width:2px
+    linkStyle 18 stroke:#2196F3,stroke-width:2px
+    linkStyle 19 stroke:#2196F3,stroke-width:2px
+    linkStyle 20 stroke:#2196F3,stroke-width:2px
+    linkStyle 21 stroke:#2196F3,stroke-width:2px
+    linkStyle 22 stroke:#2196F3,stroke-width:2px
 
-    %% Red: direct commands (links 14-22)
-    linkStyle 14 stroke:#F44336,stroke-width:2px
-    linkStyle 15 stroke:#F44336,stroke-width:2px
-    linkStyle 16 stroke:#F44336,stroke-width:2px
-    linkStyle 17 stroke:#F44336,stroke-width:2px
-    linkStyle 18 stroke:#F44336,stroke-width:2px
-    linkStyle 19 stroke:#F44336,stroke-width:2px
-    linkStyle 20 stroke:#F44336,stroke-width:2px
-    linkStyle 21 stroke:#F44336,stroke-width:2px
-    linkStyle 22 stroke:#F44336,stroke-width:2px
+    %% Red: point-to-point commands (links 23-31)
+    linkStyle 23 stroke:#F44336,stroke-width:2px
+    linkStyle 24 stroke:#F44336,stroke-width:2px
+    linkStyle 25 stroke:#F44336,stroke-width:2px
+    linkStyle 26 stroke:#F44336,stroke-width:2px
+    linkStyle 27 stroke:#F44336,stroke-width:2px
+    linkStyle 28 stroke:#F44336,stroke-width:2px
+    linkStyle 29 stroke:#F44336,stroke-width:2px
+    linkStyle 30 stroke:#F44336,stroke-width:2px
+    linkStyle 31 stroke:#F44336,stroke-width:2px
 
-    %% Green: execution + events back (links 23-28)
-    linkStyle 23 stroke:#4CAF50,stroke-width:2px
-    linkStyle 24 stroke:#4CAF50,stroke-width:2px
-    linkStyle 25 stroke:#4CAF50,stroke-width:2px
-    linkStyle 26 stroke:#4CAF50,stroke-width:2px
-    linkStyle 27 stroke:#4CAF50,stroke-width:2px
-    linkStyle 28 stroke:#4CAF50,stroke-width:2px
+    %% Purple: request/response (links 32-36)
+    linkStyle 32 stroke:#9C27B0,stroke-width:2px
+    linkStyle 33 stroke:#9C27B0,stroke-width:2px
+    linkStyle 34 stroke:#9C27B0,stroke-width:2px
+    linkStyle 35 stroke:#9C27B0,stroke-width:2px
+    linkStyle 36 stroke:#9C27B0,stroke-width:2px
 
-    %% Gray: cache access (links 29-32)
-    linkStyle 29 stroke:#9E9E9E,stroke-width:1px
-    linkStyle 30 stroke:#9E9E9E,stroke-width:1px
-    linkStyle 31 stroke:#9E9E9E,stroke-width:1px
-    linkStyle 32 stroke:#9E9E9E,stroke-width:1px
+    %% Green: execution channels (links 37-42)
+    linkStyle 37 stroke:#4CAF50,stroke-width:2px
+    linkStyle 38 stroke:#4CAF50,stroke-width:2px
+    linkStyle 39 stroke:#4CAF50,stroke-width:2px
+    linkStyle 40 stroke:#4CAF50,stroke-width:2px
+    linkStyle 41 stroke:#4CAF50,stroke-width:2px
+    linkStyle 42 stroke:#4CAF50,stroke-width:2px
+
+    %% Gray: cache access (links 43-46)
+    linkStyle 43 stroke:#9E9E9E,stroke-width:1px
+    linkStyle 44 stroke:#9E9E9E,stroke-width:1px
+    linkStyle 45 stroke:#9E9E9E,stroke-width:1px
+    linkStyle 46 stroke:#9E9E9E,stroke-width:1px
 ```
 
 ---
@@ -320,7 +372,70 @@ sequenceDiagram
 
 ---
 
-## Data flow
+## Data request/response flow
+
+> Strategies can **request** historical or snapshot data from the DataEngine.
+> The request is routed to the appropriate DataClient, which fetches from the
+> venue (REST/cache) and returns a typed response through the DataEngine back
+> to the requester.
+
+```mermaid
+sequenceDiagram
+    participant S as Strategy
+    participant MB as MessageBus
+    participant DE as DataEngine
+    participant DC as DataClient
+    participant V as Venue (REST)
+
+    Note over S: request_bars(<br/>  bar_type, start, end)
+    S->>MB: register_response_handler(<br/>  request_id, callback)
+    S->>DE: RequestBars { request_id }<br/>→ data_cmd channel
+
+    DE->>DE: Route to client<br/>by venue
+
+    DE->>DC: request_bars(RequestBars)
+    DC->>V: HTTP GET /candles
+
+    V-->>DC: JSON candle data
+    DC->>DC: Parse into Vec<Bar>
+
+    DC->>DE: BarsResponse { correlation_id }<br/>→ data_evt channel
+    DE->>DE: Cache bars
+    DE->>MB: send_response(&correlation_id, resp)
+    MB->>MB: lookup correlation_index[id]
+    MB->>S: handler.handle(BarsResponse)<br/>→ on_historical_data()
+
+    Note over S: Process historical bars
+```
+
+### Available request/response pairs
+
+| Request | Response | What it fetches |
+|---------|----------|-----------------|
+| `RequestInstrument` | `InstrumentResponse` | Single instrument definition |
+| `RequestInstruments` | `InstrumentsResponse` | All instruments for a venue |
+| `RequestBookSnapshot` | `BookResponse` | Current order book snapshot |
+| `RequestBookDepth` | `BookDepthResponse` | Book depth at N levels |
+| `RequestBookDeltas` | `BookDeltasResponse` | Historical book deltas |
+| `RequestQuotes` | `QuotesResponse` | Historical quote ticks |
+| `RequestTrades` | `TradesResponse` | Historical trade ticks |
+| `RequestBars` | `BarsResponse` | Historical OHLCV bars |
+| `RequestFundingRates` | `FundingRatesResponse` | Funding rate history |
+| `RequestForwardPrices` | `ForwardPricesResponse` | Forward/mark prices |
+| `RequestCustomData` | `CustomDataResponse` | Adapter-specific data |
+
+### Key differences from pub/sub
+
+- **Pub/sub** (subscribe): real-time streaming, DataEngine pushes to all subscribers.
+- **Request/response**: one-shot fetch, DataEngine routes the request to one client,
+  response is delivered only to the requester via a correlation ID callback.
+
+Both flows go through the same `data_evt` / `data_cmd` channels and the DataEngine,
+but request/response is point-to-point while pub/sub is broadcast.
+
+---
+
+## Data flow (streaming pub/sub)
 
 ```mermaid
 graph LR
