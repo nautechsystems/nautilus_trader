@@ -75,27 +75,28 @@ graph LR
     MB -->|"sub: events.order.SID"| EA
     MB -->|"sub: events.order.SID"| OE
 
-    %% ====== POINT-TO-POINT COMMANDS (red, links 14-22) ======
+    %% ====== POINT-TO-POINT COMMANDS (red, links 23-32) ======
     %% Arrows show logical direction; internally routed via msgbus endpoints
     S ==>|"send: SubmitOrder"| RE
     S ==>|"send: CancelOrder"| EE
     S ==>|"send: emulated order"| OE
     S ==>|"send: algo order"| EA
     S ==>|"send: Subscribe/Unsub"| DE
+    DE ==>|"call: execute_subscribe/unsubscribe"| DC
     RE ==>|"send: approved"| EE
     RE ==>|"send: OrderDenied"| EE
     OE ==>|"send: released"| RE
     EA ==>|"send: child order"| RE
 
-    %% ====== REQUEST/RESPONSE (purple, links 23-27) ======
+    %% ====== REQUEST/RESPONSE (purple, links 33-37) ======
     %% Arrows show logical direction; internally uses msgbus correlation_id
     S -.->|"req: RequestBars"| DE
     S -.->|"req: RequestInstruments"| DE
-    DE -.->|"req: forward to client"| DC
+    DE -.->|"call: execute_request"| DC
     DC -.->|"resp: BarsResponse"| DE
     DE -.->|"resp: correlation_id callback"| S
 
-    %% ====== EXECUTION via channels (green, links 28-33) ======
+    %% ====== EXECUTION via channels (green, links 38-43) ======
     EE -.->|"chan: submit/cancel/modify"| EC
     EE -.->|"chan: submit/cancel/modify"| ME
     EC -.->|"chan: ExecutionEvent"| EE
@@ -103,7 +104,7 @@ graph LR
     EE -.->|"send: OrderFilled"| PE
     EC -.->|"chan: AccountState"| PE
 
-    %% ====== CACHE (gray, links 34-37) ======
+    %% ====== CACHE (gray, links 44-47) ======
     EE -.-> CA
     DE -.-> CA
     PE -.-> CA
@@ -137,7 +138,7 @@ graph LR
     linkStyle 21 stroke:#2196F3,stroke-width:2px
     linkStyle 22 stroke:#2196F3,stroke-width:2px
 
-    %% Red: point-to-point commands (links 23-31)
+    %% Red: point-to-point commands (links 23-32)
     linkStyle 23 stroke:#F44336,stroke-width:2px
     linkStyle 24 stroke:#F44336,stroke-width:2px
     linkStyle 25 stroke:#F44336,stroke-width:2px
@@ -147,27 +148,28 @@ graph LR
     linkStyle 29 stroke:#F44336,stroke-width:2px
     linkStyle 30 stroke:#F44336,stroke-width:2px
     linkStyle 31 stroke:#F44336,stroke-width:2px
+    linkStyle 32 stroke:#F44336,stroke-width:2px
 
-    %% Purple: request/response (links 32-36)
-    linkStyle 32 stroke:#9C27B0,stroke-width:2px
+    %% Purple: request/response (links 33-37)
     linkStyle 33 stroke:#9C27B0,stroke-width:2px
     linkStyle 34 stroke:#9C27B0,stroke-width:2px
     linkStyle 35 stroke:#9C27B0,stroke-width:2px
     linkStyle 36 stroke:#9C27B0,stroke-width:2px
+    linkStyle 37 stroke:#9C27B0,stroke-width:2px
 
-    %% Green: execution channels (links 37-42)
-    linkStyle 37 stroke:#4CAF50,stroke-width:2px
+    %% Green: execution channels (links 38-43)
     linkStyle 38 stroke:#4CAF50,stroke-width:2px
     linkStyle 39 stroke:#4CAF50,stroke-width:2px
     linkStyle 40 stroke:#4CAF50,stroke-width:2px
     linkStyle 41 stroke:#4CAF50,stroke-width:2px
     linkStyle 42 stroke:#4CAF50,stroke-width:2px
+    linkStyle 43 stroke:#4CAF50,stroke-width:2px
 
-    %% Gray: cache access (links 43-46)
-    linkStyle 43 stroke:#9E9E9E,stroke-width:1px
+    %% Gray: cache access (links 44-47)
     linkStyle 44 stroke:#9E9E9E,stroke-width:1px
     linkStyle 45 stroke:#9E9E9E,stroke-width:1px
     linkStyle 46 stroke:#9E9E9E,stroke-width:1px
+    linkStyle 47 stroke:#9E9E9E,stroke-width:1px
 ```
 
 ---
@@ -393,7 +395,7 @@ sequenceDiagram
 
     DE->>DE: Route to client<br/>by venue
 
-    DE->>DC: request_bars(RequestBars)
+    DE->>DC: call execute_request(RequestBars)
     DC->>V: HTTP GET /candles
 
     V-->>DC: JSON candle data

@@ -62,6 +62,8 @@ impl Default for TradeTick {
             trade_id: TradeId::new("123456789"),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
+            buyer: None,
+            seller: None,
         }
     }
 }
@@ -311,6 +313,8 @@ pub fn stub_trade_ethusdt_buyer() -> TradeTick {
         trade_id: TradeId::new("123456789"),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::from(1),
+        buyer: None,
+        seller: None,
     }
 }
 

@@ -477,8 +477,12 @@ update-uv:  #-- Install or upgrade uv to the version pinned in pyproject.toml
 		curl -LsSf https://astral.sh/uv/$(UV_VERSION)/install.sh | sh; \
 	fi
 
+.PHONY: install-rust-components
+install-rust-components:  #-- Install required Rust toolchain components
+	rustup component add clippy rustfmt
+
 .PHONY: install-tools
-install-tools: check-binstall-installed update-uv  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
+install-tools: check-binstall-installed update-uv install-rust-components  #-- Install required development tools (pinned versions from Cargo.toml, tools.toml, pyproject.toml)
 	cargo install cargo-deny --version $(CARGO_DENY_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \
@@ -493,7 +497,7 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& bash scripts/install-osv-scanner.sh
 
 .PHONY: binstall-tools
-binstall-tools: check-binstall-installed  #-- Install dev tools using pinned pre-built binaries
+binstall-tools: check-binstall-installed install-rust-components  #-- Install dev tools using pinned pre-built binaries
 	cargo binstall --no-confirm --disable-strategies compile \
 		cargo-deny@$(CARGO_DENY_VERSION) \
 		cargo-edit@$(CARGO_EDIT_VERSION) \

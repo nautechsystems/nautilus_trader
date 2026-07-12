@@ -504,6 +504,9 @@ cdef extern from "../includes/model.h":
     cdef struct BookLevel:
         pass
 
+    cdef struct Option_Ustr:
+        pass
+
     # Provides a high-performance, versatile order book.
     #
     # Maintains buy (bid) and sell (ask) orders in price-time priority, supporting multiple
@@ -707,6 +710,10 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         # UNIX timestamp (nanoseconds) when the instance was created.
         uint64_t ts_init;
+        # The buyer participant address or ID.
+        Option_Ustr buyer;
+        # The seller participant address or ID.
+        Option_Ustr seller;
 
     # Represents a bar aggregation specification including a step, aggregation
     # method/rule and price type.

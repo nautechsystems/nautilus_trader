@@ -216,6 +216,8 @@ impl DecodeFromRecordBatch for TradeTick {
                     trade_id,
                     ts_event,
                     ts_init,
+                    buyer: None,
+                    seller: None,
                 })
             })
             .collect();

@@ -942,6 +942,8 @@ typedef enum TriggerType {
  */
 typedef struct BookLevel BookLevel;
 
+typedef struct Option_Ustr Option_Ustr;
+
 /**
  * Provides a high-performance, versatile order book.
  *
@@ -1268,6 +1270,14 @@ typedef struct TradeTick_t {
      * UNIX timestamp (nanoseconds) when the instance was created.
      */
     uint64_t ts_init;
+    /**
+     * The buyer participant address or ID.
+     */
+    struct Option_Ustr buyer;
+    /**
+     * The seller participant address or ID.
+     */
+    struct Option_Ustr seller;
 } TradeTick_t;
 
 /**

@@ -43,6 +43,7 @@ members = [
   "crates/pyo3",
   "crates/risk",
   "crates/serialization",
+  "crates/strategies",
   "crates/system",
   "crates/testkit",
   "crates/trading",

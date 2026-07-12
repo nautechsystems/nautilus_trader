@@ -79,7 +79,7 @@ pub fn parse_ws_trade_tick(
         .context("invalid trade identifier in Hyperliquid trade message")?;
     let ts_event = millis_to_nanos(trade.time)?;
 
-    TradeTick::new_checked(
+    let tick = TradeTick::new_checked(
         instrument.id(),
         price,
         size,
@@ -88,7 +88,10 @@ pub fn parse_ws_trade_tick(
         ts_event,
         ts_init,
     )
-    .context("failed to construct TradeTick from Hyperliquid trade message")
+    .context("failed to construct TradeTick from Hyperliquid trade message")?;
+
+    // TODO: Add buyer and seller directly to the `new_checked` API.
+    Ok(tick.with_participants(ustr::ustr(&trade.users[0]), ustr::ustr(&trade.users[1])))
 }
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].
@@ -533,7 +536,7 @@ mod tests {
         },
         websocket::messages::{
             FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
-            WsBookData, WsLevelData,
+            WsBookData, WsLevelData, WsTradeData,
         },
     };
 
@@ -568,6 +571,26 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         ))
+    }
+
+    #[rstest]
+    fn test_parse_ws_trade_tick_preserves_participants() {
+        let instrument = create_test_instrument();
+        let trade = WsTradeData {
+            coin: Ustr::from("BTC"),
+            side: HyperliquidSide::Buy,
+            px: dec!(50000.00),
+            sz: dec!(0.500),
+            hash: "0xabc123".to_string(),
+            time: 1_704_470_400_000,
+            tid: 12_345,
+            users: ["0xbuyer".to_string(), "0xseller".to_string()],
+        };
+
+        let tick = parse_ws_trade_tick(&trade, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(tick.buyer, Some(Ustr::from("0xbuyer")));
+        assert_eq!(tick.seller, Some(Ustr::from("0xseller")));
     }
 
     #[rstest]

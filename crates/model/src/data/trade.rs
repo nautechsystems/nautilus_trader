@@ -21,6 +21,7 @@ use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{UnixNanos, correctness::FAILED, serialization::Serializable};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::HasTsInit;
 use crate::{
@@ -56,6 +57,16 @@ pub struct TradeTick {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
+    /// The buyer participant address or ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[builder(default = "None")]
+    pub buyer: Option<Ustr>,
+    /// The seller participant address or ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    #[builder(default = "None")]
+    pub seller: Option<Ustr>,
 }
 
 impl TradeTick {
@@ -87,6 +98,8 @@ impl TradeTick {
             trade_id,
             ts_event,
             ts_init,
+            buyer: None,
+            seller: None,
         })
     }
 
@@ -115,6 +128,14 @@ impl TradeTick {
             ts_init,
         )
         .expect(FAILED)
+    }
+
+    /// Sets the buyer and seller participant addresses/IDs.
+    #[must_use]
+    pub fn with_participants(mut self, buyer: Ustr, seller: Ustr) -> Self {
+        self.buyer = Some(buyer);
+        self.seller = Some(seller);
+        self
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
