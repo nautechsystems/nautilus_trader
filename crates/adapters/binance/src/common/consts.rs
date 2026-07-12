@@ -158,6 +158,25 @@ pub const BINANCE_DAPI_PATH: &str = "/dapi/v1";
 /// Binance European Options API version path.
 pub const BINANCE_EAPI_PATH: &str = "/eapi/v1";
 
+/// Binance Margin SAPI base URL (live exchange).
+///
+/// Cross-margin and isolated-margin account management endpoints use the
+/// SAPI gateway on the same host as Spot but under the `/sapi/v1` path prefix.
+/// <https://developers.binance.com/docs/margin_trading/Introduction>
+
+
+pub const BINANCE_MARGIN_SAPI_HTTP_URL: &str = "https://api.binance.com";
+
+
+/// Binance Margin SAPI API version path.
+///
+/// All margin account management, borrowing, repayment, and transfer endpoints
+
+/// are prefixed with this path (e.g. `/sapi/v1/margin/account`).
+
+pub const BINANCE_SAPI_PATH: &str = "/sapi/v1";
+
+
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
 pub struct BinanceRateLimitQuota {
