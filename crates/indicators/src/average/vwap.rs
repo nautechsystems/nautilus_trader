@@ -361,7 +361,7 @@ mod tests {
         vwap.update_raw(-10.0, 5.0, 0.0);
         assert!(vwap.value < 0.0);
     }
-    /// Regression test for https://github.com/nautechsystems/nautilus_trader/issues/4428
+    /// Regression test for <https://github.com/nautechsystems/nautilus_trader/issues/4428>
     ///
     /// Before the fix, `update_raw` compared a nanosecond `ts_init` value against
     /// `SECONDS_PER_DAY = 86_400.0`, causing a spurious day-rollover every ~86 µs.
