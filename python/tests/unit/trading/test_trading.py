@@ -63,6 +63,8 @@ from nautilus_trader.model import OrderEmulated
 from nautilus_trader.model import OrderExpired
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderInitialized
+from nautilus_trader.model import OrderList
+from nautilus_trader.model import OrderListId
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -99,6 +101,7 @@ from nautilus_trader.trading import fx_prev_end
 from nautilus_trader.trading import fx_prev_start
 from tests.providers import TestInstrumentProvider
 from tests.unit.common.actor import OrderFactoryProbeStrategy
+from tests.unit.common.actor import OrderListCacheProbeStrategy
 from tests.unit.common.actor import PortfolioHedgedProbeStrategy
 from tests.unit.common.actor import PortfolioProbeStrategy
 from tests.unit.common.actor import TestStrategy
@@ -285,6 +288,60 @@ def test_strategy_order_factory_returns_registered_factory():
         assert OrderFactoryProbeStrategy.observed_next_client_order_id != order.client_order_id
         assert OrderFactoryProbeStrategy.observed_client_order_id_count == 3
         assert OrderFactoryProbeStrategy.observed_order_list_id_count == 0
+    finally:
+        engine.dispose()
+
+
+def test_strategy_can_recover_order_list_id_from_cache():
+    usd = Currency.from_str("USD")
+    venue = Venue("SIM")
+    instrument = TestInstrumentProvider.audusd_sim()
+    OrderListCacheProbeStrategy.reset()
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    engine.add_venue(
+        venue=venue,
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        starting_balances=[Money(1_000_000.0, usd)],
+        base_currency=usd,
+    )
+    engine.add_instrument(instrument)
+
+    try:
+        engine.add_strategy_from_config(
+            ImportableStrategyConfig(
+                strategy_path="tests.unit.common.actor:OrderListCacheProbeStrategy",
+                config_path="nautilus_trader.trading:StrategyConfig",
+                config={},
+            ),
+        )
+        engine.run()
+
+        order_list = OrderListCacheProbeStrategy.observed_order_list
+        order_lists = OrderListCacheProbeStrategy.observed_order_lists
+        order_list_id = OrderListCacheProbeStrategy.observed_order_list_id
+        client_order_ids = OrderListCacheProbeStrategy.observed_client_order_ids
+
+        assert order_list is not None
+        assert order_lists == [order_list]
+        assert type(order_list) is OrderList
+        assert OrderList.__module__ == "nautilus_trader.model"
+        assert isinstance(order_list_id, OrderListId)
+        assert order_list.id == order_list_id
+        assert order_list.instrument_id == instrument.id
+        assert order_list.strategy_id == OrderListCacheProbeStrategy.observed_strategy_id
+        assert order_list.client_order_ids() == client_order_ids
+        assert len(order_list) == 3
+        assert hash(order_list) == hash(order_list.id)
+        assert repr(order_list) == str(order_list)
+
+        returned_ids = order_list.client_order_ids()
+        returned_ids.clear()
+        assert len(order_list) == 3
+
+        with pytest.raises(AttributeError):
+            order_list.id = OrderListId("OL-IMMUTABLE")
     finally:
         engine.dispose()
 

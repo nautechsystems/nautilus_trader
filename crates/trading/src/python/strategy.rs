@@ -3231,6 +3231,7 @@ mod tests {
             self, MessagingSwitchboard,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
+        python::cache::PyCache,
         signal::Signal,
         timer::TimeEvent,
     };
@@ -3257,8 +3258,8 @@ mod tests {
             order::spec::OrderFilledSpec,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
-            StrategyId, TradeId, TraderId, Venue,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, OrderListId,
+            PositionId, StrategyId, TradeId, TraderId, Venue,
         },
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
         orderbook::OrderBook,
@@ -4432,6 +4433,30 @@ class IndicatorEventStrategy:
             assert_eq!(
                 order_list.client_order_ids.as_slice(),
                 &[client_order_id1, client_order_id2]
+            );
+
+            let py_cache =
+                Py::new(py, PyCache::from_rc(rust_strategy.inner().core.cache_rc())).unwrap();
+            let py_order_list = py_cache
+                .bind(py)
+                .call_method1("order_list", (order_list_id,))
+                .unwrap();
+
+            assert_eq!(
+                py_order_list
+                    .getattr("id")
+                    .unwrap()
+                    .extract::<OrderListId>()
+                    .unwrap(),
+                order_list_id,
+            );
+            assert_eq!(
+                py_order_list
+                    .call_method0("client_order_ids")
+                    .unwrap()
+                    .extract::<Vec<ClientOrderId>>()
+                    .unwrap(),
+                vec![client_order_id1, client_order_id2],
             );
 
             let risk_messages = risk_messages.get_messages();
