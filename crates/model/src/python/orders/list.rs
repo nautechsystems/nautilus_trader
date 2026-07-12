@@ -161,7 +161,7 @@ mod tests {
                 bound.getattr("id").unwrap().hash().unwrap(),
             );
 
-            let same = Py::new(py, order_list.clone()).unwrap();
+            let same = Py::new(py, order_list).unwrap();
             assert!(
                 bound
                     .call_method1("__eq__", (same,))
