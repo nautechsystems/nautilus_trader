@@ -39,6 +39,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     gcc-aarch64-linux-gnu \
     git \
+    jq \
     libcapnp-dev \
     libssl-dev \
     lld \
@@ -93,6 +94,9 @@ RUN --mount=type=secret,id=github_token,required=true \
     export GH_TOKEN="$(cat /run/secrets/github_token)"; \
     export GITHUB_TOKEN="$GH_TOKEN"; \
     make binstall-tools
+
+# Install Git hooks for commits made inside the baked development repository.
+RUN prek install
 
 
 # sccache configuration

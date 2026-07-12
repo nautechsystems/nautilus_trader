@@ -493,19 +493,19 @@ install-tools: check-binstall-installed update-uv  #-- Install required developm
 	&& bash scripts/install-osv-scanner.sh
 
 .PHONY: binstall-tools
-binstall-tools: check-binstall-installed  #-- Install dev tools using pre-built binaries (fast, no version pins, latest)
+binstall-tools: check-binstall-installed  #-- Install dev tools using pinned pre-built binaries
 	cargo binstall --no-confirm --disable-strategies compile \
-		cargo-deny \
-		cargo-edit \
-		cargo-fuzz \
-		cargo-machete \
-		cargo-nextest \
-		cargo-llvm-cov \
-		cargo-audit \
-		cargo-vet \
-		flamegraph \
-		lychee \
-		prek \
+		cargo-deny@$(CARGO_DENY_VERSION) \
+		cargo-edit@$(CARGO_EDIT_VERSION) \
+		cargo-fuzz@$(CARGO_FUZZ_VERSION) \
+		cargo-machete@$(CARGO_MACHETE_VERSION) \
+		cargo-nextest@$(CARGO_NEXTEST_VERSION) \
+		cargo-llvm-cov@$(CARGO_LLVM_COV_VERSION) \
+		cargo-audit@$(CARGO_AUDIT_VERSION) \
+		cargo-vet@$(CARGO_VET_VERSION) \
+		flamegraph@$(FLAMEGRAPH_VERSION) \
+		lychee@$(LYCHEE_VERSION) \
+		prek@$(PREK_VERSION) \
 		sccache \
 	&& bash scripts/install-osv-scanner.sh
 
