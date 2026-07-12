@@ -77,7 +77,6 @@ pub fn get_http_base_url(
 ///
 /// Margin SAPI endpoints (`/sapi/v1/margin/...`) always use `api.binance.com`
 /// regardless of environment - Binance does not provide a SAPI testnet.
-
 #[must_use]
 pub fn get_sapi_base_url(
     _product_type: BinanceProductType,
