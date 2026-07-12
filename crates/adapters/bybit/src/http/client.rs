@@ -28,45 +28,19 @@ use std::{
     },
 };
 
-use ahash::{AHashMap, AHashSet};
-use chrono::{DateTime, Utc};
-use nautilus_common::cache::InstrumentLookupError;
-use nautilus_core::{
-    AtomicMap, AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
-    time::get_atomic_clock_realtime,
-};
-use nautilus_model::{
-    data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
-    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
-    events::account::state::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
-    instruments::{Instrument, InstrumentAny},
-    reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Price, Quantity},
-};
-use nautilus_network::{
-    http::{HttpClient, Method, USER_AGENT},
-    ratelimiter::quota::Quota,
-    retry::{RetryConfig, RetryManager},
-};
-use rust_decimal::Decimal;
-use serde::{Serialize, de::DeserializeOwned};
-use tokio_util::sync::CancellationToken;
-use ustr::Ustr;
-
 use super::{
     error::{BybitCancelOrderError, BybitHttpError, BybitModifyOrderError, BybitSubmitOrderError},
     models::{
         BybitAccountDetailsResponse, BybitAccountInfoResponse, BybitBorrowResponse,
-        BybitEscrowSubMembersResponse, BybitFeeRate, BybitFeeRateResponse, BybitFundingResponse,
-        BybitInstrumentInverse, BybitInstrumentInverseResponse, BybitInstrumentLinear,
-        BybitInstrumentLinearResponse, BybitInstrumentOption, BybitInstrumentOptionResponse,
-        BybitInstrumentSpot, BybitInstrumentSpotResponse, BybitKlinesResponse,
-        BybitNoConvertRepayResponse, BybitOpenOrdersResponse, BybitOrder,
-        BybitOrderHistoryResponse, BybitOrderbookResponse, BybitPlaceOrderResponse,
-        BybitPositionListResponse, BybitServerTimeResponse, BybitSetLeverageResponse,
-        BybitSetMarginModeResponse, BybitSetTradingStopResponse, BybitSubApiKeyInfo,
-        BybitSubApiKeysResponse, BybitSubMember, BybitSubMembersPagedResponse,
+        BybitCollateralInfoResponse, BybitEscrowSubMembersResponse, BybitFeeRate,
+        BybitFeeRateResponse, BybitFundingResponse, BybitInstrumentInverse,
+        BybitInstrumentInverseResponse, BybitInstrumentLinear, BybitInstrumentLinearResponse,
+        BybitInstrumentOption, BybitInstrumentOptionResponse, BybitInstrumentSpot,
+        BybitInstrumentSpotResponse, BybitKlinesResponse, BybitNoConvertRepayResponse,
+        BybitOpenOrdersResponse, BybitOrder, BybitOrderHistoryResponse, BybitOrderbookResponse,
+        BybitPlaceOrderResponse, BybitPositionListResponse, BybitServerTimeResponse,
+        BybitSetLeverageResponse, BybitSetMarginModeResponse, BybitSetTradingStopResponse,
+        BybitSubApiKeyInfo, BybitSubApiKeysResponse, BybitSubMember, BybitSubMembersPagedResponse,
         BybitSubMembersResponse, BybitSwitchModeResponse, BybitTickerData, BybitTickerOption,
         BybitTickersOptionResponse, BybitTradeHistoryResponse, BybitTradesResponse,
         BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse, BybitWalletBalanceResponse,
@@ -75,10 +49,11 @@ use super::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
         BybitBatchCancelOrderEntryBuilder, BybitBatchCancelOrderParamsBuilder,
         BybitBatchPlaceOrderEntryBuilder, BybitBorrowParamsBuilder,
-        BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder, BybitFeeRateParams,
-        BybitFeeRateParamsBuilder, BybitFundingParams, BybitFundingParamsBuilder,
-        BybitInstrumentsInfoParams, BybitKlinesParams, BybitKlinesParamsBuilder,
-        BybitNativeTpSlParams, BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
+        BybitCancelAllOrdersParamsBuilder, BybitCancelOrderParamsBuilder,
+        BybitCollateralInfoParams, BybitFeeRateParams, BybitFeeRateParamsBuilder,
+        BybitFundingParams, BybitFundingParamsBuilder, BybitInstrumentsInfoParams,
+        BybitKlinesParams, BybitKlinesParamsBuilder, BybitNativeTpSlParams,
+        BybitNoConvertRepayParamsBuilder, BybitOpenOrdersParamsBuilder,
         BybitOrderHistoryParamsBuilder, BybitOrderbookParams, BybitOrderbookParamsBuilder,
         BybitPlaceOrderParamsBuilder, BybitPositionListParams, BybitSetLeverageParamsBuilder,
         BybitSetMarginModeParamsBuilder, BybitSetTradingStopParams, BybitSubApiKeysParams,
@@ -98,14 +73,41 @@ use crate::common::{
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
         bar_spec_to_bybit_interval, make_bybit_symbol, map_time_in_force, parse_account_state,
-        parse_fill_report, parse_funding_rate, parse_inverse_instrument, parse_kline_bar,
-        parse_linear_instrument, parse_option_instrument, parse_order_status_report,
-        parse_orderbook, parse_position_status_report, parse_spot_instrument, parse_trade_tick,
-        spot_leverage, spot_market_unit, trigger_direction,
+        parse_borrow_rate, parse_fill_report, parse_funding_rate, parse_inverse_instrument,
+        parse_kline_bar, parse_linear_instrument, parse_option_instrument,
+        parse_order_status_report, parse_orderbook, parse_position_status_report,
+        parse_spot_instrument, parse_trade_tick, spot_leverage, spot_market_unit,
+        trigger_direction,
     },
     symbol::BybitSymbol,
     urls::bybit_http_base_url,
 };
+use ahash::{AHashMap, AHashSet};
+use chrono::{DateTime, Utc};
+use nautilus_common::cache::InstrumentLookupError;
+use nautilus_core::{
+    AtomicMap, AtomicTime, consts::NAUTILUS_USER_AGENT, env::get_or_env_var_opt, nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
+};
+use nautilus_model::data::BorrowRate;
+use nautilus_model::{
+    data::{Bar, BarType, FundingRateUpdate, OrderBookDeltas, TradeTick},
+    enums::{MarketStatusAction, OrderSide, OrderType, PositionSideSpecified, TimeInForce},
+    events::account::state::AccountState,
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    instruments::{Instrument, InstrumentAny},
+    reports::{FillReport, OrderStatusReport, PositionStatusReport},
+    types::{Price, Quantity},
+};
+use nautilus_network::{
+    http::{HttpClient, Method, USER_AGENT},
+    ratelimiter::quota::Quota,
+    retry::{RetryConfig, RetryManager},
+};
+use rust_decimal::Decimal;
+use serde::{Serialize, de::DeserializeOwned};
+use tokio_util::sync::CancellationToken;
+use ustr::Ustr;
 
 const DEFAULT_RECV_WINDOW_MS: u64 = 5_000;
 
@@ -1140,6 +1142,29 @@ impl BybitRawHttpClient {
         self.send_request(
             Method::GET,
             "/v5/account/fee-rate",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches collateral and borrow information for currencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/account/collateral-info>
+    pub async fn get_collateral_info(
+        &self,
+        params: &BybitCollateralInfoParams,
+    ) -> Result<BybitCollateralInfoResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/account/collateral-info",
             Some(params),
             None,
             true,
@@ -4076,6 +4101,34 @@ impl BybitHttpClient {
 
         let response = self.inner.get_fee_rate(&params).await?;
         Ok(response.result.list)
+    }
+
+    /// Requests current collateral and borrow rates for the optional currency filter.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - Parsing fails.
+    ///
+    /// # References
+    ///
+    /// <https://bybit-exchange.github.io/docs/v5/account/collateral-info>
+    pub async fn request_borrow_rates(
+        &self,
+        coin: Option<String>,
+    ) -> anyhow::Result<Vec<BorrowRate>> {
+        let params = BybitCollateralInfoParams { currency: coin };
+
+        let response = self.inner.get_collateral_info(&params).await?;
+        let ts_init = self.generate_ts_init();
+
+        response
+            .result
+            .list
+            .iter()
+            .map(|info| parse_borrow_rate(info, ts_init))
+            .collect()
     }
 
     /// Requests the current account state for the specified account type.

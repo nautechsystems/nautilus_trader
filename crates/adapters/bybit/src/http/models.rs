@@ -767,6 +767,33 @@ impl BybitFeeRate {
 /// - <https://bybit-exchange.github.io/docs/v5/account/fee-rate>
 pub type BybitFeeRateResponse = BybitListResponse<BybitFeeRate>;
 
+/// Collateral and borrow information for a single currency.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/collateral-info>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitCollateralInfo {
+    pub currency: Ustr,
+    pub hourly_borrow_rate: String,
+    pub max_borrowing_amount: String,
+    pub free_borrowing_limit: String,
+    pub free_borrow_amount: String,
+    pub borrow_amount: String,
+    pub other_borrow_amount: String,
+    pub available_to_borrow: String,
+    pub borrowable: bool,
+    pub borrow_usage_rate: String,
+    pub margin_collateral: bool,
+    pub collateral_switch: bool,
+}
+
+/// Response alias for collateral info requests.
+///
+/// # References
+/// - <https://bybit-exchange.github.io/docs/v5/account/collateral-info>
+pub type BybitCollateralInfoResponse = BybitListResponse<BybitCollateralInfo>;
+
 /// Account balance snapshot coin entry.
 ///
 /// # References
