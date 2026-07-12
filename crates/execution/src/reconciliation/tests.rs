@@ -4725,10 +4725,8 @@ fn test_status_vs_qty_mismatch_emits_updated(instrument: InstrumentAny) {
     order.apply(event).unwrap();
     assert_eq!(order.quantity(), Quantity::from(10));
     assert_eq!(order.filled_qty(), Quantity::from(10));
-    // Documented limitation shared with Python reference: OrderUpdated alone
-    // does not transition PartiallyFilled -> Filled; status persists here
-    // even though filled_qty now equals quantity.
-    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert!(order.ts_closed().is_some());
 }
 
 #[rstest]

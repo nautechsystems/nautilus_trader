@@ -90,9 +90,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos, WeakCell,
-    correctness::{
-        FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
-    },
+    correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
     datetime::{NANOSECONDS_IN_DAY, millis_to_nanos_unchecked},
 };
 #[cfg(feature = "defi")]
@@ -152,7 +150,7 @@ pub struct DataEngine {
     pub(crate) cache: Rc<RefCell<Cache>>,
     pub(crate) external_clients: AHashSet<ClientId>,
     clients: IndexMap<ClientId, DataClientAdapter>,
-    default_client: Option<DataClientAdapter>,
+    default_client_id: Option<ClientId>,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
@@ -235,7 +233,7 @@ impl DataEngine {
             cache,
             external_clients,
             clients: IndexMap::new(),
-            default_client: None,
+            default_client_id: None,
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
@@ -445,14 +443,6 @@ impl DataEngine {
     pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
         let client_id = client.client_id();
 
-        if let Some(default_client) = &self.default_client {
-            check_predicate_false(
-                default_client.client_id() == client.client_id(),
-                "client_id already registered as default client",
-            )
-            .expect(FAILED);
-        }
-
         check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
         if let Some(routing) = routing {
@@ -460,13 +450,13 @@ impl DataEngine {
             log::debug!("Set client {client_id} routing for {routing}");
         }
 
-        if client.venue.is_none() && self.default_client.is_none() {
-            self.default_client = Some(client);
+        if client.venue.is_none() && self.default_client_id.is_none() {
+            self.default_client_id = Some(client_id);
             log::debug!("Registered client {client_id} for default routing");
-        } else {
-            self.clients.insert(client_id, client);
-            log::debug!("Registered client {client_id}");
         }
+
+        self.clients.insert(client_id, client);
+        log::debug!("Registered client {client_id}");
     }
 
     /// Deregisters the client for the `client_id`.
@@ -477,6 +467,9 @@ impl DataEngine {
     pub fn deregister_client(&mut self, client_id: &ClientId) {
         check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
+        if self.default_client_id.as_ref() == Some(client_id) {
+            self.default_client_id = None;
+        }
         self.clients.shift_remove(client_id);
         log::info!("Deregistered client {client_id}");
     }
@@ -494,15 +487,63 @@ impl DataEngine {
     /// Panics if a default client has already been registered.
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
         check_predicate_true(
-            self.default_client.is_none(),
+            self.default_client_id.is_none(),
             "default client already registered",
         )
         .expect(FAILED);
 
         let client_id = client.client_id();
-
-        self.default_client = Some(client);
+        self.clients.insert(client_id, client);
+        self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
+    }
+
+    /// Marks an already-registered client as the default for fallback routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is registered with the given ID, or a different
+    /// client is already the default.
+    pub fn set_default_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
+        if self.default_client_id.is_some_and(|id| id != client_id) {
+            anyhow::bail!("default client already registered");
+        }
+
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+        self.default_client_id = Some(client_id);
+        log::debug!("Set client {client_id} as default");
+        Ok(())
+    }
+
+    /// Sets routing for a specific venue to a given client ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client ID is not registered, or the venue is already routed to a
+    /// different client.
+    pub fn register_venue_routing(
+        &mut self,
+        client_id: ClientId,
+        venue: Venue,
+    ) -> anyhow::Result<()> {
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+
+        if let Some(existing_client_id) = self.routing_map.get(&venue)
+            && *existing_client_id != client_id
+        {
+            anyhow::bail!(
+                "Venue {venue} already routed to {existing_client_id}, \
+                 cannot re-route to {client_id}"
+            );
+        }
+
+        self.routing_map.insert(venue, client_id);
+        log::debug!("Set client {client_id} routing for {venue}");
+        Ok(())
     }
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
@@ -765,26 +806,12 @@ impl DataEngine {
 
     #[must_use]
     pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
-        let (default_opt, clients_map) = (&self.default_client, &self.clients);
-        let mut clients: Vec<&DataClientAdapter> = clients_map.values().collect();
-
-        if let Some(default) = default_opt {
-            clients.push(default);
-        }
-
-        clients
+        self.clients.values().collect()
     }
 
     #[must_use]
     pub fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
-        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
-        let mut clients: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
-
-        if let Some(default) = default_opt {
-            clients.push(default);
-        }
-
-        clients
+        self.clients.values_mut().collect()
     }
 
     pub fn get_client(
@@ -793,30 +820,15 @@ impl DataEngine {
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         if let Some(client_id) = client_id {
-            // Explicit ID: first look in registered clients
-            if let Some(client) = self.clients.get_mut(client_id) {
-                return Some(client);
-            }
-
-            // Then check if it matches the default client
-            if let Some(default) = self.default_client.as_mut()
-                && default.client_id() == *client_id
-            {
-                return Some(default);
-            }
-
-            // Unknown explicit client
-            return None;
+            return self.clients.get_mut(client_id);
         }
 
-        if let Some(v) = venue {
-            // Route by venue if mapped client still registered
-            if let Some(client_id) = self.routing_map.get(v) {
-                return self.clients.get_mut(client_id);
-            }
+        if let Some(v) = venue
+            && let Some(client_id) = self.routing_map.get(v)
+        {
+            return self.clients.get_mut(client_id);
         }
 
-        // Fallback to default client
         self.get_default_client()
     }
 
@@ -830,23 +842,17 @@ impl DataEngine {
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         let backtest_id = ClientId::new("BACKTEST");
-        // BACKTEST may live in `clients` or as the default (venue=None branch in
-        // `register_client`)
         if self.clients.contains_key(&backtest_id) {
             return self.clients.get_mut(&backtest_id);
-        }
-        let default_is_backtest = self
-            .default_client
-            .as_ref()
-            .is_some_and(|c| c.client_id() == backtest_id);
-        if default_is_backtest {
-            return self.default_client.as_mut();
         }
         self.get_client(client_id, venue)
     }
 
-    const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
-        self.default_client.as_mut()
+    fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
+        match self.default_client_id {
+            Some(id) => self.clients.get_mut(&id),
+            None => None,
+        }
     }
 
     /// Returns all custom data types currently subscribed across all clients.

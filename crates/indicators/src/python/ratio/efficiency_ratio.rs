@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::enums::PriceType;
+use nautilus_model::{data::Bar, enums::PriceType};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
@@ -68,5 +68,15 @@ impl EfficiencyRatio {
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64) {
         self.update_raw(value);
+    }
+
+    #[pyo3(name = "handle_bar")]
+    fn py_handle_bar(&mut self, bar: &Bar) {
+        self.handle_bar(bar);
+    }
+
+    #[pyo3(name = "reset")]
+    fn py_reset(&mut self) {
+        self.reset();
     }
 }

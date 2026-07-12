@@ -936,6 +936,11 @@ impl OrderCore {
             self.status = previous;
         }
 
+        if event.reconciliation && !self.filled_qty.is_zero() && event.quantity == self.filled_qty {
+            self.status = OrderStatus::Filled;
+            self.ts_closed = Some(event.ts_event);
+        }
+
         if let Some(venue_order_id) = &event.venue_order_id
             && (self.venue_order_id.is_none()
                 || venue_order_id != self.venue_order_id.as_ref().unwrap())

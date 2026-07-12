@@ -52,7 +52,7 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{OrderCanceled, OrderEventAny, OrderFilled, OrderInitialized},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
@@ -123,6 +123,13 @@ pub(crate) struct OpenOrderReportCheck {
 pub(crate) struct PositionReportCheck {
     pub command: GeneratePositionStatusReports,
     pub positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>>,
+}
+
+struct RetainedFillState {
+    fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)>,
+    missing_order_ids: IndexSet<(AccountId, InstrumentId, ClientOrderId)>,
+    missing_venue_order_ids: IndexSet<(AccountId, InstrumentId, VenueOrderId)>,
+    netting_lifecycle_starts: IndexMap<(AccountId, InstrumentId, StrategyId), UnixNanos>,
 }
 
 /// Configuration for execution manager.
@@ -370,6 +377,13 @@ impl ExecutionManager {
             color = LogColor::Blue
         );
 
+        let retained_fill_state = self.retained_fill_state();
+        let reported_fill_keys: IndexSet<(AccountId, InstrumentId, TradeId)> = mass_status
+            .fill_reports()
+            .values()
+            .flatten()
+            .map(|fill| (fill.account_id, fill.instrument_id, fill.trade_id))
+            .collect();
         let (adjusted_order_reports, adjusted_fill_reports) =
             self.adjust_mass_status_fills(&mass_status);
 
@@ -705,7 +719,32 @@ impl ExecutionManager {
         events.sort_by_key(|e| e.ts_event());
 
         for event in &events {
-            exec_engine.borrow_mut().process(event);
+            if let OrderEventAny::Filled(fill) = event
+                && (retained_fill_state.fill_keys.contains(&(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.trade_id,
+                )) || ((retained_fill_state.missing_order_ids.contains(&(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.client_order_id,
+                )) || retained_fill_state.missing_venue_order_ids.contains(&(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.venue_order_id,
+                ))) && !reported_fill_keys.contains(&(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.trade_id,
+                ))) || retained_fill_state
+                    .netting_lifecycle_starts
+                    .get(&(fill.account_id, fill.instrument_id, fill.strategy_id))
+                    .is_some_and(|ts_opened| fill.ts_event < *ts_opened))
+            {
+                exec_engine.borrow_mut().project_reconciliation_fill(fill);
+            } else {
+                exec_engine.borrow_mut().process(event);
+            }
         }
 
         let mut positions_created = 0usize;
@@ -787,6 +826,51 @@ impl ExecutionManager {
         ReconciliationResult {
             events,
             external_orders,
+        }
+    }
+
+    fn retained_fill_state(&self) -> RetainedFillState {
+        let cache = self.cache.borrow();
+        let positions = cache.positions(None, None, None, None, None);
+        let mut fill_keys = IndexSet::new();
+        let mut missing_order_ids = IndexSet::new();
+        let mut missing_venue_order_ids = IndexSet::new();
+        let mut netting_lifecycle_starts = IndexMap::new();
+
+        for position in positions {
+            for fill in &position.events {
+                fill_keys.insert((position.account_id, position.instrument_id, fill.trade_id));
+                if cache.order(&fill.client_order_id).is_none() {
+                    missing_order_ids.insert((
+                        position.account_id,
+                        position.instrument_id,
+                        fill.client_order_id,
+                    ));
+                    missing_venue_order_ids.insert((
+                        position.account_id,
+                        position.instrument_id,
+                        fill.venue_order_id,
+                    ));
+                }
+            }
+
+            if cache.oms_type(&position.id) == Some(OmsType::Netting) {
+                netting_lifecycle_starts.insert(
+                    (
+                        position.account_id,
+                        position.instrument_id,
+                        position.strategy_id,
+                    ),
+                    position.ts_opened,
+                );
+            }
+        }
+
+        RetainedFillState {
+            fill_keys,
+            missing_order_ids,
+            missing_venue_order_ids,
+            netting_lifecycle_starts,
         }
     }
 
@@ -2859,6 +2943,26 @@ impl ExecutionManager {
             if is_hedge_mode {
                 log::debug!(
                     "Skipping fill adjustment for {instrument_id}: hedge mode (has venue_position_id)"
+                );
+                continue;
+            }
+
+            let has_retained_position = {
+                let cache = self.cache.borrow();
+                !cache
+                    .positions_open(
+                        None,
+                        Some(&instrument_id),
+                        None,
+                        Some(&mass_status.account_id),
+                        None,
+                    )
+                    .is_empty()
+            };
+
+            if has_retained_position {
+                log::debug!(
+                    "Skipping fill adjustment for {instrument_id}: retained open position in cache"
                 );
                 continue;
             }

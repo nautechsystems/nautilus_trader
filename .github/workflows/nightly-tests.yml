@@ -114,9 +114,13 @@ jobs:
         run: bash scripts/ci/set-cargo-build-jobs.sh
 
       - name: Run Rust tests (core)
+        env:
+          CARGO_BUILD_WARNINGS: warn
         run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       - name: Run Rust tests (adapters)
+        env:
+          CARGO_BUILD_WARNINGS: warn
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       - name: Build and install wheel

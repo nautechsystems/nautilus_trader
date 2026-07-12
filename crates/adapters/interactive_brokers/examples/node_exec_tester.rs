@@ -38,7 +38,10 @@ use nautilus_interactive_brokers::{
     },
     factories::{InteractiveBrokersDataClientFactory, InteractiveBrokersExecutionClientFactory},
 };
-use nautilus_live::{config::LiveExecEngineConfig, node::LiveNode};
+use nautilus_live::{
+    config::{LiveExecEngineConfig, RoutingConfig},
+    node::LiveNode,
+};
 use nautilus_model::{
     enums::{OrderType, TimeInForce},
     identifiers::{AccountId, ClientId, InstrumentId, StrategyId, TraderId},
@@ -80,6 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let market_data_type = parse_market_data_type(MARKET_DATA_TYPE);
     let order_qty = Quantity::from(ORDER_QTY);
 
+    let routing = RoutingConfig::builder().default(true).build();
+
     let data_config = InteractiveBrokersDataClientConfig {
         host: HOST.to_string(),
         port: PORT,
@@ -108,17 +113,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_exec_engine_config(exec_engine_config)
         .with_delay_post_stop_secs(5)
         .with_reconciliation(true)
-        .add_data_client(
+        .add_data_client_with_routing(
             None,
             Box::new(InteractiveBrokersDataClientFactory::new()),
             Box::new(data_config),
+            routing.clone(),
         )?
-        .add_exec_client(
+        .add_exec_client_with_routing(
             None,
             Box::new(InteractiveBrokersExecutionClientFactory::new(
                 trader_id, account_id,
             )),
             Box::new(exec_config),
+            routing,
         )?
         .build()?;
 

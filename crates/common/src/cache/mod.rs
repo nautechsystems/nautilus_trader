@@ -2298,6 +2298,7 @@ impl Cache {
             self.index.order_client = db.load_index_order_client()?;
         }
 
+        self.cache_position_oms()?;
         self.assign_position_ids_to_contingencies();
         Ok(())
     }
@@ -2416,7 +2417,28 @@ impl Cache {
             None => AHashMap::new(),
         };
 
+        self.cache_position_oms()?;
         log::info!("Cached {} positions from database", self.general.len());
+        Ok(())
+    }
+
+    fn cache_position_oms(&mut self) -> anyhow::Result<()> {
+        let persisted = match &self.database {
+            Some(database) => database.load()?,
+            None => self.general.clone(),
+        };
+
+        self.general
+            .retain(|key, _| !key.starts_with(POSITION_OMS_KEY_PREFIX));
+
+        for (key, value) in persisted {
+            if !key.starts_with(POSITION_OMS_KEY_PREFIX) {
+                continue;
+            }
+            self.general.insert(key, value);
+        }
+
+        self.index_position_oms();
         Ok(())
     }
 
@@ -2607,6 +2629,42 @@ impl Cache {
 
             // 10: Build index.strategies -> {StrategyId}
             self.index.strategies.insert(strategy_id);
+        }
+
+        self.index_position_oms();
+    }
+
+    fn index_position_oms(&mut self) {
+        self.index.position_oms.clear();
+
+        for (key, value) in &self.general {
+            let Some(position_id) = key.strip_prefix(POSITION_OMS_KEY_PREFIX) else {
+                continue;
+            };
+            let position_id = PositionId::new(position_id);
+            if !self.positions.contains_key(&position_id) {
+                continue;
+            }
+
+            match serde_json::from_slice::<OmsType>(value) {
+                Ok(oms_type) => {
+                    self.index.position_oms.insert(position_id, oms_type);
+                }
+                Err(e) => {
+                    log::error!("Failed to decode position OMS for {position_id}: {e}");
+                }
+            }
+        }
+
+        for position in self.positions.values().map(|cell| cell.borrow()) {
+            if !self.index.position_oms.contains_key(&position.id)
+                && position.id.as_str()
+                    == format!("{}-{}", position.instrument_id, position.strategy_id)
+            {
+                self.index
+                    .position_oms
+                    .insert(position.id, OmsType::Netting);
+            }
         }
     }
 
@@ -3338,6 +3396,7 @@ impl Cache {
 
         // Always clean up position indices (even if position not in cache)
         self.index.position_strategy.remove(&position_id);
+        self.index.position_oms.remove(&position_id);
         self.index.position_orders.remove(&position_id);
         self.index.positions.remove(&position_id);
         self.index.positions_open.remove(&position_id);
@@ -4334,9 +4393,10 @@ impl Cache {
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails.
-    pub fn add_position(&mut self, position: &Position, _oms_type: OmsType) -> anyhow::Result<()> {
+    pub fn add_position(&mut self, position: &Position, oms_type: OmsType) -> anyhow::Result<()> {
         self.positions
             .insert(position.id, SharedCell::new(position.clone()));
+        self.index.position_oms.insert(position.id, oms_type);
         self.index.positions.insert(position.id);
         self.index.positions_open.insert(position.id);
         self.index.positions_closed.remove(&position.id); // Cleanup for NETTING reopen
@@ -4381,6 +4441,10 @@ impl Cache {
             //     )?;
             // }
         }
+
+        let key = position_oms_key(position.id);
+        let value = Bytes::from(serde_json::to_vec(&oms_type)?);
+        self.add(&key, value)?;
 
         Ok(())
     }
@@ -4816,14 +4880,7 @@ impl Cache {
     /// Gets the OMS type for the `position_id`.
     #[must_use]
     pub fn oms_type(&self, position_id: &PositionId) -> Option<OmsType> {
-        // Get OMS type from the index
-        if self.index.position_strategy.contains_key(position_id) {
-            // For now, we'll default to NETTING
-            // TODO: Store and retrieve actual OMS type per position
-            Some(OmsType::Netting)
-        } else {
-            None
-        }
+        self.index.position_oms.get(position_id).copied()
     }
 
     /// Gets the serialized position snapshot frames for the `position_id`.
@@ -7843,6 +7900,12 @@ impl Cache {
 
         log::debug!("Completed own books audit in {:?}", start.elapsed());
     }
+}
+
+const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
+
+fn position_oms_key(position_id: PositionId) -> String {
+    format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
 }
 
 fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {

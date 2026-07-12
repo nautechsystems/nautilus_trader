@@ -123,7 +123,7 @@ pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, ExecutionClientAdapter>,
-    default_client: Option<ExecutionClientAdapter>,
+    default_client_id: Option<ClientId>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
@@ -157,7 +157,7 @@ impl ExecutionEngine {
             clock: clock.clone(),
             cache,
             clients: IndexMap::new(),
-            default_client: None,
+            default_client_id: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
             external_order_claims: HashMap::new(),
@@ -310,39 +310,22 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns true if all registered execution clients are connected.
     pub fn check_connected(&self) -> bool {
-        let clients_connected = self.clients.values().all(|c| c.is_connected());
-        let default_connected = self
-            .default_client
-            .as_ref()
-            .is_none_or(|c| c.is_connected());
-        clients_connected && default_connected
+        self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
     /// Returns true if all registered execution clients are disconnected.
     pub fn check_disconnected(&self) -> bool {
-        let clients_disconnected = self.clients.values().all(|c| !c.is_connected());
-        let default_disconnected = self
-            .default_client
-            .as_ref()
-            .is_none_or(|c| !c.is_connected());
-        clients_disconnected && default_disconnected
+        self.clients.values().all(|c| !c.is_connected())
     }
 
     /// Returns connection status for each registered client.
     #[must_use]
     pub fn client_connection_status(&self) -> Vec<(ClientId, bool)> {
-        let mut status: Vec<_> = self
-            .clients
+        self.clients
             .values()
             .map(|c| (c.client_id(), c.is_connected()))
-            .collect();
-
-        if let Some(default) = &self.default_client {
-            status.push((default.client_id(), default.is_connected()));
-        }
-
-        status
+            .collect()
     }
 
     #[must_use]
@@ -402,8 +385,28 @@ impl ExecutionEngine {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
 
+        self.clients.insert(client_id, adapter);
+        self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
-        self.default_client = Some(adapter);
+    }
+
+    /// Marks an already-registered client as the default for fallback routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is registered with the given ID, or a default
+    /// client has already been set.
+    pub fn set_default_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
+        if self.default_client_id.is_some() {
+            anyhow::bail!("default client already registered");
+        }
+
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+        self.default_client_id = Some(client_id);
+        log::debug!("Set client {client_id} as default");
+        Ok(())
     }
 
     #[must_use]
@@ -418,11 +421,6 @@ impl ExecutionEngine {
         &mut self,
         client_id: &ClientId,
     ) -> Option<&mut ExecutionClientAdapter> {
-        if let Some(default) = &self.default_client
-            && &default.client_id == client_id
-        {
-            return self.default_client.as_mut();
-        }
         self.clients.get_mut(client_id)
     }
 
@@ -456,18 +454,16 @@ impl ExecutionEngine {
         ts_init: UnixNanos,
     ) {
         let venue = instrument_id.venue;
-        if let Some(client_id) = self.routing_map.get(&venue) {
-            if let Some(client) = self.clients.get(client_id) {
-                client.register_external_order(
-                    client_order_id,
-                    venue_order_id,
-                    instrument_id,
-                    strategy_id,
-                    ts_init,
-                );
-            }
-        } else if let Some(default) = &self.default_client {
-            default.register_external_order(
+        let client_id = self
+            .routing_map
+            .get(&venue)
+            .copied()
+            .or(self.default_client_id);
+
+        if let Some(client_id) = client_id
+            && let Some(client) = self.clients.get(&client_id)
+        {
+            client.register_external_order(
                 client_order_id,
                 venue_order_id,
                 instrument_id,
@@ -480,36 +476,19 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns all registered execution client IDs.
     pub fn client_ids(&self) -> Vec<ClientId> {
-        let mut ids: Vec<_> = self.clients.keys().copied().collect();
-
-        if let Some(default) = &self.default_client {
-            ids.push(default.client_id);
-        }
-        ids
+        self.clients.keys().copied().collect()
     }
 
     #[must_use]
     /// Returns mutable access to all registered execution clients.
     pub fn get_clients_mut(&mut self) -> Vec<&mut ExecutionClientAdapter> {
-        let mut adapters: Vec<_> = self.clients.values_mut().collect();
-
-        if let Some(default) = &mut self.default_client {
-            adapters.push(default);
-        }
-        adapters
+        self.clients.values_mut().collect()
     }
 
     /// Returns all registered execution clients.
     #[must_use]
     pub fn get_all_clients(&self) -> Vec<&dyn ExecutionClient> {
-        let mut clients: Vec<&dyn ExecutionClient> =
-            self.clients.values().map(|a| a.client.as_ref()).collect();
-
-        if let Some(default) = &self.default_client {
-            clients.push(default.client.as_ref());
-        }
-
-        clients
+        self.clients.values().map(|a| a.client.as_ref()).collect()
     }
 
     #[must_use]
@@ -542,13 +521,13 @@ impl ExecutionEngine {
 
         // Add clients for venue routing (for orders not in cache)
         for venue in &venues {
-            if let Some(client_id) = self.routing_map.get(venue) {
-                if let Some(adapter) = self.clients.get(client_id)
-                    && !clients.iter().any(|c| c.client_id() == adapter.client_id)
-                {
-                    clients.push(adapter.client.as_ref());
-                }
-            } else if let Some(adapter) = &self.default_client
+            let resolved_id = self
+                .routing_map
+                .get(venue)
+                .copied()
+                .or(self.default_client_id);
+
+            if let Some(adapter) = resolved_id.and_then(|id| self.clients.get(&id))
                 && !clients.iter().any(|c| c.client_id() == adapter.client_id)
             {
                 clients.push(adapter.client.as_ref());
@@ -1844,6 +1823,11 @@ impl ExecutionEngine {
         self.handle_event(event);
     }
 
+    /// Projects a reconciled fill onto its order without applying position or portfolio economics.
+    pub fn project_reconciliation_fill(&mut self, fill: &OrderFilled) {
+        self.handle_event_with_position_application(&OrderEventAny::Filled(fill.clone()), false);
+    }
+
     /// Starts the execution engine and all registered execution clients.
     pub fn start(&mut self) {
         for client in self.get_clients_mut() {
@@ -2048,7 +2032,7 @@ impl ExecutionEngine {
             return Some(adapter);
         }
 
-        self.default_client.as_ref()
+        self.default_client_id.and_then(|id| self.clients.get(&id))
     }
 
     fn account_id_for_command(&self, command: &TradingCommand) -> Option<AccountId> {
@@ -2493,6 +2477,14 @@ impl ExecutionEngine {
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
+        self.handle_event_with_position_application(event, true);
+    }
+
+    fn handle_event_with_position_application(
+        &mut self,
+        event: &OrderEventAny,
+        apply_position: bool,
+    ) {
         self.event_count += 1;
 
         if self.config.debug {
@@ -2596,23 +2588,35 @@ impl ExecutionEngine {
                     );
                     return;
                 };
-                let oms_type = self.determine_oms_type(fill);
+                let configured_oms_type = self.determine_oms_type(fill);
                 let position_id =
-                    self.determine_position_id(fill, oms_type, Some(&order_before_fill));
+                    self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill));
+                let oms_type = self
+                    .cache
+                    .borrow()
+                    .oms_type(&position_id)
+                    .unwrap_or(configured_oms_type);
 
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
 
-                if self
-                    .validate_fill_for_order(&order_before_fill, &fill)
-                    .is_ok()
-                {
+                let validation = if apply_position {
+                    self.validate_fill_for_order(&order_before_fill, &fill)
+                } else {
+                    self.validate_fill_for_order_projection(&order_before_fill, &fill)
+                };
+
+                if validation.is_ok() {
                     let event = OrderEventAny::Filled(fill.clone());
                     let Some(order) = self.update_cached_order(client_order_id, &event) else {
                         return;
                     };
 
-                    let position_events = self.handle_order_fill(&order, fill, oms_type);
+                    let position_events = if apply_position {
+                        self.handle_order_fill(&order, fill, oms_type)
+                    } else {
+                        Vec::new()
+                    };
                     self.publish_order_event(&event);
                     self.publish_position_events(position_events);
                 }
@@ -2724,7 +2728,7 @@ impl ExecutionEngine {
             return client.oms_type;
         }
 
-        if let Some(client) = &self.default_client {
+        if let Some(client) = self.default_client_id.and_then(|id| self.clients.get(&id)) {
             return client.oms_type;
         }
 
@@ -2936,6 +2940,18 @@ impl ExecutionEngine {
                 position_id
             );
             anyhow::bail!("Duplicate position fill");
+        }
+
+        self.check_overfill(order, fill)
+    }
+
+    fn validate_fill_for_order_projection(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<()> {
+        if order.is_duplicate_fill(fill) {
+            anyhow::bail!("Duplicate fill");
         }
 
         self.check_overfill(order, fill)

@@ -480,7 +480,7 @@ docs and run `make py-stubs-v2`. The sync applies these transforms:
 - Intra-doc links are stripped.
 - Rust paths written with `::` become Python-style `.` paths.
 
-The v2 target uses the uv version pinned by `required-version = "==0.11.26"` in
+The v2 target uses the uv version pinned by `required-version = "==0.11.28"` in
 `python/pyproject.toml`. If your local `uv` differs, `make sync-v2`, `make py-stubs-v2`, and
 `make build-debug-v2` fail before sync with the required version and update command. Run the
 `uv self update --version ...` command printed by the preflight, or prepend a matching `uv`

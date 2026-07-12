@@ -33,7 +33,7 @@ impl RelativeStrengthIndex {
     }
 
     fn __repr__(&self) -> String {
-        format!("ExponentialMovingAverage({})", self.period)
+        format!("RelativeStrengthIndex({}, {})", self.period, self.ma_type)
     }
 
     #[getter]
@@ -46,6 +46,12 @@ impl RelativeStrengthIndex {
     #[pyo3(name = "period")]
     const fn py_period(&self) -> usize {
         self.period
+    }
+
+    #[getter]
+    #[pyo3(name = "has_inputs")]
+    fn py_has_inputs(&self) -> bool {
+        self.has_inputs()
     }
 
     #[getter]
@@ -84,5 +90,10 @@ impl RelativeStrengthIndex {
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
         self.handle_trade(trade);
+    }
+
+    #[pyo3(name = "reset")]
+    fn py_reset(&mut self) {
+        self.reset();
     }
 }

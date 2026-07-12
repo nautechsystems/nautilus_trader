@@ -81,7 +81,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 orphaned composite source aggregator teardown leaking the underlying client tick subscription
 - Fixed v2 `subscribed_bars` to include internally aggregated subscriptions (v1 parity)
 - Fixed v2 `request_bars` to reject composite bar types (v1 parity)
-- Added v2 `skip_first_non_full_bar` per-command override for bar subscriptions and aggregation requests (v1 parity)
+- Fixed v2 `skip_first_non_full_bar` per-command override for bar subscriptions and aggregation requests (v1 parity)
 - Fixed v2 matching engine quote-bar execution to honor `bar_adaptive_high_low_ordering` (v1 parity)
 - Fixed v2 matching engine `reset` to clear cached bid/ask bars, preventing stale pairs across runs
 - Fixed v2 volume aggregation step thresholds to use exact integer arithmetic instead of floating-point conversion
@@ -98,6 +98,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
+- Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
 - Fixed Python v2 indicator handlers to delegate to Rust core semantics, including VWAP typical-price and Aroon quote, trade, and high/low bar handling (#4421), thanks for reporting @a1zb2yc3z
 - Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
@@ -141,6 +142,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
 - Fixed Interactive Brokers market order update price normalization (#4383), thanks @faysou
 - Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
+- Fixed Interactive Brokers Docker gateway startup to ignore the active Docker context
 
 ### Internal Improvements
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
@@ -149,9 +151,11 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Rust (MSRV) to 1.97.0
 - Upgraded Cython to v3.2.8
-- Upgraded `capnp` to v0.26.2 and `py-clob-client-v2` to v1.0.2
+- Upgraded Cap'n Proto to v1.5.0
+- Upgraded `capnp` to v0.26.2
 - Upgraded `databento` crate to v0.54.0
 - Upgraded `redis` crate to v1.3.0
+- Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
