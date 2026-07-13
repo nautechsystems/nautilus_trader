@@ -171,7 +171,6 @@ pub const BINANCE_MARGIN_SAPI_HTTP_URL: &str = "https://api.binance.com";
 /// are prefixed with this path (e.g. `/sapi/v1/margin/account`).
 pub const BINANCE_SAPI_PATH: &str = "/sapi/v1";
 
-
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
 pub struct BinanceRateLimitQuota {
