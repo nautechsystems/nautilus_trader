@@ -1145,6 +1145,9 @@ typedef struct OrderBookDeltas_API {
  *
  * Note: This type is not compatible with `OrderBookDelta` or `OrderBookDeltas` due to
  * its specialized structure and limited depth use case.
+ *
+ * Per-level [`BookOrder::order_id`] values are non-semantic for this aggregated MBP data.
+ * Parquet catalog decoding canonicalizes them to zero.
  */
 typedef struct OrderBookDepth10_t {
     /**

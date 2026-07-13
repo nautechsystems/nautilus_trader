@@ -2015,7 +2015,11 @@ impl<'a> ToCapnp<'a> for BarSpecification {
     type Builder = market_capnp::bar_spec::Builder<'a>;
 
     fn to_capnp(&self, mut builder: Self::Builder) {
-        builder.set_step(self.step.get() as u32);
+        debug_assert!(
+            u32::try_from(self.step.get()).is_ok(),
+            "step exceeds u32 range for capnp encoding"
+        );
+        builder.set_step(u32::try_from(self.step.get()).unwrap_or(u32::MAX));
         builder.set_aggregation(bar_aggregation_to_capnp(self.aggregation));
         builder.set_price_type(price_type_to_capnp(self.price_type));
     }
@@ -2044,14 +2048,17 @@ impl<'a> FromCapnp<'a> for BarSpecification {
 impl<'a> ToCapnp<'a> for BarType {
     type Builder = market_capnp::bar_type::Builder<'a>;
 
+    /// Encodes the standard form only: the composite chain is a local aggregation
+    /// detail and wire representations carry the standard bar type.
     fn to_capnp(&self, mut builder: Self::Builder) {
+        let standard = self.standard();
         let instrument_id_builder = builder.reborrow().init_instrument_id();
-        self.instrument_id().to_capnp(instrument_id_builder);
+        standard.instrument_id().to_capnp(instrument_id_builder);
 
         let spec_builder = builder.reborrow().init_spec();
-        self.spec().to_capnp(spec_builder);
+        standard.spec().to_capnp(spec_builder);
 
-        builder.set_aggregation_source(aggregation_source_to_capnp(self.aggregation_source()));
+        builder.set_aggregation_source(aggregation_source_to_capnp(standard.aggregation_source()));
     }
 }
 

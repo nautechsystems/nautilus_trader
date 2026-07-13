@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err};
+use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     data::{
         Bar, Data, DataFFI, InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta,
@@ -94,8 +94,12 @@ impl NautilusDataType {
 impl DataBackendSession {
     #[new]
     #[pyo3(signature=(chunk_size=10_000))]
-    fn new_session(chunk_size: usize) -> Self {
-        Self::new(chunk_size)
+    fn new_session(chunk_size: usize) -> PyResult<Self> {
+        if chunk_size == 0 {
+            return Err(to_pyvalue_err("chunk_size must be positive"));
+        }
+
+        Ok(Self::new(chunk_size))
     }
 
     /// Registers a Parquet file and adds a batch stream for decoding.
@@ -225,6 +229,40 @@ impl DataBackendSession {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataQueryResult {
+    /// Collects the remaining query records as native Python objects.
+    ///
+    /// This provides a PyO3-native alternative to the capsule iterator for callers that need to
+    /// inspect the decoded records in Python.
+    #[pyo3(name = "to_list")]
+    fn py_to_list(mut slf: PyRefMut<'_, Self>) -> PyResult<Vec<Py<PyAny>>> {
+        let py = slf.py();
+        let ptr = SendPtr(&raw mut *slf);
+
+        // SAFETY: `PyRefMut` guarantees exclusive access to the underlying query result for the
+        // duration of this method call. As with `__next__`, release the GIL while waiting for
+        // decoder workers that may need to acquire it for custom data.
+        let data = unsafe {
+            py.detach(move || {
+                let p = ptr;
+                let result = &mut *p.0;
+                let mut data = Vec::new();
+
+                for chunk in result.by_ref() {
+                    if chunk.is_empty() {
+                        break;
+                    }
+                    data.extend(chunk);
+                }
+
+                data
+            })
+        };
+
+        data.into_iter()
+            .map(|item| data_to_pyobject(py, item))
+            .collect()
+    }
+
     /// The reader implements an iterator.
     const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf

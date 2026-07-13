@@ -90,6 +90,7 @@ class BinanceExecClientConfig:
         base_url_ws_trading: str | None = None,
         use_ws_trading: bool = True,
         use_position_ids: bool = True,
+        oms_type: model.OmsType | None = None,
         default_taker_fee: float | None = None,
         api_key: str | None = None,
         api_secret: str | None = None,

@@ -807,11 +807,13 @@ class TestOrderBook:
             book.apply_delta(delta)
 
         # Assert
-        assert len(data) == 74544  # Includes NoOrderSide deltas that are now decoded
+        assert len(data) == 68173  # Fill ('F') and None ('N') records no longer decode into deltas
         assert book.ts_last == 1703548799446821072
         assert book.sequence == 59585
-        assert book.update_count == 74537  # 28 NoOrderSide resolved, 7 skipped
-        assert len(book.bids()) == 922
+        assert (
+            book.update_count == 68173
+        )  # Every remaining delta applies (the 7 formerly skipped were fill records)
+        assert len(book.bids()) == 922  # Final book state identical to before the decoder fix
         assert len(book.asks()) == 565
         assert book.best_bid_price() == Price.from_str("4810.00")
         assert book.best_ask_price() == Price.from_str("4810.25")

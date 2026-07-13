@@ -90,9 +90,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos, WeakCell,
-    correctness::{
-        FAILED, check_key_in_map, check_key_not_in_map, check_predicate_false, check_predicate_true,
-    },
+    correctness::{FAILED, check_key_in_map, check_key_not_in_map, check_predicate_true},
     datetime::{NANOSECONDS_IN_DAY, millis_to_nanos_unchecked},
 };
 #[cfg(feature = "defi")]
@@ -152,7 +150,7 @@ pub struct DataEngine {
     pub(crate) cache: Rc<RefCell<Cache>>,
     pub(crate) external_clients: AHashSet<ClientId>,
     clients: IndexMap<ClientId, DataClientAdapter>,
-    default_client: Option<DataClientAdapter>,
+    default_client_id: Option<ClientId>,
     routing_map: IndexMap<Venue, ClientId>,
     book_intervals: AHashMap<NonZeroUsize, BookSnapshotInfos>,
     book_snapshot_counts: IndexMap<BookSnapshotKey, usize>,
@@ -235,7 +233,7 @@ impl DataEngine {
             cache,
             external_clients,
             clients: IndexMap::new(),
-            default_client: None,
+            default_client_id: None,
             routing_map: IndexMap::new(),
             book_intervals: AHashMap::new(),
             book_snapshot_counts: IndexMap::new(),
@@ -445,14 +443,6 @@ impl DataEngine {
     pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
         let client_id = client.client_id();
 
-        if let Some(default_client) = &self.default_client {
-            check_predicate_false(
-                default_client.client_id() == client.client_id(),
-                "client_id already registered as default client",
-            )
-            .expect(FAILED);
-        }
-
         check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
         if let Some(routing) = routing {
@@ -460,13 +450,13 @@ impl DataEngine {
             log::debug!("Set client {client_id} routing for {routing}");
         }
 
-        if client.venue.is_none() && self.default_client.is_none() {
-            self.default_client = Some(client);
+        if client.venue.is_none() && self.default_client_id.is_none() {
+            self.default_client_id = Some(client_id);
             log::debug!("Registered client {client_id} for default routing");
-        } else {
-            self.clients.insert(client_id, client);
-            log::debug!("Registered client {client_id}");
         }
+
+        self.clients.insert(client_id, client);
+        log::debug!("Registered client {client_id}");
     }
 
     /// Deregisters the client for the `client_id`.
@@ -477,6 +467,9 @@ impl DataEngine {
     pub fn deregister_client(&mut self, client_id: &ClientId) {
         check_key_in_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
+        if self.default_client_id.as_ref() == Some(client_id) {
+            self.default_client_id = None;
+        }
         self.clients.shift_remove(client_id);
         log::info!("Deregistered client {client_id}");
     }
@@ -494,15 +487,63 @@ impl DataEngine {
     /// Panics if a default client has already been registered.
     pub fn register_default_client(&mut self, client: DataClientAdapter) {
         check_predicate_true(
-            self.default_client.is_none(),
+            self.default_client_id.is_none(),
             "default client already registered",
         )
         .expect(FAILED);
 
         let client_id = client.client_id();
-
-        self.default_client = Some(client);
+        self.clients.insert(client_id, client);
+        self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
+    }
+
+    /// Marks an already-registered client as the default for fallback routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is registered with the given ID, or a different
+    /// client is already the default.
+    pub fn set_default_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
+        if self.default_client_id.is_some_and(|id| id != client_id) {
+            anyhow::bail!("default client already registered");
+        }
+
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+        self.default_client_id = Some(client_id);
+        log::debug!("Set client {client_id} as default");
+        Ok(())
+    }
+
+    /// Sets routing for a specific venue to a given client ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client ID is not registered, or the venue is already routed to a
+    /// different client.
+    pub fn register_venue_routing(
+        &mut self,
+        client_id: ClientId,
+        venue: Venue,
+    ) -> anyhow::Result<()> {
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+
+        if let Some(existing_client_id) = self.routing_map.get(&venue)
+            && *existing_client_id != client_id
+        {
+            anyhow::bail!(
+                "Venue {venue} already routed to {existing_client_id}, \
+                 cannot re-route to {client_id}"
+            );
+        }
+
+        self.routing_map.insert(venue, client_id);
+        log::debug!("Set client {client_id} routing for {venue}");
+        Ok(())
     }
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
@@ -513,8 +554,11 @@ impl DataEngine {
             }
         }
 
-        for aggregator in self.bar_aggregators.values() {
-            if aggregator.borrow().bar_type().spec().is_time_aggregated() {
+        for ((_, request_id), aggregator) in &self.bar_aggregators {
+            // Request-scoped or historical aggregators run on private clocks;
+            // re-arming them here would perturb an in-flight request's timer state
+            let is_live = request_id.is_none() && !aggregator.borrow().is_historical();
+            if is_live && aggregator.borrow().bar_type().spec().is_time_aggregated() {
                 aggregator
                     .borrow_mut()
                     .start_timer(Some(aggregator.clone()));
@@ -640,6 +684,34 @@ impl DataEngine {
             }
         }
 
+        // Continuous-future source handlers live outside bar_aggregator_handlers,
+        // so release them before dropping the aggregators
+        let mut cf_sources = Vec::new();
+
+        for state in self.continuous_future_subscriptions.values_mut() {
+            if let Some(name) = state.timer_name.take() {
+                self.clock.borrow_mut().cancel_timer(&name);
+            }
+
+            if let Some(subscription) = state.active_source_subscription.take() {
+                cf_sources.push((state.target_bar_type, subscription));
+            }
+        }
+
+        for (target_bar_type, subscription) in cf_sources {
+            self.unsubscribe_continuous_future_source(target_bar_type, subscription);
+        }
+        self.continuous_future_subscriptions.clear();
+
+        // Unsubscribe aggregator msgbus handlers so the typed routers don't keep
+        // entries pointing at dropped aggregators
+        let keys: Vec<BarAggregatorKey> = self.bar_aggregators.keys().copied().collect();
+        for (bar_type, request_id) in keys {
+            if let Err(e) = self.stop_bar_aggregator(bar_type, request_id) {
+                log::error!("Error stopping bar aggregator during dispose for {bar_type}: {e}");
+            }
+        }
+
         self.clock.borrow_mut().cancel_timers();
     }
 
@@ -734,26 +806,12 @@ impl DataEngine {
 
     #[must_use]
     pub fn get_clients(&self) -> Vec<&DataClientAdapter> {
-        let (default_opt, clients_map) = (&self.default_client, &self.clients);
-        let mut clients: Vec<&DataClientAdapter> = clients_map.values().collect();
-
-        if let Some(default) = default_opt {
-            clients.push(default);
-        }
-
-        clients
+        self.clients.values().collect()
     }
 
     #[must_use]
     pub fn get_clients_mut(&mut self) -> Vec<&mut DataClientAdapter> {
-        let (default_opt, clients_map) = (&mut self.default_client, &mut self.clients);
-        let mut clients: Vec<&mut DataClientAdapter> = clients_map.values_mut().collect();
-
-        if let Some(default) = default_opt {
-            clients.push(default);
-        }
-
-        clients
+        self.clients.values_mut().collect()
     }
 
     pub fn get_client(
@@ -762,30 +820,15 @@ impl DataEngine {
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         if let Some(client_id) = client_id {
-            // Explicit ID: first look in registered clients
-            if let Some(client) = self.clients.get_mut(client_id) {
-                return Some(client);
-            }
-
-            // Then check if it matches the default client
-            if let Some(default) = self.default_client.as_mut()
-                && default.client_id() == *client_id
-            {
-                return Some(default);
-            }
-
-            // Unknown explicit client
-            return None;
+            return self.clients.get_mut(client_id);
         }
 
-        if let Some(v) = venue {
-            // Route by venue if mapped client still registered
-            if let Some(client_id) = self.routing_map.get(v) {
-                return self.clients.get_mut(client_id);
-            }
+        if let Some(v) = venue
+            && let Some(client_id) = self.routing_map.get(v)
+        {
+            return self.clients.get_mut(client_id);
         }
 
-        // Fallback to default client
         self.get_default_client()
     }
 
@@ -799,23 +842,17 @@ impl DataEngine {
         venue: Option<&Venue>,
     ) -> Option<&mut DataClientAdapter> {
         let backtest_id = ClientId::new("BACKTEST");
-        // BACKTEST may live in `clients` or as the default (venue=None branch in
-        // `register_client`)
         if self.clients.contains_key(&backtest_id) {
             return self.clients.get_mut(&backtest_id);
-        }
-        let default_is_backtest = self
-            .default_client
-            .as_ref()
-            .is_some_and(|c| c.client_id() == backtest_id);
-        if default_is_backtest {
-            return self.default_client.as_mut();
         }
         self.get_client(client_id, venue)
     }
 
-    const fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
-        self.default_client.as_mut()
+    fn get_default_client(&mut self) -> Option<&mut DataClientAdapter> {
+        match self.default_client_id {
+            Some(id) => self.clients.get_mut(&id),
+            None => None,
+        }
     }
 
     /// Returns all custom data types currently subscribed across all clients.
@@ -875,10 +912,18 @@ impl DataEngine {
         self.subscribed_synthetic_trades.iter().copied().collect()
     }
 
-    /// Returns all bar types currently subscribed across all clients.
+    /// Returns all bar types currently subscribed across all clients,
+    /// including internally aggregated subscriptions (v1 parity).
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
-        self.collect_subscriptions(|client| &client.subscriptions_bars)
+        let mut subscribed = self.collect_subscriptions(|client| &client.subscriptions_bars);
+        subscribed.extend(
+            self.bar_aggregators
+                .keys()
+                .filter(|(_, request_id)| request_id.is_none())
+                .map(|(bar_type, _)| *bar_type),
+        );
+        subscribed
     }
 
     /// Returns all instrument IDs for which mark price subscriptions exist.
@@ -1072,7 +1117,11 @@ impl DataEngine {
                     .continuous_future_subscriptions
                     .contains_key(&cmd.bar_type.standard()) =>
             {
-                self.unsubscribe_continuous_future_bars(cmd);
+                // Don't tear down the chain while other actors remain subscribed
+                let topic = switchboard::get_bars_topic(cmd.bar_type.standard());
+                if msgbus::exact_subscriber_count_bars(topic) == 0 {
+                    self.unsubscribe_continuous_future_bars(cmd);
+                }
                 return Ok(());
             }
             UnsubscribeCommand::Bars(cmd) => {
@@ -1164,6 +1213,10 @@ impl DataEngine {
             UnsubscribeCommand::OptionGreeks(c) => {
                 let topic = switchboard::get_option_greeks_topic(c.instrument_id);
                 msgbus::exact_subscriber_count_option_greeks(topic) > 0
+            }
+            UnsubscribeCommand::Bars(c) => {
+                let topic = switchboard::get_bars_topic(c.bar_type.standard());
+                msgbus::exact_subscriber_count_bars(topic) > 0
             }
             _ => false,
         }
@@ -1550,11 +1603,18 @@ impl DataEngine {
         let aggregator_request_id = state.aggregator_request_id(request_id);
 
         for bar_type in &state.bar_types {
-            self.create_bar_aggregator_for_key(*bar_type, aggregator_request_id)?;
+            self.create_bar_aggregator_for_key(
+                *bar_type,
+                aggregator_request_id,
+                state.skip_first_non_full_bar,
+            )?;
             self.setup_bar_aggregator(*bar_type, true, aggregator_request_id)?;
 
             let key = bar_aggregator_key(*bar_type, aggregator_request_id);
             if let Some(aggregator) = self.bar_aggregators.get(&key) {
+                if state.disable_build_with_no_updates {
+                    aggregator.borrow_mut().set_build_with_no_updates(false);
+                }
                 aggregator.borrow_mut().set_is_running(true);
             }
         }
@@ -3366,9 +3426,23 @@ impl DataEngine {
                 && self
                     .bar_aggregators
                     .contains_key(&bar_aggregator_key(source_type, None))
-                && let Err(e) = self.stop_bar_aggregator(source_type, None)
             {
-                log::error!("Error stopping source bar aggregator for {source_type}: {e}");
+                match self.stop_bar_aggregator(source_type, None) {
+                    // Release the underlying client subscription too, otherwise the
+                    // venue stream keeps flowing with no consumer
+                    Ok(()) => self.unsubscribe_bar_aggregator(&UnsubscribeBars::new(
+                        source_type,
+                        cmd.client_id,
+                        cmd.venue,
+                        UUID4::new(),
+                        cmd.ts_init,
+                        Some(cmd.command_id),
+                        cmd.params.clone(),
+                    )),
+                    Err(e) => {
+                        log::error!("Error stopping source bar aggregator for {source_type}: {e}");
+                    }
+                }
             }
         }
     }
@@ -4122,6 +4196,7 @@ impl DataEngine {
         &self,
         instrument: &InstrumentAny,
         bar_type: BarType,
+        skip_first_non_full_bar: Option<bool>,
     ) -> Box<dyn BarAggregator> {
         let cache = self.cache.clone();
         let validate_sequence = self.config.validate_data_sequence;
@@ -4153,7 +4228,7 @@ impl DataEngine {
                 config.time_bars_interval_type,
                 time_bars_origin_offset,
                 config.time_bars_build_delay,
-                config.time_bars_skip_first_non_full_bar,
+                skip_first_non_full_bar.unwrap_or(config.time_bars_skip_first_non_full_bar),
             ))
         } else {
             match bar_type.spec().aggregation {
@@ -4229,6 +4304,7 @@ impl DataEngine {
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         if self.bar_aggregators.contains_key(&key) {
@@ -4247,7 +4323,12 @@ impl DataEngine {
                 })?
                 .clone()
         };
-        let aggregator = self.create_bar_aggregator(&instrument, bar_type);
+        let aggregator = self.create_bar_aggregator(&instrument, bar_type, skip_first_non_full_bar);
+        debug_assert_eq!(
+            aggregator.bar_type(),
+            key.0,
+            "aggregator bar type must match its standardized key"
+        );
         self.bar_aggregators
             .insert(key, Rc::new(RefCell::new(aggregator)));
 
@@ -4270,7 +4351,11 @@ impl DataEngine {
             return Ok(());
         }
 
-        self.start_bar_aggregator(cmd.bar_type, None)?;
+        let skip_first_non_full_bar = cmd
+            .params
+            .as_ref()
+            .and_then(|params| params.get_bool("skip_first_non_full_bar"));
+        self.start_bar_aggregator(cmd.bar_type, None, skip_first_non_full_bar)?;
         self.subscribe_bar_aggregator(cmd);
 
         Ok(())
@@ -4280,11 +4365,12 @@ impl DataEngine {
         &mut self,
         bar_type: BarType,
         request_id: Option<UUID4>,
+        skip_first_non_full_bar: Option<bool>,
     ) -> anyhow::Result<()> {
         let key = bar_aggregator_key(bar_type, request_id);
         let bar_type_std = bar_type.standard();
 
-        self.create_bar_aggregator_for_key(bar_type, request_id)?;
+        self.create_bar_aggregator_for_key(bar_type, request_id, skip_first_non_full_bar)?;
         let aggregator = self
             .bar_aggregators
             .get(&key)
@@ -4573,7 +4659,7 @@ impl DataEngine {
             return Ok(());
         }
 
-        self.create_bar_aggregator_for_key(target_bar_type, None)?;
+        self.create_bar_aggregator_for_key(target_bar_type, None, None)?;
         self.setup_bar_aggregator(target_bar_type, false, None)?;
 
         let now_ns = self.clock.borrow().timestamp_ns().as_u64();
@@ -5303,6 +5389,11 @@ fn process_engine_bar(
     publish: bool,
     bar: Bar,
 ) {
+    debug_assert!(
+        bar.bar_type.is_standard(),
+        "bars must be published and cached under the standard bar type"
+    );
+
     if !validate_bar_sequence(cache, validate_sequence, &bar) {
         return;
     }

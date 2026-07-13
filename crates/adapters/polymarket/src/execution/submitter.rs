@@ -21,7 +21,14 @@
 //! Uses [`RetryManager`] from `nautilus-network` with exponential backoff for
 //! transient HTTP failures (timeouts, 5xx, rate limits).
 
-use std::{error::Error as StdError, fmt::Display, sync::Arc};
+use std::{
+    error::Error as StdError,
+    fmt::Display,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -215,6 +222,7 @@ impl OrderSubmitter {
             .expected_order_id(&poly_order, neg_risk)?;
 
         let http_client = self.http_client.clone();
+        let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
 
         let response = match self
             .retry_manager
@@ -223,7 +231,14 @@ impl OrderSubmitter {
                 || {
                     let http_client = http_client.clone();
                     let poly_order = poly_order.clone();
-                    async move { http_client.post_order(&poly_order, order_type, false).await }
+                    let saw_unknown_outcome = saw_unknown_outcome.clone();
+                    async move {
+                        let result = http_client.post_order(&poly_order, order_type, false).await;
+                        if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
+                            saw_unknown_outcome.store(true, Ordering::Release);
+                        }
+                        result
+                    }
                 },
                 |e| e.is_retryable(),
                 Error::transport,
@@ -231,7 +246,9 @@ impl OrderSubmitter {
             .await
         {
             Ok(response) => response,
-            Err(e) if e.is_submit_outcome_unknown() => {
+            Err(e)
+                if e.is_submit_outcome_unknown() || saw_unknown_outcome.load(Ordering::Acquire) =>
+            {
                 return Err(UnknownSubmitError {
                     reason: e.to_string(),
                     expected_venue_order_id,
@@ -368,27 +385,42 @@ impl OrderSubmitter {
         submission: SignedLimitOrderSubmission,
     ) -> crate::http::error::Result<OrderResponse> {
         let http_client = self.http_client.clone();
+        let saw_unknown_outcome = Arc::new(AtomicBool::new(false));
 
-        self.retry_manager
+        let result = self
+            .retry_manager
             .execute_with_retry(
                 "submit_limit_order",
                 || {
                     let http_client = http_client.clone();
                     let submission = submission.clone();
+                    let saw_unknown_outcome = saw_unknown_outcome.clone();
                     async move {
-                        http_client
+                        let result = http_client
                             .post_order(
                                 &submission.order,
                                 submission.order_type,
                                 submission.post_only,
                             )
-                            .await
+                            .await;
+
+                        if result.as_ref().is_err_and(Error::is_submit_outcome_unknown) {
+                            saw_unknown_outcome.store(true, Ordering::Release);
+                        }
+                        result
                     }
                 },
                 |e| e.is_retryable(),
                 Error::transport,
             )
-            .await
+            .await;
+
+        match result {
+            Err(e) if saw_unknown_outcome.load(Ordering::Acquire) => Err(Error::transport(
+                format!("submit outcome unknown after an earlier attempt: {e}"),
+            )),
+            result => result,
+        }
     }
 
     pub(crate) async fn post_limit_order_submissions(

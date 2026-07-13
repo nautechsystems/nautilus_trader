@@ -97,7 +97,7 @@ use crate::{
         parse::{
             extract_market_id, extract_selection_id, make_customer_order_ref,
             make_customer_order_ref_legacy, make_instrument_id, parse_account_state,
-            parse_betfair_quantity, parse_millis_timestamp,
+            parse_betfair_quantity, parse_betfair_timestamp, parse_millis_timestamp,
         },
         types::{BetId, OrderSyncEntry},
     },
@@ -700,8 +700,7 @@ impl BetfairExecutionClient {
         }
 
         if uo.status == StreamingOrderStatus::ExecutionComplete {
-            state.terminal_orders.insert(uo.id.clone());
-            state.fill_tracker.prune(&uo.id);
+            state.mark_terminal_order(uo.id.clone());
 
             if let Some(ref client_oid) = resolved_client_order_id {
                 state.cleanup_terminal_order(client_oid);
@@ -2492,7 +2491,7 @@ async fn fetch_fill_reports_via_http(
     date_range: Option<TimeRange>,
     ocm_state: &Arc<Mutex<OcmState>>,
 ) -> anyhow::Result<Vec<FillReport>> {
-    let mut reports = Vec::new();
+    let mut orders = Vec::new();
     let mut from_record: u32 = 0;
 
     loop {
@@ -2516,25 +2515,7 @@ async fn fetch_fill_reports_via_http(
         let response = list_current_orders_with_retry(http_client, &params).await?;
         let page_size = response.current_orders.len() as u32;
 
-        for order in &response.current_orders {
-            let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
-            if size_matched == Decimal::ZERO {
-                continue;
-            }
-
-            match parse_current_order_fill_report(order, account_id, currency, ts_init) {
-                Ok(mut r) => {
-                    if let Some(ref rfo) = order.customer_order_ref
-                        && let Ok(state) = ocm_state.lock()
-                        && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
-                    {
-                        r.client_order_id = Some(full_id);
-                    }
-                    reports.push(r);
-                }
-                Err(e) => log::warn!("Failed to parse fill report for {}: {e}", order.bet_id),
-            }
-        }
+        orders.extend(response.current_orders);
 
         if !response.more_available {
             break;
@@ -2543,7 +2524,60 @@ async fn fetch_fill_reports_via_http(
         from_record += page_size;
     }
 
-    Ok(reports)
+    let mut state = ocm_state
+        .lock()
+        .map_err(|_| anyhow::anyhow!("OCM state lock poisoned"))?;
+    Ok(build_incremental_fill_reports(
+        &orders, &mut state, account_id, currency, ts_init,
+    ))
+}
+
+fn build_incremental_fill_reports(
+    orders: &[CurrentOrderSummary],
+    state: &mut OcmState,
+    account_id: AccountId,
+    currency: Currency,
+    ts_init: UnixNanos,
+) -> Vec<FillReport> {
+    let mut reports = Vec::new();
+
+    for order in orders {
+        let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
+        if size_matched == Decimal::ZERO {
+            continue;
+        }
+
+        if let Err(e) = parse_betfair_timestamp(&order.placed_date) {
+            log::warn!("Failed to parse fill report for {}: {e}", order.bet_id);
+            continue;
+        }
+
+        let incremental_fill = state.fill_tracker.advance_cumulative_fill(
+            &order.bet_id,
+            size_matched,
+            order.average_price_matched,
+            order.price_size.price,
+        );
+        let Some((trade_id, last_qty, last_px)) = incremental_fill else {
+            continue;
+        };
+
+        match parse_current_order_fill_report(
+            order, account_id, currency, trade_id, last_qty, last_px, ts_init,
+        ) {
+            Ok(mut report) => {
+                if let Some(ref rfo) = order.customer_order_ref
+                    && let Some(full_id) = state.resolve_client_order_id(Some(rfo.as_str()))
+                {
+                    report.client_order_id = Some(full_id);
+                }
+                reports.push(report);
+            }
+            Err(e) => log::warn!("Failed to parse fill report for {}: {e}", order.bet_id),
+        }
+    }
+
+    reports
 }
 
 /// Builds an [`ExecutionMassStatus`] over `lookback_mins` of REST history.
@@ -2884,6 +2918,7 @@ mod tests {
     use rust_decimal::Decimal;
 
     use super::*;
+    use crate::common::testing::{load_test_json, parse_jsonrpc};
 
     #[rstest]
     #[case(
@@ -3653,6 +3688,66 @@ mod tests {
             result.is_none(),
             "synced fill should prevent duplicate fill report"
         );
+    }
+
+    #[rstest]
+    fn test_terminal_stream_state_prevents_rest_fill_replay() {
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut state = OcmState::default();
+        let account_id = AccountId::from("BETFAIR-001");
+        let currency = Currency::GBP();
+
+        let mut stream_fill_count = 0;
+
+        for order in &response.current_orders {
+            let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
+
+            if state
+                .fill_tracker
+                .advance_cumulative_fill(
+                    &order.bet_id,
+                    size_matched,
+                    order.average_price_matched,
+                    order.price_size.price,
+                )
+                .is_some()
+            {
+                stream_fill_count += 1;
+            }
+            state.mark_terminal_order(order.bet_id.clone());
+        }
+
+        let replay = build_incremental_fill_reports(
+            &response.current_orders,
+            &mut state,
+            account_id,
+            currency,
+            UnixNanos::default(),
+        );
+
+        assert_eq!(stream_fill_count, 2);
+        assert!(replay.is_empty());
+    }
+
+    #[rstest]
+    fn test_terminal_marker_without_fill_state_allows_rest_recovery() {
+        let data = load_test_json("rest/list_current_orders_execution_complete.json");
+        let response: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut state = OcmState::default();
+        for order in &response.current_orders {
+            state.mark_terminal_order(order.bet_id.clone());
+        }
+
+        let reports = build_incremental_fill_reports(
+            &response.current_orders,
+            &mut state,
+            AccountId::from("BETFAIR-001"),
+            Currency::GBP(),
+            UnixNanos::default(),
+        );
+
+        assert!(!reports.is_empty());
     }
 
     #[rstest]

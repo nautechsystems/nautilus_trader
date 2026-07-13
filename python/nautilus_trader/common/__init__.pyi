@@ -193,6 +193,7 @@ class MessageBusConfig:
         timestamps_as_iso8601: bool | None = None,
         buffer_interval_ms: int | None = None,
         autotrim_mins: int | None = None,
+        autotrim_maxlen: int | None = None,
         use_trader_prefix: bool | None = None,
         use_trader_id: bool | None = None,
         use_instance_id: bool | None = None,
@@ -214,6 +215,8 @@ class MessageBusConfig:
     def buffer_interval_ms(self) -> int | None: ...
     @property
     def autotrim_mins(self) -> int | None: ...
+    @property
+    def autotrim_maxlen(self) -> int | None: ...
     @property
     def use_trader_prefix(self) -> bool: ...
     @property
@@ -465,14 +468,14 @@ class Cache:
         account_id: model.AccountId | None = None,
         side: model.OrderSide | None = None,
     ) -> int: ...
-    def order_list(self, order_list_id: model.OrderListId) -> typing.Any | None: ...
+    def order_list(self, order_list_id: model.OrderListId) -> model.OrderList | None: ...
     def order_lists(
         self,
         venue: model.Venue | None = None,
         instrument_id: model.InstrumentId | None = None,
         strategy_id: model.StrategyId | None = None,
         account_id: model.AccountId | None = None,
-    ) -> list[typing.Any]: ...
+    ) -> list[model.OrderList]: ...
     def order_list_exists(self, order_list_id: model.OrderListId) -> bool: ...
     def orders_for_exec_algorithm(
         self,
@@ -678,6 +681,7 @@ class DataActor:
     def on_trade(self, trade: model.TradeTick) -> None: ...
     def on_bar(self, bar: model.Bar) -> None: ...
     def on_book_deltas(self, deltas: model.OrderBookDeltas) -> None: ...
+    def on_book_depth(self, depth: model.OrderBookDepth10) -> None: ...
     def on_book(self, book: model.OrderBook) -> None: ...
     def on_mark_price(self, mark_price: model.MarkPriceUpdate) -> None: ...
     def on_index_price(self, index_price: model.IndexPriceUpdate) -> None: ...
@@ -710,6 +714,14 @@ class DataActor:
         instrument_id: model.InstrumentId,
         book_type: model.BookType,
         depth: int | None = None,
+        client_id: model.ClientId | None = None,
+        managed: bool = False,
+        params: dict | None = None,
+    ) -> None: ...
+    def subscribe_book_depth10(
+        self,
+        instrument_id: model.InstrumentId,
+        book_type: model.BookType,
         client_id: model.ClientId | None = None,
         managed: bool = False,
         params: dict | None = None,
@@ -805,6 +817,12 @@ class DataActor:
         params: dict | None = None,
     ) -> None: ...
     def unsubscribe_book_deltas(
+        self,
+        instrument_id: model.InstrumentId,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> None: ...
+    def unsubscribe_book_depth10(
         self,
         instrument_id: model.InstrumentId,
         client_id: model.ClientId | None = None,

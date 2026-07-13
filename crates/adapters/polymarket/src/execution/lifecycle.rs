@@ -227,9 +227,9 @@ impl PolymarketExecutionClient {
         let fill_tracker = self.fill_tracker.clone();
         let pending_submits = self.pending_submits.clone();
         let order_identities = self.order_identities.clone();
+        let ws_dispatch_state = self.ws_dispatch_state.clone();
 
         let handle = get_runtime().spawn(async move {
-            let mut state = WsDispatchState::default();
             let ctx = WsDispatchContext {
                 token_instruments: &token_instruments,
                 fill_tracker: &fill_tracker,
@@ -245,9 +245,12 @@ impl PolymarketExecutionClient {
             loop {
                 match rx.recv().await {
                     Some(PolymarketWsMessage::User(user_msg)) => {
-                        if let Some(_refresh) =
+                        let refresh = {
+                            let mut state = ws_dispatch_state.lock().expect(MUTEX_POISONED);
                             dispatch_user_message(&user_msg, &ctx, &mut state)
-                        {
+                        };
+
+                        if refresh.is_some() {
                             let http = http_client.clone();
                             let emit = emitter.clone();
 
@@ -387,6 +390,7 @@ impl PolymarketExecutionClient {
         self.clear_position_event_subscription();
         self.shared_token_instruments.store(AHashMap::new());
         self.neg_risk_index.store(AHashMap::new());
+        *self.ws_dispatch_state.lock().expect(MUTEX_POISONED) = WsDispatchState::default();
     }
 
     pub(super) async fn connect_client(&mut self) -> anyhow::Result<()> {
@@ -1033,6 +1037,12 @@ mod tests {
         client.upsert_execution_lookup(&expired);
         client.ensure_order_event_subscription();
         client.ensure_position_event_subscription();
+        client
+            .ws_dispatch_state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .processed_fills
+            .add("trade-1".to_string());
 
         client.reset_client();
 
@@ -1044,5 +1054,37 @@ mod tests {
                 .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
         );
         assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert!(
+            !client
+                .ws_dispatch_state
+                .lock()
+                .expect(MUTEX_POISONED)
+                .processed_fills
+                .contains(&"trade-1".to_string())
+        );
+    }
+
+    #[rstest]
+    fn stop_preserves_websocket_dedup_state_for_reconnect() {
+        let (mut client, _cache) = test_client();
+        let dedup_key = "trade-reconnect".to_string();
+        client.start_client();
+        client
+            .ws_dispatch_state
+            .lock()
+            .expect(MUTEX_POISONED)
+            .processed_fills
+            .add(dedup_key.clone());
+
+        client.stop_client();
+
+        assert!(
+            client
+                .ws_dispatch_state
+                .lock()
+                .expect(MUTEX_POISONED)
+                .processed_fills
+                .contains(&dedup_key)
+        );
     }
 }

@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
 
 
@@ -22,6 +25,16 @@ class _FakeContainer:
 
     def logs(self) -> bytes:
         return self._logs
+
+
+def test_gateway_does_not_use_active_docker_context(mocker) -> None:
+    pytest.importorskip("docker")
+    from_env = mocker.patch("docker.from_env")
+    config = DockerizedIBGatewayConfig(username="test", password="test")
+
+    DockerizedIBGateway(config)
+
+    from_env.assert_called_once_with(use_context=False)
 
 
 def test_gateway_is_logged_in_requires_completed_login_markers() -> None:

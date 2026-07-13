@@ -1857,6 +1857,8 @@ mod tests {
     #[tokio::test]
     async fn test_market_stats_subscriptions_share_perp_channel_until_last_unsub() {
         let mut client = create_data_client_for_test();
+        // Prevent the unconnected test client from asynchronously rolling back local flags
+        client.cancellation_token.cancel();
         let instrument_id = cache_test_instrument(&client, 0, "ETH", LighterProductType::Perp);
 
         DataClient::subscribe_mark_prices(

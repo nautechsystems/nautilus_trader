@@ -80,7 +80,7 @@ impl MessageBusConfig {
     /// Configuration for `MessageBus` instances.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (encoding=None, encoding_market_data=None, encoding_builtin=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
+    #[pyo3(signature = (encoding=None, encoding_market_data=None, encoding_builtin=None, timestamps_as_iso8601=None, buffer_interval_ms=None, autotrim_mins=None, autotrim_maxlen=None, use_trader_prefix=None, use_trader_id=None, use_instance_id=None, streams_prefix=None, stream_per_topic=None, external_streams=None, types_filter=None, heartbeat_interval_secs=None))]
     fn py_new(
         encoding: Option<SerializationEncoding>,
         encoding_market_data: Option<SerializationEncoding>,
@@ -88,6 +88,7 @@ impl MessageBusConfig {
         timestamps_as_iso8601: Option<bool>,
         buffer_interval_ms: Option<u32>,
         autotrim_mins: Option<u32>,
+        autotrim_maxlen: Option<u32>,
         use_trader_prefix: Option<bool>,
         use_trader_id: Option<bool>,
         use_instance_id: Option<bool>,
@@ -105,6 +106,7 @@ impl MessageBusConfig {
             timestamps_as_iso8601: timestamps_as_iso8601.unwrap_or(default.timestamps_as_iso8601),
             buffer_interval_ms,
             autotrim_mins,
+            autotrim_maxlen,
             use_trader_prefix: use_trader_prefix.unwrap_or(default.use_trader_prefix),
             use_trader_id: use_trader_id.unwrap_or(default.use_trader_id),
             use_instance_id: use_instance_id.unwrap_or(default.use_instance_id),
@@ -155,6 +157,11 @@ impl MessageBusConfig {
     #[getter]
     fn autotrim_mins(&self) -> Option<u32> {
         self.autotrim_mins
+    }
+
+    #[getter]
+    fn autotrim_maxlen(&self) -> Option<u32> {
+        self.autotrim_maxlen
     }
 
     #[getter]
@@ -736,6 +743,7 @@ mod tests {
                 Some(SerializationEncoding::Json),
                 None,
                 Some(SerializationEncoding::Capnp),
+                None,
                 None,
                 None,
                 None,

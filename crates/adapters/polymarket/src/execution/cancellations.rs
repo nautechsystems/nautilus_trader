@@ -54,11 +54,14 @@ impl PolymarketExecutionClient {
         let venue_order_id = match order_ref.venue_order_id() {
             Some(id) => id,
             None => match self
-                .core
-                .cache()
+                .order_identities
                 .venue_order_id(&cmd.client_order_id)
-                .copied()
-            {
+                .or_else(|| {
+                    self.core
+                        .cache()
+                        .venue_order_id(&cmd.client_order_id)
+                        .copied()
+                }) {
                 Some(id) => id,
                 None => {
                     log::debug!(
@@ -71,10 +74,10 @@ impl PolymarketExecutionClient {
             },
         };
 
-        let order_id_str = venue_order_id.to_string();
+        let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
-        let clock = self.clock;
+        let order_id_str = venue_order_id.to_string();
         let order_clone = order.unwrap();
 
         self.spawn_task("cancel_order", async move {
@@ -117,20 +120,33 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let venue_order_ids: Vec<String> = open_orders
-            .iter()
-            .filter_map(|o| o.venue_order_id().map(|v| v.to_string()))
-            .collect();
+        let mut venue_order_ids = Vec::new();
+        let mut orders = Vec::new();
+
+        for order in open_orders {
+            if let Some(venue_order_id) = order.venue_order_id().or_else(|| {
+                self.order_identities
+                    .venue_order_id(&order.client_order_id())
+            }) {
+                venue_order_ids.push(venue_order_id.to_string());
+                orders.push((venue_order_id, order.clone()));
+            } else {
+                log::debug!(
+                    "Cancel all for {} deferred, venue_order_id not yet available",
+                    order.client_order_id()
+                );
+                self.pending_cancels.insert(order.client_order_id());
+            }
+        }
 
         if venue_order_ids.is_empty() {
-            log::warn!("No venue order IDs found for cancel all");
+            log::debug!("All matching orders are awaiting venue order IDs");
             return;
         }
 
+        let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
-        let clock = self.clock;
-        let orders: Vec<OrderAny> = open_orders.into_iter().map(|o| o.clone()).collect();
 
         self.spawn_task("cancel_all_orders", async move {
             let order_id_refs: Vec<&str> = venue_order_ids.iter().map(String::as_str).collect();
@@ -139,11 +155,16 @@ impl PolymarketExecutionClient {
                 .await
                 .context("failed to cancel all orders")?;
 
-            for order in &orders {
-                if let Some(vid) = order.venue_order_id() {
-                    let vid_str = vid.to_string();
-                    process_cancel_result(&response, &vid_str, order, vid, &emitter, clock);
-                }
+            for (venue_order_id, order) in &orders {
+                let venue_order_id_str = venue_order_id.to_string();
+                process_cancel_result(
+                    &response,
+                    &venue_order_id_str,
+                    order,
+                    *venue_order_id,
+                    &emitter,
+                    clock,
+                );
             }
 
             log::debug!("Canceled {} orders", response.canceled.len());
@@ -159,22 +180,31 @@ impl PolymarketExecutionClient {
         let mut venue_to_order: Vec<(String, OrderAny)> = Vec::new();
 
         for c in &cmd.cancels {
-            if let Some(order) = self.core.cache().order(&c.client_order_id)
-                && let Some(vid) = order.venue_order_id()
-            {
-                venue_to_order.push((vid.to_string(), order.clone()));
+            if let Some(order) = self.core.cache().order(&c.client_order_id) {
+                if let Some(venue_order_id) = order
+                    .venue_order_id()
+                    .or_else(|| self.order_identities.venue_order_id(&c.client_order_id))
+                {
+                    venue_to_order.push((venue_order_id.to_string(), order.clone()));
+                } else {
+                    log::debug!(
+                        "Batch cancel for {} deferred, venue_order_id not yet available",
+                        c.client_order_id
+                    );
+                    self.pending_cancels.insert(c.client_order_id);
+                }
             }
         }
 
         if venue_to_order.is_empty() {
-            log::warn!("No venue order IDs found for batch cancel");
+            log::debug!("All batch cancels are awaiting venue order IDs");
             return;
         }
 
-        let order_ids: Vec<String> = venue_to_order.iter().map(|(id, _)| id.clone()).collect();
+        let clock = self.clock;
         let submitter = self.submitter.clone();
         let emitter = self.emitter.clone();
-        let clock = self.clock;
+        let order_ids: Vec<String> = venue_to_order.iter().map(|(id, _)| id.clone()).collect();
 
         self.spawn_task("batch_cancel_orders", async move {
             let order_id_refs: Vec<&str> = order_ids.iter().map(String::as_str).collect();

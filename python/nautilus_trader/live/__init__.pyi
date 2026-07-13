@@ -189,10 +189,18 @@ class LiveNodeBuilder:
     def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ...
     def with_logging(self, logging: common.LoggerConfig) -> LiveNodeBuilder: ...
     def add_data_client(
-        self, name: str | None, factory: typing.Any, config: typing.Any
+        self,
+        name: str | None,
+        factory: typing.Any,
+        config: typing.Any,
+        routing: RoutingConfig | None = None,
     ) -> LiveNodeBuilder: ...
     def add_exec_client(
-        self, name: str | None, factory: typing.Any, config: typing.Any
+        self,
+        name: str | None,
+        factory: typing.Any,
+        config: typing.Any,
+        routing: RoutingConfig | None = None,
     ) -> LiveNodeBuilder: ...
     def add_simulated_exec_client(
         self, name: str | None, factory: typing.Any, config: typing.Any

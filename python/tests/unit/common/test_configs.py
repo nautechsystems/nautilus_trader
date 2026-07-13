@@ -181,6 +181,7 @@ def test_message_bus_config_defaults():
     assert config.timestamps_as_iso8601 is False
     assert config.buffer_interval_ms is None
     assert config.autotrim_mins is None
+    assert config.autotrim_maxlen is None
     assert config.use_trader_prefix is True
     assert config.use_trader_id is True
     assert config.use_instance_id is False
@@ -196,6 +197,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
         timestamps_as_iso8601=True,
         buffer_interval_ms=7,
         autotrim_mins=8,
+        autotrim_maxlen=1_000,
         use_trader_prefix=False,
         use_trader_id=False,
         use_instance_id=True,
@@ -209,6 +211,7 @@ def test_message_bus_config_accepts_explicit_kwargs():
     assert config.timestamps_as_iso8601 is True
     assert config.buffer_interval_ms == 7
     assert config.autotrim_mins == 8
+    assert config.autotrim_maxlen == 1_000
     assert config.use_trader_prefix is False
     assert config.use_trader_id is False
     assert config.use_instance_id is True

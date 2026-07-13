@@ -63,9 +63,12 @@ pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
     match c as u8 as char {
         'A' => Ok(BookAction::Add),
         'C' => Ok(BookAction::Delete),
-        'F' => Ok(BookAction::Update),
         'M' => Ok(BookAction::Update),
         'R' => Ok(BookAction::Clear),
+        // 'F' (Fill) and 'N' (None) are deliberately NOT book actions: fills
+        // are attribution records whose book impact arrives as the explicit
+        // Cancel/Modify of the same match event (`decode_mbo_msg` filters
+        // them out before calling this).
         invalid => anyhow::bail!("Invalid `BookAction`, was '{invalid}'"),
     }
 }

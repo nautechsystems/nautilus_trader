@@ -8572,6 +8572,142 @@ fn test_bar_adaptive_ordering_fills_low_side_first(
     assert_eq!(fills[1].client_order_id, buy_id, "BUY should fill second");
 }
 
+#[rstest]
+fn test_quote_bar_adaptive_ordering_fills_low_side_first(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+    account_id: AccountId,
+) {
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        bar_adaptive_high_low_ordering: true,
+        ..Default::default()
+    };
+    let mut engine =
+        get_order_matching_engine(instrument_eth_usdt.clone(), None, None, None, Some(config));
+
+    // Set initial market
+    let quote = QuoteTick::new(
+        instrument_eth_usdt.id(),
+        Price::from("1500.00"),
+        Price::from("1500.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(1u64),
+        UnixNanos::from(1u64),
+    );
+    engine.process_quote_tick(&quote);
+
+    let buy_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+    let mut buy_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .trigger_price(Price::from("1510.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(buy_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut buy_stop, account_id);
+
+    let sell_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+    let mut sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .trigger_price(Price::from("1490.00"))
+        .quantity(Quantity::from("1.000"))
+        .client_order_id(sell_id)
+        .submit(true)
+        .build();
+    engine.process_order(&mut sell_stop, account_id);
+
+    clear_order_event_handler_messages(&order_event_handler);
+
+    // BID/ASK bar pair with open closer to low: |H-O|=22 > |L-O|=18 -> L processed first
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&bid_bar);
+    engine.process_bar(&ask_bar);
+
+    // With adaptive ordering the low leg processes before the high leg, so the
+    // SELL stop (triggered on the low) fills before the BUY stop (v1 parity)
+    let saved_messages = get_order_event_handler_messages(&order_event_handler);
+    let fills: Vec<&OrderFilled> = saved_messages
+        .iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(f) => Some(f),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 2, "Both stops should fill");
+    assert_eq!(
+        fills[0].client_order_id, sell_id,
+        "SELL should fill first (low processed before high)"
+    );
+    assert_eq!(fills[1].client_order_id, buy_id, "BUY should fill second");
+}
+
+#[rstest]
+fn test_reset_clears_cached_quote_bars(
+    instrument_eth_usdt: InstrumentAny,
+    order_event_handler: TypedIntoMessageSavingHandler<OrderEventAny>,
+) {
+    let _ = order_event_handler;
+    let config = OrderMatchingEngineConfig {
+        bar_execution: true,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(instrument_eth_usdt, None, None, None, Some(config));
+
+    // Cache one side of a quote-bar pair, then reset
+    let bid_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        open: Price::from("1498.00"),
+        high: Price::from("1520.00"),
+        low: Price::from("1480.00"),
+        close: Price::from("1500.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&bid_bar);
+    engine.reset();
+
+    // The opposite side arriving with the same timestamp must not pair with the
+    // stale pre-reset bid bar
+    let ask_bar = Bar {
+        bar_type: BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        open: Price::from("1499.00"),
+        high: Price::from("1521.00"),
+        low: Price::from("1481.00"),
+        close: Price::from("1501.00"),
+        volume: Quantity::from("100.000"),
+        ts_event: UnixNanos::from(2u64),
+        ts_init: UnixNanos::from(2u64),
+    };
+    engine.process_bar(&ask_bar);
+
+    assert_eq!(engine.best_bid_price(), None);
+}
+
 // L2 engine with trade_execution=false does not iterate on trade ticks
 #[ignore]
 #[rstest]

@@ -1217,6 +1217,14 @@ impl DatabaseQueries {
     ///
     /// Returns an error if the SQL INSERT operation fails.
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
+        if bar.bar_type.is_composite() {
+            anyhow::bail!(
+                "Cannot persist bar with composite bar type {}: the bar table stores only \
+                 the standard form; standardize the bar type before persisting",
+                bar.bar_type,
+            );
+        }
+
         let bar_step = i32::try_from(bar.bar_type.spec().step.get())
             .map_err(|e| anyhow::anyhow!("invalid bar step: {e}"))?;
 

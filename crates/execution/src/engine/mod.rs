@@ -68,9 +68,8 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderCanceled, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny,
-        OrderExpired, OrderFilled, OrderInitialized, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFilled,
+        OrderInitialized, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
@@ -90,7 +89,8 @@ use crate::{
     reconciliation::{
         check_position_reconciliation, create_incremental_inferred_fill,
         generate_external_order_status_events, generate_reconciliation_order_events,
-        reconcile_fill_report as reconcile_fill,
+        generate_reconciliation_order_pre_fill_events, is_superseded_cancel_report,
+        reconcile_fill_report as reconcile_fill, reconcile_order_report,
     },
 };
 
@@ -123,7 +123,7 @@ pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     clients: IndexMap<ClientId, ExecutionClientAdapter>,
-    default_client: Option<ExecutionClientAdapter>,
+    default_client_id: Option<ClientId>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
@@ -157,7 +157,7 @@ impl ExecutionEngine {
             clock: clock.clone(),
             cache,
             clients: IndexMap::new(),
-            default_client: None,
+            default_client_id: None,
             routing_map: HashMap::new(),
             oms_overrides: HashMap::new(),
             external_order_claims: HashMap::new(),
@@ -310,39 +310,22 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns true if all registered execution clients are connected.
     pub fn check_connected(&self) -> bool {
-        let clients_connected = self.clients.values().all(|c| c.is_connected());
-        let default_connected = self
-            .default_client
-            .as_ref()
-            .is_none_or(|c| c.is_connected());
-        clients_connected && default_connected
+        self.clients.values().all(|c| c.is_connected())
     }
 
     #[must_use]
     /// Returns true if all registered execution clients are disconnected.
     pub fn check_disconnected(&self) -> bool {
-        let clients_disconnected = self.clients.values().all(|c| !c.is_connected());
-        let default_disconnected = self
-            .default_client
-            .as_ref()
-            .is_none_or(|c| !c.is_connected());
-        clients_disconnected && default_disconnected
+        self.clients.values().all(|c| !c.is_connected())
     }
 
     /// Returns connection status for each registered client.
     #[must_use]
     pub fn client_connection_status(&self) -> Vec<(ClientId, bool)> {
-        let mut status: Vec<_> = self
-            .clients
+        self.clients
             .values()
             .map(|c| (c.client_id(), c.is_connected()))
-            .collect();
-
-        if let Some(default) = &self.default_client {
-            status.push((default.client_id(), default.is_connected()));
-        }
-
-        status
+            .collect()
     }
 
     #[must_use]
@@ -402,8 +385,28 @@ impl ExecutionEngine {
         let client_id = client.client_id();
         let adapter = ExecutionClientAdapter::new(client);
 
+        self.clients.insert(client_id, adapter);
+        self.default_client_id = Some(client_id);
         log::debug!("Registered default client {client_id}");
-        self.default_client = Some(adapter);
+    }
+
+    /// Marks an already-registered client as the default for fallback routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no client is registered with the given ID, or a default
+    /// client has already been set.
+    pub fn set_default_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
+        if self.default_client_id.is_some() {
+            anyhow::bail!("default client already registered");
+        }
+
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+        self.default_client_id = Some(client_id);
+        log::debug!("Set client {client_id} as default");
+        Ok(())
     }
 
     #[must_use]
@@ -418,11 +421,6 @@ impl ExecutionEngine {
         &mut self,
         client_id: &ClientId,
     ) -> Option<&mut ExecutionClientAdapter> {
-        if let Some(default) = &self.default_client
-            && &default.client_id == client_id
-        {
-            return self.default_client.as_mut();
-        }
         self.clients.get_mut(client_id)
     }
 
@@ -456,18 +454,16 @@ impl ExecutionEngine {
         ts_init: UnixNanos,
     ) {
         let venue = instrument_id.venue;
-        if let Some(client_id) = self.routing_map.get(&venue) {
-            if let Some(client) = self.clients.get(client_id) {
-                client.register_external_order(
-                    client_order_id,
-                    venue_order_id,
-                    instrument_id,
-                    strategy_id,
-                    ts_init,
-                );
-            }
-        } else if let Some(default) = &self.default_client {
-            default.register_external_order(
+        let client_id = self
+            .routing_map
+            .get(&venue)
+            .copied()
+            .or(self.default_client_id);
+
+        if let Some(client_id) = client_id
+            && let Some(client) = self.clients.get(&client_id)
+        {
+            client.register_external_order(
                 client_order_id,
                 venue_order_id,
                 instrument_id,
@@ -480,36 +476,19 @@ impl ExecutionEngine {
     #[must_use]
     /// Returns all registered execution client IDs.
     pub fn client_ids(&self) -> Vec<ClientId> {
-        let mut ids: Vec<_> = self.clients.keys().copied().collect();
-
-        if let Some(default) = &self.default_client {
-            ids.push(default.client_id);
-        }
-        ids
+        self.clients.keys().copied().collect()
     }
 
     #[must_use]
     /// Returns mutable access to all registered execution clients.
     pub fn get_clients_mut(&mut self) -> Vec<&mut ExecutionClientAdapter> {
-        let mut adapters: Vec<_> = self.clients.values_mut().collect();
-
-        if let Some(default) = &mut self.default_client {
-            adapters.push(default);
-        }
-        adapters
+        self.clients.values_mut().collect()
     }
 
     /// Returns all registered execution clients.
     #[must_use]
     pub fn get_all_clients(&self) -> Vec<&dyn ExecutionClient> {
-        let mut clients: Vec<&dyn ExecutionClient> =
-            self.clients.values().map(|a| a.client.as_ref()).collect();
-
-        if let Some(default) = &self.default_client {
-            clients.push(default.client.as_ref());
-        }
-
-        clients
+        self.clients.values().map(|a| a.client.as_ref()).collect()
     }
 
     #[must_use]
@@ -542,13 +521,13 @@ impl ExecutionEngine {
 
         // Add clients for venue routing (for orders not in cache)
         for venue in &venues {
-            if let Some(client_id) = self.routing_map.get(venue) {
-                if let Some(adapter) = self.clients.get(client_id)
-                    && !clients.iter().any(|c| c.client_id() == adapter.client_id)
-                {
-                    clients.push(adapter.client.as_ref());
-                }
-            } else if let Some(adapter) = &self.default_client
+            let resolved_id = self
+                .routing_map
+                .get(venue)
+                .copied()
+                .or(self.default_client_id);
+
+            if let Some(adapter) = resolved_id.and_then(|id| self.clients.get(&id))
                 && !clients.iter().any(|c| c.client_id() == adapter.client_id)
             {
                 clients.push(adapter.client.as_ref());
@@ -1468,13 +1447,34 @@ impl ExecutionEngine {
                 report.venue_order_id,
                 report.instrument_id,
             );
+
+            if fills.is_empty()
+                && let Some(order) = order
+            {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let events = generate_reconciliation_order_events(&order, report, None, ts_now);
+                for event in &events {
+                    self.handle_event(event);
+                }
+            }
             return;
         };
 
         // Bootstrap the external order with only OrderAccepted; defer fill events to
         // the per-fill loop so real fill metadata is preserved.
         let mut order = match order {
-            Some(order) => order,
+            Some(order) => {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let events = generate_reconciliation_order_pre_fill_events(&order, report, ts_now);
+                for event in &events {
+                    self.handle_event(event);
+                }
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .map(|o| o.clone())
+                    .unwrap_or(order)
+            }
             None => {
                 let Some(order) = self.materialize_external_order_from_status(report) else {
                     return;
@@ -1493,7 +1493,11 @@ impl ExecutionEngine {
                     true, // reconciliation
                 );
                 self.handle_event(&OrderEventAny::Accepted(accepted));
-                order
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .map(|o| o.clone())
+                    .unwrap_or(order)
             }
         };
 
@@ -1527,8 +1531,12 @@ impl ExecutionEngine {
         // an inferred fill so the order reaches the venue-reported terminal state.
         if matches!(
             report.order_status,
-            OrderStatus::PartiallyFilled | OrderStatus::Filled,
-        ) && report.filled_qty > order.filled_qty()
+            OrderStatus::PartiallyFilled
+                | OrderStatus::Filled
+                | OrderStatus::Canceled
+                | OrderStatus::Expired,
+        ) && !is_superseded_cancel_report(&order, report)
+            && report.filled_qty > order.filled_qty()
         {
             let ts_now = self.clock.borrow().timestamp_ns();
 
@@ -1553,41 +1561,16 @@ impl ExecutionEngine {
             }
         }
 
-        // Apply terminal events when the venue reports a non-fill closure.
-        match report.order_status {
-            OrderStatus::Canceled if !order.is_closed() => {
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let canceled = OrderCanceled::new(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    UUID4::new(),
-                    report.ts_last,
-                    ts_now,
-                    true,
-                    Some(report.venue_order_id),
-                    Some(report.account_id),
-                );
-                self.handle_event(&OrderEventAny::Canceled(canceled));
+        if !order.is_closed()
+            && matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired,
+            )
+        {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            if let Some(event) = reconcile_order_report(&order, report, Some(&instrument), ts_now) {
+                self.handle_event(&event);
             }
-            OrderStatus::Expired if !order.is_closed() => {
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let expired = OrderExpired::new(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    UUID4::new(),
-                    report.ts_last,
-                    ts_now,
-                    true,
-                    Some(report.venue_order_id),
-                    Some(report.account_id),
-                );
-                self.handle_event(&OrderEventAny::Expired(expired));
-            }
-            _ => {}
         }
     }
 
@@ -1725,8 +1708,8 @@ impl ExecutionEngine {
     /// Reconciles an execution mass status report.
     ///
     /// Processes all order reports, fill reports, and position reports contained
-    /// in the mass status. Orders created as external during this pass already receive
-    /// inferred fills, so their companion fill reports are skipped to avoid double-fills.
+    /// in the mass status. Order reports are paired with their companion fills so
+    /// real trade IDs and commissions are applied before any residual inferred fill.
     pub fn reconcile_execution_mass_status(&mut self, mass_status: &ExecutionMassStatus) {
         self.report_count += 1;
 
@@ -1737,74 +1720,24 @@ impl ExecutionEngine {
             mass_status.venue
         );
 
-        let mut external_venue_ids = AHashSet::new();
-        let mut filtered_venue_ids = AHashSet::new();
+        let order_reports = mass_status.order_reports();
+        let fill_reports = mass_status.fill_reports();
+        let mut paired_venue_ids = AHashSet::new();
 
-        for order_report in mass_status.order_reports().values() {
-            let existed = {
-                let cache = self.cache.borrow();
-                order_report
-                    .client_order_id
-                    .and_then(|id| cache.order(&id).map(|o| o.clone()))
-                    .or_else(|| {
-                        cache
-                            .client_order_id(&order_report.venue_order_id)
-                            .and_then(|cid| cache.order(cid).map(|o| o.clone()))
-                    })
-                    .is_some()
-            };
-            let filtered_count = self.filtered_unclaimed_external_order_count;
-
-            self.reconcile_order_status_report(order_report);
-
-            if !existed {
-                if self.filtered_unclaimed_external_order_count > filtered_count {
-                    filtered_venue_ids.insert(order_report.venue_order_id);
-                } else {
-                    let exists_after = {
-                        let cache = self.cache.borrow();
-                        order_report
-                            .client_order_id
-                            .and_then(|id| cache.order(&id).map(|o| o.clone()))
-                            .or_else(|| {
-                                cache
-                                    .client_order_id(&order_report.venue_order_id)
-                                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
-                            })
-                            .is_some()
-                    };
-
-                    if exists_after {
-                        external_venue_ids.insert(order_report.venue_order_id);
-                    }
-                }
+        for order_report in order_reports.values() {
+            if let Some(fills) = fill_reports.get(&order_report.venue_order_id)
+                && !fills.is_empty()
+            {
+                self.reconcile_order_with_fills(order_report, fills);
+                paired_venue_ids.insert(order_report.venue_order_id);
+            } else {
+                self.reconcile_order_status_report(order_report);
             }
         }
 
-        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
-
-        for fill_reports in mass_status.fill_reports().values() {
+        for fill_reports in fill_reports.values() {
             for fill_report in fill_reports {
-                if external_venue_ids.contains(&fill_report.venue_order_id) {
-                    // Skipped fills still arrived from the venue; capture them
-                    // for forensic replay even though reconciliation is covered
-                    // by the inferred fill generated above.
-                    msgbus::publish_any(raw_fill_topic, fill_report);
-
-                    log::debug!(
-                        "Skipping fill report for external order {}: covered by inferred fill",
-                        fill_report.venue_order_id
-                    );
-                    continue;
-                }
-
-                if filtered_venue_ids.contains(&fill_report.venue_order_id) {
-                    msgbus::publish_any(raw_fill_topic, fill_report);
-
-                    log::debug!(
-                        "Skipping fill report for filtered unclaimed external order {}",
-                        fill_report.venue_order_id
-                    );
+                if paired_venue_ids.contains(&fill_report.venue_order_id) {
                     continue;
                 }
 
@@ -1842,6 +1775,11 @@ impl ExecutionEngine {
     /// Processes an order event, updating internal state and routing as needed.
     pub fn process(&mut self, event: &OrderEventAny) {
         self.handle_event(event);
+    }
+
+    /// Projects a reconciled fill onto its order without applying position or portfolio economics.
+    pub fn project_reconciliation_fill(&mut self, fill: &OrderFilled) {
+        self.handle_event_with_position_application(&OrderEventAny::Filled(fill.clone()), false);
     }
 
     /// Starts the execution engine and all registered execution clients.
@@ -2048,7 +1986,7 @@ impl ExecutionEngine {
             return Some(adapter);
         }
 
-        self.default_client.as_ref()
+        self.default_client_id.and_then(|id| self.clients.get(&id))
     }
 
     fn account_id_for_command(&self, command: &TradingCommand) -> Option<AccountId> {
@@ -2493,6 +2431,14 @@ impl ExecutionEngine {
     }
 
     fn handle_event(&mut self, event: &OrderEventAny) {
+        self.handle_event_with_position_application(event, true);
+    }
+
+    fn handle_event_with_position_application(
+        &mut self,
+        event: &OrderEventAny,
+        apply_position: bool,
+    ) {
         self.event_count += 1;
 
         if self.config.debug {
@@ -2596,23 +2542,35 @@ impl ExecutionEngine {
                     );
                     return;
                 };
-                let oms_type = self.determine_oms_type(fill);
+                let configured_oms_type = self.determine_oms_type(fill);
                 let position_id =
-                    self.determine_position_id(fill, oms_type, Some(&order_before_fill));
+                    self.determine_position_id(fill, configured_oms_type, Some(&order_before_fill));
+                let oms_type = self
+                    .cache
+                    .borrow()
+                    .oms_type(&position_id)
+                    .unwrap_or(configured_oms_type);
 
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
 
-                if self
-                    .validate_fill_for_order(&order_before_fill, &fill)
-                    .is_ok()
-                {
+                let validation = if apply_position {
+                    self.validate_fill_for_order(&order_before_fill, &fill)
+                } else {
+                    self.validate_fill_for_order_projection(&order_before_fill, &fill)
+                };
+
+                if validation.is_ok() {
                     let event = OrderEventAny::Filled(fill.clone());
                     let Some(order) = self.update_cached_order(client_order_id, &event) else {
                         return;
                     };
 
-                    let position_events = self.handle_order_fill(&order, fill, oms_type);
+                    let position_events = if apply_position {
+                        self.handle_order_fill(&order, fill, oms_type)
+                    } else {
+                        Vec::new()
+                    };
                     self.publish_order_event(&event);
                     self.publish_position_events(position_events);
                 }
@@ -2724,7 +2682,7 @@ impl ExecutionEngine {
             return client.oms_type;
         }
 
-        if let Some(client) = &self.default_client {
+        if let Some(client) = self.default_client_id.and_then(|id| self.clients.get(&id)) {
             return client.oms_type;
         }
 
@@ -2876,18 +2834,20 @@ impl ExecutionEngine {
 
         let cache = self.cache.borrow();
 
-        let exec_spawn_id = if let Some(o) = order {
-            o.exec_spawn_id()
-        } else if let Some(o) = cache.order(&fill.client_order_id()) {
-            o.exec_spawn_id()
+        let cached_order;
+        let order: &OrderAny = if let Some(order) = order {
+            order
         } else {
-            panic!(
-                "Order for {} not found to determine position ID",
-                fill.client_order_id()
-            );
+            cached_order = cache.order(&fill.client_order_id()).unwrap_or_else(|| {
+                panic!(
+                    "Order for {} not found to determine position ID",
+                    fill.client_order_id()
+                )
+            });
+            &cached_order
         };
         // Check execution spawn orders
-        if let Some(spawn_id) = exec_spawn_id {
+        if let Some(spawn_id) = order.exec_spawn_id() {
             let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
             for spawned_order in spawn_orders {
                 if let Some(pos_id) = spawned_order.position_id() {
@@ -2915,24 +2875,34 @@ impl ExecutionEngine {
                     && pos.quantity >= fill.last_qty
             });
 
-            if let Some(pos) = candidate {
+        if order.is_reduce_only() {
+            let mut candidates = cache
+                .positions_open(
+                    None,
+                    Some(&fill.instrument_id),
+                    Some(&fill.strategy_id),
+                    Some(&fill.account_id),
+                    None,
+                )
+                .into_iter()
+                .filter(|position| position.is_opposite_side(fill.order_side));
+            let candidate = candidates.next();
+
+            if let Some(position) = candidate
+                && candidates.next().is_none()
+                && order.would_reduce_only(position.side, position.quantity)
+            {
                 if self.config.debug {
                     log::debug!(
-                        "Reduce-only fill assigned to opposite-side position {} for {}",
-                        pos.id,
-                        fill.client_order_id()
+                        "Assigned reduce-only fill {} to position {}",
+                        fill.client_order_id(),
+                        position.id
                     );
                 }
-                return pos.id;
+                return position.id;
             }
-            log::error!(
-                "No safe opposite-side position found for reduce_only fill {} on {}; \
-                 fill will not open or flip a position",
-                fill.client_order_id(),
-                fill.instrument_id,
-            );
-            return PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
         }
+
         // Generate new position ID
         let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
 
@@ -2966,6 +2936,18 @@ impl ExecutionEngine {
                 position_id
             );
             anyhow::bail!("Duplicate position fill");
+        }
+
+        self.check_overfill(order, fill)
+    }
+
+    fn validate_fill_for_order_projection(
+        &self,
+        order: &OrderAny,
+        fill: &OrderFilled,
+    ) -> anyhow::Result<()> {
+        if order.is_duplicate_fill(fill) {
+            anyhow::bail!("Duplicate fill");
         }
 
         self.check_overfill(order, fill)
@@ -3298,7 +3280,7 @@ impl ExecutionEngine {
 
         match position_opt {
             None => {
-                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
@@ -3306,7 +3288,7 @@ impl ExecutionEngine {
                     .unwrap_or_default()
             }
             Some(pos) if pos.is_closed() => {
-                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
@@ -3323,15 +3305,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn reject_reduce_only_netting_position_open(
-        &self,
-        fill: &OrderFilled,
-        oms_type: OmsType,
-    ) -> bool {
-        if oms_type != OmsType::Netting {
-            return false;
-        }
-
+    fn reject_reduce_only_position_open(&self, fill: &OrderFilled, oms_type: OmsType) -> bool {
         let cache = self.cache.borrow();
         let Some(order) = cache.order_owned(&fill.client_order_id) else {
             return false;
@@ -3361,7 +3335,7 @@ impl ExecutionEngine {
             Self::position_details(positions_open.iter().map(|position| &**position));
 
         log::error!(
-            "Cannot open NETTING position {position_id} from reduce-only fill {} for {}; \
+            "Cannot open {oms_type} position {position_id} from reduce-only fill {} for {}; \
              matching_reduce_positions=[{}], open_positions=[{}]",
             fill.trade_id,
             fill.instrument_id,

@@ -33,7 +33,7 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_data::client::DataClientAdapter;
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::identifiers::{TraderId, Venue};
 use nautilus_portfolio::config::PortfolioConfig;
 #[cfg(feature = "python")]
 use nautilus_system::trader::Trader;
@@ -47,7 +47,10 @@ use nautilus_trading::ImportableControllerConfig;
 
 use super::{
     LiveNode,
-    config::{LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig},
+    config::{
+        LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
+        RoutingConfig,
+    },
 };
 use crate::{
     execution::{
@@ -88,6 +91,8 @@ pub struct LiveNodeBuilder {
     exec_client_factories: HashMap<String, ExecutionClientFactoryEntry>,
     data_client_configs: HashMap<String, Box<dyn ClientConfig>>,
     exec_client_configs: HashMap<String, Box<dyn ClientConfig>>,
+    data_client_routing: HashMap<String, RoutingConfig>,
+    exec_client_routing: HashMap<String, RoutingConfig>,
     event_store_factory: Option<EventStoreFactory>,
     clock_factory: Option<ClockFactory>,
     external_msgbus_factory: Option<Box<dyn MessageBusBackingFactory>>,
@@ -149,6 +154,8 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            data_client_routing: HashMap::new(),
+            exec_client_routing: HashMap::new(),
             event_store_factory: None,
             clock_factory: None,
             external_msgbus_factory: None,
@@ -177,6 +184,8 @@ impl LiveNodeBuilder {
             exec_client_factories: HashMap::new(),
             data_client_configs: HashMap::new(),
             exec_client_configs: HashMap::new(),
+            data_client_routing: HashMap::new(),
+            exec_client_routing: HashMap::new(),
             event_store_factory: None,
             clock_factory: None,
             external_msgbus_factory: None,
@@ -424,10 +433,25 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if a client with the same name is already registered.
     pub fn add_data_client(
+        self,
+        name: Option<String>,
+        factory: Box<dyn DataClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
+        self.add_data_client_with_routing(name, factory, config, RoutingConfig::default())
+    }
+
+    /// Adds a data client factory with configuration and explicit routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a client with the same name is already registered.
+    pub fn add_data_client_with_routing(
         mut self,
         name: Option<String>,
         factory: Box<dyn DataClientFactory>,
         config: Box<dyn ClientConfig>,
+        routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
@@ -436,20 +460,39 @@ impl LiveNodeBuilder {
         }
 
         self.data_client_factories.insert(name.clone(), factory);
-        self.data_client_configs.insert(name, config);
+        self.data_client_configs.insert(name.clone(), config);
+        self.data_client_routing.insert(name, routing);
         Ok(self)
     }
 
     /// Adds an execution client factory with configuration.
     ///
+    /// Equivalent to [`Self::add_exec_client_with_routing`] with default (empty)
+    /// routing.
+    ///
     /// # Errors
     ///
     /// Returns an error if a client with the same name is already registered.
     pub fn add_exec_client(
+        self,
+        name: Option<String>,
+        factory: Box<dyn ExecutionClientFactory>,
+        config: Box<dyn ClientConfig>,
+    ) -> anyhow::Result<Self> {
+        self.add_exec_client_with_routing(name, factory, config, RoutingConfig::default())
+    }
+
+    /// Adds an execution client factory with configuration and explicit routing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a client with the same name is already registered.
+    pub fn add_exec_client_with_routing(
         mut self,
         name: Option<String>,
         factory: Box<dyn ExecutionClientFactory>,
         config: Box<dyn ClientConfig>,
+        routing: RoutingConfig,
     ) -> anyhow::Result<Self> {
         let name = name.unwrap_or_else(|| factory.name().to_string());
 
@@ -459,7 +502,8 @@ impl LiveNodeBuilder {
 
         self.exec_client_factories
             .insert(name.clone(), ExecutionClientFactoryEntry::Adapter(factory));
-        self.exec_client_configs.insert(name, config);
+        self.exec_client_configs.insert(name.clone(), config);
+        self.exec_client_routing.insert(name, routing);
         Ok(self)
     }
 
@@ -575,10 +619,25 @@ impl LiveNodeBuilder {
                     client,
                 );
 
-                kernel
-                    .data_engine
-                    .borrow_mut()
-                    .register_client(adapter, venue);
+                let routing = self.data_client_routing.remove(&name).unwrap_or_default();
+
+                {
+                    let mut data_engine = kernel.data_engine.borrow_mut();
+                    data_engine.register_client(adapter, venue);
+
+                    if routing.default {
+                        data_engine.set_default_client(client_id)?;
+                    }
+
+                    if let Some(venues) = &routing.venues {
+                        for venue_str in venues {
+                            data_engine.register_venue_routing(
+                                client_id,
+                                Venue::new(venue_str.as_str()),
+                            )?;
+                        }
+                    }
+                }
 
                 log::info!("Registered DataClient-{client_id}");
             } else {
@@ -604,10 +663,25 @@ impl LiveNodeBuilder {
                 let client_id = client.client_id();
                 let venue = client.venue();
 
-                kernel
-                    .exec_engine
-                    .borrow_mut()
-                    .register_client(Box::new(client.clone()))?;
+                let routing = self.exec_client_routing.remove(&name).unwrap_or_default();
+
+                {
+                    let mut exec_engine = kernel.exec_engine.borrow_mut();
+                    exec_engine.register_client(Box::new(client.clone()))?;
+
+                    if routing.default {
+                        exec_engine.set_default_client(client_id)?;
+                    }
+
+                    if let Some(venues) = &routing.venues {
+                        for venue_str in venues {
+                            exec_engine.register_venue_routing(
+                                client_id,
+                                Venue::new(venue_str.as_str()),
+                            )?;
+                        }
+                    }
+                }
                 ExecutionEngine::subscribe_venue_instruments(&kernel.exec_engine, venue);
                 exec_clients.push(client);
 

@@ -432,6 +432,90 @@ fn test_build_index_when_empty(mut cache: Cache) {
 }
 
 #[rstest]
+fn test_oms_type_returns_actual_position_oms(mut cache: Cache) {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+
+    cache.add_position(&position, OmsType::Hedging).unwrap();
+
+    assert_eq!(cache.oms_type(&position_id), Some(OmsType::Hedging));
+
+    cache.clear_index();
+    cache.build_index();
+
+    assert_eq!(cache.oms_type(&position_id), Some(OmsType::Hedging));
+}
+
+#[rstest]
+fn test_cache_positions_loads_persisted_position_oms() {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let database = SnapshotBlobTestDatabase::with_position_oms(position, OmsType::Hedging);
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_positions()).unwrap();
+
+    assert_eq!(cache.oms_type(&position_id), Some(OmsType::Hedging));
+}
+
+#[rstest]
+fn test_cache_positions_without_persisted_oms_remains_unspecified() {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let database = SnapshotBlobTestDatabase {
+        positions: AHashMap::from([(position_id, position)]),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_positions()).unwrap();
+
+    assert_eq!(cache.oms_type(&position_id), None);
+}
+
+#[rstest]
+fn test_cache_positions_infers_legacy_netting_oms() {
+    let mut position = snapshot_test_position();
+    position.id = PositionId::new(format!(
+        "{}-{}",
+        position.instrument_id, position.strategy_id
+    ));
+    let position_id = position.id;
+    let database = SnapshotBlobTestDatabase {
+        positions: AHashMap::from([(position_id, position)]),
+        ..Default::default()
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_positions()).unwrap();
+
+    assert_eq!(cache.oms_type(&position_id), Some(OmsType::Netting));
+}
+
+#[rstest]
+fn test_cache_positions_skips_malformed_position_oms() {
+    let position = snapshot_test_position();
+    let position_id = position.id;
+    let database = SnapshotBlobTestDatabase {
+        general: AHashMap::from([(
+            super::position_oms_key(position_id),
+            Bytes::from_static(b"invalid"),
+        )]),
+        positions: AHashMap::from([(position_id, position)]),
+        fail_add: false,
+    };
+    let mut cache = Cache::default();
+    cache.set_database(Box::new(database));
+
+    futures::executor::block_on(cache.cache_positions()).unwrap();
+
+    assert_eq!(cache.oms_type(&position_id), None);
+}
+
+#[rstest]
 fn test_check_integrity_when_empty(mut cache: Cache) {
     let result = cache.check_integrity();
     assert!(result);
@@ -5680,6 +5764,7 @@ fn snapshot_test_position() -> Position {
 #[derive(Default)]
 struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
+    positions: AHashMap<PositionId, Position>,
     fail_add: bool,
 }
 
@@ -5689,6 +5774,21 @@ impl SnapshotBlobTestDatabase {
         general.insert(key, value);
         Self {
             general,
+            positions: AHashMap::new(),
+            fail_add: false,
+        }
+    }
+
+    fn with_position_oms(position: Position, oms_type: OmsType) -> Self {
+        let position_id = position.id;
+        let general = AHashMap::from([(
+            super::position_oms_key(position_id),
+            Bytes::from(serde_json::to_vec(&oms_type).unwrap()),
+        )]);
+        let positions = AHashMap::from([(position_id, position)]);
+        Self {
+            general,
+            positions,
             fail_add: false,
         }
     }
@@ -5696,6 +5796,7 @@ impl SnapshotBlobTestDatabase {
     fn fail_add() -> Self {
         Self {
             general: AHashMap::new(),
+            positions: AHashMap::new(),
             fail_add: true,
         }
     }
@@ -5740,7 +5841,7 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>> {
-        Ok(AHashMap::new())
+        Ok(self.positions.clone())
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {

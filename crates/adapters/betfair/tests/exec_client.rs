@@ -1602,6 +1602,16 @@ async fn test_generate_fill_reports() {
         assert!(report.last_qty.as_f64() > 0.0);
     }
 
+    let replay_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let replayed = client.generate_fill_reports(replay_cmd).await.unwrap();
+    assert!(
+        replayed.is_empty(),
+        "unchanged cumulative order state must not replay fill reports",
+    );
+
     client.disconnect().await.unwrap();
     let _ = server.await;
 }

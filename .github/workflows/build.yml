@@ -552,10 +552,14 @@ jobs:
 
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
+        env:
+          CARGO_BUILD_WARNINGS: warn
         run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       - name: Run Rust tests (adapters)
         if: needs.plan.outputs.run-rust-tests == 'true'
+        env:
+          CARGO_BUILD_WARNINGS: warn
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
       - name: Clean Rust test artifacts

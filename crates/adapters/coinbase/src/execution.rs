@@ -2492,8 +2492,20 @@ mod tests {
         }
         process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
+        let next_update = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
+        process_user_order_update(
+            make_carrier(next_update),
+            None,
+            &emitter,
+            &dedup,
+            &state,
+            None,
+        );
+
         let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 1, "replay should be deduplicated");
+        assert_eq!(fills.len(), 2, "replay should be deduplicated");
+        assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
+        assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
     }
 
     #[rstest]

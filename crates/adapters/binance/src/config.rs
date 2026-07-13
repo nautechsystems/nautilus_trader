@@ -19,6 +19,7 @@ use std::{any::Any, collections::HashMap};
 
 use nautilus_common::factories::ClientConfig;
 use nautilus_model::{
+    enums::OmsType,
     identifiers::{AccountId, TraderId},
     types::Currency,
 };
@@ -155,6 +156,11 @@ pub struct BinanceExecClientConfig {
     /// with `OmsType::Hedging`.
     #[builder(default = true)]
     pub use_position_ids: bool,
+    /// Optional OMS type override for Binance Futures accounts.
+    ///
+    /// Set to `Hedging` when the account uses dual-side position mode. When
+    /// `None`, Binance Futures clients use `Netting`. Ignored for Spot clients.
+    pub oms_type: Option<OmsType>,
     /// Default taker fee rate for commission estimation.
     ///
     /// Used as a fallback when the venue omits commission fields in
@@ -260,6 +266,7 @@ product_types = ["SPOT", "USD_M"]
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.use_ws_trading, expected.use_ws_trading);
         assert_eq!(config.use_position_ids, expected.use_position_ids);
+        assert_eq!(config.oms_type, expected.oms_type);
         assert_eq!(config.default_taker_fee, expected.default_taker_fee);
         assert_eq!(
             config.treat_expired_as_canceled,
@@ -267,5 +274,17 @@ product_types = ["SPOT", "USD_M"]
         );
         assert_eq!(config.use_trade_lite, expected.use_trade_lite);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    fn test_exec_config_toml_oms_type_override() {
+        let config: BinanceExecClientConfig = toml::from_str(
+            r#"
+oms_type = "Hedging"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
     }
 }

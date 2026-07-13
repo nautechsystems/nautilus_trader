@@ -79,7 +79,7 @@ use datafusion::arrow::{
     record_batch::RecordBatch,
 };
 use futures::StreamExt;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use nautilus_common::live::get_runtime;
 use nautilus_core::{
     UnixNanos,
@@ -88,10 +88,12 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10, QuoteTick, TradeTick,
-        close::InstrumentClose, is_monotonically_increasing_by_init, to_variant,
+        Bar, BarType, CustomData, Data, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
+        InstrumentStatus, MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDepth10,
+        QuoteTick, TradeTick, close::InstrumentClose, is_monotonically_increasing_by_init,
+        to_variant,
     },
+    enums::AggregationSource,
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
         OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
@@ -458,20 +460,69 @@ impl ParquetDataCatalog {
 
         // Instruments are handled separately via write_instruments method
 
-        self.write_to_parquet(&deltas, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&depth10s, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&quotes, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&trades, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&bars, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&mark_prices, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&index_prices, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&funding_rates, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&option_greeks, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&statuses, start, end, skip_disjoint_check)?;
-        self.write_to_parquet(&closes, start, end, skip_disjoint_check)?;
+        // Group each type by its identity so one write never mixes identifiers:
+        // the target directory and schema metadata are taken from the first
+        // element, so a mixed write would silently re-label the rest
+        self.write_grouped_to_parquet(deltas, start, end, skip_disjoint_check, |d| {
+            d.instrument_id
+        })?;
+        self.write_grouped_to_parquet(depth10s, start, end, skip_disjoint_check, |d| {
+            d.instrument_id
+        })?;
+        self.write_grouped_to_parquet(quotes, start, end, skip_disjoint_check, |q| {
+            q.instrument_id
+        })?;
+        self.write_grouped_to_parquet(trades, start, end, skip_disjoint_check, |t| {
+            t.instrument_id
+        })?;
+        self.write_grouped_to_parquet(bars, start, end, skip_disjoint_check, |b| b.bar_type)?;
+        self.write_grouped_to_parquet(mark_prices, start, end, skip_disjoint_check, |p| {
+            p.instrument_id
+        })?;
+        self.write_grouped_to_parquet(index_prices, start, end, skip_disjoint_check, |p| {
+            p.instrument_id
+        })?;
+        self.write_grouped_to_parquet(funding_rates, start, end, skip_disjoint_check, |r| {
+            r.instrument_id
+        })?;
+        self.write_grouped_to_parquet(option_greeks, start, end, skip_disjoint_check, |g| {
+            g.instrument_id
+        })?;
+        self.write_grouped_to_parquet(statuses, start, end, skip_disjoint_check, |s| {
+            s.instrument_id
+        })?;
+        self.write_grouped_to_parquet(closes, start, end, skip_disjoint_check, |c| {
+            c.instrument_id
+        })?;
 
         for (_, items) in custom_data {
             self.write_custom_data_batch(items, start, end, skip_disjoint_check)?;
+        }
+
+        Ok(())
+    }
+
+    fn write_grouped_to_parquet<T, K, F>(
+        &self,
+        data: Vec<T>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        skip_disjoint_check: Option<bool>,
+        key: F,
+    ) -> anyhow::Result<()>
+    where
+        T: HasTsInit + EncodeToRecordBatch + CatalogPathPrefix,
+        K: Eq + std::hash::Hash,
+        F: Fn(&T) -> K,
+    {
+        let mut groups: IndexMap<K, Vec<T>> = IndexMap::new();
+
+        for item in data {
+            groups.entry(key(&item)).or_default().push(item);
+        }
+
+        for (_, items) in groups {
+            self.write_to_parquet(&items, start, end, skip_disjoint_check)?;
         }
 
         Ok(())
@@ -501,6 +552,7 @@ impl ParquetDataCatalog {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - Data elements have mixed identities (instrument ID or bar type).
     /// - Data serialization to Arrow record batches fails.
     /// - Object store write operations fail.
     /// - File path construction fails.
@@ -542,6 +594,21 @@ impl ParquetDataCatalog {
 
         let type_name = to_snake_case(std::any::type_name::<T>());
         Self::check_ascending_timestamps(data, &type_name)?;
+
+        // The write directory and schema metadata come from the first element,
+        // so mixed identities would silently re-label everything after it
+        let first_metadata = data[0].metadata();
+        if let Some(position) = data
+            .iter()
+            .position(|item| item.metadata() != first_metadata)
+        {
+            anyhow::bail!(
+                "Cannot write {type_name} data with mixed identities: element {position} has \
+                 metadata {:?} but the first element has {first_metadata:?}; write each \
+                 instrument or bar type separately",
+                data[position].metadata(),
+            );
+        }
 
         let start_ts = start.unwrap_or(data.first().unwrap().ts_init());
         let end_ts = end.unwrap_or(data.last().unwrap().ts_init());
@@ -3802,14 +3869,8 @@ impl ParquetDataCatalog {
         let schema = batches[0].schema();
         let mut metadata = schema.metadata().clone();
 
-        if convert_bar_type_to_external
-            && let Some(bar_type_str) = metadata.get("bar_type").cloned()
-            && bar_type_str.ends_with("-INTERNAL")
-        {
-            metadata.insert(
-                "bar_type".to_string(),
-                bar_type_str.replace("-INTERNAL", "-EXTERNAL"),
-            );
+        if convert_bar_type_to_external {
+            convert_bar_type_metadata_to_external(&mut metadata);
         }
 
         let mut all_data = Vec::new();
@@ -3998,13 +4059,7 @@ impl ParquetDataCatalog {
         let mut metadata = schema.metadata().clone();
         let mut metadata_changed = false;
 
-        if let Some(bar_type_str) = metadata.get("bar_type").cloned()
-            && bar_type_str.ends_with("-INTERNAL")
-        {
-            metadata.insert(
-                "bar_type".to_string(),
-                bar_type_str.replace("-INTERNAL", "-EXTERNAL"),
-            );
+        if convert_bar_type_metadata_to_external(&mut metadata) {
             metadata_changed = true;
         }
 
@@ -4309,6 +4364,40 @@ impl_catalog_path_prefix!(ExecutionMassStatus, "execution_mass_status");
 /// );
 /// // Returns something like: "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet"
 /// ```
+// Rewrites internally aggregated bar_type metadata to the standard EXTERNAL form by
+// parsing and rebuilding the bar type: string replacement would corrupt symbols
+// containing "-INTERNAL" and mishandle composite suffixes. Returns whether the
+// metadata changed.
+fn convert_bar_type_metadata_to_external(metadata: &mut HashMap<String, String>) -> bool {
+    let Some(bar_type_str) = metadata.get("bar_type").cloned() else {
+        return false;
+    };
+
+    let bar_type = match bar_type_str.parse::<BarType>() {
+        Ok(bar_type) => bar_type,
+        Err(e) => {
+            log::warn!("Cannot convert bar_type '{bar_type_str}' to EXTERNAL: {e}");
+            return false;
+        }
+    };
+
+    if bar_type.standard().is_externally_aggregated() {
+        return false;
+    }
+
+    // The composite chain describes internal derivation, so the converted
+    // (venue-equivalent) form is the standard bar type marked EXTERNAL
+    let standard = bar_type.standard();
+    let converted = BarType::new(
+        standard.instrument_id(),
+        standard.spec(),
+        AggregationSource::External,
+    );
+    metadata.insert("bar_type".to_string(), converted.to_string());
+
+    true
+}
+
 #[must_use]
 pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) -> String {
     let datetime_1 = iso_timestamp_to_file_timestamp(&unix_nanos_to_iso8601(timestamp_1));
@@ -4998,5 +5087,54 @@ fn interval_to_tuple(
         Some((start, end))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    fn metadata_with(bar_type: &str) -> HashMap<String, String> {
+        HashMap::from([("bar_type".to_string(), bar_type.to_string())])
+    }
+
+    #[rstest]
+    #[case::internal_converts(
+        "AUD/USD.SIM-1-MINUTE-LAST-INTERNAL",
+        Some("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")
+    )]
+    #[case::external_unchanged("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", None)]
+    #[case::composite_flattens(
+        "AUD/USD.SIM-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL",
+        Some("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL")
+    )]
+    #[case::internal_in_symbol_preserved(
+        "X-INTERNAL.SIM-1-MINUTE-LAST-INTERNAL",
+        Some("X-INTERNAL.SIM-1-MINUTE-LAST-EXTERNAL")
+    )]
+    #[case::unparsable_unchanged("not-a-bar-type-INTERNAL", None)]
+    fn test_convert_bar_type_metadata_to_external(
+        #[case] input: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut metadata = metadata_with(input);
+
+        let changed = convert_bar_type_metadata_to_external(&mut metadata);
+
+        assert_eq!(changed, expected.is_some());
+        assert_eq!(
+            metadata.get("bar_type").map(String::as_str),
+            Some(expected.unwrap_or(input)),
+        );
+    }
+
+    #[rstest]
+    fn test_convert_bar_type_metadata_without_key_is_noop() {
+        let mut metadata = HashMap::new();
+
+        assert!(!convert_bar_type_metadata_to_external(&mut metadata));
+        assert!(metadata.is_empty());
     }
 }

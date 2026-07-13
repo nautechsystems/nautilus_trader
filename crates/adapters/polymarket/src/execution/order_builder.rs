@@ -34,6 +34,7 @@ use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     identifiers::VenueOrderId,
     orders::{Order, OrderAny},
+    types::Price,
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -196,6 +197,22 @@ impl PolymarketOrderBuilder {
             && !matches!(order.time_in_force(), TimeInForce::Gtc | TimeInForce::Gtd)
         {
             return Err("Post-only orders require GTC or GTD time in force".to_string());
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_limit_price(order: &OrderAny, tick_size: Price) -> Result<(), String> {
+        let price = order
+            .price()
+            .ok_or_else(|| "Limit orders require a price".to_string())?;
+        let tick = tick_size.as_decimal();
+        let max_price = Decimal::ONE - tick;
+
+        if price.as_decimal() < tick || price.as_decimal() > max_price {
+            return Err(format!(
+                "Limit order price {price} outside Polymarket range [{tick}, {max_price}]"
+            ));
         }
 
         Ok(())
@@ -396,6 +413,22 @@ mod tests {
         post_only: bool,
         tif: TimeInForce,
     ) -> OrderAny {
+        make_limit_at_price(
+            reduce_only,
+            quote_quantity,
+            post_only,
+            tif,
+            Price::from("0.50"),
+        )
+    }
+
+    fn make_limit_at_price(
+        reduce_only: bool,
+        quote_quantity: bool,
+        post_only: bool,
+        tif: TimeInForce,
+        price: Price,
+    ) -> OrderAny {
         let expire_time = if tif == TimeInForce::Gtd {
             Some(UnixNanos::from(2_000_000_000_000_000_000u64))
         } else {
@@ -408,7 +441,7 @@ mod tests {
             ClientOrderId::from("O-001"),
             OrderSide::Buy,
             Quantity::from("10"),
-            Price::from("0.50"),
+            price,
             tif,
             expire_time,
             post_only,
@@ -458,6 +491,43 @@ mod tests {
     fn test_validate_limit_order_valid() {
         let order = make_limit(false, false, false, TimeInForce::Gtc);
         assert!(PolymarketOrderBuilder::validate_limit_order(&order).is_ok());
+    }
+
+    #[rstest]
+    #[case("0.000", "0.001", "0.001", "0.999")]
+    #[case("1.000", "0.001", "0.001", "0.999")]
+    #[case("0.0000", "0.0001", "0.0001", "0.9999")]
+    #[case("1.0000", "0.0001", "0.0001", "0.9999")]
+    fn test_validate_limit_order_price_out_of_range_denied(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+        #[case] min_price: &str,
+        #[case] max_price: &str,
+    ) {
+        let order = make_limit_at_price(false, false, false, TimeInForce::Gtc, Price::from(price));
+        let err = PolymarketOrderBuilder::validate_limit_price(&order, Price::from(tick_size))
+            .unwrap_err();
+        assert_eq!(
+            err,
+            format!(
+                "Limit order price {price} outside Polymarket range [{min_price}, {max_price}]"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case("0.001", "0.001")]
+    #[case("0.999", "0.001")]
+    #[case("0.0001", "0.0001")]
+    #[case("0.9999", "0.0001")]
+    fn test_validate_limit_order_price_boundary_allowed(
+        #[case] price: &str,
+        #[case] tick_size: &str,
+    ) {
+        let order = make_limit_at_price(false, false, false, TimeInForce::Gtc, Price::from(price));
+        assert!(
+            PolymarketOrderBuilder::validate_limit_price(&order, Price::from(tick_size)).is_ok()
+        );
     }
 
     #[rstest]

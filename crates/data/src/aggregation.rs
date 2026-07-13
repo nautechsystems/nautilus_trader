@@ -122,6 +122,14 @@ pub trait BarAggregator: Any + Debug {
     fn set_aggregator_weak(&mut self, _weak: Weak<RefCell<Box<dyn BarAggregator>>>) {}
     /// Configures the continuous-future price adjustment for the underlying builder.
     fn set_adjustment(&mut self, _adjustment: Decimal, _mode: ContinuousFutureAdjustmentType) {}
+    /// Sets whether empty intervals emit bars at the last close.
+    /// Default implementation does nothing, `TimeBarAggregator` overrides.
+    fn set_build_with_no_updates(&mut self, _value: bool) {}
+    /// If the aggregator is processing historical data on a private clock.
+    /// Default implementation returns `false`, `TimeBarAggregator` overrides.
+    fn is_historical(&self) -> bool {
+        false
+    }
 }
 
 impl dyn BarAggregator {
@@ -281,6 +289,8 @@ impl BarBuilder {
         self.volume = self.volume.add(size);
         self.count += 1;
         self.ts_last = ts_init;
+
+        debug_assert!(self.high >= self.low, "OHLC invariant violated: high < low");
     }
 
     /// Updates the builder state with a completed bar, its volume, and the bar init timestamp.
@@ -317,6 +327,8 @@ impl BarBuilder {
         self.volume = self.volume.add(volume);
         self.count += 1;
         self.ts_last = ts_init;
+
+        debug_assert!(self.high >= self.low, "OHLC invariant violated: high < low");
     }
 
     /// Resets per-bar OHLCV state.
@@ -327,6 +339,7 @@ impl BarBuilder {
         self.open = None;
         self.high = None;
         self.low = None;
+        self.close = None;
         self.volume = Quantity::zero(self.size_precision);
         self.count = 0;
     }
@@ -400,6 +413,10 @@ impl Debug for BarAggregatorCore {
 impl BarAggregatorCore {
     /// Creates a new [`BarAggregatorCore`] instance.
     ///
+    /// The `bar_type` is standardized so aggregators always emit bars carrying the
+    /// standard form: the composite suffix is a local aggregation detail and must not
+    /// leak into emitted bars, publish topics, or cache keys.
+    ///
     /// # Panics
     ///
     /// Panics if `bar_type.aggregation_source` is not `AggregationSource::Internal`.
@@ -409,6 +426,7 @@ impl BarAggregatorCore {
         size_precision: u8,
         handler: H,
     ) -> Self {
+        let bar_type = bar_type.standard();
         Self {
             bar_type,
             builder: BarBuilder::new(bar_type, price_precision, size_precision),
@@ -730,12 +748,14 @@ impl BarAggregator for TickRunsBarAggregator {
 /// Provides a means of building volume bars aggregated from quote and trades.
 pub struct VolumeBarAggregator {
     core: BarAggregatorCore,
+    raw_step: QuantityRaw,
 }
 
 impl Debug for VolumeBarAggregator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(VolumeBarAggregator))
             .field("core", &self.core)
+            .field("raw_step", &self.raw_step)
             .finish()
     }
 }
@@ -753,12 +773,8 @@ impl VolumeBarAggregator {
         handler: H,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
+            raw_step: step_as_quantity_raw(bar_type.spec().step.get()),
         }
     }
 }
@@ -786,10 +802,14 @@ impl BarAggregator for VolumeBarAggregator {
         }
 
         let mut raw_size_update = size.raw;
-        let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
+        let raw_step = self.raw_step;
 
         while raw_size_update > 0 {
+            debug_assert!(
+                self.core.builder.volume.raw < raw_step,
+                "builder volume must stay below the step threshold between emissions"
+            );
+
             if self.core.builder.volume.raw + raw_size_update < raw_step {
                 self.core.apply_update(
                     price,
@@ -817,10 +837,14 @@ impl BarAggregator for VolumeBarAggregator {
         }
 
         let mut raw_volume_update = volume.raw;
-        let spec = self.core.bar_type.spec();
-        let raw_step = (spec.step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
+        let raw_step = self.raw_step;
 
         while raw_volume_update > 0 {
+            debug_assert!(
+                self.core.builder.volume.raw < raw_step,
+                "builder volume must stay below the step threshold between emissions"
+            );
+
             if self.core.builder.volume.raw + raw_volume_update < raw_step {
                 self.core.builder.update_bar(
                     bar,
@@ -872,14 +896,10 @@ impl VolumeImbalanceBarAggregator {
         size_precision: u8,
         handler: H,
     ) -> Self {
-        let raw_step = (bar_type.spec().step.get() as f64 * FIXED_SCALAR) as i128;
+        // Cast cannot overflow: usize::MAX * FIXED_SCALAR < i128::MAX
+        let raw_step = step_as_quantity_raw(bar_type.spec().step.get()) as i128;
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             imbalance_raw: 0,
             raw_step,
         }
@@ -981,14 +1001,9 @@ impl VolumeRunsBarAggregator {
         size_precision: u8,
         handler: H,
     ) -> Self {
-        let raw_step = (bar_type.spec().step.get() as f64 * FIXED_SCALAR) as QuantityRaw;
+        let raw_step = step_as_quantity_raw(bar_type.spec().step.get());
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             current_run_side: None,
             run_volume_raw: 0,
             raw_step,
@@ -1063,6 +1078,13 @@ impl BarAggregator for VolumeRunsBarAggregator {
                 self.current_run_side = None;
             }
         }
+
+        // Leftover volume past the last emitted bar starts a new run on the same
+        // side; without this the next same-side trade reads as a side change and
+        // resets the builder, silently dropping the pending volume.
+        if self.run_volume_raw > 0 {
+            self.current_run_side = Some(side);
+        }
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
@@ -1076,7 +1098,7 @@ impl BarAggregator for VolumeRunsBarAggregator {
 /// specification, then a bar is created and sent to the handler.
 pub struct ValueBarAggregator {
     core: BarAggregatorCore,
-    cum_value: f64,
+    cum_value: Decimal,
 }
 
 impl Debug for ValueBarAggregator {
@@ -1101,19 +1123,14 @@ impl ValueBarAggregator {
         handler: H,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
-            cum_value: 0.0,
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
+            cum_value: Decimal::ZERO,
         }
     }
 
     #[must_use]
     /// Returns the cumulative value for the aggregator.
-    pub const fn get_cumulative_value(&self) -> f64 {
+    pub const fn get_cumulative_value(&self) -> Decimal {
         self.cum_value
     }
 }
@@ -1140,42 +1157,46 @@ impl BarAggregator for ValueBarAggregator {
             return;
         }
 
-        let mut size_update = size.as_f64();
-        let spec = self.core.bar_type.spec();
+        let step_value = Decimal::from(self.core.bar_type.spec().step.get());
+        let price_value = price.as_decimal();
+        let mut size_update = size.as_decimal();
 
-        while size_update > 0.0 {
-            let value_update = price.as_f64() * size_update;
-            if value_update == 0.0 {
-                // Prevent division by zero - apply remaining size without triggering bar
-                self.core
-                    .apply_update(price, Quantity::new(size_update, size.precision), ts_init);
-                break;
-            }
+        while size_update > Decimal::ZERO {
+            // cum_value < step_value holds between emissions, so a zero value_update
+            // (zero price) always falls into the accumulate branch below and the
+            // division cannot see a zero divisor.
+            debug_assert!(self.cum_value < step_value);
+            let value_update = price_value * size_update;
 
-            if self.cum_value + value_update < spec.step.get() as f64 {
+            if self.cum_value + value_update < step_value {
                 self.cum_value += value_update;
-                self.core
-                    .apply_update(price, Quantity::new(size_update, size.precision), ts_init);
+                self.core.apply_update(
+                    price,
+                    quantity_from_decimal(size_update, size.precision),
+                    ts_init,
+                );
                 break;
             }
 
-            let value_diff = spec.step.get() as f64 - self.cum_value;
+            let value_diff = step_value - self.cum_value;
             let mut size_diff = size_update * (value_diff / value_update);
 
             // Clamp to minimum representable size to avoid zero-volume bars
-            if is_below_min_size(size_diff, size.precision) {
-                if is_below_min_size(size_update, size.precision) {
+            if is_below_min_size_decimal(size_diff, size.precision) {
+                if is_below_min_size_decimal(size_update, size.precision) {
                     break;
                 }
-                size_diff = min_size_f64(size.precision);
+                size_diff = min_size_decimal(size.precision);
             }
 
-            self.core
-                .apply_update(price, Quantity::new(size_diff, size.precision), ts_init);
+            // Subtract the representable quantity actually applied, not the ideal
+            // fraction, so rounding does not leak volume from the accounting
+            let applied = quantity_from_decimal(size_diff, size.precision);
+            self.core.apply_update(price, applied, ts_init);
 
             self.core.build_now_and_send();
-            self.cum_value = 0.0;
-            size_update -= size_diff;
+            self.cum_value = Decimal::ZERO;
+            size_update -= applied.as_decimal();
         }
     }
 
@@ -1184,49 +1205,47 @@ impl BarAggregator for ValueBarAggregator {
             return;
         }
 
-        let mut volume_update = volume;
-        let average_price = Price::new(
-            (bar.high.as_f64() + bar.low.as_f64() + bar.close.as_f64()) / 3.0,
-            self.core.builder.price_precision,
-        );
+        let step_value = Decimal::from(self.core.bar_type.spec().step.get());
+        let average_price =
+            ((bar.high.as_decimal() + bar.low.as_decimal() + bar.close.as_decimal())
+                / Decimal::from(3))
+            .round_dp(u32::from(self.core.builder.price_precision));
+        let mut volume_update = volume.as_decimal();
 
-        while volume_update.as_f64() > 0.0 {
-            let value_update = average_price.as_f64() * volume_update.as_f64();
-            if value_update == 0.0 {
-                // Prevent division by zero - apply remaining volume without triggering bar
-                self.core.builder.update_bar(bar, volume_update, ts_init);
-                break;
-            }
+        while volume_update > Decimal::ZERO {
+            // See `update` for why a zero divisor cannot occur here.
+            debug_assert!(self.cum_value < step_value);
+            let value_update = average_price * volume_update;
 
-            if self.cum_value + value_update < self.core.bar_type.spec().step.get() as f64 {
+            if self.cum_value + value_update < step_value {
                 self.cum_value += value_update;
-                self.core.builder.update_bar(bar, volume_update, ts_init);
+                self.core.builder.update_bar(
+                    bar,
+                    quantity_from_decimal(volume_update, volume.precision),
+                    ts_init,
+                );
                 break;
             }
 
-            let value_diff = self.core.bar_type.spec().step.get() as f64 - self.cum_value;
-            let mut volume_diff = volume_update.as_f64() * (value_diff / value_update);
+            let value_diff = step_value - self.cum_value;
+            let mut volume_diff = volume_update * (value_diff / value_update);
 
             // Clamp to minimum representable size to avoid zero-volume bars
-            if is_below_min_size(volume_diff, volume_update.precision) {
-                if is_below_min_size(volume_update.as_f64(), volume_update.precision) {
+            if is_below_min_size_decimal(volume_diff, volume.precision) {
+                if is_below_min_size_decimal(volume_update, volume.precision) {
                     break;
                 }
-                volume_diff = min_size_f64(volume_update.precision);
+                volume_diff = min_size_decimal(volume.precision);
             }
 
-            self.core.builder.update_bar(
-                bar,
-                Quantity::new(volume_diff, volume_update.precision),
-                ts_init,
-            );
+            // Subtract the representable quantity actually applied, not the ideal
+            // fraction, so rounding does not leak volume from the accounting
+            let applied = quantity_from_decimal(volume_diff, volume.precision);
+            self.core.builder.update_bar(bar, applied, ts_init);
 
             self.core.build_now_and_send();
-            self.cum_value = 0.0;
-            volume_update = Quantity::new(
-                volume_update.as_f64() - volume_diff,
-                volume_update.precision,
-            );
+            self.cum_value = Decimal::ZERO;
+            volume_update -= applied.as_decimal();
         }
     }
 }
@@ -1261,12 +1280,7 @@ impl ValueImbalanceBarAggregator {
         handler: H,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             imbalance_value: 0.0,
             step_value: bar_type.spec().step.get() as f64,
         }
@@ -1353,13 +1367,12 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                     value_chunk = price_f64 * size_chunk;
                 }
 
-                self.core.apply_update(
-                    trade.price,
-                    Quantity::new(size_chunk, trade.size.precision),
-                    trade.ts_init,
-                );
+                // Subtract the representable quantity actually applied, not the ideal
+                // fraction, so rounding does not leak volume from the accounting
+                let applied = Quantity::new(size_chunk, trade.size.precision);
+                self.core.apply_update(trade.price, applied, trade.ts_init);
                 self.imbalance_value += side_sign * value_chunk;
-                size_remaining -= size_chunk;
+                size_remaining -= applied.as_f64();
 
                 if self.imbalance_value.abs() >= self.step_value {
                     self.core.build_now_and_send();
@@ -1379,11 +1392,10 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                     value_to_flatten = price_f64 * size_chunk;
                 }
 
-                self.core.apply_update(
-                    trade.price,
-                    Quantity::new(size_chunk, trade.size.precision),
-                    trade.ts_init,
-                );
+                // Subtract the representable quantity actually applied, not the ideal
+                // fraction, so rounding does not leak volume from the accounting
+                let applied = Quantity::new(size_chunk, trade.size.precision);
+                self.core.apply_update(trade.price, applied, trade.ts_init);
                 self.imbalance_value += side_sign * value_to_flatten;
 
                 // Min-size clamp can overshoot past threshold
@@ -1391,7 +1403,7 @@ impl BarAggregator for ValueImbalanceBarAggregator {
                     self.core.build_now_and_send();
                     self.imbalance_value = 0.0;
                 }
-                size_remaining -= size_chunk;
+                size_remaining -= applied.as_f64();
             }
         }
     }
@@ -1433,12 +1445,7 @@ impl ValueRunsBarAggregator {
         handler: H,
     ) -> Self {
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             current_run_side: None,
             run_value: 0.0,
             step_value: bar_type.spec().step.get() as f64,
@@ -1524,16 +1531,22 @@ impl BarAggregator for ValueRunsBarAggregator {
                 size_chunk = min_size_f64(trade.size.precision);
             }
 
-            self.core.apply_update(
-                trade.price,
-                Quantity::new(size_chunk, trade.size.precision),
-                trade.ts_init,
-            );
+            // Subtract the representable quantity actually applied, not the ideal
+            // fraction, so rounding does not leak volume from the accounting
+            let applied = Quantity::new(size_chunk, trade.size.precision);
+            self.core.apply_update(trade.price, applied, trade.ts_init);
 
             self.core.build_now_and_send();
             self.run_value = 0.0;
             self.current_run_side = None;
-            size_remaining -= size_chunk;
+            size_remaining -= applied.as_f64();
+        }
+
+        // Leftover value past the last emitted bar starts a new run on the same
+        // side; without this the next same-side trade reads as a side change and
+        // resets the builder, silently dropping the pending volume.
+        if self.run_value > 0.0 {
+            self.current_run_side = Some(side);
         }
     }
 
@@ -1580,12 +1593,7 @@ impl RenkoBarAggregator {
         let brick_size = bar_type.spec().step.get() as PriceRaw * price_increment.raw;
 
         Self {
-            core: BarAggregatorCore::new(
-                bar_type.standard(),
-                price_precision,
-                size_precision,
-                handler,
-            ),
+            core: BarAggregatorCore::new(bar_type, price_precision, size_precision, handler),
             brick_size,
             last_close: None,
         }
@@ -1804,22 +1812,17 @@ impl TimeBarAggregator {
             BarIntervalType::RightOpen => false,
         };
 
-        let core = BarAggregatorCore::new(
-            bar_type.standard(),
-            price_precision,
-            size_precision,
-            handler,
-        );
+        let core = BarAggregatorCore::new(bar_type, price_precision, size_precision, handler);
 
         Self {
-            core,
             clock,
             build_with_no_updates,
             timestamp_on_close,
             is_left_open,
             stored_open_ns: UnixNanos::default(),
-            timer_name: format!("TIME_BAR_{bar_type}"),
+            timer_name: format!("TIME_BAR_{}", core.bar_type),
             interval_ns: get_bar_interval_ns(&bar_type),
+            core,
             next_close_ns: UnixNanos::default(),
             first_close_ns: UnixNanos::default(),
             bar_build_delay,
@@ -2145,6 +2148,14 @@ impl BarAggregator for TimeBarAggregator {
     fn set_adjustment(&mut self, adjustment: Decimal, mode: ContinuousFutureAdjustmentType) {
         self.core.set_adjustment(adjustment, mode);
     }
+
+    fn set_build_with_no_updates(&mut self, value: bool) {
+        self.build_with_no_updates = value;
+    }
+
+    fn is_historical(&self) -> bool {
+        self.historical_mode
+    }
 }
 
 fn is_below_min_size(size: f64, precision: u8) -> bool {
@@ -2153,6 +2164,25 @@ fn is_below_min_size(size: f64, precision: u8) -> bool {
 
 fn min_size_f64(precision: u8) -> f64 {
     10_f64.powi(-(precision as i32))
+}
+
+fn is_below_min_size_decimal(size: Decimal, precision: u8) -> bool {
+    quantity_from_decimal(size, precision).raw == 0
+}
+
+fn min_size_decimal(precision: u8) -> Decimal {
+    Decimal::new(1, u32::from(precision))
+}
+
+fn quantity_from_decimal(size: Decimal, precision: u8) -> Quantity {
+    Quantity::from_decimal_dp(size, precision).expect(FAILED)
+}
+
+// Converts a bar specification step to raw quantity units with exact integer arithmetic
+fn step_as_quantity_raw(step: usize) -> QuantityRaw {
+    (FIXED_SCALAR as QuantityRaw)
+        .checked_mul(step as QuantityRaw)
+        .expect("`step` overflows raw quantity units for volume aggregation")
 }
 
 /// Provider for vega per leg (option spreads). Returns `None` when greeks are unavailable.
@@ -4401,7 +4431,7 @@ mod tests {
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 2);
         let remaining_value = aggregator.get_cumulative_value();
-        assert!(remaining_value < 1000.0); // Should be less than threshold
+        assert!(remaining_value < Decimal::from(1_000)); // Should be less than threshold
     }
 
     #[rstest]
@@ -4434,7 +4464,7 @@ mod tests {
         assert_eq!(handler_guard.len(), 0);
 
         // Cumulative value should remain zero
-        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+        assert_eq!(aggregator.get_cumulative_value(), Decimal::ZERO);
     }
 
     #[rstest]
@@ -4467,7 +4497,82 @@ mod tests {
         assert_eq!(handler_guard.len(), 0);
 
         // Cumulative value should remain zero
-        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+        assert_eq!(aggregator.get_cumulative_value(), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_conserves_volume_across_rounded_chunks(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // Step 10 at price 3.00 needs fractional 3.33... chunks; the rounded
+        // 3-unit chunks must still conserve the 10 input units (3 + 3 + 3 + 1)
+        aggregator.update(
+            Price::from("3.00"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+        );
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 3);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(3));
+        }
+        assert_eq!(aggregator.core.builder.volume, Quantity::from(1));
+    }
+
+    #[rstest]
+    fn test_value_bar_aggregator_update_bar_conserves_volume_across_rounded_chunks(
+        equity_aapl: Equity,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(10, BarAggregation::Value, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // Average price 3.00 with volume 10 mirrors the tick-path conservation case
+        let input_bar = Bar::new(
+            bar_type,
+            Price::from("3.00"),
+            Price::from("3.00"),
+            Price::from("3.00"),
+            Price::from("3.00"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        aggregator.handle_bar(input_bar);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 3);
+        for bar in handler_guard.iter() {
+            assert_eq!(bar.volume, Quantity::from(3));
+        }
+        assert_eq!(aggregator.core.builder.volume, Quantity::from(1));
     }
 
     #[rstest]
@@ -4502,7 +4607,7 @@ mod tests {
         let handler_guard = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(handler_guard.len(), 1);
         assert_eq!(handler_guard[0].volume, Quantity::from(10));
-        assert_eq!(aggregator.get_cumulative_value(), 0.0);
+        assert_eq!(aggregator.get_cumulative_value(), Decimal::ZERO);
     }
 
     #[rstest]
@@ -6002,6 +6107,53 @@ mod tests {
     }
 
     #[rstest]
+    fn test_value_runs_bar_aggregator_keeps_leftover_volume_for_same_side_run(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(100, BarAggregation::ValueRuns, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = ValueRunsBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        // First trade spans one bar (value 150 = step 100 + 50 leftover), the
+        // leftover 5 units must survive as the start of a new same-side run.
+        let first = TradeTick {
+            price: Price::from("10.00"),
+            size: Quantity::from(15),
+            aggressor_side: AggressorSide::Seller,
+            ts_event: UnixNanos::from(1_000),
+            ts_init: UnixNanos::from(1_000),
+            ..TradeTick::default()
+        };
+        aggregator.handle_trade(first);
+
+        // Second same-side trade completes the run (50 + 50 >= 100).
+        let second = TradeTick {
+            price: Price::from("10.00"),
+            size: Quantity::from(5),
+            aggressor_side: AggressorSide::Seller,
+            ts_event: UnixNanos::from(2_000),
+            ts_init: UnixNanos::from(2_000),
+            ..TradeTick::default()
+        };
+        aggregator.handle_trade(second);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 2);
+        assert_eq!(handler_guard[0].volume, Quantity::from(10));
+        assert_eq!(handler_guard[1].volume, Quantity::from(10));
+    }
+
+    #[rstest]
     fn test_value_bar_high_price_low_step_no_zero_volume_bars(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_spec = BarSpecification::new(100, BarAggregation::Value, PriceType::Last);
@@ -7473,6 +7625,181 @@ mod tests {
         );
         assert_eq!(bars[0].close, Price::from("100.00"));
     }
+
+    #[rstest]
+    #[case(BarAggregation::Tick)]
+    #[case(BarAggregation::TickImbalance)]
+    #[case(BarAggregation::TickRuns)]
+    #[case(BarAggregation::Volume)]
+    #[case(BarAggregation::VolumeImbalance)]
+    #[case(BarAggregation::VolumeRuns)]
+    #[case(BarAggregation::Value)]
+    #[case(BarAggregation::ValueImbalance)]
+    #[case(BarAggregation::ValueRuns)]
+    #[case(BarAggregation::Renko)]
+    fn test_aggregators_standardize_composite_bar_type(
+        equity_aapl: Equity,
+        #[case] aggregation: BarAggregation,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new_composite(
+            instrument.id(),
+            BarSpecification::new(10, aggregation, PriceType::Last),
+            AggregationSource::Internal,
+            1,
+            BarAggregation::Minute,
+            AggregationSource::External,
+        );
+        let handler = |_: Bar| {};
+
+        let aggregator: Box<dyn BarAggregator> = match aggregation {
+            BarAggregation::Tick => Box::new(TickBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::TickImbalance => Box::new(TickImbalanceBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::TickRuns => Box::new(TickRunsBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::Volume => Box::new(VolumeBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::VolumeImbalance => Box::new(VolumeImbalanceBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::VolumeRuns => Box::new(VolumeRunsBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::Value => Box::new(ValueBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::ValueImbalance => Box::new(ValueImbalanceBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::ValueRuns => Box::new(ValueRunsBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                handler,
+            )),
+            BarAggregation::Renko => Box::new(RenkoBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                Price::from("0.01"),
+                handler,
+            )),
+            _ => unreachable!(),
+        };
+
+        assert!(aggregator.bar_type().is_standard());
+        assert_eq!(aggregator.bar_type(), bar_type.standard());
+    }
+
+    #[rstest]
+    fn test_composite_tick_bar_aggregator_emits_standard_bar_type(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new_composite(
+            instrument.id(),
+            BarSpecification::new(1, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+            1,
+            BarAggregation::Minute,
+            AggregationSource::External,
+        );
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().expect(MUTEX_POISONED);
+                handler_guard.push(bar);
+            },
+        );
+
+        let input_bar = Bar::new(
+            bar_type.composite(),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Price::from("99.00"),
+            Price::from("100.50"),
+            Quantity::from(10),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+        );
+        aggregator.handle_bar(input_bar);
+
+        let handler_guard = handler.lock().expect(MUTEX_POISONED);
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(handler_guard[0].bar_type, bar_type.standard());
+    }
+
+    #[rstest]
+    fn test_composite_time_bar_aggregator_uses_standard_timer_name(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new_composite(
+            instrument.id(),
+            BarSpecification::new(5, BarAggregation::Minute, PriceType::Last),
+            AggregationSource::Internal,
+            1,
+            BarAggregation::Minute,
+            AggregationSource::External,
+        );
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+
+        let aggregator = TimeBarAggregator::new(
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            clock.clone(),
+            |_: Bar| {},
+            false,
+            true,
+            BarIntervalType::LeftOpen,
+            None,
+            0,
+            false,
+        );
+
+        let boxed: Box<dyn BarAggregator> = Box::new(aggregator);
+        let rc = Rc::new(RefCell::new(boxed));
+        rc.borrow_mut().start_timer(Some(Rc::clone(&rc)));
+
+        let expected = format!("TIME_BAR_{}", bar_type.standard());
+        assert!(
+            clock.borrow().timer_names().contains(&expected.as_str()),
+            "timer names {:?} should contain {expected}",
+            clock.borrow().timer_names(),
+        );
+    }
 }
 
 #[cfg(test)]
@@ -7486,8 +7813,8 @@ mod property_tests {
     use nautilus_common::{clock::TestClock, timer::TimeEvent};
     use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
     use nautilus_model::{
-        data::{Bar, BarSpecification, BarType, bar::get_bar_interval_ns},
-        enums::{AggregationSource, BarAggregation, BarIntervalType, PriceType},
+        data::{Bar, BarSpecification, BarType, TradeTick, bar::get_bar_interval_ns},
+        enums::{AggregationSource, AggressorSide, BarAggregation, BarIntervalType, PriceType},
         instruments::{Instrument, InstrumentAny, stubs::equity_aapl},
         types::{Price, Quantity},
     };
@@ -7866,6 +8193,7 @@ mod property_tests {
                 prop_assert_eq!(aggregator.core.builder.open, None);
                 prop_assert_eq!(aggregator.core.builder.high, None);
                 prop_assert_eq!(aggregator.core.builder.low, None);
+                prop_assert_eq!(aggregator.core.builder.close, None);
             }
         }
 
@@ -8148,6 +8476,201 @@ mod property_tests {
                 prop_assert!(bar.high >= bar.open);
                 prop_assert!(bar.high >= bar.close);
                 prop_assert!(bar.volume.as_f64() > 0.0);
+            }
+        }
+
+        #[rstest]
+        fn prop_renko_brick_chain(
+            moves in prop::collection::vec(-500i64..=500i64, 1..=60),
+            step in 1usize..=10,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step, BarAggregation::Renko, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let price_increment = Price::from("0.01");
+            let mut aggregator = RenkoBarAggregator::new(
+                bar_type,
+                2,
+                0,
+                price_increment,
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+            let brick_size = aggregator.brick_size;
+
+            let base_raw = Price::from("1000.00").raw;
+            let mut cum_increments: i64 = 0;
+            let mut first_price: Option<Price> = None;
+
+            for (i, delta) in moves.iter().enumerate() {
+                cum_increments += delta;
+                let price = Price::from_raw(
+                    base_raw + PriceRaw::from(cum_increments) * price_increment.raw,
+                    2,
+                );
+
+                if first_price.is_none() {
+                    first_price = Some(price);
+                }
+
+                aggregator.update(price, Quantity::from(1), UnixNanos::from((i as u64 + 1) * 1_000));
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+            let mut expected_open = first_price.unwrap();
+
+            for bar in bars.iter() {
+                // Bricks chain: each opens at the previous close.
+                prop_assert_eq!(bar.open, expected_open);
+                // Every brick spans exactly one brick size.
+                prop_assert_eq!((bar.close.raw - bar.open.raw).abs(), brick_size);
+                // High/low are the brick endpoints.
+                prop_assert_eq!(bar.high, bar.open.max(bar.close));
+                prop_assert_eq!(bar.low, bar.open.min(bar.close));
+                expected_open = bar.close;
+            }
+        }
+
+        #[rstest]
+        fn prop_volume_imbalance_one_sided_conservation(
+            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
+            step in 2u64..=10u64,
+            buyer in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(
+                step as usize,
+                BarAggregation::VolumeImbalance,
+                PriceType::Last,
+            );
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = VolumeImbalanceBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+
+            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let mut total_input: u64 = 0;
+
+            for (i, size) in sizes.iter().enumerate() {
+                let trade = TradeTick {
+                    instrument_id: instrument.id(),
+                    price: Price::from("100.00"),
+                    size: Quantity::from(*size),
+                    aggressor_side: side,
+                    ts_event: UnixNanos::from((i as u64 + 1) * 1_000),
+                    ts_init: UnixNanos::from((i as u64 + 1) * 1_000),
+                    ..TradeTick::default()
+                };
+                aggregator.handle_trade(trade);
+                total_input += *size;
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+
+            // One-sided flow: every emitted bar carries exactly `step` volume.
+            for bar in bars.iter() {
+                prop_assert_eq!(bar.volume, Quantity::from(step));
+            }
+
+            // Conservation: emitted volume plus pending builder volume equals input.
+            let emitted: u64 = bars.len() as u64 * step;
+            let pending = aggregator.core.builder.volume.as_f64();
+            prop_assert!((emitted as f64 + pending - total_input as f64).abs() < 1e-9);
+        }
+
+        #[rstest]
+        fn prop_volume_runs_one_sided_conservation(
+            sizes in prop::collection::vec(1u64..=50u64, 1..=40),
+            step in 2u64..=10u64,
+            buyer in any::<bool>(),
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(
+                step as usize,
+                BarAggregation::VolumeRuns,
+                PriceType::Last,
+            );
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let handler = Arc::new(Mutex::new(Vec::<Bar>::new()));
+            let handler_clone = Arc::clone(&handler);
+
+            let mut aggregator = VolumeRunsBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                move |bar: Bar| {
+                    handler_clone.lock().expect(MUTEX_POISONED).push(bar);
+                },
+            );
+
+            let side = if buyer { AggressorSide::Buyer } else { AggressorSide::Seller };
+            let mut total_input: u64 = 0;
+
+            for (i, size) in sizes.iter().enumerate() {
+                let trade = TradeTick {
+                    instrument_id: instrument.id(),
+                    price: Price::from("100.00"),
+                    size: Quantity::from(*size),
+                    aggressor_side: side,
+                    ts_event: UnixNanos::from((i as u64 + 1) * 1_000),
+                    ts_init: UnixNanos::from((i as u64 + 1) * 1_000),
+                    ..TradeTick::default()
+                };
+                aggregator.handle_trade(trade);
+                total_input += *size;
+            }
+
+            let bars = handler.lock().expect(MUTEX_POISONED);
+
+            // A single-sided run never resets, so every bar carries exactly `step` volume.
+            for bar in bars.iter() {
+                prop_assert_eq!(bar.volume, Quantity::from(step));
+            }
+
+            let emitted: u64 = bars.len() as u64 * step;
+            let pending = aggregator.core.builder.volume.as_f64();
+            prop_assert!((emitted as f64 + pending - total_input as f64).abs() < 1e-9);
+        }
+
+        #[rstest]
+        fn prop_value_bar_cum_value_stays_below_step(
+            ticks in prop::collection::vec((50i64..=500i64, 1u64..=20u64), 1..=30),
+            step in 100u64..=2_000u64,
+        ) {
+            let instrument = InstrumentAny::Equity(equity_aapl());
+            let bar_spec = BarSpecification::new(step as usize, BarAggregation::Value, PriceType::Last);
+            let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+            let step_decimal = Decimal::from(step);
+
+            let mut aggregator = ValueBarAggregator::new(
+                bar_type,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                |_: Bar| {},
+            );
+
+            for (i, (price_cents, size)) in ticks.iter().enumerate() {
+                aggregator.update(
+                    Price::new((*price_cents as f64) / 100.0, 2),
+                    Quantity::new(*size as f64, 0),
+                    UnixNanos::from((i as u64 + 1) * 1_000),
+                );
+
+                // Invariant: the accumulator is always strictly below the step threshold,
+                // which also guarantees the loop division never sees a zero divisor.
+                prop_assert!(aggregator.get_cumulative_value() < step_decimal);
             }
         }
     }

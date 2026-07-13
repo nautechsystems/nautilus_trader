@@ -38,6 +38,8 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Added v2 support for trailing-stop orders with no trigger or activation price, which activate at market and materialize the trigger (and trailing-stop-limit price) from the trailing offset on the first update
 - Added v2 Cap'n Proto round-trip for order-event `activation_price` and `OrderFilled` `info`, and SQL persistence for order-event `activation_price`
 - Added v2 Polymarket fill `info` metadata carrying the raw venue trade fields
+- Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
+- Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
@@ -64,18 +66,45 @@ releases as feedback arrives, before the final `2.0.0` release.
 
 ### Fixes
 - Fixed v2 composite bar aggregation (`@` source) to deliver aggregated bars to subscribed actors and strategies
+- Fixed v2 tick, tick-imbalance, and tick-runs aggregators to emit bars with the standard bar type for composite subscriptions, matching all other aggregators
+- Fixed v2 volume-runs and value-runs aggregators dropping leftover volume when a trade spanned a bar boundary and the next trade continued the same side
+- Fixed v2 value-based aggregators dropping fractional volume when threshold chunks rounded to the instrument size precision
+- Fixed v2 `BarType.new_composite` to validate the composite specification on construction instead of panicking later in `composite()`
+- Fixed v2 `Bar` and `BarSpecification` deserialization to validate OHLC ordering and step periodicity, matching v1 `from_dict` behavior
+- Fixed v2 `Bar.from_pyobject` and bar type parsing at the Python boundary to raise `ValueError` instead of panicking
+- Fixed v2 `12-MONTH` bar specification validation so the shipped `BAR_SPEC_12_MONTH_LAST` (OKX yearly candles) parses and round-trips
+- Fixed v2 catalog writes silently re-labeling mixed instruments or bar types under the first element's identity; writes now group by identity and reject mixed input
+- Fixed v2 catalog internal-to-external bar type conversion corrupting symbols containing `-INTERNAL` and mishandling composite bar types
+- Fixed v2 SQL bar row decoding to return a decode error instead of panicking on invalid rows, and to reject composite bar types on insert
+- Fixed v2 execution mass-status reconciliation to preserve venue fill IDs and commissions, apply
+  terminal fill gaps, and convert Betfair cumulative matched sizes into incremental fills
+- Fixed v2 external bar unsubscribe detaching the venue stream while other actors remained subscribed
+- Fixed v2 continuous future bar unsubscribe tearing down the chain while other actors remained subscribed
+- Fixed v2 continuous future bar requests emitting synthetic last-close bars across roll gaps (v1 parity)
+- Fixed v2 orphaned composite source aggregator teardown leaking the underlying client tick subscription
+- Fixed v2 `subscribed_bars` to include internally aggregated subscriptions (v1 parity)
+- Fixed v2 `request_bars` to reject composite bar types (v1 parity)
+- Fixed v2 `skip_first_non_full_bar` per-command override for bar subscriptions and aggregation requests (v1 parity)
+- Fixed v2 matching engine quote-bar execution to honor `bar_adaptive_high_low_ordering` (v1 parity)
+- Fixed v2 matching engine `reset` to clear cached bid/ask bars, preventing stale pairs across runs
+- Fixed v2 volume aggregation step thresholds to use exact integer arithmetic instead of floating-point conversion
+- Fixed v2 `ValueBarAggregator` to accumulate value in `Decimal` matching the v1 implementation
 - Fixed v2 internal bar aggregation to include the first tick when aggregating from ticks, quotes, or trades in backtests
 - Fixed v2 quote extraction and quote-fed indicators to raise a clear error for a `Last` price type instead of panicking across the Python boundary
 - Fixed mixed-instrument backtest `SubmitOrderList` fills to use each leg's own book (#4392), thanks for reporting @gtalknitin
 - Fixed v2 wranglers to detect raw fixed-point overflow before Arrow conversion (#4372), thanks @MandalorianBatman
 - Fixed `PerContractFeeModel` generic spread fees to charge per leg ratio (#4360), thanks for reporting @pjlegato
 - Fixed `HEDGING` reduce-only orders without cached position IDs (#4312), thanks for reporting @luckykefu
+- Fixed v2 hedging reduce-only fills without position IDs opening phantom positions (#4424), thanks
+  for reporting @luckykefu and for the initial patch @akashchakrabortymsc-cmd
 - Fixed indicator rolling-window bounds and averages past capacity (#4351), thanks @Martingale42
 - Fixed Rust RSI moving-average selection and max-value regression (#4382), thanks @bebop23
 - Fixed v2 matching engine queue position for per-order deltas in L3 books (#4370), thanks for reporting @warmi024
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
+- Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
+- Fixed Python v2 cached `OrderList` values to expose their read-only fields and concrete stub types
 - Fixed Python v2 indicator handlers to delegate to Rust core semantics, including VWAP typical-price and Aroon quote, trade, and high/low bar handling (#4421), thanks for reporting @a1zb2yc3z
 - Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
@@ -89,9 +118,13 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed live reconciliation real-time gates to use the monotonic clock (#4376), thanks @folknor
 - Fixed live missing-order reconciliation to use monotonic receipt time (#4387), thanks @folknor
 - Fixed live execution engine position activity to stamp receipt time instead of venue `ts_event`
+- Fixed Rust/PyO3 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
 - Fixed `LiveTimer` firing past its `stop_time_ns` bound and dropping the boundary event (#4401), thanks @folknor
 - Fixed `Clock.timer_exists` to exclude expired timers like `timer_names`/`timer_count` (#4400), thanks @folknor
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
+- Fixed Rust Binance Futures hedge-mode position tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu
+- Fixed Binance Futures algo order reports omitting fill quantity and average price from `actualQty`/`actualPrice`
+- Fixed Binance Futures filled market order reconciliation to use venue average prices (#4441), thanks @KaizynX
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
@@ -99,6 +132,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Binance Spot instrument loading after the SBE schema `3:5` rollout (#4407), thanks for reporting @learnerLj
 - Fixed Blockchain HyperSync live pool-event streaming to use a durable per-DEX stream and avoid tip-window overreach
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
+- Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
 - Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
@@ -108,6 +142,8 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
+- Fixed Polymarket v2 book delta atomicity and local limit-price range validation
+- Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
@@ -117,6 +153,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
 - Fixed Interactive Brokers market order update price normalization (#4383), thanks @faysou
 - Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
+- Fixed Interactive Brokers Docker gateway startup to ignore the active Docker context
 
 ### Internal Improvements
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
@@ -125,9 +162,11 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Rust (MSRV) to 1.97.0
 - Upgraded Cython to v3.2.8
-- Upgraded `capnp` to v0.26.2 and `py-clob-client-v2` to v1.0.2
+- Upgraded Cap'n Proto to v1.5.0
+- Upgraded `capnp` to v0.26.2
 - Upgraded `databento` crate to v0.54.0
 - Upgraded `redis` crate to v1.3.0
+- Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs

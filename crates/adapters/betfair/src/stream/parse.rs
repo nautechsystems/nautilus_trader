@@ -316,24 +316,8 @@ impl FillTracker {
     ) -> Option<FillReport> {
         let raw_sm = uo.sm?;
         let sm = normalize_betfair_quantity(raw_sm);
-
-        if sm <= Decimal::ZERO {
-            return None;
-        }
-
-        let prev_filled = self
-            .filled_qty
-            .get(&uo.id)
-            .copied()
-            .map_or(Decimal::ZERO, normalize_betfair_quantity);
-
-        if sm <= prev_filled {
-            return None;
-        }
-
         let order_qty = normalize_betfair_quantity(resolve_stream_order_quantity(order_qty, uo));
 
-        // Overfill guard
         if sm > order_qty {
             log::warn!(
                 "Rejecting potential overfill for bet_id={}: order_qty={order_qty}, sm={sm}",
@@ -342,29 +326,8 @@ impl FillTracker {
             return None;
         }
 
-        let trade_id = make_trade_id_for_size(&uo.id, sm);
-        let raw_trade_id = make_trade_id_for_size(&uo.id, raw_sm);
-
-        if self.published_trade_ids.contains(trade_id.as_str())
-            || self.published_trade_ids.contains(raw_trade_id.as_str())
-        {
-            return None;
-        }
-
-        let fill_qty_dec = sm - prev_filled;
-        let fill_price = self.compute_fill_price(uo, prev_filled, sm);
-
-        let last_qty = parse_betfair_quantity(fill_qty_dec).ok()?;
-        let last_px = parse_betfair_price(fill_price).ok()?;
-
-        // Update state before emitting
-        self.filled_qty.insert(uo.id.clone(), sm);
-
-        if let Some(avp) = uo.avp.map(normalize_betfair_price) {
-            self.avg_px.insert(uo.id.clone(), avp);
-        }
-
-        self.published_trade_ids.insert(trade_id.to_string());
+        let (trade_id, last_qty, last_px) =
+            self.advance_cumulative_fill(&uo.id, raw_sm, uo.avp, uo.p)?;
 
         let venue_order_id = VenueOrderId::from(uo.id.as_str());
         let order_side = OrderSide::from(uo.side);
@@ -390,6 +353,72 @@ impl FillTracker {
         ))
     }
 
+    pub(crate) fn advance_cumulative_fill(
+        &mut self,
+        bet_id: &str,
+        raw_size_matched: Decimal,
+        average_price_matched: Option<Decimal>,
+        fallback_price: Decimal,
+    ) -> Option<(TradeId, Quantity, Price)> {
+        let size_matched = normalize_betfair_quantity(raw_size_matched);
+        if size_matched <= Decimal::ZERO {
+            return None;
+        }
+
+        let previous_filled = self
+            .filled_qty
+            .get(bet_id)
+            .copied()
+            .map_or(Decimal::ZERO, normalize_betfair_quantity);
+
+        if size_matched == previous_filled {
+            self.record_cumulative_state(bet_id, size_matched, average_price_matched);
+            return None;
+        }
+
+        if size_matched < previous_filled {
+            return None;
+        }
+
+        let trade_id = make_trade_id_for_size(bet_id, size_matched);
+        let raw_trade_id = make_trade_id_for_size(bet_id, raw_size_matched);
+        if self.published_trade_ids.contains(trade_id.as_str())
+            || self.published_trade_ids.contains(raw_trade_id.as_str())
+        {
+            self.record_cumulative_state(bet_id, size_matched, average_price_matched);
+            self.published_trade_ids.insert(trade_id.to_string());
+            return None;
+        }
+
+        let fill_qty = size_matched - previous_filled;
+        let fill_price = self.compute_fill_price(
+            bet_id,
+            average_price_matched,
+            fallback_price,
+            previous_filled,
+            size_matched,
+        );
+        let last_qty = parse_betfair_quantity(fill_qty).ok()?;
+        let last_px = parse_betfair_price(fill_price).ok()?;
+
+        self.record_cumulative_state(bet_id, size_matched, average_price_matched);
+        self.published_trade_ids.insert(trade_id.to_string());
+
+        Some((trade_id, last_qty, last_px))
+    }
+
+    fn record_cumulative_state(
+        &mut self,
+        bet_id: &str,
+        size_matched: Decimal,
+        average_price_matched: Option<Decimal>,
+    ) {
+        self.filled_qty.insert(bet_id.to_string(), size_matched);
+        if let Some(avg_px) = average_price_matched.map(normalize_betfair_price) {
+            self.avg_px.insert(bet_id.to_string(), avg_px);
+        }
+    }
+
     /// Back-calculates the individual fill price from Betfair's cumulative
     /// average price matched (`avp`).
     ///
@@ -398,19 +427,21 @@ impl FillTracker {
     /// `fill_price = (avp * sm - prev_avp * prev_sm) / fill_size`
     fn compute_fill_price(
         &self,
-        uo: &UnmatchedOrder,
+        bet_id: &str,
+        average_price_matched: Option<Decimal>,
+        fallback_price: Decimal,
         prev_filled: Decimal,
         sm: Decimal,
     ) -> Decimal {
-        let Some(avp) = uo.avp.map(normalize_betfair_price) else {
-            return uo.p;
+        let Some(avp) = average_price_matched.map(normalize_betfair_price) else {
+            return fallback_price;
         };
 
         if prev_filled == Decimal::ZERO {
             return avp;
         }
 
-        let Some(prev_avg) = self.avg_px.get(&uo.id).copied() else {
+        let Some(prev_avg) = self.avg_px.get(bet_id).copied() else {
             return avp;
         };
 
@@ -428,8 +459,7 @@ impl FillTracker {
 
         if fill_price <= Decimal::ZERO {
             log::warn!(
-                "Calculated fill price {fill_price} is invalid for bet_id={}, falling back to avp={avp}",
-                uo.id,
+                "Calculated fill price {fill_price} is invalid for bet_id={bet_id}, falling back to avp={avp}",
             );
             return avp;
         }
@@ -2583,6 +2613,25 @@ mod tests {
             result.is_none(),
             "seeded trade-id should suppress duplicate fill",
         );
+
+        let next_update = make_test_uo(
+            "123456",
+            Decimal::new(20, 0),
+            Some(Decimal::new(15, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let next_fill = tracker
+            .maybe_fill_report(
+                &next_update,
+                next_update.s,
+                InstrumentId::from("1.234567-123456-0.0.BETFAIR"),
+                AccountId::from("BETFAIR-001"),
+                Currency::from("GBP"),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .expect("later cumulative state should emit only the new delta");
+        assert_eq!(next_fill.last_qty, Quantity::from("5.00"));
     }
 
     #[rstest]
@@ -2622,6 +2671,37 @@ mod tests {
             duplicate.is_none(),
             "same normalized sm should not emit a duplicate fill"
         );
+    }
+
+    #[rstest]
+    fn test_fill_tracker_normalized_duplicate_updates_average_price_anchor() {
+        let mut tracker = FillTracker::new();
+
+        let first = tracker.advance_cumulative_fill(
+            "123456",
+            Decimal::new(10, 0),
+            Some(Decimal::new(20, 1)),
+            Decimal::new(20, 1),
+        );
+        let normalized_duplicate = tracker.advance_cumulative_fill(
+            "123456",
+            Decimal::new(10001, 3),
+            Some(Decimal::new(30, 1)),
+            Decimal::new(30, 1),
+        );
+        let next = tracker
+            .advance_cumulative_fill(
+                "123456",
+                Decimal::new(11, 0),
+                Some(Decimal::new(30, 1)),
+                Decimal::new(30, 1),
+            )
+            .expect("new cumulative quantity should emit a fill");
+
+        assert!(first.is_some());
+        assert!(normalized_duplicate.is_none());
+        assert_eq!(next.1, Quantity::from("1.00"));
+        assert_eq!(next.2, Price::from("3.00"));
     }
 
     #[rstest]
