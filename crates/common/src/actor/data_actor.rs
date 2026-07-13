@@ -37,6 +37,7 @@ use nautilus_model::{
         MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
+        Participant, ParticipantProfile,
     },
     enums::BookType,
     identifiers::{ActorId, ClientId, ComponentId, InstrumentId, OptionSeriesId, TraderId, Venue},
@@ -693,6 +694,18 @@ pub trait DataActor: Component {
         Ok(())
     }
 
+    /// Actions to be performed when receiving participants.
+    #[allow(unused_variables)]
+    fn on_participants(&mut self, participants: &[Participant]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a participant profiles.
+    #[allow(unused_variables)]
+    fn on_participant_profiles(&mut self, profiles: &[ParticipantProfile]) -> anyhow::Result<()> {
+        Ok(())
+    }
+    
     /// Returns the user-facing clock API.
     fn clock(&self) -> ClockApi<'_>
     where

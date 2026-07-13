@@ -413,6 +413,14 @@ define_switchboard! {
     get_option_chain_topic(series_id: OptionSeriesId) -> series_id,
     "data.option_chain.{}", series_id;
 
+    participant_topics: Venue,
+    get_participants_topic(venue: Venue) -> venue,
+    "data.participants.{}", venue;
+
+    participant_profile_topics: Venue,
+    get_participant_profiles_topic(venue: Venue) -> venue,
+    "data.participant_profiles.{}", venue;
+
     order_submitted_topics: InstrumentId,
     get_order_submitted_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.order_submitted.{}", instrument_id;
@@ -639,6 +647,8 @@ define_wrappers! {
     get_instrument_close_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
+    get_participants_topic(venue: Venue) -> MStr<Topic>,
+    get_participant_profiles_topic(venue: Venue) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,

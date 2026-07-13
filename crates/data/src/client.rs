@@ -217,6 +217,9 @@ impl DataClientAdapter {
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
             SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
+            SubscribeCommand::ParticipantProfiles(cmd) => {
+                self.client.subscribe_participant_profiles(cmd)
+            }
         } {
             log_command_error(&cmd_debug, &e);
         }

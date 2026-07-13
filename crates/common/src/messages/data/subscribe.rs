@@ -19,7 +19,7 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType, option_chain::StrikeRange},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, ParticipantId, Venue},
 };
 use serde::{Deserialize, Serialize};
 
@@ -614,6 +614,34 @@ impl SubscribeOptionChain {
             client_id,
             venue,
             params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscribeParticipantProfiles {
+    pub participant_ids: Vec<ParticipantId>,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+}
+
+impl SubscribeParticipantProfiles {
+    /// Creates a new [`SubscribeParticipantProfiles`] instance.
+    pub fn new(
+        participant_ids: Vec<ParticipantId>,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            participant_ids,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
         }
     }
 }

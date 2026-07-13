@@ -25,11 +25,11 @@ use crate::messages::data::{
     RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-    UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-    UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
-    UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-    UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    SubscribeOptionGreeks, SubscribeParticipantProfiles, SubscribeQuotes, SubscribeTrades,
+    UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+    UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+    UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+    UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{
@@ -250,6 +250,22 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Subscribes to participant profile refreshes for the given IDs.
+    ///
+    /// The adapter adds these IDs to its tracked set and begins continuous
+    /// profile enrichment. This is not a one-shot request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_participant_profiles(
+        &mut self,
+        cmd: SubscribeParticipantProfiles,
+    ) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }

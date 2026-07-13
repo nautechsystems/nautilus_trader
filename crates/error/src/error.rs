@@ -71,8 +71,7 @@ impl NautilusError {
     #[inline]
     pub fn with_operation(mut self, operation: &'static str) -> Self {
         if !self.operation.is_empty() {
-            self.context
-                .push(("called", self.operation.to_string()));
+            self.context.push(("called", self.operation.to_string()));
         }
         self.operation = operation;
         self
@@ -205,7 +204,9 @@ impl fmt::Debug for NautilusError {
 // -- std::error::Error impl --
 impl std::error::Error for NautilusError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+        self.source
+            .as_ref()
+            .map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -352,9 +353,8 @@ mod tests {
 
     #[test]
     fn std_error_trait() {
-        let err: Box<dyn std::error::Error> = Box::new(
-            NautilusError::new(ErrorKind::Unexpected, "something broke"),
-        );
+        let err: Box<dyn std::error::Error> =
+            Box::new(NautilusError::new(ErrorKind::Unexpected, "something broke"));
         assert!(err.to_string().contains("something broke"));
     }
 }

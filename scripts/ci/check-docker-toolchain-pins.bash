@@ -116,6 +116,7 @@ check_refs \
   "pyproject.toml [tool.uv].required-version" \
   "$EXPECTED_UV_PREFIX" \
   'ghcr\.io/astral-sh/uv:[^[:space:]\\]+@sha256:[0-9a-f]+' \
+  ".docker/DockerfileDev" \
   ".docker/DockerfileUbuntu" \
   ".docker/nautilus_trader.dockerfile" \
   ".docker/jupyterlab.dockerfile"

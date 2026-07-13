@@ -76,7 +76,8 @@ use nautilus_common::{
         DataResponse, ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars,
         RequestCommand, RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse,
+        SubscribeCommand, SubscribeOptionChain, SubscribeParticipantProfiles, SubscribeQuotes,
+        SubscribeTrades, TradesResponse,
         UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
         UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
         UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
@@ -99,7 +100,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth10, Participant, ParticipantProfile, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -107,7 +108,8 @@ use nautilus_model::{
         OrderSide, PriceType, RecordFlag,
     },
     identifiers::{
-        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
+        ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol,
+        Venue,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -1777,6 +1779,8 @@ impl DataEngine {
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
+            Data::Participants(participants) => self.handle_participants(participants),
+            Data::ParticipantProfiles(profiles) => self.handle_participant_profiles(profiles),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
@@ -1834,6 +1838,8 @@ impl DataEngine {
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
+            Data::Participants(participants) => self.handle_participants(participants),
+            Data::ParticipantProfiles(profiles) => self.handle_participant_profiles(profiles),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
@@ -2783,6 +2789,62 @@ impl DataEngine {
         log::debug!("Processing custom data: {}", custom.data.type_name());
         let topic = switchboard::get_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
+    }
+
+    fn handle_participants(&mut self, participants: Vec<Participant>) {
+        let mut new_ids = Vec::new();
+        let mut cache = self.cache.borrow_mut();
+
+        for participant in &participants {
+            let id = participant.id;
+            let is_new = cache.add_participant(participant.clone());
+            if is_new {
+                log::info!("New participant discovered: {id}");
+                new_ids.push(id);
+            } 
+        }
+
+        drop(cache);
+
+        // Publish to MessageBus so subscribed actors receive on_participants
+        // Use venue from the first participant for topic routing
+        if let Some(first) = participants.first() {
+            let topic = switchboard::get_participants_topic(first.venue);
+            msgbus::publish_participants(topic, &participants);
+        }
+
+        if !new_ids.is_empty() {
+            let cmd = SubscribeCommand::ParticipantProfiles(SubscribeParticipantProfiles::new(
+                new_ids,
+                self.default_client_id,
+                None,
+                UUID4::new(),
+                self.clock.borrow().timestamp_ns(),
+            ));
+
+            if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
+                client.execute_subscribe(cmd);
+            } else {
+                log::error!("Cannot subscribe participant profiles: no client found");
+            }
+        }
+    }
+
+    fn handle_participant_profiles(&self, profiles: Vec<ParticipantProfile>) {
+        let mut cache = self.cache.borrow_mut();
+        for profile in &profiles {
+            log::debug!("Profile received for participant: {}", profile.participant_id);
+            cache.add_participant_profile(profile.clone());
+        }
+        drop(cache);
+
+        // Publish to MessageBus so subscribed actors receive on_participant_profiles
+        if let Some(first) = profiles.first() {
+            if let Some(participant) = self.cache.borrow().participant(&first.participant_id) {
+                let topic = switchboard::get_participant_profiles_topic(participant.venue);
+                msgbus::publish_participant_profiles(topic, &profiles);
+            }
+        }
     }
 
     fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
@@ -5112,7 +5174,8 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
         SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
         SubscribeCommand::InstrumentStatus(_)
         | SubscribeCommand::InstrumentClose(_)
-        | SubscribeCommand::OptionChain(_) => None,
+        | SubscribeCommand::OptionChain(_)
+        | SubscribeCommand::ParticipantProfiles(_) => None,
     }
 }
 

@@ -36,8 +36,6 @@ use nautilus_model::identifiers::{
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
-
-use crate::node::config::RoutingConfig;
 #[cfg(feature = "examples")]
 use nautilus_testkit::{DataTester, DataTesterConfig, ExecTester, ExecTesterConfig};
 #[cfg(feature = "examples")]
@@ -68,7 +66,7 @@ use crate::{
         LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         PluginConfig,
     },
-    node::LiveNode,
+    node::{LiveNode, config::RoutingConfig},
     python::config::coerce_json_config,
 };
 

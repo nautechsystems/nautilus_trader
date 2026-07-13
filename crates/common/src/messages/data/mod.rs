@@ -54,7 +54,8 @@ pub use subscribe::{
     SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
     SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
     SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+    SubscribeOptionChain, SubscribeOptionGreeks, SubscribeParticipantProfiles, SubscribeQuotes,
+    SubscribeTrades,
 };
 pub use unsubscribe::{
     UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
@@ -106,6 +107,7 @@ pub enum SubscribeCommand {
     InstrumentClose(SubscribeInstrumentClose),
     OptionGreeks(SubscribeOptionGreeks),
     OptionChain(SubscribeOptionChain),
+    ParticipantProfiles(SubscribeParticipantProfiles),
 }
 
 impl PartialEq for SubscribeCommand {
@@ -137,6 +139,7 @@ impl SubscribeCommand {
             Self::InstrumentStatus(cmd) => cmd.command_id,
             Self::InstrumentClose(cmd) => cmd.command_id,
             Self::OptionGreeks(cmd) => cmd.command_id,
+            Self::ParticipantProfiles(cmd) => cmd.command_id,
             Self::OptionChain(cmd) => cmd.command_id,
         }
     }
@@ -159,6 +162,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
             Self::OptionGreeks(cmd) => cmd.client_id.as_ref(),
             Self::OptionChain(cmd) => cmd.client_id.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -180,6 +184,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
             Self::OptionGreeks(cmd) => cmd.venue.as_ref(),
             Self::OptionChain(cmd) => cmd.venue.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.venue.as_ref(),
         }
     }
 
@@ -201,6 +206,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
             Self::OptionGreeks(cmd) => cmd.ts_init,
             Self::OptionChain(cmd) => cmd.ts_init,
+            Self::ParticipantProfiles(cmd) => cmd.ts_init,
         }
     }
 
@@ -222,6 +228,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+            Self::ParticipantProfiles(_) => None,
         }
     }
 
@@ -243,6 +250,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.params.as_ref(),
             Self::OptionGreeks(cmd) => cmd.params.as_ref(),
             Self::OptionChain(cmd) => cmd.params.as_ref(),
+            Self::ParticipantProfiles(_) => None,
         }
     }
 }

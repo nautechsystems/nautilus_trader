@@ -151,7 +151,7 @@ repos:
         language: system
         files: >-
           (?x)^(
-            \.docker/(DockerfileUbuntu|nautilus_trader\.dockerfile|jupyterlab\.dockerfile)|
+            \.docker/(DockerfileDev|DockerfileUbuntu|nautilus_trader\.dockerfile|jupyterlab\.dockerfile)|
             pyproject\.toml|
             rust-toolchain\.toml|
             scripts/(uv-version|rust-toolchain)\.sh|
