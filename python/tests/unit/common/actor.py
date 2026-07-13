@@ -28,6 +28,7 @@ from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import MarketOrder
 from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Price
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import TimeInForce
 from nautilus_trader.model import Venue
@@ -203,6 +204,45 @@ def _market_order(
         quote_quantity=False,
         contingency_type=ContingencyType.NO_CONTINGENCY,
     )
+
+
+class OrderListCacheProbeStrategy(Strategy):
+    observed_order_list = None
+    observed_order_lists = None
+    observed_order_list_id = None
+    observed_client_order_ids = None
+    observed_strategy_id = None
+
+    @classmethod
+    def reset(cls):
+        cls.observed_order_list = None
+        cls.observed_order_lists = None
+        cls.observed_order_list_id = None
+        cls.observed_client_order_ids = None
+        cls.observed_strategy_id = None
+
+    def on_start(self):
+        instrument_id = InstrumentId.from_str("AUD/USD.SIM")
+        orders = self.order_factory.bracket(
+            instrument_id=instrument_id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_str("100000"),
+            tp_price=Price.from_str("1.10000"),
+            sl_trigger_price=Price.from_str("0.90000"),
+        )
+
+        type(self).observed_client_order_ids = [order.client_order_id for order in orders]
+        type(self).observed_strategy_id = self.strategy_id
+        self.submit_order_list(orders)
+
+        order_lists = self.cache.order_lists(
+            instrument_id=instrument_id,
+            strategy_id=self.strategy_id,
+        )
+        cached = order_lists[0]
+        type(self).observed_order_lists = order_lists
+        type(self).observed_order_list_id = cached.id
+        type(self).observed_order_list = self.cache.order_list(cached.id)
 
 
 class PortfolioHedgedProbeStrategy(Strategy):

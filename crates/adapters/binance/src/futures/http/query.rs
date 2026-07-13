@@ -685,6 +685,10 @@ pub struct BinanceOpenAlgoOrdersParams {
 pub struct BinanceAllAlgoOrdersParams {
     /// Trading symbol (required).
     pub symbol: String,
+    /// Return orders with an algo order ID greater than or equal to this value.
+    #[serde(rename = "algoId", skip_serializing_if = "Option::is_none")]
+    #[builder(default)]
+    pub algo_id: Option<i64>,
     /// Start time in milliseconds.
     #[serde(rename = "startTime", skip_serializing_if = "Option::is_none")]
     #[builder(default)]
@@ -697,7 +701,7 @@ pub struct BinanceAllAlgoOrdersParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub page: Option<u32>,
-    /// Number of results per page (default 100, max 100).
+    /// Number of results (default 500, max 1000).
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default)]
     pub limit: Option<u32>,

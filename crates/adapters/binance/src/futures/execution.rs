@@ -39,7 +39,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    AtomicSet, MUTEX_POISONED, UUID4, UnixNanos,
+    AtomicSet, MUTEX_POISONED, Params, UUID4, UnixNanos,
     datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -67,7 +67,10 @@ use tokio_util::sync::CancellationToken;
 use super::{
     http::{
         BinanceFuturesHttpError,
-        client::{BinanceFuturesHttpClient, BinanceFuturesInstrument, is_algo_order_type},
+        client::{
+            BinanceFuturesAlgoOrderQueryResult, BinanceFuturesHttpClient, BinanceFuturesInstrument,
+            is_algo_order_type,
+        },
         models::{BatchOrderResult, BinancePositionRisk},
         query::{
             BatchCancelItem, BinanceAllOrdersParamsBuilder, BinanceOpenOrdersParamsBuilder,
@@ -126,6 +129,55 @@ const LISTEN_KEY_KEEPALIVE_SECS: u64 = 30 * 60;
 
 /// Consecutive keepalive failures before a listenKey rotation is triggered.
 const MAX_KEEPALIVE_FAILURES: u32 = 1;
+
+/// Query parameter declaring that the command's venue order ID is a Binance Algo Service
+/// `algoId`, rather than a regular matching-engine `orderId` or triggered `actualOrderId`.
+pub const BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM: &str = "venue_order_id_is_algo_id";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BinanceFuturesAlgoLookup {
+    Skip,
+    AlgoId,
+    ClientAlgoId,
+}
+
+fn create_algo_order_status_report(
+    result: &BinanceFuturesAlgoOrderQueryResult,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    treat_expired_as_canceled: bool,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    if let Some(actual) = result.actual.as_ref() {
+        match result.algo.to_order_status_report_with_actual(
+            actual,
+            account_id,
+            instrument_id,
+            price_precision,
+            size_precision,
+            treat_expired_as_canceled,
+            ts_init,
+        ) {
+            Ok(report) => return Ok(report),
+            Err(e) => {
+                log::warn!(
+                    "Failed to convert matching-engine enrichment for algo order {}: {e}; falling back to Algo Service report",
+                    result.algo.algo_id
+                );
+            }
+        }
+    }
+
+    result.algo.to_order_status_report(
+        account_id,
+        instrument_id,
+        price_precision,
+        size_precision,
+        ts_init,
+    )
+}
 
 /// Live execution client for Binance Futures trading.
 ///
@@ -262,6 +314,27 @@ impl BinanceFuturesExecutionClient {
     #[must_use]
     pub fn is_hedge_mode(&self) -> bool {
         self.is_hedge_mode.load(Ordering::Acquire)
+    }
+
+    fn resolve_algo_lookup(
+        &self,
+        client_order_id: Option<ClientOrderId>,
+        params: Option<&Params>,
+    ) -> BinanceFuturesAlgoLookup {
+        if params.and_then(|p| p.get_bool(BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM)) == Some(true) {
+            return BinanceFuturesAlgoLookup::AlgoId;
+        }
+
+        let Some(client_order_id) = client_order_id else {
+            return BinanceFuturesAlgoLookup::ClientAlgoId;
+        };
+        let cache = self.core.cache();
+        match cache.order(&client_order_id) {
+            Some(order) if !is_algo_order_type(order.order_type()) => {
+                BinanceFuturesAlgoLookup::Skip
+            }
+            _ => BinanceFuturesAlgoLookup::ClientAlgoId,
+        }
     }
 
     /// Returns a clone of the HTTP client's instruments cache Arc.
@@ -1501,6 +1574,34 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
         let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
         let ts_init = self.clock.get_time_ns();
+        let algo_lookup = self.resolve_algo_lookup(cmd.client_order_id, cmd.params.as_ref());
+
+        if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+            let algo_order = self
+                .http_client
+                .query_algo_order_with_history(
+                    instrument_id,
+                    cmd.client_order_id,
+                    cmd.venue_order_id,
+                )
+                .await?;
+
+            return match algo_order {
+                Some(result) => Ok(Some(create_algo_order_status_report(
+                    &result,
+                    self.core.account_id,
+                    instrument_id,
+                    price_precision,
+                    size_precision,
+                    self.config.treat_expired_as_canceled,
+                    ts_init,
+                )?)),
+                None => {
+                    log::debug!("Algo order query returned no matching order");
+                    Ok(None)
+                }
+            };
+        }
 
         match self.http_client.query_order(&params).await {
             Ok(order) => {
@@ -1515,24 +1616,41 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 Ok(Some(report))
             }
             Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
-                // Order not found in regular API, try algo order API
-                let Some(client_order_id) = cmd.client_order_id else {
+                if algo_lookup == BinanceFuturesAlgoLookup::Skip {
+                    log::debug!("Skipping Algo Service fallback for known regular order");
                     return Ok(None);
-                };
+                }
 
-                match self.http_client.query_algo_order(client_order_id).await {
-                    Ok(algo_order) => {
-                        let report = algo_order.to_order_status_report(
-                            self.core.account_id,
-                            instrument_id,
-                            price_precision,
-                            size_precision,
-                            ts_init,
-                        )?;
-                        Ok(Some(report))
-                    }
-                    Err(e) => {
-                        log::debug!("Algo order query also failed: {e}");
+                // A conditional order may expose its Algo Service `algoId` before triggering and
+                // its matching-engine `actualOrderId` afterwards. Only an explicit ID-kind hint
+                // makes a venue ID safe for Algo Service lookup; cached conditional orders retain
+                // their existing clientAlgoId fallback.
+                let algo_venue_order_id = if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                    cmd.venue_order_id
+                } else {
+                    None
+                };
+                let algo_order = self
+                    .http_client
+                    .query_algo_order_with_history(
+                        instrument_id,
+                        cmd.client_order_id,
+                        algo_venue_order_id,
+                    )
+                    .await?;
+
+                match algo_order {
+                    Some(result) => Ok(Some(create_algo_order_status_report(
+                        &result,
+                        self.core.account_id,
+                        instrument_id,
+                        price_precision,
+                        size_precision,
+                        self.config.treat_expired_as_canceled,
+                        ts_init,
+                    )?)),
+                    None => {
+                        log::debug!("Algo order query returned no matching order");
                         Ok(None)
                     }
                 }
@@ -1835,6 +1953,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
         log::debug!("query_order: client_order_id={}", cmd.client_order_id);
 
+        let algo_lookup = self.resolve_algo_lookup(Some(cmd.client_order_id), cmd.params.as_ref());
         let http_client = self.http_client.clone();
         let command = cmd;
         let emitter = self.emitter.clone();
@@ -1859,6 +1978,34 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let treat_expired_as_canceled = self.config.treat_expired_as_canceled;
 
         self.spawn_task("query_order", async move {
+            if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                match http_client
+                    .query_algo_order_with_history(
+                        command.instrument_id,
+                        Some(command.client_order_id),
+                        command.venue_order_id,
+                    )
+                    .await
+                {
+                    Ok(Some(result)) => {
+                        let report = create_algo_order_status_report(
+                            &result,
+                            account_id,
+                            command.instrument_id,
+                            price_precision,
+                            size_precision,
+                            treat_expired_as_canceled,
+                            clock.get_time_ns(),
+                        )?;
+                        emitter.send_order_status_report(report);
+                    }
+                    Ok(None) => log::warn!("Algo order query returned no matching order"),
+                    Err(e) => log::warn!("Failed to query algo order status: {e}"),
+                }
+
+                return Ok(());
+            }
+
             let mut builder = BinanceOrderQueryParamsBuilder::default();
             builder.symbol(symbol.clone());
 
@@ -1890,25 +2037,44 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     emitter.send_order_status_report(report);
                 }
                 Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                    if algo_lookup == BinanceFuturesAlgoLookup::Skip {
+                        log::debug!("Skipping Algo Service fallback for known regular order");
+                        return Ok(());
+                    }
+
                     // Untriggered algo orders (STOP_MARKET, STOP_LIMIT, MIT, LIT,
                     // TRAILING_STOP_MARKET) live in the Binance Futures Algo Service
                     // and return -2013 on the regular order endpoint. Mirror the
                     // reconciliation path (`generate_order_status_report`) so live
                     // inflight checks resolve them instead of exhausting retries into
                     // `OrderRejected(reason='INFLIGHT_TIMEOUT')`.
-                    match http_client.query_algo_order(command.client_order_id).await {
-                        Ok(algo_order) => {
-                            let ts_init = clock.get_time_ns();
-                            let report = algo_order.to_order_status_report(
+                    let algo_venue_order_id = if algo_lookup == BinanceFuturesAlgoLookup::AlgoId {
+                        command.venue_order_id
+                    } else {
+                        None
+                    };
+
+                    match http_client
+                        .query_algo_order_with_history(
+                            command.instrument_id,
+                            Some(command.client_order_id),
+                            algo_venue_order_id,
+                        )
+                        .await
+                    {
+                        Ok(Some(result)) => {
+                            let report = create_algo_order_status_report(
+                                &result,
                                 account_id,
                                 command.instrument_id,
                                 price_precision,
                                 size_precision,
-                                ts_init,
+                                treat_expired_as_canceled,
+                                clock.get_time_ns(),
                             )?;
-
                             emitter.send_order_status_report(report);
                         }
+                        Ok(None) => log::warn!("Algo order query returned no matching order"),
                         Err(e) => log::warn!("Algo order query also failed: {e}"),
                     }
                 }

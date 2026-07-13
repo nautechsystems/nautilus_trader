@@ -95,6 +95,15 @@ use crate::{
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
 const BINANCE_ORDERS_RATE_KEY: &str = "binance:orders";
 
+/// A Binance Futures Algo Service order with optional matching-engine details.
+#[derive(Debug)]
+pub struct BinanceFuturesAlgoOrderQueryResult {
+    /// The original conditional order from the Algo Service.
+    pub algo: BinanceFuturesAlgoOrder,
+    /// The matching-engine order created after the condition triggered, when enrichment succeeds.
+    pub actual: Option<BinanceFuturesOrder>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct BatchCancelParams {
@@ -2192,6 +2201,143 @@ impl BinanceFuturesHttpClient {
         };
 
         self.inner.query_algo_order(&params).await
+    }
+
+    /// Queries a single algo order by venue order ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the venue order ID is not numeric or the request fails.
+    pub async fn query_algo_order_by_venue_order_id(
+        &self,
+        venue_order_id: VenueOrderId,
+    ) -> BinanceFuturesHttpResult<BinanceFuturesAlgoOrder> {
+        let algo_id = venue_order_id
+            .inner()
+            .parse::<i64>()
+            .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
+        let params = BinanceAlgoOrderQueryParams {
+            algo_id: Some(algo_id),
+            client_algo_id: None,
+            recv_window: None,
+        };
+
+        self.inner.query_algo_order(&params).await
+    }
+
+    async fn query_historical_algo_order_by_venue_order_id(
+        &self,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+    ) -> BinanceFuturesHttpResult<Option<BinanceFuturesAlgoOrder>> {
+        let algo_id = venue_order_id
+            .inner()
+            .parse::<i64>()
+            .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
+        let symbol = format_binance_symbol(&instrument_id);
+        let params = BinanceAllAlgoOrdersParams {
+            symbol,
+            algo_id: Some(algo_id),
+            start_time: None,
+            end_time: None,
+            page: None,
+            limit: Some(1),
+            recv_window: None,
+        };
+        let order = self
+            .inner
+            .query_all_algo_orders(&params)
+            .await?
+            .into_iter()
+            .next()
+            .filter(|order| order.algo_id == algo_id);
+
+        Ok(order)
+    }
+
+    /// Queries an algo order by venue ID, falling back to recent history when needed.
+    ///
+    /// Uses the client order ID only when no venue order ID is available.
+    /// Matching-engine details are best-effort; remote enrichment failures fall back to the
+    /// Algo Service execution fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an ID is invalid, the Algo Service request fails, or matching-engine
+    /// enrichment fails because of a local configuration or validation error.
+    pub async fn query_algo_order_with_history(
+        &self,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        algo_venue_order_id: Option<VenueOrderId>,
+    ) -> BinanceFuturesHttpResult<Option<BinanceFuturesAlgoOrderQueryResult>> {
+        let order = if let Some(venue_order_id) = algo_venue_order_id {
+            match self
+                .query_algo_order_by_venue_order_id(venue_order_id)
+                .await
+            {
+                Ok(order) => Some(order),
+                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => {
+                    self.query_historical_algo_order_by_venue_order_id(
+                        instrument_id,
+                        venue_order_id,
+                    )
+                    .await?
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            let Some(client_order_id) = client_order_id else {
+                return Ok(None);
+            };
+
+            match self.query_algo_order(client_order_id).await {
+                Ok(order) => Some(order),
+                Err(BinanceFuturesHttpError::BinanceError { code: -2013, .. }) => None,
+                Err(e) => return Err(e),
+            }
+        };
+
+        let Some(order) = order else {
+            return Ok(None);
+        };
+        let actual = if let Some(actual_order_id) = order
+            .actual_order_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .map(str::parse::<i64>)
+            .transpose()
+            .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?
+        {
+            let params = BinanceOrderQueryParams {
+                symbol: format_binance_symbol(&instrument_id),
+                order_id: Some(actual_order_id),
+                orig_client_order_id: None,
+                recv_window: None,
+            };
+
+            match self.inner.query_order(&params).await {
+                Ok(actual) => Some(actual),
+                Err(
+                    e @ (BinanceFuturesHttpError::MissingCredentials
+                    | BinanceFuturesHttpError::ValidationError(_)),
+                ) => return Err(e),
+                Err(e) => {
+                    log::warn!(
+                        "Failed to enrich algo order with matching-engine order \
+                         {actual_order_id}: {e}; falling back to Algo Service execution fields"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        Ok(Some(BinanceFuturesAlgoOrderQueryResult {
+            algo: order,
+            actual,
+        }))
     }
 
     /// Returns the size precision for an instrument from the cache.
