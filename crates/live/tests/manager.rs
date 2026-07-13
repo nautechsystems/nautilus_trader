@@ -963,6 +963,88 @@ async fn test_external_order_canceled_with_partial_fill() {
     assert_eq!(order.filled_qty(), Quantity::from("0.5"));
 }
 
+#[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Expired)]
+#[tokio::test]
+async fn test_external_terminal_order_with_incomplete_real_fills_infers_residual(
+    #[case] terminal_status: OrderStatus,
+) {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let venue_order_id = VenueOrderId::from("V-EXT-TERMINAL-RESIDUAL");
+
+    ctx.add_instrument(test_instrument());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let report = create_order_status_report(
+        None,
+        venue_order_id,
+        instrument_id,
+        terminal_status,
+        Quantity::from("2.0"),
+        Quantity::from("1.5"),
+    )
+    .with_avg_px(3000.00)
+    .unwrap();
+    mass_status.add_order_reports(vec![report]);
+
+    let real_trade_id = TradeId::from("T-TERMINAL-RESIDUAL-001");
+    let fill = FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        real_trade_id,
+        OrderSide::Buy,
+        Quantity::from("1.0"),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        None,
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    );
+    mass_status.add_fill_reports(vec![fill]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert_eq!(result.events.len(), 4);
+    assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
+    assert!(matches!(
+        (&result.events[3], terminal_status),
+        (OrderEventAny::Canceled(_), OrderStatus::Canceled)
+            | (OrderEventAny::Expired(_), OrderStatus::Expired),
+    ));
+
+    let OrderEventAny::Filled(real_fill) = &result.events[1] else {
+        panic!("Expected real Filled event, was {:?}", result.events[1]);
+    };
+    let OrderEventAny::Filled(inferred_fill) = &result.events[2] else {
+        panic!("Expected inferred Filled event, was {:?}", result.events[2]);
+    };
+    assert_eq!(real_fill.trade_id, real_trade_id);
+    assert_eq!(real_fill.last_qty, Quantity::from("1.0"));
+    assert_ne!(inferred_fill.trade_id, real_trade_id);
+    assert_eq!(inferred_fill.last_qty, Quantity::from("0.5"));
+
+    let cache = ctx.cache.borrow();
+    let orders = cache.orders(None, None, None, None, None);
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].status(), terminal_status);
+    assert_eq!(orders[0].filled_qty(), Quantity::from("1.5"));
+}
+
 #[tokio::test]
 async fn test_cached_order_canceled_with_fills() {
     // Test that a cached order transitioning to Canceled has fills applied

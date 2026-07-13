@@ -77,7 +77,7 @@ use crate::{
     config::PolymarketExecClientConfig,
     http::{clob::PolymarketClobHttpClient, data_api::PolymarketDataApiHttpClient},
     signing::eip712::OrderSigner,
-    websocket::client::PolymarketWebSocketClient,
+    websocket::{client::PolymarketWebSocketClient, dispatch::WsDispatchState},
 };
 
 /// Live execution client for the Polymarket prediction market.
@@ -103,6 +103,7 @@ pub struct PolymarketExecutionClient {
     pending_cancels: PendingCancelTracker,
     order_identities: Arc<OrderIdentityRegistry>,
     fill_tracker: Arc<OrderFillTrackerMap>,
+    ws_dispatch_state: Arc<Mutex<WsDispatchState>>,
 }
 
 impl PolymarketExecutionClient {
@@ -125,17 +126,11 @@ impl PolymarketExecutionClient {
         .context("failed to resolve Polymarket credentials")?;
 
         let signer_address = secrets.address.clone();
-        let maker_address = secrets
-            .funder
-            .clone()
-            .unwrap_or_else(|| signer_address.clone());
-        if config.signature_type == SignatureType::Poly1271
-            && maker_address.eq_ignore_ascii_case(&signer_address)
-        {
-            anyhow::bail!(
-                "POLY_1271 signature type requires a deposit wallet funder distinct from the signing address"
-            );
-        }
+        let maker_address = resolve_maker_address(
+            config.signature_type,
+            &signer_address,
+            secrets.funder.as_deref(),
+        )?;
         let http_client = PolymarketClobHttpClient::new(
             secrets.credential.clone(),
             signer_address.clone(),
@@ -208,8 +203,34 @@ impl PolymarketExecutionClient {
             pending_cancels: PendingCancelTracker::default(),
             order_identities: Arc::new(OrderIdentityRegistry::default()),
             fill_tracker: Arc::new(OrderFillTrackerMap::new()),
+            ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })
     }
+}
+
+fn resolve_maker_address(
+    signature_type: SignatureType,
+    signer_address: &str,
+    funder: Option<&str>,
+) -> anyhow::Result<String> {
+    let maker_address = match signature_type {
+        SignatureType::Eoa => funder.unwrap_or(signer_address),
+        SignatureType::PolyProxy | SignatureType::PolyGnosisSafe | SignatureType::Poly1271 => {
+            funder.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Polymarket {signature_type:?} signature type requires a funder wallet address",
+                )
+            })?
+        }
+    };
+
+    if signature_type != SignatureType::Eoa && maker_address.eq_ignore_ascii_case(signer_address) {
+        anyhow::bail!(
+            "Polymarket {signature_type:?} signature type requires a funder distinct from the signing address",
+        );
+    }
+
+    Ok(maker_address.to_string())
 }
 
 #[async_trait(?Send)]
@@ -369,5 +390,46 @@ impl ExecutionClient for PolymarketExecutionClient {
         lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         self.generate_mass_status_impl(lookback_mins).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(SignatureType::PolyProxy)]
+    #[case(SignatureType::PolyGnosisSafe)]
+    #[case(SignatureType::Poly1271)]
+    fn proxy_signature_types_require_funder(#[case] signature_type: SignatureType) {
+        let error = resolve_maker_address(signature_type, "0xsigner", None).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("requires a funder wallet address")
+        );
+    }
+
+    #[rstest]
+    #[case(SignatureType::PolyProxy)]
+    #[case(SignatureType::PolyGnosisSafe)]
+    #[case(SignatureType::Poly1271)]
+    fn proxy_signature_types_require_distinct_funder(#[case] signature_type: SignatureType) {
+        let error =
+            resolve_maker_address(signature_type, "0xsigner", Some("0xSIGNER")).unwrap_err();
+
+        assert!(error.to_string().contains("requires a funder distinct"));
+    }
+
+    #[rstest]
+    #[case(None, "0xsigner")]
+    #[case(Some("0xfunder"), "0xfunder")]
+    fn eoa_uses_configured_funder_or_signer(#[case] funder: Option<&str>, #[case] expected: &str) {
+        let maker_address = resolve_maker_address(SignatureType::Eoa, "0xsigner", funder).unwrap();
+
+        assert_eq!(maker_address, expected);
     }
 }

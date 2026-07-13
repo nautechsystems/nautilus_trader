@@ -246,7 +246,13 @@ impl PolymarketTradeStatus {
     /// Returns `true` if this status represents a finalized trade.
     #[must_use]
     pub const fn is_finalized(&self) -> bool {
-        matches!(self, Self::Mined | Self::Confirmed)
+        matches!(self, Self::Confirmed)
+    }
+
+    /// Returns `true` while settlement can still succeed or fail.
+    #[must_use]
+    pub const fn is_pending_settlement(&self) -> bool {
+        matches!(self, Self::Matched | Self::Mined | Self::Retrying)
     }
 }
 
@@ -541,10 +547,19 @@ mod tests {
 
     #[rstest]
     fn test_trade_status_is_finalized() {
-        assert!(PolymarketTradeStatus::Mined.is_finalized());
+        assert!(!PolymarketTradeStatus::Mined.is_finalized());
         assert!(PolymarketTradeStatus::Confirmed.is_finalized());
         assert!(!PolymarketTradeStatus::Matched.is_finalized());
         assert!(!PolymarketTradeStatus::Retrying.is_finalized());
         assert!(!PolymarketTradeStatus::Failed.is_finalized());
+    }
+
+    #[rstest]
+    fn test_trade_status_is_pending_settlement() {
+        assert!(PolymarketTradeStatus::Matched.is_pending_settlement());
+        assert!(PolymarketTradeStatus::Mined.is_pending_settlement());
+        assert!(PolymarketTradeStatus::Retrying.is_pending_settlement());
+        assert!(!PolymarketTradeStatus::Confirmed.is_pending_settlement());
+        assert!(!PolymarketTradeStatus::Failed.is_pending_settlement());
     }
 }

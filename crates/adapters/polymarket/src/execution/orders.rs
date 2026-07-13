@@ -221,11 +221,9 @@ impl PolymarketExecutionClient {
                         builder_taker_fee_rate: Decimal::ZERO,
                     }),
                     Err(e) => {
-                        emitter.emit_order_rejected(
+                        emitter.emit_order_denied(
                             &order,
                             &format!("Failed to fetch pUSD balance for fee adjustment: {e}"),
-                            clock.get_time_ns(),
-                            false,
                         );
                         return Ok(());
                     }
@@ -592,11 +590,13 @@ impl PolymarketExecutionClient {
                             handle_batch_order_responses(
                                 responses,
                                 orders_chunk,
+                                expected_venue_order_ids,
                                 &submitter,
                                 &emitter,
                                 clock,
                                 &fill_tracker,
                                 &order_identities,
+                                &pending_submits,
                                 &pending_cancels,
                                 &pending_tasks,
                                 account_id,

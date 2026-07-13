@@ -9,7 +9,7 @@
       "size": "10.0000",
       "fee_rate_bps": "0",
       "price": "0.5000",
-      "status": "MINED",
+      "status": "CONFIRMED",
       "match_time": "2024-01-01T00:00:00Z",
       "last_update": "2024-01-01T00:00:10Z",
       "outcome": "Yes",

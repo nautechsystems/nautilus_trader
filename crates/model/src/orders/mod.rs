@@ -258,6 +258,7 @@ impl OrderStatus {
             (Self::PendingCancel, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::PendingCancel, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::PendingCancel, OrderEventAny::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
+            (Self::PendingCancel, OrderEventAny::Updated(_)) => Self::PendingCancel,  // Handled by updated to restore previous_status
             (Self::PendingCancel, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Triggered, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Triggered, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
@@ -930,8 +931,10 @@ impl OrderCore {
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
-        if self.status == OrderStatus::PendingUpdate
-            && let Some(previous) = self.previous_status
+        if matches!(
+            self.status,
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel,
+        ) && let Some(previous) = self.previous_status
         {
             self.status = previous;
         }
@@ -1137,8 +1140,8 @@ mod tests {
         enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::spec::{
             OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
-            OrderInitializedSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec,
-            OrderTriggeredSpec, OrderUpdatedSpec,
+            OrderInitializedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderRejectedSpec, OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
         },
         identifiers::InstrumentId,
         instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -2010,6 +2013,39 @@ mod tests {
         order.apply(OrderEventAny::Canceled(canceled2)).unwrap();
         assert_eq!(order.status(), OrderStatus::Canceled);
         assert!(order.is_closed());
+    }
+
+    #[rstest]
+    fn test_updated_restores_status_before_pending_cancel() {
+        let mut order: MarketOrder = OrderInitializedSpec::builder().build().try_into().unwrap();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let pending_cancel = OrderPendingCancelSpec::builder().build();
+        let updated = OrderUpdatedSpec::builder()
+            .quantity(Quantity::from(150_000))
+            .build();
+
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        let ts_accepted = order.ts_accepted();
+        let venue_order_ids: Vec<VenueOrderId> =
+            order.venue_order_ids().into_iter().copied().collect();
+        order
+            .apply(OrderEventAny::PendingCancel(pending_cancel))
+            .unwrap();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.quantity(), Quantity::from(150_000));
+        assert_eq!(order.ts_accepted(), ts_accepted);
+        assert_eq!(
+            order
+                .venue_order_ids()
+                .into_iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            venue_order_ids,
+        );
     }
 
     #[rstest]

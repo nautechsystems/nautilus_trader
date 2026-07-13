@@ -2834,26 +2834,24 @@ impl ExecutionManager {
             sorted_fills.sort_by_key(|f| f.ts_event);
 
             match report.order_status {
-                OrderStatus::Canceled | OrderStatus::Expired => {
-                    let terminal_event = order_events.pop();
+                OrderStatus::Canceled
+                | OrderStatus::Expired
+                | OrderStatus::Filled
+                | OrderStatus::PartiallyFilled => {
+                    let terminal_event = if order_events.last().is_some_and(|event| {
+                        matches!(
+                            event,
+                            OrderEventAny::Canceled(_) | OrderEventAny::Expired(_),
+                        )
+                    }) {
+                        order_events.pop()
+                    } else {
+                        None
+                    };
 
-                    for fill in sorted_fills {
-                        if let Some(fill_event) =
-                            self.create_order_fill(&cached_order, fill, instrument)
-                        {
-                            order_events.push(fill_event);
-                        }
-                    }
-
-                    if let Some(event) = terminal_event {
-                        order_events.push(event);
-                    }
-                }
-                OrderStatus::Filled | OrderStatus::PartiallyFilled => {
-                    // Only pop if the last event is a Filled event (the inferred fill)
                     if order_events
                         .last()
-                        .is_some_and(|e| matches!(e, OrderEventAny::Filled(_)))
+                        .is_some_and(|event| matches!(event, OrderEventAny::Filled(_)))
                     {
                         order_events.pop();
                     }
@@ -2887,6 +2885,10 @@ impl ExecutionManager {
                         {
                             order_events.push(inferred_fill);
                         }
+                    }
+
+                    if let Some(event) = terminal_event {
+                        order_events.push(event);
                     }
                 }
                 _ => {}

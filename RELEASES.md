@@ -39,6 +39,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Added v2 Cap'n Proto round-trip for order-event `activation_price` and `OrderFilled` `info`, and SQL persistence for order-event `activation_price`
 - Added v2 Polymarket fill `info` metadata carrying the raw venue trade fields
 - Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
+- Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
@@ -75,6 +76,8 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 catalog writes silently re-labeling mixed instruments or bar types under the first element's identity; writes now group by identity and reject mixed input
 - Fixed v2 catalog internal-to-external bar type conversion corrupting symbols containing `-INTERNAL` and mishandling composite bar types
 - Fixed v2 SQL bar row decoding to return a decode error instead of panicking on invalid rows, and to reject composite bar types on insert
+- Fixed v2 execution mass-status reconciliation to preserve venue fill IDs and commissions, apply
+  terminal fill gaps, and convert Betfair cumulative matched sizes into incremental fills
 - Fixed v2 external bar unsubscribe detaching the venue stream while other actors remained subscribed
 - Fixed v2 continuous future bar unsubscribe tearing down the chain while other actors remained subscribed
 - Fixed v2 continuous future bar requests emitting synthetic last-close bars across roll gaps (v1 parity)
@@ -112,10 +115,13 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed live reconciliation real-time gates to use the monotonic clock (#4376), thanks @folknor
 - Fixed live missing-order reconciliation to use monotonic receipt time (#4387), thanks @folknor
 - Fixed live execution engine position activity to stamp receipt time instead of venue `ts_event`
+- Fixed Rust/PyO3 live nodes to apply configured default and venue client routing (#4408), thanks @dfjmax
 - Fixed `LiveTimer` firing past its `stop_time_ns` bound and dropping the boundary event (#4401), thanks @folknor
 - Fixed `Clock.timer_exists` to exclude expired timers like `timer_names`/`timer_count` (#4400), thanks @folknor
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 - Fixed Rust Binance Futures hedge-mode position tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu
+- Fixed Binance Futures algo order reports omitting fill quantity and average price from `actualQty`/`actualPrice`
+- Fixed Binance Futures filled market order reconciliation to use venue average prices (#4441), thanks @KaizynX
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
@@ -133,6 +139,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
+- Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)

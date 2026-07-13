@@ -121,9 +121,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .instrument_id(instrument_id)
         .client_id(client_id)
         .order_qty(order_qty)
-        // Uncomment both lines to exercise a quote-denominated market buy
+        // Uncomment to exercise a quote-denominated market buy on start.
+        // Polymarket market BUY orders require quote quantity and IOC/FOK,
+        // and quote quantity does not apply to limit orders.
         // .open_position_on_start_qty(order_qty.as_decimal())
+        // .open_position_time_in_force(TimeInForce::Ioc)
         // .use_quote_quantity(true)
+        // .enable_limit_buys(false)
         .use_post_only(true)
         .tob_offset_ticks(5) // 5 ticks = 0.005 offset (price range 0.001-0.999)
         .enable_limit_sells(false) // Can't sell without inventory on Polymarket

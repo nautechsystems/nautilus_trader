@@ -338,6 +338,9 @@ sequential 15‑order chunks.
 - A single eligible order falls through to `POST /order` so it keeps the single‑order retry
   semantics; the batch path deliberately disables retry because the venue does not expose an
   idempotency key.
+- If the batch response omits a leg, that order stays submitted for reconciliation. The adapter
+  registers the signed order's expected hash so later WebSocket events and cancels still resolve to
+  the local order. An omitted response cannot prove that the venue rejected the order.
 - `BatchCancelOrders` is dispatched to `DELETE /orders` in one shot.
 
 ### Submit error handling
@@ -356,11 +359,18 @@ a rejected leg as `success=true` with an empty `orderID` and the reason in `erro
 naked sell the venue cannot accept): the adapter rejects that leg with the venue reason. A leg with
 no `orderID` and no reason stays submitted for reconciliation.
 
+Once any single-order submit attempt has an ambiguous outcome, a later retry error cannot prove
+that the first attempt failed. The adapter therefore keeps the order submitted even if a later
+attempt returns a client error such as an already-existing order.
+
+Failures before the adapter sends `POST /order` emit `OrderDenied`, not `OrderRejected`. This
+includes a failed pUSD balance lookup needed to adjust a market BUY for fees.
+
 When a rejection reason reports a post-only order crossing the book, the `OrderRejected` event
 sets `due_post_only=true` so strategies can distinguish it from other venue rejections.
 
 For unknown outcomes, the adapter derives the expected Polymarket order hash from the signed
-EIP-712 order when possible and cache it as the `VenueOrderId`. Later WebSocket order events
+EIP-712 order when possible and caches it as the `VenueOrderId`. Later WebSocket order events
 (or reconciliation reports) then attach to the local `ClientOrderId` instead of becoming external
 orders.
 
@@ -454,28 +464,30 @@ and `best_ask` from each `price_change`.
 
 Trades on Polymarket can have the following statuses:
 
-- `MATCHED`: Trade has been matched and sent to the executor service by the operator. The executor service submits the trade as a transaction to the Exchange contract.
+- `MATCHED`: Trade has been matched and sent to the executor service. The executor submits it as
+  a transaction to the Exchange contract.
 - `MINED`: Trade is observed to be mined into the chain, and no finality threshold is established.
 - `CONFIRMED`: Trade has achieved strong probabilistic finality and was successful.
 - `RETRYING`: Trade transaction has failed (revert or reorg) and is being retried/resubmitted by the operator.
 - `FAILED`: Trade has failed and is not being retried.
 
-Once a trade is initially matched, subsequent trade status updates will be received via the WebSocket.
-NautilusTrader records the initial trade details in the `info` field of the `OrderFilled` event,
-with additional trade events stored in the cache as JSON under a custom key to retain this information.
+Once a trade is initially matched, subsequent status updates arrive through the user WebSocket.
+The execution adapter emits fills only for `CONFIRMED` trades. It treats `MATCHED`, `MINED`, and
+`RETRYING` as non-terminal and ignores `FAILED` trades. This avoids applying a fill that a later
+failed settlement cannot reverse. Confirmed WebSocket fills retain the raw trade fields in the
+`info` field of the `OrderFilled` event.
 
 ### Trade ID derivation
 
 Polymarket does not publish a trade ID on `last_trade_price` market-data events.
 The adapter derives a deterministic `TradeId` from the asset ID, side, price,
 size, and timestamp via the Rust `determine_trade_id` function using FNV-1a.
-For CLOB Data API trade history the adapter composes the `TradeId` from a hash
-suffix, an asset suffix, and a per-(transaction, asset) sequence number (format
-`{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}`). A single Polygon transaction
-can settle multiple fills sharing the same `transactionHash`, so the older
-last-36-character form collapsed those fills to a single id and downstream
-catalogs silently dropped duplicates. The same venue event yields the same
-trade ID across replays, keeping downstream dedup intact.
+For execution fills, taker reports use the venue's trade `id` in both REST reconciliation and the
+user WebSocket, so the same fill deduplicates across sources. A maker trade can fill more than one
+of the user's resting orders, so maker reports combine the venue trade ID with the maker venue
+order ID. The same venue event yields the same trade ID across replays.
+For historical Data API trades, the loader uses
+`{transactionHash[-24:]}-{asset[-4:]}-{seq:06d}` to distinguish fills in one transaction.
 
 ## Fees
 
@@ -542,6 +554,15 @@ Polymarket order ID (`venue_order_id`). The execution reconciliation procedure f
 
 Polymarket does not directly return orders that are no longer active. The V2 adapter recovers a
 cached individual order from trade history when its terminal WebSocket update is missed.
+Only `CONFIRMED` trades contribute to recovered fills; pending and failed settlement states do not.
+
+Mass-status reconciliation pairs each order report with its venue fill reports. It applies the
+real fills first to preserve trade IDs and commissions, then infers only any residual quantity
+needed to reach the venue-reported status. REST order reports cap matched quantity to the greater
+of locally applied fills and authenticated `CONFIRMED` trade history, so pending settlement cannot
+create an inferred fill. Runtime order checks fetch confirmed trade history when the venue reports
+more matched quantity than the local order and WebSocket fill tracker contain. Unpaired fill reports
+retain the normal fill-only path.
 
 ### Single-order recovery from trades
 
@@ -566,12 +587,17 @@ engine rather than synthesizing an external order from trade history alone:
   the venue trade history can be reviewed manually.
 - Cached order, no trades: returns `Canceled` with
   `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
+- Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query returns the
+  cached non-terminal `Accepted` or `PartiallyFilled` state. Terminal recovery waits until
+  settlement reaches `CONFIRMED` or `FAILED`.
 - No cached order (regardless of trades): returns `None`; the engine's
   not-found-at-venue path resolves the local entry.
 
-`open_check_interval_secs` is recommended for Polymarket so the engine
-periodically drives this recovery path for orders whose terminal WS update
-was missed.
+The bulk open-order check cannot use this fallback for matched orders omitted by `GET /orders`.
+With the default `open_check_open_only=true`, the engine leaves those cached orders open for later
+reconciliation. With `open_check_open_only=false`, missing-order retries can mark an order rejected
+before its pending settlement confirms. A singular order query or the next startup reconciliation
+recovers the settled quantity from confirmed trade history.
 
 ## Fill quantity normalization
 
@@ -584,10 +610,19 @@ normalizes them with a single threshold of `DUST_SNAP_THRESHOLD = 0.01`
 shares. Anything beyond that surfaces to the engine as a real partial fill or
 overfill.
 
-| Direction | Source                                 | Adapter behaviour                         |
-|-----------|----------------------------------------|-------------------------------------------|
-| Overfill  | V2 USDC‑scale truncation (microshares) | Snap fill DOWN to `submitted_qty`         |
-| Underfill | CLOB cent‑tick truncation (≤ `0.01`)   | Preserved; synthetic dust fill at MATCHED |
+| Direction | Source                                 | Adapter behaviour                                       |
+|-----------|----------------------------------------|---------------------------------------------------------|
+| Overfill  | V2 USDC‑scale truncation (microshares) | Snap fill DOWN to `submitted_qty`                       |
+| Underfill | CLOB cent‑tick truncation (`< 0.01`)   | Synthetic dust fill once associated trades all confirm  |
+
+Dust convergence triggers from the `MATCHED` order update for resting maker orders, or directly
+on the confirming taker trade for one-shot taker orders. FOK orders always qualify because any
+fill implies full completion. IOC maps to fill-and-kill, whose remainder can be genuine, so IOC
+qualifies only for quote-quantity market BUY orders, whose registered quantity derives from the
+venue-computed size; an IOC remainder on a limit or market SELL order is never synthesized. The
+same convergence runs after buffered fills drain when a confirmed trade arrives before the
+submit response. A buffered `Canceled`, `Expired`, or `Rejected` report takes precedence and
+preserves the remaining quantity.
 
 `FillReport.commission` always reflects the venue-reported size, not the
 snapped quantity. The few-ulp difference is sub-microcent in pUSD.
@@ -747,6 +782,15 @@ The execution adapter keeps a `user` channel connection for order and trade even
 subscriptions as needed for instruments seen during trading.
 
 The adapter supports dynamic WebSocket subscribe and unsubscribe operations.
+Confirmed fills are deduplicated across reconnects until the client is reset. If a trade arrives
+before its instrument is available, the adapter leaves it out of the dedup state. A redelivered
+event or later REST reconciliation can apply it after instrument loading completes.
+For a fully matched order, dust convergence waits for every trade ID in the order's
+`associate_trades` list to confirm before emitting a synthetic residual fill. If a confirmed trade
+is recovered through REST after a WebSocket gap, reconciliation also snaps a terminal residual
+within `DUST_SNAP_THRESHOLD` to the submitted quantity. If a `MATCHED` WebSocket update omits
+`associate_trades`, the adapter does not infer that settlement is final; the next REST
+reconciliation recovers the residual after the trade reaches `CONFIRMED`.
 
 ### Subscription limits
 
@@ -827,6 +871,7 @@ The following limitations are currently known:
 - Reduce-only orders are not supported.
 - Batch submit (`POST /orders`) accepts at most 15 orders per request; the adapter splits larger
   `SubmitOrderList` commands into sequential 15-order chunks.
+- The adapter does not implement Polymarket's authenticated heartbeat auto-cancel endpoint.
 - Position reports omit balances below 0.01 shares. Do not treat an omitted report as proof that a
   dust position is flat; a sub-minimum residual cannot be exited through the CLOB's five-share
   minimum order size.
@@ -874,17 +919,19 @@ Class/struct: `PolymarketExecClientConfig`.
 | `account_id`                                     | `POLYMARKET-001`        | Account identifier for this execution client. |
 | `private_key`                                    | `POLYMARKET_PK`         | EIP-712 signing key. |
 | `api_key`, `api_secret`, `passphrase`            | environment variables   | CLOB L2 authentication credentials. |
-| `funder`                                         | `POLYMARKET_FUNDER`     | Funding wallet; required for proxy and deposit‑wallet signatures. |
+| `funder`                                         | `POLYMARKET_FUNDER`     | Funding wallet; proxy and deposit‑wallet signatures require it to differ from the signing address. |
 | `signature_type`                                 | `Eoa`                   | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`. |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint. |
 | `http_timeout_secs`                              | `60`                    | HTTP timeout in seconds. |
 | `max_retries`                                    | `3`                     | Retries for single‑order submit and cancel requests. |
 | `retry_delay_initial_ms`                         | `1000`                  | Initial retry delay. |
 | `retry_delay_max_ms`                             | `10000`                 | Maximum retry delay. |
-| `ack_timeout_secs`                               | `5`                     | User‑WebSocket order/trade acknowledgment timeout. |
+| `ack_timeout_secs`                               | `5`                     | Reserved for order/trade acknowledgment handling; not currently applied. |
 | `transport_backend`                              | `Sockudo`               | WebSocket transport implementation. |
 
 Batch submissions never retry because Polymarket does not expose an idempotency key.
+Proxy signature clients fail during construction unless `funder` is present and differs from the
+signing address.
 
 ### Instrument provider options
 

@@ -1118,17 +1118,7 @@ impl BinanceFuturesOrder {
                 )
             }
         };
-        let avg_px = if filled_qty > Decimal::ZERO {
-            self.avg_price
-                .as_deref()
-                .filter(|price| !price.is_empty())
-                .map(|price| parse_positive_price_at_precision(price, price_precision, "avg_price"))
-                .transpose()?
-                .flatten()
-                .map(|price| price.as_decimal())
-        } else {
-            None
-        };
+        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty, price_precision)?;
 
         let mut report = OrderStatusReport::new(
             account_id,
@@ -1392,10 +1382,10 @@ pub struct BinanceFuturesAlgoOrder {
     #[serde(default)]
     pub actual_order_id: Option<String>,
     /// Executed quantity in matching engine (populated when algo order is triggered).
-    #[serde(default)]
+    #[serde(default, rename = "actualQty", alias = "executedQty")]
     pub executed_qty: Option<String>,
     /// Average fill price in matching engine (populated when algo order is triggered).
-    #[serde(default)]
+    #[serde(default, rename = "actualPrice", alias = "avgPrice")]
     pub avg_price: Option<String>,
 }
 
@@ -1466,6 +1456,7 @@ impl BinanceFuturesAlgoOrder {
         } else {
             None
         };
+        let avg_px = parse_avg_px(self.avg_price.as_deref(), filled_qty, price_precision)?;
         let trigger_price = self.parse_trigger_price(price_precision)?;
         let trailing_offset = self.parse_trailing_offset()?;
 
@@ -1491,6 +1482,8 @@ impl BinanceFuturesAlgoOrder {
         if let Some(price) = price {
             report = report.with_price(price);
         }
+
+        report.avg_px = avg_px;
 
         if let Some(trigger_price) = trigger_price {
             report = report
@@ -1581,6 +1574,21 @@ impl BinanceFuturesAlgoOrder {
     }
 }
 
+fn parse_avg_px(
+    raw: Option<&str>,
+    filled_qty: Decimal,
+    price_precision: u8,
+) -> anyhow::Result<Option<Decimal>> {
+    if filled_qty <= Decimal::ZERO {
+        return Ok(None);
+    }
+
+    raw.filter(|price| !price.is_empty())
+        .map(|price| parse_positive_price_at_precision(price, price_precision, "avg_price"))
+        .transpose()
+        .map(|price| price.flatten().map(|price| price.as_decimal()))
+}
+
 fn parse_positive_price_at_precision(
     raw: &str,
     precision: u8,
@@ -1643,6 +1651,7 @@ pub struct BinanceFuturesAlgoOrderCancelResponse {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::common::testing::load_fixture_string;
@@ -2036,29 +2045,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_algo_order_triggered() {
-        let json = r#"{
-            "algoId": 123456789,
-            "clientAlgoId": "test-algo-order-2",
-            "algoType": "CONDITIONAL",
-            "type": "TAKE_PROFIT",
-            "symbol": "ETHUSDT",
-            "side": "SELL",
-            "algoStatus": "TRIGGERED",
-            "triggerPrice": "2500.00",
-            "price": "2500.00",
-            "actualOrderId": "987654321",
-            "executedQty": "0.5",
-            "avgPrice": "2499.50"
-        }"#;
+    #[case("actualQty", "actualPrice")]
+    #[case("executedQty", "avgPrice")]
+    fn test_parse_algo_order_finished(#[case] quantity_field: &str, #[case] price_field: &str) {
+        let json = load_fixture_string("futures/http_json/algo_order_response.json")
+            .replace("actualQty", quantity_field)
+            .replace("actualPrice", price_field);
 
         let order: BinanceFuturesAlgoOrder =
-            serde_json::from_str(json).expect("Failed to parse triggered algo order");
+            serde_json::from_str(&json).expect("Failed to parse finished algo order");
 
-        assert_eq!(order.algo_status, Some(BinanceAlgoStatus::Triggered));
-        assert_eq!(order.order_type, BinanceFuturesOrderType::TakeProfit);
+        assert_eq!(order.algo_status, Some(BinanceAlgoStatus::Finished));
+        assert_eq!(order.order_type, BinanceFuturesOrderType::StopMarket);
         assert_eq!(order.actual_order_id, Some("987654321".to_string()));
-        assert_eq!(order.executed_qty, Some("0.5".to_string()));
+        assert_eq!(order.executed_qty, Some("0.001".to_string()));
+        assert_eq!(order.avg_price, Some("50000.00".to_string()));
     }
 
     #[rstest]
@@ -2204,6 +2205,41 @@ mod tests {
             .unwrap();
 
         assert_eq!(report.price, Some(Price::from("50000.00")));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_sets_actual_fill_fields() {
+        let json = load_fixture_string("futures/http_json/algo_order_response.json");
+        let order: BinanceFuturesAlgoOrder = serde_json::from_str(&json).unwrap();
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.filled_qty.as_decimal(), dec!(0.001));
+        assert_eq!(report.price, None);
+        assert_eq!(report.avg_px, Some(dec!(50000.00)));
+    }
+
+    #[rstest]
+    fn test_algo_order_to_report_omits_actual_price_without_fills() {
+        let mut order = algo_order_with_price(None);
+        order.executed_qty = Some("0".to_string());
+        order.avg_price = Some("not-a-number".to_string());
+        let account_id = AccountId::from("BINANCE-FUTURES-001");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+
+        let report = order
+            .to_order_status_report(account_id, instrument_id, 2, 3, ts_init)
+            .unwrap();
+
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::ZERO);
+        assert_eq!(report.avg_px, None);
     }
 
     #[rstest]

@@ -68,9 +68,8 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderCanceled, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny,
-        OrderExpired, OrderFilled, OrderInitialized, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFilled,
+        OrderInitialized, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
@@ -90,7 +89,8 @@ use crate::{
     reconciliation::{
         check_position_reconciliation, create_incremental_inferred_fill,
         generate_external_order_status_events, generate_reconciliation_order_events,
-        reconcile_fill_report as reconcile_fill,
+        generate_reconciliation_order_pre_fill_events, is_superseded_cancel_report,
+        reconcile_fill_report as reconcile_fill, reconcile_order_report,
     },
 };
 
@@ -1447,13 +1447,34 @@ impl ExecutionEngine {
                 report.venue_order_id,
                 report.instrument_id,
             );
+
+            if fills.is_empty()
+                && let Some(order) = order
+            {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let events = generate_reconciliation_order_events(&order, report, None, ts_now);
+                for event in &events {
+                    self.handle_event(event);
+                }
+            }
             return;
         };
 
         // Bootstrap the external order with only OrderAccepted; defer fill events to
         // the per-fill loop so real fill metadata is preserved.
         let mut order = match order {
-            Some(order) => order,
+            Some(order) => {
+                let ts_now = self.clock.borrow().timestamp_ns();
+                let events = generate_reconciliation_order_pre_fill_events(&order, report, ts_now);
+                for event in &events {
+                    self.handle_event(event);
+                }
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .map(|o| o.clone())
+                    .unwrap_or(order)
+            }
             None => {
                 let Some(order) = self.materialize_external_order_from_status(report) else {
                     return;
@@ -1472,7 +1493,11 @@ impl ExecutionEngine {
                     true, // reconciliation
                 );
                 self.handle_event(&OrderEventAny::Accepted(accepted));
-                order
+                self.cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .map(|o| o.clone())
+                    .unwrap_or(order)
             }
         };
 
@@ -1506,8 +1531,12 @@ impl ExecutionEngine {
         // an inferred fill so the order reaches the venue-reported terminal state.
         if matches!(
             report.order_status,
-            OrderStatus::PartiallyFilled | OrderStatus::Filled,
-        ) && report.filled_qty > order.filled_qty()
+            OrderStatus::PartiallyFilled
+                | OrderStatus::Filled
+                | OrderStatus::Canceled
+                | OrderStatus::Expired,
+        ) && !is_superseded_cancel_report(&order, report)
+            && report.filled_qty > order.filled_qty()
         {
             let ts_now = self.clock.borrow().timestamp_ns();
 
@@ -1532,41 +1561,16 @@ impl ExecutionEngine {
             }
         }
 
-        // Apply terminal events when the venue reports a non-fill closure.
-        match report.order_status {
-            OrderStatus::Canceled if !order.is_closed() => {
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let canceled = OrderCanceled::new(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    UUID4::new(),
-                    report.ts_last,
-                    ts_now,
-                    true,
-                    Some(report.venue_order_id),
-                    Some(report.account_id),
-                );
-                self.handle_event(&OrderEventAny::Canceled(canceled));
+        if !order.is_closed()
+            && matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired,
+            )
+        {
+            let ts_now = self.clock.borrow().timestamp_ns();
+            if let Some(event) = reconcile_order_report(&order, report, Some(&instrument), ts_now) {
+                self.handle_event(&event);
             }
-            OrderStatus::Expired if !order.is_closed() => {
-                let ts_now = self.clock.borrow().timestamp_ns();
-                let expired = OrderExpired::new(
-                    order.trader_id(),
-                    order.strategy_id(),
-                    order.instrument_id(),
-                    order.client_order_id(),
-                    UUID4::new(),
-                    report.ts_last,
-                    ts_now,
-                    true,
-                    Some(report.venue_order_id),
-                    Some(report.account_id),
-                );
-                self.handle_event(&OrderEventAny::Expired(expired));
-            }
-            _ => {}
         }
     }
 
@@ -1704,8 +1708,8 @@ impl ExecutionEngine {
     /// Reconciles an execution mass status report.
     ///
     /// Processes all order reports, fill reports, and position reports contained
-    /// in the mass status. Orders created as external during this pass already receive
-    /// inferred fills, so their companion fill reports are skipped to avoid double-fills.
+    /// in the mass status. Order reports are paired with their companion fills so
+    /// real trade IDs and commissions are applied before any residual inferred fill.
     pub fn reconcile_execution_mass_status(&mut self, mass_status: &ExecutionMassStatus) {
         self.report_count += 1;
 
@@ -1716,74 +1720,24 @@ impl ExecutionEngine {
             mass_status.venue
         );
 
-        let mut external_venue_ids = AHashSet::new();
-        let mut filtered_venue_ids = AHashSet::new();
+        let order_reports = mass_status.order_reports();
+        let fill_reports = mass_status.fill_reports();
+        let mut paired_venue_ids = AHashSet::new();
 
-        for order_report in mass_status.order_reports().values() {
-            let existed = {
-                let cache = self.cache.borrow();
-                order_report
-                    .client_order_id
-                    .and_then(|id| cache.order(&id).map(|o| o.clone()))
-                    .or_else(|| {
-                        cache
-                            .client_order_id(&order_report.venue_order_id)
-                            .and_then(|cid| cache.order(cid).map(|o| o.clone()))
-                    })
-                    .is_some()
-            };
-            let filtered_count = self.filtered_unclaimed_external_order_count;
-
-            self.reconcile_order_status_report(order_report);
-
-            if !existed {
-                if self.filtered_unclaimed_external_order_count > filtered_count {
-                    filtered_venue_ids.insert(order_report.venue_order_id);
-                } else {
-                    let exists_after = {
-                        let cache = self.cache.borrow();
-                        order_report
-                            .client_order_id
-                            .and_then(|id| cache.order(&id).map(|o| o.clone()))
-                            .or_else(|| {
-                                cache
-                                    .client_order_id(&order_report.venue_order_id)
-                                    .and_then(|cid| cache.order(cid).map(|o| o.clone()))
-                            })
-                            .is_some()
-                    };
-
-                    if exists_after {
-                        external_venue_ids.insert(order_report.venue_order_id);
-                    }
-                }
+        for order_report in order_reports.values() {
+            if let Some(fills) = fill_reports.get(&order_report.venue_order_id)
+                && !fills.is_empty()
+            {
+                self.reconcile_order_with_fills(order_report, fills);
+                paired_venue_ids.insert(order_report.venue_order_id);
+            } else {
+                self.reconcile_order_status_report(order_report);
             }
         }
 
-        let raw_fill_topic = MessagingSwitchboard::reconciliation_raw_fill_report_topic();
-
-        for fill_reports in mass_status.fill_reports().values() {
+        for fill_reports in fill_reports.values() {
             for fill_report in fill_reports {
-                if external_venue_ids.contains(&fill_report.venue_order_id) {
-                    // Skipped fills still arrived from the venue; capture them
-                    // for forensic replay even though reconciliation is covered
-                    // by the inferred fill generated above.
-                    msgbus::publish_any(raw_fill_topic, fill_report);
-
-                    log::debug!(
-                        "Skipping fill report for external order {}: covered by inferred fill",
-                        fill_report.venue_order_id
-                    );
-                    continue;
-                }
-
-                if filtered_venue_ids.contains(&fill_report.venue_order_id) {
-                    msgbus::publish_any(raw_fill_topic, fill_report);
-
-                    log::debug!(
-                        "Skipping fill report for filtered unclaimed external order {}",
-                        fill_report.venue_order_id
-                    );
+                if paired_venue_ids.contains(&fill_report.venue_order_id) {
                     continue;
                 }
 

@@ -82,17 +82,18 @@ use crate::{
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-        DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        PARAMS_IS_PARENT, QuotesResponse, TradesResponse,
+        DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
+        PARAMS_IS_PARENT, QuotesResponse, SubscribeCommand, TradesResponse, UnsubscribeCommand,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
+        stubs::get_typed_into_message_saving_handler,
         switchboard::{
-            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_snapshots_topic,
-            get_custom_topic, get_funding_rate_topic, get_index_price_topic,
-            get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
-            get_mark_price_topic, get_option_chain_topic, get_option_greeks_topic,
-            get_quotes_topic, get_trades_topic,
+            MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth10_topic,
+            get_book_snapshots_topic, get_custom_topic, get_funding_rate_topic,
+            get_index_price_topic, get_instrument_close_topic, get_instrument_status_topic,
+            get_instrument_topic, get_mark_price_topic, get_option_chain_topic,
+            get_option_greeks_topic, get_quotes_topic, get_trades_topic,
         },
     },
     nautilus_actor,
@@ -248,6 +249,11 @@ impl DataActor for TestDataActor {
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {
         self.received_deltas.extend(&deltas.deltas);
+        Ok(())
+    }
+
+    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        self.received_depths.push(*depth);
         Ok(())
     }
 
@@ -1571,10 +1577,178 @@ fn test_subscribe_and_receive_book_deltas(
     assert_eq!(actor.received_deltas.len(), 1);
 }
 
+#[rstest]
+fn test_subscribe_and_receive_book_depth10(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+
+    let topic = get_book_depth10_topic(audusd_sim.id);
+    let mut depth = stub_depth10();
+    depth.instrument_id = audusd_sim.id;
+    msgbus::publish_depth10(topic, &depth);
+
+    assert_eq!(actor.core.depth10_handler_count(), 1);
+    assert!(actor.core.has_depth10_handler(topic.as_str()));
+    assert_eq!(actor.received_depths, vec![depth]);
+}
+
+#[rstest]
+fn test_unsubscribe_book_depth10_stops_delivery(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.unsubscribe_book_depth10(audusd_sim.id, None, None);
+
+    let topic = get_book_depth10_topic(audusd_sim.id);
+    let mut depth = stub_depth10();
+    depth.instrument_id = audusd_sim.id;
+    msgbus::publish_depth10(topic, &depth);
+
+    assert_eq!(actor.core.depth10_handler_count(), 0);
+    assert!(!actor.core.has_depth10_handler(topic.as_str()));
+    assert!(actor.received_depths.is_empty());
+}
+
+#[rstest]
+fn test_stopped_actor_does_not_receive_book_depth10(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.stop().unwrap();
+
+    let topic = get_book_depth10_topic(audusd_sim.id);
+    let mut depth = stub_depth10();
+    depth.instrument_id = audusd_sim.id;
+    msgbus::publish_depth10(topic, &depth);
+
+    assert!(actor.received_depths.is_empty());
+}
+
+#[rstest]
+fn test_duplicate_book_depth10_subscription_delivers_once(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, None, false, None);
+
+    let topic = get_book_depth10_topic(audusd_sim.id);
+    let mut depth = stub_depth10();
+    depth.instrument_id = audusd_sim.id;
+    msgbus::publish_depth10(topic, &depth);
+
+    assert_eq!(actor.core.depth10_handler_count(), 1);
+    assert_eq!(actor.received_depths, vec![depth]);
+}
+
+#[rstest]
+fn test_book_depth10_facade_sends_subscribe_and_unsubscribe_commands(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    audusd_sim: CurrencyPair,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    let client_id = Some(ClientId::new("DEPTH10-CLIENT"));
+    actor.subscribe_book_depth10(audusd_sim.id, BookType::L2_MBP, client_id, true, None);
+
+    actor.unsubscribe_book_depth10(audusd_sim.id, client_id, None);
+
+    let commands = saver.get_messages();
+    let [
+        DataCommand::Subscribe(SubscribeCommand::BookDepth10(subscribe)),
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDepth10(unsubscribe)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected BookDepth10 subscribe and unsubscribe commands, was {commands:?}");
+    };
+
+    assert_eq!(subscribe.instrument_id, audusd_sim.id);
+    assert_eq!(subscribe.book_type, BookType::L2_MBP);
+    assert_eq!(subscribe.depth, NonZeroUsize::new(10));
+    assert_eq!(subscribe.client_id, client_id);
+    assert_eq!(subscribe.venue, Some(audusd_sim.id.venue));
+    assert!(subscribe.managed);
+    assert!(subscribe.correlation_id.is_none());
+    assert!(subscribe.params.is_none());
+    assert_eq!(unsubscribe.instrument_id, audusd_sim.id);
+    assert_eq!(unsubscribe.client_id, client_id);
+    assert_eq!(unsubscribe.venue, Some(audusd_sim.id.venue));
+    assert!(unsubscribe.correlation_id.is_none());
+    assert!(unsubscribe.params.is_none());
+}
+
 fn parent_params() -> Params {
     let mut params = Params::new();
     params.insert(PARAMS_IS_PARENT.to_string(), serde_json::json!(true));
     params
+}
+
+#[rstest]
+fn test_parent_book_depth10_subscription_receives_and_unsubscribes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let parent_id = InstrumentId::from("ES.FUT.XCME");
+    let underlying_id = InstrumentId::from("ESZ24.XCME");
+    actor.subscribe_book_depth10(
+        parent_id,
+        BookType::L2_MBP,
+        None,
+        false,
+        Some(parent_params()),
+    );
+
+    let topic = get_book_depth10_topic(underlying_id);
+    let mut depth = stub_depth10();
+    depth.instrument_id = underlying_id;
+    msgbus::publish_depth10(topic, &depth);
+
+    actor.unsubscribe_book_depth10(parent_id, None, Some(parent_params()));
+    msgbus::publish_depth10(topic, &depth);
+
+    assert_eq!(actor.core.depth10_handler_count(), 0);
+    assert_eq!(actor.received_depths, vec![depth]);
 }
 
 #[rstest]

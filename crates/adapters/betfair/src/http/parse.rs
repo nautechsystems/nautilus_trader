@@ -20,7 +20,7 @@ use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money},
+    types::{Currency, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -143,17 +143,19 @@ fn uses_liability_based_quantity(order: &CurrentOrderSummary) -> bool {
 
 /// Parses a Betfair [`CurrentOrderSummary`] into a Nautilus [`FillReport`].
 ///
-/// Uses cumulative `size_matched` and `average_price_matched` to produce a
-/// single fill representing the total execution. Trade IDs use the format
-/// `{bet_id}-{size_matched}` for deterministic uniqueness.
+/// The caller supplies an incremental quantity and price derived from the
+/// cumulative order state.
 ///
 /// # Errors
 ///
-/// Returns an error if timestamps or decimal values cannot be parsed.
+/// Returns an error if the order timestamps cannot be parsed.
 pub fn parse_current_order_fill_report(
     order: &CurrentOrderSummary,
     account_id: AccountId,
     currency: Currency,
+    trade_id: TradeId,
+    last_qty: Quantity,
+    last_px: Price,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FillReport> {
     let instrument_id = make_instrument_id(&order.market_id, order.selection_id, order.handicap);
@@ -164,16 +166,6 @@ pub fn parse_current_order_fill_report(
         .filter(|s| !s.is_empty())
         .map(ClientOrderId::from);
     let order_side = OrderSide::from(order.side);
-
-    let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
-    let avg_px = order
-        .average_price_matched
-        .unwrap_or(order.price_size.price);
-
-    let last_qty = parse_betfair_quantity(size_matched)?;
-    let last_px = parse_betfair_price(avg_px)?;
-
-    let trade_id = TradeId::new(format!("{}-{size_matched}", order.bet_id));
 
     let ts_event = order
         .matched_date
@@ -456,19 +448,13 @@ mod tests {
         // Second order: BACK, fully matched, sizeMatched=10, avgPx=1.9
         let order = &resp.current_orders[1];
         let currency = Currency::from("GBP");
-        let report = parse_current_order_fill_report(
-            order,
-            AccountId::from("BETFAIR-001"),
-            currency,
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report = parse_cumulative_fill_fixture(order, currency).unwrap();
 
         assert_eq!(report.venue_order_id, VenueOrderId::from("228059821049"));
         assert_eq!(report.order_side, OrderSide::Sell);
         assert_eq!(report.last_qty, Quantity::from("10.00"));
         assert_eq!(report.last_px, Price::from("1.90"));
-        assert_eq!(report.trade_id, TradeId::new("228059821049-10"));
+        assert_eq!(report.trade_id, TradeId::new("228059821049-10.00"));
         assert_eq!(report.commission, Money::zero(currency));
         assert_eq!(report.liquidity_side, LiquiditySide::NoLiquiditySide);
     }
@@ -480,13 +466,7 @@ mod tests {
 
         // First order: sizeMatched=0, should still parse but with zero qty
         let order = &resp.current_orders[0];
-        let report = parse_current_order_fill_report(
-            order,
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report = parse_cumulative_fill_fixture(order, Currency::from("GBP")).unwrap();
 
         assert_eq!(report.last_qty, Quantity::from("0.00"));
     }
@@ -498,13 +478,7 @@ mod tests {
 
         // Third order: LAY side
         let order = &resp.current_orders[2];
-        let report = parse_current_order_fill_report(
-            order,
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report = parse_cumulative_fill_fixture(order, Currency::from("GBP")).unwrap();
 
         assert_eq!(report.order_side, OrderSide::Buy);
         assert_eq!(report.last_qty, Quantity::from("10.00"));
@@ -518,17 +492,11 @@ mod tests {
 
         // Second order: sizeMatched=30, avgPx=2.4
         let order = &resp.current_orders[1];
-        let report = parse_current_order_fill_report(
-            order,
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report = parse_cumulative_fill_fixture(order, Currency::from("GBP")).unwrap();
 
         assert_eq!(report.last_qty, Quantity::from("30.00"));
         assert_eq!(report.last_px, Price::from("2.40"));
-        assert_eq!(report.trade_id, TradeId::new("229430281401-30"));
+        assert_eq!(report.trade_id, TradeId::new("229430281401-30.00"));
     }
 
     #[rstest]
@@ -538,13 +506,7 @@ mod tests {
 
         // First order has customerOrderRef
         let order = &resp.current_orders[0];
-        let report = parse_current_order_fill_report(
-            order,
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report = parse_cumulative_fill_fixture(order, Currency::from("GBP")).unwrap();
 
         assert_eq!(
             report.client_order_id,
@@ -553,13 +515,7 @@ mod tests {
 
         // Second order has no customerOrderRef
         let order2 = &resp.current_orders[1];
-        let report2 = parse_current_order_fill_report(
-            order2,
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let report2 = parse_cumulative_fill_fixture(order2, Currency::from("GBP")).unwrap();
 
         assert!(report2.client_order_id.is_none());
     }
@@ -586,18 +542,37 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("20.00"));
         assert_eq!(report.price.unwrap(), Price::from("6.00"));
 
-        let fill = parse_current_order_fill_report(
-            &resp.current_orders[0],
-            AccountId::from("BETFAIR-001"),
-            Currency::from("GBP"),
-            UnixNanos::default(),
-        )
-        .unwrap();
+        let fill =
+            parse_cumulative_fill_fixture(&resp.current_orders[0], Currency::from("GBP")).unwrap();
         assert!(fill.client_order_id.is_none());
         assert_eq!(fill.venue_order_id, VenueOrderId::from("229430281400"));
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from("0.00"));
         // Lapsed order has averagePriceMatched=0.0, so the fill report uses 0.00.
         assert_eq!(fill.last_px, Price::from("0.00"));
+    }
+
+    fn parse_cumulative_fill_fixture(
+        order: &CurrentOrderSummary,
+        currency: Currency,
+    ) -> anyhow::Result<FillReport> {
+        let size_matched = order.size_matched.unwrap_or(Decimal::ZERO);
+        let last_qty = parse_betfair_quantity(size_matched)?;
+        let last_px = parse_betfair_price(
+            order
+                .average_price_matched
+                .unwrap_or(order.price_size.price),
+        )?;
+        let trade_id = TradeId::new(format!("{}-{}", order.bet_id, last_qty.as_decimal(),));
+
+        parse_current_order_fill_report(
+            order,
+            AccountId::from("BETFAIR-001"),
+            currency,
+            trade_id,
+            last_qty,
+            last_px,
+            UnixNanos::default(),
+        )
     }
 }

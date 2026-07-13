@@ -37,7 +37,7 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
@@ -450,6 +450,15 @@ impl PyDataActorInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any_unwrap(py),))
             })?;
         }
         Ok(())
@@ -1011,6 +1020,11 @@ impl DataActor for PyDataActorInner {
             .map_err(|e| anyhow::anyhow!("Python on_book_deltas failed: {e}"))
     }
 
+    fn on_book_depth(&mut self, depth: &OrderBookDepth10) -> anyhow::Result<()> {
+        self.dispatch_on_book_depth(depth)
+            .map_err(|e| anyhow::anyhow!("Python on_book_depth failed: {e}"))
+    }
+
     fn on_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
         self.dispatch_on_book(order_book)
             .map_err(|e| anyhow::anyhow!("Python on_book failed: {e}"))
@@ -1475,6 +1489,10 @@ impl PyDataActor {
     fn py_on_book_deltas(&mut self, deltas: OrderBookDeltas) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_book_depth")]
+    fn py_on_book_depth(&mut self, depth: &OrderBookDepth10) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_book")]
     fn py_on_book(&mut self, book: &OrderBook) {}
 
@@ -1574,6 +1592,29 @@ impl PyDataActor {
             instrument_id,
             book_type,
             depth,
+            client_id,
+            managed,
+            params,
+        );
+        Ok(())
+    }
+
+    #[pyo3(name = "subscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, book_type, client_id=None, managed=false, params=None))]
+    fn py_subscribe_book_depth10(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        client_id: Option<ClientId>,
+        managed: bool,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::subscribe_book_depth10(
+            self.inner_mut(),
+            instrument_id,
+            book_type,
             client_id,
             managed,
             params,
@@ -1819,6 +1860,20 @@ impl PyDataActor {
     ) -> PyResult<()> {
         let params = dict_to_params(py, params)?;
         DataActor::unsubscribe_book_deltas(self.inner_mut(), instrument_id, client_id, params);
+        Ok(())
+    }
+
+    #[pyo3(name = "unsubscribe_book_depth10")]
+    #[pyo3(signature = (instrument_id, client_id=None, params=None))]
+    fn py_unsubscribe_book_depth10(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<()> {
+        let params = dict_to_params(py, params)?;
+        DataActor::unsubscribe_book_depth10(self.inner_mut(), instrument_id, client_id, params);
         Ok(())
     }
 
@@ -2528,12 +2583,12 @@ mod tests {
     use nautilus_model::{
         data::{
             Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate,
-            InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, QuoteTick,
-            TradeTick,
+            InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10,
+            QuoteTick, TradeTick,
             close::InstrumentClose,
             greeks::OptionGreekValues,
             option_chain::{OptionChainSlice, OptionGreeks},
-            stubs::stub_custom_data,
+            stubs::{stub_custom_data, stub_depth10},
         },
         enums::{
             AggressorSide, BookType, GreeksConvention, InstrumentCloseType, MarketStatusAction,
@@ -3245,6 +3300,30 @@ class CapturingActor:
     }
 
     #[rstest]
+    fn test_book_depth10_subscription_methods_manage_handler(
+        clock: Rc<RefCell<TestClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+        audusd_sim: CurrencyPair,
+    ) {
+        pyo3::Python::initialize();
+
+        let mut actor = create_registered_actor(clock, cache, trader_id);
+
+        Python::attach(|py| {
+            actor
+                .py_subscribe_book_depth10(py, audusd_sim.id, BookType::L2_MBP, None, false, None)
+                .unwrap();
+            assert_eq!(actor.inner().depth10_handler_count(), 1);
+
+            actor
+                .py_unsubscribe_book_depth10(py, audusd_sim.id, None, None)
+                .unwrap();
+            assert_eq!(actor.inner().depth10_handler_count(), 0);
+        });
+    }
+
+    #[rstest]
     fn test_request_methods_signatures_exist() {
         let actor = create_unregistered_actor();
         assert!(actor.trader_id().is_none());
@@ -3338,6 +3417,10 @@ class CapturingActor:
         let delta =
             OrderBookDelta::clear(instrument.id, 0, UnixNanos::default(), UnixNanos::default());
         OrderBookDeltas::new(instrument.id, vec![delta])
+    }
+
+    fn sample_book_depth() -> OrderBookDepth10 {
+        stub_depth10()
     }
 
     fn sample_mark_price() -> MarkPriceUpdate {
@@ -3634,6 +3717,7 @@ class TrackingActor:
         "on_bar",
         "on_book",
         "on_book_deltas",
+        "on_book_depth",
         "on_mark_price",
         "on_index_price",
         "on_funding_rate",
@@ -4285,6 +4369,7 @@ class IndicatorEventActor:
     #[case("on_bar")]
     #[case("on_book")]
     #[case("on_book_deltas")]
+    #[case("on_book_depth")]
     #[case("on_mark_price")]
     #[case("on_index_price")]
     #[case("on_funding_rate")]
@@ -4338,6 +4423,10 @@ class IndicatorEventActor:
                     "on_book_deltas" => {
                         let deltas = sample_book_deltas();
                         rust_actor.inner_mut().on_book_deltas(&deltas)
+                    }
+                    "on_book_depth" => {
+                        let depth = sample_book_depth();
+                        rust_actor.inner_mut().on_book_depth(&depth)
                     }
                     "on_mark_price" => {
                         let update = sample_mark_price();

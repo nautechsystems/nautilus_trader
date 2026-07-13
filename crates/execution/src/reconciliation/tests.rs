@@ -1324,7 +1324,11 @@ fn make_test_report(
 #[case::accepted(OrderStatus::Accepted, "0", 1, "Accepted")]
 #[case::triggered(OrderStatus::Triggered, "0", 1, "Accepted")]
 #[case::canceled(OrderStatus::Canceled, "0", 2, "Canceled")]
+#[case::partially_canceled(OrderStatus::Canceled, "0.5", 3, "Canceled")]
+#[case::fully_matched_canceled(OrderStatus::Canceled, "1.0", 2, "Filled")]
 #[case::expired(OrderStatus::Expired, "0", 2, "Expired")]
+#[case::partially_expired(OrderStatus::Expired, "0.5", 3, "Expired")]
+#[case::fully_matched_expired(OrderStatus::Expired, "1.0", 2, "Filled")]
 #[case::filled(OrderStatus::Filled, "1.0", 2, "Filled")]
 #[case::partially_filled(OrderStatus::PartiallyFilled, "0.5", 2, "Filled")]
 #[case::rejected(OrderStatus::Rejected, "0", 1, "Rejected")]
@@ -2628,6 +2632,143 @@ fn test_generate_reconciliation_order_events_accepts_before_cancel(instrument: I
     assert_eq!(events.len(), 2);
     assert!(matches!(events[0], OrderEventAny::Accepted(_)));
     assert!(matches!(events[1], OrderEventAny::Canceled(_)));
+}
+
+#[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Expired)]
+fn test_generate_reconciliation_order_events_fills_before_partial_terminal(
+    instrument: InstrumentAny,
+    #[case] terminal_status: OrderStatus,
+    #[values(
+        OrderStatus::Accepted,
+        OrderStatus::PendingUpdate,
+        OrderStatus::PendingCancel
+    )]
+    local_status: OrderStatus,
+) {
+    let client_order_id = ClientOrderId::from("O-PARTIAL-CANCEL");
+    let venue_order_id = VenueOrderId::from("V-PARTIAL-CANCEL");
+    let account_id = AccountId::from("SIM-001");
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    match local_status {
+        OrderStatus::PendingUpdate => {
+            let event = build_order_pending_update(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                account_id,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+            );
+            order.apply(OrderEventAny::PendingUpdate(event)).unwrap();
+        }
+        OrderStatus::PendingCancel => {
+            let event = build_order_pending_cancel(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                account_id,
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+            );
+            order.apply(OrderEventAny::PendingCancel(event)).unwrap();
+        }
+        OrderStatus::Accepted => {}
+        _ => unreachable!(),
+    }
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        terminal_status,
+        Quantity::from(150),
+        Quantity::from(120),
+    );
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let reconciled = apply_events(&order, &events);
+
+    assert_eq!(events.len(), 3);
+    assert!(matches!(events[0], OrderEventAny::Updated(_)));
+    assert!(matches!(events[1], OrderEventAny::Filled(_)));
+    assert!(matches!(
+        (&events[2], terminal_status),
+        (OrderEventAny::Canceled(_), OrderStatus::Canceled)
+            | (OrderEventAny::Expired(_), OrderStatus::Expired),
+    ));
+    assert_eq!(reconciled.quantity(), Quantity::from(150));
+    assert_eq!(reconciled.filled_qty(), Quantity::from(120));
+    assert_eq!(reconciled.status(), terminal_status);
+}
+
+#[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Expired)]
+fn test_generate_reconciliation_order_events_full_fill_supersedes_terminal_status(
+    instrument: InstrumentAny,
+    #[case] terminal_status: OrderStatus,
+) {
+    let client_order_id = ClientOrderId::from("O-FULL-TERMINAL");
+    let venue_order_id = VenueOrderId::from("V-FULL-TERMINAL");
+    let account_id = AccountId::from("SIM-001");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        terminal_status,
+        Quantity::from(100),
+        Quantity::from(100),
+    );
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::default(),
+    );
+    let reconciled = apply_events(&order, &events);
+
+    assert_eq!(events.len(), 1);
+    assert!(matches!(events[0], OrderEventAny::Filled(_)));
+    assert_eq!(reconciled.filled_qty(), Quantity::from(100));
+    assert_eq!(reconciled.status(), OrderStatus::Filled);
 }
 
 #[rstest]
