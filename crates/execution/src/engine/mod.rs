@@ -2878,18 +2878,14 @@ impl ExecutionEngine {
 
         let exec_spawn_id = if let Some(o) = order {
             o.exec_spawn_id()
+        } else if let Some(o) = cache.order(&fill.client_order_id()) {
+            o.exec_spawn_id()
         } else {
-            match cache.order(&fill.client_order_id()) {
-                Some(o) => o.exec_spawn_id(),
-                None => {
-                    panic!(
-                        "Order for {} not found to determine position ID",
-                        fill.client_order_id()
-                    );
-                }
-            }
+            panic!(
+                "Order for {} not found to determine position ID",
+                fill.client_order_id()
+            );
         };
-
         // Check execution spawn orders
         if let Some(spawn_id) = exec_spawn_id {
             let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
@@ -2903,38 +2899,39 @@ impl ExecutionEngine {
             }
         }
         // Check if this is a reduce_only order that should reduce an existing opposite-side position
-        if let Some(order) = order {
-            if order.is_reduce_only() {
-                let positions_open = cache.positions_open(
-                    None,
-                    Some(&fill.instrument_id),
-                    Some(&fill.strategy_id),
-                    Some(&fill.account_id),
-                    None,
-                );
-                let candidate = positions_open.iter().find(|pos| {
-                    pos.is_opposite_side(fill.order_side)
-                        && !pos.is_closed()
-                        && pos.quantity >= fill.last_qty
-                });
-                if let Some(pos) = candidate {
-                    if self.config.debug {
-                        log::debug!(
-                            "Reduce-only fill assigned to opposite-side position {} for {}",
-                            pos.id,
-                            fill.client_order_id()
-                        );
-                    }
-                    return pos.id;
+        if let Some(order) = order
+            && order.is_reduce_only()
+        {
+            let positions_open = cache.positions_open(
+                None,
+                Some(&fill.instrument_id),
+                Some(&fill.strategy_id),
+                Some(&fill.account_id),
+                None,
+            );
+            let candidate = positions_open.iter().find(|pos| {
+                pos.is_opposite_side(fill.order_side)
+                    && !pos.is_closed()
+                    && pos.quantity >= fill.last_qty
+            });
+
+            if let Some(pos) = candidate {
+                if self.config.debug {
+                    log::debug!(
+                        "Reduce-only fill assigned to opposite-side position {} for {}",
+                        pos.id,
+                        fill.client_order_id()
+                    );
                 }
-                log::error!(
-                    "No safe opposite-side position found for reduce_only fill {} on {}; \
-                     fill will not open or flip a position",
-                    fill.client_order_id(),
-                    fill.instrument_id,
-                );
-                return PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
+                return pos.id;
             }
+            log::error!(
+                "No safe opposite-side position found for reduce_only fill {} on {}; \
+                 fill will not open or flip a position",
+                fill.client_order_id(),
+                fill.instrument_id,
+            );
+            return PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
         }
         // Generate new position ID
         let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
