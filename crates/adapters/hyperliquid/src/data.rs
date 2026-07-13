@@ -750,11 +750,12 @@ impl DataClient for HyperliquidDataClient {
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+        let (n_sig_figs, mantissa, fast) =
+            parse_book_precision_params(subscription.params.as_ref())?;
         self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
 
         self.spawn_task("subscribe_book_deltas", async move {
-            ws.subscribe_book_with_options(instrument_id, n_sig_figs, mantissa)
+            ws.subscribe_book_with_options(instrument_id, n_sig_figs, mantissa, fast)
                 .await
         });
 
@@ -773,11 +774,12 @@ impl DataClient for HyperliquidDataClient {
 
         let ws = self.ws_client.clone();
         let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+        let (n_sig_figs, mantissa, fast) =
+            parse_book_precision_params(subscription.params.as_ref())?;
         self.register_stream_health(MarketDataChannel::Depth10, instrument_id);
 
         self.spawn_task("subscribe_book_depth10", async move {
-            ws.subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa)
+            ws.subscribe_book_depth10_with_options(instrument_id, n_sig_figs, mantissa, fast)
                 .await
         });
 
@@ -1819,13 +1821,13 @@ pub(crate) fn parse_l2_book_snapshot(
     book
 }
 
-// Reads optional `nSigFigs` / `mantissa` L2 precision controls from
-// `subscribe_params`; bails on non-positive integer values.
+// Reads optional `nSigFigs` / `mantissa` L2 precision controls and the `fast`
+// stream flag from `subscribe_params`; bails on invalid values.
 pub(crate) fn parse_book_precision_params(
     params: Option<&Params>,
-) -> anyhow::Result<(Option<u32>, Option<u32>)> {
+) -> anyhow::Result<(Option<u32>, Option<u32>, bool)> {
     let Some(params) = params else {
-        return Ok((None, None));
+        return Ok((None, None, false));
     };
 
     let read_u32 = |key: &str| -> anyhow::Result<Option<u32>> {
@@ -1839,7 +1841,14 @@ pub(crate) fn parse_book_precision_params(
         }
     };
 
-    Ok((read_u32("n_sig_figs")?, read_u32("mantissa")?))
+    let fast = match params.get("fast") {
+        None => false,
+        Some(value) => value
+            .as_bool()
+            .ok_or_else(|| anyhow::anyhow!("`fast` must be a bool"))?,
+    };
+
+    Ok((read_u32("n_sig_figs")?, read_u32("mantissa")?, fast))
 }
 
 // Hyperliquid funds perpetuals hourly, so `interval` is fixed at 60 mins;
@@ -2445,9 +2454,10 @@ mod tests {
 
     #[rstest]
     fn test_parse_book_precision_params_none() {
-        let (n, m) = parse_book_precision_params(None).unwrap();
+        let (n, m, fast) = parse_book_precision_params(None).unwrap();
         assert_eq!(n, None);
         assert_eq!(m, None);
+        assert!(!fast);
     }
 
     fn make_params(json: serde_json::Value) -> Params {
@@ -2457,17 +2467,19 @@ mod tests {
     #[rstest]
     fn test_parse_book_precision_params_only_n_sig_figs() {
         let params = make_params(serde_json::json!({"n_sig_figs": 4}));
-        let (n, m) = parse_book_precision_params(Some(&params)).unwrap();
+        let (n, m, fast) = parse_book_precision_params(Some(&params)).unwrap();
         assert_eq!(n, Some(4));
         assert_eq!(m, None);
+        assert!(!fast);
     }
 
     #[rstest]
     fn test_parse_book_precision_params_both() {
         let params = make_params(serde_json::json!({"n_sig_figs": 5, "mantissa": 2}));
-        let (n, m) = parse_book_precision_params(Some(&params)).unwrap();
+        let (n, m, fast) = parse_book_precision_params(Some(&params)).unwrap();
         assert_eq!(n, Some(5));
         assert_eq!(m, Some(2));
+        assert!(!fast);
     }
 
     #[rstest]
@@ -2475,6 +2487,22 @@ mod tests {
         let params = make_params(serde_json::json!({"n_sig_figs": -1}));
         let err = parse_book_precision_params(Some(&params)).unwrap_err();
         assert!(err.to_string().contains("n_sig_figs"));
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_fast() {
+        let params = make_params(serde_json::json!({"fast": true}));
+        let (n, m, fast) = parse_book_precision_params(Some(&params)).unwrap();
+        assert_eq!(n, None);
+        assert_eq!(m, None);
+        assert!(fast);
+    }
+
+    #[rstest]
+    fn test_parse_book_precision_params_rejects_non_bool_fast() {
+        let params = make_params(serde_json::json!({"fast": "true"}));
+        let err = parse_book_precision_params(Some(&params)).unwrap_err();
+        assert!(err.to_string().contains("fast"));
     }
 
     #[rstest]

@@ -93,6 +93,8 @@ pub enum SubscriptionRequest {
         n_sig_figs: Option<u32>,
         #[serde(skip_serializing_if = "Option::is_none")]
         mantissa: Option<u32>,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        fast: bool,
     },
     /// Trade updates.
     Trades { coin: Ustr },
@@ -923,11 +925,13 @@ mod tests {
             coin: Ustr::from("BTC"),
             n_sig_figs: Some(5),
             mantissa: None,
+            fast: true,
         };
 
         let json = serde_json::to_string(&sub).unwrap();
         assert!(json.contains(r#""type":"l2Book""#));
         assert!(json.contains(r#""coin":"BTC""#));
+        assert!(json.contains(r#""fast":true"#));
     }
 
     #[rstest]

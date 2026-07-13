@@ -615,8 +615,12 @@ class HyperliquidDataClient(LiveMarketDataClient):
         self._log.info("Subscribed to instruments updates")
 
     async def _subscribe_order_book_deltas(self, command: SubscribeOrderBook) -> None:
+        fast = command.params.get("fast", False)
+        if not isinstance(fast, bool):
+            raise ValueError("Hyperliquid l2Book `fast` parameter must be a bool")
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
-        await self._ws_client.subscribe_book(pyo3_instrument_id)
+        await self._ws_client.subscribe_book(pyo3_instrument_id, fast)
 
     async def _subscribe_order_book_depth(self, command: SubscribeOrderBook) -> None:
         if command.book_type != BookType.L2_MBP:
@@ -625,11 +629,16 @@ class HyperliquidDataClient(LiveMarketDataClient):
             )
             return
 
+        fast = command.params.get("fast", False)
+        if not isinstance(fast, bool):
+            raise ValueError("Hyperliquid l2Book `fast` parameter must be a bool")
+
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(command.instrument_id.value)
         await self._ws_client.subscribe_book_snapshots(
             pyo3_instrument_id,
             int(command.book_type),
             command.depth,
+            fast,
         )
 
     async def _subscribe_quote_ticks(self, command: SubscribeQuoteTicks) -> None:

@@ -1433,6 +1433,7 @@ async fn test_book_precision_options_survive_reconnection() {
             InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"),
             Some(5),
             Some(2),
+            true,
         )
         .await
         .expect("subscribe failed");
@@ -1471,6 +1472,11 @@ async fn test_book_precision_options_survive_reconnection() {
             Some(2),
             "expected mantissa preserved in {sub}"
         );
+        assert_eq!(
+            sub.get("fast").and_then(Value::as_bool),
+            Some(true),
+            "expected fast preserved in {sub}"
+        );
     }
     drop(subscriptions);
 
@@ -1492,7 +1498,7 @@ async fn test_book_resubscribe_after_reconnect_cycle_reaches_venue() {
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     client
-        .subscribe_book_with_options(instrument_id, Some(5), None)
+        .subscribe_book_with_options(instrument_id, Some(5), None, false)
         .await
         .expect("subscribe failed");
 
@@ -1519,7 +1525,7 @@ async fn test_book_resubscribe_after_reconnect_cycle_reaches_venue() {
         .expect("client inactive after reconnect");
 
     client
-        .subscribe_book_with_options(instrument_id, Some(5), None)
+        .subscribe_book_with_options(instrument_id, Some(5), None, false)
         .await
         .expect("resubscribe failed");
 
@@ -1562,7 +1568,7 @@ async fn test_book_subscribe_recovers_after_venue_reject() {
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     client
-        .subscribe_book_with_options(instrument_id, Some(5), None)
+        .subscribe_book_with_options(instrument_id, Some(5), None, false)
         .await
         .expect("subscribe failed");
 
@@ -1586,7 +1592,7 @@ async fn test_book_subscribe_recovers_after_venue_reject() {
         .await
         .expect("unsubscribe failed");
     client
-        .subscribe_book_with_options(instrument_id, Some(5), None)
+        .subscribe_book_with_options(instrument_id, Some(5), None, false)
         .await
         .expect("resubscribe failed");
 
@@ -1699,6 +1705,93 @@ async fn test_unsubscribe_book_deltas_keeps_shared_stream_for_depth10() {
 
 #[rstest]
 #[tokio::test]
+async fn test_fast_book_subscription_upgrades_shared_normal_stream() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_book(instrument_id)
+        .await
+        .expect("normal subscribe failed");
+    client
+        .subscribe_book_depth10_with_options(instrument_id, None, None, true)
+        .await
+        .expect("fast subscribe failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .filter(|(channel, success)| channel == "l2Book" && *success)
+                    .count()
+                    >= 2
+                    && state.unsubscriptions.lock().await.len() == 1
+            }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert!(
+        unsubscriptions[0].get("fast").is_none(),
+        "the upgrade must first unsubscribe the original normal stream"
+    );
+    drop(unsubscriptions);
+
+    let subscriptions = state.subscriptions.lock().await;
+    let (_, upgraded) = subscriptions
+        .iter()
+        .rev()
+        .find(|(channel, _)| channel == "l2Book")
+        .expect("upgraded subscription")
+        .clone();
+    assert_eq!(upgraded.get("fast").and_then(Value::as_bool), Some(true));
+    drop(subscriptions);
+
+    client
+        .unsubscribe_book(instrument_id)
+        .await
+        .expect("unsubscribe deltas failed");
+    client
+        .unsubscribe_book_depth10(instrument_id)
+        .await
+        .expect("unsubscribe depth10 failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.unsubscriptions.lock().await.len() == 2 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let unsubscriptions = state.unsubscriptions.lock().await;
+    assert_eq!(
+        unsubscriptions[1].get("fast").and_then(Value::as_bool),
+        Some(true),
+        "the final unsubscribe must match the upgraded stream"
+    );
+    drop(unsubscriptions);
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options() {
     let state = Arc::new(TestServerState::default());
     let addr = start_ws_server(state.clone()).await;
@@ -1712,7 +1805,7 @@ async fn test_depth10_only_unsubscribe_tears_down_stream_with_original_options()
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     client
-        .subscribe_book_depth10_with_options(instrument_id, Some(4), None)
+        .subscribe_book_depth10_with_options(instrument_id, Some(4), None, false)
         .await
         .expect("subscribe depth10 failed");
 
@@ -1781,7 +1874,7 @@ async fn test_resubscribe_book_echoes_original_options() {
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
     client
-        .subscribe_book_with_options(instrument_id, Some(5), Some(2))
+        .subscribe_book_with_options(instrument_id, Some(5), Some(2), true)
         .await
         .expect("subscribe failed");
 
@@ -1830,6 +1923,11 @@ async fn test_resubscribe_book_echoes_original_options() {
         unsubscriptions[0].get("mantissa").and_then(Value::as_u64),
         Some(2),
     );
+    assert_eq!(
+        unsubscriptions[0].get("fast").and_then(Value::as_bool),
+        Some(true),
+        "expected the targeted unsubscribe to preserve fast"
+    );
     drop(unsubscriptions);
 
     let subscriptions = state.subscriptions.lock().await;
@@ -1847,6 +1945,11 @@ async fn test_resubscribe_book_echoes_original_options() {
     assert_eq!(
         resubscribed.get("mantissa").and_then(Value::as_u64),
         Some(2),
+    );
+    assert_eq!(
+        resubscribed.get("fast").and_then(Value::as_bool),
+        Some(true),
+        "expected the targeted resubscribe to preserve fast"
     );
     drop(subscriptions);
 
@@ -1869,6 +1972,11 @@ async fn test_resubscribe_book_echoes_original_options() {
         unsubscriptions[1].get("nSigFigs").and_then(Value::as_u64),
         Some(5),
         "expected the registry to survive the targeted resubscribe"
+    );
+    assert_eq!(
+        unsubscriptions[1].get("fast").and_then(Value::as_bool),
+        Some(true),
+        "expected final unsubscribe to preserve fast"
     );
     drop(unsubscriptions);
 

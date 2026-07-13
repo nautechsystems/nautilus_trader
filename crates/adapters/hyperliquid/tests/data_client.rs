@@ -47,8 +47,9 @@ use nautilus_common::{
         DataEvent, DataResponse,
         data::{
             RequestBookSnapshot, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBookDeltas, SubscribeCustomData, SubscribeMarkPrices,
-            SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData, UnsubscribeMarkPrices,
+            RequestTrades, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
+            UnsubscribeMarkPrices,
         },
     },
     testing::wait_until_async,
@@ -1352,7 +1353,7 @@ async fn test_data_client_subscribe_all_dex_asset_ctxs_custom_data() {
 #[tokio::test]
 async fn test_data_client_subscribe_book_deltas() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
 
@@ -1373,7 +1374,7 @@ async fn test_data_client_subscribe_book_deltas() {
         None,
         false,
         None,
-        None,
+        Some(serde_json::from_value(json!({"fast": true})).unwrap()),
     );
     client.subscribe_book_deltas(cmd).unwrap();
 
@@ -1382,10 +1383,73 @@ async fn test_data_client_subscribe_book_deltas() {
         .expect("timeout waiting for book deltas event")
         .expect("channel closed");
 
-    assert!(
-        matches!(event, DataEvent::Data(Data::Deltas(_))),
-        "Expected Deltas event, was: {event:?}"
-    );
+    match event {
+        DataEvent::Data(Data::Deltas(deltas)) => {
+            // Hyperliquid's fast L2 fixture has five bid and five ask levels.
+            // The adapter emits each received level, plus the snapshot clear delta.
+            assert_eq!(deltas.deltas.len(), 11);
+        }
+        other => panic!("Expected Deltas event, was: {other:?}"),
+    }
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.subscriptions.lock().await.iter().any(|subscription| {
+                    subscription.get("type").and_then(Value::as_str) == Some("l2Book")
+                        && subscription.get("fast").and_then(Value::as_bool) == Some(true)
+                })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_client_subscribe_book_depth10_passes_fast_param() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_book_depth10(SubscribeBookDepth10::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            Some(serde_json::from_value(json!({"fast": true})).unwrap()),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state.subscriptions.lock().await.iter().any(|subscription| {
+                    subscription.get("type").and_then(Value::as_str) == Some("l2Book")
+                        && subscription.get("fast").and_then(Value::as_bool) == Some(true)
+                })
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 
     client.disconnect().await.unwrap();
 }

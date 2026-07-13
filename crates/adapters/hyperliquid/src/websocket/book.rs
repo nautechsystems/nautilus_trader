@@ -17,9 +17,10 @@
 //!
 //! One venue `l2Book` subscription per coin serves both order book deltas and
 //! depth10 snapshots. This registry records which logical uses are active and
-//! the precision options the stream was opened with, so that:
+//! the options the stream was opened with, so that:
 //!
-//! - only the first logical use sends a venue subscribe (first-wins options),
+//! - only the first logical use sends a venue subscribe,
+//! - a later `fast: true` use widens the active stream and reconfigures it,
 //! - releasing one use keeps the stream while another use remains,
 //! - reconnect and unsubscribe replay the original subscription shape instead
 //!   of a lossy default reconstructed from topic text.
@@ -36,20 +37,22 @@ pub(crate) enum BookStreamUse {
     Depth10,
 }
 
-/// Venue precision options for an `l2Book` subscription.
+/// Venue options for an `l2Book` subscription.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct BookStreamOptions {
     pub n_sig_figs: Option<u32>,
     pub mantissa: Option<u32>,
+    pub fast: bool,
 }
 
 /// Outcome of registering a logical use: whether a venue subscribe should be
-/// sent, the active stream options (first-wins), and whether the requested
-/// options differed from the active stream's.
+/// sent, the active stream options, whether an existing stream must be
+/// reconfigured, and whether precision options differed from the active stream's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BookStreamRegistration {
     pub subscribe: bool,
     pub options: BookStreamOptions,
+    pub reconfigure_from: Option<BookStreamOptions>,
     pub options_mismatch: bool,
 }
 
@@ -90,10 +93,19 @@ impl BookStreamRegistry {
                     BookStreamUse::Deltas => entry.deltas = true,
                     BookStreamUse::Depth10 => entry.depth10 = true,
                 }
+                let reconfigure_from = if options.fast && !entry.options.fast {
+                    let previous = entry.options;
+                    entry.options.fast = true;
+                    Some(previous)
+                } else {
+                    None
+                };
                 BookStreamRegistration {
                     subscribe: false,
                     options: entry.options,
-                    options_mismatch: options != entry.options,
+                    reconfigure_from,
+                    options_mismatch: options.n_sig_figs != entry.options.n_sig_figs
+                        || options.mantissa != entry.options.mantissa,
                 }
             }
             Entry::Vacant(vacant) => {
@@ -105,6 +117,7 @@ impl BookStreamRegistry {
                 BookStreamRegistration {
                     subscribe: true,
                     options,
+                    reconfigure_from: None,
                     options_mismatch: false,
                 }
             }
@@ -137,7 +150,7 @@ impl BookStreamRegistry {
         }
     }
 
-    /// Returns the precision options of the coin's active stream, if tracked.
+    /// Returns the options of the coin's active stream, if tracked.
     pub(crate) fn options(&self, coin: &Ustr) -> Option<BookStreamOptions> {
         self.streams.get(coin).map(|entry| entry.options)
     }
@@ -161,6 +174,7 @@ mod tests {
         BookStreamOptions {
             n_sig_figs,
             mantissa,
+            fast: false,
         }
     }
 
@@ -286,5 +300,25 @@ mod tests {
                 )
                 .subscribe
         );
+    }
+
+    #[rstest]
+    fn later_fast_subscription_widens_the_active_stream() {
+        let registry = BookStreamRegistry::default();
+        let coin = Ustr::from("BTC");
+        let normal = options(Some(5), None);
+        let fast = BookStreamOptions {
+            fast: true,
+            ..normal
+        };
+        registry.register(coin, BookStreamUse::Deltas, normal);
+
+        let registration = registry.register(coin, BookStreamUse::Depth10, fast);
+
+        assert!(!registration.subscribe);
+        assert_eq!(registration.reconfigure_from, Some(normal));
+        assert_eq!(registration.options, fast);
+        assert!(!registration.options_mismatch);
+        assert_eq!(registry.options(&coin), Some(fast));
     }
 }

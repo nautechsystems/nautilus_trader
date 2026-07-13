@@ -655,17 +655,18 @@ impl HyperliquidWebSocketClient {
     }
 
     /// Subscribe to L2 order book for an instrument.
-    #[pyo3(name = "subscribe_book")]
+    #[pyo3(name = "subscribe_book", signature = (instrument_id, fast=false))]
     fn py_subscribe_book<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
+        fast: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(instrument_id)
+                .subscribe_book_with_options(instrument_id, None, None, fast)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -693,19 +694,20 @@ impl HyperliquidWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_book_deltas")]
+    #[pyo3(name = "subscribe_book_deltas", signature = (instrument_id, _book_type, _depth, fast=false))]
     fn py_subscribe_book_deltas<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
         _book_type: u8,
         _depth: u64,
+        fast: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book(instrument_id)
+                .subscribe_book_with_options(instrument_id, None, None, fast)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())
@@ -729,19 +731,20 @@ impl HyperliquidWebSocketClient {
         })
     }
 
-    #[pyo3(name = "subscribe_book_snapshots")]
+    #[pyo3(name = "subscribe_book_snapshots", signature = (instrument_id, _book_type, _depth, fast=false))]
     fn py_subscribe_book_snapshots<'py>(
         &self,
         py: Python<'py>,
         instrument_id: InstrumentId,
         _book_type: u8,
         _depth: u64,
+        fast: bool,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
-                .subscribe_book_depth10(instrument_id)
+                .subscribe_book_depth10_with_options(instrument_id, None, None, fast)
                 .await
                 .map_err(to_pyruntime_err)?;
             Ok(())

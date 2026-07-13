@@ -218,6 +218,7 @@ async def test_subscribe_order_book_deltas(data_client_builder, monkeypatch):
 
         command = SimpleNamespace(
             instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
+            params={"fast": True},
         )
 
         # Act
@@ -225,7 +226,7 @@ async def test_subscribe_order_book_deltas(data_client_builder, monkeypatch):
 
         # Assert
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
-        ws_client.subscribe_book.assert_awaited_once_with(expected_id)
+        ws_client.subscribe_book.assert_awaited_once_with(expected_id, True)
     finally:
         await client._disconnect()
 
@@ -245,6 +246,7 @@ async def test_subscribe_order_book_depth(data_client_builder, monkeypatch):
             instrument_id=InstrumentId(Symbol("BTC-USD-PERP"), HYPERLIQUID_VENUE),
             book_type=BookType.L2_MBP,
             depth=10,
+            params={"fast": True},
         )
 
         # Act
@@ -256,6 +258,7 @@ async def test_subscribe_order_book_depth(data_client_builder, monkeypatch):
             expected_id,
             int(BookType.L2_MBP),
             10,
+            True,
         )
     finally:
         await client._disconnect()
