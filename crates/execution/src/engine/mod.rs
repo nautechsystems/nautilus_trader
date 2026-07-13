@@ -2908,25 +2908,34 @@ impl ExecutionEngine {
                 let positions_open = cache.positions_open(
                     None,
                     Some(&fill.instrument_id),
-                    None,
+                    Some(&fill.strategy_id),
                     Some(&fill.account_id),
                     None,
                 );
-                for pos in &positions_open {
-                    if pos.is_opposite_side(fill.order_side) && !pos.is_closed() {
-                        if self.config.debug {
-                            log::debug!(
-                                "Reduce-only fill assigned to opposite-side position {} for {}",
-                                pos.id,
-                                fill.client_order_id()
-                            );
-                        }
-                        return pos.id;
+                let candidate = positions_open.iter().find(|pos| {
+                    pos.is_opposite_side(fill.order_side)
+                        && !pos.is_closed()
+                        && pos.quantity >= fill.last_qty
+                });
+                if let Some(pos) = candidate {
+                    if self.config.debug {
+                        log::debug!(
+                            "Reduce-only fill assigned to opposite-side position {} for {}",
+                            pos.id,
+                            fill.client_order_id()
+                        );
                     }
+                    return pos.id;
                 }
+                log::error!(
+                    "No safe opposite-side position found for reduce_only fill {} on {}; \
+                     fill will not open or flip a position",
+                    fill.client_order_id(),
+                    fill.instrument_id,
+                );
+                return PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id));
             }
         }
-
         // Generate new position ID
         let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
 
@@ -3858,12 +3867,12 @@ mod tests {
         Position::new(instrument, fill)
     }
     #[rstest]
-    fn determine_hedging_position_id_reduce_only_returns_opposite_side_position_id() {
+    fn determine_hedging_position_id_reduce_only_reduces_opposite_side_position() {
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         let account_id = AccountId::from("SIM-001");
         let strategy_id = StrategyId::from("S-001");
 
-        // Create an existing SHORT position (opened by a SELL order)
+        // Open a SHORT position
         let short_position = position_for_account(
             &instrument,
             account_id,
@@ -3878,23 +3887,121 @@ mod tests {
             .add_position(&short_position, OmsType::Hedging)
             .unwrap();
 
-        // A BUY reduce_only fill should find the SHORT position on the opposite side
-        let buy_fill_side = OrderSide::Buy;
-        let positions_open =
-            cache.positions_open(None, Some(&instrument.id()), None, Some(&account_id), None);
-
-        let matched = positions_open
-            .iter()
-            .find(|pos| pos.is_opposite_side(buy_fill_side) && !pos.is_closed());
+        // BUY reduce_only fill with same qty — should match the SHORT position
+        let positions_open = cache.positions_open(
+            None,
+            Some(&instrument.id()),
+            Some(&strategy_id),
+            Some(&account_id),
+            None,
+        );
+        let candidate = positions_open.iter().find(|pos| {
+            pos.is_opposite_side(OrderSide::Buy)
+                && !pos.is_closed()
+                && pos.quantity >= Quantity::from(1)
+        });
 
         assert!(
-            matched.is_some(),
-            "reduce_only BUY fill should find existing SHORT position"
+            candidate.is_some(),
+            "should find SHORT position for reduce_only BUY fill"
         );
+        assert_eq!(candidate.unwrap().id, short_position.id);
+    }
+
+    #[rstest]
+    fn determine_hedging_position_id_reduce_only_does_not_touch_other_strategy_position() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let account_id = AccountId::from("SIM-001");
+        let strategy_a = StrategyId::from("S-001");
+        let strategy_b = StrategyId::from("S-002");
+
+        // Strategy B has an open SHORT position
+        let short_position = position_for_account(
+            &instrument,
+            account_id,
+            strategy_b,
+            PositionId::from("P-SHORT-B"),
+            OrderSide::Sell,
+            Quantity::from(1),
+        );
+
+        let mut cache = Cache::default();
+        cache
+            .add_position(&short_position, OmsType::Hedging)
+            .unwrap();
+
+        // Strategy A's reduce_only BUY fill should NOT find Strategy B's SHORT
+        let positions_open = cache.positions_open(
+            None,
+            Some(&instrument.id()),
+            Some(&strategy_a), // scoped to strategy A only
+            Some(&account_id),
+            None,
+        );
+        let candidate = positions_open.iter().find(|pos| {
+            pos.is_opposite_side(OrderSide::Buy)
+                && !pos.is_closed()
+                && pos.quantity >= Quantity::from(1)
+        });
+
+        assert!(
+            candidate.is_none(),
+            "reduce_only fill must not touch another strategy's position"
+        );
+    }
+
+    #[rstest]
+    fn determine_hedging_position_id_reduce_only_rejects_too_small_candidate() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let account_id = AccountId::from("SIM-001");
+        let strategy_id = StrategyId::from("S-001");
+
+        // SHORT position of qty=1, but fill is qty=2 — would flip, so must not match
+        let short_position = position_for_account(
+            &instrument,
+            account_id,
+            strategy_id,
+            PositionId::from("P-SHORT-SMALL"),
+            OrderSide::Sell,
+            Quantity::from(1),
+        );
+
+        let mut cache = Cache::default();
+        cache
+            .add_position(&short_position, OmsType::Hedging)
+            .unwrap();
+
+        let positions_open = cache.positions_open(
+            None,
+            Some(&instrument.id()),
+            Some(&strategy_id),
+            Some(&account_id),
+            None,
+        );
+        let candidate = positions_open.iter().find(|pos| {
+            pos.is_opposite_side(OrderSide::Buy)
+                && !pos.is_closed()
+                && pos.quantity >= Quantity::from(2) // fill qty=2 > position qty=1
+        });
+
+        assert!(
+            candidate.is_none(),
+            "too-small position must not be selected as reduce_only candidate"
+        );
+    }
+
+    #[rstest]
+    fn determine_hedging_position_id_reduce_only_no_candidate_returns_netting_style_id() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let strategy_id = StrategyId::from("S-001");
+
+        // No open positions at all — verify the fallback ID format
+        let expected_id = PositionId::new(format!("{}-{}", instrument.id(), strategy_id));
+        let fallback_id = PositionId::new(format!("{}-{}", instrument.id(), strategy_id));
+
         assert_eq!(
-            matched.unwrap().id,
-            short_position.id,
-            "should reuse SHORT position ID instead of generating a new one"
+            fallback_id, expected_id,
+            "no-candidate fallback should produce netting-style position ID"
         );
     }
 }
