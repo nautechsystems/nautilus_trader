@@ -146,7 +146,8 @@ pub struct DeriveExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
-    /// Per-contract USDC fee cap signed into every order.
+    /// Per-contract USDC fee cap signed into every order. Required for
+    /// execution and must be greater than zero.
     pub max_fee_per_contract: Option<Decimal>,
     /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
     #[builder(default)]
@@ -237,6 +238,23 @@ impl DeriveExecClientConfig {
                 .as_deref()
                 .is_some_and(|s| !s.trim().is_empty())
             && self.subaccount_id.is_some()
+    }
+
+    /// Validates execution configuration invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `max_fee_per_contract` is missing or not greater
+    /// than zero.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        let Some(max_fee_per_contract) = self.max_fee_per_contract else {
+            anyhow::bail!("max_fee_per_contract is required");
+        };
+
+        if max_fee_per_contract <= Decimal::ZERO {
+            anyhow::bail!("max_fee_per_contract must be greater than zero");
+        }
+        Ok(())
     }
 
     /// Returns the REST API base URL, respecting environment and overrides.

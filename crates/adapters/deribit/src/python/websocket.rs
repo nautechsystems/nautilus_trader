@@ -371,6 +371,9 @@ impl DeribitWebSocketClient {
                                 }
                             }
                         }),
+                        NautilusWsMessage::OrderFilled(msg) => {
+                            call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
+                        }
                         NautilusWsMessage::OrderRejected(msg) => {
                             call_python_with_data(&call_soon, &callback, |py| msg.into_py_any(py));
                         }

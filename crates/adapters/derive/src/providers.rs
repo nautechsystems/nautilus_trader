@@ -117,7 +117,7 @@ impl DeriveInstrumentProvider {
         for currency in currencies {
             let definitions =
                 fetch_instrument_definitions(&self.http_client, currency, expired).await?;
-            instruments.extend(parse_instrument_definitions(definitions)?);
+            instruments.extend(parse_instrument_definitions(definitions));
         }
 
         Ok(instruments)
@@ -215,17 +215,22 @@ impl InstrumentProvider for DeriveInstrumentProvider {
 
 pub(crate) fn parse_instrument_definitions(
     definitions: Vec<DeriveInstrument>,
-) -> anyhow::Result<Vec<InstrumentAny>> {
+) -> Vec<InstrumentAny> {
     let ts_init = get_atomic_clock_realtime().get_time_ns();
     let mut instruments = Vec::with_capacity(definitions.len());
 
     for definition in definitions {
-        if let Some(instrument) = parse_derive_instrument_any(&definition, ts_init)? {
-            instruments.push(instrument);
+        match parse_derive_instrument_any(&definition, ts_init) {
+            Ok(Some(instrument)) => instruments.push(instrument),
+            Ok(None) => {}
+            Err(e) => log::warn!(
+                "Failed to parse Derive instrument {}: {e}",
+                definition.instrument_name,
+            ),
         }
     }
 
-    Ok(instruments)
+    instruments
 }
 
 pub(crate) async fn fetch_instrument_definitions(
@@ -234,9 +239,9 @@ pub(crate) async fn fetch_instrument_definitions(
     expired: bool,
 ) -> anyhow::Result<Vec<DeriveInstrument>> {
     let (mut definitions, options, erc20s) = tokio::try_join!(
-        http_client.get_instruments(currency, DeriveInstrumentType::Perp, expired),
-        http_client.get_instruments(currency, DeriveInstrumentType::Option, expired),
-        fetch_erc20_instruments(http_client, currency, expired),
+        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Perp, expired),
+        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Option, expired,),
+        fetch_instruments_if_listed(http_client, currency, DeriveInstrumentType::Erc20, expired,),
     )?;
     definitions.extend(options);
     definitions.extend(erc20s);
@@ -244,17 +249,17 @@ pub(crate) async fn fetch_instrument_definitions(
     Ok(definitions)
 }
 
-// Venue returns JSON-RPC error 12001 (`Instrument not found`) when querying
-// `erc20` for a currency with no spot listing (e.g. BTC has perp+option but
-// no spot). Treat as empty so a missing spot listing does not fail the
-// perp/option fetch.
-async fn fetch_erc20_instruments(
+// Venue returns JSON-RPC error 12001 (`Instrument not found`) when a currency
+// has no listing for the requested product type. Treat that leg as empty so
+// the other product types still load.
+async fn fetch_instruments_if_listed(
     http_client: &DeriveHttpClient,
     currency: &str,
+    instrument_type: DeriveInstrumentType,
     expired: bool,
 ) -> Result<Vec<DeriveInstrument>, DeriveHttpError> {
     match http_client
-        .get_instruments(currency, DeriveInstrumentType::Erc20, expired)
+        .get_instruments(currency, instrument_type, expired)
         .await
     {
         Ok(rows) => Ok(rows),

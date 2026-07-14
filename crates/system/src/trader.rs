@@ -986,12 +986,12 @@ impl Trader {
     pub fn stop_components(&mut self) -> anyhow::Result<()> {
         for actor_id in &self.actor_ids {
             log::debug!("Stopping actor {actor_id}");
-            Self::stop_component_if_running(actor_id.inner())?;
+            Self::stop_component_if_active(actor_id.inner())?;
         }
 
         for exec_algorithm_id in &self.exec_algorithm_ids {
             log::debug!("Stopping execution algorithm {exec_algorithm_id}");
-            Self::stop_component_if_running(exec_algorithm_id.inner())?;
+            Self::stop_component_if_active(exec_algorithm_id.inner())?;
         }
 
         for strategy_id in self.strategy_ids.clone() {
@@ -1002,15 +1002,77 @@ impl Trader {
                 .is_none_or(|stop_fn| stop_fn());
 
             if should_proceed {
-                Self::stop_component_if_running(strategy_id.inner())?;
+                Self::stop_component_if_active(strategy_id.inner())?;
             }
         }
 
         Ok(())
     }
 
-    fn stop_component_if_running(component_id: Ustr) -> anyhow::Result<()> {
-        if component_state(&component_id)? != ComponentState::Running {
+    /// Stops a partially started trader without deferring managed strategy shutdown.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the trader transition or any component stop fails. All registered
+    /// components still receive a stop attempt before the error is returned.
+    pub fn stop_after_start_failure(&mut self) -> anyhow::Result<()> {
+        self.transition_state(ComponentTrigger::Stop)?;
+
+        let stop_result = self.stop_components_after_start_failure();
+        let clock = self.clock_factory.clock();
+        self.ts_stopped = Some(clock.borrow().timestamp_ns());
+        let transition_result = self.transition_state(ComponentTrigger::StopCompleted);
+
+        match (stop_result, transition_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(stop_err), Ok(())) => Err(stop_err),
+            (Ok(()), Err(transition_err)) => Err(transition_err),
+            (Err(stop_err), Err(transition_err)) => anyhow::bail!(
+                "Failed to stop trader components: {stop_err}; failed to complete trader stop: \
+                 {transition_err}"
+            ),
+        }
+    }
+
+    fn stop_components_after_start_failure(&self) -> anyhow::Result<()> {
+        let mut errors = Vec::new();
+
+        for actor_id in &self.actor_ids {
+            log::debug!("Stopping actor {actor_id} after startup failure");
+            if let Err(e) = Self::stop_component_if_active(actor_id.inner()) {
+                errors.push(format!("actor {actor_id}: {e:#}"));
+            }
+        }
+
+        for exec_algorithm_id in &self.exec_algorithm_ids {
+            log::debug!("Stopping execution algorithm {exec_algorithm_id} after startup failure");
+            if let Err(e) = Self::stop_component_if_active(exec_algorithm_id.inner()) {
+                errors.push(format!("execution algorithm {exec_algorithm_id}: {e:#}"));
+            }
+        }
+
+        for strategy_id in &self.strategy_ids {
+            log::debug!("Stopping strategy {strategy_id} after startup failure");
+            if let Err(e) = Self::stop_component_if_active(strategy_id.inner()) {
+                errors.push(format!("strategy {strategy_id}: {e:#}"));
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!(
+                "Failed to stop one or more trader components after startup failure: {}",
+                errors.join("; ")
+            )
+        }
+    }
+
+    fn stop_component_if_active(component_id: Ustr) -> anyhow::Result<()> {
+        if !matches!(
+            component_state(&component_id)?,
+            ComponentState::Starting | ComponentState::Running
+        ) {
             return Ok(());
         }
 

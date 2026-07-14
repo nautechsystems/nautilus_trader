@@ -81,6 +81,7 @@ static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("RECONCI
 /// throttles, venue report lookups) so that multiple accounts holding the same
 /// instrument do not share the same tracking entry.
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
+type FillKey = (AccountId, InstrumentId, TradeId);
 
 /// Metadata for an external order that needs to be registered with the execution client.
 #[derive(Debug, Clone)]
@@ -276,14 +277,14 @@ pub struct ExecutionManager {
     config: ExecutionManagerConfig,
     inflight_checks: IndexMap<ClientOrderId, InflightCheck>,
     external_order_claims: IndexMap<InstrumentId, StrategyId>,
-    processed_fills: IndexMap<TradeId, ClientOrderId>,
+    processed_fills: IndexMap<FillKey, ClientOrderId>,
     recon_check_retries: IndexMap<ClientOrderId, u32>,
     order_query_recency: RecencyMap<ClientOrderId>,
     order_local_activity: RecencyMap<ClientOrderId>,
     // Monotonic (`dst::time`) instants, not `self.clock`; see `record_position_activity`.
     position_local_activity: RecencyMap<InstrumentAccountKey>,
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
-    recent_fills_cache: RecencyMap<TradeId>,
+    recent_fills_cache: RecencyMap<FillKey>,
 }
 
 impl Debug for ExecutionManager {
@@ -397,12 +398,17 @@ impl ExecutionManager {
         let mut fills_applied = 0usize;
 
         let fill_reports = &adjusted_fill_reports;
-        let mut seen_trade_ids: IndexSet<TradeId> = IndexSet::new();
+        let mut seen_fill_keys: IndexSet<FillKey> = IndexSet::new();
 
         for fills in fill_reports.values() {
             for fill in fills {
-                if !seen_trade_ids.insert(fill.trade_id) {
-                    log::warn!("Duplicate trade_id {} in mass status", fill.trade_id);
+                let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+                if !seen_fill_keys.insert(fill_key) {
+                    log::warn!(
+                        "Duplicate trade_id {} for {} in mass status",
+                        fill.trade_id,
+                        fill.instrument_id
+                    );
                 }
             }
         }
@@ -1558,7 +1564,7 @@ impl ExecutionManager {
         match event {
             OrderEventAny::Filled(fill) => {
                 self.record_position_activity(fill.instrument_id, fill.account_id);
-                self.mark_fill_processed(fill.trade_id);
+                self.mark_fill_processed(fill.account_id, fill.instrument_id, fill.trade_id);
             }
             OrderEventAny::Accepted(_)
             | OrderEventAny::Rejected(_)
@@ -1655,13 +1661,25 @@ impl ExecutionManager {
 
     /// Checks if a fill has been recently processed (for deduplication).
     #[must_use]
-    pub fn is_fill_recently_processed(&self, trade_id: &TradeId) -> bool {
-        self.recent_fills_cache.contains_key(trade_id)
+    pub fn is_fill_recently_processed(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        trade_id: TradeId,
+    ) -> bool {
+        self.recent_fills_cache
+            .contains_key(&(account_id, instrument_id, trade_id))
     }
 
     /// Marks a fill as recently processed with the current monotonic instant.
-    pub fn mark_fill_processed(&mut self, trade_id: TradeId) {
-        self.recent_fills_cache.mark(trade_id);
+    pub fn mark_fill_processed(
+        &mut self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        trade_id: TradeId,
+    ) {
+        self.recent_fills_cache
+            .mark((account_id, instrument_id, trade_id));
     }
 
     /// Prunes expired fills from the recent fills cache.
@@ -3083,12 +3101,13 @@ impl ExecutionManager {
         fill: &FillReport,
         instrument: &InstrumentAny,
     ) -> Option<OrderEventAny> {
-        if self.processed_fills.contains_key(&fill.trade_id) {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if self.processed_fills.contains_key(&fill_key) {
             return None;
         }
 
         self.processed_fills
-            .insert(fill.trade_id, order.client_order_id());
+            .insert(fill_key, order.client_order_id());
 
         Some(OrderEventAny::Filled(OrderFilled::new(
             order.trader_id(),

@@ -465,7 +465,7 @@ pub enum LighterWsFrame {
         #[serde(default, deserialize_with = "deserialize_trade_vec")]
         trades: Vec<LighterTrade>,
     },
-    #[serde(rename = "update/account_orders")]
+    #[serde(rename = "update/account_orders", alias = "subscribed/account_orders")]
     AccountOrders {
         account: i64,
         channel: Ustr,
@@ -526,7 +526,7 @@ pub enum LighterWsFrame {
         stats: LighterUserStats,
         timestamp: u64,
     },
-    #[serde(rename = "update/height")]
+    #[serde(rename = "update/height", alias = "subscribed/height")]
     Height {
         channel: Ustr,
         height: i64,
@@ -1375,6 +1375,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_account_orders_subscribed_frame_deserializes() {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ORDERS_UPDATE).unwrap();
+        payload["type"] = serde_json::json!("subscribed/account_orders");
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        assert!(matches!(frame, LighterWsFrame::AccountOrders { .. }));
+    }
+
+    #[rstest]
     fn test_account_all_orders_subscribed_frame_deserializes_empty_side() {
         let frame: LighterWsFrame = serde_json::from_str(
             r#"{
@@ -1485,6 +1496,16 @@ mod tests {
             }
             _ => panic!("expected height frame"),
         }
+    }
+
+    #[rstest]
+    fn test_height_subscribed_frame_deserializes() {
+        let mut payload: serde_json::Value = serde_json::from_str(WS_HEIGHT_UPDATE).unwrap();
+        payload["type"] = serde_json::json!("subscribed/height");
+
+        let frame: LighterWsFrame = serde_json::from_value(payload).unwrap();
+
+        assert!(matches!(frame, LighterWsFrame::Height { .. }));
     }
 
     #[rstest]

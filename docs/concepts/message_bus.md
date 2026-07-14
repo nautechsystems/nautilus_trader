@@ -404,6 +404,12 @@ The Rust live runtime accepts `external_streams` in `MessageBusConfig`, and cons
 ingress is the concrete runtime source. Rust-native factory wiring from config to a backing remains
 the caller's responsibility.
 
+The built-in Redis ingress starts each configured stream at the current timestamp, so entries that
+already exist when the node starts are not replayed. After startup it advances the last-seen ID for
+each stream and preserves those IDs across connection retries. Use cache recovery or the event store
+when durable pre-start replay is required; `external_streams` provides live forwarding, not a
+consumer-group backlog.
+
 ### Encoding
 
 Rust-native external message bus egress supports these encoding names:

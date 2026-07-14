@@ -37,8 +37,8 @@ mod serial_tests {
             order::spec::{OrderCancelRejectedSpec, OrderModifyRejectedSpec},
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+            TradeId, TraderId, VenueOrderId,
         },
         instruments::{
             Instrument, InstrumentAny,
@@ -329,6 +329,38 @@ mod serial_tests {
         assert_eq!(*target_account_for_venue.unwrap(), account);
 
         database.flush().unwrap();
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_load_all_and_unsupported_loads_return_results() {
+        let mut database = get_pg_cache_database().await.unwrap();
+        database.flush().unwrap();
+
+        let loaded = database.load_all().await.unwrap();
+        let synthetic_result = database
+            .load_synthetic(&InstrumentId::from("SYNTHETIC.SYNTH"))
+            .await;
+        let actor_result = database.load_actor(&ComponentId::from("ACTOR-001"));
+        let strategy_result = database.load_strategy(&StrategyId::from("STRATEGY-001"));
+
+        assert!(loaded.synthetics.is_empty());
+        assert!(synthetic_result.is_err());
+        assert!(actor_result.is_err());
+        assert!(strategy_result.is_err());
+
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_failed_async_position_load_returns_error() {
+        let mut database = get_pg_cache_database().await.unwrap();
+        database.pool.close().await;
+
+        let result = database.load_positions().await;
+
+        assert!(result.is_err());
+
         database.close().unwrap();
     }
 

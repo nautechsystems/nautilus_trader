@@ -59,8 +59,8 @@ use nautilus_common::{
             DataResponse, RequestBars, RequestBookDepth, RequestBookSnapshot, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
             SubscribeBookDeltas, SubscribeBookDepth10, SubscribeFundingRates, SubscribeIndexPrices,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeIndexPrices,
+            SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeIndexPrices,
             UnsubscribeInstrument, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
@@ -71,10 +71,12 @@ use nautilus_lighter::{
     common::consts::LIGHTER_VENUE, config::LighterDataClientConfig, data::LighterDataClient,
 };
 use nautilus_model::{
-    data::{BarSpecification, BarType, Data},
-    enums::{AggregationSource, BarAggregation, BookType, PriceType},
+    data::{BarSpecification, BarType, Data, OrderBookDeltas_API},
+    enums::{AggregationSource, BarAggregation, BookAction, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
+    orderbook::{OrderBook, analysis::book_check_integrity},
+    types::Price,
 };
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -88,6 +90,22 @@ fn load_json(filename: &str) -> Value {
     let content = std::fs::read_to_string(data_path().join(filename))
         .unwrap_or_else(|_| panic!("failed to read {filename}"));
     serde_json::from_str(&content).expect("invalid json")
+}
+
+fn sequential_book_update() -> Value {
+    let mut frame = load_json("ws_order_book_update.json");
+    frame["last_updated_at"] = json!(1_778_138_389_656_150_u64);
+    frame["offset"] = json!(2_165);
+    frame["timestamp"] = json!(1_778_138_583_602_u64);
+    frame["order_book"]["offset"] = json!(2_165);
+    frame["order_book"]["nonce"] = json!(904_846);
+    frame["order_book"]["last_updated_at"] = json!(1_778_138_389_656_150_u64);
+    frame["order_book"]["begin_nonce"] = json!(904_845);
+    frame["order_book"]["bids"] = json!([
+        {"price": "2000.00", "size": "0.0500"},
+        {"price": "1999.00", "size": "0.0100"}
+    ]);
+    frame
 }
 
 fn eth_perp_id() -> InstrumentId {
@@ -398,6 +416,67 @@ async fn await_unsubscribe_count(state: &TestServerState, target: usize) {
     .await;
 }
 
+async fn collect_managed_book_batches(
+    client: &mut LighterDataClient,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    state: &TestServerState,
+) -> (OrderBookDeltas_API, OrderBookDeltas_API) {
+    state
+        .enqueue_push(load_json("ws_order_book_subscribed.json"))
+        .await;
+
+    let instrument_id = eth_perp_id();
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(10),
+            true,
+            None,
+            None,
+        ))
+        .expect("subscribe managed book deltas");
+
+    await_subscribe_count(state, 1).await;
+    let snapshot = next_event_matching(rx, Duration::from_secs(2), |event| {
+        matches!(event, DataEvent::Data(Data::Deltas(_)))
+    })
+    .await
+    .expect("expected snapshot deltas");
+    let DataEvent::Data(Data::Deltas(snapshot)) = snapshot else {
+        unreachable!("event predicate requires deltas")
+    };
+
+    state.enqueue_push(sequential_book_update()).await;
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("trigger incremental book push");
+
+    await_subscribe_count(state, 2).await;
+    let incremental = next_event_matching(rx, Duration::from_secs(2), |event| {
+        matches!(event, DataEvent::Data(Data::Deltas(_)))
+    })
+    .await
+    .expect("expected incremental deltas");
+    let DataEvent::Data(Data::Deltas(incremental)) = incremental else {
+        unreachable!("event predicate requires deltas")
+    };
+
+    (snapshot, incremental)
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_connect_disconnect_lifecycle() {
@@ -503,6 +582,45 @@ async fn test_connect_emits_instrument_event() {
 
 #[rstest]
 #[tokio::test]
+async fn test_subscribe_instrument_replays_cached_instrument() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    client
+        .subscribe_instrument(SubscribeInstrument::new(
+            eth_perp_id(),
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("subscribe_instrument");
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
+        matches!(event, DataEvent::Instrument(_))
+    })
+    .await
+    .expect("expected cached instrument replay");
+    let DataEvent::Instrument(instrument) = event else {
+        unreachable!("event predicate requires instrument")
+    };
+
+    assert_eq!(instrument.id(), eth_perp_id());
+    assert_eq!(instrument.price_precision(), 2);
+    assert_eq!(instrument.size_precision(), 4);
+    assert!(!instrument.size_increment().is_zero());
+    assert!(state.subscribes().await.is_empty());
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_unsubscribe_instrument_is_cache_replay_noop() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx) = build_client(build_config(addr));
@@ -577,6 +695,85 @@ async fn test_subscribe_book_deltas_emits_deltas() {
         }
         other => panic!("expected Deltas event, was {other:?}"),
     }
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_interval_snapshot_managed_feed_emits_snapshot_then_incremental_deltas() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    let (snapshot, incremental) = collect_managed_book_batches(&mut client, &mut rx, &state).await;
+
+    assert_eq!(snapshot.instrument_id, eth_perp_id());
+    assert_eq!(snapshot.sequence, 904_845);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert!(
+        snapshot
+            .deltas
+            .iter()
+            .any(|delta| delta.flags & RecordFlag::F_SNAPSHOT as u8 != 0),
+    );
+    assert_eq!(incremental.instrument_id, eth_perp_id());
+    assert_eq!(incremental.sequence, 904_846);
+    assert!(
+        incremental
+            .deltas
+            .iter()
+            .all(|delta| delta.flags & RecordFlag::F_SNAPSHOT as u8 == 0),
+    );
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_managed_book_applies_snapshot_and_incremental_with_integrity() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx) = build_client(build_config(addr));
+
+    client.connect().await.expect("connect");
+    drain_pending(&mut rx);
+
+    let (snapshot, incremental) = collect_managed_book_batches(&mut client, &mut rx, &state).await;
+    let mut book = OrderBook::new(eth_perp_id(), BookType::L2_MBP);
+
+    book.apply_deltas(&snapshot)
+        .expect("apply initial book snapshot");
+    let updates_after_snapshot = book.update_count;
+
+    assert_eq!(book.best_bid_price(), Some(Price::from("2000.00")));
+    assert_eq!(book.best_ask_price(), Some(Price::from("2325.00")));
+    assert!(book.bids(None).next().is_some());
+    assert!(book.asks(None).next().is_some());
+    assert_eq!(book_check_integrity(&book), Ok(()));
+
+    book.apply_deltas(&incremental)
+        .expect("apply incremental book update");
+    let bid_prices: Vec<_> = book.bids(None).map(|level| level.price.value).collect();
+    let ask_prices: Vec<_> = book.asks(None).map(|level| level.price.value).collect();
+
+    assert!(book.update_count > updates_after_snapshot);
+    assert_eq!(book.sequence, 904_846);
+    assert_eq!(book.best_ask_price(), Some(Price::from("2064.54")));
+    assert_eq!(
+        bid_prices,
+        vec![Price::from("2000.00"), Price::from("1999.00")],
+    );
+    assert_eq!(
+        ask_prices,
+        vec![
+            Price::from("2064.54"),
+            Price::from("2325.00"),
+            Price::from("2341.25"),
+        ],
+    );
+    assert_eq!(book_check_integrity(&book), Ok(()));
 
     client.disconnect().await.expect("disconnect");
 }

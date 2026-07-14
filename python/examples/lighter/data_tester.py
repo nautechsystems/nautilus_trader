@@ -42,6 +42,7 @@ def main() -> None:
     args = parse_args()
     lighter_environment = lighter_environment_from_name(args.lighter_environment)
     instrument_id = InstrumentId.from_str(args.instrument)
+    request_funding_rates = args.subscribe_funding_rates and "-SPOT." not in args.instrument.upper()
 
     builder = LiveNode.builder(
         "LIGHTER-DATA-TESTER-001",
@@ -63,11 +64,11 @@ def main() -> None:
             subscribe_book_deltas=True,
             subscribe_quotes=True,
             subscribe_trades=True,
-            subscribe_funding_rates=args.subscribe_funding_rates,
+            subscribe_funding_rates=request_funding_rates,
             request_instruments=True,
             request_trades=True,
             request_bars=True,
-            request_funding_rates=args.subscribe_funding_rates,
+            request_funding_rates=request_funding_rates,
             manage_book=True,
             log_data=True,
         ),

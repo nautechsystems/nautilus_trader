@@ -19,8 +19,9 @@
 //! Run with cargo-nextest for process isolation, or use --test-threads=1.
 
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     fmt::Debug,
+    rc::Rc,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -32,9 +33,11 @@ use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::CacheView,
-    clients::ExecutionClient,
+    clients::{DataClient, ExecutionClient},
+    clock::Clock,
+    component::Component,
     enums::Environment,
-    factories::{ClientConfig, ExecutionClientFactory},
+    factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     messages::{
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder},
         system::ShutdownSystem,
@@ -101,6 +104,27 @@ impl TestStrategy {
 impl DataActor for TestStrategy {}
 
 nautilus_strategy!(TestStrategy);
+
+#[derive(Debug)]
+struct FailingStartStrategy {
+    core: StrategyCore,
+}
+
+impl FailingStartStrategy {
+    fn new(config: StrategyConfig) -> Self {
+        Self {
+            core: StrategyCore::new(config),
+        }
+    }
+}
+
+impl DataActor for FailingStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("simulated live node strategy start failure")
+    }
+}
+
+nautilus_strategy!(FailingStartStrategy);
 
 #[derive(Debug)]
 struct ClaimingTestStrategy {
@@ -233,7 +257,13 @@ mod serial_tests {
     #[derive(Clone, Debug, Default)]
     struct StartupMassStatusClientState {
         connected: Arc<AtomicBool>,
+        disconnect_attempted: Arc<AtomicBool>,
         mass_status_requested: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct FailingDisconnectDataClientState {
+        disconnect_attempted: Arc<AtomicBool>,
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -248,6 +278,10 @@ mod serial_tests {
         behavior: StartupMassStatusBehavior,
     }
 
+    struct FailingDisconnectDataClient {
+        state: FailingDisconnectDataClientState,
+    }
+
     impl StartupMassStatusExecutionClient {
         const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
 
@@ -256,10 +290,27 @@ mod serial_tests {
         }
     }
 
+    impl FailingDisconnectDataClient {
+        const CLIENT_ID: &'static str = "FAILING-DISCONNECT-DATA";
+
+        fn new(state: FailingDisconnectDataClientState) -> Self {
+            Self { state }
+        }
+    }
+
     #[derive(Debug)]
     struct StartupMassStatusExecutionClientConfig;
 
+    #[derive(Debug)]
+    struct FailingDisconnectDataClientConfig;
+
     impl ClientConfig for StartupMassStatusExecutionClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for FailingDisconnectDataClientConfig {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
@@ -271,9 +322,20 @@ mod serial_tests {
         behavior: StartupMassStatusBehavior,
     }
 
+    #[derive(Debug)]
+    struct FailingDisconnectDataClientFactory {
+        state: FailingDisconnectDataClientState,
+    }
+
     impl StartupMassStatusExecutionClientFactory {
         fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
             Self { state, behavior }
+        }
+    }
+
+    impl FailingDisconnectDataClientFactory {
+        fn new(state: FailingDisconnectDataClientState) -> Self {
+            Self { state }
         }
     }
 
@@ -296,6 +358,70 @@ mod serial_tests {
 
         fn config_type(&self) -> &'static str {
             stringify!(StartupMassStatusExecutionClientConfig)
+        }
+    }
+
+    impl DataClientFactory for FailingDisconnectDataClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(FailingDisconnectDataClient::new(
+                self.state.clone(),
+            )))
+        }
+
+        fn name(&self) -> &'static str {
+            "failing-disconnect-data"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(FailingDisconnectDataClientConfig)
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for FailingDisconnectDataClient {
+        fn client_id(&self) -> ClientId {
+            ClientId::from(Self::CLIENT_ID)
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            false
+        }
+
+        fn is_disconnected(&self) -> bool {
+            true
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+            anyhow::bail!("simulated data client disconnect failure")
         }
     }
 
@@ -372,6 +498,9 @@ mod serial_tests {
         }
 
         async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
             self.state.connected.store(false, Ordering::Relaxed);
             Ok(())
         }
@@ -774,6 +903,76 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
+    async fn test_start_stop_dispose_releases_resources() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("LifecycleNode".to_string(), Some(config)).unwrap();
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("LIFECYCLE-001")),
+            ..Default::default()
+        }))
+        .unwrap();
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+        let trader_running = node.kernel().trader().borrow().is_running();
+        let running_component_count = node.kernel().trader().borrow().component_count();
+        node.stop().await.unwrap();
+        let trader_stopped = node.kernel().trader().borrow().is_stopped();
+        node.dispose();
+        node.dispose();
+
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(trader_running);
+        assert_eq!(running_component_count, 1);
+        assert!(trader_stopped);
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_start_without_cache_backing_preserves_staged_cache() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("NoBackingNode".to_string(), Some(config)).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        node.kernel()
+            .cache()
+            .borrow_mut()
+            .add_instrument(instrument)
+            .unwrap();
+
+        node.start().await.unwrap();
+        let retained = node
+            .kernel()
+            .cache()
+            .borrow()
+            .instrument(&instrument_id)
+            .is_some();
+        node.stop().await.unwrap();
+        node.dispose();
+
+        assert!(retained);
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn test_run_twice_returns_error() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
@@ -987,6 +1186,108 @@ mod serial_tests {
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));
+
+        node.dispose();
+
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_strategy_start_failure_stops_partial_start_and_disposes_resources() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "StrategyStartFailureNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("MANAGED-STOP-001")),
+            manage_stop: true,
+            ..Default::default()
+        }))
+        .unwrap();
+        node.add_strategy(FailingStartStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("FAILING-START-001")),
+            order_id_tag: Some("002".to_string()),
+            ..Default::default()
+        }))
+        .unwrap();
+        let handle = node.handle();
+
+        let err = node.start().await.expect_err("strategy start should fail");
+
+        assert!(
+            err.to_string()
+                .contains("simulated live node strategy start failure"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+        assert!(node.kernel().trader().borrow().is_stopped());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 2);
+
+        node.dispose();
+
+        assert!(node.kernel().trader().borrow().is_disposed());
+        assert_eq!(node.kernel().trader().borrow().component_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_data_disconnect_failure_still_attempts_execution_disconnect() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let data_state = FailingDisconnectDataClientState::default();
+        let exec_state = StartupMassStatusClientState::default();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("DisconnectFailureNode")
+            .add_data_client(
+                Some("failing-disconnect-data".to_string()),
+                Box::new(FailingDisconnectDataClientFactory::new(data_state.clone())),
+                Box::new(FailingDisconnectDataClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("startup-mass-status".to_string()),
+                Box::new(StartupMassStatusExecutionClientFactory::new(
+                    exec_state.clone(),
+                    StartupMassStatusBehavior::Unavailable,
+                )),
+                Box::new(StartupMassStatusExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        let err = node
+            .kernel_mut()
+            .disconnect_clients()
+            .await
+            .expect_err("data client disconnect should fail");
+        node.dispose();
+
+        assert!(
+            err.to_string()
+                .contains("simulated data client disconnect failure"),
+            "unexpected error: {err:#}"
+        );
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
     }
 
     #[rstest]

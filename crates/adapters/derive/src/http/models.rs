@@ -77,17 +77,26 @@ impl<P> JsonRpcRequest<P> {
 /// Inbound JSON-RPC response frame. Exactly one of `result` or `error` is set
 /// by the venue.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(bound(deserialize = "R: Deserialize<'de>"))]
 pub struct JsonRpcResponse<R> {
     /// Correlator echoing the request `id`. The Derive REST API may omit this
     /// for some endpoints, hence `Option`.
     #[serde(default, deserialize_with = "deserialize_optional_jsonrpc_id")]
     pub id: Option<u64>,
     /// Result payload on success.
-    #[serde(default = "Option::default")]
+    #[serde(default, deserialize_with = "deserialize_present_jsonrpc_result")]
     pub result: Option<R>,
     /// Error payload on failure.
     #[serde(default)]
     pub error: Option<JsonRpcError>,
+}
+
+fn deserialize_present_jsonrpc_result<'de, D, R>(deserializer: D) -> Result<Option<R>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    R: Deserialize<'de>,
+{
+    R::deserialize(deserializer).map(Some)
 }
 
 fn deserialize_optional_jsonrpc_id<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
@@ -929,7 +938,7 @@ pub struct DerivePublicFundingRate {
 /// `public/get_funding_rate_history` result envelope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePublicFundingRateHistoryResult {
-    /// Funding rate samples ordered oldest to newest.
+    /// Funding rate samples in venue response order (currently newest to oldest).
     pub funding_rate_history: Vec<DerivePublicFundingRate>,
 }
 
@@ -1351,11 +1360,12 @@ mod tests {
     fn test_empty_result_decodes_cancel_ack_shapes() {
         let object: DeriveEmptyResult = serde_json::from_value(json!({})).unwrap();
         let ok_string: DeriveEmptyResult = serde_json::from_value(json!("ok")).unwrap();
-        let null_value: DeriveEmptyResult = serde_json::from_value(Value::Null).unwrap();
+        let null_envelope: JsonRpcResponse<DeriveEmptyResult> =
+            serde_json::from_value(json!({"id": 1, "result": null})).unwrap();
 
         assert_eq!(object, DeriveEmptyResult {});
         assert_eq!(ok_string, DeriveEmptyResult {});
-        assert_eq!(null_value, DeriveEmptyResult {});
+        assert_eq!(null_envelope.result, Some(DeriveEmptyResult {}));
     }
 
     #[rstest]

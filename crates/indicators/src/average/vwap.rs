@@ -82,8 +82,8 @@ impl VolumeWeightedAveragePrice {
     }
 
     pub fn update_raw(&mut self, price: f64, volume: f64, timestamp: f64) {
-        const SECONDS_PER_DAY: f64 = 86_400.0;
-        let epoch_day = (timestamp / SECONDS_PER_DAY).floor() as i64;
+        const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
+        let epoch_day = (timestamp / NANOSECONDS_PER_DAY).floor() as i64;
 
         if epoch_day != self.day {
             self.reset();
@@ -119,9 +119,9 @@ mod tests {
 
     use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator, stubs::*};
 
-    const SECONDS_PER_DAY: f64 = 86_400.0;
-    const DAY0: f64 = 10.0;
-    const DAY1: f64 = SECONDS_PER_DAY;
+    const NANOSECONDS_PER_DAY: f64 = 86_400.0 * 1_000_000_000.0;
+    const DAY0: f64 = 10.0 * 1_000_000_000.0;
+    const DAY1: f64 = NANOSECONDS_PER_DAY;
 
     #[rstest]
     fn test_vwap_initialized(indicator_vwap: VolumeWeightedAveragePrice) {
@@ -222,7 +222,7 @@ mod tests {
     fn test_epoch_day_floor_rounding() {
         let mut vwap = VolumeWeightedAveragePrice::new();
 
-        vwap.update_raw(50.0, 5.0, DAY1 - 0.000_001);
+        vwap.update_raw(50.0, 5.0, DAY1 - 1.0); // 1 nanosecound before midnight
         let before = vwap.value;
 
         vwap.update_raw(150.0, 5.0, DAY1);
@@ -240,8 +240,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(10.0, 11.0)]
-    #[case(43_200.123, 86_399.999)]
+    #[case(10.0e9, 11.0e9)]
+    #[case(43_200.123e9, 86_399.999e9)]
     fn test_no_reset_for_same_epoch_day(#[case] t1: f64, #[case] t2: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
 
@@ -254,8 +254,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(86_399.999, 86_400.0)]
-    #[case(86_400.0, 172_800.0)]
+    #[case(86_399.999e9, 86_400.0e9)]
+    #[case(86_400.0e9, 172_800.0e9)]
     fn test_reset_when_epoch_day_changes(#[case] t1: f64, #[case] t2: f64) {
         let mut vwap = VolumeWeightedAveragePrice::new();
 
@@ -360,6 +360,27 @@ mod tests {
         assert_eq!(vwap.value, 0.0);
         vwap.update_raw(-10.0, 5.0, 0.0);
         assert!(vwap.value < 0.0);
+    }
+    /// Regression test for <https://github.com/nautechsystems/nautilus_trader/issues/4428>
+    ///
+    /// Before the fix, `update_raw` compared a nanosecond `ts_init` value against
+    /// `SECONDS_PER_DAY = 86_400.0`, causing a spurious day-rollover every ~86 µs.
+    #[rstest]
+    fn test_no_spurious_reset_with_real_nanosecond_timestamps() {
+        let mut vwap = VolumeWeightedAveragePrice::new();
+
+        // 2024-01-15 10:00:00 UTC → 1_705_312_800_000_000_000 ns
+        // 2024-01-15 10:05:00 UTC → 1_705_313_100_000_000_000 ns
+        let ts1 = 1_705_312_800_000_000_000_f64;
+        let ts2 = 1_705_313_100_000_000_000_f64;
+
+        vwap.update_raw(100.0, 10.0, ts1);
+        assert_eq!(vwap.value, 100.0);
+
+        vwap.update_raw(200.0, 10.0, ts2);
+
+        // Before the fix this would reset to 200.0 instead of accumulating
+        assert!((vwap.value - 150.0).abs() < 1e-9);
     }
 
     #[rstest]

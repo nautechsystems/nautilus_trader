@@ -24,7 +24,7 @@ use std::{
         Arc,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -56,8 +56,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, ExecutionReport,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, QueryAccount, QueryOrder,
-            SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports, ModifyOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
     },
     testing::wait_until_async,
@@ -67,9 +67,14 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     enums::{AccountType, ContingencyType, OmsType, OrderSide, TimeInForce, TriggerType},
-    events::{AccountState, OrderEventAny},
+    events::{AccountState, OrderAccepted, OrderEventAny},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
+    },
+    instruments::{
+        any::InstrumentAny,
+        stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
     orders::{LimitOrder, Order, OrderAny, OrderList, StopLimitOrder},
     types::{AccountBalance, Money, Price, Quantity},
@@ -85,10 +90,12 @@ const NEW_ORDER_FULL_TEMPLATE_ID: u16 = 302;
 const CANCEL_ORDER_TEMPLATE_ID: u16 = 305;
 const CANCEL_OPEN_ORDERS_TEMPLATE_ID: u16 = 306;
 const ACCOUNT_TEMPLATE_ID: u16 = 400;
+const ACCOUNT_TRADES_TEMPLATE_ID: u16 = 401;
 const ORDERS_TEMPLATE_ID: u16 = 308;
 const SYMBOL_BLOCK_LENGTH: u16 = 19;
 const ACCOUNT_BLOCK_LENGTH: u16 = 64;
 const BALANCE_BLOCK_LENGTH: u16 = 17;
+const ACCOUNT_TRADE_BLOCK_LENGTH: u16 = 70;
 const NEW_ORDER_FULL_BLOCK_LENGTH: u16 = 153;
 const CANCEL_ORDER_BLOCK_LENGTH: u16 = 137;
 const ORDERS_GROUP_BLOCK_LENGTH: u16 = 162;
@@ -504,6 +511,29 @@ struct CommandResponseState {
     request_count: Arc<AtomicUsize>,
 }
 
+#[derive(Clone, Copy, Debug)]
+enum FillFixtureMode {
+    Empty,
+    Invalid,
+    Paginated,
+    PaginatedWithWindowSpill,
+    Stable,
+    StableWithOpenOrder,
+}
+
+#[derive(Clone)]
+struct FillFixtureState {
+    mode: FillFixtureMode,
+    captured_queries: Option<CapturedQueries>,
+}
+
+#[derive(Clone)]
+struct CapturedQuery {
+    query: HashMap<String, String>,
+}
+
+type CapturedQueries = Arc<std::sync::Mutex<Vec<CapturedQuery>>>;
+
 #[derive(Clone, Copy)]
 enum WsSetupBehavior {
     CompleteSetup,
@@ -535,7 +565,19 @@ impl WsSetupState {
 }
 
 fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Router {
+    create_exec_test_router_with_fill_fixture(order_query_count, FillFixtureMode::Stable, None)
+}
+
+fn create_exec_test_router_with_fill_fixture(
+    order_query_count: Option<Arc<AtomicUsize>>,
+    mode: FillFixtureMode,
+    captured_queries: Option<CapturedQueries>,
+) -> Router {
     let order_query_count_for_order_route = order_query_count;
+    let state = FillFixtureState {
+        mode,
+        captured_queries,
+    };
 
     Router::new()
         .route(
@@ -592,14 +634,7 @@ fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Route
         )
         .route(
             "/api/v3/openOrders",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return unauthorized_response().into_response();
-                }
-                let orders: Vec<(i64, &str, &str, i64, i64)> = vec![];
-                sbe_response(build_orders_response(&orders)).into_response()
-            })
-            .delete(
+            get(handle_open_orders).delete(
                 |headers: HeaderMap, Query(params): Query<HashMap<String, String>>| async move {
                     if !has_auth_headers(&headers) {
                         return unauthorized_response().into_response();
@@ -620,6 +655,7 @@ fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Route
                 },
             ),
         )
+        .route("/api/v3/myTrades", get(handle_account_trades))
         .route(
             "/api/v3/order",
             post(
@@ -691,6 +727,101 @@ fn create_exec_test_router(order_query_count: Option<Arc<AtomicUsize>>) -> Route
                 },
             ),
         )
+        .with_state(state)
+}
+
+async fn handle_open_orders(State(state): State<FillFixtureState>, headers: HeaderMap) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response().into_response();
+    }
+    let orders = if matches!(state.mode, FillFixtureMode::StableWithOpenOrder) {
+        vec![(
+            12345_i64,
+            "BTCUSDT",
+            "venue-open-order",
+            100_000_000_000_i64,
+            10_000_000_i64,
+        )]
+    } else {
+        Vec::new()
+    };
+    sbe_response(build_orders_response(&orders)).into_response()
+}
+
+async fn handle_account_trades(
+    State(state): State<FillFixtureState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    if !has_auth_headers(&headers) {
+        return unauthorized_response().into_response();
+    }
+    let from_id = query
+        .get("fromId")
+        .and_then(|value| value.parse::<i64>().ok());
+    if let Some(captured_queries) = &state.captured_queries {
+        captured_queries
+            .lock()
+            .unwrap()
+            .push(CapturedQuery { query });
+    }
+    let time_micros = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_micros() as i64
+        - 30_000_000;
+    let trades = match state.mode {
+        FillFixtureMode::Empty => Vec::new(),
+        FillFixtureMode::Invalid => {
+            return sbe_response(vec![0_u8; 4]).into_response();
+        }
+        FillFixtureMode::Paginated | FillFixtureMode::PaginatedWithWindowSpill
+            if from_id.is_none() || from_id == Some(0) =>
+        {
+            (1..=1_000).map(|id| (id, time_micros)).collect()
+        }
+        FillFixtureMode::Paginated if from_id == Some(1_001) => {
+            vec![(1_001, time_micros)]
+        }
+        FillFixtureMode::PaginatedWithWindowSpill if from_id == Some(1_001) => {
+            vec![(1_001, time_micros + 60_000_000)]
+        }
+        FillFixtureMode::Paginated => Vec::new(),
+        FillFixtureMode::PaginatedWithWindowSpill => Vec::new(),
+        FillFixtureMode::Stable | FillFixtureMode::StableWithOpenOrder => {
+            vec![(98_765_432, time_micros)]
+        }
+    };
+    sbe_response(build_account_trade_response(&trades)).into_response()
+}
+
+fn build_account_trade_response(trades: &[(i64, i64)]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&create_sbe_header(0, ACCOUNT_TRADES_TEMPLATE_ID));
+    buf.extend_from_slice(&create_group_header(
+        ACCOUNT_TRADE_BLOCK_LENGTH,
+        trades.len() as u32,
+    ));
+
+    for (id, time_micros) in trades {
+        buf.push((-8i8) as u8);
+        buf.push((-8i8) as u8);
+        buf.push((-8i8) as u8);
+        buf.extend_from_slice(&id.to_le_bytes());
+        buf.extend_from_slice(&12345_i64.to_le_bytes());
+        buf.extend_from_slice(&i64::MIN.to_le_bytes());
+        buf.extend_from_slice(&100_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&10_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&10_000_000_000_i64.to_le_bytes());
+        buf.extend_from_slice(&100_000_i64.to_le_bytes());
+        buf.extend_from_slice(&time_micros.to_le_bytes());
+        buf.push(1);
+        buf.push(0);
+        buf.push(1);
+        write_var_string(&mut buf, "BTCUSDT");
+        write_var_string(&mut buf, "BNB");
+    }
+    buf
 }
 
 fn create_exec_test_router_with_command_responses(state: CommandResponseState) -> Router {
@@ -1079,6 +1210,37 @@ async fn start_exec_test_server_with_order_query_count(
     addr
 }
 
+async fn start_exec_test_server_with_fill_fixture(
+    mode: FillFixtureMode,
+) -> (SocketAddr, CapturedQueries) {
+    let captured_queries = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let router =
+        create_exec_test_router_with_fill_fixture(None, mode, Some(captured_queries.clone()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap();
+    });
+
+    let health_url = format!("http://{addr}/api/v3/ping");
+    let http_client =
+        HttpClient::new(HashMap::new(), Vec::new(), Vec::new(), None, None, None).unwrap();
+    wait_until_async(
+        || {
+            let url = health_url.clone();
+            let client = http_client.clone();
+            async move { client.get(url, None, None, Some(1), None).await.is_ok() }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    (addr, captured_queries)
+}
+
 async fn start_exec_test_server_with_command_responses(
     responses: CommandResponses,
 ) -> (SocketAddr, Arc<AtomicUsize>) {
@@ -1245,6 +1407,317 @@ async fn test_connect_loads_instruments_and_account() {
     client.connect().await.unwrap();
 
     assert!(client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_includes_stable_fill_identity() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::Stable).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
+        .unwrap();
+    add_open_order_to_cache(
+        &cache,
+        test_instrument_id(),
+        ClientOrderId::new("retained-spot-order"),
+        account_id,
+        VenueOrderId::from("12345"),
+    );
+
+    let futures_instrument = crypto_perpetual_ethusdt();
+    let futures_instrument_id = futures_instrument.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(futures_instrument))
+        .unwrap();
+    add_open_order_to_cache(
+        &cache,
+        futures_instrument_id,
+        ClientOrderId::new("retained-futures-order"),
+        account_id,
+        VenueOrderId::from("12346"),
+    );
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
+
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(fill_reports[0].instrument_id, test_instrument_id());
+    assert_eq!(fill_reports[0].trade_id, TradeId::new("98765432"));
+    let queries = captured_queries.lock().unwrap();
+    assert_eq!(queries.len(), 1);
+    assert_eq!(
+        queries[0].query.get("symbol").map(String::as_str),
+        Some("BTCUSDT")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_discovers_fill_instrument_from_venue_order() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::StableWithOpenOrder).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
+
+    assert_eq!(fill_reports.len(), 1);
+    assert_eq!(fill_reports[0].trade_id, TradeId::new("98765432"));
+    assert_eq!(captured_queries.lock().unwrap().len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_propagates_invalid_fill_response() {
+    let (addr, _captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::Invalid).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
+        .unwrap();
+    add_open_order_to_cache(
+        &cache,
+        test_instrument_id(),
+        ClientOrderId::new("invalid-fill-order"),
+        account_id,
+        VenueOrderId::from("12345"),
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let error = client.generate_mass_status(Some(60)).await.unwrap_err();
+
+    assert!(error.to_string().contains("SBE decode error"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_uses_supported_order_cursor_query() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::Paginated).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let now_ns = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let command = GenerateFillReports::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::from(now_ns),
+        Some(test_instrument_id()),
+        Some(VenueOrderId::from("12345")),
+        Some(UnixNanos::from(now_ns - 60_000_000_000)),
+        Some(UnixNanos::from(now_ns)),
+        None,
+        None,
+    );
+
+    let reports = client.generate_fill_reports(command).await.unwrap();
+    let queries = captured_queries.lock().unwrap();
+
+    assert_eq!(reports.len(), 1_001);
+    assert_eq!(reports[997].trade_id, TradeId::new("998"));
+    assert_eq!(reports[998].trade_id, TradeId::new("999"));
+    assert_eq!(reports[999].trade_id, TradeId::new("1000"));
+    assert_eq!(reports[1_000].trade_id, TradeId::new("1001"));
+    assert_eq!(queries.len(), 2);
+    assert_eq!(
+        queries[0].query.get("orderId").map(String::as_str),
+        Some("12345")
+    );
+    assert_eq!(
+        queries[0].query.get("fromId").map(String::as_str),
+        Some("0")
+    );
+    assert!(!queries[0].query.contains_key("startTime"));
+    assert!(!queries[0].query.contains_key("endTime"));
+    assert_eq!(
+        queries[1].query.get("fromId").map(String::as_str),
+        Some("1001")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_fill_reports_rejects_reversed_time_range() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::Stable).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let now_ns = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64;
+    let command = GenerateFillReports::new(
+        nautilus_core::UUID4::new(),
+        UnixNanos::from(now_ns),
+        Some(test_instrument_id()),
+        None,
+        Some(UnixNanos::from(now_ns)),
+        Some(UnixNanos::from(now_ns - 1_000_000)),
+        None,
+        None,
+    );
+
+    let error = client.generate_fill_reports(command).await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "fill report start time must not exceed end time"
+    );
+    assert!(captured_queries.lock().unwrap().is_empty());
+}
+
+#[rstest]
+#[case(Some(60), false, FillFixtureMode::Paginated, 1_001)]
+#[case(None, true, FillFixtureMode::Paginated, 1_001)]
+#[case(Some(60), false, FillFixtureMode::PaginatedWithWindowSpill, 1_000)]
+#[tokio::test]
+async fn test_generate_mass_status_paginates_fill_reports(
+    #[case] lookback_mins: Option<u64>,
+    #[case] maximum_history: bool,
+    #[case] fixture_mode: FillFixtureMode,
+    #[case] expected_reports: usize,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_fill_fixture(fixture_mode).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
+        .unwrap();
+    add_open_order_to_cache(
+        &cache,
+        test_instrument_id(),
+        ClientOrderId::new("paginated-fill-order"),
+        account_id,
+        VenueOrderId::from("12345"),
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(lookback_mins)
+        .await
+        .unwrap()
+        .unwrap();
+    let fill_reports: Vec<_> = mass_status.fill_reports().into_values().flatten().collect();
+    let queries = captured_queries.lock().unwrap();
+
+    assert_eq!(fill_reports.len(), expected_reports);
+    assert_eq!(fill_reports.first().unwrap().trade_id, TradeId::new("1"));
+    assert_eq!(
+        fill_reports.last().unwrap().trade_id,
+        TradeId::new(expected_reports.to_string())
+    );
+    assert_eq!(queries.len(), 2);
+    assert_eq!(
+        queries[0].query.get("limit").map(String::as_str),
+        Some("1000")
+    );
+
+    if maximum_history {
+        assert_eq!(
+            queries[0].query.get("fromId").map(String::as_str),
+            Some("0")
+        );
+        assert!(!queries[0].query.contains_key("startTime"));
+        assert!(!queries[0].query.contains_key("endTime"));
+    } else {
+        assert!(queries[0].query.contains_key("startTime"));
+        assert!(queries[0].query.contains_key("endTime"));
+    }
+    assert_eq!(
+        queries[1].query.get("fromId").map(String::as_str),
+        Some("1001")
+    );
+    assert!(!queries[1].query.contains_key("startTime"));
+    assert!(!queries[1].query.contains_key("endTime"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_splits_fill_lookback_into_supported_windows() {
+    let (addr, captured_queries) =
+        start_exec_test_server_with_fill_fixture(FillFixtureMode::Empty).await;
+    let base_url = format!("http://{addr}");
+
+    let (mut client, _rx, cache) = create_test_execution_client(base_url);
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(currency_pair_btcusdt()))
+        .unwrap();
+    add_open_order_to_cache(
+        &cache,
+        test_instrument_id(),
+        ClientOrderId::new("windowed-fill-order"),
+        account_id,
+        VenueOrderId::from("12345"),
+    );
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let mass_status = client
+        .generate_mass_status(Some(25 * 60))
+        .await
+        .unwrap()
+        .unwrap();
+    let queries = captured_queries.lock().unwrap();
+    let first_start = queries[0].query["startTime"].parse::<i64>().unwrap();
+    let first_end = queries[0].query["endTime"].parse::<i64>().unwrap();
+    let second_start = queries[1].query["startTime"].parse::<i64>().unwrap();
+
+    assert_eq!(
+        mass_status.fill_reports().into_values().flatten().count(),
+        0
+    );
+    assert_eq!(queries.len(), 2);
+    assert_eq!(first_end - first_start, 24 * 60 * 60 * 1_000);
+    assert_eq!(second_start, first_end + 1);
 }
 
 #[rstest]
@@ -2365,10 +2838,18 @@ fn add_limit_order_to_cache(
     cache: &Rc<RefCell<Cache>>,
     client_order_id: ClientOrderId,
 ) -> OrderAny {
+    add_limit_order_for_instrument_to_cache(cache, test_instrument_id(), client_order_id)
+}
+
+fn add_limit_order_for_instrument_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderAny {
     let order = LimitOrder::new(
         test_trader_id(),
         test_strategy_id(),
-        test_instrument_id(),
+        instrument_id,
         client_order_id,
         OrderSide::Buy,
         Quantity::from("0.001"),
@@ -2399,6 +2880,32 @@ fn add_limit_order_to_cache(
         .add_order(order_any.clone(), None, None, false)
         .unwrap();
     order_any
+}
+
+fn add_open_order_to_cache(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: VenueOrderId,
+) {
+    add_limit_order_for_instrument_to_cache(cache, instrument_id, client_order_id);
+    let accepted = OrderAccepted::new(
+        test_trader_id(),
+        test_strategy_id(),
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        nautilus_core::UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+    );
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
 }
 
 fn add_spot_oco_orders_to_cache(cache: &Rc<RefCell<Cache>>) -> Vec<OrderAny> {

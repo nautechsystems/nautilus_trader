@@ -18,7 +18,7 @@
 use std::{
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -109,6 +109,8 @@ pub struct LighterDataClient {
     instrument_statuses: Arc<DashMap<InstrumentId, LighterMarketStatus>>,
     instrument_status_subscriptions: Arc<DashSet<InstrumentId>>,
     market_stats_subscriptions: Arc<DashMap<InstrumentId, MarketStatsSubscription>>,
+    market_stats_subscription_generations: Arc<DashMap<InstrumentId, u64>>,
+    next_market_stats_subscription_generation: AtomicU64,
 }
 
 impl LighterDataClient {
@@ -172,6 +174,8 @@ impl LighterDataClient {
             instrument_statuses: Arc::new(DashMap::new()),
             instrument_status_subscriptions: Arc::new(DashSet::new()),
             market_stats_subscriptions: Arc::new(DashMap::new()),
+            market_stats_subscription_generations: Arc::new(DashMap::new()),
+            next_market_stats_subscription_generation: AtomicU64::new(1),
         })
     }
 
@@ -194,6 +198,7 @@ impl LighterDataClient {
             config.environment,
             registry,
             config.transport_backend,
+            config.ws_timeout_secs,
             config.proxy_url.clone(),
         )
     }
@@ -327,6 +332,17 @@ impl LighterDataClient {
             .connect()
             .await
             .context("failed to connect to Lighter WebSocket")?;
+
+        if let Err(e) = ws_client.wait_until_active().await {
+            if let Err(disconnect_error) = ws_client.disconnect().await {
+                log::warn!(
+                    "Error disconnecting Lighter WebSocket after readiness failure: {disconnect_error}",
+                );
+            }
+            return Err(
+                anyhow::Error::new(e).context("Lighter WebSocket did not reach active state")
+            );
+        }
 
         if let Some(handle) = ws_client.take_task_handle() {
             self.ws_client.set_task_handle(handle);
@@ -465,7 +481,15 @@ impl LighterDataClient {
                         break;
                     }
                     () = &mut sleep => {
-                        match http_client.request_instruments_with_status().await {
+                        let Some(result) = await_instrument_refresh(
+                            &cancellation,
+                            http_client.request_instruments_with_status(),
+                        ).await else {
+                            log::debug!("Lighter instrument refresh task cancelled");
+                            break;
+                        };
+
+                        match result {
                             Ok(items) => {
                                 instruments_cache.rcu(|m| {
                                     for (instrument, _) in &items {
@@ -534,6 +558,7 @@ impl LighterDataClient {
 
     fn clear_market_stats_subscriptions(&self) {
         self.market_stats_subscriptions.clear();
+        self.market_stats_subscription_generations.clear();
     }
 
     fn clear_instrument_status_subscriptions(&self) {
@@ -561,6 +586,15 @@ impl LighterDataClient {
         kind: MarketStatsKind,
         label: &'static str,
     ) {
+        let generation_entry = self
+            .market_stats_subscription_generations
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                self.next_market_stats_subscription_generation
+                    .fetch_add(1, Ordering::Relaxed)
+            });
+        let generation = *generation_entry;
+
         let subscribe_channel = match self.market_stats_subscriptions.entry(instrument_id) {
             Entry::Occupied(mut entry) => {
                 let subscription = entry.get_mut();
@@ -573,15 +607,24 @@ impl LighterDataClient {
                 Some(channel)
             }
         };
+        drop(generation_entry);
 
         if let Some(channel) = subscribe_channel {
             let ws = self.ws_client.clone();
             let subscriptions = Arc::clone(&self.market_stats_subscriptions);
+            let generations = Arc::clone(&self.market_stats_subscription_generations);
             self.spawn_task(async move {
                 if let Err(e) = subscribe_market_stats_channel(ws, channel).await {
                     log::error!("Failed to subscribe to Lighter {label}: {e:?}");
-                    // Roll back the latched flag so a later subscribe retries
-                    rollback_market_stats_flag(&subscriptions, instrument_id, kind);
+
+                    // The underlying channel never became active, so clear every request
+                    // piggybacked on this generation. A newer replacement is left intact.
+                    rollback_market_stats_subscription(
+                        &subscriptions,
+                        &generations,
+                        instrument_id,
+                        generation,
+                    );
                 }
             });
         }
@@ -594,10 +637,16 @@ impl LighterDataClient {
         label: &'static str,
     ) {
         // Hold the shard lock across removal so a concurrent activate cannot re-add an erased flag
+        let generation = self
+            .market_stats_subscription_generations
+            .entry(instrument_id);
         let unsubscribe_channel = match self.market_stats_subscriptions.entry(instrument_id) {
             Entry::Occupied(mut entry) => {
                 entry.get_mut().flags.remove(kind);
                 if entry.get().flags.is_empty() {
+                    if let Entry::Occupied(generation) = generation {
+                        generation.remove();
+                    }
                     Some(entry.remove().channel)
                 } else {
                     None
@@ -666,6 +715,17 @@ impl LighterDataClient {
     }
 }
 
+async fn await_instrument_refresh<T>(
+    cancellation: &CancellationToken,
+    request: impl std::future::Future<Output = T>,
+) -> Option<T> {
+    tokio::select! {
+        biased;
+        () = cancellation.cancelled() => None,
+        result = request => (!cancellation.is_cancelled()).then_some(result),
+    }
+}
+
 fn cache_lighter_instrument_status(
     statuses: &DashMap<InstrumentId, LighterMarketStatus>,
     instrument_id: InstrumentId,
@@ -674,18 +734,22 @@ fn cache_lighter_instrument_status(
     statuses.insert(instrument_id, status);
 }
 
-// Clears the flag latched on subscribe failure so a later subscribe re-subscribes
-fn rollback_market_stats_flag(
+fn rollback_market_stats_subscription(
     subscriptions: &DashMap<InstrumentId, MarketStatsSubscription>,
+    generations: &DashMap<InstrumentId, u64>,
     instrument_id: InstrumentId,
-    kind: MarketStatsKind,
+    failed_generation: u64,
 ) {
-    if let Entry::Occupied(mut entry) = subscriptions.entry(instrument_id) {
-        entry.get_mut().flags.remove(kind);
-        if entry.get().flags.is_empty() {
-            entry.remove();
-        }
+    let Entry::Occupied(generation) = generations.entry(instrument_id) else {
+        return;
+    };
+
+    if *generation.get() != failed_generation {
+        return;
     }
+
+    subscriptions.remove(&instrument_id);
+    generation.remove();
 }
 
 fn emit_lighter_instrument_status_if_subscribed(
@@ -1918,6 +1982,11 @@ mod tests {
             LighterWsChannel::MarketStats(LighterMarketSelection::Market(0)),
         ));
         drop(subscription);
+        assert!(
+            client
+                .market_stats_subscription_generations
+                .contains_key(&instrument_id),
+        );
 
         DataClient::unsubscribe_mark_prices(
             &mut client,
@@ -1987,6 +2056,11 @@ mod tests {
             !client
                 .market_stats_subscriptions
                 .contains_key(&instrument_id)
+        );
+        assert!(
+            !client
+                .market_stats_subscription_generations
+                .contains_key(&instrument_id),
         );
     }
 
@@ -2650,6 +2724,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_await_instrument_refresh_drops_result_when_request_cancels() {
+        let cancellation = CancellationToken::new();
+        let request_cancellation = cancellation.clone();
+
+        let result = await_instrument_refresh(&cancellation, async move {
+            request_cancellation.cancel();
+            42
+        })
+        .await;
+
+        assert_eq!(result, None);
+    }
+
+    #[tokio::test]
     async fn test_reset_aborts_registered_tasks_before_rotating_token() {
         let (mut client, _receiver) = create_data_client_with_receiver_for_test();
         let old_token = client.cancellation_token.clone();
@@ -2779,8 +2867,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_rollback_market_stats_flag_clears_only_triggering_kind() {
+    fn test_rollback_market_stats_subscription_clears_piggybacked_flags() {
         let subscriptions = DashMap::new();
+        let generations = DashMap::new();
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
         subscriptions.insert(
             instrument_id,
@@ -2793,28 +2882,42 @@ mod tests {
                 },
             },
         );
+        generations.insert(instrument_id, 7);
 
-        rollback_market_stats_flag(&subscriptions, instrument_id, MarketStatsKind::MarkPrice);
+        rollback_market_stats_subscription(&subscriptions, &generations, instrument_id, 7);
+
+        assert!(
+            !subscriptions.contains_key(&instrument_id),
+            "all flags share the failed underlying channel",
+        );
+        assert!(!generations.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn test_rollback_market_stats_subscription_keeps_replacement_generation() {
+        let subscriptions = DashMap::new();
+        let generations = DashMap::new();
+        let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), *LIGHTER_VENUE);
+        let replacement = MarketStatsSubscription {
+            channel: LighterWsChannel::MarketStats(LighterMarketSelection::Market(0)),
+            flags: MarketStatsFlags {
+                funding_rate: true,
+                ..Default::default()
+            },
+        };
+        subscriptions.insert(instrument_id, replacement.clone());
+        generations.insert(instrument_id, 8);
+
+        rollback_market_stats_subscription(&subscriptions, &generations, instrument_id, 7);
+
         assert_eq!(
             subscriptions
                 .get(&instrument_id)
-                .expect("entry retained while a flag remains")
+                .expect("replacement retained")
                 .flags,
-            MarketStatsFlags {
-                index_price: true,
-                ..Default::default()
-            },
+            replacement.flags,
         );
-
-        rollback_market_stats_flag(&subscriptions, instrument_id, MarketStatsKind::IndexPrice);
-        assert!(
-            !subscriptions.contains_key(&instrument_id),
-            "entry removed once the last flag is cleared",
-        );
-
-        // Rolling back an absent entry is a no-op
-        rollback_market_stats_flag(&subscriptions, instrument_id, MarketStatsKind::MarkPrice);
-        assert!(!subscriptions.contains_key(&instrument_id));
+        assert_eq!(generations.get(&instrument_id).map(|value| *value), Some(8));
     }
 
     // Tests that observe `has_credentials()` semantics under controlled env

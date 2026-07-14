@@ -64,6 +64,22 @@ pub enum DeriveWsError {
     #[error("auth error: {0}")]
     Auth(#[from] AuthError),
 
+    /// The WebSocket session did not authenticate before a request could proceed.
+    #[error("authentication failed for `{operation}`: {reason}")]
+    Authentication {
+        /// Operation attempting or awaiting authentication.
+        operation: String,
+        /// Authentication failure detail.
+        reason: String,
+    },
+
+    /// One or more channels were rejected in a subscribe result.
+    #[error("subscription failed: {details}")]
+    Subscription {
+        /// Per-channel failure detail returned by the venue.
+        details: String,
+    },
+
     /// Private operation invoked without credentials configured on the client.
     #[error("missing credentials for `{operation}`")]
     MissingCredentials {
@@ -115,5 +131,16 @@ mod tests {
             operation: "public/login".to_string(),
         };
         assert!(err.to_string().contains("public/login"));
+    }
+
+    #[rstest]
+    fn test_authentication_error_names_operation_and_reason() {
+        let err = DeriveWsError::Authentication {
+            operation: "private/order".to_string(),
+            reason: "session recovery failed".to_string(),
+        };
+
+        assert!(err.to_string().contains("private/order"));
+        assert!(err.to_string().contains("session recovery failed"));
     }
 }

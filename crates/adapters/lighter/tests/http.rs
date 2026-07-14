@@ -602,6 +602,30 @@ async fn raw_client_retries_transient_5xx_then_succeeds() {
 }
 
 #[tokio::test]
+async fn raw_client_returns_persistent_503_after_retry_exhaustion() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let state = TransientFailureState {
+        calls: calls.clone(),
+        fail_until: u32::MAX,
+        fail_status: StatusCode::SERVICE_UNAVAILABLE,
+        success_body: HTTP_ORDER_BOOKS,
+    };
+    let base_url = spawn_server(
+        Router::new()
+            .route("/api/v1/orderBooks", get(handle_transient_failure))
+            .with_state(state),
+    )
+    .await;
+    let client = raw_client(base_url);
+    let query = LighterOrderBooksQueryBuilder::default().build().unwrap();
+
+    let error = client.get_order_books(&query).await.unwrap_err();
+
+    assert!(matches!(error, LighterHttpError::Http { status: 503, .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
 async fn raw_client_retries_429_rate_limit_then_succeeds() {
     let calls = Arc::new(AtomicUsize::new(0));
     let state = TransientFailureState {
@@ -875,6 +899,34 @@ async fn domain_client_request_bars_fills_market_id_and_parses_bars() {
     assert_eq!(bars[0].close, Price::from("2361.31"));
     assert_eq!(bars[0].volume, Quantity::from("1.2345"));
     assert_eq!(bars[0].ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+}
+
+#[tokio::test]
+async fn domain_client_request_bars_skips_gap_candle_and_keeps_valid_rows() {
+    let base_url = spawn_server(
+        Router::new()
+            .route("/api/v1/orderBookDetails", get(handle_order_book_details))
+            .route("/api/v1/candles", get(handle_domain_candles_with_gap)),
+    )
+    .await;
+    let client =
+        LighterHttpClient::new(LighterEnvironment::Mainnet, Some(base_url), 10, None).unwrap();
+    let instrument = create_test_instrument();
+    let bar_type = one_minute_bar_type(instrument.id());
+    let start = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
+    let end = Utc.timestamp_millis_opt(1_700_000_120_000).unwrap();
+
+    client
+        .get_order_book_details(&LighterOrderBookDetailsQuery::default())
+        .await
+        .unwrap();
+    let bars = client
+        .request_bars(&instrument, bar_type, Some(start), Some(end), Some(3))
+        .await
+        .unwrap();
+
+    assert_eq!(bars.len(), 2);
+    assert!(bars.iter().all(|bar| bar.open > Price::from("0.00")));
 }
 
 #[tokio::test]
@@ -1538,6 +1590,23 @@ async fn handle_domain_candles(Query(query): Query<LighterCandlesQuery>) -> Resp
     assert_eq!(query.count_back, i64::from(LIGHTER_CANDLES_MAX_LIMIT));
     assert_eq!(query.set_timestamp_to_end, Some(false));
     (StatusCode::OK, HTTP_CANDLES).into_response()
+}
+
+async fn handle_domain_candles_with_gap(Query(query): Query<LighterCandlesQuery>) -> Response {
+    assert_eq!(query.market_id, 0);
+    assert_eq!(query.resolution, LighterCandleResolution::OneMinute);
+    assert_eq!(query.start_timestamp, 1_700_000_000_000);
+    assert_eq!(query.end_timestamp, 1_700_000_120_000);
+    assert_eq!(query.count_back, i64::from(LIGHTER_CANDLES_MAX_LIMIT));
+    assert_eq!(query.set_timestamp_to_end, Some(false));
+
+    let mut response: serde_json::Value = serde_json::from_str(HTTP_CANDLES).unwrap();
+    let candles = response["c"].as_array_mut().unwrap();
+    let mut gap = candles[0].clone();
+    gap.as_object_mut().unwrap().remove("o");
+    candles.insert(1, gap);
+
+    (StatusCode::OK, response.to_string()).into_response()
 }
 
 async fn handle_incomplete_candles(

@@ -734,18 +734,7 @@ pub fn parse_user_order_msg(
     };
 
     // Map Deribit order type to Nautilus
-    let order_type = match msg.order_type.as_str() {
-        "limit" => OrderType::Limit,
-        "market" => OrderType::Market,
-        "stop_limit" => OrderType::StopLimit,
-        "stop_market" => OrderType::StopMarket,
-        "take_limit" => OrderType::LimitIfTouched,
-        "take_market" => OrderType::MarketIfTouched,
-        other => {
-            log::warn!("Unknown Deribit order_type '{other}', defaulting to Limit");
-            OrderType::Limit
-        }
-    };
+    let order_type = parse_deribit_order_type(&msg.order_type);
 
     // Deribit supports: good_til_cancelled, good_til_day, fill_or_kill, immediate_or_cancel
     let time_in_force = match msg.time_in_force.as_str() {
@@ -855,6 +844,22 @@ pub fn parse_user_order_msg(
     }
 
     Ok(report)
+}
+
+#[must_use]
+pub(crate) fn parse_deribit_order_type(order_type: &str) -> OrderType {
+    match order_type {
+        "limit" => OrderType::Limit,
+        "market" => OrderType::Market,
+        "stop_limit" => OrderType::StopLimit,
+        "stop_market" => OrderType::StopMarket,
+        "take_limit" => OrderType::LimitIfTouched,
+        "take_market" => OrderType::MarketIfTouched,
+        other => {
+            log::warn!("Unknown Deribit order_type '{other}', defaulting to Limit");
+            OrderType::Limit
+        }
+    }
 }
 
 /// Parses a Deribit user trade message into a Nautilus `FillReport`.
@@ -1025,12 +1030,31 @@ pub fn parse_order_accepted(
     strategy_id: StrategyId,
     ts_init: UnixNanos,
 ) -> OrderAccepted {
+    let client_order_id =
+        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    parse_order_accepted_with_client_order_id(
+        msg,
+        instrument,
+        account_id,
+        trader_id,
+        strategy_id,
+        client_order_id,
+        ts_init,
+    )
+}
+
+#[must_use]
+pub(crate) fn parse_order_accepted_with_client_order_id(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    ts_init: UnixNanos,
+) -> OrderAccepted {
     let instrument_id = instrument.id();
     let venue_order_id = VenueOrderId::new(&msg.order_id);
-    let client_order_id = extract_client_order_id(msg).unwrap_or_else(|| {
-        // Generate a client order ID from the venue order ID if not provided
-        ClientOrderId::new(&msg.order_id)
-    });
     let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
 
     OrderAccepted::new(
@@ -1059,10 +1083,31 @@ pub fn parse_order_canceled(
     strategy_id: StrategyId,
     ts_init: UnixNanos,
 ) -> OrderCanceled {
-    let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&msg.order_id);
     let client_order_id =
         extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    parse_order_canceled_with_client_order_id(
+        msg,
+        instrument,
+        account_id,
+        trader_id,
+        strategy_id,
+        client_order_id,
+        ts_init,
+    )
+}
+
+#[must_use]
+pub(crate) fn parse_order_canceled_with_client_order_id(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    ts_init: UnixNanos,
+) -> OrderCanceled {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
     let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
 
     OrderCanceled::new(
@@ -1092,10 +1137,31 @@ pub fn parse_order_expired(
     strategy_id: StrategyId,
     ts_init: UnixNanos,
 ) -> OrderExpired {
-    let instrument_id = instrument.id();
-    let venue_order_id = VenueOrderId::new(&msg.order_id);
     let client_order_id =
         extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    parse_order_expired_with_client_order_id(
+        msg,
+        instrument,
+        account_id,
+        trader_id,
+        strategy_id,
+        client_order_id,
+        ts_init,
+    )
+}
+
+#[must_use]
+pub(crate) fn parse_order_expired_with_client_order_id(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    ts_init: UnixNanos,
+) -> OrderExpired {
+    let instrument_id = instrument.id();
+    let venue_order_id = VenueOrderId::new(&msg.order_id);
     let ts_event = UnixNanos::new(msg.last_update_timestamp * NANOSECONDS_IN_MILLISECOND);
 
     OrderExpired::new(
@@ -1124,13 +1190,34 @@ pub fn parse_order_updated(
     strategy_id: StrategyId,
     ts_init: UnixNanos,
 ) -> OrderUpdated {
+    let client_order_id =
+        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
+    parse_order_updated_with_client_order_id(
+        msg,
+        instrument,
+        account_id,
+        trader_id,
+        strategy_id,
+        client_order_id,
+        ts_init,
+    )
+}
+
+#[must_use]
+pub(crate) fn parse_order_updated_with_client_order_id(
+    msg: &DeribitOrderMsg,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    ts_init: UnixNanos,
+) -> OrderUpdated {
     let instrument_id = instrument.id();
     let price_precision = instrument.price_precision();
     let size_precision = instrument.size_precision();
 
     let venue_order_id = VenueOrderId::new(&msg.order_id);
-    let client_order_id =
-        extract_client_order_id(msg).unwrap_or_else(|| ClientOrderId::new(&msg.order_id));
     let quantity = Quantity::from_decimal_dp(msg.amount, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let price = msg
@@ -2038,6 +2125,7 @@ mod tests {
         );
         assert_eq!(order_msg.direction, "buy");
         assert_eq!(order_msg.order_state, "open");
+        assert!(order_msg.replaced);
         assert_eq!(order_msg.price, Some(dec!(3067.2))); // New price after edit
 
         // Test parse_order_updated

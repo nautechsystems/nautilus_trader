@@ -7,11 +7,19 @@
 //  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Debug, sync::Arc, time::Duration};
+use std::{
+    fmt::Debug,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use ahash::AHashMap;
 use anyhow::Context;
 use ibapi::{
+    ConnectivityStatus, Error, Notice,
     contracts::tick_types::TickType,
     market_data::{
         IgnoreSize, SmartDepth, TradingHours,
@@ -49,6 +57,7 @@ use crate::data::{
 enum StreamAction {
     Continue,
     Stop,
+    Resubscribe,
 }
 
 trait IntoSubscriptionTick {
@@ -67,9 +76,129 @@ impl IntoSubscriptionTick for SubscriptionItem<TickTypes> {
     }
 }
 
+const SUBSCRIPTION_DISCONNECTED_CODE: i32 = 10182;
 const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
 const HISTORICAL_BAR_RETRY_DELAY: Duration = Duration::from_secs(1);
 const IB_GENERIC_TICK_OPTION_OPEN_INTEREST: &str = "101";
+
+#[derive(Debug, Default)]
+pub(super) struct DataFarmConnectionState {
+    degraded_since_ns: Mutex<Option<UnixNanos>>,
+    last_recovery: Mutex<Option<(u64, UnixNanos)>>,
+    recovery_generation: AtomicU64,
+    recovery_notify: tokio::sync::Notify,
+}
+
+impl DataFarmConnectionState {
+    pub(super) fn handle_notice(&self, notice: &Notice, clock: &'static AtomicTime) {
+        if is_data_farm_broken_code(notice.code) {
+            self.mark_degraded(clock.get_time_ns());
+            tracing::debug!(
+                "IB data farm degraded by notice {} - {}; waiting for farm OK before resubscribe",
+                notice.code,
+                notice.message
+            );
+        } else if is_data_farm_ok_code(notice.code) && self.mark_ok() {
+            tracing::info!(
+                "IB data farm recovered by notice {} - {}; resubscribing data feeds",
+                notice.code,
+                notice.message
+            );
+        }
+    }
+
+    pub(super) fn mark_degraded(&self, degraded_since_ns: UnixNanos) {
+        let mut guard = self
+            .degraded_since_ns
+            .lock()
+            .expect("data farm state mutex poisoned");
+
+        if guard.is_none() {
+            *guard = Some(degraded_since_ns);
+        }
+    }
+
+    fn mark_ok(&self) -> bool {
+        let Some(degraded_since_ns) = self
+            .degraded_since_ns
+            .lock()
+            .expect("data farm state mutex poisoned")
+            .take()
+        else {
+            return false;
+        };
+
+        let generation = self.recovery_generation.fetch_add(1, Ordering::Relaxed) + 1;
+        *self
+            .last_recovery
+            .lock()
+            .expect("data farm recovery mutex poisoned") = Some((generation, degraded_since_ns));
+        self.recovery_notify.notify_waiters();
+        true
+    }
+
+    fn recovery_generation(&self) -> u64 {
+        self.recovery_generation.load(Ordering::Relaxed)
+    }
+
+    fn last_recovery_since_ns(&self, generation: u64) -> Option<UnixNanos> {
+        self.last_recovery
+            .lock()
+            .expect("data farm recovery mutex poisoned")
+            .and_then(|(recovery_generation, degraded_since_ns)| {
+                (recovery_generation == generation).then_some(degraded_since_ns)
+            })
+    }
+
+    async fn wait_for_recovery_after(&self, generation: u64) {
+        loop {
+            let notified = self.recovery_notify.notified();
+
+            if self.recovery_generation() != generation {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+fn is_data_farm_broken_code(code: i32) -> bool {
+    matches!(
+        ConnectivityStatus::from_code(code),
+        Some(ConnectivityStatus::Broken)
+    )
+}
+
+fn is_data_farm_ok_code(code: i32) -> bool {
+    matches!(
+        ConnectivityStatus::from_code(code),
+        Some(ConnectivityStatus::Ok)
+    )
+}
+
+fn is_subscription_disconnected_error(error: &Error) -> bool {
+    matches!(error, Error::Notice(notice) if notice.code == SUBSCRIPTION_DISCONNECTED_CODE)
+}
+
+fn earliest_data_loss_ns(first: Option<UnixNanos>, second: Option<UnixNanos>) -> Option<UnixNanos> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(first.min(second)),
+        (Some(first), None) => Some(first),
+        (None, Some(second)) => Some(second),
+        (None, None) => None,
+    }
+}
+
+async fn wait_for_data_farm_recovery_or_cancel(
+    data_farm_state: &DataFarmConnectionState,
+    generation: u64,
+    cancellation_token: &CancellationToken,
+) -> bool {
+    tokio::select! {
+        () = data_farm_state.wait_for_recovery_after(generation) => true,
+        () = cancellation_token.cancelled() => false,
+    }
+}
 
 pub(super) fn resolve_historical_bar_start_ns(
     start_ns: Option<UnixNanos>,
@@ -116,6 +245,29 @@ fn should_emit_historical_bar(bar: &Bar, start_ns: UnixNanos) -> bool {
     bar.ts_init >= start_ns
 }
 
+pub(super) async fn monitor_data_farm_notices(
+    client: Arc<ibapi::Client>,
+    data_farm_state: Arc<DataFarmConnectionState>,
+    clock: &'static AtomicTime,
+    cancellation_token: CancellationToken,
+) -> anyhow::Result<()> {
+    let mut notices = client
+        .notice_stream()
+        .context("Failed to subscribe to IB notice stream")?;
+
+    loop {
+        tokio::select! {
+            () = cancellation_token.cancelled() => return Ok(()),
+            notice = notices.next() => {
+                let Some(notice) = notice else {
+                    return Ok(());
+                };
+                data_farm_state.handle_notice(&notice, clock);
+            }
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_historical_bars_subscription(
     client: Arc<ibapi::Client>,
@@ -130,11 +282,13 @@ pub(super) async fn handle_historical_bars_subscription(
     handle_revised_bars: bool,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting historical bars subscription for {}", bar_type);
 
     let first_start_ns = resolve_historical_bar_start_ns(start_ns, clock.get_time_ns());
     let mut last_disconnection_ns = None;
+    let mut farm_generation = data_farm_state.recovery_generation();
     // Only stamp last_disconnection_ns after receiving real data, mirroring the Python
     // adapter's _had_ib_connection guard. historical_data_streaming() returns Ok after
     // sending the request; server-side errors arrive later via subscription.next(). A
@@ -240,6 +394,7 @@ pub(super) async fn handle_historical_bars_subscription(
                         }
                         Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::End { .. }))) => {}
                         Some(Ok(SubscriptionItem::Notice(notice))) => {
+                            data_farm_state.handle_notice(&notice, clock);
                             tracing::debug!(
                                 "IB historical bars notice for {}: {} - {}",
                                 bar_type,
@@ -248,6 +403,33 @@ pub(super) async fn handle_historical_bars_subscription(
                             );
                         }
                         Some(Err(e)) => {
+                            if is_subscription_disconnected_error(&e) {
+                                data_farm_state.mark_degraded(clock.get_time_ns());
+                                tracing::warn!(
+                                    "Historical bars subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                                    bar_type,
+                                    e
+                                );
+
+                                if !wait_for_data_farm_recovery_or_cancel(
+                                    &data_farm_state,
+                                    farm_generation,
+                                    &cancellation_token,
+                                )
+                                .await
+                                {
+                                    subscription.cancel().await;
+                                    return Ok(());
+                                }
+                                let recovered_generation = data_farm_state.recovery_generation();
+                                last_disconnection_ns = earliest_data_loss_ns(
+                                    last_disconnection_ns,
+                                    data_farm_state.last_recovery_since_ns(recovered_generation),
+                                );
+                                farm_generation = recovered_generation;
+                                break;
+                            }
+
                             tracing::warn!(
                                 "Historical bars subscription ended for {}: {:?}",
                                 bar_type,
@@ -278,6 +460,16 @@ pub(super) async fn handle_historical_bars_subscription(
                         }
                     }
                 }
+                () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                    let recovered_generation = data_farm_state.recovery_generation();
+                    last_disconnection_ns = earliest_data_loss_ns(
+                        last_disconnection_ns,
+                        data_farm_state.last_recovery_since_ns(recovered_generation),
+                    );
+                    farm_generation = recovered_generation;
+                    subscription.cancel().await;
+                    break;
+                }
             }
         }
 
@@ -304,31 +496,71 @@ pub(super) async fn handle_quote_subscription(
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     ignore_size_updates: bool,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting quote subscription for {}", instrument_id);
 
-    let mut subscription = client
-        .market_data(&contract)
-        .streaming()
-        .subscribe()
-        .await
-        .context("Failed to create market data subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
     loop {
-        tokio::select! {
-            () = cancellation_token.cancelled() => {
-                tracing::debug!("Quote subscription cancelled for {}", instrument_id);
-                subscription.cancel().await;
-                break;
-            }
-            tick_result = subscription.next() => {
-                let Some(tick_result) = tick_result else {
-                    tracing::debug!("Quote subscription stream ended for {}", instrument_id);
-                    break;
-                };
+        if cancellation_token.is_cancelled() {
+            break;
+        }
 
-                if matches!(
-                    process_quote_tick_result(
+        let mut subscription = client
+            .market_data(&contract)
+            .streaming()
+            .subscribe()
+            .await
+            .context("Failed to create market data subscription")?;
+
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    tracing::debug!("Quote subscription cancelled for {}", instrument_id);
+                    subscription.cancel().await;
+                    return Ok(());
+                }
+                () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                    farm_generation = data_farm_state.recovery_generation();
+                    subscription.cancel().await;
+                    break;
+                }
+                tick_result = subscription.next() => {
+                    let Some(tick_result) = tick_result else {
+                        tracing::debug!("Quote subscription stream ended for {}", instrument_id);
+                        break;
+                    };
+
+                    if let Err(e) = &tick_result
+                        && is_subscription_disconnected_error(e)
+                    {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Quote subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            &data_farm_state,
+                            farm_generation,
+                            &cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(());
+                        }
+                        farm_generation = data_farm_state.recovery_generation();
+                        break;
+                    }
+
+                    if let Ok(SubscriptionItem::Notice(notice)) = &tick_result {
+                        data_farm_state.handle_notice(notice, clock);
+                    }
+
+                    let action = process_quote_tick_result(
                         tick_result,
                         instrument_id,
                         price_precision,
@@ -338,10 +570,17 @@ pub(super) async fn handle_quote_subscription(
                         clock,
                         ignore_size_updates,
                     )
-                    .await?,
-                    StreamAction::Stop
-                ) {
-                    break;
+                    .await?;
+
+                    match action {
+                        StreamAction::Continue => {}
+                        StreamAction::Stop => return Ok(()),
+                        StreamAction::Resubscribe => {
+                            farm_generation = data_farm_state.recovery_generation();
+                            subscription.cancel().await;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -359,42 +598,89 @@ pub(super) async fn handle_option_greeks_subscription(
     option_greeks_cache: Arc<tokio::sync::Mutex<OptionGreeksCache>>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting option greeks subscription for {}", instrument_id);
 
-    let mut subscription = client
-        .market_data(&contract)
-        .generic_ticks(&[IB_GENERIC_TICK_OPTION_OPEN_INTEREST])
-        .streaming()
-        .subscribe()
-        .await
-        .context("Failed to create option greeks market data subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
     loop {
-        tokio::select! {
-            () = cancellation_token.cancelled() => {
-                tracing::debug!("Option greeks subscription cancelled for {}", instrument_id);
-                subscription.cancel().await;
-                break;
-            }
-            tick_result = subscription.next() => {
-                let Some(tick_result) = tick_result else {
-                    tracing::debug!("Option greeks subscription stream ended for {}", instrument_id);
-                    break;
-                };
+        if cancellation_token.is_cancelled() {
+            break;
+        }
 
-                if matches!(
-                    process_option_greeks_tick_result(
+        let mut subscription = client
+            .market_data(&contract)
+            .generic_ticks(&[IB_GENERIC_TICK_OPTION_OPEN_INTEREST])
+            .streaming()
+            .subscribe()
+            .await
+            .context("Failed to create option greeks market data subscription")?;
+
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    tracing::debug!("Option greeks subscription cancelled for {}", instrument_id);
+                    subscription.cancel().await;
+                    return Ok(());
+                }
+                () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                    farm_generation = data_farm_state.recovery_generation();
+                    subscription.cancel().await;
+                    break;
+                }
+                tick_result = subscription.next() => {
+                    let Some(tick_result) = tick_result else {
+                        tracing::debug!("Option greeks subscription stream ended for {}", instrument_id);
+                        break;
+                    };
+
+                    if let Err(e) = &tick_result
+                        && is_subscription_disconnected_error(e)
+                    {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Option greeks subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            &data_farm_state,
+                            farm_generation,
+                            &cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(());
+                        }
+                        farm_generation = data_farm_state.recovery_generation();
+                        break;
+                    }
+
+                    if let Ok(SubscriptionItem::Notice(notice)) = &tick_result {
+                        data_farm_state.handle_notice(notice, clock);
+                    }
+
+                    let action = process_option_greeks_tick_result(
                         tick_result,
                         instrument_id,
                         &data_sender,
                         &option_greeks_cache,
                         clock,
                     )
-                    .await?,
-                    StreamAction::Stop
-                ) {
-                    break;
+                    .await?;
+
+                    match action {
+                        StreamAction::Continue => {}
+                        StreamAction::Stop => return Ok(()),
+                        StreamAction::Resubscribe => {
+                            farm_generation = data_farm_state.recovery_generation();
+                            subscription.cancel().await;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -414,31 +700,71 @@ pub(super) async fn handle_index_price_subscription(
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting index price subscription for {}", instrument_id);
 
-    let mut subscription = client
-        .market_data(&contract)
-        .streaming()
-        .subscribe()
-        .await
-        .context("Failed to create index market data subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
     loop {
-        tokio::select! {
-            () = cancellation_token.cancelled() => {
-                tracing::debug!("Index price subscription cancelled for {}", instrument_id);
-                subscription.cancel().await;
-                break;
-            }
-            tick_result = subscription.next() => {
-                let Some(tick_result) = tick_result else {
-                    tracing::debug!("Index price subscription stream ended for {}", instrument_id);
-                    break;
-                };
+        if cancellation_token.is_cancelled() {
+            break;
+        }
 
-                if matches!(
-                    process_index_price_tick_result(
+        let mut subscription = client
+            .market_data(&contract)
+            .streaming()
+            .subscribe()
+            .await
+            .context("Failed to create index market data subscription")?;
+
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    tracing::debug!("Index price subscription cancelled for {}", instrument_id);
+                    subscription.cancel().await;
+                    return Ok(());
+                }
+                () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                    farm_generation = data_farm_state.recovery_generation();
+                    subscription.cancel().await;
+                    break;
+                }
+                tick_result = subscription.next() => {
+                    let Some(tick_result) = tick_result else {
+                        tracing::debug!("Index price subscription stream ended for {}", instrument_id);
+                        break;
+                    };
+
+                    if let Err(e) = &tick_result
+                        && is_subscription_disconnected_error(e)
+                    {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Index price subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            &data_farm_state,
+                            farm_generation,
+                            &cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(());
+                        }
+                        farm_generation = data_farm_state.recovery_generation();
+                        break;
+                    }
+
+                    if let Ok(SubscriptionItem::Notice(notice)) = &tick_result {
+                        data_farm_state.handle_notice(notice, clock);
+                    }
+
+                    let action = process_index_price_tick_result(
                         tick_result,
                         instrument_id,
                         price_precision,
@@ -446,10 +772,17 @@ pub(super) async fn handle_index_price_subscription(
                         &data_sender,
                         clock,
                     )
-                    .await?,
-                    StreamAction::Stop
-                ) {
-                    break;
+                    .await?;
+
+                    match action {
+                        StreamAction::Continue => {}
+                        StreamAction::Stop => return Ok(()),
+                        StreamAction::Resubscribe => {
+                            farm_generation = data_farm_state.recovery_generation();
+                            subscription.cancel().await;
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -469,69 +802,105 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     price_magnifier: f64,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!(
         "Starting tick-by-tick quote subscription for {}",
         instrument_id
     );
 
-    let mut subscription = client
-        .tick_by_tick(&contract, 0)
-        .bid_ask(IgnoreSize::No)
-        .await
-        .context("Failed to create tick-by-tick bid/ask subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
     loop {
-        tokio::select! {
-            () = cancellation_token.cancelled() => {
-                tracing::debug!("Tick-by-tick quote subscription cancelled for {}", instrument_id);
-                subscription.cancel().await;
-                break;
-            }
-            tick_result = subscription.next() => {
-                match tick_result {
-                    Some(Ok(SubscriptionItem::Data(bid_ask))) => {
-                        let ts_event = ib_timestamp_to_unix_nanos(&bid_ask.time);
-                        let ts_init = clock.get_time_ns();
+        if cancellation_token.is_cancelled() {
+            break;
+        }
 
-                        let bid_price = bid_ask.bid_price * price_magnifier;
-                        let ask_price = bid_ask.ask_price * price_magnifier;
+        let mut subscription = client
+            .tick_by_tick(&contract, 0)
+            .bid_ask(IgnoreSize::No)
+            .await
+            .context("Failed to create tick-by-tick bid/ask subscription")?;
 
-                        match parse_quote_tick(
-                            instrument_id,
-                            Some(bid_price),
-                            Some(ask_price),
-                            Some(bid_ask.bid_size),
-                            Some(bid_ask.ask_size),
-                            price_precision,
-                            size_precision,
-                            ts_event,
-                            ts_init,
-                        ) {
-                            Ok(quote_tick) => {
-                                if data_sender
-                                    .send(DataEvent::Data(Data::Quote(quote_tick)))
-                                    .is_err()
-                                {
-                                    break;
+        loop {
+            tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    tracing::debug!("Tick-by-tick quote subscription cancelled for {}", instrument_id);
+                    subscription.cancel().await;
+                    return Ok(());
+                }
+                () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                    farm_generation = data_farm_state.recovery_generation();
+                    subscription.cancel().await;
+                    break;
+                }
+                tick_result = subscription.next() => {
+                    match tick_result {
+                        Some(Ok(SubscriptionItem::Data(bid_ask))) => {
+                            let ts_event = ib_timestamp_to_unix_nanos(&bid_ask.time);
+                            let ts_init = clock.get_time_ns();
+
+                            let bid_price = bid_ask.bid_price * price_magnifier;
+                            let ask_price = bid_ask.ask_price * price_magnifier;
+
+                            match parse_quote_tick(
+                                instrument_id,
+                                Some(bid_price),
+                                Some(ask_price),
+                                Some(bid_ask.bid_size),
+                                Some(bid_ask.ask_size),
+                                price_precision,
+                                size_precision,
+                                ts_event,
+                                ts_init,
+                            ) {
+                                Ok(quote_tick) => {
+                                    if data_sender
+                                        .send(DataEvent::Data(Data::Quote(quote_tick)))
+                                        .is_err()
+                                    {
+                                        return Ok(());
+                                    }
                                 }
+                                Err(e) => tracing::warn!("Failed to parse quote tick: {:?}", e),
                             }
-                            Err(e) => tracing::warn!("Failed to parse quote tick: {:?}", e),
                         }
+                        Some(Ok(SubscriptionItem::Notice(notice))) => {
+                            data_farm_state.handle_notice(&notice, clock);
+                            tracing::debug!(
+                                "IB tick-by-tick quote notice for {}: {} - {}",
+                                instrument_id,
+                                notice.code,
+                                notice.message
+                            );
+                        }
+                        Some(Err(e)) if is_subscription_disconnected_error(&e) => {
+                            data_farm_state.mark_degraded(clock.get_time_ns());
+                            tracing::warn!(
+                                "Tick-by-tick quote subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                                instrument_id,
+                                e
+                            );
+
+                            if !wait_for_data_farm_recovery_or_cancel(
+                                &data_farm_state,
+                                farm_generation,
+                                &cancellation_token,
+                            )
+                            .await
+                            {
+                                subscription.cancel().await;
+                                return Ok(());
+                            }
+                            farm_generation = data_farm_state.recovery_generation();
+                            break;
+                        }
+                        Some(Err(e)) => {
+                            tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
+                            anyhow::bail!("Subscription error: {e:?}");
+                        }
+                        None => break,
                     }
-                    Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        tracing::debug!(
-                            "IB tick-by-tick quote notice for {}: {} - {}",
-                            instrument_id,
-                            notice.code,
-                            notice.message
-                        );
-                    }
-                    Some(Err(e)) => {
-                        tracing::error!("Subscription error for {}: {:?}", instrument_id, e);
-                        anyhow::bail!("Subscription error: {e:?}");
-                    }
-                    None => break,
                 }
             }
         }
@@ -550,25 +919,41 @@ pub(super) async fn handle_trade_subscription(
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting trade subscription for {}", instrument_id);
 
-    let mut subscription = client
-        .tick_by_tick(&contract, 0)
-        .all_last()
-        .await
-        .context("Failed to create tick-by-tick trade subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
-    process_trade_stream(
-        &mut subscription,
-        instrument_id,
-        price_precision,
-        size_precision,
-        &data_sender,
-        clock,
-        &cancellation_token,
-    )
-    .await?;
+    loop {
+        if cancellation_token.is_cancelled() {
+            break;
+        }
+
+        let mut subscription = client
+            .tick_by_tick(&contract, 0)
+            .all_last()
+            .await
+            .context("Failed to create tick-by-tick trade subscription")?;
+
+        let action = process_trade_stream(
+            &mut subscription,
+            instrument_id,
+            price_precision,
+            size_precision,
+            &data_sender,
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            farm_generation,
+        )
+        .await?;
+
+        match action {
+            StreamAction::Continue | StreamAction::Stop => break,
+            StreamAction::Resubscribe => farm_generation = data_farm_state.recovery_generation(),
+        }
+    }
 
     Ok(())
 }
@@ -584,12 +969,13 @@ pub(super) async fn handle_realtime_bars_subscription(
     price_precision: u8,
     size_precision: u8,
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
-    _clock: &'static AtomicTime,
+    clock: &'static AtomicTime,
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
     bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
     handle_revised_bars: bool,
     use_rth: bool,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting bars subscription for {}", bar_type);
     let trading_hours = if use_rth {
@@ -598,27 +984,43 @@ pub(super) async fn handle_realtime_bars_subscription(
         TradingHours::Extended
     };
 
-    let mut subscription = client
-        .realtime_bars(&contract)
-        .what_to_show(what_to_show)
-        .trading_hours(trading_hours)
-        .subscribe()
-        .await
-        .context("Failed to create realtime bars subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
-    process_realtime_bar_stream(
-        &mut subscription,
-        bar_type,
-        &bar_type_str,
-        price_precision,
-        size_precision,
-        &data_sender,
-        &last_bars,
-        &bar_timeout_tasks,
-        handle_revised_bars,
-        &cancellation_token,
-    )
-    .await?;
+    loop {
+        if cancellation_token.is_cancelled() {
+            break;
+        }
+
+        let mut subscription = client
+            .realtime_bars(&contract)
+            .what_to_show(what_to_show)
+            .trading_hours(trading_hours)
+            .subscribe()
+            .await
+            .context("Failed to create realtime bars subscription")?;
+
+        let action = process_realtime_bar_stream(
+            &mut subscription,
+            bar_type,
+            &bar_type_str,
+            price_precision,
+            size_precision,
+            &data_sender,
+            &last_bars,
+            &bar_timeout_tasks,
+            handle_revised_bars,
+            &cancellation_token,
+            &data_farm_state,
+            farm_generation,
+            clock,
+        )
+        .await?;
+
+        match action {
+            StreamAction::Continue | StreamAction::Stop => break,
+            StreamAction::Resubscribe => farm_generation = data_farm_state.recovery_generation(),
+        }
+    }
 
     Ok(())
 }
@@ -645,13 +1047,19 @@ async fn process_trade_stream(
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: &CancellationToken,
-) -> anyhow::Result<()> {
+    data_farm_state: &DataFarmConnectionState,
+    farm_generation: u64,
+) -> anyhow::Result<StreamAction> {
     loop {
         tokio::select! {
             () = cancellation_token.cancelled() => {
                 tracing::debug!("Trade subscription cancelled for {}", instrument_id);
                 subscription.cancel().await;
-                break;
+                return Ok(StreamAction::Stop);
+            }
+            () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                subscription.cancel().await;
+                return Ok(StreamAction::Resubscribe);
             }
             tick_result = subscription.next() => {
                 match tick_result {
@@ -671,13 +1079,14 @@ async fn process_trade_stream(
                         ) {
                             Ok(trade_tick) => {
                                 if data_sender.send(DataEvent::Data(Data::Trade(trade_tick))).is_err() {
-                                    break;
+                                    return Ok(StreamAction::Stop);
                                 }
                             }
                             Err(e) => tracing::warn!("Failed to parse trade tick: {:?}", e),
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        data_farm_state.handle_notice(&notice, clock);
                         tracing::debug!(
                             "IB trade notice for {}: {} - {}",
                             instrument_id,
@@ -685,17 +1094,35 @@ async fn process_trade_stream(
                             notice.message
                         );
                     }
+                    Some(Err(e)) if is_subscription_disconnected_error(&e) => {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Trade subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            data_farm_state,
+                            farm_generation,
+                            cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(StreamAction::Stop);
+                        }
+                        return Ok(StreamAction::Resubscribe);
+                    }
                     Some(Err(e)) => {
                         tracing::error!("Trade subscription error for {}: {:?}", instrument_id, e);
                         anyhow::bail!("Subscription error: {e:?}");
                     }
-                    None => break,
+                    None => return Ok(StreamAction::Stop),
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -710,13 +1137,20 @@ async fn process_realtime_bar_stream(
     bar_timeout_tasks: &Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
     handle_revised_bars: bool,
     cancellation_token: &CancellationToken,
-) -> anyhow::Result<()> {
+    data_farm_state: &DataFarmConnectionState,
+    farm_generation: u64,
+    clock: &'static AtomicTime,
+) -> anyhow::Result<StreamAction> {
     loop {
         tokio::select! {
             () = cancellation_token.cancelled() => {
                 tracing::debug!("Bars subscription cancelled for {}", bar_type);
                 subscription.cancel().await;
-                break;
+                return Ok(StreamAction::Stop);
+            }
+            () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                subscription.cancel().await;
+                return Ok(StreamAction::Resubscribe);
             }
             bar_result = subscription.next() => {
                 match bar_result {
@@ -738,7 +1172,7 @@ async fn process_realtime_bar_stream(
                         )?;
 
                         if data_sender.send(DataEvent::Data(Data::Bar(parsed_bar))).is_err() {
-                            break;
+                            return Ok(StreamAction::Stop);
                         }
 
                         if handle_revised_bars {
@@ -752,6 +1186,7 @@ async fn process_realtime_bar_stream(
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        data_farm_state.handle_notice(&notice, clock);
                         tracing::debug!(
                             "IB realtime bar notice for {}: {} - {}",
                             bar_type,
@@ -759,17 +1194,35 @@ async fn process_realtime_bar_stream(
                             notice.message
                         );
                     }
+                    Some(Err(e)) if is_subscription_disconnected_error(&e) => {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Realtime bar subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            bar_type,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            data_farm_state,
+                            farm_generation,
+                            cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(StreamAction::Stop);
+                        }
+                        return Ok(StreamAction::Resubscribe);
+                    }
                     Some(Err(e)) => {
                         tracing::error!("Bars subscription error for {}: {:?}", bar_type, e);
                         anyhow::bail!("Subscription error: {e:?}");
                     }
-                    None => break,
+                    None => return Ok(StreamAction::Stop),
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -781,14 +1234,20 @@ async fn process_market_depth_stream(
     data_sender: &tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: &CancellationToken,
-) -> anyhow::Result<()> {
+    data_farm_state: &DataFarmConnectionState,
+    farm_generation: u64,
+) -> anyhow::Result<StreamAction> {
     let mut sequence: u64 = 0;
 
     loop {
         tokio::select! {
             () = cancellation_token.cancelled() => {
                 subscription.cancel().await;
-                break;
+                return Ok(StreamAction::Stop);
+            }
+            () = data_farm_state.wait_for_recovery_after(farm_generation) => {
+                subscription.cancel().await;
+                return Ok(StreamAction::Resubscribe);
             }
             depth_result = subscription.next() => {
                 match depth_result {
@@ -813,7 +1272,7 @@ async fn process_market_depth_stream(
                         );
 
                         if data_sender.send(DataEvent::Data(Data::Delta(delta))).is_err() {
-                            break;
+                            return Ok(StreamAction::Stop);
                         }
                     }
                     Some(Ok(SubscriptionItem::Data(MarketDepths::MarketDepthL2(depth)))) => {
@@ -845,10 +1304,11 @@ async fn process_market_depth_stream(
                         );
 
                         if data_sender.send(DataEvent::Data(Data::Delta(delta))).is_err() {
-                            break;
+                            return Ok(StreamAction::Stop);
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
+                        data_farm_state.handle_notice(&notice, clock);
                         tracing::debug!(
                             "IB market depth notice for {}: {} - {}",
                             instrument_id,
@@ -856,14 +1316,32 @@ async fn process_market_depth_stream(
                             notice.message
                         );
                     }
+                    Some(Err(e)) if is_subscription_disconnected_error(&e) => {
+                        data_farm_state.mark_degraded(clock.get_time_ns());
+                        tracing::warn!(
+                            "Market depth subscription disconnected for {}; waiting for data farm recovery: {:?}",
+                            instrument_id,
+                            e
+                        );
+
+                        if !wait_for_data_farm_recovery_or_cancel(
+                            data_farm_state,
+                            farm_generation,
+                            cancellation_token,
+                        )
+                        .await
+                        {
+                            subscription.cancel().await;
+                            return Ok(StreamAction::Stop);
+                        }
+                        return Ok(StreamAction::Resubscribe);
+                    }
                     Some(Err(e)) => anyhow::bail!("Subscription error: {e:?}"),
-                    None => break,
+                    None => return Ok(StreamAction::Stop),
                 }
             }
         }
     }
-
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -878,28 +1356,44 @@ pub(super) async fn handle_market_depth_subscription(
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
+    data_farm_state: Arc<DataFarmConnectionState>,
 ) -> anyhow::Result<()> {
-    let mut subscription = client
-        .market_depth(&contract, depth_rows)
-        .smart_depth(if is_smart_depth {
-            SmartDepth::Yes
-        } else {
-            SmartDepth::No
-        })
-        .subscribe()
-        .await
-        .context("Failed to create market depth subscription")?;
+    let mut farm_generation = data_farm_state.recovery_generation();
 
-    process_market_depth_stream(
-        &mut subscription,
-        instrument_id,
-        price_precision,
-        size_precision,
-        &data_sender,
-        clock,
-        &cancellation_token,
-    )
-    .await?;
+    loop {
+        if cancellation_token.is_cancelled() {
+            break;
+        }
+
+        let mut subscription = client
+            .market_depth(&contract, depth_rows)
+            .smart_depth(if is_smart_depth {
+                SmartDepth::Yes
+            } else {
+                SmartDepth::No
+            })
+            .subscribe()
+            .await
+            .context("Failed to create market depth subscription")?;
+
+        let action = process_market_depth_stream(
+            &mut subscription,
+            instrument_id,
+            price_precision,
+            size_precision,
+            &data_sender,
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            farm_generation,
+        )
+        .await?;
+
+        match action {
+            StreamAction::Continue | StreamAction::Stop => break,
+            StreamAction::Resubscribe => farm_generation = data_farm_state.recovery_generation(),
+        }
+    }
 
     Ok(())
 }
@@ -1137,7 +1631,8 @@ where
             }
             Ok(StreamAction::Continue)
         }
-        Ok(SubscriptionItem::Data(_) | SubscriptionItem::Notice(_)) => Ok(StreamAction::Continue),
+        Ok(SubscriptionItem::Notice(_)) => Ok(StreamAction::Continue),
+        Ok(SubscriptionItem::Data(_)) => Ok(StreamAction::Continue),
         Err(e) => {
             tracing::error!(
                 "Index price subscription stream error for {}: {:?}",
@@ -1338,7 +1833,7 @@ mod tests {
 
     use ahash::AHashMap;
     use ibapi::{
-        Notice,
+        Error, Notice,
         contracts::{OptionComputation, tick_types::TickType},
         market_data::realtime::{
             Bar as RealtimeBar, MarketDepth, MarketDepthL2, MarketDepths, TickAttribute,
@@ -1356,10 +1851,11 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        OptionGreeksCache, QuoteCache, StreamAction, process_index_price_tick_result,
-        process_market_depth_stream, process_option_greeks_tick_result, process_quote_tick_result,
-        process_realtime_bar_stream, process_trade_stream, send_quote_tick,
-        update_quote_from_price_tick, update_revised_bar_tracking,
+        DataFarmConnectionState, OptionGreeksCache, QuoteCache, StreamAction,
+        process_index_price_tick_result, process_market_depth_stream,
+        process_option_greeks_tick_result, process_quote_tick_result, process_realtime_bar_stream,
+        process_trade_stream, send_quote_tick, update_quote_from_price_tick,
+        update_revised_bar_tracking,
     };
 
     fn instrument_id() -> InstrumentId {
@@ -1368,6 +1864,15 @@ mod tests {
 
     fn minute_bar_type() -> BarType {
         BarType::from("SPX.CBOE-1-MINUTE-LAST-EXTERNAL")
+    }
+
+    fn notice(code: i32, message: &str) -> Notice {
+        Notice {
+            code,
+            message: message.to_string(),
+            error_time: None,
+            advanced_order_reject_json: String::new(),
+        }
     }
 
     #[rstest]
@@ -1426,6 +1931,28 @@ mod tests {
         );
 
         assert_eq!(duration, 18_000.seconds());
+    }
+
+    #[rstest]
+    fn test_data_farm_state_records_recovery_generation() {
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
+
+        data_farm_state.handle_notice(
+            &notice(2103, "Market data farm connection is broken:usfarm"),
+            clock,
+        );
+        data_farm_state.handle_notice(
+            &notice(2104, "Market data farm connection is OK:usfarm"),
+            clock,
+        );
+
+        assert_eq!(data_farm_state.recovery_generation(), 1);
+        assert!(
+            data_farm_state
+                .last_recovery_since_ns(data_farm_state.recovery_generation())
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -1873,6 +2400,7 @@ mod tests {
         let mut subscription = Subscription::new(trade_receiver);
         let cancellation_token = CancellationToken::new();
         let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
 
         trade_sender
             .send(Ok(Trade {
@@ -1898,6 +2426,8 @@ mod tests {
             &sender,
             clock,
             &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
         )
         .await
         .unwrap();
@@ -1912,6 +2442,63 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_process_trade_stream_10182_waits_for_farm_ok_and_resubscribes() {
+        let instrument_id = instrument_id();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (trade_sender, trade_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut subscription = Subscription::new(trade_receiver);
+        let cancellation_token = CancellationToken::new();
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = Arc::new(DataFarmConnectionState::default());
+        let farm_generation = data_farm_state.recovery_generation();
+
+        trade_sender
+            .send(Err(Error::Notice(notice(
+                10182,
+                "Failed to request live updates (disconnected).",
+            ))))
+            .unwrap();
+
+        let state_for_recovery = Arc::clone(&data_farm_state);
+
+        let recovery_task = tokio::spawn(async move {
+            loop {
+                if state_for_recovery
+                    .degraded_since_ns
+                    .lock()
+                    .expect("data farm state mutex poisoned")
+                    .is_some()
+                {
+                    state_for_recovery.handle_notice(
+                        &notice(2104, "Market data farm connection is OK:usfarm"),
+                        clock,
+                    );
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        });
+
+        let action = process_trade_stream(
+            &mut subscription,
+            instrument_id,
+            2,
+            0,
+            &sender,
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            farm_generation,
+        )
+        .await
+        .unwrap();
+        recovery_task.await.unwrap();
+
+        assert!(matches!(action, StreamAction::Resubscribe));
+        assert_eq!(data_farm_state.recovery_generation(), 1);
+    }
+
+    #[tokio::test]
     async fn test_process_realtime_bar_stream_emits_bar_and_tracks_revision() {
         let bar_type = BarType::from("SPX.CBOE-5-SECOND-LAST-EXTERNAL");
         let bar_type_str = bar_type.to_string();
@@ -1921,6 +2508,8 @@ mod tests {
         let cancellation_token = CancellationToken::new();
         let last_bars = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
         let timeout_tasks = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
 
         bar_sender
             .send(Ok(RealtimeBar {
@@ -1947,6 +2536,9 @@ mod tests {
             &timeout_tasks,
             true,
             &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
+            clock,
         )
         .await
         .unwrap();
@@ -1969,6 +2561,7 @@ mod tests {
         let mut subscription = Subscription::new(depth_receiver);
         let cancellation_token = CancellationToken::new();
         let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
 
         depth_sender
             .send(Ok(MarketDepths::MarketDepth(MarketDepth {
@@ -2000,6 +2593,8 @@ mod tests {
             &sender,
             clock,
             &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
         )
         .await
         .unwrap();

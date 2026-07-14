@@ -47,6 +47,9 @@ pub const LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED: u64 = 21_149;
 /// Venue error code for an invalid (non-contiguous) transaction nonce.
 pub const LIGHTER_ERROR_CODE_INVALID_NONCE: i64 = 21_104;
 
+/// Venue error code for an idempotent duplicate WebSocket subscription.
+pub const LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED: u64 = 30_003;
+
 /// Venue error-code range for L2 transaction failures.
 ///
 /// Observed codes follow a domain split: `20xxx` request validation, `21xxx`

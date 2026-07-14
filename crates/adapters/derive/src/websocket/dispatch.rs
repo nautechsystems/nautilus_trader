@@ -64,6 +64,7 @@ pub struct OrderIdentity {
 pub struct WsDispatchState {
     order_identities: Mutex<AHashMap<ClientOrderId, OrderIdentity>>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
+    emitted_canceled: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, ORDER_DEDUP_CAPACITY>>,
     emitted_trades: Mutex<FifoCache<TradeId, TRADE_DEDUP_CAPACITY>>,
     bound_venue_order_ids: Mutex<AHashMap<ClientOrderId, VenueOrderId>>,
@@ -179,6 +180,63 @@ impl WsDispatchState {
             .copied()
     }
 
+    /// Rebinds an in-flight modify when a frame for its replacement arrives
+    /// before the `private/replace` response.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn bind_incoming_modify(
+        &self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        terminal: bool,
+    ) -> bool {
+        let mut pending = self.pending_modifies.lock().expect(MUTEX_POISONED);
+        let Some(old_venue_order_id) = pending.get(&client_order_id).copied() else {
+            return false;
+        };
+
+        if old_venue_order_id == venue_order_id {
+            return false;
+        }
+
+        let mut bound = self.bound_venue_order_ids.lock().expect(MUTEX_POISONED);
+        if bound
+            .get(&client_order_id)
+            .is_some_and(|current| *current != old_venue_order_id)
+        {
+            return false;
+        }
+        bound.insert(client_order_id, venue_order_id);
+        if terminal {
+            pending.remove(&client_order_id);
+        }
+        true
+    }
+
+    /// Atomically claims a pending modify for its RPC response, optionally
+    /// rebinding the replacement venue order id before clearing the marker.
+    /// Returns `false` when an incoming terminal frame already resolved it.
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn take_pending_modify(
+        &self,
+        client_order_id: &ClientOrderId,
+        old_venue_order_id: VenueOrderId,
+        new_venue_order_id: Option<VenueOrderId>,
+    ) -> bool {
+        let mut pending = self.pending_modifies.lock().expect(MUTEX_POISONED);
+        if pending.get(client_order_id) != Some(&old_venue_order_id) {
+            return false;
+        }
+
+        if let Some(new_venue_order_id) = new_venue_order_id {
+            self.bound_venue_order_ids
+                .lock()
+                .expect(MUTEX_POISONED)
+                .insert(*client_order_id, new_venue_order_id);
+        }
+        pending.remove(client_order_id);
+        true
+    }
+
     /// Returns `true` when an `OrderAccepted` has already been emitted for
     /// this client order in the current process lifetime.
     #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
@@ -195,6 +253,18 @@ impl WsDispatchState {
     #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
     pub fn mark_accepted(&self, client_order_id: ClientOrderId) -> bool {
         let mut cache = self.emitted_accepted.lock().expect(MUTEX_POISONED);
+        if cache.contains(&client_order_id) {
+            return true;
+        }
+        cache.add(client_order_id);
+        false
+    }
+
+    /// Records that `OrderCanceled` has been emitted for this client order.
+    /// Returns `true` when the marker was already present (duplicate).
+    #[allow(clippy::missing_panics_doc, reason = "mutex poisoning is not expected")]
+    pub fn mark_canceled(&self, client_order_id: ClientOrderId) -> bool {
+        let mut cache = self.emitted_canceled.lock().expect(MUTEX_POISONED);
         if cache.contains(&client_order_id) {
             return true;
         }
@@ -334,6 +404,50 @@ mod tests {
         state.mark_pending_modify(cid, old_voi);
         assert_eq!(state.pending_modify(&cid), Some(old_voi));
         state.clear_pending_modify(&cid);
+        assert!(state.pending_modify(&cid).is_none());
+    }
+
+    #[rstest]
+    fn test_bind_incoming_modify_advances_bound_venue_order_id() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+        let old_voi = VenueOrderId::from("voi-old");
+        let new_voi = VenueOrderId::from("voi-new");
+        state.record_venue_order_id(cid, old_voi);
+        state.mark_pending_modify(cid, old_voi);
+
+        assert!(state.bind_incoming_modify(cid, new_voi, false));
+        assert_eq!(state.bound_venue_order_id(&cid), Some(new_voi));
+        assert!(!state.bind_incoming_modify(cid, VenueOrderId::from("voi-other"), true));
+        assert_eq!(state.bound_venue_order_id(&cid), Some(new_voi));
+        assert!(state.take_pending_modify(&cid, old_voi, None));
+        assert!(!state.take_pending_modify(&cid, old_voi, None));
+    }
+
+    #[rstest]
+    fn test_terminal_incoming_modify_claims_pending_response() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+        let old_voi = VenueOrderId::from("voi-old");
+        state.record_venue_order_id(cid, old_voi);
+        state.mark_pending_modify(cid, old_voi);
+
+        assert!(state.bind_incoming_modify(cid, VenueOrderId::from("voi-rejected"), true));
+        assert!(state.pending_modify(&cid).is_none());
+        assert!(!state.take_pending_modify(&cid, old_voi, None));
+    }
+
+    #[rstest]
+    fn test_response_claim_rebinds_before_clearing_pending_modify() {
+        let state = WsDispatchState::new();
+        let cid = ClientOrderId::from("STRAT-O-1");
+        let old_voi = VenueOrderId::from("voi-old");
+        let new_voi = VenueOrderId::from("voi-new");
+        state.record_venue_order_id(cid, old_voi);
+        state.mark_pending_modify(cid, old_voi);
+
+        assert!(state.take_pending_modify(&cid, old_voi, Some(new_voi)));
+        assert_eq!(state.bound_venue_order_id(&cid), Some(new_voi));
         assert!(state.pending_modify(&cid).is_none());
     }
 

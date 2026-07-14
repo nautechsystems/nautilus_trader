@@ -209,7 +209,13 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     ibg_port : int, default None
         The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
-        The client_id to be passed into connect call.
+        The client_id passed to the IB connect call. IB scopes open-order visibility by client
+        id (each id only sees the orders it placed). On reconnect the configured id may still be
+        held by the not-yet-released previous session (IB error 326); the adapter backs off and
+        retries the same id first, and only falls back to a nearby id within a bounded band if the
+        collision is consistent. Reserve a contiguous band of client ids per client (e.g. 1-5,
+        6-10) so a fallback stays within that client's range. Note order isolation by client id is
+        not guaranteed while running under a fallback id.
     use_regular_trading_hours : bool
         If True, will request data for Regular Trading Hours only.
         Only applies to bar data - will have no effect on trade or tick data feeds.
@@ -257,7 +263,13 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     ibg_port : int
         The port for the gateway server. ("paper"/"live" defaults: IBG 4002/4001; TWS 7497/7496)
     ibg_client_id: int, default 1
-        The client_id to be passed into connect call.
+        The client_id passed to the IB connect call. IB scopes open-order visibility by client
+        id (each id only sees the orders it placed). On reconnect the configured id may still be
+        held by the not-yet-released previous session (IB error 326); the adapter backs off and
+        retries the same id first, and only falls back to a nearby id within a bounded band if the
+        collision is consistent. Reserve a contiguous band of client ids per client (e.g. 1-5,
+        6-10) so a fallback stays within that client's range. Note order isolation by client id is
+        not guaranteed while running under a fallback id.
     account_id : str
         Represents the account_id for the Interactive Brokers to which the TWS/Gateway is logged in.
         It's crucial that the account_id aligns with the account for which the TWS/Gateway is logged in.

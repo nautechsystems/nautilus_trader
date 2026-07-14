@@ -105,6 +105,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
 - Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
 - Fixed Python v2 cached `OrderList` fields and concrete cache return types (#4453), thanks @JiajunWan
+- Fixed live fill deduplication dropping valid fills when trade IDs collide across accounts or instruments
 - Fixed Python v2 indicator handlers to delegate to Rust core semantics, including VWAP typical-price and Aroon quote, trade, and high/low bar handling (#4421), thanks for reporting @a1zb2yc3z
 - Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
@@ -112,6 +113,14 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Python v2 `Strategy` close-position and close-all-position commands to accept and forward `params`
 - Fixed Python v2 `DataActor.shutdown_system()` unregistered calls to raise `RuntimeError`
 - Fixed Python v2 `LiveNode.stop()` to complete shutdown instead of only signaling the handle
+- Fixed Rust and Python v2 `LiveNode.dispose()` before start to release the trader cleanly and
+  remain idempotent
+- Fixed Rust and Python v2 `LiveNode` startup failures to propagate the original error, stop
+  partially started trader components, and disconnect all clients before disposal
+- Fixed Rust and Python v2 `LiveNode` zero-duration connection and disconnection waits to recognize
+  already-ready engines before reporting a timeout
+- Fixed Rust v2 `LiveNode` startup to restore attached cache databases before reconciliation and
+  honor `flush_on_start`
 - Fixed Python v2 boundary error handling to raise exceptions instead of panicking on invalid inputs
 - Fixed Python v2 DeFi comparisons to return `NotImplemented` for unsupported ordering instead of panicking
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
@@ -130,13 +139,29 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
 - Fixed Binance Futures inflight query falsely rejecting untriggered algo orders (#4411), thanks @reijz
 - Fixed Binance Futures historical algo order queries (#4449), thanks @KaizynX
+- Fixed Binance Futures startup reconciliation omitting and truncating venue fill history
+- Fixed Binance Spot startup reconciliation omitting and truncating venue fill history
 - Fixed Binance Spot instrument loading after the SBE schema `3:5` rollout (#4407), thanks for reporting @learnerLj
 - Fixed Blockchain HyperSync live pool-event streaming to use a durable per-DEX stream and avoid tip-window overreach
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
+- Fixed Deribit live execution routing tracked fills and amendments through order events while
+  preserving reports for external orders
+- Fixed Derive execution WebSocket connect and reconnect handling to reject failed private
+  subscriptions, retry authentication, refresh balances, and reconcile execution state
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
 - Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
+- Fixed Derive historical trades and funding to return the newest records in chronological order
+- Fixed Derive historical bars to use close timestamps and exclude forming buckets
+- Fixed Derive instrument loading to skip absent product types and malformed rows without panicking
+- Fixed Derive fill reconciliation dropping fills on retry after a discarded snapshot
+- Fixed Derive null cancel acknowledgements being reported as failures
+- Fixed Derive cancellation, replacement, and nonce failure lifecycle events, and rejected
+  execution configs without a positive `max_fee_per_contract`
+- Fixed Derive shared market data channel ownership, unsubscribe races, and stale quote-cache reuse
+- Fixed Derive HTTP and WebSocket request pacing, signed-write expiry, null-id error handling, and
+  handler blocking during reconnects
 - Fixed Architect AX market data subscriptions to use trade-only streams and suppress unrequested trade/ticker events
 - Fixed Architect AX `/transactions` requests to include the required bounded time range
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
@@ -153,13 +178,21 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Hyperliquid rapid chained order modifications to preserve each in-flight cancel-replace, so a later modify no longer drops an earlier one's cancel-suppression and a failed modify no longer clears newer queued modifications
 - Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
 - Fixed Interactive Brokers market order update price normalization (#4383), thanks @faysou
+- Fixed Interactive Brokers v2 tracked fills to emit `OrderFilled` after `OrderAccepted`, emit `OrderRejected` on gateway submission failure, and retain fill identity across terminal callbacks
 - Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
 - Fixed Interactive Brokers Docker gateway startup to ignore the active Docker context
+- Fixed Lighter batch orders to use correlated sequential WebSocket transactions
+- Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
+- Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
+- Fixed Lighter modify validation, conditional order acknowledgements, approval nonce recovery,
+  auth refresh, and WebSocket timeouts
+- Fixed Lighter ambiguous send outcomes, hashless response attribution, historical order identity, order-index collisions, and GTD expiry validation
 
 ### Internal Improvements
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
+- Improved Lighter signing and execution coverage for conditional, IOC, cancel-all, and leverage transactions
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.0
@@ -173,6 +206,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
 - Updated Architect AX integration docs for current market-data, REST schema, and funding-rate behavior
+- Updated Lighter integration docs for sequential order fanout and reconciliation limits
 - Updated Polymarket v2 examples and integration docs for current markets, order modes, and configuration
 - Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
 - Added canonical references and doc comments for portfolio statistics

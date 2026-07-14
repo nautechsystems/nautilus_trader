@@ -101,6 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment,
         Arc::clone(&registry),
         TransportBackend::Tungstenite,
+        30,
         None,
     );
 

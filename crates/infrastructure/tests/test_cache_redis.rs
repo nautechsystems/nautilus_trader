@@ -30,6 +30,10 @@ mod serial_tests {
         cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
         queries::DatabaseQueries,
     };
+    use nautilus_live::{
+        config::{LiveExecEngineConfig, LiveNodeConfig},
+        node::LiveNode,
+    };
     use nautilus_model::{
         accounts::AccountAny,
         data::{
@@ -1128,8 +1132,89 @@ mod serial_tests {
         );
         assert_eq!(
             cache.account(&account.id()).map(|loaded| loaded.cloned()),
-            Some(account)
+            Some(account.clone())
         );
+
+        let restarted_node_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let config = LiveNodeConfig {
+            trader_id: TraderId::from("test-trader"),
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("RedisRestartNode".to_string(), Some(config)).unwrap();
+        node.set_cache_database(Box::new(restarted_node_adapter))
+            .unwrap();
+        node.start().await.unwrap();
+
+        {
+            let node_cache = node.kernel().cache();
+            let node_cache = node_cache.borrow();
+            assert_eq!(
+                node_cache.position_id(&order_1.client_order_id()),
+                Some(&position.id)
+            );
+            assert_eq!(
+                node_cache.client_id(&order_1.client_order_id()),
+                Some(&client_id)
+            );
+            assert!(node_cache.order(&order_1.client_order_id()).is_some());
+            assert!(node_cache.position(&position.id).is_some());
+            assert_eq!(
+                node_cache
+                    .order(&order_1.client_order_id())
+                    .map(|order| order.status()),
+                Some(OrderStatus::Accepted)
+            );
+            assert_eq!(
+                node_cache
+                    .account(&account.id())
+                    .map(|loaded| loaded.cloned()),
+                Some(account.clone())
+            );
+        }
+
+        node.stop().await.unwrap();
+        node.dispose();
+
+        let disabled_node_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let disabled_config = LiveNodeConfig {
+            trader_id: TraderId::from("test-trader"),
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecEngineConfig {
+                load_cache: false,
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut disabled_node =
+            LiveNode::build("RedisLoadDisabledNode".to_string(), Some(disabled_config)).unwrap();
+        disabled_node
+            .set_cache_database(Box::new(disabled_node_adapter))
+            .unwrap();
+        disabled_node.start().await.unwrap();
+        let order_loaded_when_disabled = disabled_node
+            .kernel()
+            .cache()
+            .borrow()
+            .order(&order_1.client_order_id())
+            .is_some();
+        disabled_node.stop().await.unwrap();
+        disabled_node.dispose();
+
+        assert!(!order_loaded_when_disabled);
 
         adapter.delete_actor(&actor_id).unwrap();
         adapter.delete_strategy(&strategy_id).unwrap();
@@ -1141,6 +1226,50 @@ mod serial_tests {
             Duration::from_secs(5),
         )
         .await;
+
+        let flush_node_adapter = connect_redis_cache_adapter()
+            .await
+            .expect("Failed to create adapter");
+        let flush_config = LiveNodeConfig {
+            trader_id: TraderId::from("test-trader"),
+            cache: Some(CacheConfig {
+                flush_on_start: true,
+                ..Default::default()
+            }),
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            delay_post_stop: Duration::ZERO,
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut flush_node =
+            LiveNode::build("RedisFlushNode".to_string(), Some(flush_config)).unwrap();
+        flush_node
+            .set_cache_database(Box::new(flush_node_adapter))
+            .unwrap();
+        let flush_handle = flush_node.handle();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { flush_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            flush_handle.stop();
+        });
+        flush_node.run().await.unwrap();
+        let order_loaded_after_flush = flush_node
+            .kernel()
+            .cache()
+            .borrow()
+            .order(&order_1.client_order_id())
+            .is_some();
+        flush_node.dispose();
+
+        assert!(!order_loaded_after_flush);
 
         let mut adapter = adapter;
         adapter.flush().unwrap();

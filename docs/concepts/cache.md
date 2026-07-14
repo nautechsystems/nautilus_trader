@@ -170,6 +170,23 @@ let cache_database = database
     .await?;
 ```
 
+For a Rust-native live node, attach the adapter before startup:
+
+```rust
+let node_config = LiveNodeConfig {
+    trader_id,
+    ..Default::default()
+};
+let mut node = LiveNode::build("LiveNode".to_string(), Some(node_config))?;
+node.set_cache_database(cache_database)?;
+node.run().await?;
+```
+
+With the default `LiveExecEngineConfig.load_cache = true`, the node restores persisted cache state
+and rebuilds derived indexes before connecting clients or reconciling execution state. Setting
+`CacheConfig.flush_on_start = true` clears the backing instead. Direct backing injection is not yet
+available from the Python v2 `LiveNode` surface.
+
 ## Using the cache
 
 ### Accessing market data

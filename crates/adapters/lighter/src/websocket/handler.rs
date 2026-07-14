@@ -55,8 +55,9 @@ use super::{
 use crate::{
     common::{
         consts::{
-            LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED, LIGHTER_ERROR_CODE_TX_RANGE,
-            LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL, SUBSCRIBE_INFLIGHT_MAX,
+            LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED, LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED,
+            LIGHTER_ERROR_CODE_TX_RANGE, LIGHTER_INTEGRATOR_APPROVAL_DOCS_URL,
+            SUBSCRIBE_INFLIGHT_MAX,
         },
         enums::LighterCandleResolution,
         rate_limit::LIGHTER_WS_MESSAGE_RATE_LIMIT_KEY,
@@ -66,7 +67,7 @@ use crate::{
 
 // Lighter control-frame `type` field values that fall outside the typed
 // `LighterWsFrame` variants. These are protocol-level frames the handler
-// inspects via the dual-pass parse fallback in `handle_control_text`.
+// inspects via the typed-frame parse fallback in `handle_control_value`.
 const CTRL_TYPE_CONNECTED: &str = "connected";
 const CTRL_TYPE_SUBSCRIBED: &str = "subscribed";
 const CTRL_TYPE_UNSUBSCRIBED: &str = "unsubscribed";
@@ -366,7 +367,7 @@ impl FeedHandler {
                     "Sending Lighter sendTx: tx_type={tx_type} ({} bytes)",
                     payload.len(),
                 );
-                log::debug!("Lighter sendTx payload: {payload}");
+
                 if let Err(e) = self.send_once(payload).await {
                     log::error!("Error dispatching Lighter sendTx (tx_type={tx_type}): {e}");
                     Err(e)
@@ -517,8 +518,10 @@ impl FeedHandler {
                                 if let Some(first) = self.dispatch_results(messages) {
                                     return Some(first);
                                 }
-                            } else {
-                                let (matched, msg) = self.handle_control_text(&text);
+                            } else if let Ok(value) =
+                                serde_json::from_str::<serde_json::Value>(&text)
+                            {
+                                let (matched, msg) = self.handle_control_value(&value);
                                 if let Some(first) = msg {
                                     return Some(first);
                                 }
@@ -528,14 +531,11 @@ impl FeedHandler {
                                     // control type. Surface raw so venue
                                     // errors (bad signature, margin rejection,
                                     // ...) don't drop silently.
-                                    if let Ok(value) =
-                                        serde_json::from_str::<serde_json::Value>(&text)
-                                    {
-                                        log::warn!("Lighter WS unparsed frame: {value}");
-                                        return Some(NautilusWsMessage::Raw(value));
-                                    }
-                                    log::warn!("Lighter WS non-JSON text: {text}");
+                                    log::warn!("Lighter WS unparsed frame: {value}");
+                                    return Some(NautilusWsMessage::Raw(value));
                                 }
+                            } else {
+                                log::warn!("Lighter WS non-JSON text: {text}");
                             }
                         }
                         Message::Ping(data) => {
@@ -588,8 +588,6 @@ impl FeedHandler {
         }
     }
 
-    // True only on the first ack for a topic; handle_frame calls this per frame,
-    // so later frames for an already-confirmed topic are no-ops.
     fn release_subscribe_inflight(&mut self, topic: &str) -> bool {
         self.inflight_subs.remove(&Ustr::from(topic))
     }
@@ -598,10 +596,15 @@ impl FeedHandler {
     /// `type` was recognized as a known control type (whether or not a
     /// message is emitted); `matched=false` lets the caller surface the
     /// raw frame so venue errors with unknown shapes aren't lost.
-    fn handle_control_text(&mut self, text: &str) -> (bool, Option<NautilusWsMessage>) {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
-            return (false, None);
-        };
+    fn handle_control_value(
+        &mut self,
+        value: &serde_json::Value,
+    ) -> (bool, Option<NautilusWsMessage>) {
+        if let Some(error) = already_subscribed_error(value) {
+            self.confirm_already_subscribed(error);
+            return (true, None);
+        }
+
         let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
         match kind {
@@ -618,22 +621,12 @@ impl FeedHandler {
                         (
                             true,
                             Some(send_tx_rejected_from_value(
-                                &value,
+                                value,
                                 SendTxRejectionSource::Ack,
                             )),
                         )
                     }
-                    Some(code) if code != 200 => {
-                        log::error!("Lighter sendTx rejected: {value}");
-                        (
-                            true,
-                            Some(send_tx_rejected_from_value(
-                                &value,
-                                SendTxRejectionSource::Ack,
-                            )),
-                        )
-                    }
-                    _ => {
+                    Some(200) => {
                         log::debug!("Lighter WebSocket sendTx ack: {value}");
                         let tx_hash = value
                             .get("tx_hash")
@@ -643,6 +636,22 @@ impl FeedHandler {
                             true,
                             Some(NautilusWsMessage::SendTxAck { tx_hash, code: 200 }),
                         )
+                    }
+                    Some(_) => {
+                        log::error!("Lighter sendTx rejected: {value}");
+                        (
+                            true,
+                            Some(send_tx_rejected_from_value(
+                                value,
+                                SendTxRejectionSource::Ack,
+                            )),
+                        )
+                    }
+                    None => {
+                        log::warn!(
+                            "Ignoring malformed Lighter sendTx response without numeric code: {value}",
+                        );
+                        (true, None)
                     }
                 }
             }
@@ -685,7 +694,7 @@ impl FeedHandler {
                     (
                         true,
                         Some(send_tx_rejected_from_value(
-                            &value,
+                            value,
                             SendTxRejectionSource::BareError,
                         )),
                     )
@@ -711,15 +720,45 @@ impl FeedHandler {
         }
     }
 
+    fn confirm_already_subscribed(&mut self, error: &serde_json::Value) {
+        let Some(topic) = error
+            .get("message")
+            .and_then(|value| value.as_str())
+            .and_then(|message| message.strip_prefix("Already Subscribed to : "))
+        else {
+            log::debug!(
+                "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}",
+            );
+            return;
+        };
+
+        let Some(known_topic) = self
+            .inflight_subs
+            .iter()
+            .find(|known| known.as_str() == topic)
+            .copied()
+        else {
+            log::debug!(
+                "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}",
+            );
+            return;
+        };
+
+        self.inflight_subs.remove(&known_topic);
+        self.subscriptions.confirm_subscribe(known_topic.as_str());
+        log::debug!(
+            "Lighter WebSocket subscription response: code={LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED}, topic={known_topic}",
+        );
+    }
+
     fn handle_frame(
         &mut self,
         frame: LighterWsFrame,
         ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let topic = frame_topic(&frame);
-        self.subscriptions.confirm_subscribe(&topic);
-        if !self.inflight_subs.is_empty() {
-            self.release_subscribe_inflight(&topic);
+        if self.inflight_subs.remove(topic) {
+            self.subscriptions.confirm_subscribe(topic.as_str());
         }
 
         match frame {
@@ -791,8 +830,7 @@ impl FeedHandler {
                 if self.exec_account.is_none() {
                     return raw_message(&frame);
                 }
-                let flat: Vec<LighterTrade> = trades.values().flatten().cloned().collect();
-                let mut msgs = self.handle_account_trades(&flat, ts_init);
+                let mut msgs = self.handle_account_trades(trades.values().flatten(), ts_init);
                 msgs.push(NautilusWsMessage::AccountStreamFirstFrame(
                     AccountStream::Trades,
                 ));
@@ -966,7 +1004,7 @@ impl FeedHandler {
         }
     }
 
-    async fn resubscribe_order_book_stream(&self, market_index: i16) {
+    async fn resubscribe_order_book_stream(&mut self, market_index: i16) {
         if !self.order_book_stream_is_referenced(market_index) {
             log::debug!(
                 "Skipping Lighter order_book resync: subscription cancelled before venue \
@@ -986,14 +1024,30 @@ impl FeedHandler {
             return;
         }
 
-        self.dispatch_subscribe(channel.clone(), None).await;
+        let topic = Ustr::from(channel.topic_key().as_str());
+        let attempted = self.inflight_subs.len() < SUBSCRIBE_INFLIGHT_MAX;
+        if attempted {
+            self.inflight_subs.insert(topic);
+            let dispatched = self.dispatch_subscribe(channel.clone(), None).await;
+            if !dispatched {
+                self.inflight_subs.remove(&topic);
+            }
+        } else {
+            self.pending_subs.push_front((channel.clone(), None));
+        }
 
         if !self.order_book_stream_is_referenced(market_index) {
             log::debug!(
                 "Cancelling Lighter order_book resync subscribe after user unsubscribe: \
                  market_index={market_index}",
             );
-            self.dispatch_unsubscribe(channel).await;
+            self.pending_subs
+                .retain(|(queued, _)| queued.topic_key() != channel.topic_key());
+
+            if attempted {
+                self.inflight_subs.remove(&topic);
+                self.dispatch_unsubscribe(channel).await;
+            }
         }
     }
 
@@ -1311,9 +1365,9 @@ impl FeedHandler {
         }
     }
 
-    fn handle_account_trades(
+    fn handle_account_trades<'a>(
         &self,
-        trades: &[LighterTrade],
+        trades: impl IntoIterator<Item = &'a LighterTrade>,
         _ts_init: UnixNanos,
     ) -> Vec<NautilusWsMessage> {
         let Some((_account_id, account_index)) = self.exec_account else {
@@ -1525,6 +1579,19 @@ fn is_sendtx_error_code(code: Option<u64>) -> bool {
     code.is_some_and(|c| LIGHTER_ERROR_CODE_TX_RANGE.contains(&c))
 }
 
+fn already_subscribed_error(value: &serde_json::Value) -> Option<&serde_json::Value> {
+    if value.get("code").and_then(|code| code.as_u64())
+        == Some(LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED)
+    {
+        Some(value)
+    } else {
+        value.get("error").filter(|e| {
+            e.get("code").and_then(|code| code.as_u64())
+                == Some(LIGHTER_ERROR_CODE_ALREADY_SUBSCRIBED)
+        })
+    }
+}
+
 // SendTxRejected from a top-level `{code, message}` frame: non-200 sendTx
 // ACK or `{"type":"error",...}`.
 fn send_tx_rejected_from_value(
@@ -1578,7 +1645,7 @@ fn log_integrator_not_approved() {
     );
 }
 
-fn frame_topic(frame: &LighterWsFrame) -> String {
+fn frame_topic(frame: &LighterWsFrame) -> &Ustr {
     match frame {
         LighterWsFrame::OrderBookSnapshot { channel, .. }
         | LighterWsFrame::OrderBook { channel, .. }
@@ -1597,7 +1664,7 @@ fn frame_topic(frame: &LighterWsFrame) -> String {
         | LighterWsFrame::UserStats { channel, .. }
         | LighterWsFrame::Height { channel, .. }
         | LighterWsFrame::CandleSnapshot { channel, .. }
-        | LighterWsFrame::Candle { channel, .. } => channel.as_str().to_string(),
+        | LighterWsFrame::Candle { channel, .. } => channel,
     }
 }
 
@@ -1636,7 +1703,8 @@ pub(crate) fn should_retry_lighter_ws_error(error: &LighterWsError) -> bool {
         },
         LighterWsError::Authentication(_)
         | LighterWsError::Parse(_)
-        | LighterWsError::Client(_) => false,
+        | LighterWsError::Client(_)
+        | LighterWsError::SendTxOutcomeUnknown(_) => false,
     }
 }
 
@@ -1687,6 +1755,16 @@ mod tests {
         include_str!("../../test_data/ws_spot_market_stats_update_single.json");
     const WS_SPOT_MARKET_STATS_UPDATE_ALL: &str =
         include_str!("../../test_data/ws_spot_market_stats_update_all.json");
+
+    fn handle_control_text(
+        handler: &mut FeedHandler,
+        text: &str,
+    ) -> (bool, Option<NautilusWsMessage>) {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(text) else {
+            return (false, None);
+        };
+        handler.handle_control_value(&value)
+    }
 
     fn stub_eth_perp_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("ETH-PERP"), Venue::new("LIGHTER"));
@@ -1850,6 +1928,29 @@ mod tests {
     }
 
     #[rstest]
+    fn handle_frame_tolerates_unknown_position_margin_mode() {
+        let mut handler = make_handler_with_account();
+        let mut frame_json: serde_json::Value =
+            serde_json::from_str(WS_ACCOUNT_ALL_POSITIONS_UPDATE).unwrap();
+        frame_json["positions"]["0"]["margin_mode"] = json!(99);
+        let frame: super::LighterWsFrame = serde_json::from_value(frame_json).unwrap();
+
+        let messages = strip_account_marker(handler.handle_frame(frame, UnixNanos::from(11)));
+
+        assert_eq!(messages.len(), 1);
+        match &messages[0] {
+            NautilusWsMessage::PositionSnapshot {
+                reports,
+                skipped_market_ids,
+            } => {
+                assert!(skipped_market_ids.is_empty());
+                assert_eq!(reports.len(), 1);
+            }
+            other => panic!("expected position snapshot, was {other:?}"),
+        }
+    }
+
+    #[rstest]
     fn handle_frame_routes_empty_account_positions_to_empty_snapshot() {
         // Empty frame must still emit so the cache clears (last position closed).
         let mut handler = make_handler_with_account();
@@ -1984,6 +2085,16 @@ mod tests {
         true,
         true,
     )]
+    #[case::send_tx_without_code(
+        serde_json::json!({"type": "jsonapi/sendtx", "tx_hash": "abc"}),
+        true,
+        false,
+    )]
+    #[case::send_tx_with_nonnumeric_code(
+        serde_json::json!({"type": "jsonapi/sendtx", "code": "200", "tx_hash": "abc"}),
+        true,
+        false,
+    )]
     #[case::error_frame(
         serde_json::json!({"type": "error", "code": 21727, "message": "invalid client order index"}),
         true,
@@ -2042,7 +2153,7 @@ mod tests {
         // back to in-flight cloids.
         let mut handler = make_handler_with_account();
         let text = payload.to_string();
-        let (matched, msg) = handler.handle_control_text(&text);
+        let (matched, msg) = handle_control_text(&mut handler, &text);
         assert_eq!(matched, expected_matched, "matched flag");
         assert_eq!(msg.is_some(), expected_has_msg, "msg presence");
     }
@@ -2057,7 +2168,7 @@ mod tests {
         })
         .to_string();
 
-        let (_, msg) = handler.handle_control_text(&payload);
+        let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxAck emitted") {
             NautilusWsMessage::SendTxAck { tx_hash, code } => {
@@ -2078,7 +2189,7 @@ mod tests {
         })
         .to_string();
 
-        let (_, msg) = handler.handle_control_text(&payload);
+        let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxRejected emitted") {
             NautilusWsMessage::SendTxRejected {
@@ -2107,7 +2218,7 @@ mod tests {
         })
         .to_string();
 
-        let (_, msg) = handler.handle_control_text(&payload);
+        let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxRejected emitted") {
             NautilusWsMessage::SendTxRejected { tx_hash, .. } => {
@@ -2127,7 +2238,7 @@ mod tests {
         })
         .to_string();
 
-        let (_, msg) = handler.handle_control_text(&payload);
+        let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxRejected emitted") {
             NautilusWsMessage::SendTxRejected {
@@ -2154,7 +2265,7 @@ mod tests {
         })
         .to_string();
 
-        let (_, msg) = handler.handle_control_text(&payload);
+        let (_, msg) = handle_control_text(&mut handler, &payload);
 
         match msg.expect("SendTxRejected emitted") {
             NautilusWsMessage::SendTxRejected {
@@ -2793,6 +2904,32 @@ mod tests {
         assert!(subscriptions.pending_unsubscribe_topics().is_empty());
     }
 
+    #[tokio::test]
+    async fn resubscribe_order_book_queues_when_inflight_is_at_cap() {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel::<Message>();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel::<NautilusWsMessage>();
+        let subscriptions = SubscriptionState::new(':');
+        let topic = LighterWsChannel::OrderBook(0).topic_key();
+        assert!(subscriptions.add_reference(&topic));
+
+        let mut handler = FeedHandler::new(signal, cmd_rx, raw_rx, out_tx, subscriptions);
+        handler.book_delta_subs.insert(0);
+        for i in 0..SUBSCRIBE_INFLIGHT_MAX {
+            handler
+                .inflight_subs
+                .insert(Ustr::from(format!("dummy:{i}").as_str()));
+        }
+
+        handler.resubscribe_order_book_stream(0).await;
+
+        assert_eq!(handler.inflight_subs.len(), SUBSCRIBE_INFLIGHT_MAX);
+        assert!(handler.pending_subs.iter().any(|(channel, _)| {
+            matches!(channel, LighterWsChannel::OrderBook(market_index) if *market_index == 0)
+        }));
+    }
+
     fn stub_candle(
         t: i64,
         open: i64,
@@ -2955,7 +3092,7 @@ mod tests {
         handler.subscriptions.mark_unsubscribe("candle:0:1m");
 
         let payload = json!({"type": "unsubscribed", "channel": "candle:0:1m"});
-        let (matched, _) = handler.handle_control_text(&payload.to_string());
+        let (matched, _) = handle_control_text(&mut handler, &payload.to_string());
 
         assert!(matched);
         assert!(
@@ -3150,8 +3287,10 @@ mod tests {
         let mut handler = make_handler_with_account();
         handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
 
-        let (matched, msg) =
-            handler.handle_control_text(r#"{"type":"subscribed","channel":"candle:0:1m"}"#);
+        let (matched, msg) = handle_control_text(
+            &mut handler,
+            r#"{"type":"subscribed","channel":"candle:0:1m"}"#,
+        );
 
         assert!(matched);
         assert!(msg.is_none());
@@ -3159,9 +3298,57 @@ mod tests {
     }
 
     #[rstest]
+    #[case::top_level(
+        r#"{"type":"error","code":30003,"message":"Already Subscribed to : account_all_orders:12345"}"#
+    )]
+    #[case::nested(
+        r#"{"error":{"code":30003,"message":"Already Subscribed to : account_all_orders:12345"}}"#
+    )]
+    #[case::nested_typed(
+        r#"{"type":"error","error":{"code":30003,"message":"Already Subscribed to : account_all_orders:12345"}}"#
+    )]
+    fn already_subscribed_confirms_matching_inflight_topic(#[case] payload: &str) {
+        let mut handler = make_handler_with_account();
+        let topic = "account_all_orders:12345";
+        handler.inflight_subs.insert(Ustr::from(topic));
+        handler.subscriptions.mark_subscribe(topic);
+
+        let (matched, msg) = handle_control_text(&mut handler, payload);
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert!(handler.inflight_subs.is_empty());
+        assert!(handler.subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+    }
+
+    #[rstest]
+    fn already_subscribed_does_not_confirm_unmatched_topic() {
+        let mut handler = make_handler_with_account();
+        let inflight = "account_all_orders:12345";
+        handler.inflight_subs.insert(Ustr::from(inflight));
+        handler.subscriptions.mark_subscribe(inflight);
+
+        let (matched, msg) = handle_control_text(
+            &mut handler,
+            r#"{"type":"error","code":30003,"message":"Already Subscribed to : account_all_trades:12345"}"#,
+        );
+
+        assert!(matched);
+        assert!(msg.is_none());
+        assert!(handler.inflight_subs.contains(&Ustr::from(inflight)));
+        assert_eq!(
+            handler.subscriptions.pending_subscribe_topics(),
+            vec![inflight]
+        );
+        assert_eq!(handler.subscriptions.len(), 0);
+    }
+
+    #[rstest]
     fn typed_frame_releases_inflight_slot() {
         let mut handler = make_handler_with_account();
         handler.inflight_subs.insert(Ustr::from("candle:0:1m"));
+        handler.subscriptions.mark_subscribe("candle:0:1m");
 
         handler.handle_frame(
             candle_frame(
@@ -3173,6 +3360,18 @@ mod tests {
         );
 
         assert!(!handler.inflight_subs.contains(&Ustr::from("candle:0:1m")));
+        assert!(handler.subscriptions.pending_subscribe_topics().is_empty());
+        assert_eq!(handler.subscriptions.len(), 1);
+
+        handler.handle_frame(
+            candle_frame(
+                "candle:0:1m",
+                stub_candle(1_060_000, 10_000, 10_000, 10_000, 10_000, 10_000),
+                false,
+            ),
+            UnixNanos::from(2),
+        );
+        assert_eq!(handler.subscriptions.len(), 1);
     }
 
     #[rstest]

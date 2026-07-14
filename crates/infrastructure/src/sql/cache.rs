@@ -510,7 +510,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
-        todo!()
+        Ok(AHashMap::new())
     }
 
     async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
@@ -689,9 +689,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     async fn load_synthetic(
         &self,
-        _instrument_id: &InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
-        todo!()
+        anyhow::bail!(
+            "load_synthetic not implemented for PostgreSQL cache adapter: {instrument_id}"
+        )
     }
 
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
@@ -757,16 +759,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         rx.recv()?
     }
 
-    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_actor not implemented for PostgreSQL cache adapter: {component_id}")
     }
 
     fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_strategy not implemented for PostgreSQL cache adapter: {strategy_id}")
     }
 
     fn delete_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<()> {

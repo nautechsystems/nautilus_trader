@@ -140,6 +140,14 @@ The adapter includes connection management features:
 - **Connection timeout**: Adjust the timeout with the `connection_timeout` parameter (default: 300 seconds).
 - **Connection watchdog**: Monitor connection health and trigger reconnection automatically when required.
 - **Graceful error handling**: Handle diverse connection scenarios with error classification.
+- **Transient data-farm tolerance**: Transient IB data-farm status notifications (codes 2103/2105 "broken" followed by 2104/2106 "OK", common during the nightly gateway restart) degrade only the affected data feeds and are recovered by resubscribing when the farm returns. They do **not** tear down the socket or the order/execution channel.
+
+#### Client ID allocation
+
+IB scopes open-order visibility by client id: a given client id only sees, and can manage, the orders it placed. Keep this in mind when allocating ids:
+
+- **Reserve a band per client.** On reconnect during a gateway restart the configured client id can still be held by the not-yet-released previous session (IB error 326). The adapter backs off and retries the *same* configured id first; only if the collision is consistent does it fall back to a nearby id within a bounded band (incremented deterministically, never randomly). Assign each client a contiguous band of ids (e.g. `1-5`, `6-10`, `11-15`) so a fallback stays within that client's range and never collides with a sibling process.
+- **Order isolation is not guaranteed at all times.** While running under a fallback id, order isolation by client id does not hold, and the adapter re-fetches all open orders in that case. Do not rely on client-id order isolation as a hard guarantee.
 
 ## Overview
 

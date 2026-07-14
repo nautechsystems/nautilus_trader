@@ -25,7 +25,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -63,11 +63,12 @@ struct CapturedRequest {
     path: String,
     headers: HashMap<String, String>,
     body: Value,
+    received_at_ms: u64,
 }
 
 #[derive(Clone, Default)]
 struct TestServerState {
-    captured: Arc<tokio::sync::Mutex<Option<CapturedRequest>>>,
+    captured: Arc<tokio::sync::Mutex<Vec<CapturedRequest>>>,
     response_body: Arc<tokio::sync::Mutex<Value>>,
     response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     delay: Arc<tokio::sync::Mutex<Option<Duration>>>,
@@ -87,8 +88,13 @@ impl TestServerState {
         self.captured
             .lock()
             .await
-            .clone()
+            .last()
+            .cloned()
             .expect("no request captured")
+    }
+
+    async fn captured_all(&self) -> Vec<CapturedRequest> {
+        self.captured.lock().await.clone()
     }
 }
 
@@ -112,10 +118,15 @@ async fn handle(
         }
     }
 
-    *state.captured.lock().await = Some(CapturedRequest {
+    let received_at_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time is after unix epoch")
+        .as_millis() as u64;
+    state.captured.lock().await.push(CapturedRequest {
         path: path.to_string(),
         headers: header_map,
         body: parsed_body,
+        received_at_ms,
     });
 
     let status = *state.response_status.lock().await;
@@ -382,6 +393,75 @@ async fn test_send_private_attaches_all_lyra_auth_headers() {
     assert_eq!(signature.len(), 2 + 130, "signature must be 65 bytes hex");
 
     assert_eq!(order.order_id, "abc-123");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_paced_http_writes_build_auth_headers_after_waiting() {
+    let state = TestServerState::with_success_response();
+    *state.response_body.lock().await = json!({
+        "id": 1,
+        "result": {"order": load_json("perps/http_order_eth_partially_filled.json")},
+    });
+    let addr = start_mock_server(state.clone()).await;
+    let client =
+        DeriveHttpClient::with_credentials(base_url(addr), test_credentials(), Some(5), None, None)
+            .unwrap();
+    let payload = DeriveOrderParams {
+        envelope: DeriveSignedEnvelope {
+            subaccount_id: 42,
+            nonce: 123,
+            signer: "0xsigner".to_string(),
+            signature_expiry_sec: 1_700_001_000,
+            signature: "0x00".to_string(),
+        },
+        instrument_name: "ETH-PERP".into(),
+        direction: DeriveOrderSide::Buy,
+        order_type: DeriveOrderType::Limit,
+        time_in_force: DeriveTimeInForce::Gtc,
+        limit_price: dec!(3500),
+        amount: dec!(1),
+        max_fee: dec!(1),
+        label: "client-paced".to_string(),
+        referral_code: "nautilus".to_string(),
+        reduce_only: None,
+        mmp: None,
+        trigger_price: None,
+        trigger_price_type: None,
+        trigger_type: None,
+    };
+
+    let started = Instant::now();
+    let requests = (0..7).map(|sequence| {
+        let client = client.clone();
+        let mut payload = payload.clone();
+        payload.envelope.nonce += sequence;
+        async move { client.submit_order(&payload).await }
+    });
+    let outcomes = futures_util::future::join_all(requests).await;
+    let elapsed = started.elapsed();
+    let captured = state.captured_all().await;
+
+    assert!(outcomes.iter().all(Result::is_ok));
+    assert_eq!(captured.len(), 7);
+    assert!(
+        elapsed >= Duration::from_millis(1_500),
+        "seven writes must exhaust the five-request burst, elapsed {elapsed:?}",
+    );
+
+    for request in captured {
+        let timestamp = request
+            .headers
+            .get(&HEADER_LYRA_TIMESTAMP.to_lowercase())
+            .expect("timestamp header present")
+            .parse::<u64>()
+            .expect("timestamp header is milliseconds");
+        let age_ms = request.received_at_ms.saturating_sub(timestamp);
+        assert!(
+            age_ms < 900,
+            "auth timestamp must be built after the limiter wait, age was {age_ms} ms",
+        );
+    }
 }
 
 #[rstest]

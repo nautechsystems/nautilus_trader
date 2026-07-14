@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -33,9 +34,10 @@ use nautilus_common::{
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
-        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -55,7 +57,7 @@ use nautilus_model::{
         OrderRejected, OrderUpdated,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Quantity},
@@ -129,6 +131,10 @@ const LISTEN_KEY_KEEPALIVE_SECS: u64 = 30 * 60;
 
 /// Consecutive keepalive failures before a listenKey rotation is triggered.
 const MAX_KEEPALIVE_FAILURES: u32 = 1;
+
+const USER_TRADES_MAX_INTERVAL_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+
+const USER_TRADES_PAGE_LIMIT: u32 = 1_000;
 
 /// Query parameter declaring that the command's venue order ID is a Binance Algo Service
 /// `algoId`, rather than a regular matching-engine `orderId` or triggered `actualOrderId`.
@@ -1700,7 +1706,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.raw_symbol().as_str() == order.symbol.as_str())
+                        .find(|instrument| {
+                            instrument.raw_symbol().as_str() == order.symbol.as_str()
+                                && is_instrument_for_product(instrument, self.product_type)
+                        })
                         && let Ok(report) = order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1734,7 +1743,10 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                     if let Some(instrument) = cache
                         .instruments(&BINANCE_VENUE, None)
                         .into_iter()
-                        .find(|i| i.raw_symbol().as_str() == algo_order.symbol.as_str())
+                        .find(|instrument| {
+                            instrument.raw_symbol().as_str() == algo_order.symbol.as_str()
+                                && is_instrument_for_product(instrument, self.product_type)
+                        })
                         && let Ok(report) = algo_order.to_order_status_report(
                             self.core.account_id,
                             instrument.id(),
@@ -1798,42 +1810,132 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         };
 
         let symbol = format_binance_symbol(&instrument_id);
-        let start_time = cmd
-            .start
-            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
-        let end_time = cmd
+        let mut trades = Vec::new();
+        let mut seen_trade_ids = AHashSet::new();
+        let requested_end_time = cmd
             .end
-            .map(|t| t.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+            .map(|end| end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
 
-        let mut builder = BinanceUserTradesParamsBuilder::default();
-        builder.symbol(symbol);
+        if let Some(start) = cmd.start {
+            let query_start_time = start.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+            let query_end_time = requested_end_time.unwrap_or_else(|| {
+                self.clock.get_time_ns().as_i64() / NANOSECONDS_IN_MILLISECOND as i64
+            });
+            anyhow::ensure!(
+                query_start_time <= query_end_time,
+                "fill report start time must not exceed end time"
+            );
+            let mut window_start = query_start_time;
 
-        if let Some(st) = start_time {
-            builder.start_time(st);
+            loop {
+                let window_end = window_start
+                    .saturating_add(USER_TRADES_MAX_INTERVAL_MS)
+                    .min(query_end_time);
+                let mut from_id = None;
+
+                loop {
+                    let mut builder = BinanceUserTradesParamsBuilder::default();
+                    builder.symbol(symbol.clone());
+                    builder.limit(USER_TRADES_PAGE_LIMIT);
+
+                    if let Some(cursor) = from_id {
+                        builder.from_id(cursor);
+                    } else {
+                        builder.start_time(window_start);
+                        builder.end_time(window_end);
+                    }
+                    let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let page = self.http_client.query_user_trades(&params).await?;
+
+                    if page.is_empty() {
+                        break;
+                    }
+
+                    let page_len = page.len();
+                    let max_trade_id = page.iter().map(|trade| trade.id).max().unwrap();
+                    let passed_window_end = page.iter().any(|trade| trade.time > window_end);
+
+                    trades.extend(page.into_iter().filter(|trade| {
+                        trade.time >= window_start
+                            && trade.time <= window_end
+                            && seen_trade_ids.insert(trade.id)
+                    }));
+
+                    if page_len < USER_TRADES_PAGE_LIMIT as usize || passed_window_end {
+                        break;
+                    }
+
+                    let next_from_id = max_trade_id
+                        .checked_add(1)
+                        .context("Binance user trade ID overflow during pagination")?;
+                    anyhow::ensure!(
+                        from_id.is_none_or(|cursor| next_from_id > cursor),
+                        "Binance user-trades pagination made no progress"
+                    );
+                    from_id = Some(next_from_id);
+                }
+
+                if window_end >= query_end_time {
+                    break;
+                }
+                window_start = window_end.saturating_add(1);
+            }
+        } else {
+            let mut from_id = 0;
+
+            loop {
+                let params = BinanceUserTradesParamsBuilder::default()
+                    .symbol(symbol.clone())
+                    .from_id(from_id)
+                    .limit(USER_TRADES_PAGE_LIMIT)
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let page = self.http_client.query_user_trades(&params).await?;
+
+                if page.is_empty() {
+                    break;
+                }
+
+                let page_len = page.len();
+                let max_trade_id = page.iter().map(|trade| trade.id).max().unwrap();
+                let passed_end = requested_end_time
+                    .is_some_and(|end_time| page.iter().any(|trade| trade.time > end_time));
+
+                trades.extend(page.into_iter().filter(|trade| {
+                    requested_end_time.is_none_or(|end_time| trade.time <= end_time)
+                        && seen_trade_ids.insert(trade.id)
+                }));
+
+                if page_len < USER_TRADES_PAGE_LIMIT as usize || passed_end {
+                    break;
+                }
+
+                let next_from_id = max_trade_id
+                    .checked_add(1)
+                    .context("Binance user trade ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_from_id > from_id,
+                    "Binance user-trades pagination made no progress"
+                );
+                from_id = next_from_id;
+            }
         }
 
-        if let Some(et) = end_time {
-            builder.end_time(et);
-        }
-        let params = builder.build().map_err(|e| anyhow::anyhow!("{e}"))?;
-
-        let trades = self.http_client.query_user_trades(&params).await?;
+        trades.sort_unstable_by_key(|trade| (trade.time, trade.id));
         let (price_precision, size_precision) = self.get_instrument_precision(instrument_id);
         let ts_init = self.clock.get_time_ns();
 
         let mut reports = Vec::new();
 
         for trade in trades {
-            if let Ok(report) = trade.to_fill_report(
+            reports.push(trade.to_fill_report(
                 self.core.account_id,
                 instrument_id,
                 price_precision,
                 size_precision,
                 self.config.bnfcr_currency,
                 ts_init,
-            ) {
-                reports.push(report);
-            }
+            )?);
         }
 
         Ok(reports)
@@ -1873,10 +1975,14 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             }
 
             let cache = self.core.cache();
-            if let Some(instrument) = cache
-                .instruments(&BINANCE_VENUE, None)
-                .into_iter()
-                .find(|i| i.raw_symbol().as_str() == position.symbol.as_str())
+            if let Some(instrument) =
+                cache
+                    .instruments(&BINANCE_VENUE, None)
+                    .into_iter()
+                    .find(|instrument| {
+                        instrument.raw_symbol().as_str() == position.symbol.as_str()
+                            && is_instrument_for_product(instrument, self.product_type)
+                    })
             {
                 match self.create_position_report(
                     &position,
@@ -1928,7 +2034,72 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             self.generate_position_status_reports(&position_cmd),
         )?;
 
+        let mut instrument_ids: Vec<_> = order_reports
+            .iter()
+            .map(|report| report.instrument_id)
+            .chain(position_reports.iter().map(|report| report.instrument_id))
+            .collect();
+        {
+            let cache = self.core.cache();
+            instrument_ids.extend(
+                cache
+                    .orders_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|order| order.instrument_id()),
+            );
+            instrument_ids.extend(
+                cache
+                    .orders_inflight(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|order| order.instrument_id()),
+            );
+            instrument_ids.extend(
+                cache
+                    .positions_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|position| position.instrument_id),
+            );
+            instrument_ids.retain(|instrument_id| {
+                cache.instrument(instrument_id).is_some_and(|instrument| {
+                    is_instrument_for_product(instrument, self.product_type)
+                })
+            });
+        }
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
+
+        let mut fill_reports = Vec::new();
+
+        for instrument_id in instrument_ids {
+            let fill_cmd = GenerateFillReportsBuilder::default()
+                .ts_init(ts_now)
+                .instrument_id(Some(instrument_id))
+                .start(start)
+                .build()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            fill_reports.extend(self.generate_fill_reports(fill_cmd).await?);
+        }
+
         log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
 
         let mut mass_status = ExecutionMassStatus::new(
@@ -1940,6 +2111,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         );
 
         mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
 
         Ok(Some(mass_status))
@@ -2753,8 +2925,23 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
     }
 }
 
+fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinanceProductType) -> bool {
+    match product_type {
+        BinanceProductType::UsdM => {
+            matches!(instrument, InstrumentAny::CryptoPerpetual(_)) && !instrument.is_inverse()
+        }
+        BinanceProductType::CoinM => {
+            matches!(instrument, InstrumentAny::CryptoPerpetual(_)) && instrument.is_inverse()
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_model::instruments::stubs::{
+        crypto_perpetual_ethusdt, currency_pair_btcusdt, xbtusd_bitmex,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -2806,5 +2993,19 @@ mod tests {
         let err = http_error(BINANCE_GTX_ORDER_REJECT_CODE);
         assert!(!is_ambiguous_submit_error(&err));
         assert!(is_structured_venue_rejection(&err));
+    }
+
+    #[rstest]
+    fn test_instrument_product_matching_distinguishes_futures_products_from_spot() {
+        let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let coinm = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
+        let spot = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+
+        assert!(is_instrument_for_product(&usdm, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&usdm, BinanceProductType::CoinM));
+        assert!(is_instrument_for_product(&coinm, BinanceProductType::CoinM));
+        assert!(!is_instrument_for_product(&coinm, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::UsdM));
+        assert!(!is_instrument_for_product(&spot, BinanceProductType::CoinM));
     }
 }

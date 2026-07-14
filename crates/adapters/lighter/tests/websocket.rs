@@ -331,6 +331,7 @@ impl ClientHarness {
             LighterEnvironment::Testnet,
             Arc::clone(&registry),
             TransportBackend::default(),
+            5,
             None,
         );
         client.cache_instruments(vec![
@@ -650,6 +651,7 @@ async fn test_send_tx_errors_when_handler_unavailable() {
         LighterEnvironment::Testnet,
         registry,
         TransportBackend::default(),
+        5,
         None,
     );
 
