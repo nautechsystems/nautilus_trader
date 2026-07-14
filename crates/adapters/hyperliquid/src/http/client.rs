@@ -95,8 +95,7 @@ use crate::{
         },
         parse::{
             HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
-            parse_fill_report,
-            parse_order_status_report_from_basic, parse_outcome_instruments,
+            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
             parse_perp_instruments_with_settlement, parse_position_status_report,
             parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
             resolve_perp_settlement_currency,
@@ -2843,7 +2842,10 @@ impl HyperliquidHttpClient {
                 Error::bad_request(InstrumentLookupError::not_found(instrument_id).to_string())
             })?;
 
-        let raw_trades = match self.info_recent_trades(instrument.raw_symbol().as_ref()).await {
+        let raw_trades = match self
+            .info_recent_trades(instrument.raw_symbol().as_ref())
+            .await
+        {
             Ok(trades) => trades,
             Err(e) if e.is_unprocessable_entity() => {
                 log::warn!(
