@@ -62,6 +62,7 @@ from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
+from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
@@ -69,6 +70,7 @@ from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import filename_to_class
 from nautilus_trader.persistence.funcs import urisafe_identifier
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
+from nautilus_trader.serialization.arrow.serializer import get_schema
 
 
 TimestampLike = int | str | float
@@ -2061,7 +2063,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not file_list:
             return []
 
-        dataset = pds.dataset(file_list, filesystem=self.fs)
+        # Use the registered Equity schema so fragments written before it gained
+        # max_quantity/min_quantity don't mask those fields on newer fragments
+        # (pyarrow otherwise infers the schema from the first fragment only).
+        # Scoped to Equity: other instruments have had schema/type migrations
+        # (e.g. legacy Betting ISO-string timestamps) that an enforced schema
+        # would reject, and subclasses may carry their own registered metadata.
+        schema = None
+
+        if data_cls is Equity:
+            schema = get_schema(Equity).with_metadata({"class": Equity.__name__})
+
+        dataset = pds.dataset(file_list, filesystem=self.fs, schema=schema)
 
         # Filter dataset
         used_start: pd.Timestamp | None = time_object_to_dt(start)

@@ -49,6 +49,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -680,6 +681,70 @@ def test_catalog_instrument_roundtrip_with_info_params(
     assert by_ts[2000].info == {"venue_extra": "v2", "count": 2, "enabled": False}
     assert by_ts[1000].id == inst1.id
     assert by_ts[2000].id == inst2.id
+
+
+def test_catalog_equity_roundtrip_preserves_quantity_constraints(
+    catalog: ParquetDataCatalog,
+) -> None:
+    # Quantity constraints must survive the catalog round trip (GH #4461)
+    base = TestInstrumentProvider.equity()
+    equity = Equity.from_dict(
+        {
+            **Equity.to_dict(base),
+            "max_quantity": "1000",
+            "min_quantity": "1",
+        },
+    )
+    catalog.write_data([equity])
+    read = catalog.instruments(instrument_ids=[equity.id.value])
+    assert len(read) == 1
+    assert read[0].max_quantity == Quantity.from_int(1000)
+    assert read[0].min_quantity == Quantity.from_int(1)
+
+
+def test_catalog_equity_mixed_schema_fragments(
+    catalog: ParquetDataCatalog,
+    monkeypatch,
+) -> None:
+    # Fragments written before the Equity schema gained max_quantity/min_quantity
+    # must not mask those fields on newer fragments in the same catalog (GH #4461)
+    from nautilus_trader.serialization.arrow.implementations import (
+        instruments as instruments_schemas,
+    )
+
+    new_schema = instruments_schemas.SCHEMAS[Equity]
+    old_schema = pa.schema(
+        {
+            field.name: field.type
+            for field in new_schema
+            if field.name not in ("max_quantity", "min_quantity")
+        },
+    )
+    base = TestInstrumentProvider.equity()
+
+    # write one fragment with the pre-fix schema, then one with the current schema
+    monkeypatch.setitem(instruments_schemas.SCHEMAS, Equity, old_schema)
+    catalog.write_data([Equity.from_dict({**Equity.to_dict(base), "ts_init": 0})])
+    monkeypatch.setitem(instruments_schemas.SCHEMAS, Equity, new_schema)
+    catalog.write_data(
+        [
+            Equity.from_dict(
+                {
+                    **Equity.to_dict(base),
+                    "max_quantity": "1000",
+                    "min_quantity": "1",
+                    "ts_event": 1,
+                    "ts_init": 1,
+                },
+            ),
+        ],
+    )
+
+    read = {equity.ts_init: equity for equity in catalog.instruments()}
+    assert read[0].max_quantity is None
+    assert read[0].min_quantity is None
+    assert read[1].max_quantity == Quantity.from_int(1000)
+    assert read[1].min_quantity == Quantity.from_int(1)
 
 
 def test_list_backtest_runs(
