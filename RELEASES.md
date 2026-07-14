@@ -65,6 +65,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
+- Fixed `OrderFactory.bracket(...)` docstring to document the actual `tp_post_only` default of `True` (was incorrectly documented as `False`) (#4437)
 - Fixed v2 composite bar aggregation (`@` source) to deliver aggregated bars to subscribed actors and strategies
 - Fixed v2 tick, tick-imbalance, and tick-runs aggregators to emit bars with the standard bar type for composite subscriptions, matching all other aggregators
 - Fixed v2 volume-runs and value-runs aggregators dropping leftover volume when a trade spanned a bar boundary and the next trade continued the same side
