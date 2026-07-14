@@ -23,6 +23,7 @@ pub mod parse;
 pub mod post;
 
 pub(crate) mod book;
+pub(crate) mod trades;
 
 pub use client::HyperliquidWebSocketClient;
 pub use enums::HyperliquidWsChannel;

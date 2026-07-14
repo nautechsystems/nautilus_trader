@@ -605,6 +605,42 @@ impl HyperliquidWebSocketClient {
         })
     }
 
+    /// Subscribe to complete public trades for an instrument.
+    #[pyo3(name = "subscribe_public_trades")]
+    fn py_subscribe_public_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .subscribe_public_trades(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
+    /// Unsubscribe from complete public trades for an instrument.
+    #[pyo3(name = "unsubscribe_public_trades")]
+    fn py_unsubscribe_public_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .unsubscribe_public_trades(instrument_id)
+                .await
+                .map_err(to_pyruntime_err)?;
+            Ok(())
+        })
+    }
+
     /// Subscribe to all mid prices across markets.
     #[pyo3(name = "subscribe_all_mids")]
     fn py_subscribe_all_mids<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

@@ -45,7 +45,7 @@ use crate::{
             parse_trigger_order_type,
         },
     },
-    data_types::HyperliquidOpenInterest,
+    data_types::{HyperliquidOpenInterest, HyperliquidPublicTrade},
 };
 
 fn parse_price(
@@ -89,6 +89,30 @@ pub fn parse_ws_trade_tick(
         ts_init,
     )
     .context("failed to construct TradeTick from Hyperliquid trade message")
+}
+
+/// Parses a WebSocket trade frame into a complete public Hyperliquid trade.
+pub fn parse_ws_public_trade(
+    trade: &WsTradeData,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<HyperliquidPublicTrade> {
+    let price = parse_price(trade.px, instrument, "trade.px")?;
+    let size = parse_quantity(trade.sz, instrument, "trade.sz")?;
+    let ts_event = millis_to_nanos(trade.time)?;
+
+    Ok(HyperliquidPublicTrade::new(
+        instrument.id(),
+        price,
+        size,
+        AggressorSide::from(trade.side),
+        trade.tid.to_string(),
+        trade.users[0].clone(),
+        trade.users[1].clone(),
+        trade.hash.clone(),
+        ts_event,
+        ts_init,
+    ))
 }
 
 /// Parses a WebSocket L2 order book message into [`OrderBookDeltas`].

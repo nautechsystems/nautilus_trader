@@ -32,15 +32,15 @@ use nautilus_common::{
     messages::{
         DataEvent,
         data::{
-            BarsResponse, BookResponse, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestFundingRates,
-            RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
-            UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstruments,
-            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
+            RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -51,7 +51,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, BarType, BookOrder, Data, DataType, FundingRateUpdate, OrderBookDeltas_API, TradeTick,
+        Bar, BarType, BookOrder, CustomData, Data, DataType, FundingRateUpdate,
+        OrderBookDeltas_API, TradeTick,
     },
     enums::{BarAggregation, BookType, OrderSide},
     identifiers::{ClientId, InstrumentId, Venue},
@@ -539,7 +540,10 @@ impl DataClient for HyperliquidDataClient {
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting Hyperliquid data client {}", self.client_id);
         self.is_connected.store(false, Ordering::Relaxed);
-        self.cancellation_token = CancellationToken::new();
+        // Keep this generation cancelled until `connect()` has torn down the
+        // inner WebSocket client. Replacing it here would allow the next
+        // connection to reuse an active old-generation handler.
+        self.cancellation_token.cancel();
         self.abort_pending_tasks();
         self.abort_stream_health_monitor();
         self.clear_stream_health();
@@ -547,6 +551,8 @@ impl DataClient for HyperliquidDataClient {
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
             handle.abort();
         }
+        self.instruments.store(AHashMap::new());
+        self.coin_to_instrument_id.store(AHashMap::new());
         Ok(())
     }
 
@@ -569,6 +575,15 @@ impl DataClient for HyperliquidDataClient {
         }
 
         if self.cancellation_token.is_cancelled() {
+            // `reset()` is synchronous, while shutting down the inner socket
+            // is async. Complete that teardown before creating any new stream
+            // task so its receiver and subscription registries cannot belong
+            // to the previous generation.
+            if let Err(e) = self.ws_client.disconnect().await {
+                log::debug!("Error tearing down Hyperliquid WebSocket after reset: {e}");
+            }
+            self.ws_client.reset_runtime_state();
+            self.abort_pending_tasks();
             self.cancellation_token = CancellationToken::new();
         }
 
@@ -673,6 +688,19 @@ impl DataClient for HyperliquidDataClient {
             return Ok(());
         }
 
+        if data_type == "HyperliquidPublicTrade" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidPublicTrade subscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("subscribe_public_trades", async move {
+                ws.subscribe_public_trades(instrument_id).await
+            });
+
+            return Ok(());
+        }
+
         log::warn!("Unsupported custom data subscription: {data_type}");
         Ok(())
     }
@@ -719,6 +747,19 @@ impl DataClient for HyperliquidDataClient {
 
             self.spawn_task("unsubscribe_open_interest", async move {
                 ws.unsubscribe_open_interest(instrument_id).await
+            });
+
+            return Ok(());
+        }
+
+        if data_type == "HyperliquidPublicTrade" {
+            let ws = self.ws_client.clone();
+            let instrument_id = Self::custom_instrument_id(&cmd.data_type)?.context(
+                "HyperliquidPublicTrade unsubscriptions require metadata['instrument_id']",
+            )?;
+
+            self.spawn_task("unsubscribe_public_trades", async move {
+                ws.unsubscribe_public_trades(instrument_id).await
             });
 
             return Ok(());
@@ -1208,6 +1249,63 @@ impl DataClient for HyperliquidDataClient {
 
             if let Err(e) = sender.send(DataEvent::Response(response)) {
                 log::error!("Failed to send trades response: {e}");
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        if request.data_type.type_name() != "HyperliquidPublicTrade" {
+            log::warn!(
+                "Unsupported custom data request: {}",
+                request.data_type.type_name()
+            );
+            return Ok(());
+        }
+
+        let data_type = request.data_type.clone();
+        let instrument_id = Self::custom_instrument_id(&data_type)?
+            .context("HyperliquidPublicTrade requests require metadata['instrument_id']")?;
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let request_id = request.request_id;
+        let client_id = request.client_id;
+        let params = request.params;
+        let clock = self.clock;
+        let limit = request.limit.map(|limit| limit.get());
+        let start = request.start;
+        let end = request.end;
+        let start_nanos = datetime_to_unix_nanos(start);
+        let end_nanos = datetime_to_unix_nanos(end);
+        let venue = self.venue();
+
+        self.spawn_task("request_public_trades", async move {
+            let trades = http
+                .request_public_trades(instrument_id, start, end, limit)
+                .await
+                .map_err(anyhow::Error::new)
+                .with_context(|| format!("public trades request failed for {instrument_id}"))?;
+            let data: Vec<CustomData> = trades
+                .into_iter()
+                .map(|trade| CustomData::new(Arc::new(trade), data_type.clone()))
+                .collect();
+
+            let response = DataResponse::Data(CustomDataResponse::new(
+                request_id,
+                client_id,
+                Some(venue),
+                data_type,
+                data,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            ));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send public trades response: {e}");
             }
             Ok(())
         });

@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
-use nautilus_core::{Params, UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
     data::TradeTick,
     enums::{
@@ -48,6 +48,7 @@ use crate::{
         },
         types::HyperliquidAssetId,
     },
+    data_types::HyperliquidPublicTrade,
     websocket::messages::{WsBasicOrderData, WsOrderData},
 };
 
@@ -1088,6 +1089,83 @@ pub fn parse_recent_trade(
     .context("failed to construct TradeTick from Hyperliquid recent trade")
 }
 
+/// Parses a `recentTrades` info entry into a complete public Hyperliquid trade.
+pub fn parse_recent_public_trade(
+    trade: &HyperliquidRecentTrade,
+    instrument: &InstrumentAny,
+) -> anyhow::Result<HyperliquidPublicTrade> {
+    let price = Price::from_decimal_dp(trade.px, instrument.price_precision())
+        .with_context(|| format!("Failed to create price from '{}'", trade.px))?;
+    let size = Quantity::from_decimal_dp(trade.sz.abs(), instrument.size_precision())
+        .with_context(|| format!("Failed to create size from '{}'", trade.sz))?;
+    let ts_event = millis_to_nanos(trade.time)?;
+
+    Ok(HyperliquidPublicTrade::new(
+        instrument.id(),
+        price,
+        size,
+        AggressorSide::from(trade.side),
+        trade.tid.to_string(),
+        trade.users[0].clone(),
+        trade.users[1].clone(),
+        trade.hash.clone(),
+        ts_event,
+        ts_event,
+    ))
+}
+
+/// Constrains a recent public-trade snapshot to a requested time window.
+///
+/// The `recentTrades` endpoint only provides bounded recent coverage, so a
+/// request whose end precedes the snapshot floor cannot be fulfilled.
+pub fn filter_recent_public_trades(
+    trades: Vec<HyperliquidPublicTrade>,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+    limit: Option<usize>,
+    instrument_id: InstrumentId,
+) -> Vec<HyperliquidPublicTrade> {
+    let Some(floor) = trades.first().map(|trade| trade.ts_event) else {
+        return Vec::new();
+    };
+
+    if let Some(end) = end
+        && end < floor
+    {
+        log::warn!(
+            "Recent public trades for {instrument_id} are entirely older than the requested window; \
+             snapshot only covers back to {}",
+            unix_nanos_to_iso8601(floor),
+        );
+        return Vec::new();
+    }
+
+    if let Some(start) = start
+        && start < floor
+    {
+        log::warn!(
+            "Recent public trades for {instrument_id} only cover back to {}; \
+             the requested start is earlier and cannot be served",
+            unix_nanos_to_iso8601(floor),
+        );
+    }
+
+    let mut filtered: Vec<HyperliquidPublicTrade> = trades
+        .into_iter()
+        .filter(|trade| start.is_none_or(|value| trade.ts_event >= value))
+        .filter(|trade| end.is_none_or(|value| trade.ts_event <= value))
+        .collect();
+
+    if let Some(limit) = limit
+        && filtered.len() > limit
+    {
+        // Preserve ascending event-time order while retaining the newest data.
+        filtered.drain(0..filtered.len() - limit);
+    }
+
+    filtered
+}
+
 /// Parse Hyperliquid fill to FillReport.
 ///
 /// # Errors
@@ -1371,8 +1449,10 @@ mod tests {
             side: HyperliquidSide::Sell,
             px: dec!(50000.0),
             sz: dec!(0.5),
+            hash: "0xhash".to_string(),
             time: 1_769_916_000_000,
             tid: 987_654_321,
+            users: ["0xbuyer".to_string(), "0xseller".to_string()],
         };
 
         let tick = parse_recent_trade(&trade, &instrument).unwrap();
