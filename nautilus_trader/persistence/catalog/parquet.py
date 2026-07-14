@@ -973,7 +973,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in globbed_files
             if (interval := _parse_filename_timestamps(file)) is not None
         }
-        interval_components = []
+        interval_components: list[tuple[int, int, list[str]]] = []
         for file, interval in sorted(file_intervals.items(), key=lambda item: item[1]):
             if interval_components and interval[0] <= interval_components[-1][1]:
                 component_start, component_end, component_files = interval_components[-1]
@@ -1016,6 +1016,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 and component_end >= query_info["query_start"]
                 for component_start, component_end in protected_components
             )
+
             if query_is_protected:
                 # Skipping a query means none of its input files were rewritten. Protect every
                 # component intersecting that query, and let extended components propagate the
@@ -1040,6 +1041,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                         query_info["query_end"],
                     ),
                 )
+
                 if self.fs.exists(target_filename):
                     exclude_existing_target(target_filename)
                     continue
@@ -1104,9 +1106,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             for file in list(existing_files):
                 interval = file_intervals.get(file)
 
-                if file not in protected_files and interval and (
-                    interval[1] <= query_info["query_end"]
-                    and interval[0] >= queries_to_execute[0]["query_start"]
+                if (
+                    file not in protected_files
+                    and interval
+                    and (
+                        interval[1] <= query_info["query_end"]
+                        and interval[0] >= queries_to_execute[0]["query_start"]
+                    )
                 ):
                     existing_files.pop(file)
                     self.fs.rm(file)

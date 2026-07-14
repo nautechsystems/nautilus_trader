@@ -1826,6 +1826,7 @@ class TestConsolidateDataByPeriod:
             [start_ns + 5 * day_ns + i * minute_ns for i in range(3)],
             [start_ns + 5 * day_ns + (10 + i) * minute_ns for i in range(3)],
         ]
+
         for timestamps in later_batches:
             self.catalog.write_data(
                 self._create_test_bars(timestamps),
@@ -1840,7 +1841,7 @@ class TestConsolidateDataByPeriod:
                 *spanning_timestamps,
                 nested_timestamp,
             ]
-            + [timestamp for batch in later_batches for timestamp in batch]
+            + [timestamp for batch in later_batches for timestamp in batch],
         )
 
         # Act
@@ -1875,6 +1876,7 @@ class TestConsolidateDataByPeriod:
             [start_ns + 5 * day_ns + i * minute_ns for i in range(3)],
             [start_ns + 5 * day_ns + (10 + i) * minute_ns for i in range(3)],
         ]
+
         for timestamps in later_batches:
             self.catalog.write_data(
                 self._create_test_bars(timestamps),
@@ -1884,7 +1886,7 @@ class TestConsolidateDataByPeriod:
         bar_type_str = self._get_bar_type_identifier()
         expected_timestamps = sorted(
             [*spanning_timestamps, *target_timestamps]
-            + [timestamp for batch in later_batches for timestamp in batch]
+            + [timestamp for batch in later_batches for timestamp in batch],
         )
 
         # Act
