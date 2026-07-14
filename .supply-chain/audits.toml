@@ -630,6 +630,12 @@ criteria = "safe-to-deploy"
 delta = "1.23.1 -> 1.23.2"
 notes = "Parser error-message refactor (RequestedUuid enum, 0-based indices, ParseLength variant). No new deps, network, or unsafe beyond pre-existing from_utf8_unchecked."
 
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.23.4 -> 1.23.5"
+notes = "Reviewed parser and formatter refactors plus benchmark-only metadata. No new unsafe code, build script, runtime dependencies, filesystem, or network behavior."
+
 [[audits.winnow]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"

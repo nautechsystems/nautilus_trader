@@ -193,10 +193,10 @@ jobs:
         run: |
           cargo deny --all-features check advisories licenses sources bans
           cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
-            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            --config .cargo/deny-fuzz.toml --locked --all-features check \
             advisories licenses sources bans
           cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
-            --locked --all-features check --config .cargo/deny-fuzz.toml \
+            --config .cargo/deny-fuzz.toml --locked --all-features check \
             advisories licenses sources bans
 
   cargo-vet:

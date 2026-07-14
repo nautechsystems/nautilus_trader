@@ -1368,6 +1368,12 @@ fn flush_mbo_event_boundary(
         return None;
     }
 
+    let buffer = buffered_deltas.get(&instrument_id)?;
+
+    if buffer.is_empty() {
+        return None;
+    }
+
     if let Some(start_ns) = *buffering_start {
         if ts_event <= start_ns {
             return None;
@@ -1376,11 +1382,6 @@ fn flush_mbo_event_boundary(
     }
 
     let buffer = buffered_deltas.remove(&instrument_id)?;
-
-    if buffer.is_empty() {
-        return None;
-    }
-
     let deltas = OrderBookDeltas::new(instrument_id, buffer);
     Some(OrderBookDeltas_API::new(deltas))
 }
@@ -1449,18 +1450,57 @@ mod tests {
 
     #[rstest]
     fn test_boundary_flag_with_empty_buffer_is_noop() {
-        // A pure-fill event ([T, F | F_LAST]) has no buffered deltas
-        let mut buffering_start = None;
+        let instrument_id = InstrumentId::from("TEST.GLBX");
+        let start = UnixNanos::from(1);
+        let mut buffering_start = Some(start);
         let mut buffered: AHashMap<InstrumentId, Vec<OrderBookDelta>> = AHashMap::new();
+        buffered.insert(instrument_id, Vec::new());
 
         let flushed = flush_mbo_event_boundary(
-            InstrumentId::from("TEST.GLBX"),
+            instrument_id,
             2.into(),
             RecordFlag::F_LAST as u8,
             &mut buffering_start,
             &mut buffered,
         );
+
         assert!(flushed.is_none());
+        assert_eq!(buffering_start, Some(start));
+    }
+
+    #[rstest]
+    fn test_empty_boundary_preserves_replay_gate_for_buffered_instrument() {
+        let empty_id = InstrumentId::from("EMPTY.GLBX");
+        let buffered_id = InstrumentId::from("BUFFERED.GLBX");
+        let start = UnixNanos::from(10);
+        let mut buffering_start = Some(start);
+        let mut buffered = AHashMap::new();
+        let _ = process_mbo_delta(
+            stub_delta(buffered_id, 1),
+            0,
+            &mut buffering_start,
+            &mut buffered,
+        );
+
+        let empty_boundary = flush_mbo_event_boundary(
+            empty_id,
+            11.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+        let buffered_boundary = flush_mbo_event_boundary(
+            buffered_id,
+            5.into(),
+            RecordFlag::F_LAST as u8,
+            &mut buffering_start,
+            &mut buffered,
+        );
+
+        assert!(empty_boundary.is_none());
+        assert!(buffered_boundary.is_none());
+        assert_eq!(buffering_start, Some(start));
+        assert!(buffered.contains_key(&buffered_id));
     }
 
     #[rstest]

@@ -2834,22 +2834,21 @@ impl ExecutionEngine {
 
         let cache = self.cache.borrow();
 
-        let exec_spawn_id = if let Some(o) = order {
-            o.exec_spawn_id()
+        let cached_order;
+        let order: &OrderAny = if let Some(order) = order {
+            order
         } else {
-            match cache.order(&fill.client_order_id()) {
-                Some(o) => o.exec_spawn_id(),
-                None => {
-                    panic!(
-                        "Order for {} not found to determine position ID",
-                        fill.client_order_id()
-                    );
-                }
-            }
+            cached_order = cache.order(&fill.client_order_id()).unwrap_or_else(|| {
+                panic!(
+                    "Order for {} not found to determine position ID",
+                    fill.client_order_id()
+                )
+            });
+            &cached_order
         };
 
         // Check execution spawn orders
-        if let Some(spawn_id) = exec_spawn_id {
+        if let Some(spawn_id) = order.exec_spawn_id() {
             let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
             for spawned_order in spawn_orders {
                 if let Some(pos_id) = spawned_order.position_id() {
@@ -2858,6 +2857,34 @@ impl ExecutionEngine {
                     }
                     return pos_id;
                 }
+            }
+        }
+
+        if order.is_reduce_only() {
+            let mut candidates = cache
+                .positions_open(
+                    None,
+                    Some(&fill.instrument_id),
+                    Some(&fill.strategy_id),
+                    Some(&fill.account_id),
+                    None,
+                )
+                .into_iter()
+                .filter(|position| position.is_opposite_side(fill.order_side));
+            let candidate = candidates.next();
+
+            if let Some(position) = candidate
+                && candidates.next().is_none()
+                && order.would_reduce_only(position.side, position.quantity)
+            {
+                if self.config.debug {
+                    log::debug!(
+                        "Assigned reduce-only fill {} to position {}",
+                        fill.client_order_id(),
+                        position.id
+                    );
+                }
+                return position.id;
             }
         }
 
@@ -3238,7 +3265,7 @@ impl ExecutionEngine {
 
         match position_opt {
             None => {
-                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
@@ -3246,7 +3273,7 @@ impl ExecutionEngine {
                     .unwrap_or_default()
             }
             Some(pos) if pos.is_closed() => {
-                if self.reject_reduce_only_netting_position_open(&fill, oms_type) {
+                if self.reject_reduce_only_position_open(&fill, oms_type) {
                     return Vec::new();
                 }
 
@@ -3263,15 +3290,7 @@ impl ExecutionEngine {
         }
     }
 
-    fn reject_reduce_only_netting_position_open(
-        &self,
-        fill: &OrderFilled,
-        oms_type: OmsType,
-    ) -> bool {
-        if oms_type != OmsType::Netting {
-            return false;
-        }
-
+    fn reject_reduce_only_position_open(&self, fill: &OrderFilled, oms_type: OmsType) -> bool {
         let cache = self.cache.borrow();
         let Some(order) = cache.order_owned(&fill.client_order_id) else {
             return false;
@@ -3301,7 +3320,7 @@ impl ExecutionEngine {
             Self::position_details(positions_open.iter().map(|position| &**position));
 
         log::error!(
-            "Cannot open NETTING position {position_id} from reduce-only fill {} for {}; \
+            "Cannot open {oms_type} position {position_id} from reduce-only fill {} for {}; \
              matching_reduce_positions=[{}], open_positions=[{}]",
             fill.trade_id,
             fill.instrument_id,

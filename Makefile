@@ -529,8 +529,8 @@ security-audit: check-audit-installed check-deny-installed check-vet-installed c
 	@$(call audit_step,cargo audit lighter fuzz,cargo audit --color never --file crates/adapters/lighter/fuzz/Cargo.lock)
 	@$(call audit_step,cargo audit derive fuzz,cargo audit --color never --file crates/adapters/derive/fuzz/Cargo.lock)
 	@$(call audit_step,cargo deny,cargo deny --all-features check advisories licenses sources bans)
-	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --locked --all-features check --config .cargo/deny-fuzz.toml advisories licenses sources bans)
-	@$(call audit_step,cargo deny derive fuzz,cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml --locked --all-features check --config .cargo/deny-fuzz.toml advisories licenses sources bans)
+	@$(call audit_step,cargo deny lighter fuzz,cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --config .cargo/deny-fuzz.toml --locked --all-features check advisories licenses sources bans)
+	@$(call audit_step,cargo deny derive fuzz,cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml --config .cargo/deny-fuzz.toml --locked --all-features check advisories licenses sources bans)
 	@$(call audit_step,cargo vet,cargo vet --locked)
 	@$(call audit_step,cargo vet lighter fuzz,cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml --store-path .supply-chain)
 	@$(call audit_step,cargo vet derive fuzz,cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml --store-path .supply-chain)
@@ -617,9 +617,20 @@ check-audit-installed:  #-- Verify cargo-audit is installed
 	fi
 
 .PHONY: check-deny-installed
-check-deny-installed:  #-- Verify cargo-deny is installed
+check-deny-installed:  #-- Verify the pinned cargo-deny version is installed
 	@if ! cargo deny --version >/dev/null 2>&1; then \
-		echo "cargo-deny is not installed. You can install it using 'cargo install cargo-deny'"; \
+		printf "$(YELLOW)cargo-deny %s is required but not installed$(RESET)\n" \
+			"$(CARGO_DENY_VERSION)"; \
+		printf "Install with: $(CYAN)cargo install cargo-deny --version %s --locked$(RESET)\n" \
+			"$(CARGO_DENY_VERSION)"; \
+		exit 1; \
+	fi
+	@INSTALLED=$$(cargo deny --version | awk '{print $$2}'); \
+	if [ "$$INSTALLED" != "$(CARGO_DENY_VERSION)" ]; then \
+		printf "$(RED)cargo-deny version mismatch: installed %s, expected %s (from Cargo.toml)$(RESET)\n" \
+			"$$INSTALLED" "$(CARGO_DENY_VERSION)"; \
+		printf "Install with: $(CYAN)cargo install cargo-deny --version %s --locked$(RESET)\n" \
+			"$(CARGO_DENY_VERSION)"; \
 		exit 1; \
 	fi
 

@@ -142,10 +142,10 @@ trait/buffer definitions below `SBE_SEMANTIC_VERSION`). Update:
 - Update the schema reference in this README and the `mod.rs` doc comment.
 - If the schema adds enum values or message types the adapter maps (e.g. `symbolStatus`),
   extend the corresponding match arms (e.g. `common/status.rs`) and add test cases.
-- Leave the requested `SBE_SCHEMA_HEADER` in `spot/http/client.rs` on its current stable value
-  unless that schema is being retired: Binance upgrades the request to the highest compatible
-  version, and the decoder accepts any version (see below). Bump it only when the retirement
-  window forces it, then update `test_sbe_schema_header` / `test_default_headers_include_sbe`.
+- Keep the requested `SBE_SCHEMA_HEADER` in `spot/http/client.rs` and the Spot SBE WebSocket API
+  URLs in `common/consts.rs` aligned with the generated schema. Update
+  `test_sbe_schema_header`, `test_default_headers_include_sbe`, and
+  `test_spot_sbe_ws_api_urls_use_current_schema` when bumping the schema.
 - `cargo build -p nautilus-binance` and `cargo test -p nautilus-binance` must pass.
 - `cargo clippy -p nautilus-binance --all-targets` must pass.
 
