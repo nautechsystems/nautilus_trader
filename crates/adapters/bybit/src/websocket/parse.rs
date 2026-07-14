@@ -33,7 +33,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, any::InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, BorrowBalance, MarginBalance, Money, Price, Quantity},
 };
 use rust_decimal::Decimal;
 
@@ -1071,6 +1071,7 @@ pub fn parse_ws_account_state(
 ) -> anyhow::Result<AccountState> {
     let mut balances = Vec::new();
     let mut margins = Vec::new();
+    let mut borrows = Vec::new();
 
     for coin_data in &wallet.coin {
         let currency = get_currency(coin_data.coin.as_str());
@@ -1096,6 +1097,13 @@ pub fn parse_ws_account_state(
                 None,
             ));
         }
+
+        if !coin_data.borrow_amount.is_zero() {
+            borrows.push(BorrowBalance::new(
+                Money::from_decimal(coin_data.borrow_amount, currency)?,
+                Money::from_decimal(coin_data.accrued_interest, currency)?,
+            ));
+        }
     }
 
     Ok(AccountState::new(
@@ -1103,6 +1111,7 @@ pub fn parse_ws_account_state(
         AccountType::Margin, // Bybit unified account
         balances,
         margins,
+        borrows,
         true, // is_reported
         UUID4::new(),
         ts_event,

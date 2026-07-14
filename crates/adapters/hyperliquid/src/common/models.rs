@@ -721,6 +721,7 @@ impl HyperliquidAccountState {
             account_type,
             balances,
             margins,
+            vec![],
             is_reported,
             event_id,
             ts_event,

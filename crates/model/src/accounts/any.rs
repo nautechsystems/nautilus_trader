@@ -34,6 +34,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 #[enum_dispatch(Account)]
 pub enum AccountAny {
     Margin(MarginAccount),
@@ -293,6 +294,7 @@ mod tests {
         let state = AccountState::new(
             AccountId::from("WALLET-001"),
             AccountType::Wallet,
+            vec![],
             vec![],
             vec![],
             true,

@@ -42,6 +42,7 @@ impl<'r> FromRow<'r, PgRow> for AccountEventModel {
             account_type,
             serde_json::from_value(balances).unwrap(),
             serde_json::from_value(margins).unwrap(),
+            vec![],
             is_reported,
             event_id,
             ts_event,

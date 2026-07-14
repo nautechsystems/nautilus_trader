@@ -1024,6 +1024,7 @@ mod tests {
                 Money::new(total, currency),
             )],
             vec![],
+            vec![],
             true,
             UUID4::new(),
             UnixNanos::from(ts_event),

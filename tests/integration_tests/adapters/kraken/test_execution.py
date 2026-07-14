@@ -1909,6 +1909,7 @@ async def test_handle_account_state_pyo3(
             ),
         ],
         margins=[],
+        borrows=[],
         is_reported=True,
         event_id=nautilus_pyo3.UUID4(),
         ts_event=0,

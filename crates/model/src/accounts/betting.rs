@@ -673,6 +673,7 @@ mod tests {
                 Money::from("-50 GBP"),
             )],
             vec![],
+            vec![],
             false,
             crate::identifiers::stubs::uuid4(),
             0.into(),

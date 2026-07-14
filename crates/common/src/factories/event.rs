@@ -90,6 +90,7 @@ impl OrderEventFactory {
             self.account_type,
             balances,
             margins,
+            vec![],
             reported,
             UUID4::new(),
             ts_event,

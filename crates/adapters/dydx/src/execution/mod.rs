@@ -428,6 +428,7 @@ impl DydxExecutionClient {
                                 AccountType::Margin,
                                 vec![balance],
                                 vec![],
+                                vec![],
                                 true,
                                 UUID4::new(),
                                 ts_init,

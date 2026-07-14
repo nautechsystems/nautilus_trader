@@ -488,6 +488,7 @@ pub fn parse_account_state(
         account_type,
         balances,
         margins,
+        vec![],
         is_reported,
         event_id,
         ts_event,

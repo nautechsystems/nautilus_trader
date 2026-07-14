@@ -117,6 +117,7 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
             Money::from("100000.50 USD"),
         )],
         vec![],
+        vec![],
         true,
         UUID4::new(),
         UnixNanos::default(),

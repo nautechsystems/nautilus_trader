@@ -52,7 +52,10 @@ use crate::{
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
     position::Position,
-    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity, money::MoneyRaw},
+    types::{
+        AccountBalance, BorrowBalance, Currency, MarginBalance, Money, Price, Quantity,
+        money::MoneyRaw,
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +77,8 @@ pub struct MarginAccount {
     /// Populated from `AccountState.margins` entries where `instrument_id` is
     /// `None`. Most derivatives venues in cross-margin mode report here.
     pub account_margins: IndexMap<Currency, MarginBalance>,
+    /// Account-wide borrow balances keyed by the borrowed currency.
+    pub borrows: IndexMap<Currency, BorrowBalance>,
     pub default_leverage: Decimal,
     #[serde(skip, default = "MarginModelAny::default")]
     margin_model: MarginModelAny,
@@ -106,12 +111,18 @@ impl MarginAccount {
     #[must_use]
     pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
         let (margins, account_margins) = split_event_margins(&event);
+        let borrows = event
+            .borrows
+            .iter()
+            .map(|borrow| (borrow.currency, *borrow))
+            .collect();
 
         Self {
             base: BaseAccount::new(event, calculate_account_state),
             leverages: AHashMap::new(),
             margins,
             account_margins,
+            borrows,
             default_leverage: Decimal::ONE,
             margin_model: MarginModelAny::default(),
         }
@@ -409,6 +420,40 @@ impl MarginAccount {
         if self.account_margins.shift_remove(&currency).is_some() {
             self.recalculate_balance(currency);
         }
+    }
+
+    /// Returns the borrow balance for the specified currency.
+    #[must_use]
+    pub fn borrow(&self, currency: &Currency) -> Option<BorrowBalance> {
+        self.borrows.get(currency).copied()
+    }
+
+    /// Returns all borrow balances keyed by currency.
+    #[must_use]
+    pub fn borrows(&self) -> IndexMap<Currency, BorrowBalance> {
+        self.borrows.clone()
+    }
+
+    /// Returns the outstanding borrowed amount for the specified currency.
+    #[must_use]
+    pub fn borrowed(&self, currency: &Currency) -> Option<Money> {
+        self.borrows.get(currency).map(|b| b.borrowed)
+    }
+
+    /// Returns the accrued interest on the outstanding borrow for the specified currency.
+    #[must_use]
+    pub fn accrued_interest(&self, currency: &Currency) -> Option<Money> {
+        self.borrows.get(currency).map(|b| b.accrued_interest)
+    }
+
+    /// Updates the borrow balance, keyed by `borrow.currency`.
+    pub fn update_borrow(&mut self, borrow: BorrowBalance) {
+        self.borrows.insert(borrow.currency, borrow);
+    }
+
+    /// Clears the borrow balance for the specified currency.
+    pub fn clear_borrow(&mut self, currency: Currency) {
+        self.borrows.shift_remove(&currency);
     }
 
     /// Calculates the initial margin amount for the specified instrument and quantity.
@@ -752,7 +797,7 @@ mod tests {
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
-        types::{Currency, MarginBalance, Money, Price, Quantity},
+        types::{BorrowBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
 
     #[rstest]
@@ -1010,6 +1055,7 @@ mod tests {
                 Money::from("25000 USD"),
                 Some(new_instrument_id),
             )],
+            vec![],
             true,
             uuid4(),
             1.into(),
@@ -1045,6 +1091,7 @@ mod tests {
                 Money::from("25000 USD"),
                 None,
             )],
+            vec![],
             true,
             uuid4(),
             1.into(),
@@ -1084,6 +1131,7 @@ mod tests {
         let empty_event = AccountState::new(
             margin_account_state.account_id,
             AccountType::Margin,
+            vec![],
             vec![],
             vec![],
             true,
@@ -1402,6 +1450,28 @@ mod tests {
 
         margin_account.clear_account_margin(usd);
         assert!(margin_account.account_margin(&usd).is_none());
+    }
+
+    #[rstest]
+    fn test_update_and_clear_borrow(mut margin_account: MarginAccount) {
+        let usdt = Currency::from("USDT");
+        let borrow = BorrowBalance::new(Money::from("1000 USDT"), Money::from("5 USDT"));
+
+        margin_account.update_borrow(borrow);
+
+        assert_eq!(margin_account.borrow(&usdt), Some(borrow));
+        assert_eq!(
+            margin_account.borrowed(&usdt),
+            Some(Money::from("1000 USDT"))
+        );
+        assert_eq!(
+            margin_account.accrued_interest(&usdt),
+            Some(Money::from("5 USDT"))
+        );
+        assert_eq!(margin_account.borrows().len(), 1);
+
+        margin_account.clear_borrow(usdt);
+        assert!(margin_account.borrow(&usdt).is_none());
     }
 
     #[rstest]

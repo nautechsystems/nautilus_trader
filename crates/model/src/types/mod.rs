@@ -68,7 +68,7 @@ pub mod quantity;
 pub mod stubs;
 
 // Re-exports
-pub use balance::{AccountBalance, MarginBalance};
+pub use balance::{AccountBalance, BorrowBalance, MarginBalance};
 pub use currency::{Currency, CurrencyLookupError};
 pub use money::{MONEY_MAX, MONEY_MIN, Money};
 pub use price::{

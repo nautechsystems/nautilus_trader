@@ -82,6 +82,7 @@ fn make_account(account_type: AccountType, account_id: AccountId) -> AccountStat
         account_type,
         balances,
         Vec::new(),
+        vec![],
         true,
         UUID4::new(),
         UnixNanos::default(),

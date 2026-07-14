@@ -1615,6 +1615,7 @@ impl BitmexHttpClient {
             account_type,
             balances,
             margins_vec,
+            vec![],
             is_reported,
             event_id,
             ts_event,

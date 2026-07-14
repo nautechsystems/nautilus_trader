@@ -121,11 +121,32 @@ pub mod masked_secret {
         })
     }
 }
+use crate::{
+    common::{
+        enums::{
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
+            BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
+            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
+            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+        },
+        symbol::BybitSymbol,
+    },
+    http::{
+        models::{
+            BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse,
+            BybitInstrumentLinear, BybitInstrumentOption, BybitInstrumentSpot, BybitKline,
+            BybitOrderbookResult, BybitPosition, BybitTrade, BybitWalletBalance,
+        },
+        query::BybitNativeTpSlParams,
+    },
+    websocket::parse::parse_millis_i64,
+};
 use nautilus_core::{
     Params, UUID4,
     datetime::{NANOSECONDS_IN_MILLISECOND, nanos_to_millis as nanos_to_millis_u64},
     nanos::UnixNanos,
 };
+use nautilus_model::types::BorrowBalance;
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, FundingRateUpdate, OrderBookDelta, OrderBookDeltas, TradeTick,
@@ -148,27 +169,6 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
-
-use crate::{
-    common::{
-        enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
-            BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
-            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
-        },
-        symbol::BybitSymbol,
-    },
-    http::{
-        models::{
-            BybitExecution, BybitFeeRate, BybitFunding, BybitInstrumentInverse,
-            BybitInstrumentLinear, BybitInstrumentOption, BybitInstrumentSpot, BybitKline,
-            BybitOrderbookResult, BybitPosition, BybitTrade, BybitWalletBalance,
-        },
-        query::BybitNativeTpSlParams,
-    },
-    websocket::parse::parse_millis_i64,
-};
 
 const BYBIT_HOUR_INTERVALS: &[u64] = &[1, 2, 4, 6, 12];
 
@@ -1173,6 +1173,30 @@ pub fn parse_account_state(
         margins.push(MarginBalance::new(initial_margin, maintenance_margin, None));
     }
 
+    let mut borrows = Vec::new();
+
+    for coin in &wallet_balance.coin {
+        let borrowed_f64 = match &coin.borrow_amount {
+            s if !s.is_empty() => s.parse::<f64>()?,
+            _ => 0.0,
+        };
+
+        if borrowed_f64 == 0.0 {
+            continue;
+        }
+
+        let accrued_interest_f64 = match &coin.accrued_interest {
+            s if !s.is_empty() => s.parse::<f64>()?,
+            _ => 0.0,
+        };
+
+        let currency = get_currency(&coin.coin);
+        let borrowed = Money::new(borrowed_f64, currency);
+        let accrued_interest = Money::new(accrued_interest_f64, currency);
+
+        borrows.push(BorrowBalance::new(borrowed, accrued_interest));
+    }
+
     let account_type = AccountType::Margin;
     let is_reported = true;
     let event_id = UUID4::new();
@@ -1185,6 +1209,7 @@ pub fn parse_account_state(
         account_type,
         balances,
         margins,
+        borrows,
         is_reported,
         event_id,
         ts_event,

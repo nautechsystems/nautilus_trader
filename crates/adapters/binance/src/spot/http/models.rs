@@ -324,7 +324,8 @@ impl BinanceAccountInfo {
             AccountType::Cash,
             balances,
             vec![], // No margins for spot
-            true,   // is_reported
+            vec![],
+            true, // is_reported
             UUID4::new(),
             ts_event,
             ts_init,

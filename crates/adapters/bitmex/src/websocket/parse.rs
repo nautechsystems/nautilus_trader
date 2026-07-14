@@ -1144,7 +1144,8 @@ pub fn parse_wallet_msg(msg: &BitmexWalletMsg, ts_init: UnixNanos) -> AccountSta
         AccountType::Margin,
         vec![balance],
         vec![], // margins will be added separately
-        true,   // is_reported
+        vec![],
+        true, // is_reported
         UUID4::new(),
         ts_init,
         ts_init,
@@ -1190,6 +1191,7 @@ pub fn parse_margin_account_state(msg: &BitmexMarginMsg, ts_init: UnixNanos) -> 
         AccountType::Margin,
         vec![balance],
         margins,
+        vec![],
         true,
         UUID4::new(),
         ts_event,

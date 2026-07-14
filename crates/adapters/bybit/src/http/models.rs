@@ -774,10 +774,8 @@ pub type BybitFeeRateResponse = BybitListResponse<BybitFeeRate>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BybitCoinBalance {
-    pub available_to_borrow: String,
     pub bonus: String,
     pub accrued_interest: String,
-    pub available_to_withdraw: String,
     #[serde(default, rename = "totalOrderIM")]
     pub total_order_im: Option<String>,
     pub equity: String,
@@ -2035,7 +2033,6 @@ mod tests {
         // Check BTC coin
         let btc = &wallet.coin[0];
         assert_eq!(btc.coin.as_str(), "BTC");
-        assert_eq!(btc.available_to_borrow, "3");
         assert_eq!(btc.total_order_im, Some("0".to_string()));
         assert_eq!(btc.total_position_mm, Some("0".to_string()));
         assert_eq!(btc.total_position_im, Some("0".to_string()));

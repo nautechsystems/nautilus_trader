@@ -28,7 +28,7 @@ use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
     identifiers::InstrumentId,
-    types::{AccountBalance, Currency, MarginBalance, Money},
+    types::{AccountBalance, BorrowBalance, Currency, MarginBalance, Money},
 };
 
 #[pymethods]
@@ -241,6 +241,97 @@ impl MarginBalance {
             Some(id) => dict.set_item("instrument_id", id.to_string())?,
             None => dict.set_item("instrument_id", py.None())?,
         }
+        Ok(dict.into())
+    }
+}
+
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl BorrowBalance {
+    /// Represents a borrow balance denominated in a particular currency.
+    #[new]
+    fn py_new(borrowed: Money, accrued_interest: Money) -> PyResult<Self> {
+        Self::new_checked(borrowed, accrued_interest).map_err(to_pyvalue_err)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.borrowed.raw.hash(&mut h);
+        self.accrued_interest.raw.hash(&mut h);
+        self.currency.code.hash(&mut h);
+        h.finish() as isize
+    }
+
+    /// Returns a copy of this borrow balance.
+    #[pyo3(name = "copy")]
+    fn py_copy(&self) -> Self {
+        *self
+    }
+
+    /// Constructs a [`BorrowBalance`] from a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if parsing or conversion fails.
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let currency_str = get_required_string(values, "currency")?;
+        let borrowed_str = get_required_string(values, "borrowed")?;
+        let borrowed: f64 = borrowed_str.parse::<f64>().map_err(|e| {
+            to_pyvalue_err(format!(
+                "invalid BorrowBalance borrowed '{borrowed_str}': {e}"
+            ))
+        })?;
+        let accrued_interest_str = get_required_string(values, "accrued_interest")?;
+        let accrued_interest: f64 = accrued_interest_str.parse::<f64>().map_err(|e| {
+            to_pyvalue_err(format!(
+                "invalid BorrowBalance accrued_interest '{accrued_interest_str}': {e}"
+            ))
+        })?;
+        let currency = Currency::from_str(currency_str.as_str()).map_err(to_pyvalue_err)?;
+        Self::new_checked(
+            Money::new_checked(borrowed, currency).map_err(correctness_error_to_pyvalue_err)?,
+            Money::new_checked(accrued_interest, currency)
+                .map_err(correctness_error_to_pyvalue_err)?,
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    /// Converts this [`BorrowBalance`] into a Python dict.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `PyErr` if serialization fails.
+    #[pyo3(name = "to_dict")]
+    pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let dict = PyDict::new(py);
+        dict.set_item("type", stringify!(BorrowBalance))?;
+        dict.set_item(
+            "borrowed",
+            format!(
+                "{:.*}",
+                self.borrowed.currency.precision as usize,
+                self.borrowed.as_f64()
+            ),
+        )?;
+        dict.set_item(
+            "accrued_interest",
+            format!(
+                "{:.*}",
+                self.accrued_interest.currency.precision as usize,
+                self.accrued_interest.as_f64()
+            ),
+        )?;
+        dict.set_item("currency", self.currency.code.to_string())?;
         Ok(dict.into())
     }
 }

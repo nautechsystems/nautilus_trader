@@ -311,6 +311,94 @@ impl Display for MarginBalance {
     }
 }
 
+/// Represents a borrow balance denominated in a particular currency.
+///
+/// Captures the per-currency state of a borrowed position in a margin account.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.core.nautilus_pyo3.model",
+        frozen,
+        eq,
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")
+)]
+pub struct BorrowBalance {
+    /// The borrow balance currency.
+    pub currency: Currency,
+    /// The amount currently borrowed (outstanding loan principal, excluding interest).
+    pub borrowed: Money,
+    /// The interest accrued so far on the outstanding borrow.
+    pub accrued_interest: Money,
+}
+
+impl BorrowBalance {
+    /// Creates a new [`BorrowBalance`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `borrowed` and `accrued_interest` do not share the same currency.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(borrowed: Money, accrued_interest: Money) -> CorrectnessResult<Self> {
+        check_predicate_true(
+            borrowed.currency == accrued_interest.currency,
+            &format!(
+                "`borrowed` currency ({}) != `accrued_interest` currency ({})",
+                borrowed.currency, accrued_interest.currency
+            ),
+        )?;
+        Ok(Self {
+            currency: borrowed.currency,
+            borrowed,
+            accrued_interest,
+        })
+    }
+
+    /// Creates a new [`BorrowBalance`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a correctness check fails. See [`BorrowBalance::new_checked`] for more details.
+    #[must_use]
+    pub fn new(borrowed: Money, accrued_interest: Money) -> Self {
+        Self::new_checked(borrowed, accrued_interest).expect_display(FAILED)
+    }
+}
+
+impl PartialEq for BorrowBalance {
+    fn eq(&self, other: &Self) -> bool {
+        self.currency == other.currency
+            && self.borrowed == other.borrowed
+            && self.accrued_interest == other.accrued_interest
+    }
+}
+
+impl Debug for BorrowBalance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}(borrowed={}, accrued_interest={})",
+            stringify!(BorrowBalance),
+            self.borrowed,
+            self.accrued_interest,
+        )
+    }
+}
+
+impl Display for BorrowBalance {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -320,8 +408,8 @@ mod tests {
     use crate::{
         identifiers::InstrumentId,
         types::{
-            AccountBalance, Currency, MarginBalance, Money,
-            stubs::{stub_account_balance, stub_margin_balance},
+            AccountBalance, BorrowBalance, Currency, MarginBalance, Money,
+            stubs::{stub_account_balance, stub_borrow_balance, stub_margin_balance},
         },
     };
 
@@ -749,5 +837,44 @@ mod tests {
             "MarginBalance(initial=500.00 USD, maintenance=200.00 USD, currency=USD)",
             format!("{balance}")
         );
+    }
+
+    #[rstest]
+    fn test_borrow_balance_equality() {
+        let borrow_balance_1 = stub_borrow_balance();
+        let borrow_balance_2 = stub_borrow_balance();
+        assert_eq!(borrow_balance_1, borrow_balance_2);
+    }
+
+    #[rstest]
+    fn test_borrow_balance_debug(stub_borrow_balance: BorrowBalance) {
+        let result = format!("{stub_borrow_balance:?}");
+        let expected =
+            "BorrowBalance(borrowed=1000.00000000 USDT, accrued_interest=5.00000000 USDT)";
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_borrow_balance_display(stub_borrow_balance: BorrowBalance) {
+        let result = format!("{stub_borrow_balance}");
+        let expected =
+            "BorrowBalance(borrowed=1000.00000000 USDT, accrued_interest=5.00000000 USDT)";
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_borrow_balance_new_checked_with_currency_mismatch_returns_error() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let result = BorrowBalance::new_checked(Money::new(1000.0, usd), Money::new(5.0, eur));
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`borrowed` currency (USD) != `accrued_interest` currency (EUR)")]
+    fn test_borrow_balance_new_with_currency_mismatch_panics() {
+        let usd = Currency::USD();
+        let eur = Currency::EUR();
+        let _ = BorrowBalance::new(Money::new(1000.0, usd), Money::new(5.0, eur));
     }
 }

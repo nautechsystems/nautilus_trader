@@ -29,7 +29,7 @@ use crate::{
     instruments::InstrumentAny,
     position::Position,
     python::instruments::pyobject_to_instrument_any,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, BorrowBalance, Currency, Money, Price, Quantity},
 };
 
 #[pymethods]
@@ -325,6 +325,42 @@ impl MarginAccount {
     #[pyo3(name = "maintenance_margin")]
     fn py_maintenance_margin(&self, instrument_id: InstrumentId) -> Option<Money> {
         self.margin(&instrument_id).map(|margin| margin.maintenance)
+    }
+
+    /// Returns the borrow balance for the specified currency.
+    #[pyo3(name = "borrow")]
+    fn py_borrow(&self, currency: Currency) -> Option<BorrowBalance> {
+        self.borrow(&currency)
+    }
+
+    /// Returns all borrow balances keyed by currency.
+    #[pyo3(name = "borrows")]
+    fn py_borrows(&self) -> IndexMap<Currency, BorrowBalance> {
+        self.borrows()
+    }
+
+    /// Returns the outstanding borrowed amount for the specified currency.
+    #[pyo3(name = "borrowed")]
+    fn py_borrowed(&self, currency: Currency) -> Option<Money> {
+        self.borrowed(&currency)
+    }
+
+    /// Returns the accrued interest on the outstanding borrow for the specified currency.
+    #[pyo3(name = "accrued_interest")]
+    fn py_accrued_interest(&self, currency: Currency) -> Option<Money> {
+        self.accrued_interest(&currency)
+    }
+
+    /// Updates the borrow balance, keyed by `borrow.currency`.
+    #[pyo3(name = "update_borrow")]
+    fn py_update_borrow(&mut self, borrow: BorrowBalance) {
+        self.update_borrow(borrow);
+    }
+
+    /// Clears the borrow balance for the specified currency.
+    #[pyo3(name = "clear_borrow")]
+    fn py_clear_borrow(&mut self, currency: Currency) {
+        self.clear_borrow(currency);
     }
 
     #[pyo3(name = "calculate_initial_margin")]

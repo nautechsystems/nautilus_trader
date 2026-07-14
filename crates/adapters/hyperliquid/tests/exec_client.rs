@@ -1994,6 +1994,7 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
             Money::from("10000.0 USDC"),
         )],
         vec![],
+        vec![],
         true,
         UUID4::new(),
         UnixNanos::default(),

@@ -341,6 +341,7 @@ pub fn parse_account_state(
         AccountType::Margin,
         balances,
         vec![],
+        vec![],
         true,
         UUID4::new(),
         ts_event,

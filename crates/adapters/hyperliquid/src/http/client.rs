@@ -2597,6 +2597,7 @@ impl HyperliquidHttpClient {
             AccountType::Margin,
             balances,
             margins,
+            vec![],
             true, // reported
             UUID4::new(),
             ts_init,
