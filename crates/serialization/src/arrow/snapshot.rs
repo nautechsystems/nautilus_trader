@@ -99,6 +99,7 @@ const POSITION_SNAPSHOT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::u64("ts_closed", true),
     JsonFieldSpec::u64("ts_init", false),
     JsonFieldSpec::u64("ts_last", false),
+    JsonFieldSpec::utf8_json("replay_state", true),
 ];
 
 fn instrument_metadata(type_name: &'static str, instrument_id: &str) -> HashMap<String, String> {
@@ -210,12 +211,14 @@ mod tests {
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),
             ts_last: UnixNanos::from(4_600_000_000),
+            replay_state: None,
         }
     }
 
     #[rstest]
     fn test_position_snapshot_round_trip() {
-        let snapshot = make_position_snapshot();
+        let mut snapshot = make_position_snapshot();
+        snapshot.replay_state = Some(serde_json::json!({"fill_voids": []}));
         let metadata = snapshot.metadata();
         let batch =
             PositionSnapshot::encode_batch(&metadata, std::slice::from_ref(&snapshot)).unwrap();

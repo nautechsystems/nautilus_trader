@@ -45,11 +45,11 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct PortfolioConfig {
     /// The type of prices used for portfolio calculations, such as unrealized PnLs.
-    /// If false (default), uses quote prices if available; otherwise, last trade prices
-    /// (or falls back to bar prices if `bar_updates` is true).
-    /// If true, uses mark prices.
-    #[serde(default)]
-    #[builder(default)]
+    /// If true (default), prefers mark prices when available, then falls back to quote,
+    /// last trade, or bar prices when `bar_updates` is true. If false, skips mark prices
+    /// and uses the fallback chain.
+    #[serde(default = "default_true")]
+    #[builder(default = true)]
     pub use_mark_prices: bool,
     /// The type of exchange rates used for portfolio calculations.
     /// If false (default), uses quote prices.

@@ -43,7 +43,7 @@ you choose the right one for your use case.
 | Data catalog          | ✓                  | ✓              | ✓                        |
 | Indicators            | ✓                  | ✓              | ✓                        |
 | Exec algorithms       | TWAP               | TWAP           | TWAP                     |
-| Controller            | ✓                  | -              | -                        |
+| Controller            | ✓                  | -              | ✓                        |
 | Tearsheets            | ✓                  | -              | ✓                        |
 | Config serialization  | ✓                  | -              | -                        |
 

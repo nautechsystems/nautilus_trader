@@ -259,6 +259,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::events::AccountState>()?;
     m.add_class::<crate::events::OrderDenied>()?;
     m.add_class::<crate::events::OrderFilled>()?;
+    m.add_class::<crate::events::OrderFillVoided>()?;
     m.add_class::<crate::events::OrderInitialized>()?;
     m.add_class::<crate::events::OrderRejected>()?;
     m.add_class::<crate::events::OrderTriggered>()?;

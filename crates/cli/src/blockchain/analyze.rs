@@ -23,7 +23,7 @@ use nautilus_blockchain::{
 };
 use nautilus_infrastructure::sql::pg::get_postgres_connect_options;
 use nautilus_model::defi::{
-    DexType, PoolIdentifier, chain::Chain, data::block::BlockPosition,
+    DexType, Pool, PoolIdentifier, PoolProfiler, chain::Chain, data::block::BlockPosition,
     pool_analysis::snapshot::PoolSnapshot, validation::validate_address,
 };
 use serde_json::json;
@@ -316,17 +316,18 @@ async fn analyze_pool_with_client(
         .clone();
 
     let mut outcomes = Vec::with_capacity(checkpoints.len());
+    let mut rpc_profiler = None;
+
     for checkpoint in checkpoints {
         log::info!("Profiling pool {pool_identifier} to checkpoint block {checkpoint}");
-        let (profiler, already_valid) = if snapshot_from_rpc {
-            data_client
-                .bootstrap_pool_profiler_from_rpc_snapshot(&pool, checkpoint)
-                .await?
-        } else {
-            data_client
-                .bootstrap_latest_pool_profiler(&pool, Some(checkpoint))
-                .await?
-        };
+        let (profiler, already_valid) = bootstrap_profiler_for_checkpoint(
+            data_client,
+            &pool,
+            checkpoint,
+            snapshot_from_rpc,
+            &mut rpc_profiler,
+        )
+        .await?;
         let snapshot = profiler.extract_snapshot()?;
         let snapshot_block_position = snapshot.block_position.clone();
         let positions = snapshot.positions.len();
@@ -354,6 +355,10 @@ async fn analyze_pool_with_client(
             liquidity_utilization_rate * 100.0
         );
 
+        if snapshot_from_rpc {
+            rpc_profiler = Some(profiler);
+        }
+
         outcomes.push(PoolAnalysisOutcome::Success(PoolAnalysisSuccessOutcome {
             pool_address: pool_address.to_string(),
             target_block: checkpoint,
@@ -367,6 +372,30 @@ async fn analyze_pool_with_client(
     }
 
     Ok(outcomes)
+}
+
+async fn bootstrap_profiler_for_checkpoint(
+    data_client: &mut BlockchainDataClientCore,
+    pool: &Arc<Pool>,
+    checkpoint: u64,
+    snapshot_from_rpc: bool,
+    rpc_profiler: &mut Option<PoolProfiler>,
+) -> anyhow::Result<(PoolProfiler, bool)> {
+    if snapshot_from_rpc {
+        if let Some(profiler) = rpc_profiler.take() {
+            data_client
+                .advance_pool_profiler_from_rpc_snapshot(profiler, checkpoint)
+                .await
+        } else {
+            data_client
+                .bootstrap_pool_profiler_from_rpc_snapshot(pool, checkpoint)
+                .await
+        }
+    } else {
+        data_client
+            .bootstrap_latest_pool_profiler(pool, Some(checkpoint))
+            .await
+    }
 }
 
 fn validate_snapshot_from_rpc_options(

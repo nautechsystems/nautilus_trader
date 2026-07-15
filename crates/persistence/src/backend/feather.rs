@@ -41,10 +41,10 @@ use nautilus_model::{
     },
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
-        PositionClosed, PositionOpened, PositionSnapshot,
+        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -917,6 +917,7 @@ impl FeatherWriter {
             try_write!(message, OrderModifyRejected, "OrderModifyRejected");
             try_write!(message, OrderUpdated, "OrderUpdated");
             try_write!(message, OrderFilled, "OrderFilled");
+            try_write!(message, OrderFillVoided, "OrderFillVoided");
             try_write!(message, PositionOpened, "PositionOpened");
             try_write!(message, PositionChanged, "PositionChanged");
             try_write!(message, PositionClosed, "PositionClosed");

@@ -203,7 +203,7 @@ Accurate PnL accounting requires careful consideration of several factors:
 
 - **Realized PnL**: Calculated when positions are partially or fully closed.
 - **Unrealized PnL**: Marked-to-market using current prices.
-- **Commission impact**: Only included when in settlement currency.
+- **Commission impact**: Only included when in the position's cost currency.
 
 :::warning
 PnL calculations depend on the OMS type. In `NETTING` OMS, position snapshots
@@ -216,21 +216,22 @@ not used since each position has a unique ID and is never reopened.
 
 When dealing with multiple currencies:
 
-- Each position tracks PnL in its settlement currency.
+- Each position tracks PnL in its cost currency: quote for linear contracts, base for inverse
+  contracts, and settlement for quanto contracts.
 - Portfolio aggregation requires currency conversion.
-- Commission currencies may differ from settlement currency.
+- Commission currencies may differ from the position's cost currency.
 
 ```python
 # Accessing PnL across positions
 for position in positions:
-    realized = position.realized_pnl  # In settlement currency
+    realized = position.realized_pnl  # In the position's cost currency
     unrealized = position.unrealized_pnl(last_price)
 
     # Handle multi-currency aggregation (illustrative)
     # Note: Currency conversion requires user-provided exchange rates
-    if position.settlement_currency != base_currency:
+    if realized.currency != base_currency:
         # Apply conversion rate from your data source
-        # rate = get_exchange_rate(position.settlement_currency, base_currency)
+        # rate = get_exchange_rate(realized.currency, base_currency)
         # realized_converted = realized.as_double() * rate
         pass
 ```

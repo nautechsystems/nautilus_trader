@@ -72,6 +72,19 @@ pub fn get_http_base_url(
     }
 }
 
+/// Returns the SAPI base URL for the given environment, or `None` where SAPI is unavailable.
+///
+/// SAPI endpoints (`/sapi/v1/...`) are served from the Spot host on the live exchange. The
+/// testnet and demo hosts do not route `/sapi/v1`, so callers must treat `None` as unavailable
+/// rather than falling back to live, which would route account management against real funds.
+#[must_use]
+pub fn get_sapi_base_url(environment: BinanceEnvironment) -> Option<&'static str> {
+    match environment {
+        BinanceEnvironment::Live => Some(BINANCE_SPOT_HTTP_URL),
+        BinanceEnvironment::Testnet | BinanceEnvironment::Demo => None,
+    }
+}
+
 /// Returns the WebSocket base URL for the given product type and environment.
 #[must_use]
 pub fn get_ws_base_url(
@@ -421,5 +434,14 @@ mod tests {
     ) {
         let url = get_usdm_ws_route_base_url(base_url, route);
         assert_eq!(url, base_url);
+    }
+
+    #[rstest]
+    #[case(BinanceEnvironment::Live, Some("https://api.binance.com"))]
+    #[case(BinanceEnvironment::Testnet, None)]
+    #[case(BinanceEnvironment::Demo, None)]
+    fn test_sapi_base_url(#[case] environment: BinanceEnvironment, #[case] expected: Option<&str>) {
+        let url = get_sapi_base_url(environment);
+        assert_eq!(url, expected);
     }
 }

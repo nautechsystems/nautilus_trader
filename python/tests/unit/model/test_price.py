@@ -47,6 +47,11 @@ def test_none_raises():
         Price(None, precision=0)
 
 
+def test_ordering_with_unsupported_type_raises():
+    with pytest.raises(TypeError):
+        _ = Price.from_int(1) < object()
+
+
 def test_negative_precision_raises():
     with pytest.raises(OverflowError):
         Price(1.0, precision=-1)

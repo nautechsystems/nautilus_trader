@@ -67,7 +67,10 @@ use nautilus_model::{
         Instrument, InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt, xbtusd_bitmex},
     },
-    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{
+        Order, OrderAny, OrderTestBuilder,
+        stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+    },
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -3734,7 +3737,7 @@ async fn test_no_inferred_fill_when_already_in_sync() {
 }
 
 #[tokio::test]
-async fn test_fill_qty_mismatch_venue_less_logs_error() {
+async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-MISMATCH");
@@ -3751,22 +3754,14 @@ async fn test_fill_qty_mismatch_venue_less_logs_error() {
         "3000.00",
         venue_order_id,
     );
-    let fill = TestOrderEventStubs::filled(
-        &order,
-        &test_instrument(),
-        None,                        // trade_id
-        None,                        // position_id
-        None,                        // last_px
-        Some(Quantity::from("5.0")), // last_qty
-        None,                        // liquidity_side
-        None,                        // commission
-        None,                        // ts_filled_ns
-        None,                        // account_id
-    );
+    let fill = OrderFilledTestBuilder::new(&order, &test_instrument())
+        .last_qty(Quantity::from("5.0"))
+        .without_position_id()
+        .build();
     order.apply(fill).unwrap();
     ctx.add_order(order);
 
-    // Venue reports LESS filled than we have (anomaly)
+    // Venue reports less filled than Nautilus has applied.
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
         test_account_id(),
@@ -3790,8 +3785,21 @@ async fn test_fill_qty_mismatch_venue_less_logs_error() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should not generate events (error condition)
-    assert!(result.events.is_empty());
+    let order = ctx
+        .cache
+        .borrow()
+        .order_owned(&client_order_id)
+        .expect("order cached");
+
+    assert_eq!(result.events.len(), 1);
+    let OrderEventAny::FillVoided(voided) = &result.events[0] else {
+        panic!("expected OrderFillVoided event");
+    };
+    assert_eq!(voided.voided_qty, Quantity::from("2.0"));
+    assert!(voided.is_reopened);
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("3.0"));
+    assert_eq!(order.voided_qty(), Quantity::from("2.0"));
 }
 
 #[tokio::test]

@@ -158,6 +158,9 @@ pub const BINANCE_DAPI_PATH: &str = "/dapi/v1";
 /// Binance European Options API version path.
 pub const BINANCE_EAPI_PATH: &str = "/eapi/v1";
 
+/// Binance SAPI version path for wallet, margin, and other account management endpoints.
+pub const BINANCE_SAPI_PATH: &str = "/sapi/v1";
+
 /// Describes a static rate limit quota for a product type.
 #[derive(Clone, Copy, Debug)]
 pub struct BinanceRateLimitQuota {

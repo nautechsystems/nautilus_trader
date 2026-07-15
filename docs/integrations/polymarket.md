@@ -472,10 +472,13 @@ Trades on Polymarket can have the following statuses:
 - `FAILED`: Trade has failed and is not being retried.
 
 Once a trade is initially matched, subsequent status updates arrive through the user WebSocket.
-The execution adapter emits fills only for `CONFIRMED` trades. It treats `MATCHED`, `MINED`, and
-`RETRYING` as non-terminal and ignores `FAILED` trades. This avoids applying a fill that a later
-failed settlement cannot reverse. Confirmed WebSocket fills retain the raw trade fields in the
-`info` field of the `OrderFilled` event.
+The execution adapter emits one `OrderFilled` at `MATCHED`. It treats `MINED` and `RETRYING` as
+settlement updates without emitting another fill. `CONFIRMED` records finality and refreshes the
+account. If the trade reaches `FAILED`, the adapter emits one `OrderFillVoided` for each locally
+applied fill and refreshes the account. The correction does not relist the failed quantity, but it
+preserves any maker-order remainder that was already working. An execution-complete order becomes
+`VOIDED`. Matched WebSocket fills retain the raw trade fields in the `info` field of the
+`OrderFilled` event.
 
 ### Trade ID derivation
 
@@ -587,9 +590,9 @@ engine rather than synthesizing an external order from trade history alone:
   the venue trade history can be reviewed manually.
 - Cached order, no trades: returns `Canceled` with
   `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
-- Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query returns the
-  cached non-terminal `Accepted` or `PartiallyFilled` state. Terminal recovery waits until
-  settlement reaches `CONFIRMED` or `FAILED`.
+- Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query preserves
+  the locally applied matched quantity while terminal REST recovery waits for `CONFIRMED` or
+  `FAILED`.
 - No cached order (regardless of trades): returns `None`; the engine's
   not-found-at-venue path resolves the local entry.
 
@@ -782,9 +785,10 @@ The execution adapter keeps a `user` channel connection for order and trade even
 subscriptions as needed for instruments seen during trading.
 
 The adapter supports dynamic WebSocket subscribe and unsubscribe operations.
-Confirmed fills are deduplicated across reconnects until the client is reset. If a trade arrives
-before its instrument is available, the adapter leaves it out of the dedup state. A redelivered
-event or later REST reconciliation can apply it after instrument loading completes.
+Matched WebSocket fills and their corrections are restored from cached order history and
+deduplicated across reconnects. If a trade arrives before its instrument is available, the adapter
+leaves it out of the dedup state. A redelivered event or later REST reconciliation can apply it after
+instrument loading completes.
 For a fully matched order, dust convergence waits for every trade ID in the order's
 `associate_trades` list to confirm before emitting a synthetic residual fill. If a confirmed trade
 is recovered through REST after a WebSocket gap, reconciliation also snaps a terminal residual

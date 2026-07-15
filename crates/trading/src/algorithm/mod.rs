@@ -55,10 +55,10 @@ use nautilus_model::{
     enums::{OrderStatus, TimeInForce, TriggerType},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{AccountId, ClientId, ExecAlgorithmId, PositionId, StrategyId, TraderId},
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderError, OrderList},
@@ -1170,6 +1170,7 @@ pub trait ExecutionAlgorithm: DataActor {
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
             OrderEventAny::Filled(e) => self.on_algo_order_filled(e.clone()),
+            OrderEventAny::FillVoided(e) => self.on_order_fill_voided(e),
         }
 
         self.on_order_event(event);
@@ -1318,6 +1319,10 @@ pub trait ExecutionAlgorithm: DataActor {
     #[allow(unused_variables)]
     fn on_algo_order_filled(&mut self, event: OrderFilled) {}
 
+    /// Called when an applied order fill is partly or fully voided.
+    #[allow(unused_variables)]
+    fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {}
+
     /// Called for any order event (after specific handler).
     #[allow(unused_variables)]
     fn on_order_event(&mut self, event: OrderEventAny) {}
@@ -1382,8 +1387,8 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderDenied, OrderRejected,
             order::spec::{
-                OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
-                OrderRejectedSpec,
+                OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFillVoidedSpec,
+                OrderFilledSpec, OrderRejectedSpec,
             },
         },
         identifiers::{
@@ -1768,6 +1773,7 @@ mod tests {
         algo.on_order_cancel_rejected(OrderCancelRejected::default());
         algo.on_order_updated(OrderUpdated::default());
         algo.on_algo_order_filled(OrderFilledSpec::builder().build());
+        algo.on_order_fill_voided(&OrderFillVoidedSpec::builder().build());
     }
 
     #[rstest]

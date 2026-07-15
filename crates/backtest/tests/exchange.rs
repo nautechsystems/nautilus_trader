@@ -63,12 +63,12 @@ use nautilus_model::{
     },
     instruments::{
         CryptoOption, CryptoPerpetual, Instrument, InstrumentAny, OptionContract,
-        stubs::crypto_perpetual_ethusdt,
+        stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity, money::MONEY_RAW_MAX},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -1065,6 +1065,48 @@ fn test_accounting() {
 }
 
 #[rstest]
+fn test_adjust_account_overflow_emits_no_state() {
+    let account_type = AccountType::Margin;
+    let usd = Currency::USD();
+    let maximum = Money::from_raw(MONEY_RAW_MAX, usd);
+    let mut cache = Cache::default();
+    let (handler, saving_handler) = get_typed_message_saving_handler::<AccountState>(None);
+    msgbus::register_account_state_endpoint("Portfolio.update_account".into(), handler);
+    let margin_account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            account_type,
+            vec![AccountBalance::new(maximum, Money::zero(usd), maximum)],
+            vec![],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    cache
+        .add_account(AccountAny::Margin(margin_account))
+        .unwrap();
+    cache.build_index();
+    let exchange = get_exchange(
+        Venue::new("SIM"),
+        account_type,
+        BookType::L2_MBP,
+        Some(Rc::new(RefCell::new(cache))),
+    );
+    exchange.borrow_mut().initialize_account();
+
+    let adjusted = exchange
+        .borrow_mut()
+        .adjust_account(Money::from("0.01 USD"));
+
+    assert!(!adjusted);
+    assert_eq!(saving_handler.get_messages().len(), 1);
+}
+
+#[rstest]
 fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let account_id = AccountId::from("BINANCE-001");
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
@@ -1174,6 +1216,108 @@ fn test_process_funding_rate_settles_open_position(crypto_perpetual_ethusdt: Cry
     assert_eq!(adjustment.adjustment_type, PositionAdjustmentType::Funding);
     assert_eq!(adjustment.pnl_change, Some(Money::from("-1 USDT")));
     assert_eq!(account_state.balances[0].total, Money::from("999 USDT"));
+}
+
+#[rstest]
+fn test_process_funding_rate_invalid_notional_emits_nothing_and_can_retry() {
+    let inverse = xbtusd_bitmex();
+    let instrument = InstrumentAny::CryptoPerpetual(inverse.clone());
+    let account_id = AccountId::from("BITMEX-001");
+    let mut cache = Cache::default();
+    pre_populate_margin_account_with_balance(&mut cache, "BITMEX-001", Money::from("100 BTC"));
+    cache.add_instrument(instrument.clone()).unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(inverse.id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-INVERSE-ZERO")),
+        None,
+        Some(Price::from("10000.0")),
+        Some(Quantity::from("100000")),
+        None,
+        Some(Money::from("0 BTC")),
+        Some(UnixNanos::from(1)),
+        Some(account_id),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_mark_price(MarkPriceUpdate::new(
+            inverse.id,
+            Price::from("0.0"),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ))
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(cache));
+    let (settlement_handler, settlement_saver) = get_any_saving_handler::<FundingSettlement>(None);
+    msgbus::subscribe_any(
+        "events.funding_settlements.*".into(),
+        settlement_handler,
+        None,
+    );
+    let exchange = build_exchange_with_options(
+        Venue::new("BITMEX"),
+        AccountType::Margin,
+        false,
+        false,
+        cache.clone(),
+    );
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let settlement_ns = UnixNanos::from(3);
+    exchange
+        .borrow_mut()
+        .process_funding_rate(FundingRateUpdate::new(
+            inverse.id,
+            Decimal::from_str("0.001").unwrap(),
+            Some(480),
+            Some(settlement_ns),
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        ));
+
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(inverse.id, settlement_ns);
+    assert!(settlement_saver.get_messages().is_empty());
+    assert!(
+        cache
+            .borrow()
+            .position(&position.id)
+            .unwrap()
+            .adjustments
+            .is_empty()
+    );
+
+    cache
+        .borrow_mut()
+        .add_mark_price(MarkPriceUpdate::new(
+            inverse.id,
+            Price::from("10000.0"),
+            UnixNanos::from(3),
+            UnixNanos::from(3),
+        ))
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .process_funding_settlement(inverse.id, settlement_ns);
+
+    assert_eq!(settlement_saver.get_messages().len(), 1);
+    assert_eq!(
+        cache
+            .borrow()
+            .position(&position.id)
+            .unwrap()
+            .adjustments
+            .len(),
+        1
+    );
 }
 
 #[rstest]

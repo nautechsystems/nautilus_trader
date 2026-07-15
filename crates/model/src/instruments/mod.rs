@@ -525,11 +525,47 @@ pub trait Instrument: 'static + Send {
             .unwrap()
     }
 
+    /// Calculates the notional value for the given quantity and price.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if base-denominated inverse valuation lacks a base currency or positive
+    /// price, or if the result cannot be represented as [`Money`].
+    #[inline(always)]
+    fn try_calculate_notional_value(
+        &self,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        let use_quote_inverse = use_quote_for_inverse.unwrap_or(false);
+        let currency = if self.is_inverse() {
+            if use_quote_inverse {
+                self.quote_currency()
+            } else {
+                self.base_currency().ok_or_else(|| {
+                    anyhow::anyhow!("inverse instrument {} has no base currency", self.id())
+                })?
+            }
+        } else if self.is_quanto() {
+            self.settlement_currency()
+        } else {
+            self.quote_currency()
+        };
+
+        try_notional_value(
+            quantity,
+            price,
+            self.multiplier(),
+            self.is_inverse(),
+            use_quote_inverse,
+            currency,
+        )
+    }
+
     /// # Panics
     ///
-    /// Panics if the instrument is inverse and does not have a base currency, if the
-    /// instrument is inverse and `price` is zero, or if the notional amount cannot be
-    /// represented as `Money`.
+    /// Panics if [`Instrument::try_calculate_notional_value`] returns an error.
     #[inline(always)]
     fn calculate_notional_value(
         &self,
@@ -537,29 +573,8 @@ pub trait Instrument: 'static + Send {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
-        let use_quote_inverse = use_quote_for_inverse.unwrap_or(false);
-        let (amount, currency) = if self.is_inverse() {
-            if use_quote_inverse {
-                (quantity.as_decimal(), self.quote_currency())
-            } else {
-                let amount =
-                    quantity.as_decimal() * self.multiplier().as_decimal() / price.as_decimal();
-                let currency = self
-                    .base_currency()
-                    .expect("inverse instrument without base_currency");
-                (amount, currency)
-            }
-        } else if self.is_quanto() {
-            let amount =
-                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
-            (amount, self.settlement_currency())
-        } else {
-            let amount =
-                quantity.as_decimal() * self.multiplier().as_decimal() * price.as_decimal();
-            (amount, self.quote_currency())
-        };
-
-        Money::from_decimal(amount, currency).expect("Invalid notional value")
+        self.try_calculate_notional_value(quantity, price, use_quote_for_inverse)
+            .expect("invalid notional value")
     }
 
     #[inline(always)]
@@ -649,6 +664,37 @@ pub trait Instrument: 'static + Send {
 
         prices
     }
+}
+
+pub(crate) fn try_notional_value(
+    quantity: Quantity,
+    price: Price,
+    multiplier: Quantity,
+    is_inverse: bool,
+    use_quote_for_inverse: bool,
+    currency: Currency,
+) -> anyhow::Result<Money> {
+    let amount = if is_inverse && !use_quote_for_inverse {
+        anyhow::ensure!(
+            price.is_positive(),
+            "price must be positive for inverse notional valuation"
+        );
+        quantity
+            .as_decimal()
+            .checked_mul(multiplier.as_decimal())
+            .and_then(|value| value.checked_div(price.as_decimal()))
+            .ok_or_else(|| anyhow::anyhow!("inverse notional calculation overflow"))?
+    } else if is_inverse {
+        quantity.as_decimal()
+    } else {
+        quantity
+            .as_decimal()
+            .checked_mul(multiplier.as_decimal())
+            .and_then(|value| value.checked_mul(price.as_decimal()))
+            .ok_or_else(|| anyhow::anyhow!("notional calculation overflow"))?
+    };
+
+    Money::from_decimal(amount, currency).map_err(Into::into)
 }
 
 impl Display for CurrencyPair {
@@ -1505,6 +1551,48 @@ mod tests {
         let notional = xbtusd_inverse_perp.calculate_notional_value(quantity, price, Some(true));
         let expected = Money::new(100.0, xbtusd_inverse_perp.quote_currency());
         assert_eq!(notional, expected);
+    }
+
+    #[rstest]
+    fn try_notional_inverse_zero_price_returns_error(xbtusd_inverse_perp: CryptoPerpetual) {
+        let result = xbtusd_inverse_perp.try_calculate_notional_value(
+            xbtusd_inverse_perp.make_qty(100.0, None),
+            Price::new(0.0, 1),
+            Some(false),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "price must be positive for inverse notional valuation"
+        );
+    }
+
+    #[rstest]
+    fn try_notional_unrepresentable_money_returns_error(currency_pair_btcusdt: CurrencyPair) {
+        let result = currency_pair_btcusdt.try_calculate_notional_value(
+            Quantity::from("100000000"),
+            Price::from("100000000"),
+            None,
+        );
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn try_notional_decimal_overflow_returns_error() {
+        let result = try_notional_value(
+            Quantity::from("9000000000"),
+            Price::from("9000000000"),
+            Quantity::from("9000000000"),
+            false,
+            false,
+            Currency::USD(),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "notional calculation overflow"
+        );
     }
 
     #[rstest]

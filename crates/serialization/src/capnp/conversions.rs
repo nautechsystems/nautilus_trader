@@ -37,9 +37,10 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+        OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
+        PositionOpened,
     },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
@@ -739,6 +740,7 @@ pub fn order_status_to_capnp(value: OrderStatus) -> enums_capnp::OrderStatus {
         OrderStatus::PendingCancel => enums_capnp::OrderStatus::PendingCancel,
         OrderStatus::PartiallyFilled => enums_capnp::OrderStatus::PartiallyFilled,
         OrderStatus::Filled => enums_capnp::OrderStatus::Filled,
+        OrderStatus::Voided => enums_capnp::OrderStatus::Voided,
     }
 }
 
@@ -759,6 +761,7 @@ pub fn order_status_from_capnp(value: enums_capnp::OrderStatus) -> OrderStatus {
         enums_capnp::OrderStatus::PendingCancel => OrderStatus::PendingCancel,
         enums_capnp::OrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         enums_capnp::OrderStatus::Filled => OrderStatus::Filled,
+        enums_capnp::OrderStatus::Voided => OrderStatus::Voided,
     }
 }
 
@@ -3812,6 +3815,148 @@ impl<'a> FromCapnp<'a> for OrderFilled {
     }
 }
 
+impl<'a> ToCapnp<'a> for OrderFillVoided {
+    type Builder = order_capnp::order_fill_voided::Builder<'a>;
+
+    fn to_capnp(&self, mut builder: Self::Builder) {
+        self.trader_id.to_capnp(builder.reborrow().init_trader_id());
+        self.strategy_id
+            .to_capnp(builder.reborrow().init_strategy_id());
+        self.instrument_id
+            .to_capnp(builder.reborrow().init_instrument_id());
+        self.client_order_id
+            .to_capnp(builder.reborrow().init_client_order_id());
+        self.venue_order_id
+            .to_capnp(builder.reborrow().init_venue_order_id());
+        self.account_id
+            .to_capnp(builder.reborrow().init_account_id());
+        builder.set_correction_id(self.correction_id.as_str());
+        self.trade_id.to_capnp(builder.reborrow().init_trade_id());
+        self.voided_qty
+            .to_capnp(builder.reborrow().init_voided_qty());
+        if let Some(commission) = self.commission_voided {
+            commission.to_capnp(builder.reborrow().init_commission_voided());
+        }
+        builder.set_order_side(order_side_to_capnp(self.order_side));
+        builder.set_order_type(order_type_to_capnp(self.order_type));
+        self.last_px.to_capnp(builder.reborrow().init_last_px());
+        self.currency.to_capnp(builder.reborrow().init_currency());
+        builder.set_liquidity_side(liquidity_side_to_capnp(self.liquidity_side));
+
+        if let Some(position_id) = self.position_id {
+            position_id.to_capnp(builder.reborrow().init_position_id());
+        }
+
+        if let Some(reason) = self.reason {
+            builder.set_reason(reason.as_str());
+        }
+
+        if let Some(info) = &self.info {
+            let mut info_builder = builder.reborrow().init_info();
+            let mut entries = info_builder.reborrow().init_entries(info.len() as u32);
+            for (index, (key, value)) in info.iter().enumerate() {
+                let mut entry = entries.reborrow().get(index as u32);
+                entry.set_key(key.as_str());
+                entry.set_value(value.as_str());
+            }
+        }
+        self.event_id.to_capnp(builder.reborrow().init_event_id());
+        builder.reborrow().init_ts_event().set_value(*self.ts_event);
+        builder.reborrow().init_ts_init().set_value(*self.ts_init);
+        builder.set_reconciliation(self.reconciliation);
+        builder.set_is_reopened(self.is_reopened);
+        if let Some(causation_id) = self.causation_id {
+            causation_id.to_capnp(builder.reborrow().init_causation_id());
+        }
+    }
+}
+
+impl<'a> FromCapnp<'a> for OrderFillVoided {
+    type Reader = order_capnp::order_fill_voided::Reader<'a>;
+
+    fn from_capnp(reader: Self::Reader) -> Result<Self, Box<dyn Error>> {
+        let trader_id = TraderId::from_capnp(reader.get_trader_id()?)?;
+        let strategy_id = StrategyId::from_capnp(reader.get_strategy_id()?)?;
+        let instrument_id = InstrumentId::from_capnp(reader.get_instrument_id()?)?;
+        let client_order_id = ClientOrderId::from_capnp(reader.get_client_order_id()?)?;
+        let venue_order_id = VenueOrderId::from_capnp(reader.get_venue_order_id()?)?;
+        let account_id = AccountId::from_capnp(reader.get_account_id()?)?;
+        let correction_id = Ustr::from(reader.get_correction_id()?.to_str()?);
+        let trade_id = TradeId::from_capnp(reader.get_trade_id()?)?;
+        let voided_qty = Quantity::from_capnp(reader.get_voided_qty()?)?;
+        let commission_voided = if reader.has_commission_voided() {
+            Some(Money::from_capnp(reader.get_commission_voided()?)?)
+        } else {
+            None
+        };
+        let order_side = order_side_from_capnp(reader.get_order_side()?);
+        let order_type = order_type_from_capnp(reader.get_order_type()?);
+        let last_px = Price::from_capnp(reader.get_last_px()?)?;
+        let currency = Currency::from_capnp(reader.get_currency()?)?;
+        let liquidity_side = liquidity_side_from_capnp(reader.get_liquidity_side()?);
+        let position_id = if reader.has_position_id() {
+            Some(PositionId::from_capnp(reader.get_position_id()?)?)
+        } else {
+            None
+        };
+        let reason = if reader.has_reason() {
+            Some(Ustr::from(reader.get_reason()?.to_str()?))
+        } else {
+            None
+        };
+        let info = if reader.has_info() {
+            let entries = reader.get_info()?.get_entries()?;
+            let mut map = IndexMap::with_capacity(entries.len() as usize);
+            for entry in entries {
+                map.insert(
+                    Ustr::from(entry.get_key()?.to_str()?),
+                    Ustr::from(entry.get_value()?.to_str()?),
+                );
+            }
+            Some(map)
+        } else {
+            None
+        };
+        let event_id = nautilus_core::UUID4::from_capnp(reader.get_event_id()?)?;
+        let ts_event = reader.get_ts_event()?.get_value().into();
+        let ts_init = reader.get_ts_init()?.get_value().into();
+        let causation_id = if reader.has_causation_id() {
+            Some(nautilus_core::UUID4::from_capnp(
+                reader.get_causation_id()?,
+            )?)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            correction_id,
+            trade_id,
+            voided_qty,
+            commission_voided,
+            order_side,
+            order_type,
+            last_px,
+            currency,
+            liquidity_side,
+            position_id,
+            reason,
+            info,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation: reader.get_reconciliation(),
+            is_reopened: reader.get_is_reopened(),
+            causation_id,
+        })
+    }
+}
+
 // OrderInitialized - seed event
 impl<'a> ToCapnp<'a> for OrderInitialized {
     type Builder = order_capnp::order_initialized::Builder<'a>;
@@ -4781,10 +4926,13 @@ impl<'a> FromCapnp<'a> for PositionAdjusted {
 #[cfg(test)]
 mod tests {
     use capnp::message::Builder;
-    use nautilus_core::UnixNanos;
+    use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::stubs::*,
-        events::order::{spec::OrderCanceledSpec, stubs::*},
+        events::order::{
+            spec::{OrderCanceledSpec, OrderFillVoidedSpec},
+            stubs::*,
+        },
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -5196,6 +5344,31 @@ mod tests {
         OrderFilled,
         order_capnp::order_filled::Builder,
         order_capnp::order_filled::Reader
+    );
+    capnp_simple_roundtrip_test!(
+        order_fill_voided_capnp_roundtrip,
+        OrderFillVoidedSpec::builder().is_reopened(true).build(),
+        order_capnp::order_fill_voided::Builder,
+        order_capnp::order_fill_voided::Reader,
+        OrderFillVoided
+    );
+    capnp_simple_roundtrip_test!(
+        order_fill_voided_populated_optionals_capnp_roundtrip,
+        {
+            let mut event = OrderFillVoidedSpec::builder()
+                .voided_qty(Quantity::from("0.561000"))
+                .commission_voided(Money::from("12.20000000 USDT"))
+                .position_id(PositionId::from("P-001"))
+                .reason(Ustr::from("VENUE_VOID"))
+                .info(IndexMap::from([(Ustr::from("source"), Ustr::from("test"))]))
+                .is_reopened(true)
+                .build();
+            event.causation_id = Some(UUID4::new());
+            event
+        },
+        order_capnp::order_fill_voided::Builder,
+        order_capnp::order_fill_voided::Reader,
+        OrderFillVoided
     );
     order_fixture_roundtrip_test!(
         order_denied_capnp_roundtrip,

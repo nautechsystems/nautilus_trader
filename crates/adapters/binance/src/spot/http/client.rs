@@ -110,7 +110,9 @@ use crate::{
 /// (see `parse::MessageHeader::validate`), so compatible responses continue to decode.
 pub const SBE_SCHEMA_HEADER: &str = "3:5";
 
-use crate::common::consts::BINANCE_SPOT_API_PATH as SPOT_API_PATH;
+use crate::common::consts::{
+    BINANCE_SAPI_PATH as SAPI_PATH, BINANCE_SPOT_API_PATH as SPOT_API_PATH,
+};
 
 /// Global rate limit key.
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:spot:global";
@@ -805,7 +807,7 @@ impl BinanceRawSpotHttpClient {
             format!("/{path}")
         };
 
-        let mut url = format!("{}/sapi/v1{}", self.base_url, normalized_path);
+        let mut url = format!("{}{}{}", self.base_url, SAPI_PATH, normalized_path);
 
         if !query.is_empty() {
             url.push('?');

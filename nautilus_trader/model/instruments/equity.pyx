@@ -138,6 +138,8 @@ cdef class Equity(Instrument):
     @staticmethod
     cdef Equity from_dict_c(dict values):
         Condition.not_none(values, "values")
+        cdef str max_q = values.get("max_quantity")
+        cdef str min_q = values.get("min_quantity")
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -145,6 +147,8 @@ cdef class Equity(Instrument):
             price_precision=values["price_precision"],
             price_increment=Price.from_str(values["price_increment"]),
             lot_size=Quantity.from_str(values["lot_size"]),
+            max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
+            min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
             isin=values.get("isin"),  # Can be None,
             margin_init=Decimal(values.get("margin_init", 0)) if values.get("margin_init") is not None else None,
             margin_maint=Decimal(values.get("margin_maint", 0)) if values.get("margin_maint") is not None else None,

@@ -202,6 +202,47 @@ def test_live_node_dispose_before_start_twice_does_not_raise():
     node.dispose()
 
 
+def test_live_node_stop_before_start_raises():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-008"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+        ),
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="LiveNode is not running"):
+            node.stop()
+    finally:
+        node.dispose()
+
+
+def test_live_node_start_after_dispose_raises():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-009"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            timeout_connection_secs=0,
+            timeout_reconciliation_secs=0,
+            timeout_portfolio_secs=0,
+            timeout_disconnection_secs=0,
+            delay_post_stop_secs=0,
+            timeout_shutdown_secs=0,
+        ),
+    )
+    node.dispose()
+
+    try:
+        with pytest.raises(RuntimeError, match="Invalid state trigger DISPOSED -> START"):
+            node.start()
+    finally:
+        node.dispose()
+
+
 def test_live_node_strategy_start_failure_disposes_resources():
     node = LiveNode.build(
         "TEST",

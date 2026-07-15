@@ -86,6 +86,9 @@ pub struct PositionSnapshot {
     pub ts_init: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the last position event occurred.
     pub ts_last: UnixNanos,
+    /// Full replay state when the snapshot is used as a durable correction boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replay_state: Option<serde_json::Value>,
 }
 
 impl PositionSnapshot {
@@ -118,7 +121,16 @@ impl PositionSnapshot {
             ts_closed: position.ts_closed,
             ts_init: position.ts_init,
             ts_last: position.ts_last,
+            replay_state: None,
         }
+    }
+
+    /// Creates a snapshot containing the full state needed to replay a corrected position.
+    #[must_use]
+    pub fn from_replay_state(position: &Position, unrealized_pnl: Option<Money>) -> Self {
+        let mut snapshot = Self::from(position, unrealized_pnl);
+        snapshot.replay_state = serde_json::to_value(position).ok();
+        snapshot
     }
 }
 
@@ -168,6 +180,7 @@ mod tests {
             ts_closed: Some(UnixNanos::from(4_600_000_000)),
             ts_init: UnixNanos::from(2_000_000_000),
             ts_last: UnixNanos::from(4_600_000_000),
+            replay_state: None,
         }
     }
 
@@ -221,6 +234,7 @@ mod tests {
         assert_eq!(snapshot.ts_closed, position.ts_closed);
         assert_eq!(snapshot.ts_init, position.ts_init);
         assert_eq!(snapshot.ts_last, position.ts_last);
+        assert_eq!(snapshot.replay_state, None);
     }
 
     #[rstest]
@@ -232,6 +246,18 @@ mod tests {
         let snapshot = PositionSnapshot::from(&position, None);
 
         assert_eq!(snapshot.unrealized_pnl, None);
+    }
+
+    #[rstest]
+    fn test_position_snapshot_from_replay_state() {
+        let instrument = audusd_sim();
+        let fill = create_test_order_filled();
+        let position = Position::new(&InstrumentAny::CurrencyPair(instrument), fill);
+
+        let snapshot = PositionSnapshot::from_replay_state(&position, None);
+        let restored: Position = serde_json::from_value(snapshot.replay_state.unwrap()).unwrap();
+
+        assert_eq!(restored, position);
     }
 
     #[rstest]

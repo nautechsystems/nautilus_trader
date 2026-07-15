@@ -647,7 +647,7 @@ impl LiveNode {
                 color = LogColor::Blue
             );
 
-            let mass_status_result = tokio::time::timeout(remaining, async {
+            let mass_status_result = dst::time::timeout(remaining, async {
                 self.kernel
                     .exec_engine
                     .borrow_mut()

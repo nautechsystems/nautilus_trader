@@ -76,6 +76,19 @@ flowchart LR
     engine <--> client
 ```
 
+## Fill corrections
+
+Some venues can later reduce or invalidate a fill. Nautilus records this as an
+[`OrderFillVoided`](events/order_fill_voided.md) event, never as an opposite-side fill. The event
+identifies the original trade and carries the cumulative voided quantity and fee correction.
+
+The execution engine rebuilds the affected order and positions and refreshes portfolio position and
+PnL caches before publishing the correction to strategies and execution algorithms. Migrated venue
+adapters request an authoritative account refresh after a void. A correction preserves any order
+remainder that was already working, but the corrected quantity becomes executable only when the
+venue provides positive evidence through `is_reopened=true`. A prior cancel or expiry remains
+terminal.
+
 ## Order denied reasons
 
 A local denial (`OrderDenied`) carries a standardized `CATEGORY_CONDITION` reason code followed by

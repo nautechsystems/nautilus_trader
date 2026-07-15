@@ -380,18 +380,19 @@ impl FeeModel for MakerTakerFeeModel {
         fill_px: Price,
         instrument: &InstrumentAny,
     ) -> anyhow::Result<Money> {
-        let notional = instrument.calculate_notional_value(fill_quantity, fill_px, Some(false));
-        let commission = match order.liquidity_side() {
-            Some(LiquiditySide::Maker) => notional * instrument.maker_fee(),
-            Some(LiquiditySide::Taker) => notional * instrument.taker_fee(),
+        let notional =
+            instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
+        let rate = match order.liquidity_side() {
+            Some(LiquiditySide::Maker) => instrument.maker_fee(),
+            Some(LiquiditySide::Taker) => instrument.taker_fee(),
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set"),
         };
+        let commission = notional
+            .as_decimal()
+            .checked_mul(rate)
+            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
 
-        if instrument.is_inverse() {
-            Money::from_decimal(commission, instrument.base_currency().unwrap()).map_err(Into::into)
-        } else {
-            Money::from_decimal(commission, instrument.quote_currency()).map_err(Into::into)
-        }
+        Money::from_decimal(commission, notional.currency).map_err(Into::into)
     }
 }
 
@@ -595,8 +596,12 @@ impl FeeModel for TieredNotionalOptionFeeModel {
     ) -> anyhow::Result<Money> {
         check_option_instrument(instrument, "TieredNotionalOptionFeeModel")?;
         let rate = option_fee_rate(order, instrument, self.maker_rate, self.taker_rate)?;
-        let notional = instrument.calculate_notional_value(fill_quantity, fill_px, Some(false));
-        let total = notional.as_decimal() * rate;
+        let notional =
+            instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
+        let total = notional
+            .as_decimal()
+            .checked_mul(rate)
+            .ok_or_else(|| anyhow::anyhow!("commission calculation overflow"))?;
         Money::from_decimal(total, notional.currency).map_err(Into::into)
     }
 }
@@ -786,6 +791,29 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission, Money::from("2.34 USD"));
+    }
+
+    #[rstest]
+    fn test_maker_taker_fee_model_decimal_overflow_returns_error() {
+        let fee_model = MakerTakerFeeModel;
+        let mut instrument = audusd_sim();
+        instrument.maker_fee = Decimal::MAX;
+        let instrument = InstrumentAny::CurrencyPair(instrument);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("1.0"))
+            .quantity(Quantity::from("2"))
+            .build();
+        let fill = TestOrderStubs::make_filled_order(&order, &instrument, LiquiditySide::Maker);
+
+        let result =
+            fee_model.get_commission(&fill, Quantity::from("2"), Price::from("1.0"), &instrument);
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "commission calculation overflow"
+        );
     }
 
     #[rstest]

@@ -34,7 +34,7 @@ use nautilus_model::{
 };
 use thiserror::Error;
 
-use super::base::{BaseContract, ContractCall};
+use super::base::{BaseContract, ContractCall, Multicall3};
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
 sol! {
@@ -321,8 +321,7 @@ impl UniswapV3PoolContract {
     ///
     /// # Errors
     ///
-    /// Returns an error if the multicall fails or if any tick decoding fails.
-    /// Uninitialized ticks are silently skipped (not included in the result HashMap).
+    /// Returns an error if the multicall fails, a subcall fails, or any tick decoding fails.
     pub async fn batch_get_ticks(
         &self,
         pool_address: &Address,
@@ -331,52 +330,22 @@ impl UniswapV3PoolContract {
     ) -> Result<HashMap<i32, PoolTick>, UniswapV3PoolError> {
         let calls: Vec<ContractCall> = ticks
             .iter()
-            .filter_map(|&tick| {
-                I24::try_from(tick).ok().map(|tick_i24| ContractCall {
+            .map(|&tick| {
+                let tick_i24 = I24::try_from(tick).map_err(|_| UniswapV3PoolError::CallFailed {
+                    field: format!("ticks({tick})"),
+                    pool: *pool_address,
+                    reason: "tick is out of range for int24".to_string(),
+                })?;
+                Ok(ContractCall {
                     target: *pool_address,
-                    allow_failure: true,
+                    allow_failure: false,
                     call_data: UniswapV3Pool::ticksCall { tick: tick_i24 }.abi_encode(),
                 })
             })
-            .collect();
+            .collect::<Result<_, UniswapV3PoolError>>()?;
 
         let results = self.base.execute_multicall(calls, block).await?;
-
-        let mut tick_infos = HashMap::with_capacity(ticks.len());
-        for (i, &tick_value) in ticks.iter().enumerate() {
-            if i >= results.len() {
-                break;
-            }
-
-            let result = &results[i];
-            if !result.success {
-                // Skip uninitialized ticks
-                continue;
-            }
-
-            let tick_info = UniswapV3Pool::ticksCall::abi_decode_returns(&result.returnData)
-                .map_err(|e| UniswapV3PoolError::DecodingError {
-                    field: format!("ticks({tick_value})"),
-                    pool: *pool_address,
-                    reason: e.to_string(),
-                    raw_data: hex::encode(&result.returnData),
-                })?;
-
-            tick_infos.insert(
-                tick_value,
-                PoolTick::new(
-                    tick_value,
-                    tick_info.liquidityGross,
-                    tick_info.liquidityNet,
-                    tick_info.feeGrowthOutside0X128,
-                    tick_info.feeGrowthOutside1X128,
-                    tick_info.initialized,
-                    0, // last_updated_block - not available from RPC
-                ),
-            );
-        }
-
-        Ok(tick_infos)
+        decode_tick_results(pool_address, ticks, &results)
     }
 
     /// Computes the position key used by Uniswap V3.
@@ -405,8 +374,7 @@ impl UniswapV3PoolContract {
     ///
     /// # Errors
     ///
-    /// Returns an error if the multicall fails. Individual position failures are
-    /// captured in the Result values of the returned Vec.
+    /// Returns an error if the multicall fails, a subcall fails, or any position decoding fails.
     pub async fn batch_get_positions(
         &self,
         pool_address: &Address,
@@ -419,7 +387,7 @@ impl UniswapV3PoolContract {
                 let position_key = Self::compute_position_key(owner, *tick_lower, *tick_upper);
                 ContractCall {
                     target: *pool_address,
-                    allow_failure: true,
+                    allow_failure: false,
                     call_data: UniswapV3Pool::positionsCall {
                         key: position_key.into(),
                     }
@@ -429,40 +397,7 @@ impl UniswapV3PoolContract {
             .collect();
 
         let results = self.base.execute_multicall(calls, block).await?;
-
-        let position_infos: Vec<PoolPosition> = positions
-            .iter()
-            .enumerate()
-            .filter_map(|(i, (owner, tick_lower, tick_upper))| {
-                if i >= results.len() {
-                    return None;
-                }
-
-                let result = &results[i];
-                if !result.success {
-                    return None;
-                }
-
-                UniswapV3Pool::positionsCall::abi_decode_returns(&result.returnData)
-                    .ok()
-                    .map(|info| PoolPosition {
-                        owner: *owner,
-                        tick_lower: *tick_lower,
-                        tick_upper: *tick_upper,
-                        liquidity: info.liquidity,
-                        fee_growth_inside_0_last: info.feeGrowthInside0LastX128,
-                        fee_growth_inside_1_last: info.feeGrowthInside1LastX128,
-                        tokens_owed_0: info.tokensOwed0,
-                        tokens_owed_1: info.tokensOwed1,
-                        total_amount0_deposited: U256::ZERO,
-                        total_amount1_deposited: U256::ZERO,
-                        total_amount0_collected: 0,
-                        total_amount1_collected: 0,
-                    })
-            })
-            .collect();
-
-        Ok(position_infos)
+        decode_position_results(pool_address, positions, &results)
     }
 
     /// Fetches a complete pool snapshot directly from on-chain state.
@@ -511,6 +446,116 @@ impl UniswapV3PoolContract {
     }
 }
 
+fn decode_tick_results(
+    pool_address: &Address,
+    ticks: &[i32],
+    results: &[Multicall3::Result],
+) -> Result<HashMap<i32, PoolTick>, UniswapV3PoolError> {
+    if results.len() != ticks.len() {
+        return Err(UniswapV3PoolError::CallFailed {
+            field: "ticks".to_string(),
+            pool: *pool_address,
+            reason: format!(
+                "expected {} multicall results, received {}",
+                ticks.len(),
+                results.len()
+            ),
+        });
+    }
+
+    let mut tick_infos = HashMap::with_capacity(ticks.len());
+
+    for (&tick_value, result) in ticks.iter().zip(results) {
+        if !result.success {
+            return Err(UniswapV3PoolError::CallFailed {
+                field: format!("ticks({tick_value})"),
+                pool: *pool_address,
+                reason: "multicall subcall failed".to_string(),
+            });
+        }
+
+        let tick_info =
+            UniswapV3Pool::ticksCall::abi_decode_returns(&result.returnData).map_err(|e| {
+                UniswapV3PoolError::DecodingError {
+                    field: format!("ticks({tick_value})"),
+                    pool: *pool_address,
+                    reason: e.to_string(),
+                    raw_data: hex::encode(&result.returnData),
+                }
+            })?;
+        tick_infos.insert(
+            tick_value,
+            PoolTick::new(
+                tick_value,
+                tick_info.liquidityGross,
+                tick_info.liquidityNet,
+                tick_info.feeGrowthOutside0X128,
+                tick_info.feeGrowthOutside1X128,
+                tick_info.initialized,
+                0,
+            ),
+        );
+    }
+
+    Ok(tick_infos)
+}
+
+fn decode_position_results(
+    pool_address: &Address,
+    positions: &[(Address, i32, i32)],
+    results: &[Multicall3::Result],
+) -> Result<Vec<PoolPosition>, UniswapV3PoolError> {
+    if results.len() != positions.len() {
+        return Err(UniswapV3PoolError::CallFailed {
+            field: "positions".to_string(),
+            pool: *pool_address,
+            reason: format!(
+                "expected {} multicall results, received {}",
+                positions.len(),
+                results.len()
+            ),
+        });
+    }
+
+    positions
+        .iter()
+        .zip(results)
+        .map(|((owner, tick_lower, tick_upper), result)| {
+            let field = format!("positions({owner}, {tick_lower}, {tick_upper})");
+
+            if !result.success {
+                return Err(UniswapV3PoolError::CallFailed {
+                    field,
+                    pool: *pool_address,
+                    reason: "multicall subcall failed".to_string(),
+                });
+            }
+
+            let info = UniswapV3Pool::positionsCall::abi_decode_returns(&result.returnData)
+                .map_err(|e| UniswapV3PoolError::DecodingError {
+                    field,
+                    pool: *pool_address,
+                    reason: e.to_string(),
+                    raw_data: hex::encode(&result.returnData),
+                })?;
+            Ok(PoolPosition {
+                owner: *owner,
+                tick_lower: *tick_lower,
+                tick_upper: *tick_upper,
+                liquidity: info.liquidity,
+                fee_growth_inside_0_last: info.feeGrowthInside0LastX128,
+                fee_growth_inside_1_last: info.feeGrowthInside1LastX128,
+                tokens_owed_0: info.tokensOwed0,
+                tokens_owed_1: info.tokensOwed1,
+                total_amount0_deposited: U256::ZERO,
+                total_amount1_deposited: U256::ZERO,
+                total_amount0_collected: 0,
+                total_amount1_collected: 0,
+            })
+        })
+        .collect()
+}
+
 const fn split_pancakeswap_v3_fee_protocol(fee_protocol: u32) -> (u32, u32) {
     (
         fee_protocol % PANCAKESWAP_V3_PROTOCOL_FEE_LANE_SIZE,
@@ -520,6 +565,7 @@ const fn split_pancakeswap_v3_fee_protocol(fee_protocol: u32) -> (u32, u32) {
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::Bytes;
     use rstest::rstest;
 
     use super::*;
@@ -533,5 +579,71 @@ mod tests {
             (3_200, 4_000)
         );
         assert_eq!(split_pancakeswap_v3_fee_protocol(0), (0, 0));
+    }
+
+    #[rstest]
+    fn decode_tick_results_rejects_failed_subcall() {
+        let results = vec![Multicall3::Result {
+            success: false,
+            returnData: Bytes::new(),
+        }];
+
+        let error = decode_tick_results(&Address::ZERO, &[10], &results).unwrap_err();
+
+        assert!(matches!(
+            error,
+            UniswapV3PoolError::CallFailed { field, .. } if field == "ticks(10)"
+        ));
+    }
+
+    #[rstest]
+    fn decode_tick_results_rejects_missing_result() {
+        let error = decode_tick_results(&Address::ZERO, &[10], &[]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            UniswapV3PoolError::CallFailed { field, .. } if field == "ticks"
+        ));
+    }
+
+    #[rstest]
+    fn decode_position_results_rejects_undecodable_result() {
+        let results = vec![Multicall3::Result {
+            success: true,
+            returnData: Bytes::new(),
+        }];
+
+        let error = decode_position_results(&Address::ZERO, &[(Address::ZERO, -10, 10)], &results)
+            .unwrap_err();
+
+        assert!(matches!(error, UniswapV3PoolError::DecodingError { .. }));
+    }
+
+    #[rstest]
+    fn decode_position_results_rejects_failed_subcall() {
+        let results = vec![Multicall3::Result {
+            success: false,
+            returnData: Bytes::new(),
+        }];
+
+        let error = decode_position_results(&Address::ZERO, &[(Address::ZERO, -10, 10)], &results)
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            UniswapV3PoolError::CallFailed { field, .. }
+                if field == "positions(0x0000000000000000000000000000000000000000, -10, 10)"
+        ));
+    }
+
+    #[rstest]
+    fn decode_position_results_rejects_missing_result() {
+        let error =
+            decode_position_results(&Address::ZERO, &[(Address::ZERO, -10, 10)], &[]).unwrap_err();
+
+        assert!(matches!(
+            error,
+            UniswapV3PoolError::CallFailed { field, .. } if field == "positions"
+        ));
     }
 }

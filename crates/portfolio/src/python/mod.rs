@@ -23,6 +23,7 @@ use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::python::{to_pynotimplemented_err, to_pyvalue_err};
 use nautilus_model::{
     accounts::AccountAny,
+    events::PortfolioSnapshot,
     identifiers::{AccountId, InstrumentId, Venue},
     python::account::account_any_to_pyobject,
     types::{Currency, Money, Price},
@@ -326,6 +327,16 @@ impl PyPortfolio {
     #[pyo3(name = "missing_price_instruments")]
     fn py_missing_price_instruments(&self, venue: Venue) -> Vec<InstrumentId> {
         self.0.borrow().missing_price_instruments(&venue)
+    }
+
+    #[pyo3(name = "build_snapshot")]
+    fn py_build_snapshot(&self, account_id: AccountId) -> Option<PortfolioSnapshot> {
+        self.0.borrow_mut().build_snapshot(&account_id)
+    }
+
+    #[pyo3(name = "snapshots")]
+    fn py_snapshots(&self, account_id: AccountId) -> Vec<PortfolioSnapshot> {
+        self.0.borrow().snapshots(&account_id)
     }
 
     #[pyo3(name = "realized_pnl", signature = (instrument_id, account_id=None, target_currency=None))]

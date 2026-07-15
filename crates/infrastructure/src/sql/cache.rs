@@ -1142,7 +1142,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        let query = DatabaseQuery::UpdatePosition(position_last_event(position)?);
+        let query = if position.fill_voids.is_empty() {
+            DatabaseQuery::UpdatePosition(position_last_event(position)?)
+        } else {
+            DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
+        };
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_position to database message handler: {e}")
         })

@@ -299,7 +299,7 @@ def test_portfolio_config_properties():
     config = PortfolioConfig()
 
     assert config.convert_to_account_base_currency is True
-    assert config.use_mark_prices is False
+    assert config.use_mark_prices is True
     assert config.use_mark_xrates is False
     assert config.debug is False
     assert config.min_account_state_logging_interval_ms is None

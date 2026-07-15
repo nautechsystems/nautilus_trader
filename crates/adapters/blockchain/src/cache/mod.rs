@@ -1014,7 +1014,7 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    use alloy::primitives::{U160, address};
+    use alloy::primitives::{U160, U256, address};
     use futures_util::TryStreamExt;
     use nautilus_core::UnixNanos;
     use nautilus_infrastructure::sql::pg::{PostgresConnectOptions, get_postgres_connect_options};
@@ -1583,8 +1583,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn load_latest_pool_snapshot_round_trips_fee_protocol_basis_points() -> anyhow::Result<()>
-    {
+    async fn add_pool_snapshot_upserts_existing_snapshot() -> anyhow::Result<()> {
         let Some((database, schema)) = connect_cache_test_database().await? else {
             return Ok(());
         };
@@ -1623,11 +1622,20 @@ mod tests {
 
         let mut state = PoolState::default();
         state.set_protocol_fee_basis_points(3_200, 4_000);
-        let snapshot = PoolSnapshot::new(
+        let owner = address!("0000000000000000000000000000000000000001");
+        let mut snapshot = PoolSnapshot::new(
             instrument_id,
             state,
-            Vec::new(),
-            Vec::new(),
+            vec![PoolPosition::new(owner, -10, 10, 100)],
+            vec![PoolTick::new(
+                -10,
+                100,
+                100,
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                100,
+            )],
             PoolAnalytics::default(),
             BlockPosition::new(100, "0xabc".to_string(), 0, 0),
             ts,
@@ -1636,9 +1644,30 @@ mod tests {
         cache
             .add_pool_snapshot(&DexType::PancakeSwapV3, &pool_identifier, &snapshot)
             .await?;
+        database
+            .set_pool_snapshot_validation_state(
+                chain.chain_id,
+                &pool_identifier,
+                100,
+                0,
+                0,
+                "on_chain",
+            )
+            .await?;
+
+        snapshot.state.set_protocol_fee_basis_points(3_300, 4_100);
+        snapshot.positions[0].liquidity = 200;
+        snapshot.ticks[0].liquidity_gross = 200;
+        snapshot.ticks[0].liquidity_net = 200;
+        cache
+            .add_pool_snapshot(&DexType::PancakeSwapV3, &pool_identifier, &snapshot)
+            .await?;
 
         let loaded = database
             .load_latest_pool_snapshot(chain.chain_id, &pool_identifier, None, false)
+            .await?;
+        let validation = database
+            .get_pool_snapshot_validation_state(chain.chain_id, &pool_identifier, 100, 0, 0)
             .await?;
 
         cache.database = None;
@@ -1651,10 +1680,24 @@ mod tests {
             loaded.state.fee_protocol,
             loaded.state.fee_protocol0_basis_points,
             loaded.state.fee_protocol1_basis_points,
+            loaded.positions[0].liquidity,
+            loaded.ticks[0].liquidity_gross,
+            loaded.ticks[0].liquidity_net,
+            validation,
         );
 
-        if observed != (0, Some(3_200), Some(4_000)) {
-            anyhow::bail!("unexpected snapshot fee protocol state: {observed:?}");
+        if observed
+            != (
+                0,
+                Some(3_300),
+                Some(4_100),
+                200,
+                200,
+                200,
+                Some("on_chain".to_string()),
+            )
+        {
+            anyhow::bail!("unexpected upserted snapshot state: {observed:?}");
         }
         Ok(())
     }
@@ -1794,6 +1837,9 @@ mod tests {
                 0,
                 "invalid",
             )
+            .await?;
+        core.cache
+            .add_pool_snapshot(&DexType::UniswapV3, &pool_identifier, &snapshot)
             .await?;
 
         let mut profiler = PoolProfiler::new(Arc::new(pool));

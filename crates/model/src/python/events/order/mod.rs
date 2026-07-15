@@ -18,8 +18,9 @@ use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,
-    OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-    OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+    OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyRejected,
+    OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+    OrderTriggered, OrderUpdated,
 };
 
 pub mod accepted;
@@ -28,6 +29,7 @@ pub mod canceled;
 pub mod denied;
 pub mod emulated;
 pub mod expired;
+pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
 pub mod modify_rejected;
@@ -63,6 +65,7 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
         OrderEventAny::CancelRejected(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::Updated(event) => Ok(event.into_py_any_unwrap(py)),
         OrderEventAny::Filled(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::FillVoided(event) => Ok(event.into_py_any_unwrap(py)),
     }
 }
 
@@ -95,6 +98,9 @@ pub fn pyobject_to_order_event(py: Python, order_event: Py<PyAny>) -> PyResult<O
         )),
         stringify!(OrderFilled) => Ok(OrderEventAny::Filled(
             order_event.extract::<OrderFilled>(py)?,
+        )),
+        stringify!(OrderFillVoided) => Ok(OrderEventAny::FillVoided(
+            order_event.extract::<OrderFillVoided>(py)?,
         )),
         stringify!(OrderInitialized) => Ok(OrderEventAny::Initialized(
             order_event.extract::<OrderInitialized>(py)?,
