@@ -356,18 +356,14 @@ impl PolymarketExecutionClient {
                 None,
             )
             .into_iter()
-            .filter_map(|order| {
-                let order = order.cloned();
-                let instrument = cache.instrument(&order.instrument_id()).cloned()?;
-                Some((order, instrument))
-            })
+            .map(|order| order.cloned())
             .collect();
         drop(cache);
 
         let mut matched_fills: AHashMap<String, Vec<OrderFilled>> = AHashMap::new();
         let mut voided_trades = AHashSet::new();
 
-        for (order, instrument) in &orders {
+        for order in &orders {
             let Some(venue_order_id) = order.venue_order_id() else {
                 continue;
             };
@@ -379,12 +375,7 @@ impl PolymarketExecutionClient {
                 venue_order_id,
                 order.quantity(),
                 order.filled_qty(),
-                order.avg_px().unwrap_or_default(),
-                order.ts_last(),
                 order.order_side(),
-                order.instrument_id(),
-                instrument.size_precision(),
-                instrument.price_precision(),
             );
 
             for event in order.events() {
@@ -925,7 +916,7 @@ mod tests {
         assert!(!client.order_identities.mark_accepted(venue_order_id));
         assert_eq!(
             client.fill_tracker.get_cumulative_filled(&venue_order_id),
-            Some(order.filled_qty().as_f64())
+            Some(order.filled_qty())
         );
         assert_eq!(order.status(), OrderStatus::Voided);
         assert!(state.processed_fills.contains(&key.to_string()));

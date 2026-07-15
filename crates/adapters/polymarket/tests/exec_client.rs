@@ -1350,9 +1350,8 @@ fn recovery_trades_response(venue_order_id: &str, size: &str, price: &str) -> Va
 #[rstest]
 #[tokio::test]
 async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
-    // CLOB cent-tick truncation: trade size lands within DUST_SNAP_THRESHOLD
-    // below cached quantity. Recovery must surface Filled with filled_qty
-    // snapped up to the cached quantity.
+    // CLOB cent-tick truncation leaves the confirmed trade within DUST_SNAP_THRESHOLD below the
+    // cached quantity. Recovery must preserve the economic fill and normalize only order quantity.
     let venue_order_id_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
     let state = TestServerState::default();
     *state.single_order_response.lock().await = Some(Value::Null);
@@ -1422,8 +1421,8 @@ async fn test_generate_order_status_report_recovers_filled_with_dust_snap() {
         .expect("recovery should produce a report");
 
     assert_eq!(report.order_status, OrderStatus::Filled);
-    assert_eq!(report.filled_qty, Quantity::new(10.0, 4));
-    assert_eq!(report.quantity, Quantity::new(10.0, 4));
+    assert_eq!(report.filled_qty, Quantity::from("9.9950"));
+    assert_eq!(report.quantity, Quantity::from("9.9950"));
 }
 
 #[rstest]

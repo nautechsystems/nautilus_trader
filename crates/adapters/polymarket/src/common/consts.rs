@@ -45,7 +45,10 @@ pub const LOT_SIZE_SCALE: u32 = 2;
 
 /// Minimum position size (in shares) reported in position status reports.
 /// Smaller positions are filtered as dust during reconciliation.
-pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
+pub const DUST_POSITION_THRESHOLD: Decimal = dec!(0.01);
+
+/// Maximum six-decimal position difference below [`DUST_POSITION_THRESHOLD`].
+pub const POSITION_RECONCILIATION_TOLERANCE: Decimal = dec!(0.009999);
 
 /// Dust band (in shares) for fill quantity normalization. Set to one
 /// cent-share, matching Polymarket's CLOB tick quantization.
@@ -53,9 +56,9 @@ pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
 /// Live-fill snapping is overfill-only: when the venue fill exceeds
 /// `submitted_qty` by less than `DUST_SNAP_THRESHOLD`, the fill is snapped
 /// DOWN to `submitted_qty`. Underfill is preserved on the per-fill path and
-/// resolved at terminal `MATCHED` status by the synthetic dust fill
-/// mechanism. `OrderStatusReport.filled_qty` snapping at terminal `Filled`
-/// status uses this same threshold in both directions.
+/// resolved after terminal trade confirmation by lowering the order quantity
+/// to its venue-filled quantity. `OrderStatusReport.filled_qty` snapping at
+/// terminal `Filled` status uses this same threshold in both directions.
 ///
 /// Two observed drift sources sit within this band:
 ///
@@ -66,9 +69,6 @@ pub const DUST_POSITION_THRESHOLD: f64 = 0.01;
 ///
 /// A diff at or above this threshold is left unsnapped and surfaces to the
 /// engine. See `docs/integrations/polymarket.md` (Fill quantity normalization).
-pub const DUST_SNAP_THRESHOLD: f64 = 0.01;
-
-/// Decimal form of [`DUST_SNAP_THRESHOLD`] for `Decimal` arithmetic paths.
 pub const DUST_SNAP_THRESHOLD_DEC: Decimal = dec!(0.01);
 
 pub const WS_MAX_SUBSCRIPTIONS: usize = 200;

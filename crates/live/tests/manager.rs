@@ -76,6 +76,7 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[cfg(all(feature = "simulation", madsim))]
@@ -9036,6 +9037,7 @@ struct MockPositionExecutionClient {
     order_reports: RefCell<Vec<OrderStatusReport>>,
     position_reports: RefCell<Vec<PositionStatusReport>>,
     fail_position_reports: bool,
+    position_reconciliation_tolerance: Decimal,
 }
 
 impl MockPositionExecutionClient {
@@ -9050,7 +9052,13 @@ impl MockPositionExecutionClient {
             order_reports: RefCell::new(order_reports),
             position_reports: RefCell::new(position_reports),
             fail_position_reports: false,
+            position_reconciliation_tolerance: dec!(0.00000001),
         }
+    }
+
+    fn with_position_reconciliation_tolerance(mut self, tolerance: Decimal) -> Self {
+        self.position_reconciliation_tolerance = tolerance;
+        self
     }
 
     fn failing_position_reports() -> Self {
@@ -9061,6 +9069,7 @@ impl MockPositionExecutionClient {
             order_reports: RefCell::new(Vec::new()),
             position_reports: RefCell::new(Vec::new()),
             fail_position_reports: true,
+            position_reconciliation_tolerance: dec!(0.00000001),
         }
     }
 }
@@ -9089,6 +9098,10 @@ impl ExecutionClient for MockPositionExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         None
+    }
+
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.position_reconciliation_tolerance
     }
 
     fn generate_account_state(
@@ -9158,6 +9171,117 @@ impl ExecutionClient for MockPositionExecutionClient {
 
         Ok(self.position_reports.borrow().clone())
     }
+}
+
+#[tokio::test]
+async fn test_position_check_uses_client_tolerance_for_missing_dust_report() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-DUST-MISSING"),
+        OrderSide::Buy,
+        "0.008007",
+        "3000.00",
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-SMOKE-DIFFERENCE"),
+        OrderSide::Buy,
+        "5.202897",
+        "3000.00",
+    );
+    // The venue report includes a pre-existing 0.005103-share balance in addition to this order.
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.208000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn test_position_check_reconciles_at_client_tolerance_boundary() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-TOLERANCE-BOUNDARY"),
+        OrderSide::Buy,
+        "5.200000",
+        "3000.00",
+    );
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.210000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(fill) if fill.last_qty == Quantity::from("0.010000"))));
 }
 
 #[tokio::test]

@@ -23,7 +23,7 @@ use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr, sync::LazyLock, time:
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient},
     clock::Clock,
     enums::{LogColor, LogLevel},
     live::dst,
@@ -285,6 +285,7 @@ pub struct ExecutionManager {
     // Monotonic (`dst::time`) instants, not `self.clock`; see `record_position_activity`.
     position_local_activity: RecencyMap<InstrumentAccountKey>,
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
+    position_reconciliation_tolerances: IndexMap<(Venue, AccountId), Decimal>,
     recent_fills_cache: RecencyMap<FillKey>,
 }
 
@@ -319,8 +320,39 @@ impl ExecutionManager {
             order_local_activity: RecencyMap::default(),
             position_local_activity: RecencyMap::default(),
             position_recon_retries: IndexMap::new(),
+            position_reconciliation_tolerances: IndexMap::new(),
             recent_fills_cache: RecencyMap::default(),
         }
+    }
+
+    pub(crate) fn set_position_reconciliation_tolerance(
+        &mut self,
+        venue: Venue,
+        account_id: AccountId,
+        tolerance: Decimal,
+    ) {
+        let tolerance = if tolerance < Decimal::ZERO {
+            log::error!(
+                "Invalid negative position reconciliation tolerance {tolerance} for \
+                 {venue}/{account_id}; using the default"
+            );
+            DEFAULT_POSITION_RECONCILIATION_TOLERANCE
+        } else {
+            tolerance
+        };
+        self.position_reconciliation_tolerances
+            .insert((venue, account_id), tolerance);
+    }
+
+    fn position_reconciliation_tolerance(
+        &self,
+        instrument_id: InstrumentId,
+        account_id: AccountId,
+    ) -> Decimal {
+        self.position_reconciliation_tolerances
+            .get(&(instrument_id.venue, account_id))
+            .copied()
+            .unwrap_or(DEFAULT_POSITION_RECONCILIATION_TOLERANCE)
     }
 
     /// Reconciles orders and fills from a mass status report.
@@ -1341,6 +1373,12 @@ impl ExecutionManager {
         let mut failed_venues = IndexSet::new();
 
         for client in clients {
+            self.set_position_reconciliation_tolerance(
+                client.venue(),
+                client.account_id(),
+                client.position_reconciliation_tolerance(),
+            );
+
             match client
                 .generate_position_status_reports(&check.command)
                 .await
@@ -1859,7 +1897,7 @@ impl ExecutionManager {
         }
         let venue_signed_qty = venue_report.map_or(Decimal::ZERO, |r| r.signed_decimal_qty);
 
-        let tolerance = Decimal::from_str("0.00000001").unwrap();
+        let tolerance = self.position_reconciliation_tolerance(instrument_id, account_id);
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
             self.position_recon_retries.shift_remove(&key);
             return None;
@@ -2471,7 +2509,7 @@ impl ExecutionManager {
 
         log::debug!("venue_signed_qty={venue_signed_qty}, cached_signed_qty={cached_signed_qty}");
 
-        let tolerance = Decimal::from_str("0.00000001").unwrap_or(Decimal::ZERO);
+        let tolerance = self.position_reconciliation_tolerance(instrument_id, account_id);
         if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
             log::debug!("Position quantities match for {instrument_id}, no reconciliation needed");
             return None;

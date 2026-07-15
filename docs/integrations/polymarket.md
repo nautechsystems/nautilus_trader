@@ -414,9 +414,11 @@ Polymarket enforces different precision constraints based on tick size and `orde
 precision requirements**:
 
 - **Market order types (`FAK` and `FOK`):**
-  - Sell orders: maker amount limited to **2 decimal places**.
-  - Taker amount: limited to **4 decimal places**.
-  - The product `size × price` must not exceed **2 decimal places**.
+  - The direct maker amount is limited to **2 decimal places**.
+  - The computed taker amount uses the market tick precision plus two size decimals.
+  - A limit order submitted with `FAK` or `FOK` must also satisfy the stricter market-order amount
+    validation. The venue rejects values that are valid for a resting order but not for that
+    market-order type.
 
 - **Resting limit order types (`GTC` and `GTD`):** More flexible precision based on
   market tick size.
@@ -432,7 +434,8 @@ precision requirements**:
 
 :::note
 
-- The adapter validates tick-size and market-order precision before signing.
+- The adapter validates tick size before signing. The CLOB remains authoritative for the
+  order-type-specific amount precision of limit orders submitted as `FAK` or `FOK`.
 - The adapter rejects limit prices outside the current market's `tick_size` to `1 - tick_size`
   range before signing.
 - Market-order precision limits include two decimals for the sell size plus tick-derived bounds
@@ -604,28 +607,29 @@ recovers the settled quantity from confirmed trade history.
 
 ## Fill quantity normalization
 
-Polymarket reports fill quantities that drift slightly from the submitted
-order quantity due to protocol-level rounding: the CLOB rounds matched fills
-to integer cent ticks (underfill) and the V2 SDK truncates `takerAmount` to
-USDC scale on market-BUY quote-quantity orders (overfill, a few microshares).
-Both drift sources are fixed in absolute share terms, so the adapter
-normalizes them with a single threshold of `DUST_SNAP_THRESHOLD = 0.01`
-shares. Anything beyond that surfaces to the engine as a real partial fill or
-overfill.
+Polymarket wire amounts use six-decimal fixed-point mantissas. Market SELL signing truncates the
+share-denominated `makerAmount` to two decimal places, while market BUY quote conversion can leave
+a few microshares of drift between the registered and filled quantities. Both effects are fixed in
+absolute share terms, so the adapter uses `DUST_SNAP_THRESHOLD = 0.01` shares. Anything at or above
+that threshold remains a real partial fill or overfill.
 
-| Direction | Source                                 | Adapter behaviour                                       |
-|-----------|----------------------------------------|---------------------------------------------------------|
-| Overfill  | V2 USDC‑scale truncation (microshares) | Snap fill DOWN to `submitted_qty`                       |
-| Underfill | CLOB cent‑tick truncation (`< 0.01`)   | Synthetic dust fill once associated trades all confirm  |
+| Direction | Source                                         | Adapter behavior                              |
+|-----------|------------------------------------------------|-----------------------------------------------|
+| Overfill  | Market BUY quote conversion (microshares)      | Snap fill down to `submitted_qty`              |
+| Underfill | Signed or venue quantity truncation (`< 0.01`)  | Normalize atomic FOK; cancel a FAK remainder  |
 
-Dust convergence triggers from the `MATCHED` order update for resting maker orders, or directly
-on the confirming taker trade for one-shot taker orders. FOK orders always qualify because any
-fill implies full completion. IOC maps to fill-and-kill, whose remainder can be genuine, so IOC
-qualifies only for quote-quantity market BUY orders, whose registered quantity derives from the
-venue-computed size; an IOC remainder on a limit or market SELL order is never synthesized. The
-same convergence runs after buffered fills drain when a confirmed trade arrives before the
-submit response. A buffered `Canceled`, `Expired`, or `Rejected` report takes precedence and
-preserves the remaining quantity.
+Terminal quantity normalization triggers from the `MATCHED` order update for resting maker
+orders, or directly on the confirming taker trade for atomic FOK orders. It emits a reconciliation
+`OrderUpdated` which lowers the order quantity to the cumulative venue fill. It does not emit a
+fill and does not change positions, balances, or commissions.
+
+IOC maps to venue FAK. Once a taker trade confirms, every positive difference between
+`original_size` and `size_matched` is an unfilled remainder which the venue has killed. The adapter
+therefore emits `OrderCanceled` after the real fills instead of normalizing quantity or leaving the
+order partially filled. REST reports apply the same rule when a `MATCHED` FAK has
+`size_matched < original_size`. The same terminal handling runs after buffered fills drain when a
+confirmed trade arrives before the submit response. A buffered `Canceled`, `Expired`, or
+`Rejected` report takes precedence.
 
 `FillReport.commission` always reflects the venue-reported size, not the
 snapped quantity. The few-ulp difference is sub-microcent in pUSD.
@@ -789,12 +793,12 @@ Matched WebSocket fills and their corrections are restored from cached order his
 deduplicated across reconnects. If a trade arrives before its instrument is available, the adapter
 leaves it out of the dedup state. A redelivered event or later REST reconciliation can apply it after
 instrument loading completes.
-For a fully matched order, dust convergence waits for every trade ID in the order's
-`associate_trades` list to confirm before emitting a synthetic residual fill. If a confirmed trade
-is recovered through REST after a WebSocket gap, reconciliation also snaps a terminal residual
-within `DUST_SNAP_THRESHOLD` to the submitted quantity. If a `MATCHED` WebSocket update omits
-`associate_trades`, the adapter does not infer that settlement is final; the next REST
-reconciliation recovers the residual after the trade reaches `CONFIRMED`.
+For a fully matched order, terminal quantity normalization waits for every trade ID in the order's
+`associate_trades` list to confirm before lowering the order quantity to its actual fills. If a
+confirmed trade is recovered through REST after a WebSocket gap, reconciliation applies the same
+order-only normalization. If a `MATCHED` WebSocket update omits `associate_trades`, the adapter does
+not infer that settlement is final; the next REST reconciliation recovers the residual after the
+trade reaches `CONFIRMED`.
 
 ### Subscription limits
 
@@ -878,7 +882,8 @@ The following limitations are currently known:
 - The adapter does not implement Polymarket's authenticated heartbeat auto-cancel endpoint.
 - Position reports omit balances below 0.01 shares. Do not treat an omitted report as proof that a
   dust position is flat; a sub-minimum residual cannot be exited through the CLOB's five-share
-  minimum order size.
+  minimum order size. Position reconciliation therefore tolerates differences through 0.009999
+  shares and reconciles differences of 0.01 shares or more.
 
 ## Configuration
 

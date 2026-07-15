@@ -60,21 +60,12 @@ impl OrderIdentity {
         }
     }
 
-    /// Returns true when settled taker fills fully consume the order, so a sub-cent residual
-    /// against the registered quantity is quantity normalization rather than a real remainder.
+    /// Returns true when any taker fill implies full completion.
     ///
-    /// FOK is atomic: any fill means the order filled in full. IOC maps to venue
-    /// fill-and-kill, which can legitimately cancel a remainder, so only the quote-quantity
-    /// market BUY case qualifies: market BUY orders are always quote-denominated on
-    /// Polymarket and their registered quantity derives from the venue-computed size.
-    pub(crate) fn is_one_shot_taker(&self) -> bool {
-        match self.time_in_force {
-            TimeInForce::Fok => true,
-            TimeInForce::Ioc => {
-                self.order_type == OrderType::Market && self.order_side == OrderSide::Buy
-            }
-            _ => false,
-        }
+    /// FOK is atomic, so a sub-cent difference between its registered and filled quantities is
+    /// normalization. IOC maps to venue FAK: every positive remainder is canceled.
+    pub(crate) fn requires_terminal_quantity_normalization(&self) -> bool {
+        self.time_in_force == TimeInForce::Fok
     }
 }
 

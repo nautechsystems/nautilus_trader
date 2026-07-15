@@ -19,7 +19,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use nautilus_core::{UnixNanos, collections::AtomicMap, time::AtomicTime};
 use nautilus_model::{
-    enums::{LiquiditySide, PositionSideSpecified},
+    enums::{LiquiditySide, OrderStatus, PositionSideSpecified},
     identifiers::{AccountId, ClientId, InstrumentId, Venue, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -32,12 +32,12 @@ use super::{
     order_fill_tracker::OrderFillTrackerMap,
     parse::{
         build_maker_fill_report, instrument_taker_fee, parse_fill_report,
-        parse_order_status_report, parse_timestamp, snap_filled_qty_to_quantity,
+        parse_order_status_report, parse_timestamp,
     },
 };
 use crate::{
     common::{
-        consts::{DUST_POSITION_THRESHOLD, USDC_DECIMALS},
+        consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{PolymarketLiquiditySide, PolymarketTradeStatus},
     },
     http::{
@@ -229,7 +229,7 @@ pub(crate) fn build_position_reports(
     positions
         .iter()
         .filter(|p| {
-            if p.size > 0.0 && p.size < DUST_POSITION_THRESHOLD {
+            if p.size > Decimal::ZERO && p.size < DUST_POSITION_THRESHOLD {
                 log::debug!(
                     "Filtering dust position: {}-{}, size={}",
                     p.condition_id,
@@ -239,21 +239,32 @@ pub(crate) fn build_position_reports(
             }
             p.size >= DUST_POSITION_THRESHOLD
         })
-        .map(|p| {
+        .filter_map(|p| {
             let instrument_id =
                 InstrumentId::from(format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str());
-            let avg_px_open = p.avg_price.and_then(|px| Decimal::try_from(px).ok());
-            PositionStatusReport::new(
+            let quantity = match Quantity::from_decimal_dp(p.size, USDC_DECIMALS as u8) {
+                Ok(quantity) => quantity,
+                Err(e) => {
+                    log::warn!(
+                        "Skipping invalid Data API position {}-{} size {}: {e}",
+                        p.condition_id,
+                        p.asset,
+                        p.size,
+                    );
+                    return None;
+                }
+            };
+            Some(PositionStatusReport::new(
                 account_id,
                 instrument_id,
                 PositionSideSpecified::Long,
-                Quantity::new(p.size, USDC_DECIMALS as u8),
+                quantity,
                 ts,
                 ts,
                 None,
                 None,
-                avg_px_open,
-            )
+                p.avg_price,
+            ))
         })
         .collect()
 }
@@ -384,7 +395,28 @@ pub(crate) fn cap_order_report_filled_qty(
         .and_then(|qty| Quantity::from_decimal_dp(qty, report.quantity.precision).ok())
         .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
     let capped = report.filled_qty.min(local_filled.max(confirmed_filled));
-    report.filled_qty = snap_filled_qty_to_quantity(report.quantity, capped, report.order_status);
+    report.filled_qty = capped;
+    normalize_terminal_order_report_quantity(report);
+}
+
+pub(crate) fn normalize_terminal_order_report_quantity(report: &mut OrderStatusReport) {
+    if report.order_status != OrderStatus::Filled
+        || report.filled_qty.is_zero()
+        || report.filled_qty >= report.quantity
+    {
+        return;
+    }
+
+    let leaves = report.quantity.as_decimal() - report.filled_qty.as_decimal();
+    if leaves < DUST_SNAP_THRESHOLD_DEC {
+        log::debug!(
+            "Normalizing terminal order report {} quantity from {} to confirmed fills {}",
+            report.venue_order_id,
+            report.quantity,
+            report.filled_qty,
+        );
+        report.quantity = report.filled_qty;
+    }
 }
 
 #[cfg(test)]
@@ -442,7 +474,12 @@ mod tests {
     }
 
     #[rstest]
-    fn snaps_confirmed_dust_residual_to_filled_quantity() {
+    #[case::below_threshold("99.995", "99.995")]
+    #[case::at_threshold("99.990", "100.000")]
+    fn normalizes_confirmed_dust_residual_to_order_quantity(
+        #[case] confirmed: &str,
+        #[case] expected_quantity: &str,
+    ) {
         let account_id = AccountId::from("POLY-001");
         let instrument_id = InstrumentId::from("TEST.POLYMARKET");
         let venue_order_id = VenueOrderId::from("V-DUST");
@@ -468,7 +505,7 @@ mod tests {
             venue_order_id,
             TradeId::from("T-DUST"),
             OrderSide::Buy,
-            Quantity::from("99.995"),
+            Quantity::from(confirmed),
             Price::from("0.5000"),
             Money::zero(Currency::pUSD()),
             LiquiditySide::Taker,
@@ -481,6 +518,7 @@ mod tests {
 
         cap_order_reports_to_confirmed_fills(&mut reports, &fills);
 
-        assert_eq!(reports[0].filled_qty, Quantity::from("100.000"));
+        assert_eq!(reports[0].quantity, Quantity::from(expected_quantity));
+        assert_eq!(reports[0].filled_qty, Quantity::from(confirmed));
     }
 }

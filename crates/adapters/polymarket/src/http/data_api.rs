@@ -330,7 +330,7 @@ mod tests {
         identifiers::{AccountId, InstrumentId},
     };
     use rstest::rstest;
-    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -356,8 +356,8 @@ mod tests {
         let positions = load_positions();
 
         assert_eq!(positions.len(), 4);
-        assert_eq!(positions[0].size, 150.5);
-        assert_eq!(positions[0].avg_price, Some(0.55));
+        assert_eq!(positions[0].size, dec!(150.5));
+        assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
         assert_eq!(
             positions[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
@@ -388,14 +388,8 @@ mod tests {
         let reports = build_position_reports(&positions, account_id, ts_now);
 
         assert_eq!(reports.len(), 2);
-        assert_eq!(
-            reports[0].avg_px_open,
-            Some(Decimal::try_from(0.55).unwrap())
-        );
-        assert_eq!(
-            reports[1].avg_px_open,
-            Some(Decimal::try_from(0.3).unwrap())
-        );
+        assert_eq!(reports[0].avg_px_open, Some(dec!(0.55)));
+        assert_eq!(reports[1].avg_px_open, Some(dec!(0.3)));
     }
 
     #[rstest]
@@ -416,7 +410,7 @@ mod tests {
         let positions = vec![DataApiPosition {
             asset: "123".to_string(),
             condition_id: "0xabc".to_string(),
-            size: 10.0,
+            size: dec!(10),
             avg_price: None,
         }];
         let account_id = AccountId::from("POLYMARKET-001");

@@ -44,6 +44,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 #[derive(Clone)]
 pub(crate) struct LiveExecutionClient {
@@ -89,6 +90,10 @@ impl LiveExecutionClient {
 
     pub(crate) const fn venue(&self) -> Venue {
         self.venue
+    }
+
+    pub(crate) fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.client.borrow().position_reconciliation_tolerance()
     }
 
     #[expect(
@@ -166,6 +171,10 @@ impl ExecutionClient for LiveExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.client.borrow().get_account()
+    }
+
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.client.borrow().position_reconciliation_tolerance()
     }
 
     fn handles_order_venue(&self, venue: Venue) -> bool {
