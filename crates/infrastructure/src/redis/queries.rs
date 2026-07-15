@@ -23,7 +23,7 @@ use nautilus_common::{cache::database::CacheMap, enums::SerializationEncoding};
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit},
-    events::{AccountState, OrderEventAny, OrderFilled},
+    events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
@@ -46,6 +46,7 @@ const SYNTHETICS: &str = "synthetics";
 const ACCOUNTS: &str = "accounts";
 const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
+const SNAPSHOTS: &str = "snapshots";
 const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
 const CUSTOM: &str = "custom";
@@ -246,7 +247,7 @@ impl DatabaseQueries {
             GENERAL | CURRENCIES | INSTRUMENTS | SYNTHETICS | ACTORS | STRATEGIES => {
                 Self::read_string(&mut con, &full_key).await
             }
-            ACCOUNTS | ORDERS | POSITIONS => Self::read_list(&mut con, &full_key).await,
+            ACCOUNTS | ORDERS | POSITIONS | SNAPSHOTS => Self::read_list(&mut con, &full_key).await,
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -886,6 +887,18 @@ impl DatabaseQueries {
         position_id: &PositionId,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<Option<Position>> {
+        let snapshot_key =
+            format!("{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{position_id}");
+        let snapshots = Self::read(con, trader_key, &snapshot_key).await?;
+        for payload in snapshots.iter().rev() {
+            let snapshot: PositionSnapshot = Self::deserialize_payload(encoding, payload)?;
+            if let Some(replay_state) = snapshot.replay_state {
+                return serde_json::from_value(replay_state)
+                    .map(Some)
+                    .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"));
+            }
+        }
+
         let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
         let result = Self::read(con, trader_key, &key).await?;
         if result.is_empty() {

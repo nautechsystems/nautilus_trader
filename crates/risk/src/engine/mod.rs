@@ -1380,8 +1380,17 @@ impl RiskEngine {
                 }
             }
 
-            let notional =
-                instrument.calculate_notional_value(effective_quantity, last_px, Some(true));
+            let notional = match instrument.try_calculate_notional_value(
+                effective_quantity,
+                last_px,
+                Some(true),
+            ) {
+                Ok(notional) => notional,
+                Err(e) => {
+                    self.deny_order(order, &format!("Cannot calculate notional value: {e}"));
+                    return false;
+                }
+            };
 
             if self.config.debug {
                 log::debug!("Notional: {notional:?}");
@@ -1437,12 +1446,21 @@ impl RiskEngine {
             if is_margin {
                 // Margin account: check initial margin requirement
                 let margin_req = match &mut account {
-                    AccountAny::Margin(margin) => margin
-                        .calculate_initial_margin(instrument, effective_quantity, last_px, None)
-                        .unwrap_or_else(|e| {
-                            log::error!("Failed to calculate initial margin: {e}");
-                            Money::zero(instrument.quote_currency())
-                        }),
+                    AccountAny::Margin(margin) => match margin.calculate_initial_margin(
+                        instrument,
+                        effective_quantity,
+                        last_px,
+                        None,
+                    ) {
+                        Ok(margin) => margin,
+                        Err(e) => {
+                            self.deny_order(
+                                order,
+                                &format!("Cannot calculate initial margin: {e}"),
+                            );
+                            return false;
+                        }
+                    },
                     _ => unreachable!(),
                 };
 
@@ -1502,7 +1520,16 @@ impl RiskEngine {
 
                 // Cumulative margin check
                 match cum_margin_required.as_mut() {
-                    Some(cum) => cum.raw += margin_req.raw,
+                    Some(cum) => {
+                        let Some(total) = cum.checked_add(margin_req) else {
+                            self.deny_order(
+                                order,
+                                "Cannot calculate cumulative margin: total exceeds Money bounds",
+                            );
+                            return false;
+                        };
+                        *cum = total;
+                    }
                     None => cum_margin_required = Some(margin_req),
                 }
 
@@ -1525,26 +1552,39 @@ impl RiskEngine {
                 }
             } else {
                 // Cash account: check full notional value
-                let notional =
-                    instrument.calculate_notional_value(effective_quantity, last_px, None);
+                let notional = match instrument.try_calculate_notional_value(
+                    effective_quantity,
+                    last_px,
+                    None,
+                ) {
+                    Ok(notional) => notional,
+                    Err(e) => {
+                        self.deny_order(order, &format!("Cannot calculate notional value: {e}"));
+                        return false;
+                    }
+                };
                 let order_balance_impact = if is_betting {
                     match &mut account {
-                        AccountAny::Betting(betting) => Money::from_raw(
-                            -betting
-                                .calculate_balance_locked(
-                                    instrument,
-                                    order.order_side(),
-                                    effective_quantity,
-                                    last_px,
-                                    None,
-                                )
-                                .unwrap_or_else(|e| {
-                                    log::error!("Failed to calculate betting balance locked: {e}");
-                                    Money::zero(instrument.quote_currency())
-                                })
-                                .raw,
-                            instrument.quote_currency(),
-                        ),
+                        AccountAny::Betting(betting) => {
+                            match betting.calculate_balance_locked(
+                                instrument,
+                                order.order_side(),
+                                effective_quantity,
+                                last_px,
+                                None,
+                            ) {
+                                Ok(locked) => {
+                                    Money::from_raw(-locked.raw, instrument.quote_currency())
+                                }
+                                Err(e) => {
+                                    self.deny_order(
+                                        order,
+                                        &format!("Cannot calculate betting balance locked: {e}"),
+                                    );
+                                    return false;
+                                }
+                            }
+                        }
                         _ => unreachable!(),
                     }
                 } else {

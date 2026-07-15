@@ -24,7 +24,7 @@ use nautilus_model::{
         option_chain::OptionGreeks,
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired,
+        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled,
         OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     instruments::InstrumentAny,
@@ -642,6 +642,9 @@ pub struct DeribitOrderMsg {
     pub order_type: String,
     /// Order state: "open", "filled", "rejected", "cancelled", "untriggered".
     pub order_state: String,
+    /// Whether this update reflects an order replacement or amendment.
+    #[serde(default)]
+    pub replaced: bool,
     /// Limit price (None for market orders, or when Deribit returns the
     /// literal `"market_price"` for trigger market orders).
     #[serde(default, deserialize_with = "deserialize_optional_decimal_or_market")]
@@ -864,6 +867,8 @@ pub enum NautilusWsMessage {
     OrderStatusReports(Vec<OrderStatusReport>),
     /// Fill reports from user.trades subscription or order responses.
     FillReports(Vec<FillReport>),
+    /// Fill for an order tracked by this execution client.
+    OrderFilled(OrderFilled),
     /// Order accepted by venue.
     OrderAccepted(OrderAccepted),
     /// Order canceled by venue or user.

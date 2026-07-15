@@ -62,10 +62,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use self::streams::{
-    handle_historical_bars_subscription, handle_index_price_subscription,
+    DataFarmConnectionState, handle_historical_bars_subscription, handle_index_price_subscription,
     handle_market_depth_subscription, handle_option_greeks_subscription, handle_quote_subscription,
     handle_realtime_bars_subscription, handle_tick_by_tick_quote_subscription,
-    handle_trade_subscription,
+    handle_trade_subscription, monitor_data_farm_notices,
 };
 use super::{
     cache::{OptionGreeksCache, QuoteCache},
@@ -128,6 +128,8 @@ pub struct InteractiveBrokersDataClient {
     last_bars: Arc<tokio::sync::Mutex<AHashMap<String, ibapi::market_data::realtime::Bar>>>,
     /// Active timeout tasks for bar completion.
     bar_timeout_tasks: Arc<tokio::sync::Mutex<AHashMap<String, tokio::task::JoinHandle<()>>>>,
+    /// Shared data-farm state used to resubscribe data feeds without tearing down the IB socket.
+    data_farm_state: Arc<DataFarmConnectionState>,
 }
 
 /// Information about an active subscription.
@@ -309,6 +311,7 @@ impl InteractiveBrokersDataClient {
             ib_client: None,
             last_bars: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
             bar_timeout_tasks: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            data_farm_state: Arc::new(DataFarmConnectionState::default()),
         })
     }
 
@@ -666,8 +669,22 @@ impl DataClient for InteractiveBrokersDataClient {
             tracing::info!("Set market data type to {:?}", self.config.market_data_type);
         }
 
+        let notice_client = Arc::clone(client);
         self.ib_client = Some(handle);
         self.is_connected.store(true, Ordering::Relaxed);
+
+        let data_farm_state = Arc::clone(&self.data_farm_state);
+        let cancellation_token = self.cancellation_token.child_token();
+        let clock = self.clock;
+
+        self.tasks.push(get_runtime().spawn(async move {
+            if let Err(e) =
+                monitor_data_farm_notices(notice_client, data_farm_state, clock, cancellation_token)
+                    .await
+            {
+                tracing::warn!("IB data farm notice monitor stopped: {e:?}");
+            }
+        }));
 
         // Initialize provider and load instruments from cache/config if configured
         tracing::debug!("Initializing IB data instrument provider");
@@ -778,6 +795,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
         let ignore_size_updates = self.config.ignore_quote_tick_size_updates;
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             if use_market_data {
@@ -800,6 +818,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     clock,
                     subscription_token_clone,
                     ignore_size_updates,
+                    Arc::clone(&data_farm_state),
                 )
                 .await
                 {
@@ -823,6 +842,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     clock,
                     subscription_token_clone.clone(),
                     price_magnifier,
+                    Arc::clone(&data_farm_state),
                 )
                 .await
                 {
@@ -847,6 +867,7 @@ impl DataClient for InteractiveBrokersDataClient {
                             clock,
                             subscription_token_clone,
                             ignore_size_updates,
+                            Arc::clone(&data_farm_state),
                         )
                         .await
                         {
@@ -936,6 +957,7 @@ impl DataClient for InteractiveBrokersDataClient {
 
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             if let Err(e) = handle_index_price_subscription(
@@ -947,6 +969,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 data_sender,
                 clock,
                 subscription_token_clone,
+                data_farm_state,
             )
             .await
             {
@@ -1023,6 +1046,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let subscription_token = self.cancellation_token.child_token();
         let subscription_token_clone = subscription_token.clone();
         let client_clone = client.as_arc().clone();
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             if let Err(e) = handle_option_greeks_subscription(
@@ -1033,6 +1057,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 option_greeks_cache,
                 clock,
                 subscription_token_clone,
+                data_farm_state,
             )
             .await
             {
@@ -1172,6 +1197,7 @@ impl DataClient for InteractiveBrokersDataClient {
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             if let Err(e) = handle_trade_subscription(
@@ -1183,6 +1209,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 data_sender,
                 clock,
                 subscription_token_clone,
+                data_farm_state,
             )
             .await
             {
@@ -1276,6 +1303,7 @@ impl DataClient for InteractiveBrokersDataClient {
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             let result = if bar_type.spec().timedelta().num_seconds() == 5 {
@@ -1298,6 +1326,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     handle_revised_bars,
                     use_rth,
                     subscription_token_clone,
+                    Arc::clone(&data_farm_state),
                 )
                 .await
             } else {
@@ -1317,6 +1346,7 @@ impl DataClient for InteractiveBrokersDataClient {
                     handle_revised_bars,
                     clock,
                     subscription_token_clone,
+                    Arc::clone(&data_farm_state),
                 )
                 .await
             };
@@ -1418,6 +1448,7 @@ impl DataClient for InteractiveBrokersDataClient {
         // Spawn subscription task
         let client_clone = client.as_arc().clone();
         let subscription_token_clone = subscription_token.clone();
+        let data_farm_state = Arc::clone(&self.data_farm_state);
 
         let task = get_runtime().spawn(async move {
             if let Err(e) = handle_market_depth_subscription(
@@ -1431,6 +1462,7 @@ impl DataClient for InteractiveBrokersDataClient {
                 data_sender,
                 clock,
                 subscription_token_clone,
+                data_farm_state,
             )
             .await
             {

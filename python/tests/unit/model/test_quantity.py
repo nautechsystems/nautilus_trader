@@ -37,6 +37,11 @@ def test_none_raises():
         Quantity(None, precision=0)
 
 
+def test_ordering_with_unsupported_type_raises():
+    with pytest.raises(TypeError):
+        _ = Quantity.from_int(1) < object()
+
+
 def test_negative_precision_raises():
     with pytest.raises(OverflowError):
         Quantity(1.0, precision=-1)

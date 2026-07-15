@@ -114,6 +114,22 @@ let cache_database = database
     .await?;
 ```
 
+Attach the adapter after building the Rust-native node and before starting it. The node restores
+the database before reconciliation when `exec_engine.load_cache` is enabled, which is the default.
+
+```rust
+let node_config = LiveNodeConfig {
+    trader_id,
+    ..Default::default()
+};
+let mut node = LiveNode::build("LiveNode".to_string(), Some(node_config))?;
+node.set_cache_database(cache_database)?;
+node.run().await?;
+```
+
+Set `CacheConfig.flush_on_start = true` to clear the attached backing instead of restoring it.
+The Python v2 `LiveNode` does not yet expose direct cache-backing injection.
+
 ### MessageBus configuration
 
 Message bus behavior stays in `MessageBusConfig`. Redis connection settings live in

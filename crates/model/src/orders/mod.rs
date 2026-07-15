@@ -66,9 +66,9 @@ use crate::{
     },
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated,
+        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
@@ -156,6 +156,14 @@ pub enum OrderError {
     NoPreviousState,
     #[error("Duplicate fill: trade_id {0} already applied to order")]
     DuplicateFill(TradeId),
+    #[error("Duplicate fill void: trade_id {0} already has this cumulative correction")]
+    DuplicateFillVoid(TradeId),
+    #[error("Fill void for trade_id {0} is older than the applied correction")]
+    StaleFillVoid(TradeId),
+    #[error("Fill void quantity exceeds the original fill for trade_id {0}")]
+    OverVoid(TradeId),
+    #[error("Fill void commission is missing or conflicts with trade_id {0}")]
+    InvalidFillVoidCommission(TradeId),
     #[error("{0}")]
     Invariant(#[from] CorrectnessError),
 }
@@ -241,7 +249,10 @@ impl OrderStatus {
             (Self::Accepted, OrderEventAny::Updated(_)) => Self::Accepted,  // Updates should preserve state
             (Self::Accepted, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::Accepted, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::Accepted, OrderEventAny::FillVoided(_)) => Self::Accepted,
             (Self::Canceled, OrderEventAny::Filled(_)) => Self::Filled,  // Real world possibility
+            (Self::Canceled, OrderEventAny::FillVoided(_)) => Self::Canceled,
+            (Self::Canceled, OrderEventAny::Updated(_)) => Self::Canceled,
             (Self::PendingUpdate, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingUpdate, OrderEventAny::Accepted(_)) => Self::Accepted,
             (Self::PendingUpdate, OrderEventAny::Canceled(_)) => Self::Canceled,
@@ -252,6 +263,7 @@ impl OrderStatus {
             (Self::PendingUpdate, OrderEventAny::ModifyRejected(_)) => Self::PendingUpdate,  // Handled by modify_rejected to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Updated(_)) => Self::PendingUpdate,  // Handled by updated to restore previous_status
             (Self::PendingUpdate, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::PendingUpdate, OrderEventAny::FillVoided(_)) => Self::PendingUpdate,
             (Self::PendingCancel, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::PendingCancel, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,  // Allow multiple requests
             (Self::PendingCancel, OrderEventAny::CancelRejected(_)) => Self::PendingCancel,  // Handled by cancel_rejected to restore previous_status
@@ -260,6 +272,7 @@ impl OrderStatus {
             (Self::PendingCancel, OrderEventAny::Accepted(_)) => Self::Accepted,  // Allow failed cancel requests
             (Self::PendingCancel, OrderEventAny::Updated(_)) => Self::PendingCancel,  // Handled by updated to restore previous_status
             (Self::PendingCancel, OrderEventAny::Filled(_)) => Self::Filled,
+            (Self::PendingCancel, OrderEventAny::FillVoided(_)) => Self::PendingCancel,
             (Self::Triggered, OrderEventAny::Rejected(_)) => Self::Rejected,
             (Self::Triggered, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::Triggered, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
@@ -267,6 +280,7 @@ impl OrderStatus {
             (Self::Triggered, OrderEventAny::Expired(_)) => Self::Expired,
             (Self::Triggered, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Triggered, OrderEventAny::Updated(_)) => Self::Triggered,
+            (Self::Triggered, OrderEventAny::FillVoided(_)) => Self::Triggered,
             (Self::PartiallyFilled, OrderEventAny::PendingUpdate(_)) => Self::PendingUpdate,
             (Self::PartiallyFilled, OrderEventAny::PendingCancel(_)) => Self::PendingCancel,
             (Self::PartiallyFilled, OrderEventAny::Canceled(_)) => Self::Canceled,
@@ -274,6 +288,14 @@ impl OrderStatus {
             (Self::PartiallyFilled, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::PartiallyFilled, OrderEventAny::Accepted(_)) => Self::Accepted,
             (Self::PartiallyFilled, OrderEventAny::Updated(_)) => Self::PartiallyFilled,
+            (Self::PartiallyFilled, OrderEventAny::FillVoided(_)) => Self::PartiallyFilled,
+            (Self::Filled, OrderEventAny::FillVoided(_)) => Self::Voided,
+            (Self::Filled, OrderEventAny::Updated(_)) => Self::Filled,
+            (Self::Expired, OrderEventAny::FillVoided(_)) => Self::Expired,
+            (Self::Expired, OrderEventAny::Updated(_)) => Self::Expired,
+            (Self::Voided, OrderEventAny::FillVoided(_)) => Self::Voided,
+            (Self::Voided, OrderEventAny::Canceled(_)) => Self::Canceled,
+            (Self::Voided, OrderEventAny::Updated(_)) => Self::Voided,
             _ => return Err(OrderError::InvalidStateTransition),
         };
         Ok(new_state)
@@ -324,6 +346,7 @@ pub trait Order: 'static + Send {
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
     fn tags(&self) -> Option<&[Ustr]>;
     fn filled_qty(&self) -> Quantity;
+    fn voided_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
     fn overfill_qty(&self) -> Quantity;
 
@@ -477,6 +500,7 @@ pub trait Order: 'static + Send {
                 | OrderStatus::Canceled
                 | OrderStatus::Expired
                 | OrderStatus::Filled
+                | OrderStatus::Voided
         )
     }
 
@@ -725,6 +749,8 @@ pub struct OrderCore {
     pub exec_spawn_id: Option<ClientOrderId>,
     pub tags: Option<Vec<Ustr>>,
     pub filled_qty: Quantity,
+    #[serde(default)]
+    pub voided_qty: Quantity,
     pub leaves_qty: Quantity,
     pub overfill_qty: Quantity,
     pub avg_px: Option<f64>,
@@ -776,6 +802,7 @@ impl OrderCore {
             exec_spawn_id: init.exec_spawn_id,
             tags: init.tags,
             filled_qty: Quantity::zero(init.quantity.precision),
+            voided_qty: Quantity::zero(init.quantity.precision),
             leaves_qty: init.quantity,
             overfill_qty: Quantity::zero(init.quantity.precision),
             avg_px: None,
@@ -818,6 +845,10 @@ impl OrderCore {
             .into());
         }
 
+        if let OrderEventAny::FillVoided(event) = &event {
+            self.validate_fill_void(event)?;
+        }
+
         // Save current status as previous_status for ALL transitions except:
         // - Initialized (no prior state exists)
         // - ModifyRejected/CancelRejected (need to preserve the pre Pending state)
@@ -836,7 +867,9 @@ impl OrderCore {
 
         // Check for duplicate fill before state transition to maintain consistency
         if let OrderEventAny::Filled(fill) = &event
-            && self.trade_ids.contains(&fill.trade_id)
+            && self.events.iter().any(
+                |event| matches!(event, OrderEventAny::Filled(existing) if existing.trade_id == fill.trade_id),
+            )
         {
             return Err(OrderError::DuplicateFill(fill.trade_id));
         }
@@ -867,6 +900,7 @@ impl OrderCore {
             OrderEventAny::Canceled(event) => self.canceled(event),
             OrderEventAny::Expired(event) => self.expired(event),
             OrderEventAny::Filled(event) => self.filled(event),
+            OrderEventAny::FillVoided(event) => self.fill_voided(event),
         }
 
         self.ts_last = event.ts_event();
@@ -930,6 +964,222 @@ impl OrderCore {
         self.ts_closed = Some(event.ts_event);
     }
 
+    fn validate_fill_void(&self, event: &OrderFillVoided) -> Result<(), OrderError> {
+        let fill = self.events.iter().find_map(|candidate| match candidate {
+            OrderEventAny::Filled(fill) if fill.trade_id == event.trade_id => Some(fill),
+            _ => None,
+        });
+
+        if event.voided_qty.is_zero() {
+            return Err(OrderError::OverVoid(event.trade_id));
+        }
+
+        let previous = self.latest_fill_void(event.trade_id);
+        if let Some(previous) = previous {
+            if event.voided_qty < previous.voided_qty {
+                return Err(OrderError::StaleFillVoid(event.trade_id));
+            }
+
+            if event.voided_qty == previous.voided_qty
+                && event.commission_voided == previous.commission_voided
+                && event.is_reopened == previous.is_reopened
+            {
+                return Err(OrderError::DuplicateFillVoid(event.trade_id));
+            }
+        }
+
+        let Some(fill) = fill else {
+            if event.voided_qty > self.quantity
+                || event
+                    .commission_voided
+                    .is_some_and(|commission| !commission.is_zero())
+            {
+                return Err(OrderError::OverVoid(event.trade_id));
+            }
+            return Ok(());
+        };
+
+        if fill.venue_order_id != event.venue_order_id
+            || fill.account_id != event.account_id
+            || fill.order_side != event.order_side
+            || fill.order_type != event.order_type
+            || fill.last_px != event.last_px
+            || fill.currency != event.currency
+            || fill.liquidity_side != event.liquidity_side
+            || fill.position_id != event.position_id
+        {
+            return Err(OrderError::InvalidOrderEvent);
+        }
+
+        if event.voided_qty > fill.last_qty {
+            return Err(OrderError::OverVoid(event.trade_id));
+        }
+
+        self.validate_fill_void_commission(fill, event, previous)
+    }
+
+    fn validate_fill_void_commission(
+        &self,
+        fill: &OrderFilled,
+        event: &OrderFillVoided,
+        previous: Option<&OrderFillVoided>,
+    ) -> Result<(), OrderError> {
+        match (fill.commission, event.commission_voided) {
+            (None, None) => Ok(()),
+            (None, Some(commission)) if commission.is_zero() => Ok(()),
+            (Some(_), None) if previous.and_then(|prior| prior.commission_voided).is_none() => {
+                Ok(())
+            }
+            (Some(commission), Some(voided))
+                if commission.currency == voided.currency
+                    && commission.raw.signum() == voided.raw.signum()
+                    && voided.raw.abs() <= commission.raw.abs()
+                    && previous
+                        .and_then(|prior| prior.commission_voided)
+                        .is_none_or(|prior| voided.raw.abs() >= prior.raw.abs()) =>
+            {
+                Ok(())
+            }
+            _ => Err(OrderError::InvalidFillVoidCommission(event.trade_id)),
+        }
+    }
+
+    fn latest_fill_void(&self, trade_id: TradeId) -> Option<&OrderFillVoided> {
+        self.events
+            .iter()
+            .rev()
+            .find_map(|candidate| match candidate {
+                OrderEventAny::FillVoided(event) if event.trade_id == trade_id => Some(event),
+                _ => None,
+            })
+    }
+
+    fn fill_voided(&mut self, event: &OrderFillVoided) {
+        let has_local_fill = self.events.iter().any(
+            |candidate| matches!(candidate, OrderEventAny::Filled(fill) if fill.trade_id == event.trade_id),
+        );
+        let transition_status = self.status;
+        let non_reopened_voided_qty = self.recompute_fill_state(Some(event));
+        let unfilled_qty = self.quantity.saturating_sub(self.filled_qty);
+        let working_leaves = unfilled_qty.saturating_sub(non_reopened_voided_qty);
+
+        match transition_status {
+            OrderStatus::Canceled | OrderStatus::Expired => {
+                self.status = transition_status;
+                self.leaves_qty = unfilled_qty;
+            }
+            _ if !has_local_fill && !event.is_reopened => {
+                self.status = OrderStatus::Voided;
+                self.leaves_qty = Quantity::zero(self.quantity.precision);
+            }
+            _ if working_leaves.is_zero() => {
+                self.status = OrderStatus::Voided;
+                self.leaves_qty = working_leaves;
+            }
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel | OrderStatus::Triggered => {
+                self.status = transition_status;
+                self.leaves_qty = working_leaves;
+            }
+            _ => {
+                self.status = if self.filled_qty.is_zero() {
+                    OrderStatus::Accepted
+                } else {
+                    OrderStatus::PartiallyFilled
+                };
+                self.leaves_qty = working_leaves;
+            }
+        }
+
+        if self.status.is_open() {
+            self.ts_closed = None;
+        } else if self.status.is_closed() {
+            self.ts_closed = self.ts_closed.or(Some(event.ts_event));
+        }
+    }
+
+    fn recompute_fill_state(&mut self, additional: Option<&OrderFillVoided>) -> Quantity {
+        let mut corrections: IndexMap<TradeId, &OrderFillVoided> = IndexMap::new();
+
+        for candidate in &self.events {
+            if let OrderEventAny::FillVoided(event) = candidate {
+                corrections.insert(event.trade_id, event);
+            }
+        }
+
+        if let Some(event) = additional {
+            corrections.insert(event.trade_id, event);
+        }
+
+        let mut filled_raw = Quantity::zero(self.quantity.precision).raw;
+        let mut voided_raw = Quantity::zero(self.quantity.precision).raw;
+        let mut non_reopened_voided_raw = Quantity::zero(self.quantity.precision).raw;
+        let mut notional = 0.0;
+        let mut commissions = IndexMap::<Currency, Money>::new();
+        let mut trade_ids = Vec::new();
+        let mut last_trade_id = None;
+        let mut position_id = None;
+        let mut liquidity_side = Some(LiquiditySide::NoLiquiditySide);
+        let mut matched_corrections = AHashSet::new();
+
+        for candidate in &self.events {
+            let OrderEventAny::Filled(fill) = candidate else {
+                continue;
+            };
+            let correction = corrections.get(&fill.trade_id).copied();
+            if correction.is_some() {
+                matched_corrections.insert(fill.trade_id);
+            }
+            let removed = correction.map_or_else(
+                || Quantity::zero(fill.last_qty.precision),
+                |event| event.voided_qty,
+            );
+            let effective = fill.last_qty - removed;
+            voided_raw = voided_raw.saturating_add(removed.raw);
+            if correction.is_some_and(|event| !event.is_reopened) {
+                non_reopened_voided_raw = non_reopened_voided_raw.saturating_add(removed.raw);
+            }
+
+            if !effective.is_zero() {
+                filled_raw = filled_raw.saturating_add(effective.raw);
+                notional += effective.as_f64() * fill.last_px.as_f64();
+                trade_ids.push(fill.trade_id);
+                last_trade_id = Some(fill.trade_id);
+                position_id = fill.position_id;
+                liquidity_side = Some(fill.liquidity_side);
+            }
+
+            if let Some(commission) = fill.commission {
+                let surviving = correction
+                    .and_then(|event| event.commission_voided)
+                    .map_or(commission, |voided| commission - voided);
+                if !surviving.is_zero() {
+                    commissions
+                        .entry(surviving.currency)
+                        .and_modify(|total| *total = *total + surviving)
+                        .or_insert(surviving);
+                }
+            }
+        }
+
+        for (trade_id, correction) in corrections {
+            if !matched_corrections.contains(&trade_id) {
+                voided_raw = voided_raw.saturating_add(correction.voided_qty.raw);
+            }
+        }
+
+        self.filled_qty = Quantity::from_raw(filled_raw, self.quantity.precision);
+        self.voided_qty = Quantity::from_raw(voided_raw, self.quantity.precision);
+        self.overfill_qty = self.filled_qty.saturating_sub(self.quantity);
+        self.avg_px = (!self.filled_qty.is_zero()).then(|| notional / self.filled_qty.as_f64());
+        self.commissions = commissions;
+        self.trade_ids = trade_ids;
+        self.last_trade_id = last_trade_id;
+        self.position_id = position_id;
+        self.liquidity_side = liquidity_side;
+
+        Quantity::from_raw(non_reopened_voided_raw, self.quantity.precision)
+    }
+
     fn updated(&mut self, event: &OrderUpdated) {
         if matches!(
             self.status,
@@ -971,11 +1221,16 @@ impl OrderCore {
             );
         }
 
-        if new_filled_qty < self.quantity {
-            self.status = OrderStatus::PartiallyFilled;
-        } else {
+        let new_leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
+
+        if new_filled_qty >= self.quantity {
             self.status = OrderStatus::Filled;
             self.ts_closed = Some(event.ts_event);
+        } else if new_leaves_qty.is_zero() && !self.voided_qty.is_zero() {
+            self.status = OrderStatus::Voided;
+            self.ts_closed = Some(event.ts_event);
+        } else {
+            self.status = OrderStatus::PartiallyFilled;
         }
 
         self.venue_order_id = Some(event.venue_order_id);
@@ -984,7 +1239,7 @@ impl OrderCore {
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
         self.filled_qty = new_filled_qty;
-        self.leaves_qty = self.leaves_qty.saturating_sub(event.last_qty);
+        self.leaves_qty = new_leaves_qty;
         self.ts_last = event.ts_event;
 
         if let Some(commission) = event.commission {
@@ -1006,9 +1261,9 @@ impl OrderCore {
         debug_assert!(
             matches!(
                 self.status,
-                OrderStatus::PartiallyFilled | OrderStatus::Filled
+                OrderStatus::PartiallyFilled | OrderStatus::Filled | OrderStatus::Voided
             ),
-            "Invariant: status must be PartiallyFilled or Filled after fill handler (status={:?})",
+            "Invariant: status must be PartiallyFilled, Filled, or Voided after fill handler (status={:?})",
             self.status
         );
         debug_assert!(
@@ -1018,9 +1273,14 @@ impl OrderCore {
             "Invariant: venue_order_id, last_trade_id and trade_ids must be set after fill"
         );
         debug_assert!(
-            self.filled_qty.raw.saturating_add(self.leaves_qty.raw) >= self.quantity.raw,
-            "Invariant: filled_qty + leaves_qty >= quantity (filled={}, leaves={}, quantity={})",
+            self.filled_qty
+                .raw
+                .saturating_add(self.voided_qty.raw)
+                .saturating_add(self.leaves_qty.raw)
+                >= self.quantity.raw,
+            "Invariant: filled_qty + voided_qty + leaves_qty >= quantity (filled={}, voided={}, leaves={}, quantity={})",
             self.filled_qty,
+            self.voided_qty,
             self.leaves_qty,
             self.quantity
         );
@@ -1139,9 +1399,10 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderFilledSpec,
-            OrderInitializedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-            OrderRejectedSpec, OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderExpiredSpec,
+            OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec, OrderPendingCancelSpec,
+            OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec, OrderTriggeredSpec,
+            OrderUpdatedSpec,
         },
         identifiers::InstrumentId,
         instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -1324,6 +1585,246 @@ mod tests {
             Some(Money::from("2.60 USD"))
         );
         assert_eq!(order.commissions_vec(), vec![Money::from("2.60 USD")]);
+    }
+
+    #[rstest]
+    fn test_fill_void_reopens_only_when_explicitly_marked() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-VOID"))
+            .last_qty(Quantity::from(100_000))
+            .commission(Money::from("1.00 USD"))
+            .build();
+        let fill_voided = OrderFillVoidedSpec::builder()
+            .trade_id(filled.trade_id)
+            .voided_qty(Quantity::from(40_000))
+            .commission_voided(Money::from("0.40 USD"))
+            .build();
+        let later_fill = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-AFTER-REOPEN"))
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+
+        let mut terminal = order.clone();
+        terminal
+            .apply(OrderEventAny::FillVoided(fill_voided.clone()))
+            .unwrap();
+        let fill_while_terminal = terminal.apply(OrderEventAny::Filled(later_fill.clone()));
+
+        order
+            .apply(OrderEventAny::FillVoided(OrderFillVoided {
+                is_reopened: true,
+                ..fill_voided
+            }))
+            .unwrap();
+        let status_after_correction = order.status();
+        order.apply(OrderEventAny::Filled(later_fill)).unwrap();
+
+        assert!(matches!(
+            fill_while_terminal,
+            Err(OrderError::InvalidStateTransition)
+        ));
+        assert_eq!(terminal.status(), OrderStatus::Voided);
+        assert_eq!(status_after_correction, OrderStatus::PartiallyFilled);
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from(100_000));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(
+            order.commission(&Currency::USD()),
+            Some(Money::from("0.60 USD"))
+        );
+    }
+
+    #[rstest]
+    fn test_fill_void_preserves_existing_working_remainder() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-VOID"))
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let later_fill = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-REMAINDER"))
+            .last_qty(Quantity::from(60_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(filled.clone())).unwrap();
+
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(filled.trade_id)
+                    .voided_qty(filled.last_qty)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(60_000));
+        assert!(order.is_open());
+
+        order.apply(OrderEventAny::Filled(later_fill)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.filled_qty(), Quantity::from(60_000));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert!(order.is_closed());
+    }
+
+    #[rstest]
+    #[case(OrderStatus::Canceled)]
+    #[case(OrderStatus::Expired)]
+    fn test_fill_void_does_not_reopen_canceled_or_expired_order(
+        #[case] terminal_status: OrderStatus,
+    ) {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-TERMINAL-VOID"))
+            .last_qty(Quantity::from(60_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(filled.clone())).unwrap();
+        match terminal_status {
+            OrderStatus::Canceled => order
+                .apply(OrderEventAny::Canceled(
+                    OrderCanceledSpec::builder().build(),
+                ))
+                .unwrap(),
+            OrderStatus::Expired => order
+                .apply(OrderEventAny::Expired(OrderExpiredSpec::builder().build()))
+                .unwrap(),
+            _ => unreachable!(),
+        }
+        let voided = OrderFillVoidedSpec::builder()
+            .trade_id(filled.trade_id)
+            .voided_qty(Quantity::from(20_000))
+            .is_reopened(true)
+            .build();
+
+        order.apply(OrderEventAny::FillVoided(voided)).unwrap();
+
+        assert_eq!(order.status(), terminal_status);
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+        assert_eq!(order.voided_qty(), Quantity::from(20_000));
+        assert!(order.is_closed());
+        assert!(order.ts_closed().is_some());
+    }
+
+    #[rstest]
+    fn test_fill_void_rejects_duplicate_stale_and_over_void() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-VOID"))
+            .last_qty(Quantity::from(100_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-VOID"))
+                    .voided_qty(Quantity::from(40_000))
+                    .build(),
+            ))
+            .unwrap();
+
+        let duplicate = order.apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trade_id(TradeId::from("TRADE-VOID"))
+                .voided_qty(Quantity::from(40_000))
+                .build(),
+        ));
+        let stale = order.apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trade_id(TradeId::from("TRADE-VOID"))
+                .voided_qty(Quantity::from(30_000))
+                .build(),
+        ));
+        let over_void = order.apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trade_id(TradeId::from("TRADE-VOID"))
+                .voided_qty(Quantity::from(100_001))
+                .build(),
+        ));
+        assert!(matches!(
+            duplicate,
+            Err(OrderError::DuplicateFillVoid(trade_id))
+                if trade_id == TradeId::from("TRADE-VOID")
+        ));
+        assert!(matches!(
+            stale,
+            Err(OrderError::StaleFillVoid(trade_id))
+                if trade_id == TradeId::from("TRADE-VOID")
+        ));
+        assert!(matches!(
+            over_void,
+            Err(OrderError::OverVoid(trade_id))
+                if trade_id == TradeId::from("TRADE-VOID")
+        ));
+        assert_eq!(order.filled_qty(), Quantity::from(60_000));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+    }
+
+    #[rstest]
+    fn test_unknown_fill_void_does_not_reverse_surviving_fill() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let filled = OrderFilledSpec::builder()
+            .last_qty(Quantity::from(60_000))
+            .build();
+        let voided = OrderFillVoidedSpec::builder()
+            .trade_id(TradeId::from("TRADE-NEVER-APPLIED"))
+            .voided_qty(Quantity::from(40_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::Filled(filled)).unwrap();
+
+        order.apply(OrderEventAny::FillVoided(voided)).unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.filled_qty(), Quantity::from(60_000));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+        assert_eq!(order.leaves_qty(), Quantity::zero(0));
+        assert!(order.is_closed());
     }
 
     #[rstest]

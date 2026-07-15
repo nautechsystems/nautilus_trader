@@ -318,13 +318,28 @@ fn write_sig(out: &mut String, signed: &SignedTx) {
     out.push_str("\",");
 }
 
-// Match upstream marshalling: Create/Modify always emit integrator keys 1-3
+// Match upstream marshalling: nil-valued attributes are omitted, and a fully
+// empty Create/Modify attribute map is encoded as null.
 fn write_attributes_with_integrator(out: &mut String, attrs: &L2TxAttributes) {
+    if attrs.is_empty() {
+        out.push_str("\"L2TxAttributes\":null");
+        return;
+    }
+
     out.push_str("\"L2TxAttributes\":{");
     let mut first = true;
-    write_attr_pair(out, &mut first, "1", attrs.integrator_account_index);
-    write_attr_pair(out, &mut first, "2", u64::from(attrs.integrator_taker_fee));
-    write_attr_pair(out, &mut first, "3", u64::from(attrs.integrator_maker_fee));
+    if attrs.integrator_account_index != 0 {
+        write_attr_pair(out, &mut first, "1", attrs.integrator_account_index);
+    }
+
+    if attrs.integrator_taker_fee != 0 {
+        write_attr_pair(out, &mut first, "2", u64::from(attrs.integrator_taker_fee));
+    }
+
+    if attrs.integrator_maker_fee != 0 {
+        write_attr_pair(out, &mut first, "3", u64::from(attrs.integrator_maker_fee));
+    }
+
     if attrs.skip_nonce != 0 {
         write_attr_pair(out, &mut first, "4", u64::from(attrs.skip_nonce));
     }
@@ -480,6 +495,27 @@ mod tests {
         }
     }
 
+    fn expect_cancel_all_orders(v: &OracleVector) -> CancelAllOrdersTxInfo {
+        let f = &v.fields;
+        CancelAllOrdersTxInfo {
+            context: ctx_for(v),
+            time_in_force: f["time_in_force"].as_u64().unwrap() as u8,
+            scheduled_time_ms: f["scheduled_time_ms"].as_i64().unwrap(),
+            skip_nonce: f["skip_nonce"].as_u64().unwrap_or(0) as u8,
+        }
+    }
+
+    fn expect_update_leverage(v: &OracleVector) -> UpdateLeverageTxInfo {
+        let f = &v.fields;
+        UpdateLeverageTxInfo {
+            context: ctx_for(v),
+            market_index: f["market_index"].as_i64().unwrap() as i16,
+            initial_margin_fraction: f["initial_margin_fraction"].as_u64().unwrap() as u16,
+            margin_mode: f["margin_mode"].as_u64().unwrap() as u8,
+            skip_nonce: f["skip_nonce"].as_u64().unwrap_or(0) as u8,
+        }
+    }
+
     fn expect_approve_integrator(v: &OracleVector) -> ApproveIntegratorTxInfo {
         let f = &v.fields;
         ApproveIntegratorTxInfo {
@@ -594,6 +630,34 @@ mod tests {
     }
 
     #[rstest]
+    fn oracle_tx_hash_matches_cancel_all_orders() {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        for v in suite
+            .vectors
+            .iter()
+            .filter(|v| v.kind == "cancel_all_orders")
+        {
+            assert_eq!(v.tx_type, 16);
+            let tx = expect_cancel_all_orders(v);
+            assert_hash_matches(&tx, v);
+            assert_oracle_sig_verifies(&tx, v);
+            assert_round_trip_sign(&tx, v);
+        }
+    }
+
+    #[rstest]
+    fn oracle_tx_hash_matches_update_leverage() {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        for v in suite.vectors.iter().filter(|v| v.kind == "update_leverage") {
+            assert_eq!(v.tx_type, 20);
+            let tx = expect_update_leverage(v);
+            assert_hash_matches(&tx, v);
+            assert_oracle_sig_verifies(&tx, v);
+            assert_round_trip_sign(&tx, v);
+        }
+    }
+
+    #[rstest]
     fn oracle_tx_hash_matches_approve_integrator() {
         let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
         for v in suite
@@ -654,6 +718,31 @@ mod tests {
     }
 
     #[rstest]
+    #[case(2)]
+    #[case(3)]
+    #[case(4)]
+    #[case(5)]
+    fn oracle_covers_conditional_create_order_type(#[case] order_type: u64) {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        assert!(suite.vectors.iter().any(|v| {
+            v.kind == "create_order" && v.fields["order_type"].as_u64() == Some(order_type)
+        }));
+    }
+
+    #[rstest]
+    #[case("create_order")]
+    #[case("modify_order")]
+    fn oracle_covers_production_integrator_attributes(#[case] kind: &str) {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        assert!(suite.vectors.iter().any(|v| {
+            v.kind == kind
+                && v.fields["integrator_account_index"].as_u64() == Some(723_813)
+                && v.fields["integrator_taker_fee"].as_u64() == Some(0)
+                && v.fields["integrator_maker_fee"].as_u64() == Some(0)
+        }));
+    }
+
+    #[rstest]
     fn cancel_order_json_emits_null_attributes_when_empty() {
         let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
         for v in suite.vectors.iter().filter(|v| v.kind == "cancel_order") {
@@ -706,24 +795,23 @@ mod tests {
     }
 
     #[rstest]
-    fn cancel_all_orders_json_pins_field_order() {
-        // Pins wire layout for `txtypes.L2CancelAllOrdersTxInfo`. No oracle
-        // vector covers this kind; live testnet replay is the only path that
-        // verifies byte-equality with the closed Go signer.
-        let tx = CancelAllOrdersTxInfo {
-            context: stub_context(),
-            time_in_force: 0,
-            scheduled_time_ms: 0,
-            skip_nonce: 0,
-        };
-        let json = TxInfoJson::cancel_all_orders(&tx, &stub_signed());
-        let expected = concat!(
-            r#"{"AccountIndex":12345,"ApiKeyIndex":5,"#,
-            r#""TimeInForce":0,"Time":0,"#,
-            r#""ExpiredAt":1777804395089,"Nonce":7,"#,
-            r#""Sig":"REDACTED","L2TxAttributes":null}"#,
-        );
-        assert_eq!(redact_sig(&json), expected);
+    fn cancel_all_orders_json_byte_equals_oracle_modulo_sig() {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        for v in suite
+            .vectors
+            .iter()
+            .filter(|v| v.kind == "cancel_all_orders")
+        {
+            let tx = expect_cancel_all_orders(v);
+            let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
+            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let json = TxInfoJson::cancel_all_orders(&tx, &signed);
+            assert_eq!(
+                redact_sig(&json),
+                redact_sig(&v.tx_info),
+                "cancel_all_orders tx_info diverged",
+            );
+        }
     }
 
     #[rstest]
@@ -745,24 +833,19 @@ mod tests {
     }
 
     #[rstest]
-    fn update_leverage_json_pins_field_order() {
-        // Pins wire layout for `txtypes.L2UpdateLeverageTxInfo`. No oracle
-        // vector covers this kind; live testnet replay verifies byte-equality.
-        let tx = UpdateLeverageTxInfo {
-            context: stub_context(),
-            market_index: 3,
-            initial_margin_fraction: 500,
-            margin_mode: 1,
-            skip_nonce: 0,
-        };
-        let json = TxInfoJson::update_leverage(&tx, &stub_signed());
-        let expected = concat!(
-            r#"{"AccountIndex":12345,"ApiKeyIndex":5,"#,
-            r#""MarketIndex":3,"InitialMarginFraction":500,"MarginMode":1,"#,
-            r#""ExpiredAt":1777804395089,"Nonce":7,"#,
-            r#""Sig":"REDACTED","L2TxAttributes":null}"#,
-        );
-        assert_eq!(redact_sig(&json), expected);
+    fn update_leverage_json_byte_equals_oracle_modulo_sig() {
+        let suite: OracleFile = serde_json::from_str(ORACLE_JSON).expect("parse oracle");
+        for v in suite.vectors.iter().filter(|v| v.kind == "update_leverage") {
+            let tx = expect_update_leverage(v);
+            let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
+            let signed = signed_with_fixture_k(v, &sk, |k| sign_tx(&tx, v.chain_id, &sk, k));
+            let json = TxInfoJson::update_leverage(&tx, &signed);
+            assert_eq!(
+                redact_sig(&json),
+                redact_sig(&v.tx_info),
+                "update_leverage tx_info diverged",
+            );
+        }
     }
 
     #[rstest]

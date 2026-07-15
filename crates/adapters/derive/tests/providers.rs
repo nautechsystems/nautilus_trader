@@ -253,13 +253,16 @@ async fn test_load_all_includes_spot_rows() {
 }
 
 #[rstest]
+#[case("perp")]
+#[case("option")]
+#[case("erc20")]
 #[tokio::test]
-async fn test_load_all_passes_through_non_not_found_erc20_errors() {
+async fn test_load_all_passes_through_non_not_found_errors(#[case] instrument_type: &str) {
     // Only venue code 12001 (Instrument not found) is tolerated. Any other
-    // JSON-RPC error on the erc20 arm must fail the whole instrument fetch
+    // JSON-RPC error on any arm must fail the whole instrument fetch
     // so that real venue failures are not silently swallowed.
     let state = TestServerState::with_instruments_response().with_type_overrides(vec![(
-        "erc20",
+        instrument_type,
         json!({
             "id": 1,
             "error": {"code": 5000, "message": "Internal error"},
@@ -281,13 +284,15 @@ async fn test_load_all_passes_through_non_not_found_erc20_errors() {
 }
 
 #[rstest]
+#[case("perp")]
+#[case("option")]
+#[case("erc20")]
 #[tokio::test]
-async fn test_load_all_tolerates_erc20_instrument_not_found() {
-    // Venue returns JSON-RPC 12001 for currencies without a spot listing
-    // (e.g. BTC has perp+option but no spot). The provider must keep the
-    // perp+option rows instead of failing the whole fetch.
+async fn test_load_all_tolerates_instrument_not_found(#[case] instrument_type: &str) {
+    // Venue returns JSON-RPC 12001 when a currency has no listing for one
+    // product type. The provider must keep rows from the other product types.
     let state = TestServerState::with_instruments_response().with_type_overrides(vec![(
-        "erc20",
+        instrument_type,
         json!({
             "id": 1,
             "error": {"code": 12001, "message": "Instrument not found"},
@@ -304,6 +309,42 @@ async fn test_load_all_tolerates_erc20_instrument_not_found() {
     assert!(provider.store().contains(&perp_id));
     assert!(provider.store().contains(&option_id));
     assert_eq!(provider.store().count(), 2);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_load_all_skips_invalid_instrument_row() {
+    let valid = load_json("perps/instrument_eth.json");
+    let mut invalid = valid.clone();
+    invalid["instrument_name"] = json!("INVALID-PERP");
+    invalid["tick_size"] = json!("0");
+    let not_found = json!({
+        "id": 1,
+        "error": {"code": 12001, "message": "Instrument not found"},
+    });
+    let state = TestServerState::default().with_type_overrides(vec![
+        (
+            "perp",
+            json!({
+                "id": 1,
+                "result": [valid, invalid],
+            }),
+        ),
+        ("option", not_found.clone()),
+        ("erc20", not_found),
+    ]);
+    let addr = start_mock_server(state).await;
+    let client = DeriveHttpClient::new(base_url(addr), Some(5), None, None).unwrap();
+    let mut provider = DeriveInstrumentProvider::new(client, vec!["ETH".to_string()]);
+
+    provider.load_all(None).await.unwrap();
+
+    assert!(
+        provider
+            .store()
+            .contains(&InstrumentId::from("ETH-PERP.DERIVE"))
+    );
+    assert_eq!(provider.store().count(), 1);
 }
 
 #[rstest]

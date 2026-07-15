@@ -518,13 +518,22 @@ matches a recently-seen one. The cumulative-state map is bounded with the
 same capacity to protect against orders that never receive a terminal
 event in this client's lifetime. After very long disconnections (beyond
 the in-memory dedup window) replayed fills may emit duplicate
-`OrderFilled` events; strategies should rely on REST reconciliation to
+`FillReport` values; strategies should rely on REST reconciliation to
 recover canonical state in that case.
 
 ## Execution client behaviour
 
 This section documents how `CoinbaseExecutionClient` translates Nautilus
 order commands and Coinbase venue events into Nautilus execution events.
+
+:::warning
+Coinbase live execution is not approved as v2 cutover evidence. The user
+channel reports cumulative order state without Coinbase's per-fill `trade_id`,
+so its synthesized live fill IDs do not match the venue IDs returned by REST
+reconciliation. Until both paths use the same stable fill identity, the
+adapter cannot prove fill idempotence across the startup reconciliation
+window.
+:::
 
 ### Order submission
 
@@ -756,6 +765,11 @@ no Python factory wiring is required.
 
 ### Adapter-side
 
+- **Stable fill identity differs across live and REST paths.** The user
+  channel does not provide Coinbase's per-fill `trade_id`, so live
+  `FillReport` values use IDs synthesized from the venue order ID and
+  cumulative quantity. REST reconciliation uses the venue `trade_id`.
+  Coinbase live execution is therefore not approved as v2 cutover evidence.
 - **One product family per client.** Submission, modification, cancellation,
   and report generation are filtered to the configured product family (spot
   under `AccountType::Cash`; perp + dated futures under `AccountType::Margin`).

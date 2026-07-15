@@ -67,6 +67,7 @@ pub struct LighterAccountsResponse {
     pub code: i32,
     pub message: Option<String>,
     pub total: i64,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub accounts: Vec<LighterAccountDetail>,
 }
 
@@ -159,6 +160,7 @@ pub struct LighterSendTxResponse {
 pub struct LighterSendTxBatchResponse {
     pub code: i32,
     pub message: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_null_vec")]
     pub tx_hash: Vec<String>,
     pub predicted_execution_time_ms: i64,
     pub volume_quota_remaining: Option<i64>,
@@ -579,6 +581,37 @@ mod tests {
     }
 
     #[rstest]
+    fn test_account_response_allows_missing_or_null_accounts() {
+        let missing = serde_json::json!({"code": 200, "total": 0});
+        let null = serde_json::json!({"code": 200, "total": 0, "accounts": null});
+
+        let missing: LighterAccountsResponse = serde_json::from_value(missing).unwrap();
+        let null: LighterAccountsResponse = serde_json::from_value(null).unwrap();
+
+        assert!(missing.accounts.is_empty());
+        assert!(null.accounts.is_empty());
+    }
+
+    #[rstest]
+    fn test_send_tx_batch_response_allows_missing_or_null_tx_hash() {
+        let missing = serde_json::json!({
+            "code": 200,
+            "predicted_execution_time_ms": 1_751_465_475,
+        });
+        let null = serde_json::json!({
+            "code": 200,
+            "tx_hash": null,
+            "predicted_execution_time_ms": 1_751_465_475,
+        });
+
+        let missing: LighterSendTxBatchResponse = serde_json::from_value(missing).unwrap();
+        let null: LighterSendTxBatchResponse = serde_json::from_value(null).unwrap();
+
+        assert!(missing.tx_hash.is_empty());
+        assert!(null.tx_hash.is_empty());
+    }
+
+    #[rstest]
     fn test_order_book_details_deserializes_live_shape() {
         let details: LighterOrderBookDetails =
             serde_json::from_str(HTTP_ORDER_BOOK_DETAILS).unwrap();
@@ -659,6 +692,41 @@ mod tests {
         assert_eq!(candles.code, 200);
         assert_eq!(candles.resolution, LighterCandleResolution::OneMinute);
         assert!(candles.candles.is_empty());
+    }
+
+    #[rstest]
+    #[case("o")]
+    #[case("h")]
+    #[case("l")]
+    #[case("c")]
+    fn test_candle_missing_or_null_ohlc_deserializes_as_zero(#[case] field: &str) {
+        let base = serde_json::json!({
+            "t": 1_700_000_000_000_i64,
+            "o": "1",
+            "h": "1",
+            "l": "1",
+            "c": "1",
+            "v": "1",
+            "V": "1",
+            "i": 1,
+        });
+        let mut missing = base.clone();
+        missing.as_object_mut().unwrap().remove(field);
+        let mut null = base;
+        null[field] = serde_json::Value::Null;
+
+        let missing: LighterCandle = serde_json::from_value(missing).unwrap();
+        let null: LighterCandle = serde_json::from_value(null).unwrap();
+        let value_for = |candle: &LighterCandle| match field {
+            "o" => candle.open,
+            "h" => candle.high,
+            "l" => candle.low,
+            "c" => candle.close,
+            _ => unreachable!(),
+        };
+
+        assert_eq!(value_for(&missing), Decimal::ZERO);
+        assert_eq!(value_for(&null), Decimal::ZERO);
     }
 
     #[rstest]

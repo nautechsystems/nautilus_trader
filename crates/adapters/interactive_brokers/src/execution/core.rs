@@ -49,7 +49,7 @@ use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
 };
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, fifo::FifoCacheMap},
     clients::ExecutionClient,
     enums::LogLevel,
     factories::OrderEventFactory,
@@ -78,8 +78,8 @@ use nautilus_model::{
         TimeInForce, TrailingOffsetType,
     },
     events::{
-        AccountState, OrderAccepted, OrderCanceled, OrderDenied, OrderEventAny, OrderPendingCancel,
-        OrderRejected, OrderSubmitted, OrderUpdated,
+        AccountState, OrderAccepted, OrderCanceled, OrderDenied, OrderEventAny, OrderFilled,
+        OrderPendingCancel, OrderRejected, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -152,13 +152,19 @@ pub struct InteractiveBrokersExecutionClient {
     /// Venue order ID to client order ID mapping.
     venue_order_id_map: Arc<Mutex<AHashMap<i32, ClientOrderId>>>,
     /// Commission cache by execution ID (to merge with fill reports).
-    commission_cache: Arc<Mutex<AHashMap<String, (f64, String)>>>,
+    commission_cache: Arc<Mutex<CommissionCache>>,
+    /// Execution cache by execution ID while awaiting commission reports.
+    pending_execution_cache: Arc<Mutex<PendingExecutionCache>>,
     /// Instrument ID mapping by venue order ID (for order status tracking).
     instrument_id_map: Arc<Mutex<AHashMap<i32, InstrumentId>>>,
     /// Trader ID mapping by venue order ID.
     trader_id_map: Arc<Mutex<AHashMap<i32, TraderId>>>,
     /// Strategy ID mapping by venue order ID.
     strategy_id_map: Arc<Mutex<AHashMap<i32, StrategyId>>>,
+    /// Locally submitted active order identity.
+    active_order_contexts: Arc<Mutex<AHashMap<i32, TrackedOrderContext>>>,
+    /// Recently terminal locally submitted order identity.
+    terminal_order_contexts: Arc<Mutex<FifoCacheMap<i32, TrackedOrderContext, 10_000>>>,
     /// Spread fill tracking to avoid duplicate processing.
     /// Maps client_order_id to set of trade_ids that have been processed.
     spread_fill_tracking: Arc<Mutex<AHashMap<ClientOrderId, ahash::AHashSet<String>>>>,
@@ -173,26 +179,42 @@ pub struct InteractiveBrokersExecutionClient {
     pending_combo_fill_avgs: Arc<Mutex<AHashMap<ClientOrderId, VecDeque<(Decimal, Price)>>>>,
     /// Tracks cumulative filled quantity and notional for deriving incremental avg fill chunks.
     order_fill_progress: Arc<Mutex<AHashMap<ClientOrderId, (Decimal, Decimal)>>>,
-    /// Set of client order IDs that have already emitted an OrderAccepted event.
-    accepted_orders: Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
     /// Set of client order IDs that have already emitted an OrderPendingCancel event.
     pending_cancel_orders: Arc<Mutex<ahash::AHashSet<ClientOrderId>>>,
 }
 
+type CommissionCache = FifoCacheMap<String, (f64, String), 10_000>;
+type PendingExecutionCache = FifoCacheMap<String, ExecutionData, 10_000>;
+
 #[derive(Clone, Debug)]
 struct PendingComboFill {
+    trader_id: TraderId,
+    strategy_id: StrategyId,
     account_id: AccountId,
     instrument_id: InstrumentId,
     venue_order_id: VenueOrderId,
     trade_id: TradeId,
     order_side: OrderSide,
+    order_type: OrderType,
     last_qty: Quantity,
-    last_px: Price,
     commission: Money,
     liquidity_side: LiquiditySide,
+    quote_currency: Currency,
     client_order_id: ClientOrderId,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
+}
+
+#[derive(Clone, Debug)]
+struct TrackedOrderContext {
+    client_order_id: ClientOrderId,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    order_side: OrderSide,
+    order_type: OrderType,
+    accepted: bool,
+    avg_px: Option<Price>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,17 +308,19 @@ impl InteractiveBrokersExecutionClient {
             order_update_handle: Mutex::new(None),
             order_id_map: Arc::new(Mutex::new(AHashMap::new())),
             venue_order_id_map: Arc::new(Mutex::new(AHashMap::new())),
-            commission_cache: Arc::new(Mutex::new(AHashMap::new())),
+            commission_cache: Arc::new(Mutex::new(CommissionCache::new())),
+            pending_execution_cache: Arc::new(Mutex::new(PendingExecutionCache::new())),
             instrument_id_map: Arc::new(Mutex::new(AHashMap::new())),
             trader_id_map: Arc::new(Mutex::new(AHashMap::new())),
             strategy_id_map: Arc::new(Mutex::new(AHashMap::new())),
+            active_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+            terminal_order_contexts: Arc::new(Mutex::new(FifoCacheMap::new())),
             spread_fill_tracking: Arc::new(Mutex::new(AHashMap::new())),
             position_tracker: create_position_tracker(),
             order_avg_prices: Arc::new(Mutex::new(AHashMap::new())),
             pending_combo_fills: Arc::new(Mutex::new(AHashMap::new())),
             pending_combo_fill_avgs: Arc::new(Mutex::new(AHashMap::new())),
             order_fill_progress: Arc::new(Mutex::new(AHashMap::new())),
-            accepted_orders: Arc::new(Mutex::new(ahash::AHashSet::new())),
             pending_cancel_orders: Arc::new(Mutex::new(ahash::AHashSet::new())),
         })
     }
@@ -313,13 +337,14 @@ impl InteractiveBrokersExecutionClient {
         let instrument_id_map = Arc::clone(&self.instrument_id_map);
         let trader_id_map = Arc::clone(&self.trader_id_map);
         let strategy_id_map = Arc::clone(&self.strategy_id_map);
+        let active_order_contexts = Arc::clone(&self.active_order_contexts);
+        let terminal_order_contexts = Arc::clone(&self.terminal_order_contexts);
         let next_order_id = Arc::clone(&self.next_order_id);
         let instrument_provider = Arc::clone(&self.instrument_provider);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
         let account_id = self.core.account_id;
         let strategy_id = cmd.strategy_id;
-        let accepted_orders = Arc::clone(&self.accepted_orders);
         let client_clone = client.as_arc().clone();
         let order_submit_lock = Arc::clone(&self.order_submit_lock);
 
@@ -333,13 +358,14 @@ impl InteractiveBrokersExecutionClient {
                 &instrument_id_map,
                 &trader_id_map,
                 &strategy_id_map,
+                &active_order_contexts,
+                &terminal_order_contexts,
                 &next_order_id,
                 &instrument_provider,
                 &exec_sender,
                 clock,
                 account_id,
                 strategy_id,
-                &accepted_orders,
                 &order_submit_lock,
             )
             .await
@@ -529,11 +555,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         let instrument_id_map = Arc::clone(&self.instrument_id_map);
         let trader_id_map = Arc::clone(&self.trader_id_map);
         let strategy_id_map = Arc::clone(&self.strategy_id_map);
+        let active_order_contexts = Arc::clone(&self.active_order_contexts);
+        let terminal_order_contexts = Arc::clone(&self.terminal_order_contexts);
         let next_order_id = Arc::clone(&self.next_order_id);
         let instrument_provider = Arc::clone(&self.instrument_provider);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
-        let accepted_orders = Arc::clone(&self.accepted_orders);
         let order_submit_lock = Arc::clone(&self.order_submit_lock);
 
         let client_clone = client.as_arc().clone();
@@ -549,12 +576,13 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
                 &instrument_id_map,
                 &trader_id_map,
                 &strategy_id_map,
+                &active_order_contexts,
+                &terminal_order_contexts,
                 &next_order_id,
                 &instrument_provider,
                 &exec_sender,
                 clock,
                 account_id,
-                &accepted_orders,
                 &order_submit_lock,
             )
             .await

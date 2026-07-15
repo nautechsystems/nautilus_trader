@@ -505,6 +505,7 @@ jobs:
       - pre-commit
     env:
       BUILD_MODE: release
+      CARGO_BUILD_JOBS: 2
       CARGO_TARGET_DIR: ${{ github.workspace }}/target/build-macos
       RUST_BACKTRACE: 1
     steps:
@@ -538,7 +539,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
-          rust-cache-key: build-macos
+          rust-cache-key: build-macos-${{ matrix.python-version }}
           rust-cache-workspaces: . -> target/build-macos
           rust-cache-on-failure: "false"
           rust-cache-save-if: ${{ github.event_name == 'push' }}
@@ -546,9 +547,6 @@ jobs:
 
       - name: Cached test data
         uses: ./.github/actions/common-test-data
-
-      - name: Set compile jobs from cache state
-        run: bash scripts/ci/set-cargo-build-jobs.sh
 
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'

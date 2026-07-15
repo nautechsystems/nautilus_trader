@@ -283,6 +283,7 @@ impl Clock for LiveClock {
 }
 
 #[cfg(test)]
+#[cfg(not(all(feature = "simulation", madsim)))]
 mod tests {
     use std::{
         sync::{Arc, Mutex},

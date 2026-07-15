@@ -538,12 +538,20 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             params=params,
         )
 
-        # In order to get missed bars after a disconnection
-        if (
-            self._last_disconnection_ns is not None
-            and self._last_disconnection_ns > params["first_start_ns"]
-        ):
-            start = self._last_disconnection_ns
+        # In order to get missed bars after a disconnection or a transient data-farm outage,
+        # move the bar filter cutoff back to the earliest point at which data was lost (a socket
+        # disconnection or a data-farm degradation). Bars from that point are recovered via the
+        # historical backfill on resubscription.
+        recovery_ns = self._last_disconnection_ns
+        if self._data_farm_degraded_since_ns is not None:
+            recovery_ns = (
+                self._data_farm_degraded_since_ns
+                if recovery_ns is None
+                else min(recovery_ns, self._data_farm_degraded_since_ns)
+            )
+
+        if recovery_ns is not None and recovery_ns > params["first_start_ns"]:
+            start = recovery_ns
 
         # Store start time separately for bar filtering (not part of resubscription handle)
         self._subscription_start_times[subscription.req_id] = start

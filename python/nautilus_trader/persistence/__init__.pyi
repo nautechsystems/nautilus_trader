@@ -78,14 +78,14 @@ class OrderBookDepth10DataWrangler:
 
 @typing.final
 class ParquetDataCatalog:
-    def new(
+    def __init__(
         self,
         base_path: str,
         storage_options: typing.Mapping[str, str] | None = None,
         batch_size: int | None = None,
         compression: int | None = None,
         max_row_group_size: int | None = None,
-    ) -> ParquetDataCatalog: ...
+    ) -> None: ...
     def write_quote_ticks(
         self,
         data: typing.Sequence[model.QuoteTick],

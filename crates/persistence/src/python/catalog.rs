@@ -82,7 +82,7 @@ impl PyParquetDataCatalog {
     /// Returns an error if the underlying [`ParquetDataCatalog`] cannot be created.
     #[new]
     #[pyo3(signature = (base_path, storage_options=None, batch_size=None, compression=None, max_row_group_size=None))]
-    pub fn new(
+    pub fn py_new(
         base_path: &str,
         storage_options: Option<HashMap<String, String>>,
         batch_size: Option<usize>,

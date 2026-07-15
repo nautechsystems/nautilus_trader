@@ -68,8 +68,9 @@ use nautilus_model::{
         TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFilled,
-        OrderInitialized, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+        OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
+        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
@@ -78,7 +79,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::own::{OwnBookOrder, OwnOrderBook, should_handle_own_book_order},
     orders::{Order, OrderAny, OrderError},
-    position::Position,
+    position::{Position, PositionReplayEvent},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{Money, Quantity},
 };
@@ -87,10 +88,9 @@ use rust_decimal::Decimal;
 use crate::{
     client::ExecutionClientAdapter,
     reconciliation::{
-        check_position_reconciliation, create_incremental_inferred_fill,
-        generate_external_order_status_events, generate_reconciliation_order_events,
-        generate_reconciliation_order_pre_fill_events, is_superseded_cancel_report,
-        reconcile_fill_report as reconcile_fill, reconcile_order_report,
+        check_position_reconciliation, generate_external_order_status_events,
+        generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
+        generate_reconciliation_order_snapshot_events, reconcile_fill_report as reconcile_fill,
     },
 };
 
@@ -1452,7 +1452,9 @@ impl ExecutionEngine {
                 && let Some(order) = order
             {
                 let ts_now = self.clock.borrow().timestamp_ns();
-                let events = generate_reconciliation_order_events(&order, report, None, ts_now);
+                let events =
+                    generate_reconciliation_order_snapshot_events(&order, report, None, ts_now);
+
                 for event in &events {
                     self.handle_event(event);
                 }
@@ -1527,50 +1529,16 @@ impl ExecutionEngine {
             }
         }
 
-        // Cover any quantity gap between the status report and the real fills with
-        // an inferred fill so the order reaches the venue-reported terminal state.
-        if matches!(
-            report.order_status,
-            OrderStatus::PartiallyFilled
-                | OrderStatus::Filled
-                | OrderStatus::Canceled
-                | OrderStatus::Expired,
-        ) && !is_superseded_cancel_report(&order, report)
-            && report.filled_qty > order.filled_qty()
-        {
-            let ts_now = self.clock.borrow().timestamp_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let events = generate_reconciliation_order_snapshot_events(
+            &order,
+            report,
+            Some(&instrument),
+            ts_now,
+        );
 
-            if let Some(event) = create_incremental_inferred_fill(
-                &order,
-                report,
-                &report.account_id,
-                &instrument,
-                ts_now,
-                None,
-            ) {
-                self.handle_event(&event);
-
-                if let Some(refreshed) = self
-                    .cache
-                    .borrow()
-                    .order(&client_order_id)
-                    .map(|o| o.clone())
-                {
-                    order = refreshed;
-                }
-            }
-        }
-
-        if !order.is_closed()
-            && matches!(
-                report.order_status,
-                OrderStatus::Canceled | OrderStatus::Expired,
-            )
-        {
-            let ts_now = self.clock.borrow().timestamp_ns();
-            if let Some(event) = reconcile_order_report(&order, report, Some(&instrument), ts_now) {
-                self.handle_event(&event);
-            }
+        for event in &events {
+            self.handle_event(event);
         }
     }
 
@@ -2575,6 +2543,93 @@ impl ExecutionEngine {
                     self.publish_position_events(position_events);
                 }
             }
+            OrderEventAny::FillVoided(voided) => {
+                let mut voided = voided.clone();
+                let Some(order_before_void) = self
+                    .cache
+                    .borrow()
+                    .order(&client_order_id)
+                    .map(|order| order.clone())
+                else {
+                    log::error!("Cannot apply fill void: order {client_order_id} not found");
+                    return;
+                };
+                let original_fill = order_before_void
+                    .events()
+                    .into_iter()
+                    .find_map(|candidate| match candidate {
+                        OrderEventAny::Filled(fill) if fill.trade_id == voided.trade_id => {
+                            Some(fill.clone())
+                        }
+                        _ => None,
+                    });
+
+                if voided.position_id.is_none() {
+                    voided.position_id = original_fill.as_ref().and_then(|fill| fill.position_id);
+                }
+                let event = OrderEventAny::FillVoided(voided.clone());
+
+                let mut validated_order = order_before_void.clone();
+                match validated_order.apply(event.clone()) {
+                    Ok(()) => {}
+                    Err(OrderError::DuplicateFillVoid(trade_id)) => {
+                        log::warn!(
+                            "Duplicate fill void rejected at order level: trade_id={trade_id}"
+                        );
+                        return;
+                    }
+                    Err(e) => {
+                        log::error!("Cannot apply fill void to order: {e}");
+                        return;
+                    }
+                }
+
+                let corrected_positions = if apply_position
+                    && original_fill
+                        .as_ref()
+                        .is_some_and(|fill| fill.position_id.is_some())
+                {
+                    match self.prepare_order_fill_void_positions(&order_before_void, &voided) {
+                        Ok(positions) => positions,
+                        Err(e) => {
+                            log::error!("Cannot apply fill void to positions: {e}");
+                            return;
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let mut position_events = Vec::new();
+
+                for (position, corrected_qty) in corrected_positions {
+                    if let Err(e) = self.cache.borrow_mut().update_position(&position) {
+                        log::error!("Cannot apply fill void to position {}: {e}", position.id);
+                        return;
+                    }
+
+                    if self.config.snapshot_positions {
+                        self.create_position_state_snapshot(&position, false);
+                    }
+
+                    position_events.push(Self::create_fill_void_position_event(
+                        &position,
+                        &voided,
+                        corrected_qty,
+                    ));
+                }
+
+                if self.update_cached_order(client_order_id, &event).is_none() {
+                    return;
+                }
+
+                if original_fill.is_some() {
+                    let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
+                    msgbus::send_order_event(portfolio_endpoint, event.clone());
+                }
+                self.publish_order_event(&event);
+                self.publish_position_events(position_events);
+            }
             _ => {
                 if self.update_cached_order(client_order_id, &event).is_some() {
                     self.publish_order_event(&event);
@@ -2983,6 +3038,15 @@ impl ExecutionEngine {
                     return None;
                 }
 
+                if let Some(OrderError::DuplicateFillVoid(trade_id)) =
+                    e.downcast_ref::<OrderError>()
+                {
+                    log::warn!(
+                        "Duplicate fill void rejected at order level: trade_id={trade_id}, did not apply {event}"
+                    );
+                    return None;
+                }
+
                 log::error!("Error applying event: {e}, did not apply {event}");
 
                 if matches!(
@@ -3245,6 +3309,222 @@ impl ExecutionEngine {
         position_events
     }
 
+    fn prepare_order_fill_void_positions(
+        &self,
+        order: &OrderAny,
+        event: &OrderFillVoided,
+    ) -> anyhow::Result<Vec<(Position, Quantity)>> {
+        let source_event_id = order
+            .events()
+            .into_iter()
+            .find_map(|order_event| match order_event {
+                OrderEventAny::Filled(fill) if fill.trade_id == event.trade_id => {
+                    Some(fill.event_id)
+                }
+                _ => None,
+            })
+            .ok_or_else(|| anyhow::anyhow!("fill {} is not in order history", event.trade_id))?;
+
+        let positions: Vec<Position> = {
+            let cache = self.cache.borrow();
+            cache
+                .positions(
+                    None,
+                    Some(&event.instrument_id),
+                    Some(&event.strategy_id),
+                    Some(&event.account_id),
+                    None,
+                )
+                .into_iter()
+                .map(|position| position.cloned())
+                .collect()
+        };
+        let mut fragments = Vec::new();
+
+        for position in &positions {
+            for replay_event in &position.replay_events {
+                let PositionReplayEvent::Filled(fill) = replay_event else {
+                    continue;
+                };
+
+                if fill.client_order_id != event.client_order_id || fill.trade_id != event.trade_id
+                {
+                    continue;
+                }
+                let split_rank = if fill.event_id == source_event_id {
+                    0
+                } else if fill.causation_id == Some(source_event_id) {
+                    1
+                } else {
+                    continue;
+                };
+                fragments.push((position.id, split_rank, fill.last_qty, fill.commission));
+            }
+        }
+        anyhow::ensure!(
+            !fragments.is_empty(),
+            "no position fragments found for fill {}",
+            event.trade_id
+        );
+        fragments.sort_by_key(|(_, split_rank, _, _)| *split_rank);
+
+        let mut allocations = IndexMap::<PositionId, (Quantity, Option<Money>)>::new();
+        let mut remaining_qty = event.voided_qty;
+        for (position_id, _, quantity, _) in fragments.iter().rev() {
+            if remaining_qty.is_zero() {
+                break;
+            }
+            let removed = remaining_qty.min(*quantity);
+            allocations
+                .entry(*position_id)
+                .and_modify(|allocation| allocation.0 = allocation.0 + removed)
+                .or_insert((removed, None));
+            remaining_qty = remaining_qty - removed;
+        }
+        anyhow::ensure!(
+            remaining_qty.is_zero(),
+            "position fragments do not cover voided quantity for fill {}",
+            event.trade_id
+        );
+
+        if let Some(mut remaining_commission) = event.commission_voided {
+            for (position_id, _, _, commission) in fragments.iter().rev() {
+                if remaining_commission.is_zero() {
+                    break;
+                }
+                let Some(commission) = commission else {
+                    continue;
+                };
+                anyhow::ensure!(
+                    commission.currency == remaining_commission.currency,
+                    "position commission currency differs for fill {}",
+                    event.trade_id
+                );
+                let removed_raw = remaining_commission.raw.abs().min(commission.raw.abs());
+                let removed = Money::from_raw(
+                    removed_raw * remaining_commission.raw.signum(),
+                    remaining_commission.currency,
+                );
+                allocations
+                    .entry(*position_id)
+                    .and_modify(|allocation| {
+                        allocation.1 = Some(
+                            allocation
+                                .1
+                                .map_or(removed, |commission| commission + removed),
+                        );
+                    })
+                    .or_insert((Quantity::zero(event.voided_qty.precision), Some(removed)));
+                remaining_commission = remaining_commission - removed;
+            }
+            anyhow::ensure!(
+                remaining_commission.is_zero(),
+                "position fragments do not cover voided commission for fill {}",
+                event.trade_id
+            );
+        }
+
+        let mut corrected_positions = Vec::new();
+
+        for (position_id, (voided_qty, commission_voided)) in allocations {
+            if voided_qty.is_zero() {
+                anyhow::bail!(
+                    "commission-only position correction requires authoritative reconciliation for fill {}",
+                    event.trade_id
+                );
+            }
+            let mut position = self
+                .cache
+                .borrow()
+                .position_owned(&position_id)
+                .ok_or_else(|| anyhow::anyhow!("position {position_id} is not cached"))?;
+            let previous = position
+                .fill_voids
+                .iter()
+                .rev()
+                .find(|record| {
+                    record.event.client_order_id == event.client_order_id
+                        && record.event.trade_id == event.trade_id
+                })
+                .map(|record| (record.voided_qty, record.commission_voided));
+            if previous == Some((voided_qty, commission_voided)) {
+                continue;
+            }
+            let corrected_qty = previous.map_or(voided_qty, |(prior_qty, _)| {
+                voided_qty.saturating_sub(prior_qty)
+            });
+            position.apply_fill_void(event.clone(), voided_qty, commission_voided)?;
+            corrected_positions.push((position, corrected_qty));
+        }
+        Ok(corrected_positions)
+    }
+
+    fn create_fill_void_position_event(
+        position: &Position,
+        fill_voided: &OrderFillVoided,
+        corrected_qty: Quantity,
+    ) -> PositionEvent {
+        let event_id = UUID4::new();
+        let ts_init = fill_voided.ts_init;
+
+        if position.is_closed() {
+            PositionEvent::PositionClosed(PositionClosed {
+                trader_id: position.trader_id,
+                strategy_id: position.strategy_id,
+                instrument_id: position.instrument_id,
+                position_id: position.id,
+                account_id: position.account_id,
+                opening_order_id: position.opening_order_id,
+                closing_order_id: position.closing_order_id,
+                entry: position.entry,
+                side: position.side,
+                signed_qty: position.signed_qty,
+                quantity: position.quantity,
+                peak_quantity: position.peak_qty,
+                last_qty: corrected_qty,
+                last_px: fill_voided.last_px,
+                currency: position.quote_currency,
+                avg_px_open: position.avg_px_open,
+                avg_px_close: position.avg_px_close,
+                realized_return: position.realized_return,
+                realized_pnl: position.realized_pnl,
+                unrealized_pnl: Money::zero(position.quote_currency),
+                duration: position.duration_ns,
+                event_id,
+                ts_opened: position.ts_opened,
+                ts_closed: position.ts_closed,
+                ts_event: fill_voided.ts_event,
+                ts_init,
+            })
+        } else {
+            PositionEvent::PositionChanged(PositionChanged {
+                trader_id: position.trader_id,
+                strategy_id: position.strategy_id,
+                instrument_id: position.instrument_id,
+                position_id: position.id,
+                account_id: position.account_id,
+                opening_order_id: position.opening_order_id,
+                entry: position.entry,
+                side: position.side,
+                signed_qty: position.signed_qty,
+                quantity: position.quantity,
+                peak_quantity: position.peak_qty,
+                last_qty: corrected_qty,
+                last_px: fill_voided.last_px,
+                currency: position.quote_currency,
+                avg_px_open: position.avg_px_open,
+                avg_px_close: position.avg_px_close,
+                realized_return: position.realized_return,
+                realized_pnl: position.realized_pnl,
+                unrealized_pnl: Money::zero(position.quote_currency),
+                event_id,
+                ts_opened: position.ts_opened,
+                ts_event: fill_voided.ts_event,
+                ts_init,
+            })
+        }
+    }
+
     /// Handle position creation or update for a fill.
     ///
     /// This function mirrors the Python `_handle_position_update` method.
@@ -3357,7 +3637,19 @@ impl ExecutionEngine {
             self.reopen_position(position, oms_type)?;
         }
 
-        let position = Position::new(instrument, fill.clone());
+        let prior_position = position.cloned().or_else(|| {
+            fill.position_id
+                .and_then(|position_id| self.cache.borrow().position_owned(&position_id))
+        });
+        let mut position = Position::new(instrument, fill.clone());
+        if let Some(prior) = prior_position
+            && prior.id == position.id
+        {
+            let current_replay = position.replay_events.clone();
+            position.replay_events = prior.replay_events;
+            position.replay_events.extend(current_replay);
+            position.fill_voids = prior.fill_voids;
+        }
         self.cache.borrow_mut().add_position(&position, oms_type)?;
 
         if self.config.snapshot_positions {
@@ -3514,7 +3806,7 @@ impl ExecutionEngine {
         let mut fill_split1: Option<OrderFilled> = None;
 
         if position.is_open() {
-            fill_split1 = Some(OrderFilled::new(
+            let mut split = OrderFilled::new(
                 fill.trader_id,
                 fill.strategy_id,
                 fill.instrument_id,
@@ -3534,8 +3826,10 @@ impl ExecutionEngine {
                 fill.reconciliation,
                 fill.position_id,
                 commission1,
-                None,
-            ));
+                fill.info.clone(),
+            );
+            split.causation_id = fill.causation_id;
+            fill_split1 = Some(split);
 
             if let Some(position_event) =
                 self.update_position(position, fill_split1.as_ref().unwrap())
@@ -3571,7 +3865,7 @@ impl ExecutionEngine {
             fill.position_id
         };
 
-        let fill_split2 = OrderFilled::new(
+        let mut fill_split2 = OrderFilled::new(
             fill.trader_id,
             fill.strategy_id,
             fill.instrument_id,
@@ -3591,8 +3885,9 @@ impl ExecutionEngine {
             fill.reconciliation,
             position_id_flip,
             commission2,
-            None,
+            fill.info.clone(),
         );
+        fill_split2.causation_id = Some(fill.event_id);
 
         if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id

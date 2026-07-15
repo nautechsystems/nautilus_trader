@@ -110,7 +110,9 @@ use crate::{
 /// (see `parse::MessageHeader::validate`), so compatible responses continue to decode.
 pub const SBE_SCHEMA_HEADER: &str = "3:5";
 
-use crate::common::consts::BINANCE_SPOT_API_PATH as SPOT_API_PATH;
+use crate::common::consts::{
+    BINANCE_SAPI_PATH as SAPI_PATH, BINANCE_SPOT_API_PATH as SPOT_API_PATH,
+};
 
 /// Global rate limit key.
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:spot:global";
@@ -805,7 +807,7 @@ impl BinanceRawSpotHttpClient {
             format!("/{path}")
         };
 
-        let mut url = format!("{}/sapi/v1{}", self.base_url, normalized_path);
+        let mut url = format!("{}{}{}", self.base_url, SAPI_PATH, normalized_path);
 
         if !query.is_empty() {
             url.push('?');
@@ -1012,12 +1014,25 @@ impl BinanceRawSpotHttpClient {
         end_time: Option<i64>,
         limit: Option<u32>,
     ) -> BinanceSpotHttpResult<Vec<BinanceAccountTrade>> {
+        self.account_trades_with_cursor(symbol, order_id, start_time, end_time, None, limit)
+            .await
+    }
+
+    async fn account_trades_with_cursor(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        from_id: Option<i64>,
+        limit: Option<u32>,
+    ) -> BinanceSpotHttpResult<Vec<BinanceAccountTrade>> {
         let params = AccountTradesParams {
             symbol: symbol.to_string(),
             order_id,
             start_time,
             end_time,
-            from_id: None,
+            from_id,
             limit,
         };
         let bytes = self.get_signed("myTrades", Some(&params)).await?;
@@ -1810,6 +1825,29 @@ impl BinanceSpotHttpClient {
         end: Option<DateTime<Utc>>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_with_cursor(
+            account_id,
+            instrument_id,
+            venue_order_id,
+            start,
+            end,
+            None,
+            limit,
+        )
+        .await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn request_fill_reports_with_cursor(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        venue_order_id: Option<VenueOrderId>,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        from_id: Option<i64>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
         let symbol = instrument_id.symbol.inner();
 
@@ -1820,11 +1858,12 @@ impl BinanceSpotHttpClient {
 
         let trades = self
             .inner
-            .account_trades(
+            .account_trades_with_cursor(
                 symbol.as_str(),
                 order_id,
                 start.map(|dt| dt.timestamp_millis()),
                 end.map(|dt| dt.timestamp_millis()),
+                from_id,
                 limit,
             )
             .await

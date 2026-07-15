@@ -39,11 +39,15 @@ from pathlib import Path
 
 
 CHAIN_ID_TESTNET = 300
+UPSTREAM_VERSION = "1.1.2"
+UPSTREAM_REVISION = "6957dd8a1b36894ca9580be0d51de30aeea3bd4a"
 
 # Tx type discriminants, mirrored from the lighter-go constants.
 TX_TYPE_L2_CREATE_ORDER = 14
 TX_TYPE_L2_CANCEL_ORDER = 15
+TX_TYPE_L2_CANCEL_ALL_ORDERS = 16
 TX_TYPE_L2_MODIFY_ORDER = 17
+TX_TYPE_L2_UPDATE_LEVERAGE = 20
 TX_TYPE_L2_APPROVE_INTEGRATOR = 45
 
 
@@ -99,6 +103,8 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_int,
         ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
         ctypes.c_longlong,
         ctypes.c_int,
         ctypes.c_longlong,
@@ -125,11 +131,35 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_int,
         ctypes.c_int,
         ctypes.c_uint8,
+        ctypes.c_uint8,
+        ctypes.c_uint8,
         ctypes.c_longlong,
         ctypes.c_int,
         ctypes.c_longlong,
     ]
     lib.SignModifyOrder.restype = SignedTxResponse
+
+    lib.SignCancelAllOrders.argtypes = [
+        ctypes.c_int,
+        ctypes.c_longlong,
+        ctypes.c_int,
+        ctypes.c_uint8,
+        ctypes.c_longlong,
+        ctypes.c_int,
+        ctypes.c_longlong,
+    ]
+    lib.SignCancelAllOrders.restype = SignedTxResponse
+
+    lib.SignUpdateLeverage.argtypes = [
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint8,
+        ctypes.c_longlong,
+        ctypes.c_int,
+        ctypes.c_longlong,
+    ]
+    lib.SignUpdateLeverage.restype = SignedTxResponse
 
     lib.SignApproveIntegrator.argtypes = [
         ctypes.c_longlong,
@@ -178,6 +208,15 @@ def decode(lib: ctypes.CDLL, resp: SignedTxResponse) -> dict:
     }
 
 
+def decode_expected(lib: ctypes.CDLL, resp: SignedTxResponse, expected_tx_type: int) -> dict:
+    decoded = decode(lib, resp)
+    if decoded["tx_type"] != expected_tx_type:
+        raise RuntimeError(
+            f"signer returned tx type {decoded['tx_type']}, expected {expected_tx_type}",
+        )
+    return decoded
+
+
 def fixed_private_key() -> str:
     # 40-byte (80-hex) deterministic key. Bytes are arbitrary but non-trivial
     # so every limb of the underlying scalar takes a non-zero value.
@@ -215,12 +254,14 @@ def gen_create_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         fields["integrator_account_index"],
         fields["integrator_taker_fee"],
         fields["integrator_maker_fee"],
+        0,  # default self-trade behavior: expire maker
+        0,  # default self-trade equality: account index
         fields["skip_nonce"],
         ctx["nonce"],
         ctx["api_key_index"],
         ctx["account_index"],
     )
-    return decode(lib, resp)
+    return decode_expected(lib, resp, TX_TYPE_L2_CREATE_ORDER)
 
 
 def gen_cancel_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
@@ -232,7 +273,7 @@ def gen_cancel_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
-    return decode(lib, resp)
+    return decode_expected(lib, resp, TX_TYPE_L2_CANCEL_ORDER)
 
 
 def gen_modify_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
@@ -245,12 +286,40 @@ def gen_modify_order(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         fields["integrator_account_index"],
         fields["integrator_taker_fee"],
         fields["integrator_maker_fee"],
+        0,  # default self-trade behavior: expire maker
+        0,  # default self-trade equality: account index
         fields["skip_nonce"],
         ctx["nonce"],
         ctx["api_key_index"],
         ctx["account_index"],
     )
-    return decode(lib, resp)
+    return decode_expected(lib, resp, TX_TYPE_L2_MODIFY_ORDER)
+
+
+def gen_cancel_all_orders(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
+    resp = lib.SignCancelAllOrders(
+        fields["time_in_force"],
+        fields["scheduled_time_ms"],
+        fields["cancel_all_market_index"],
+        fields["skip_nonce"],
+        ctx["nonce"],
+        ctx["api_key_index"],
+        ctx["account_index"],
+    )
+    return decode_expected(lib, resp, TX_TYPE_L2_CANCEL_ALL_ORDERS)
+
+
+def gen_update_leverage(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
+    resp = lib.SignUpdateLeverage(
+        fields["market_index"],
+        fields["initial_margin_fraction"],
+        fields["margin_mode"],
+        fields["skip_nonce"],
+        ctx["nonce"],
+        ctx["api_key_index"],
+        ctx["account_index"],
+    )
+    return decode_expected(lib, resp, TX_TYPE_L2_UPDATE_LEVERAGE)
 
 
 def gen_approve_integrator(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
@@ -266,7 +335,7 @@ def gen_approve_integrator(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
         ctx["api_key_index"],
         ctx["account_index"],
     )
-    return decode(lib, resp)
+    return decode_expected(lib, resp, TX_TYPE_L2_APPROVE_INTEGRATOR)
 
 
 def gen_auth_token(lib: ctypes.CDLL, deadline: int, api_key_index: int, account_index: int) -> str:
@@ -372,6 +441,8 @@ def write_auth_oracle(
             "license": "Apache-2.0 (SDK repository; compiled signer binary)",
             "primitive": "lighter_auth_token",
             "source": "github.com/elliottech/lighter-python",
+            "upstream_version": UPSTREAM_VERSION,
+            "upstream_revision": UPSTREAM_REVISION,
             "note": (
                 "Sig is non-deterministic (random k); the Rust side verifies "
                 "each oracle token under the derived pubkey rather than "
@@ -615,11 +686,124 @@ def main() -> int:
         ),
     )
 
+    # Conditional CreateOrder types 2-5. Market-trigger variants require IOC;
+    # limit-trigger variants use GTT. Each carries a non-zero trigger price.
+    conditional_orders = [
+        {
+            **create_fields,
+            "client_order_index": 202,
+            "price": 390_000,
+            "order_type": 2,  # Stop loss
+            "time_in_force": 0,
+            "trigger_price": 395_000,
+        },
+        {
+            **create_fields,
+            "client_order_index": 203,
+            "price": 390_000,
+            "order_type": 3,  # Stop loss limit
+            "time_in_force": 1,
+            "trigger_price": 395_000,
+        },
+        {
+            **create_fields,
+            "client_order_index": 204,
+            "price": 420_000,
+            "is_ask": False,
+            "order_type": 4,  # Take profit
+            "time_in_force": 0,
+            "trigger_price": 415_000,
+        },
+        {
+            **create_fields,
+            "client_order_index": 205,
+            "price": 420_000,
+            "is_ask": False,
+            "order_type": 5,  # Take profit limit
+            "time_in_force": 1,
+            "trigger_price": 415_000,
+        },
+    ]
+    for nonce, fields in enumerate(conditional_orders, start=9):
+        ctx = {**base_ctx, "nonce": nonce}
+        vectors.append(
+            build_vector("create_order", ctx, fields, gen_create_order(lib, ctx, fields)),
+        )
+
+    # Account-wide immediate cancel. Market index 255 is the upstream nil
+    # sentinel, so this covers the same account-wide payload Rust emits.
+    cancel_all_fields = {
+        "time_in_force": 0,
+        "scheduled_time_ms": 0,
+        "cancel_all_market_index": 255,
+        "skip_nonce": 0,
+    }
+    ctx = {**base_ctx, "nonce": 13}
+    vectors.append(
+        build_vector(
+            "cancel_all_orders",
+            ctx,
+            cancel_all_fields,
+            gen_cancel_all_orders(lib, ctx, cancel_all_fields),
+        ),
+    )
+
+    # UpdateLeverage: 5% initial margin (20x), isolated mode.
+    update_leverage_fields = {
+        "market_index": 3,
+        "initial_margin_fraction": 500,
+        "margin_mode": 1,
+        "skip_nonce": 0,
+    }
+    ctx = {**base_ctx, "nonce": 14}
+    vectors.append(
+        build_vector(
+            "update_leverage",
+            ctx,
+            update_leverage_fields,
+            gen_update_leverage(lib, ctx, update_leverage_fields),
+        ),
+    )
+
+    # Production integrator attribution uses the account index with zero fee
+    # overrides. Keep create and modify vectors for this partial map shape.
+    production_create = {
+        **create_fields,
+        "client_order_index": 206,
+        "integrator_account_index": 723_813,
+    }
+    ctx = {**base_ctx, "nonce": 15}
+    vectors.append(
+        build_vector(
+            "create_order",
+            ctx,
+            production_create,
+            gen_create_order(lib, ctx, production_create),
+        ),
+    )
+
+    production_modify = {
+        **modify_fields,
+        "index": 125,
+        "integrator_account_index": 723_813,
+    }
+    ctx = {**base_ctx, "nonce": 16}
+    vectors.append(
+        build_vector(
+            "modify_order",
+            ctx,
+            production_modify,
+            gen_modify_order(lib, ctx, production_modify),
+        ),
+    )
+
     payload = {
         "metadata": {
             "license": "Apache-2.0 (SDK repository; compiled signer binary)",
             "primitive": "lighter_l2_tx",
             "source": "github.com/elliottech/lighter-python",
+            "upstream_version": UPSTREAM_VERSION,
+            "upstream_revision": UPSTREAM_REVISION,
             "note": (
                 "Sig is non-deterministic (random k); tx_hash and tx_info "
                 "carry deterministic byte equality targets."

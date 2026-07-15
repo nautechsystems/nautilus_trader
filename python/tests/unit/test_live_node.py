@@ -32,6 +32,7 @@ from nautilus_trader.trading import ImportableControllerConfig
 from nautilus_trader.trading import ImportableExecAlgorithmConfig
 from nautilus_trader.trading import ImportableStrategyConfig
 from tests.unit.common.actor import ControllerRegistrationProbe
+from tests.unit.common.actor import LifecycleProbeStrategy
 
 
 @pytest.fixture(scope="module")
@@ -141,6 +142,7 @@ def test_live_node_config_registers_importable_controller():
     ],
 )
 def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
+    LifecycleProbeStrategy.reset()
     node = LiveNode.build(
         "TEST",
         LiveNodeConfig(
@@ -154,6 +156,13 @@ def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
             timeout_disconnection_secs=0,
             delay_post_stop_secs=0,
             timeout_shutdown_secs=0,
+        ),
+    )
+    node.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="tests.unit.common.actor:LifecycleProbeStrategy",
+            config_path="nautilus_trader.trading:StrategyConfig",
+            config={},
         ),
     )
 
@@ -171,8 +180,96 @@ def test_live_node_start_stop_dispose_local(trader_id, stop_before_dispose):
         assert node.is_running is False
     finally:
         node.dispose()
+        node.dispose()
 
     assert node.is_running is False
+    assert LifecycleProbeStrategy.started == 1
+    assert LifecycleProbeStrategy.stopped == 1
+    assert LifecycleProbeStrategy.disposed == 1
+
+
+def test_live_node_dispose_before_start_twice_does_not_raise():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-006"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+        ),
+    )
+
+    node.dispose()
+    node.dispose()
+
+
+def test_live_node_stop_before_start_raises():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-008"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+        ),
+    )
+
+    try:
+        with pytest.raises(RuntimeError, match="LiveNode is not running"):
+            node.stop()
+    finally:
+        node.dispose()
+
+
+def test_live_node_start_after_dispose_raises():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-009"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            timeout_connection_secs=0,
+            timeout_reconciliation_secs=0,
+            timeout_portfolio_secs=0,
+            timeout_disconnection_secs=0,
+            delay_post_stop_secs=0,
+            timeout_shutdown_secs=0,
+        ),
+    )
+    node.dispose()
+
+    try:
+        with pytest.raises(RuntimeError, match="Invalid state trigger DISPOSED -> START"):
+            node.start()
+    finally:
+        node.dispose()
+
+
+def test_live_node_strategy_start_failure_disposes_resources():
+    node = LiveNode.build(
+        "TEST",
+        LiveNodeConfig(
+            trader_id=TraderId("TESTER-007"),
+            environment=Environment.SANDBOX,
+            exec_engine=LiveExecEngineConfig(reconciliation=False),
+            timeout_connection_secs=1,
+            timeout_disconnection_secs=0,
+            delay_post_stop_secs=0,
+        ),
+    )
+    node.add_strategy_from_config(
+        ImportableStrategyConfig(
+            strategy_path="tests.unit.common.actor:FailingStartStrategy",
+            config_path="nautilus_trader.trading:StrategyConfig",
+            config={},
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="simulated live node strategy start failure"):
+        node.start()
+
+    assert node.is_running is False
+
+    node.dispose()
+    node.dispose()
 
 
 def test_importable_exec_algorithm_config_construction():

@@ -362,7 +362,7 @@ fn parse_perp_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let perp = CryptoPerpetual::new(
+    let perp = CryptoPerpetual::new_checked(
         instrument_id,
         raw_symbol,
         base_currency,
@@ -389,7 +389,7 @@ fn parse_perp_instrument(
         Some(info),
         ts_init,
         ts_init,
-    );
+    )?;
 
     Ok(InstrumentAny::CryptoPerpetual(perp))
 }
@@ -420,7 +420,7 @@ fn parse_option_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let option = CryptoOption::new(
+    let option = CryptoOption::new_checked(
         instrument_id,
         raw_symbol,
         underlying,
@@ -451,7 +451,7 @@ fn parse_option_instrument(
         Some(info),
         ts_init,
         ts_init,
-    );
+    )?;
 
     Ok(InstrumentAny::CryptoOption(option))
 }
@@ -471,7 +471,7 @@ fn parse_spot_instrument(
     let min_quantity = quantity_from_decimal(instrument.minimum_amount, "minimum_amount")?;
     let info = derive_instrument_info(instrument)?;
 
-    let pair = CurrencyPair::new(
+    let pair = CurrencyPair::new_checked(
         instrument_id,
         raw_symbol,
         base_currency,
@@ -496,7 +496,7 @@ fn parse_spot_instrument(
         Some(info),
         ts_init,
         ts_init,
-    );
+    )?;
 
     Ok(InstrumentAny::CurrencyPair(pair))
 }
@@ -934,6 +934,29 @@ mod tests {
 
         assert_eq!(pair.maker_fee(), dec!(0.0001));
         assert_eq!(pair.taker_fee(), dec!(0.0005));
+    }
+
+    #[rstest]
+    #[case::perp(DeriveInstrumentType::Perp)]
+    #[case::option(DeriveInstrumentType::Option)]
+    #[case::spot(DeriveInstrumentType::Erc20)]
+    fn test_parse_instrument_rejects_non_positive_tick_size(
+        #[case] instrument_type: DeriveInstrumentType,
+    ) {
+        let mut instrument = match instrument_type {
+            DeriveInstrumentType::Perp => perp_fixture(),
+            DeriveInstrumentType::Option => option_fixture(),
+            DeriveInstrumentType::Erc20 => spot_fixture(),
+            DeriveInstrumentType::Unknown => unreachable!(),
+        };
+        instrument.tick_size = Decimal::ZERO;
+
+        let err = parse_derive_instrument_any(&instrument, UnixNanos::from(123))
+            .expect_err("must reject non-positive tick size");
+        let message = err.to_string();
+
+        assert!(message.contains("price_increment"), "{message}");
+        assert!(message.contains("not positive"), "{message}");
     }
 
     #[rstest]

@@ -47,8 +47,9 @@ use nautilus_execution::{
         calculate_reconciliation_price, create_inferred_fill_for_qty,
         create_position_reconciliation_venue_order_id, create_reconciliation_rejected,
         create_reconciliation_triggered, generate_external_order_status_events,
-        process_mass_status_for_reconciliation, reconcile_order_report,
-        should_reconciliation_update,
+        generate_reconciliation_order_pre_fill_events,
+        generate_reconciliation_order_snapshot_events, process_mass_status_for_reconciliation,
+        reconcile_order_report, should_reconciliation_update,
     },
 };
 use nautilus_model::{
@@ -81,6 +82,7 @@ static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("RECONCI
 /// throttles, venue report lookups) so that multiple accounts holding the same
 /// instrument do not share the same tracking entry.
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
+type FillKey = (AccountId, InstrumentId, TradeId);
 
 /// Metadata for an external order that needs to be registered with the execution client.
 #[derive(Debug, Clone)]
@@ -276,14 +278,14 @@ pub struct ExecutionManager {
     config: ExecutionManagerConfig,
     inflight_checks: IndexMap<ClientOrderId, InflightCheck>,
     external_order_claims: IndexMap<InstrumentId, StrategyId>,
-    processed_fills: IndexMap<TradeId, ClientOrderId>,
+    processed_fills: IndexMap<FillKey, ClientOrderId>,
     recon_check_retries: IndexMap<ClientOrderId, u32>,
     order_query_recency: RecencyMap<ClientOrderId>,
     order_local_activity: RecencyMap<ClientOrderId>,
     // Monotonic (`dst::time`) instants, not `self.clock`; see `record_position_activity`.
     position_local_activity: RecencyMap<InstrumentAccountKey>,
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
-    recent_fills_cache: RecencyMap<TradeId>,
+    recent_fills_cache: RecencyMap<FillKey>,
 }
 
 impl Debug for ExecutionManager {
@@ -397,12 +399,17 @@ impl ExecutionManager {
         let mut fills_applied = 0usize;
 
         let fill_reports = &adjusted_fill_reports;
-        let mut seen_trade_ids: IndexSet<TradeId> = IndexSet::new();
+        let mut seen_fill_keys: IndexSet<FillKey> = IndexSet::new();
 
         for fills in fill_reports.values() {
             for fill in fills {
-                if !seen_trade_ids.insert(fill.trade_id) {
-                    log::warn!("Duplicate trade_id {} in mass status", fill.trade_id);
+                let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+                if !seen_fill_keys.insert(fill_key) {
+                    log::warn!(
+                        "Duplicate trade_id {} for {} in mass status",
+                        fill.trade_id,
+                        fill.instrument_id
+                    );
                 }
             }
         }
@@ -1558,7 +1565,7 @@ impl ExecutionManager {
         match event {
             OrderEventAny::Filled(fill) => {
                 self.record_position_activity(fill.instrument_id, fill.account_id);
-                self.mark_fill_processed(fill.trade_id);
+                self.mark_fill_processed(fill.account_id, fill.instrument_id, fill.trade_id);
             }
             OrderEventAny::Accepted(_)
             | OrderEventAny::Rejected(_)
@@ -1655,13 +1662,25 @@ impl ExecutionManager {
 
     /// Checks if a fill has been recently processed (for deduplication).
     #[must_use]
-    pub fn is_fill_recently_processed(&self, trade_id: &TradeId) -> bool {
-        self.recent_fills_cache.contains_key(trade_id)
+    pub fn is_fill_recently_processed(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        trade_id: TradeId,
+    ) -> bool {
+        self.recent_fills_cache
+            .contains_key(&(account_id, instrument_id, trade_id))
     }
 
     /// Marks a fill as recently processed with the current monotonic instant.
-    pub fn mark_fill_processed(&mut self, trade_id: TradeId) {
-        self.recent_fills_cache.mark(trade_id);
+    pub fn mark_fill_processed(
+        &mut self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        trade_id: TradeId,
+    ) {
+        self.recent_fills_cache
+            .mark((account_id, instrument_id, trade_id));
     }
 
     /// Prunes expired fills from the recent fills cache.
@@ -2596,9 +2615,6 @@ impl ExecutionManager {
     }
 
     /// Reconciles an order with its associated fills atomically.
-    ///
-    /// For terminal statuses (Canceled), fills are applied BEFORE the terminal event
-    /// to ensure correct state transitions (matching Python behavior).
     fn reconcile_order_with_fills(
         &mut self,
         order: &OrderAny,
@@ -2607,68 +2623,74 @@ impl ExecutionManager {
         instrument: Option<&InstrumentAny>,
     ) -> Vec<OrderEventAny> {
         let mut events = Vec::new();
+        let mut working = order.clone();
         let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
         sorted_fills.sort_by_key(|f| f.ts_event);
 
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        match report.order_status {
-            OrderStatus::Canceled => {
-                if report.ts_triggered.is_some()
-                    && order.status() != OrderStatus::Triggered
-                    && TRIGGERABLE_ORDER_TYPES.contains(&order.order_type())
-                {
-                    events.push(create_reconciliation_triggered(order, report, ts_now));
-                }
-
-                // Apply fills before Canceled event regardless of current state,
-                // as the order may have partial fills we haven't seen yet
-                if let Some(inst) = instrument {
-                    for fill in &sorted_fills {
-                        if let Some(event) = self.create_order_fill(order, fill, inst) {
-                            events.push(event);
-                        }
-                    }
-                }
-
-                if let Some(event) = self.reconcile_order_report(order, report, instrument) {
-                    events.push(event);
-                }
+        if matches!(
+            report.order_status,
+            OrderStatus::Canceled | OrderStatus::Expired
+        ) && report.ts_triggered.is_some()
+            && working.status() != OrderStatus::Triggered
+            && TRIGGERABLE_ORDER_TYPES.contains(&working.order_type())
+        {
+            let triggered = create_reconciliation_triggered(&working, report, ts_now);
+            if working.apply(triggered.clone()).is_ok() {
+                events.push(triggered);
             }
-            OrderStatus::Expired => {
-                if report.ts_triggered.is_some()
-                    && order.status() != OrderStatus::Triggered
-                    && TRIGGERABLE_ORDER_TYPES.contains(&order.order_type())
-                {
-                    events.push(create_reconciliation_triggered(order, report, ts_now));
-                }
+        }
 
-                // Apply fills before Expired event (same as Canceled)
-                if let Some(inst) = instrument {
-                    for fill in &sorted_fills {
-                        if let Some(event) = self.create_order_fill(order, fill, inst) {
-                            events.push(event);
-                        }
-                    }
-                }
-
-                if let Some(event) = self.reconcile_order_report(order, report, instrument) {
-                    events.push(event);
-                }
+        let requires_snapshot_projection = !sorted_fills.is_empty()
+            || report.order_status == OrderStatus::Voided
+            || report.filled_qty < working.filled_qty();
+        if !requires_snapshot_projection {
+            if let Some(event) = self.reconcile_order_report(&working, report, instrument) {
+                events.push(event);
             }
-            _ => {
-                if let Some(event) = self.reconcile_order_report(order, report, instrument) {
-                    events.push(event);
-                }
+            return events;
+        }
 
-                if let Some(inst) = instrument {
-                    for fill in &sorted_fills {
-                        if let Some(event) = self.create_order_fill(order, fill, inst) {
-                            events.push(event);
-                        }
-                    }
-                }
+        for event in generate_reconciliation_order_pre_fill_events(&working, report, ts_now) {
+            if let Err(e) = working.apply(event.clone()) {
+                log::warn!(
+                    "Cannot project reconciliation event for {}: {e}",
+                    order.client_order_id()
+                );
+                return events;
             }
+            events.push(event);
+        }
+
+        if let Some(inst) = instrument {
+            for fill in sorted_fills {
+                let Some(event) = self.create_order_fill(&working, fill, inst) else {
+                    continue;
+                };
+
+                if let Err(e) = working.apply(event.clone()) {
+                    log::warn!(
+                        "Cannot project reconciliation fill for {}: {e}",
+                        order.client_order_id()
+                    );
+                    return events;
+                }
+                events.push(event);
+            }
+        }
+
+        for event in
+            generate_reconciliation_order_snapshot_events(&working, report, instrument, ts_now)
+        {
+            if let Err(e) = working.apply(event.clone()) {
+                log::warn!(
+                    "Cannot project reconciliation snapshot event for {}: {e}",
+                    order.client_order_id()
+                );
+                break;
+            }
+            events.push(event);
         }
 
         events
@@ -3067,7 +3089,7 @@ impl ExecutionManager {
             OrderStatus::Triggered => 3,
             OrderStatus::PartiallyFilled => 4,
             OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => 5,
-            OrderStatus::Filled => 6,
+            OrderStatus::Filled | OrderStatus::Voided => 6,
         }
     }
 
@@ -3083,12 +3105,13 @@ impl ExecutionManager {
         fill: &FillReport,
         instrument: &InstrumentAny,
     ) -> Option<OrderEventAny> {
-        if self.processed_fills.contains_key(&fill.trade_id) {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if self.processed_fills.contains_key(&fill_key) {
             return None;
         }
 
         self.processed_fills
-            .insert(fill.trade_id, order.client_order_id());
+            .insert(fill_key, order.client_order_id());
 
         Some(OrderEventAny::Filled(OrderFilled::new(
             order.trader_id(),
@@ -3120,12 +3143,13 @@ mod tests {
     use nautilus_common::clock::TestClock;
     use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
     use nautilus_model::{
-        enums::OmsType,
+        enums::{LiquiditySide, OmsType},
         instruments::{
             Instrument,
             stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+        types::Money,
     };
     use rstest::rstest;
 
@@ -3255,6 +3279,99 @@ mod tests {
         assert_eq!(check.positions_by_key.len(), 1);
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].id, included_position.id);
+    }
+
+    #[rstest]
+    fn test_mass_status_projects_companion_fill_before_void_correction() {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let client_order_id = ClientOrderId::from("O-MASS-VOID-001");
+        let venue_order_id = VenueOrderId::from("V-MASS-VOID-001");
+        let account_id = AccountId::from("TEST-001");
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        insert_accepted_limit_order(
+            &cache,
+            client_order_id,
+            venue_order_id,
+            instrument.id(),
+            ClientId::from("BINANCE"),
+        );
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let initial_fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-MASS-VOID-INITIAL")),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("6.0")),
+            Some(LiquiditySide::Taker),
+            None,
+            None,
+            Some(account_id),
+        );
+        cache.borrow_mut().update_order(&initial_fill).unwrap();
+        let order = cache.borrow().order_owned(&client_order_id).unwrap();
+        let report = OrderStatusReport::new(
+            account_id,
+            instrument.id(),
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Canceled,
+            Quantity::from("10.0"),
+            Quantity::from("5.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        );
+        let companion_fill = FillReport::new(
+            account_id,
+            instrument.id(),
+            venue_order_id,
+            TradeId::from("T-MASS-VOID-COMPANION"),
+            OrderSide::Buy,
+            Quantity::from("1.0"),
+            Price::from("100.0"),
+            Money::zero(instrument.quote_currency()),
+            LiquiditySide::Taker,
+            Some(client_order_id),
+            None,
+            UnixNanos::from(900),
+            UnixNanos::from(1_000),
+            None,
+        );
+
+        let events = manager.reconcile_order_with_fills(
+            &order,
+            &report,
+            &[&companion_fill],
+            Some(&instrument),
+        );
+        let mut projected = order;
+        for event in &events {
+            projected.apply(event.clone()).unwrap();
+        }
+
+        assert!(matches!(events[0], OrderEventAny::Filled(_)));
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::FillVoided(_)))
+                .count(),
+            2
+        );
+        assert_eq!(projected.status(), OrderStatus::Canceled);
+        assert_eq!(projected.filled_qty(), Quantity::from("5.0"));
+        assert_eq!(projected.voided_qty(), Quantity::from("2.0"));
     }
 
     fn insert_accepted_limit_order(

@@ -287,6 +287,11 @@ impl DeribitDataClient {
                     reports.len()
                 );
             }
+            NautilusWsMessage::OrderFilled(order) => {
+                log::warn!(
+                    "Data client received OrderFilled message (should be handled by execution client): {order:?}"
+                );
+            }
             NautilusWsMessage::OrderRejected(order) => {
                 log::warn!(
                     "Data client received OrderRejected message (should be handled by execution client): {order:?}"

@@ -29,12 +29,14 @@ use nautilus_core::{
     datetime::floor_to_nearest_microsecond,
     time::get_atomic_clock_realtime,
 };
-use tokio::{
+use ustr::Ustr;
+
+use super::dst::{
+    self,
     task::JoinHandle,
     time::{Duration, Instant},
 };
-use ustr::Ustr;
-
+#[cfg(not(all(feature = "simulation", madsim)))]
 use super::runtime::get_runtime;
 use crate::{
     runner::TimeEventSender,
@@ -174,7 +176,7 @@ impl LiveTimer {
             || self
                 .task_handle
                 .as_ref()
-                .is_some_and(tokio::task::JoinHandle::is_finished)
+                .is_some_and(JoinHandle::is_finished)
     }
 
     /// Starts the timer.
@@ -244,13 +246,12 @@ impl LiveTimer {
 
         let sender = self.sender.clone();
 
-        let rt = get_runtime();
-        let handle = rt.spawn(async move {
+        let task = async move {
             let clock = get_atomic_clock_realtime();
 
             let start = Instant::now() + timer_start_delay(next_time_ns, now_ns);
 
-            let mut timer = tokio::time::interval_at(start, Duration::from_nanos(interval_ns));
+            let mut timer = dst::time::interval_at(start, Duration::from_nanos(interval_ns));
 
             loop {
                 // Never fire an event scheduled past the stop time. The event's
@@ -299,7 +300,12 @@ impl LiveTimer {
                     break; // Timer expired at the stop boundary
                 }
             }
-        });
+        };
+
+        #[cfg(all(feature = "simulation", madsim))]
+        let handle = dst::task::spawn(task);
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let handle = get_runtime().spawn(task);
 
         self.task_handle = Some(handle);
         self.canceled = false;
@@ -338,16 +344,16 @@ impl Drop for LiveTimer {
 
 #[cfg(test)]
 mod tests {
-    use std::num::NonZeroU64;
-    #[cfg(feature = "python")]
+    #[cfg(all(feature = "simulation", madsim))]
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::{num::NonZeroU64, sync::Arc};
+    #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
     use std::{
-        sync::{Arc, Mutex, mpsc},
+        sync::{Mutex, mpsc},
         time::Duration as StdDuration,
     };
 
-    use nautilus_core::UnixNanos;
-    #[cfg(feature = "python")]
-    use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     #[cfg(feature = "python")]
     use pyo3::{
         Python,
@@ -357,11 +363,42 @@ mod tests {
     use ustr::Ustr;
 
     use super::LiveTimer;
-    #[cfg(feature = "python")]
-    use crate::runner::TimeEventSender;
-    use crate::timer::TimeEventCallback;
-    #[cfg(feature = "python")]
-    use crate::timer::TimeEventHandler;
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use crate::testing::wait_until;
+    use crate::{
+        runner::TimeEventSender,
+        timer::{TimeEventCallback, TimeEventHandler},
+    };
+
+    #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
+    #[derive(Debug)]
+    struct ChannelSender {
+        tx: Mutex<mpsc::Sender<TimeEventHandler>>,
+    }
+
+    #[cfg(any(feature = "python", not(all(feature = "simulation", madsim))))]
+    impl TimeEventSender for ChannelSender {
+        fn send(&self, handler: TimeEventHandler) {
+            self.tx
+                .lock()
+                .expect("sender mutex should lock")
+                .send(handler)
+                .expect("handler should send");
+        }
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[derive(Debug)]
+    struct CountingSender {
+        count: Arc<AtomicUsize>,
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    impl TimeEventSender for CountingSender {
+        fn send(&self, _handler: TimeEventHandler) {
+            self.count.fetch_add(1, Ordering::Relaxed);
+        }
+    }
 
     #[rstest]
     fn test_live_timer_stop_bound_allows_unbounded_scheduled_time() {
@@ -540,24 +577,61 @@ mod tests {
         assert_eq!(timer.next_time_ns(), UnixNanos::from(1100));
     }
 
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    fn test_live_timer_uses_global_runtime() {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(ChannelSender { tx: Mutex::new(tx) });
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let mut timer = LiveTimer::new(
+            Ustr::from("LIVE_TIMER"),
+            NonZeroU64::new(1_000_000).unwrap(),
+            now,
+            Some(now),
+            TimeEventCallback::from(|_| {}),
+            true,
+            Some(sender),
+        );
+
+        timer.start();
+        let handler = rx
+            .recv_timeout(StdDuration::from_secs(1))
+            .expect("timer handler should arrive on the global runtime");
+        wait_until(|| timer.is_expired(), StdDuration::from_secs(1));
+
+        assert_eq!(handler.event.ts_event, now);
+        assert!(timer.is_expired());
+    }
+
+    #[cfg(all(feature = "simulation", madsim))]
+    #[madsim::test]
+    async fn test_live_timer_uses_dst_runtime() {
+        let count = Arc::new(AtomicUsize::new(0));
+        let sender = Arc::new(CountingSender {
+            count: count.clone(),
+        });
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let mut timer = LiveTimer::new(
+            Ustr::from("DST_TIMER"),
+            NonZeroU64::new(1_000_000).unwrap(),
+            now,
+            Some(now),
+            TimeEventCallback::from(|_| {}),
+            true,
+            Some(sender),
+        );
+
+        timer.start();
+        crate::live::dst::time::sleep(crate::live::dst::time::Duration::from_millis(2)).await;
+        crate::live::dst::task::yield_now().await;
+
+        assert_eq!(count.load(Ordering::Relaxed), 1);
+        assert!(timer.is_expired());
+    }
+
     #[cfg(feature = "python")]
     #[rstest]
     fn test_live_timer_with_sender_defers_python_callback_to_handler() {
-        #[derive(Debug)]
-        struct ChannelSender {
-            tx: Mutex<mpsc::Sender<TimeEventHandler>>,
-        }
-
-        impl TimeEventSender for ChannelSender {
-            fn send(&self, handler: TimeEventHandler) {
-                self.tx
-                    .lock()
-                    .expect("sender mutex should lock")
-                    .send(handler)
-                    .expect("handler should send");
-            }
-        }
-
         Python::initialize();
 
         Python::attach(|py| {

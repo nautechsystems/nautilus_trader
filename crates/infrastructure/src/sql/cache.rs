@@ -510,7 +510,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_synthetics(&self) -> anyhow::Result<AHashMap<InstrumentId, SyntheticInstrument>> {
-        todo!()
+        Ok(AHashMap::new())
     }
 
     async fn load_accounts(&self) -> anyhow::Result<AHashMap<AccountId, AccountAny>> {
@@ -689,9 +689,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     async fn load_synthetic(
         &self,
-        _instrument_id: &InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
-        todo!()
+        anyhow::bail!(
+            "load_synthetic not implemented for PostgreSQL cache adapter: {instrument_id}"
+        )
     }
 
     async fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
@@ -757,16 +759,16 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         rx.recv()?
     }
 
-    fn load_actor(&self, _component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_actor not implemented for PostgreSQL cache adapter: {component_id}")
     }
 
     fn delete_actor(&self, _component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn load_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
-        todo!()
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<AHashMap<String, Bytes>> {
+        anyhow::bail!("load_strategy not implemented for PostgreSQL cache adapter: {strategy_id}")
     }
 
     fn delete_strategy(&self, _strategy_id: &StrategyId) -> anyhow::Result<()> {
@@ -1140,7 +1142,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
-        let query = DatabaseQuery::UpdatePosition(position_last_event(position)?);
+        let query = if position.fill_voids.is_empty() {
+            DatabaseQuery::UpdatePosition(position_last_event(position)?)
+        } else {
+            DatabaseQuery::AddPositionSnapshot(PositionSnapshot::from_replay_state(position, None))
+        };
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_position to database message handler: {e}")
         })

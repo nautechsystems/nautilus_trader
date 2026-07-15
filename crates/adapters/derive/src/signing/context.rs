@@ -73,7 +73,9 @@ pub(crate) fn resolve_signing_context(
         .unwrap_or_else(|| trade_module_address_for(config.environment).to_string());
     let trade_module_address = parse_address_const(&module_str, "trade_module_address")?;
 
-    let max_fee_per_contract = config.max_fee_per_contract.unwrap_or(Decimal::ZERO);
+    let max_fee_per_contract = config
+        .max_fee_per_contract
+        .context("max_fee_per_contract is required")?;
 
     Ok(SigningContext {
         wallet_address,

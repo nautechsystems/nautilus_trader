@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
@@ -30,14 +30,15 @@ use nautilus_common::{
     live::{get_runtime, runner::get_exec_event_sender},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateOrderStatusReport, GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
-        GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
-        QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+        SubmitOrderList,
     },
 };
 use nautilus_core::{
     MUTEX_POISONED, UUID4, UnixNanos,
-    datetime::mins_to_nanos,
+    datetime::{NANOSECONDS_IN_MILLISECOND, mins_to_nanos},
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{ExecutionClientCore, ExecutionEventEmitter};
@@ -52,7 +53,7 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -106,6 +107,10 @@ use crate::{
         },
     },
 };
+
+const ACCOUNT_TRADES_MAX_INTERVAL_MS: i64 = 24 * 60 * 60 * 1_000;
+
+const ACCOUNT_TRADES_PAGE_LIMIT: u32 = 1_000;
 
 /// Live execution client for Binance Spot trading.
 ///
@@ -874,23 +879,209 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .venue_order_id
             .as_ref()
             .map(|id| VenueOrderId::new(id.inner()));
+        let requested_start_time = cmd
+            .start
+            .map(|start| start.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+        let requested_end_time = cmd
+            .end
+            .map(|end| end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+        if let (Some(start), Some(end)) = (requested_start_time, requested_end_time) {
+            anyhow::ensure!(
+                start <= end,
+                "fill report start time must not exceed end time"
+            );
+        }
 
-        let start_dt = cmd.start.map(|nanos| nanos.to_datetime_utc());
-        let end_dt = cmd.end.map(|nanos| nanos.to_datetime_utc());
+        let mut reports = Vec::new();
+        let mut seen_trade_ids = AHashSet::new();
 
-        let reports = self
-            .http_client
-            .request_fill_reports(
-                self.core.account_id,
-                instrument_id,
-                venue_order_id,
-                start_dt,
-                end_dt,
-                None, // limit
-            )
-            .await?;
+        if venue_order_id.is_some() {
+            let mut from_id = 0;
 
-        Ok(reports)
+            loop {
+                let page = self
+                    .http_client
+                    .request_fill_reports_with_cursor(
+                        self.core.account_id,
+                        instrument_id,
+                        venue_order_id,
+                        None,
+                        None,
+                        Some(from_id),
+                        Some(ACCOUNT_TRADES_PAGE_LIMIT),
+                    )
+                    .await?;
+
+                if page.is_empty() {
+                    break;
+                }
+
+                let page_len = page.len();
+                let max_trade_id = max_trade_id(&page)?;
+                let passed_end = requested_end_time.is_some_and(|end_time| {
+                    page.iter().any(|report| report_time_ms(report) > end_time)
+                });
+
+                reports.extend(page.into_iter().filter(|report| {
+                    requested_start_time
+                        .is_none_or(|start_time| report_time_ms(report) >= start_time)
+                        && requested_end_time
+                            .is_none_or(|end_time| report_time_ms(report) <= end_time)
+                        && seen_trade_ids.insert(report.trade_id)
+                }));
+
+                if page_len < ACCOUNT_TRADES_PAGE_LIMIT as usize || passed_end {
+                    break;
+                }
+
+                let next_from_id = max_trade_id
+                    .checked_add(1)
+                    .context("Binance Spot trade ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_from_id > from_id,
+                    "Binance Spot account-trades pagination made no progress"
+                );
+                from_id = next_from_id;
+            }
+        } else if let Some(query_start_time) = requested_start_time {
+            let query_end_time = requested_end_time.unwrap_or_else(|| {
+                self.clock.get_time_ns().as_i64() / NANOSECONDS_IN_MILLISECOND as i64
+            });
+            anyhow::ensure!(
+                query_start_time <= query_end_time,
+                "fill report start time must not exceed end time"
+            );
+            let mut window_start = query_start_time;
+
+            loop {
+                let window_end = window_start
+                    .saturating_add(ACCOUNT_TRADES_MAX_INTERVAL_MS)
+                    .min(query_end_time);
+                let mut from_id = None;
+
+                loop {
+                    let start = if from_id.is_none() {
+                        Some(
+                            chrono::DateTime::from_timestamp_millis(window_start)
+                                .context("invalid Binance Spot account-trades start time")?,
+                        )
+                    } else {
+                        None
+                    };
+                    let end = if from_id.is_none() {
+                        Some(
+                            chrono::DateTime::from_timestamp_millis(window_end)
+                                .context("invalid Binance Spot account-trades end time")?,
+                        )
+                    } else {
+                        None
+                    };
+                    let page = self
+                        .http_client
+                        .request_fill_reports_with_cursor(
+                            self.core.account_id,
+                            instrument_id,
+                            None,
+                            start,
+                            end,
+                            from_id,
+                            Some(ACCOUNT_TRADES_PAGE_LIMIT),
+                        )
+                        .await?;
+
+                    if page.is_empty() {
+                        break;
+                    }
+
+                    let page_len = page.len();
+                    let max_trade_id = max_trade_id(&page)?;
+                    let passed_window_end = page
+                        .iter()
+                        .any(|report| report_time_ms(report) > window_end);
+
+                    reports.extend(page.into_iter().filter(|report| {
+                        let report_time = report_time_ms(report);
+                        report_time >= window_start
+                            && report_time <= window_end
+                            && seen_trade_ids.insert(report.trade_id)
+                    }));
+
+                    if page_len < ACCOUNT_TRADES_PAGE_LIMIT as usize || passed_window_end {
+                        break;
+                    }
+
+                    let next_from_id = max_trade_id
+                        .checked_add(1)
+                        .context("Binance Spot trade ID overflow during pagination")?;
+                    anyhow::ensure!(
+                        from_id.is_none_or(|cursor| next_from_id > cursor),
+                        "Binance Spot account-trades pagination made no progress"
+                    );
+                    from_id = Some(next_from_id);
+                }
+
+                if window_end >= query_end_time {
+                    break;
+                }
+                window_start = window_end.saturating_add(1);
+            }
+        } else {
+            let mut from_id = 0;
+
+            loop {
+                let page = self
+                    .http_client
+                    .request_fill_reports_with_cursor(
+                        self.core.account_id,
+                        instrument_id,
+                        None,
+                        None,
+                        None,
+                        Some(from_id),
+                        Some(ACCOUNT_TRADES_PAGE_LIMIT),
+                    )
+                    .await?;
+
+                if page.is_empty() {
+                    break;
+                }
+
+                let page_len = page.len();
+                let max_trade_id = max_trade_id(&page)?;
+                let passed_end = requested_end_time.is_some_and(|end_time| {
+                    page.iter().any(|report| report_time_ms(report) > end_time)
+                });
+
+                reports.extend(page.into_iter().filter(|report| {
+                    requested_end_time.is_none_or(|end_time| report_time_ms(report) <= end_time)
+                        && seen_trade_ids.insert(report.trade_id)
+                }));
+
+                if page_len < ACCOUNT_TRADES_PAGE_LIMIT as usize || passed_end {
+                    break;
+                }
+
+                let next_from_id = max_trade_id
+                    .checked_add(1)
+                    .context("Binance Spot trade ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_from_id > from_id,
+                    "Binance Spot account-trades pagination made no progress"
+                );
+                from_id = next_from_id;
+            }
+        }
+
+        let mut reports_with_trade_ids = reports
+            .into_iter()
+            .map(|report| parse_trade_id(&report).map(|trade_id| (report, trade_id)))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        reports_with_trade_ids
+            .sort_unstable_by_key(|(report, trade_id)| (report.ts_event, *trade_id));
+        Ok(reports_with_trade_ids
+            .into_iter()
+            .map(|(report, _)| report)
+            .collect())
     }
 
     async fn generate_position_status_reports(
@@ -935,10 +1126,55 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             self.generate_position_status_reports(&position_cmd),
         )?;
 
-        // Note: Fill reports require instrument_id for Binance, so we skip them in mass status
-        // They would need to be fetched per-instrument if needed
+        let mut instrument_ids: Vec<_> = order_reports
+            .iter()
+            .map(|report| report.instrument_id)
+            .collect();
+        {
+            let cache = self.core.cache();
+            instrument_ids.extend(
+                cache
+                    .orders_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .chain(cache.orders_inflight(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    ))
+                    .map(|order| order.instrument_id())
+                    .filter(|instrument_id| {
+                        matches!(
+                            cache.instrument(instrument_id),
+                            Some(InstrumentAny::CurrencyPair(_))
+                        )
+                    }),
+            );
+        }
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
+
+        let mut fill_reports = Vec::new();
+
+        for instrument_id in instrument_ids {
+            let fill_cmd = GenerateFillReportsBuilder::default()
+                .ts_init(ts_now)
+                .instrument_id(Some(instrument_id))
+                .start(start)
+                .build()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            fill_reports.extend(self.generate_fill_reports(fill_cmd).await?);
+        }
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
+        log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
 
         let mut mass_status = ExecutionMassStatus::new(
@@ -950,6 +1186,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         );
 
         mass_status.add_order_reports(order_reports);
+        mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
 
         Ok(Some(mass_status))
@@ -1427,6 +1664,29 @@ impl ExecutionClient for BinanceSpotExecutionClient {
 
         Ok(())
     }
+}
+
+fn max_trade_id(reports: &[FillReport]) -> anyhow::Result<i64> {
+    let mut max_trade_id = None;
+
+    for report in reports {
+        let trade_id = parse_trade_id(report)?;
+        max_trade_id = Some(max_trade_id.map_or(trade_id, |current: i64| current.max(trade_id)));
+    }
+
+    max_trade_id.context("Binance Spot account-trades page was empty")
+}
+
+fn parse_trade_id(report: &FillReport) -> anyhow::Result<i64> {
+    report
+        .trade_id
+        .to_string()
+        .parse::<i64>()
+        .with_context(|| format!("invalid Binance Spot trade ID {}", report.trade_id))
+}
+
+fn report_time_ms(report: &FillReport) -> i64 {
+    report.ts_event.as_i64() / NANOSECONDS_IN_MILLISECOND as i64
 }
 
 fn normalize_spot_order_status_report(

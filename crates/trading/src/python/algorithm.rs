@@ -33,10 +33,10 @@ use nautilus_model::{
     enums::{TimeInForce, TriggerType},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{ActorId, ClientId, ExecAlgorithmId, PositionId, TraderId},
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderList},
@@ -459,6 +459,13 @@ impl ExecutionAlgorithm for PyExecutionAlgorithm {
         let _ = self.dispatch_order_event("on_order_filled", OrderEventAny::Filled(event));
     }
 
+    fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
+        let _ = self.dispatch_order_event(
+            "on_order_fill_voided",
+            OrderEventAny::FillVoided(event.clone()),
+        );
+    }
+
     fn on_order_event(&mut self, event: OrderEventAny) {
         let _ = self.dispatch_order_event("on_order_event", event);
     }
@@ -531,10 +538,13 @@ impl DataActor for PyExecutionAlgorithm {
 
 #[pyo3::pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
-#[expect(
+#[allow(
     clippy::large_types_passed_by_value,
+    reason = "PyO3 callbacks accept Python-owned event values"
+)]
+#[expect(
     clippy::unused_self,
-    reason = "default PyO3 callbacks must remain instance methods and accept Python-owned values"
+    reason = "default PyO3 callbacks must remain instance methods"
 )]
 impl PyExecutionAlgorithm {
     /// Creates a new [`PyExecutionAlgorithm`] instance.
@@ -934,6 +944,10 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
     fn py_on_order_filled(&mut self, event: OrderFilled) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_order_fill_voided")]
+    fn py_on_order_fill_voided(&mut self, event: OrderFillVoided) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]

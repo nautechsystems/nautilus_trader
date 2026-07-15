@@ -190,6 +190,12 @@ The adapter handles several edge cases when processing fills from the stream:
 
 - **Incremental fills**: Betfair reports cumulative matched sizes. The adapter calculates
   incremental fills by tracking the last known filled quantity per order.
+- **Cumulative voids**: Betfair `sv` is cumulative. The adapter allocates increases to known,
+  locally applied fill lots newest-first and emits cumulative `OrderFillVoided` corrections.
+- **Reconnect safety**: A first-seen snapshot seeds its cumulative void state without reversing
+  exposure Nautilus never applied.
+- **Terminal disposition**: A Betfair void remains `EXECUTION_COMPLETE`, maps the order to
+  `VOIDED`, and never sets `is_reopened`.
 - **Overfill protection**: fills that would exceed the order quantity are rejected.
 - **Race conditions**: when stream fills arrive before the HTTP order response, the adapter
   caches the venue order ID immediately to ensure correct order matching.

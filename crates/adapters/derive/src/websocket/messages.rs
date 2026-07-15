@@ -34,7 +34,7 @@ use crate::{
             DeriveInstrumentType, DeriveOrderbookDepth, DeriveOrderbookGroup, DeriveTickerInterval,
         },
         parse::{format_instrument_id, salvage_elements},
-        rate_limit::{DERIVE_MATCHING_RATE_KEY, DERIVE_NON_MATCHING_RATE_KEY},
+        rate_limit,
     },
     http::models::{
         DeriveAggregateTradingStats, DeriveOptionPricing, DeriveOrder, DerivePublicTrade,
@@ -754,6 +754,8 @@ pub enum DeriveWsFrame {
     },
     /// Server-initiated subscription update.
     Subscription(WsSubscriptionPayload),
+    /// JSON-RPC error whose null or absent id cannot identify a pending request.
+    UncorrelatedError(JsonRpcError),
     /// Frame we could decode as JSON but did not recognize; surfaced so logs
     /// can flag unknown server-initiated messages without dropping silently.
     Unknown(Value),
@@ -809,6 +811,10 @@ impl DeriveWsFrame {
         {
             let payload: WsSubscriptionPayload = serde_json::from_str(params.get())?;
             return Ok(Self::Subscription(payload));
+        }
+
+        if let Some(error) = frame.error {
+            return Ok(Self::UncorrelatedError(error));
         }
 
         // Unrecognised frame: re-parse into a `Value` for diagnostic logging.
@@ -890,6 +896,9 @@ pub mod methods {
     /// Cancel a single trigger order. Params:
     /// [`crate::http::query::DeriveCancelTriggerOrderParams`].
     pub const PRIVATE_CANCEL_TRIGGER_ORDER: &str = "private/cancel_trigger_order";
+    /// Cancel orders by label. Params:
+    /// [`crate::http::query::DeriveCancelByLabelParams`].
+    pub const PRIVATE_CANCEL_BY_LABEL: &str = "private/cancel_by_label";
     /// List untriggered trigger orders. Params:
     /// [`crate::http::query::DeriveGetTriggerOrdersParams`].
     pub const PRIVATE_GET_TRIGGER_ORDERS: &str = "private/get_trigger_orders";
@@ -904,28 +913,12 @@ pub mod methods {
 /// Returns the rate-limit key for a JSON-RPC `method` sent over the WebSocket.
 ///
 /// Matching-engine actions (order create/cancel/replace) draw on the venue's
-/// per-account matching allowance; everything else (login, subscribe, reads)
-/// draws on the non-matching allowance. See [`crate::common::rate_limit`].
+/// per-account matching allowance, cancel-all and unscoped label cancellation
+/// use custom buckets, and other methods use the non-matching allowance. See
+/// [`crate::common::rate_limit`].
 #[must_use]
 pub(crate) fn rate_limit_key_for(method: &str) -> Ustr {
-    let key = if is_matching_method(method) {
-        DERIVE_MATCHING_RATE_KEY
-    } else {
-        DERIVE_NON_MATCHING_RATE_KEY
-    };
-    Ustr::from(key)
-}
-
-fn is_matching_method(method: &str) -> bool {
-    matches!(
-        method,
-        methods::PRIVATE_ORDER
-            | methods::PRIVATE_TRIGGER_ORDER
-            | methods::PRIVATE_REPLACE
-            | methods::PRIVATE_CANCEL
-            | methods::PRIVATE_CANCEL_TRIGGER_ORDER
-            | methods::PRIVATE_CANCEL_ALL
-    )
+    Ustr::from(rate_limit::rate_limit_key_for_method(method))
 }
 
 #[cfg(test)]
@@ -934,7 +927,13 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::http::models::JsonRpcRequest;
+    use crate::{
+        common::rate_limit::{
+            DERIVE_CANCEL_ALL_RATE_KEY, DERIVE_CANCEL_BY_LABEL_RATE_KEY, DERIVE_MATCHING_RATE_KEY,
+            DERIVE_NON_MATCHING_RATE_KEY,
+        },
+        http::models::JsonRpcRequest,
+    };
 
     #[rstest]
     fn test_ticker_channel_joins_with_dots() {
@@ -962,7 +961,8 @@ mod tests {
     #[case(methods::PRIVATE_REPLACE, DERIVE_MATCHING_RATE_KEY)]
     #[case(methods::PRIVATE_CANCEL, DERIVE_MATCHING_RATE_KEY)]
     #[case(methods::PRIVATE_CANCEL_TRIGGER_ORDER, DERIVE_MATCHING_RATE_KEY)]
-    #[case(methods::PRIVATE_CANCEL_ALL, DERIVE_MATCHING_RATE_KEY)]
+    #[case(methods::PRIVATE_CANCEL_BY_LABEL, DERIVE_CANCEL_BY_LABEL_RATE_KEY)]
+    #[case(methods::PRIVATE_CANCEL_ALL, DERIVE_CANCEL_ALL_RATE_KEY)]
     #[case(methods::PUBLIC_LOGIN, DERIVE_NON_MATCHING_RATE_KEY)]
     #[case(methods::PUBLIC_SUBSCRIBE, DERIVE_NON_MATCHING_RATE_KEY)]
     #[case(methods::PUBLIC_UNSUBSCRIBE, DERIVE_NON_MATCHING_RATE_KEY)]
@@ -1277,6 +1277,29 @@ mod tests {
                 assert_ne!(method, Some("subscription"));
             }
             other => panic!("expected Unknown, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    fn test_parse_null_id_error_preserves_structured_error() {
+        let text = json!({
+            "id": null,
+            "error": {
+                "code": -32700,
+                "message": "Parse error",
+                "data": "invalid JSON",
+            },
+        })
+        .to_string();
+        let frame = DeriveWsFrame::parse(&text).unwrap();
+
+        match frame {
+            DeriveWsFrame::UncorrelatedError(error) => {
+                assert_eq!(error.code, -32700);
+                assert_eq!(error.message, "Parse error");
+                assert_eq!(error.data, Some(json!("invalid JSON")));
+            }
+            other => panic!("expected UncorrelatedError, was {other:?}"),
         }
     }
 

@@ -748,7 +748,7 @@ impl BacktestEngine {
             if self.kernel.is_event_store_replay_configured() {
                 anyhow::bail!("event-store replay did not start");
             }
-            self.kernel.start_trader();
+            self.kernel.start_trader()?;
 
             // Drain on_start data subscriptions so aggregators subscribe before the first data
             // point, else internal aggregation drops the first tick. Trading/exec stay queued

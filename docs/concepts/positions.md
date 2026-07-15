@@ -268,7 +268,7 @@ position.unrealized_pnl(bid_price)   # Conservative for LONG positions
 position.unrealized_pnl(ask_price)   # Conservative for SHORT positions
 ```
 
-Returns `Money(0, settlement_currency)` for `FLAT` positions regardless of the price provided.
+Returns `Money(0, cost_currency)` for `FLAT` positions regardless of the price provided.
 
 ### Total PnL
 
@@ -281,10 +281,10 @@ total_pnl = position.total_pnl(current_price)
 
 ### Currency considerations
 
-- PnL is calculated in the instrument's settlement currency.
-- For Forex, this is typically the quote currency.
-- For inverse contracts, PnL may be in the base currency.
-- Portfolio aggregates realized PnL per instrument in settlement currency.
+- PnL is calculated in the instrument's cost currency: quote for linear contracts, base for
+  inverse contracts, and settlement for quanto contracts.
+- For Forex, the cost currency is typically the quote currency.
+- Portfolio aggregates realized PnL per instrument in cost currency.
 - Multi-currency totals require conversion outside the Position class.
 
 ## Commissions and costs
@@ -294,7 +294,7 @@ Positions track all trading costs:
 - Commissions are accumulated by currency.
 - Each fill's commission is added to the running total.
 - Multiple commission currencies are supported.
-- Realized PnL includes commissions only when denominated in the settlement currency.
+- Realized PnL includes commissions only when denominated in the position's cost currency.
 - Other commissions are tracked separately and may require conversion.
 
 ```python
@@ -302,14 +302,12 @@ commissions = position.commissions()
 # Returns list[Money] with aggregated commission totals per currency
 
 notional = position.notional_value(current_price)
-# Returns Money in quote currency (standard) or base currency (inverse)
+# Returns Money in quote (linear), base (inverse), or settlement currency (quanto)
 ```
 
-**Limitations:**
+**Limitation:**
 
 - Panics if inverse instrument has no `base_currency` set.
-- Does not handle quanto contracts (returns quote currency instead of settlement currency).
-- For quanto instruments, use `instrument.calculate_notional_value()` instead.
 
 ## Position properties and state
 

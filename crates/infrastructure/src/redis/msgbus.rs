@@ -1455,6 +1455,61 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_stream_messages_skips_preexisting_entries(
+        #[future] redis_connection: ConnectionManager,
+    ) {
+        let mut con = redis_connection.await;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let suffix = UUID4::new();
+        let stream_key = format!("test:stream:no-backlog:{suffix}");
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        let _: () = con
+            .xadd(
+                &stream_key,
+                "1-0",
+                &[("topic", "preexisting"), ("payload", "old")],
+            )
+            .await
+            .unwrap();
+
+        let handle = tokio::spawn(async move {
+            stream_messages(
+                tx,
+                RedisMessageBusConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .await
+            .unwrap();
+        });
+
+        let future_id = (get_atomic_clock_realtime().get_time_ms() + 1_000_000).to_string();
+        let _: () = con
+            .xadd(
+                &stream_key,
+                future_id,
+                &[("topic", "live"), ("payload", "new")],
+            )
+            .await
+            .unwrap();
+
+        let msg = receive_bus_message(&mut rx, Duration::from_secs(2)).await;
+
+        rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap();
+        let _: usize = con.del(stream_key).await.unwrap();
+
+        assert_eq!(msg.topic, "live");
+        assert_eq!(msg.payload, Bytes::from("new"));
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_stream_messages_skips_malformed_entry(
         #[future] redis_connection: ConnectionManager,
     ) {

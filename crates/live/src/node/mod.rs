@@ -367,6 +367,8 @@ impl LiveNode {
             anyhow::bail!("Already running");
         }
 
+        self.prepare_cache().await?;
+
         if let Some(runner) = self.runner.as_ref() {
             runner.bind_senders();
         }
@@ -433,7 +435,9 @@ impl LiveNode {
             return Err(e);
         }
 
-        self.kernel.start_trader();
+        if let Err(e) = self.kernel.start_trader() {
+            return self.abort_after_trader_start_failure(e).await;
+        }
         #[cfg(feature = "plugin")]
         if let Err(e) = self.plugins.start_controllers() {
             return self.abort_after_trader_start_failure(e).await;
@@ -501,7 +505,7 @@ impl LiveNode {
         let timeout = self.config.timeout_connection;
         let interval = Duration::from_millis(100);
 
-        while start.elapsed() < timeout {
+        loop {
             if self.handle.should_stop() {
                 log::warn!("Stop signal received, aborting connection wait");
                 return EngineConnectionStatus::StopRequested;
@@ -516,6 +520,11 @@ impl LiveNode {
                 log::info!("All engine clients connected");
                 return EngineConnectionStatus::Connected;
             }
+
+            if start.elapsed() >= timeout {
+                break;
+            }
+
             dst::time::sleep(interval).await;
         }
 
@@ -536,11 +545,16 @@ impl LiveNode {
         let timeout = self.config.timeout_disconnection;
         let interval = Duration::from_millis(100);
 
-        while start.elapsed() < timeout {
+        loop {
             if self.kernel.check_engines_disconnected() {
                 log::info!("All engine clients disconnected");
                 return;
             }
+
+            if start.elapsed() >= timeout {
+                break;
+            }
+
             dst::time::sleep(interval).await;
         }
 
@@ -633,7 +647,7 @@ impl LiveNode {
                 color = LogColor::Blue
             );
 
-            let mass_status_result = tokio::time::timeout(remaining, async {
+            let mass_status_result = dst::time::timeout(remaining, async {
                 self.kernel
                     .exec_engine
                     .borrow_mut()
@@ -741,6 +755,12 @@ impl LiveNode {
         if self.state().is_running() {
             anyhow::bail!("Already running");
         }
+
+        if self.runner.is_none() {
+            anyhow::bail!("Runner already consumed - run() called twice");
+        }
+
+        self.prepare_cache().await?;
 
         let Some(runner) = self.runner.take() else {
             anyhow::bail!("Runner already consumed - run() called twice");
@@ -890,7 +910,19 @@ impl LiveNode {
 
                 return Err(e);
             }
-            self.kernel.start_trader();
+
+            if let Err(e) = self.kernel.start_trader() {
+                let result = self.abort_after_trader_start_failure(e).await;
+                Self::drain_channels(
+                    &mut time_evt_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+                return result;
+            }
             #[cfg(feature = "plugin")]
             if let Err(e) = self.plugins.start_controllers() {
                 let result = self.abort_after_trader_start_failure(e).await;
@@ -1361,6 +1393,38 @@ impl LiveNode {
         Ok(())
     }
 
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "cache loading is serialized before the single-threaded live node starts"
+    )]
+    async fn prepare_cache(&self) -> anyhow::Result<()> {
+        let cache = self.kernel.cache();
+        if !cache.borrow().has_backing() {
+            return Ok(());
+        }
+
+        if self
+            .config
+            .cache
+            .as_ref()
+            .is_some_and(|config| config.flush_on_start)
+        {
+            cache.borrow_mut().flush_db();
+            return Ok(());
+        }
+
+        if self.config.exec_engine.load_cache {
+            self.kernel
+                .exec_engine()
+                .borrow_mut()
+                .load_cache()
+                .await
+                .context("Failed to load persistent cache")?;
+        }
+
+        Ok(())
+    }
+
     fn take_external_ingress_receiver(
         &mut self,
     ) -> anyhow::Result<Option<tokio::sync::mpsc::Receiver<BusMessage>>> {
@@ -1404,7 +1468,11 @@ impl LiveNode {
             if let OrderEventAny::Filled(fill) = event {
                 self.exec_manager
                     .record_position_activity(fill.instrument_id, fill.account_id);
-                self.exec_manager.mark_fill_processed(fill.trade_id);
+                self.exec_manager.mark_fill_processed(
+                    fill.account_id,
+                    fill.instrument_id,
+                    fill.trade_id,
+                );
             }
             self.kernel.exec_engine.borrow_mut().process(event);
         }
@@ -1435,21 +1503,30 @@ impl LiveNode {
         self.finalize_stop().await
     }
 
-    #[cfg(feature = "plugin")]
     async fn abort_after_trader_start_failure(
         &mut self,
         start_err: anyhow::Error,
     ) -> anyhow::Result<()> {
-        log::info!("Plug-in controller startup failed, aborting startup");
+        log::info!("Trader startup failed, aborting startup");
         self.handle.set_state(NodeState::ShuttingDown);
-        self.kernel.stop_trader();
+        let stop_result = self.kernel.stop_trader_after_start_failure();
+        let finalize_result = self.finalize_stop().await;
 
-        if let Err(finalize_err) = self.finalize_stop().await {
-            anyhow::bail!(
-                "failed to start plug-in controller: {start_err}; failed to finalize startup abort: {finalize_err}"
-            );
+        match (stop_result, finalize_result) {
+            (Ok(()), Ok(())) => Err(start_err),
+            (Err(stop_err), Ok(())) => anyhow::bail!(
+                "Failed during trader startup: {start_err}; failed to stop partial trader start: \
+                 {stop_err}"
+            ),
+            (Ok(()), Err(finalize_err)) => anyhow::bail!(
+                "Failed during trader startup: {start_err}; failed to finalize startup abort: \
+                 {finalize_err}"
+            ),
+            (Err(stop_err), Err(finalize_err)) => anyhow::bail!(
+                "Failed during trader startup: {start_err}; failed to stop partial trader start: \
+                 {stop_err}; failed to finalize startup abort: {finalize_err}"
+            ),
         }
-        Err(start_err)
     }
 
     fn initiate_shutdown(&mut self) {
@@ -1556,9 +1633,11 @@ impl LiveNode {
             }
             ExecutionEvent::Report(report) => {
                 if let ExecutionReport::Fill(fill_report) = report
-                    && self
-                        .exec_manager
-                        .is_fill_recently_processed(&fill_report.trade_id)
+                    && self.exec_manager.is_fill_recently_processed(
+                        fill_report.account_id,
+                        fill_report.instrument_id,
+                        fill_report.trade_id,
+                    )
                 {
                     log::debug!(
                         "Skipping recently processed fill report: {}",
@@ -2446,13 +2525,20 @@ mod tests {
         };
         let mut node = LiveNode::build("FillSkipNode".to_string(), Some(config)).unwrap();
         let event = stub_exec_event();
+        let account_id = AccountId::from("TEST-001");
+        let instrument_id = InstrumentId::from("TEST.VENUE");
         let trade_id = TradeId::from("T-001");
 
         let close_ids = node.observe_exec_event_before_dispatch(&event);
         assert_eq!(close_ids, Some(Vec::new()));
-        assert!(!node.exec_manager.is_fill_recently_processed(&trade_id));
+        assert!(
+            !node
+                .exec_manager
+                .is_fill_recently_processed(account_id, instrument_id, trade_id)
+        );
 
-        node.exec_manager.mark_fill_processed(trade_id);
+        node.exec_manager
+            .mark_fill_processed(account_id, instrument_id, trade_id);
 
         let close_ids = node.observe_exec_event_before_dispatch(&event);
         assert_eq!(close_ids, None);
@@ -3155,6 +3241,23 @@ mod tests {
             err.to_string().contains("with_event_store"),
             "error message should mention with_event_store, was: {err}"
         );
+    }
+
+    #[rstest]
+    fn test_dispose_before_start_is_idempotent() {
+        let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
+        node.add_strategy(TestStrategy::new(StrategyConfig {
+            strategy_id: Some(StrategyId::from("DISPOSAL-001")),
+            ..Default::default()
+        }))
+        .unwrap();
+
+        node.dispose();
+        node.dispose();
+
+        assert!(node.kernel.trader().borrow().is_disposed());
+        assert_eq!(node.kernel.trader().borrow().component_count(), 0);
+        assert_eq!(node.state(), NodeState::Stopped);
     }
 
     #[rstest]

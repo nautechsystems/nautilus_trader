@@ -100,6 +100,37 @@ impl Debug for EmptyStrategy {
 
 impl DataActor for EmptyStrategy {}
 
+struct FailingStartStrategy {
+    core: StrategyCore,
+}
+
+impl FailingStartStrategy {
+    fn new() -> Self {
+        let config = StrategyConfig {
+            strategy_id: Some(StrategyId::from("FAILING-START-001")),
+            order_id_tag: Some("001".to_string()),
+            ..Default::default()
+        };
+        Self {
+            core: StrategyCore::new(config),
+        }
+    }
+}
+
+nautilus_strategy!(FailingStartStrategy);
+
+impl Debug for FailingStartStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(FailingStartStrategy)).finish()
+    }
+}
+
+impl DataActor for FailingStartStrategy {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        anyhow::bail!("simulated backtest strategy start failure")
+    }
+}
+
 struct EmptyActor {
     core: DataActorCore,
 }
@@ -1845,6 +1876,38 @@ fn test_run_with_strategy(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let bt_result = engine.get_result();
     assert_eq!(bt_result.iterations, 3);
     assert_eq!(bt_result.total_orders, 0);
+}
+
+#[rstest]
+fn test_run_propagates_strategy_start_failure(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(FailingStartStrategy::new()).unwrap();
+    engine
+        .add_data(
+            vec![quote(instrument_id, "1000.00", "1000.10", 1_000_000_000)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    let err = engine
+        .run(None, None, None, false)
+        .expect_err("strategy start should fail");
+    let trader_stopped = engine.kernel().trader.borrow().is_stopped();
+    engine.dispose();
+
+    assert!(
+        err.to_string()
+            .contains("simulated backtest strategy start failure"),
+        "unexpected error: {err:#}"
+    );
+    assert!(trader_stopped);
+    assert!(engine.kernel().trader.borrow().is_disposed());
+    assert_eq!(engine.kernel().trader.borrow().component_count(), 0);
 }
 
 #[rstest]

@@ -301,7 +301,7 @@ async fn close_position(
         limit_price,
         amount: close_qty,
         max_fee,
-        label: "flatten".to_string(),
+        label: format!("flatten-{nonce}"),
         referral_code: DERIVE_NAUTILUS_REFERRAL_CODE.to_string(),
         reduce_only: Some(true),
         mmp: None,

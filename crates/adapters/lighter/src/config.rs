@@ -28,6 +28,8 @@ use crate::common::{
     urls::{lighter_http_base_url, lighter_ws_url},
 };
 
+const WS_READONLY_QUERY_PARAM: &str = "readonly";
+
 /// Configuration for the Lighter data client.
 #[derive(Clone, Serialize, Deserialize, bon::Builder)]
 #[serde(default, deny_unknown_fields)]
@@ -61,7 +63,7 @@ pub struct LighterDataClientConfig {
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket connect timeout in seconds.
+    /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     /// Refresh interval for instrument metadata in minutes.
@@ -156,7 +158,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
 
     let pairs = parsed
         .query_pairs()
-        .filter(|(key, _)| key != "readonly")
+        .filter(|(key, _)| key != WS_READONLY_QUERY_PARAM)
         .map(|(key, value)| (key.into_owned(), value.into_owned()))
         .collect::<Vec<_>>();
 
@@ -166,7 +168,7 @@ fn ensure_readonly_ws_url(url: String) -> String {
         for (key, value) in pairs {
             query.append_pair(&key, &value);
         }
-        query.append_pair("readonly", "true");
+        query.append_pair(WS_READONLY_QUERY_PARAM, "true");
     }
 
     parsed.to_string()
@@ -216,7 +218,7 @@ pub struct LighterExecClientConfig {
     /// HTTP request timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket connect timeout in seconds.
+    /// WebSocket connection and reconnection timeout in seconds.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     /// Slippage buffer in basis points for market-style orders.

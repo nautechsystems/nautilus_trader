@@ -27,7 +27,7 @@ use nautilus_model::{
     },
     enums::{
         AggressorSide, BookAction, InstrumentCloseType, LiquiditySide, MarketStatusAction,
-        OrderSide, OrderType, RecordFlag, TimeInForce,
+        OrderSide, OrderStatus, OrderType, RecordFlag, TimeInForce,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
@@ -288,8 +288,26 @@ pub fn make_trade_id(uo: &UnmatchedOrder) -> TradeId {
 #[derive(Debug, Default)]
 pub struct FillTracker {
     filled_qty: AHashMap<String, Decimal>,
+    voided_qty: AHashMap<String, Decimal>,
     avg_px: AHashMap<String, Decimal>,
     published_trade_ids: AHashSet<String>,
+    fill_lots: AHashMap<String, Vec<FillLot>>,
+    fill_voids: AHashMap<(String, TradeId), Decimal>,
+}
+
+#[derive(Debug, Clone)]
+struct FillLot {
+    trade_id: TradeId,
+    quantity: Decimal,
+    price: Price,
+}
+
+/// One cumulative per-fill allocation derived from Betfair's cumulative `sv`.
+#[derive(Debug, Clone)]
+pub struct FillVoidAllocation {
+    pub trade_id: TradeId,
+    pub voided_qty: Quantity,
+    pub last_px: Price,
 }
 
 impl FillTracker {
@@ -327,7 +345,17 @@ impl FillTracker {
         }
 
         let (trade_id, last_qty, last_px) =
-            self.advance_cumulative_fill(&uo.id, raw_sm, uo.avp, uo.p)?;
+            if uo.sv.is_some_and(|sv| sv > Decimal::ZERO) && self.has_fill_lots(&uo.id) {
+                self.advance_cumulative_fill_with_voids(
+                    &uo.id,
+                    raw_sm,
+                    uo.sv.unwrap_or(Decimal::ZERO),
+                    uo.avp,
+                    uo.p,
+                )?
+            } else {
+                self.advance_cumulative_fill(&uo.id, raw_sm, uo.avp, uo.p)?
+            };
 
         let venue_order_id = VenueOrderId::from(uo.id.as_str());
         let order_side = OrderSide::from(uo.side);
@@ -357,6 +385,40 @@ impl FillTracker {
         &mut self,
         bet_id: &str,
         raw_size_matched: Decimal,
+        average_price_matched: Option<Decimal>,
+        fallback_price: Decimal,
+    ) -> Option<(TradeId, Quantity, Price)> {
+        self.advance_cumulative_fill_inner(
+            bet_id,
+            raw_size_matched,
+            None,
+            average_price_matched,
+            fallback_price,
+        )
+    }
+
+    pub(crate) fn advance_cumulative_fill_with_voids(
+        &mut self,
+        bet_id: &str,
+        raw_size_matched: Decimal,
+        cumulative_voided: Decimal,
+        average_price_matched: Option<Decimal>,
+        fallback_price: Decimal,
+    ) -> Option<(TradeId, Quantity, Price)> {
+        self.advance_cumulative_fill_inner(
+            bet_id,
+            raw_size_matched,
+            Some(cumulative_voided),
+            average_price_matched,
+            fallback_price,
+        )
+    }
+
+    fn advance_cumulative_fill_inner(
+        &mut self,
+        bet_id: &str,
+        raw_size_matched: Decimal,
+        cumulative_voided: Option<Decimal>,
         average_price_matched: Option<Decimal>,
         fallback_price: Decimal,
     ) -> Option<(TradeId, Quantity, Price)> {
@@ -391,20 +453,152 @@ impl FillTracker {
         }
 
         let fill_qty = size_matched - previous_filled;
-        let fill_price = self.compute_fill_price(
-            bet_id,
-            average_price_matched,
-            fallback_price,
-            previous_filled,
-            size_matched,
-        );
+        let fill_price = if let Some(cumulative_voided) = cumulative_voided {
+            self.compute_fill_price_with_voids(
+                bet_id,
+                average_price_matched,
+                fallback_price,
+                size_matched,
+                fill_qty,
+                cumulative_voided,
+            )
+        } else {
+            self.compute_fill_price(
+                bet_id,
+                average_price_matched,
+                fallback_price,
+                previous_filled,
+                size_matched,
+            )
+        };
         let last_qty = parse_betfair_quantity(fill_qty).ok()?;
         let last_px = parse_betfair_price(fill_price).ok()?;
 
         self.record_cumulative_state(bet_id, size_matched, average_price_matched);
         self.published_trade_ids.insert(trade_id.to_string());
+        self.fill_lots
+            .entry(bet_id.to_string())
+            .or_default()
+            .push(FillLot {
+                trade_id,
+                quantity: fill_qty,
+                price: last_px,
+            });
 
         Some((trade_id, last_qty, last_px))
+    }
+
+    /// Allocates cumulative Betfair `sv` to known applied fill lots, newest first.
+    ///
+    /// First-seen voids without known fill lots are recorded but emit no correction.
+    pub fn maybe_fill_voids(&mut self, uo: &UnmatchedOrder) -> Vec<FillVoidAllocation> {
+        let cumulative = normalize_betfair_quantity(uo.sv.unwrap_or(Decimal::ZERO));
+        let previous = self
+            .voided_qty
+            .get(&uo.id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+
+        if cumulative <= previous {
+            return Vec::new();
+        }
+
+        let Some(lots) = self.fill_lots.get(&uo.id) else {
+            self.voided_qty.insert(uo.id.clone(), cumulative);
+            return Vec::new();
+        };
+        let mut remaining = cumulative - previous;
+        let mut desired = Vec::new();
+
+        for lot in lots.iter().rev() {
+            if remaining <= Decimal::ZERO {
+                break;
+            }
+            let key = (uo.id.clone(), lot.trade_id);
+            let prior = self.fill_voids.get(&key).copied().unwrap_or(Decimal::ZERO);
+            let available = lot.quantity.saturating_sub(prior);
+            let increment = remaining.min(available);
+            if increment > Decimal::ZERO {
+                desired.push((lot, prior + increment));
+                remaining -= increment;
+            }
+        }
+
+        if remaining > Decimal::ZERO {
+            log::warn!(
+                "Betfair cumulative void exceeds known fill lots for bet_id={}: sv={cumulative}, unmatched={remaining}",
+                uo.id,
+            );
+            return Vec::new();
+        }
+
+        let mut updates = Vec::new();
+
+        for (lot, allocation) in desired.into_iter().rev() {
+            let key = (uo.id.clone(), lot.trade_id);
+            let Ok(voided_qty) = parse_betfair_quantity(allocation) else {
+                continue;
+            };
+            self.fill_voids.insert(key, allocation);
+            updates.push(FillVoidAllocation {
+                trade_id: lot.trade_id,
+                voided_qty,
+                last_px: lot.price,
+            });
+        }
+        self.voided_qty.insert(uo.id.clone(), cumulative);
+        updates
+    }
+
+    #[must_use]
+    pub(crate) fn has_fill_lots(&self, bet_id: &str) -> bool {
+        self.fill_lots
+            .get(bet_id)
+            .is_some_and(|lots| !lots.is_empty())
+    }
+
+    /// Returns whether a cumulative Betfair void update has not yet been applied.
+    #[must_use]
+    pub fn has_unseen_fill_void(&self, uo: &UnmatchedOrder) -> bool {
+        let cumulative = normalize_betfair_quantity(uo.sv.unwrap_or(Decimal::ZERO));
+        let previous = self
+            .voided_qty
+            .get(&uo.id)
+            .copied()
+            .unwrap_or(Decimal::ZERO);
+        cumulative > previous
+    }
+
+    pub(crate) fn sync_fill_lot(
+        &mut self,
+        bet_id: &str,
+        trade_id: TradeId,
+        quantity: Decimal,
+        price: Price,
+        voided_qty: Decimal,
+    ) {
+        let lots = self.fill_lots.entry(bet_id.to_string()).or_default();
+        if !lots.iter().any(|lot| lot.trade_id == trade_id) {
+            lots.push(FillLot {
+                trade_id,
+                quantity: normalize_betfair_quantity(quantity),
+                price,
+            });
+        }
+        let gross_filled = lots.iter().map(|lot| lot.quantity).sum();
+        self.filled_qty.insert(bet_id.to_string(), gross_filled);
+        self.published_trade_ids.insert(trade_id.to_string());
+        if voided_qty > Decimal::ZERO {
+            self.fill_voids.insert(
+                (bet_id.to_string(), trade_id),
+                normalize_betfair_quantity(voided_qty),
+            );
+        }
+    }
+
+    pub(crate) fn sync_voided_qty(&mut self, bet_id: &str, voided_qty: Decimal) {
+        self.voided_qty
+            .insert(bet_id.to_string(), normalize_betfair_quantity(voided_qty));
     }
 
     fn record_cumulative_state(
@@ -467,6 +661,67 @@ impl FillTracker {
         fill_price
     }
 
+    fn compute_fill_price_with_voids(
+        &self,
+        bet_id: &str,
+        average_price_matched: Option<Decimal>,
+        fallback_price: Decimal,
+        gross_matched: Decimal,
+        fill_qty: Decimal,
+        cumulative_voided: Decimal,
+    ) -> Decimal {
+        let Some(avp) = average_price_matched.map(normalize_betfair_price) else {
+            return fallback_price;
+        };
+        let cumulative_voided = normalize_betfair_quantity(cumulative_voided);
+        let previous_voided = self
+            .voided_qty
+            .get(bet_id)
+            .copied()
+            .map_or(Decimal::ZERO, normalize_betfair_quantity);
+        let incremental_void = cumulative_voided.saturating_sub(previous_voided);
+        let surviving_fill_qty = fill_qty.saturating_sub(incremental_void);
+        if surviving_fill_qty <= Decimal::ZERO {
+            return avp;
+        }
+
+        let mut prior_notional = Decimal::ZERO;
+        let mut effective_lots = Vec::new();
+
+        if let Some(lots) = self.fill_lots.get(bet_id) {
+            for lot in lots {
+                let already_voided = self
+                    .fill_voids
+                    .get(&(bet_id.to_string(), lot.trade_id))
+                    .copied()
+                    .unwrap_or(Decimal::ZERO);
+                let effective = lot.quantity.saturating_sub(already_voided);
+                prior_notional += effective * lot.price.as_decimal();
+                effective_lots.push((effective, lot.price.as_decimal()));
+            }
+        }
+
+        let mut prior_void = incremental_void.saturating_sub(fill_qty);
+        for (effective, price) in effective_lots.into_iter().rev() {
+            if prior_void <= Decimal::ZERO {
+                break;
+            }
+            let removed = prior_void.min(effective);
+            prior_notional -= removed * price;
+            prior_void -= removed;
+        }
+
+        let surviving_matched = gross_matched.saturating_sub(cumulative_voided);
+        let fill_price = (avp * surviving_matched - prior_notional) / surviving_fill_qty;
+        if fill_price <= Decimal::ZERO {
+            log::warn!(
+                "Calculated post-void fill price {fill_price} is invalid for bet_id={bet_id}, falling back to avp={avp}",
+            );
+            return avp;
+        }
+        fill_price
+    }
+
     /// Pre-populates state for a bet from existing order data.
     ///
     /// Monotonic in `filled_qty`: keeps the larger of the cached and
@@ -504,7 +759,10 @@ impl FillTracker {
     /// Removes state for a completed bet to prevent unbounded growth.
     pub fn prune(&mut self, bet_id: &str) {
         self.filled_qty.remove(bet_id);
+        self.voided_qty.remove(bet_id);
         self.avg_px.remove(bet_id);
+        self.fill_lots.remove(bet_id);
+        self.fill_voids.retain(|(id, _), _| id != bet_id);
 
         let prefix = format!("{bet_id}-");
         self.published_trade_ids
@@ -557,7 +815,15 @@ pub fn parse_order_status_report(
 
     // Include lapsed/voided in the closed quantity for status resolution
     let size_closed = size_cancelled + size_lapsed + size_voided;
-    let order_status = resolve_streaming_order_status(uo.status, size_matched, size_closed);
+    let order_status = if uo.status == StreamingOrderStatus::ExecutionComplete
+        && size_voided > Decimal::ZERO
+        && size_cancelled.is_zero()
+        && size_lapsed.is_zero()
+    {
+        OrderStatus::Voided
+    } else {
+        resolve_streaming_order_status(uo.status, size_matched, size_closed)
+    };
 
     let quantity_decimal = stream_order_quantity(uo);
     anyhow::ensure!(
@@ -3073,6 +3339,209 @@ mod tests {
     }
 
     #[rstest]
+    fn test_fill_tracker_first_seen_void_records_without_correction() {
+        let mut tracker = FillTracker::new();
+        let uo = UnmatchedOrder {
+            status: StreamingOrderStatus::ExecutionComplete,
+            sm: Some(Decimal::new(50, 0)),
+            sv: Some(Decimal::new(50, 0)),
+            ..make_test_uo("999016", Decimal::new(50, 0), None, None)
+        };
+
+        let first = tracker.maybe_fill_voids(&uo);
+        let duplicate = tracker.maybe_fill_voids(&uo);
+
+        assert!(first.is_empty());
+        assert!(duplicate.is_empty());
+        assert!(!tracker.has_unseen_fill_void(&uo));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_emits_only_increased_cumulative_void() {
+        let mut tracker = FillTracker::new();
+        let instrument_id = InstrumentId::from("1.234567-123456-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let mut uo = make_test_uo(
+            "999017",
+            Decimal::new(60, 0),
+            Some(Decimal::new(60, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        tracker
+            .maybe_fill_report(
+                &uo,
+                uo.s,
+                instrument_id,
+                account_id,
+                Currency::GBP(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            )
+            .expect("matched size should establish a fill lot");
+
+        uo.sv = Some(Decimal::new(40, 0));
+        let first = tracker.maybe_fill_voids(&uo);
+        let duplicate = tracker.maybe_fill_voids(&uo);
+        uo.sv = Some(Decimal::new(50, 0));
+        let unseen_before_update = tracker.has_unseen_fill_void(&uo);
+        let increased = tracker.maybe_fill_voids(&uo);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].voided_qty, Quantity::from("40.00"));
+        assert!(duplicate.is_empty());
+        assert!(unseen_before_update);
+        assert_eq!(increased.len(), 1);
+        assert_eq!(increased[0].trade_id, first[0].trade_id);
+        assert_eq!(increased[0].voided_qty, Quantity::from("50.00"));
+        assert!(!tracker.has_unseen_fill_void(&uo));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_allocates_cumulative_void_to_newest_fill_lot_first() {
+        let mut tracker = FillTracker::new();
+        let bet_id = "999019";
+        let older_trade_id = TradeId::from("999019-30.00");
+        let newer_trade_id = TradeId::from("999019-100.00");
+        tracker.sync_fill_lot(
+            bet_id,
+            older_trade_id,
+            Decimal::new(30, 0),
+            Price::from("2.00"),
+            Decimal::ZERO,
+        );
+        tracker.sync_fill_lot(
+            bet_id,
+            newer_trade_id,
+            Decimal::new(70, 0),
+            Price::from("3.00"),
+            Decimal::ZERO,
+        );
+        let uo = UnmatchedOrder {
+            sv: Some(Decimal::new(50, 0)),
+            ..make_test_uo(bet_id, Decimal::new(100, 0), None, None)
+        };
+
+        let corrections = tracker.maybe_fill_voids(&uo);
+
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].trade_id, newer_trade_id);
+        assert_eq!(corrections[0].voided_qty, Quantity::from("50.00"));
+        assert_eq!(corrections[0].last_px, Price::from("3.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_prices_new_fill_from_post_void_average() {
+        let mut tracker = FillTracker::new();
+        let bet_id = "999021";
+        let older_trade_id = TradeId::from("999021-50.00");
+        tracker.sync_fill_lot(
+            bet_id,
+            older_trade_id,
+            Decimal::new(50, 0),
+            Price::from("2.00"),
+            Decimal::ZERO,
+        );
+        let (_, last_qty, last_px) = tracker
+            .advance_cumulative_fill_with_voids(
+                bet_id,
+                Decimal::new(100, 0),
+                Decimal::new(40, 0),
+                Some(Decimal::new(25, 1)),
+                Decimal::new(20, 1),
+            )
+            .expect("gross lifecycle increase should produce a fill");
+
+        let uo = UnmatchedOrder {
+            sm: Some(Decimal::new(60, 0)),
+            sv: Some(Decimal::new(40, 0)),
+            ..make_test_uo(bet_id, Decimal::new(100, 0), None, None)
+        };
+        let corrections = tracker.maybe_fill_voids(&uo);
+
+        assert_eq!(last_qty, Quantity::from("50.00"));
+        assert_eq!(last_px, Price::from("5.00"));
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].voided_qty, Quantity::from("40.00"));
+        assert_eq!(corrections[0].last_px, Price::from("5.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_preserves_prior_void_allocation_when_new_fill_arrives() {
+        let mut tracker = FillTracker::new();
+        let bet_id = "999020";
+        let older_trade_id = TradeId::from("999020-60.00");
+        let newer_trade_id = TradeId::from("999020-80.00");
+        tracker.sync_fill_lot(
+            bet_id,
+            older_trade_id,
+            Decimal::new(60, 0),
+            Price::from("2.00"),
+            Decimal::ZERO,
+        );
+        let mut uo = UnmatchedOrder {
+            sv: Some(Decimal::new(40, 0)),
+            ..make_test_uo(bet_id, Decimal::new(80, 0), None, None)
+        };
+
+        let first = tracker.maybe_fill_voids(&uo);
+        tracker.sync_fill_lot(
+            bet_id,
+            newer_trade_id,
+            Decimal::new(20, 0),
+            Price::from("3.00"),
+            Decimal::ZERO,
+        );
+        uo.sv = Some(Decimal::new(50, 0));
+        let increased = tracker.maybe_fill_voids(&uo);
+
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].trade_id, older_trade_id);
+        assert_eq!(first[0].voided_qty, Quantity::from("40.00"));
+        assert_eq!(increased.len(), 1);
+        assert_eq!(increased[0].trade_id, newer_trade_id);
+        assert_eq!(increased[0].voided_qty, Quantity::from("10.00"));
+    }
+
+    #[rstest]
+    fn test_fill_tracker_reconnect_increased_void_does_not_replay_gross_fill() {
+        let mut tracker = FillTracker::new();
+        let instrument_id = InstrumentId::from("1.234567-123456-0.0.BETFAIR");
+        let account_id = AccountId::from("BETFAIR-001");
+        let mut uo = make_test_uo(
+            "999018",
+            Decimal::new(60, 0),
+            Some(Decimal::new(60, 0)),
+            Some(Decimal::new(25, 1)),
+        );
+        let trade_id = make_trade_id(&uo);
+        tracker.sync_fill_lot(
+            &uo.id,
+            trade_id,
+            Decimal::new(60, 0),
+            Price::from("2.50"),
+            Decimal::new(40, 0),
+        );
+        tracker.sync_voided_qty(&uo.id, Decimal::new(40, 0));
+        uo.sv = Some(Decimal::new(50, 0));
+
+        let fill = tracker.maybe_fill_report(
+            &uo,
+            uo.s,
+            instrument_id,
+            account_id,
+            Currency::GBP(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        let corrections = tracker.maybe_fill_voids(&uo);
+
+        assert!(fill.is_none());
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].trade_id, trade_id);
+        assert_eq!(corrections[0].voided_qty, Quantity::from("50.00"));
+    }
+
+    #[rstest]
     fn test_parse_order_status_report_missing_persistence_type_fails_for_limit_order() {
         let uo = UnmatchedOrder {
             pt: None,
@@ -3178,6 +3647,16 @@ mod tests {
             assert_eq!(fill.last_qty.as_f64(), 60.0);
             assert_eq!(fill.last_px.as_f64(), 1.5);
             assert_eq!(fill.order_side, OrderSide::Sell);
+
+            let report = parse_order_status_report(
+                uo,
+                instrument_id,
+                AccountId::from("BETFAIR-001"),
+                ts,
+                ts,
+            )
+            .unwrap();
+            assert_eq!(report.filled_qty, Quantity::from("60.00"));
         } else {
             panic!("expected OrderChange");
         }

@@ -16,11 +16,11 @@
 //! Rate-limit quotas and keys for the Derive adapter.
 //!
 //! Derive runs a fixed-window limiter that replenishes the request allowance
-//! every five seconds, splitting traffic into matching-engine actions (order
-//! create/cancel/replace) and everything else ("non-matching": market-data
-//! reads, channel subscriptions, login). Matching limits are per account and
-//! tiered (Trader vs Market Maker); the non-matching limit is a flat per-IP
-//! allowance. See <https://docs.derive.xyz/reference/rate-limits>.
+//! every five seconds. Matching-engine actions (order create/cancel/replace)
+//! use an account allowance, while cancel-all and unscoped label cancellation
+//! have custom quotas. REST non-matching requests use a flat per-IP allowance;
+//! authenticated WebSocket non-matching requests use a separate allowance. See
+//! <https://docs.derive.xyz/reference/rate-limits>.
 //!
 //! The `nautilus_network` limiter is GCRA-based, so each quota is expressed as a
 //! sustained per-second rate with a burst capacity of five seconds' worth of
@@ -38,13 +38,28 @@ pub const DERIVE_MATCHING_RATE_KEY: &str = "derive:matching";
 /// Rate-limit key for non-matching requests (reads, subscriptions, login).
 pub const DERIVE_NON_MATCHING_RATE_KEY: &str = "derive:non-matching";
 
+/// Rate-limit key for `private/cancel_all` requests.
+pub const DERIVE_CANCEL_ALL_RATE_KEY: &str = "derive:cancel-all";
+
+/// Rate-limit key for unscoped `private/cancel_by_label` requests.
+pub const DERIVE_CANCEL_BY_LABEL_RATE_KEY: &str = "derive:cancel-by-label";
+
 /// Default matching-engine allowance for a Trader-tier account (requests per
 /// second). Market Maker accounts negotiate higher limits and raise this via
 /// [`crate::config::DeriveExecClientConfig::max_matching_requests_per_second`].
 pub const DERIVE_DEFAULT_MATCHING_TPS: u32 = 1;
 
-/// Flat non-matching allowance per IP (requests per second).
+/// Flat REST non-matching allowance per IP (requests per second).
 pub const DERIVE_NON_MATCHING_TPS: u32 = 10;
+
+/// Default authenticated WebSocket non-matching allowance for a Trader account.
+pub const DERIVE_WEBSOCKET_NON_MATCHING_TPS: u32 = 5;
+
+/// Custom allowance for `private/cancel_all` (requests per second).
+pub const DERIVE_CANCEL_ALL_TPS: u32 = 1;
+
+/// Custom allowance for unscoped `private/cancel_by_label` (requests per second).
+pub const DERIVE_CANCEL_BY_LABEL_TPS: u32 = 10;
 
 /// Burst multiplier: Derive permits five seconds' worth of requests in a single
 /// burst before the fixed window replenishes.
@@ -60,10 +75,43 @@ pub fn matching_quota(max_requests_per_second: Option<u32>) -> Quota {
     quota_with_burst(tps)
 }
 
-/// Builds the flat non-matching quota ([`DERIVE_NON_MATCHING_TPS`]).
+/// Builds the flat REST non-matching quota ([`DERIVE_NON_MATCHING_TPS`]).
 #[must_use]
 pub fn non_matching_quota() -> Quota {
     quota_with_burst(DERIVE_NON_MATCHING_TPS)
+}
+
+/// Builds the default authenticated WebSocket non-matching quota.
+#[must_use]
+pub fn websocket_non_matching_quota() -> Quota {
+    quota_with_burst(DERIVE_WEBSOCKET_NON_MATCHING_TPS)
+}
+
+/// Builds the custom `private/cancel_all` quota.
+#[must_use]
+pub fn cancel_all_quota() -> Quota {
+    quota_with_burst(DERIVE_CANCEL_ALL_TPS)
+}
+
+/// Builds the custom unscoped `private/cancel_by_label` quota.
+#[must_use]
+pub fn cancel_by_label_quota() -> Quota {
+    quota_with_burst(DERIVE_CANCEL_BY_LABEL_TPS)
+}
+
+/// Returns the venue quota key for an RPC method used by this adapter.
+#[must_use]
+pub(crate) fn rate_limit_key_for_method(method: &str) -> &'static str {
+    match method.trim_start_matches('/') {
+        "private/order"
+        | "private/trigger_order"
+        | "private/replace"
+        | "private/cancel"
+        | "private/cancel_trigger_order" => DERIVE_MATCHING_RATE_KEY,
+        "private/cancel_all" => DERIVE_CANCEL_ALL_RATE_KEY,
+        "private/cancel_by_label" => DERIVE_CANCEL_BY_LABEL_RATE_KEY,
+        _ => DERIVE_NON_MATCHING_RATE_KEY,
+    }
 }
 
 fn quota_with_burst(tps: u32) -> Quota {
@@ -91,6 +139,27 @@ mod tests {
     }
 
     #[rstest]
+    fn test_websocket_non_matching_quota_is_five_per_second_with_five_second_burst() {
+        let quota = websocket_non_matching_quota();
+        assert_eq!(quota.burst_size().get(), 25);
+        assert_eq!(quota.replenish_interval(), Duration::from_millis(200));
+    }
+
+    #[rstest]
+    fn test_custom_cancel_quotas_match_venue_limits() {
+        let cancel_all = cancel_all_quota();
+        let cancel_by_label = cancel_by_label_quota();
+
+        assert_eq!(cancel_all.burst_size().get(), 5);
+        assert_eq!(cancel_all.replenish_interval(), Duration::from_secs(1));
+        assert_eq!(cancel_by_label.burst_size().get(), 50);
+        assert_eq!(
+            cancel_by_label.replenish_interval(),
+            Duration::from_millis(100),
+        );
+    }
+
+    #[rstest]
     fn test_matching_quota_defaults_to_trader_tier() {
         let quota = matching_quota(None);
         assert_eq!(quota.burst_size().get(), 5);
@@ -107,5 +176,23 @@ mod tests {
         let quota = matching_quota(Some(500));
         assert_eq!(quota.burst_size().get(), 2500);
         assert_eq!(quota.replenish_interval(), Duration::from_millis(2));
+    }
+
+    #[rstest]
+    #[case("private/order", DERIVE_MATCHING_RATE_KEY)]
+    #[case("/private/order", DERIVE_MATCHING_RATE_KEY)]
+    #[case("private/trigger_order", DERIVE_MATCHING_RATE_KEY)]
+    #[case("private/replace", DERIVE_MATCHING_RATE_KEY)]
+    #[case("private/cancel", DERIVE_MATCHING_RATE_KEY)]
+    #[case("private/cancel_trigger_order", DERIVE_MATCHING_RATE_KEY)]
+    #[case("private/cancel_all", DERIVE_CANCEL_ALL_RATE_KEY)]
+    #[case("private/cancel_by_label", DERIVE_CANCEL_BY_LABEL_RATE_KEY)]
+    #[case("private/get_subaccount", DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case("private/get_open_orders", DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case("public/get_instruments", DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case("public/login", DERIVE_NON_MATCHING_RATE_KEY)]
+    #[case("subscribe", DERIVE_NON_MATCHING_RATE_KEY)]
+    fn test_rate_limit_key_for_method(#[case] method: &str, #[case] expected: &str) {
+        assert_eq!(rate_limit_key_for_method(method), expected);
     }
 }

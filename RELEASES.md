@@ -23,6 +23,36 @@ The `2.0.0rc1` wheels are already available on PyPI for community testing with n
 installation. Follow-up `2.0.0rcN` wheels are likely to ship at a higher cadence than normal
 releases as feedback arrives, before the final `2.0.0` release.
 
+#### Migration contracts
+
+The v2 cutover makes the Rust + PyO3 package the primary path for new installs and source builds.
+In the current checkout it lives under `python/` and uses `python/.venv`; the root package and root
+`.venv` still provide the legacy v1 Cython environment. Both packages import as
+`nautilus_trader`, so test the migration in a separate virtual environment. See
+[Migrate from v1 to v2](MIGRATION_V2.md) for the current imports and build commands.
+
+The accepted v2 contract differences are native `CustomData` without v1 wrapper semantics,
+`OptionGreeks` cache writes, no Python `Bar.is_revision`, and a cross-zero `Position.apply` entry
+price that resets to the flipping fill. V2 also prefers mark prices by default. Catalog order-event
+data written before `activation_price` and `OrderFilled.info` were added is not readable with the new
+schema and must be regenerated or migrated before an in-place upgrade.
+
+#### Cutover limits
+
+The supported cutover workflows cover Python strategies, actors, backtests, live nodes, core risk
+and execution, portfolio/accounting, data catalogs, reports, tearsheets, and the current Rust-backed
+adapter set. The following limits remain deferred:
+
+- Python request callback, join, and pending-request convenience semantics.
+- Direct Python `LiveNode` injection for Redis cache databases and external message-bus backing.
+- SQL cache position and synthetic loads, state persistence, and heartbeat.
+- External message-bus publication of serialized order and position snapshots.
+- V1 `StreamingConfig` and `DataCatalogConfig` iterator wiring on the v2 `BacktestNode`.
+- Common adapter support for v1 instrument-provider filter dictionaries. Hyperliquid v2 loads the
+  configured universe and does not accept the v1 `instrument_provider` field.
+- Published quickstart and backtesting tutorials still use v1 imports and configuration while the
+  generated v2 stubs and `python/examples/` provide the current API.
+
 ### Enhancements
 - Added opt-in `mimalloc` allocator feature, enabled by default for Python wheels (#4358), thanks @ivannp
 - Added `LiveNode` metrics for Rust live runner metrics
@@ -45,16 +75,20 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
+- Added Python v2 Portfolio snapshot access with base-currency equity and stale/unpriced metadata
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
 - Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
+- Added Polymarket v2 fills at `MATCHED` with corrections for failed settlement
 - Added Polymarket v2 WS `hash` and `transaction_hash` field decoding (#4377), thanks for reporting @SebastianPartarrieu
 - Added Tardis MEXC spot and futures market data support
+- Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, and strategy and algorithm callbacks
 
 ### Breaking Changes
+- Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
@@ -65,7 +99,17 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
-- Fixed `OrderFactory.bracket(...)` docstring to document the actual `tp_post_only` default of `True` (was incorrectly documented as `False`) (#4437)
+- Fixed `OrderFactory.bracket` `tp_post_only` docs (#4437), thanks for reporting @jh171717 and for the patch @chang-pro
+- Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
+- Fixed v2 portfolio snapshots retaining stale-price flags after the affected position side closed
+- Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
+- Fixed v2 account-scoped valuations clearing other accounts' missing-price flags on shared venues
+- Fixed v2 account locks and margins using settlement currency instead of each calculated currency
+- Fixed v2 invalid or out-of-range notional and PnL valuations panicking or falling back to zero
+- Fixed v2 multi-currency cash equity double-counting assets already credited to account balances
+- Fixed v2 quanto position notionals using quote currency instead of settlement currency
+- Fixed v2 portfolio valuations labeling and converting cost-currency amounts as settlement currency
+- Fixed legacy `Equity` round trips dropping `max_quantity` and `min_quantity` through `from_dict` and the `ParquetDataCatalog` (#4461)
 - Fixed v2 composite bar aggregation (`@` source) to deliver aggregated bars to subscribed actors and strategies
 - Fixed v2 tick, tick-imbalance, and tick-runs aggregators to emit bars with the standard bar type for composite subscriptions, matching all other aggregators
 - Fixed v2 volume-runs and value-runs aggregators dropping leftover volume when a trade spanned a bar boundary and the next trade continued the same side
@@ -106,6 +150,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
 - Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
 - Fixed Python v2 cached `OrderList` fields and concrete cache return types (#4453), thanks @JiajunWan
+- Fixed live fill deduplication dropping valid fills when trade IDs collide across accounts or instruments
 - Fixed Python v2 indicator handlers to delegate to Rust core semantics, including VWAP typical-price and Aroon quote, trade, and high/low bar handling (#4421), thanks for reporting @a1zb2yc3z
 - Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
@@ -113,6 +158,14 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Python v2 `Strategy` close-position and close-all-position commands to accept and forward `params`
 - Fixed Python v2 `DataActor.shutdown_system()` unregistered calls to raise `RuntimeError`
 - Fixed Python v2 `LiveNode.stop()` to complete shutdown instead of only signaling the handle
+- Fixed Rust and Python v2 `LiveNode.dispose()` before start to release the trader cleanly and
+  remain idempotent
+- Fixed Rust and Python v2 `LiveNode` startup failures to propagate the original error, stop
+  partially started trader components, and disconnect all clients before disposal
+- Fixed Rust and Python v2 `LiveNode` zero-duration connection and disconnection waits to recognize
+  already-ready engines before reporting a timeout
+- Fixed Rust v2 `LiveNode` startup to restore attached cache databases before reconciliation and
+  honor `flush_on_start`
 - Fixed Python v2 boundary error handling to raise exceptions instead of panicking on invalid inputs
 - Fixed Python v2 DeFi comparisons to return `NotImplemented` for unsupported ordering instead of panicking
 - Fixed `LiveNode` external order claims bypassing the execution engine (#4347), thanks for reporting @linimin
@@ -124,6 +177,7 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed `Clock.timer_exists` to exclude expired timers like `timer_names`/`timer_count` (#4400), thanks @folknor
 - Fixed Redis message bus startup with Python v2 configs (#4356), thanks for reporting @davidgreyme
 - Fixed Rust Binance Futures hedge-mode position tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu
+- Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
 - Fixed Binance Futures algo order reports omitting fill quantity and average price from `actualQty`/`actualPrice`
 - Fixed Binance Futures filled market order reconciliation to use venue average prices (#4441), thanks @KaizynX
 - Fixed Binance Futures order reports omitting external limit order prices (#4346), thanks for reporting @linimin
@@ -131,13 +185,30 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
 - Fixed Binance Futures inflight query falsely rejecting untriggered algo orders (#4411), thanks @reijz
 - Fixed Binance Futures historical algo order queries (#4449), thanks @KaizynX
+- Fixed Binance Futures startup reconciliation omitting and truncating venue fill history
+- Fixed Binance Spot startup reconciliation omitting and truncating venue fill history
 - Fixed Binance Spot instrument loading after the SBE schema `3:5` rollout (#4407), thanks for reporting @learnerLj
 - Fixed Blockchain HyperSync live pool-event streaming to use a durable per-DEX stream and avoid tip-window overreach
+- Fixed Blockchain RPC pool snapshots panicking on incomplete tick and position topology
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
+- Fixed Deribit live execution routing tracked fills and amendments through order events while
+  preserving reports for external orders
+- Fixed Derive execution WebSocket connect and reconnect handling to reject failed private
+  subscriptions, retry authentication, refresh balances, and reconcile execution state
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
 - Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
+- Fixed Derive historical trades and funding to return the newest records in chronological order
+- Fixed Derive historical bars to use close timestamps and exclude forming buckets
+- Fixed Derive instrument loading to skip absent product types and malformed rows without panicking
+- Fixed Derive fill reconciliation dropping fills on retry after a discarded snapshot
+- Fixed Derive null cancel acknowledgements being reported as failures
+- Fixed Derive cancellation, replacement, and nonce failure lifecycle events, and rejected
+  execution configs without a positive `max_fee_per_contract`
+- Fixed Derive shared market data channel ownership, unsubscribe races, and stale quote-cache reuse
+- Fixed Derive HTTP and WebSocket request pacing, signed-write expiry, null-id error handling, and
+  handler blocking during reconnects
 - Fixed Architect AX market data subscriptions to use trade-only streams and suppress unrequested trade/ticker events
 - Fixed Architect AX `/transactions` requests to include the required bounded time range
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
@@ -154,26 +225,36 @@ releases as feedback arrives, before the final `2.0.0` release.
 - Fixed Hyperliquid rapid chained order modifications to preserve each in-flight cancel-replace, so a later modify no longer drops an earlier one's cancel-suppression and a failed modify no longer clears newer queued modifications
 - Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
 - Fixed Interactive Brokers market order update price normalization (#4383), thanks @faysou
+- Fixed Interactive Brokers v2 tracked fills to emit `OrderFilled` after `OrderAccepted`, emit `OrderRejected` on gateway submission failure, and retain fill identity across terminal callbacks
 - Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
 - Fixed Interactive Brokers Docker gateway startup to ignore the active Docker context
+- Fixed Lighter batch orders to use correlated sequential WebSocket transactions
+- Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
+- Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
+- Fixed Lighter modify validation, conditional order acknowledgements, approval nonce recovery,
+  auth refresh, and WebSocket timeouts
+- Fixed Lighter ambiguous send outcomes, hashless response attribution, historical order identity, order-index collisions, and GTD expiry validation
 
 ### Internal Improvements
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
+- Improved Lighter signing and execution coverage for conditional, IOC, cancel-all, and leverage transactions
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)
 - Upgraded Rust (MSRV) to 1.97.0
 - Upgraded Cython to v3.2.8
 - Upgraded Cap'n Proto to v1.5.0
 - Upgraded `capnp` to v0.26.2
-- Upgraded `databento` crate to v0.54.0
-- Upgraded `redis` crate to v1.3.0
+- Upgraded `databento` crate to v0.55.0
+- Upgraded `redis` crate to v1.4.0
+- Upgraded `tokio-tungstenite` crate to v0.30.0
 - Upgraded `pyarrow` to v25.0.0
 
 ### Documentation Updates
 - Added Binance Futures `/fapi/v1/algoOrder` order-count rate limit docs
 - Updated Architect AX integration docs for current market-data, REST schema, and funding-rate behavior
+- Updated Lighter integration docs for sequential order fanout and reconciliation limits
 - Updated Polymarket v2 examples and integration docs for current markets, order modes, and configuration
 - Added SinoPac Securities community adapter listing (#4324), thanks @Martingale42
 - Added canonical references and doc comments for portfolio statistics

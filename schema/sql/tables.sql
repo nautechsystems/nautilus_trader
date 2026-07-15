@@ -237,9 +237,11 @@ CREATE TABLE IF NOT EXISTS "position"(
     ts_closed TEXT,
     ts_init TEXT NOT NULL,
     ts_last TEXT NOT NULL,
+    replay_state JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE "position" ADD COLUMN IF NOT EXISTS replay_state JSONB;
 
 CREATE TABLE IF NOT EXISTS "account_event"(
     id TEXT PRIMARY KEY NOT NULL,

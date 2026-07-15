@@ -146,8 +146,9 @@ Static enforcement has two layers:
   structural checks that Clippy cannot express cleanly.
 
 The hook lives at `.pre-commit-hooks/check_dst_conventions.sh`, runs as part of the standard
-pre-commit suite, and runs in continuous integration. It covers the 16 in-scope workspace crates
-and fails the commit when it detects any of:
+pre-commit suite, and runs in continuous integration. Rules 1 to 6 cover the 16 in-scope workspace
+crates. The raw Tokio facade rule covers the nine crates on the madsim build path. The hook fails
+the commit when it detects any of:
 
 - Raw `std::time::Instant::now()`, `SystemTime::now()`, or `chrono::Utc::now()` reads,
   including bare forms when the enclosing file imports the type from `std::time`, or from
@@ -165,6 +166,9 @@ and fails the commit when it detects any of:
   bypass `nautilus_network::net`. The seam re-exports `tokio::net` types under normal builds
   and swaps to `turmoil::net` under the `turmoil` feature, so all TCP entry points share a
   single cfg-gated swap point.
+- Raw `tokio::{time,task,runtime,signal}` paths in production code on the madsim build path.
+  Callers route these modules through `nautilus_common::live::dst`; the facade definition,
+  process-wide real Tokio runtime, and test infrastructure are explicit exceptions.
 
 The hook supports two exception forms:
 
@@ -506,14 +510,18 @@ As of the current state of this repository:
   also run a second leg with `--features "simulation,high-precision"` so the seam-routed
   code paths are exercised under both fixed-point widths (`QuantityRaw` / `PriceRaw` as
   `u64` vs `u128`).
-  - All of `nautilus-common`. This leg compiles with `nautilus-core/simulation`
-    propagated, so the explicit `wall_clock_now` cfg branch is selected for every
-    test in the suite. Plain `#[rstest]` tests run outside a madsim runtime and route
-    through the seam's `SystemTime::now()` fallback (the same path madsim's libc shim
-    takes outside a runtime). The `live::dst::tests::test_dst_wall_clock_advances_with_virtual_time`
-    test in this leg uses `#[madsim::test]` and asserts that `nanos_since_unix_epoch`
-    advances with `madsim::time::sleep`, so virtual wall-clock behavior is validated
-    end-to-end on the common leg.
+  - All simulation-compatible `nautilus-common` tests. This leg compiles with
+    `nautilus-core/simulation` propagated, so the explicit `wall_clock_now` cfg branch is
+    selected for every test in the suite. Plain `#[rstest]` tests run outside a madsim runtime
+    and route through the seam's `SystemTime::now()` fallback (the same path madsim's libc shim
+    takes outside a runtime). The `LiveClock` test module is cfg-gated out because its plain
+    `#[rstest]` cases start `LiveTimer` tasks without a madsim runtime, and most also block on
+    wall-clock progress. The `live::dst::tests::test_dst_wall_clock_advances_with_virtual_time`
+    test in this leg uses `#[madsim::test]` and asserts that `nanos_since_unix_epoch` advances with
+    `madsim::time::sleep`, so virtual wall-clock behavior is validated end-to-end on the common leg.
+  - The `nautilus-live` startup reconciliation timeout regression. This runs under a madsim
+    runtime and verifies that a pending mass-status request reaches the configured timeout,
+    reports the expected error, and cleans up the node instead of entering a real Tokio timer.
   - All of `nautilus-network` (transport-bound test modules are gated out at the
     source). Includes the seam pinning tests for sleep / timeout virtual time and the
     rate-limiter, plus the retry suites that exercise backoff timing under virtual time.
@@ -528,13 +536,13 @@ As of the current state of this repository:
   state machines under the deterministic scheduler; it does not yet exercise
   determinism end-to-end.
 - End-to-end runtime verification (same-seed diff over an in-scope code path) is out of
-  scope for this repository. The structural conditions (Rule 1 to Rule 6) are enforced;
+  scope for this repository. The structural conditions (Rule 1 to Rule 7) are enforced;
   the claim that a seed reproduces identical observable behavior across runs is plausible
   from the seam design but is not yet verified by a regression gate.
 
 ## Further reading
 
-- `.pre-commit-hooks/check_dst_conventions.sh` defines the six enforcement rules in full and
+- `.pre-commit-hooks/check_dst_conventions.sh` defines the seven enforcement rules in full and
   documents the `// dst-ok` marker convention.
 - External references: the [FoundationDB testing
   philosophy](https://apple.github.io/foundationdb/testing.html), the [TigerBeetle simulation

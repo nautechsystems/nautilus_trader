@@ -1681,7 +1681,29 @@ impl BlockchainCacheDatabase {
                 $22, $23, $24, $25, $26, $27
             )
             ON CONFLICT (chain_id, pool_identifier, block, transaction_index, log_index)
-            DO NOTHING
+            DO UPDATE SET
+                dex_name = EXCLUDED.dex_name,
+                transaction_hash = EXCLUDED.transaction_hash,
+                current_tick = EXCLUDED.current_tick,
+                price_sqrt_ratio_x96 = EXCLUDED.price_sqrt_ratio_x96,
+                liquidity = EXCLUDED.liquidity,
+                protocol_fees_token0 = EXCLUDED.protocol_fees_token0,
+                protocol_fees_token1 = EXCLUDED.protocol_fees_token1,
+                fee_protocol = EXCLUDED.fee_protocol,
+                fee_protocol0_basis_points = EXCLUDED.fee_protocol0_basis_points,
+                fee_protocol1_basis_points = EXCLUDED.fee_protocol1_basis_points,
+                fee_growth_global_0 = EXCLUDED.fee_growth_global_0,
+                fee_growth_global_1 = EXCLUDED.fee_growth_global_1,
+                total_amount0_deposited = EXCLUDED.total_amount0_deposited,
+                total_amount1_deposited = EXCLUDED.total_amount1_deposited,
+                total_amount0_collected = EXCLUDED.total_amount0_collected,
+                total_amount1_collected = EXCLUDED.total_amount1_collected,
+                total_swaps = EXCLUDED.total_swaps,
+                total_mints = EXCLUDED.total_mints,
+                total_burns = EXCLUDED.total_burns,
+                total_fee_collects = EXCLUDED.total_fee_collects,
+                total_flashes = EXCLUDED.total_flashes,
+                liquidity_utilization_rate = EXCLUDED.liquidity_utilization_rate
             ",
         )
         .bind(chain_id as i32)
@@ -1795,7 +1817,16 @@ impl BlockchainCacheDatabase {
                    total_amount0_deposited, total_amount1_deposited,
                    total_amount0_collected, total_amount1_collected)
             ON CONFLICT (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, owner, tick_lower, tick_upper)
-            DO NOTHING
+            DO UPDATE SET
+                liquidity = EXCLUDED.liquidity,
+                fee_growth_inside_0_last = EXCLUDED.fee_growth_inside_0_last,
+                fee_growth_inside_1_last = EXCLUDED.fee_growth_inside_1_last,
+                tokens_owed_0 = EXCLUDED.tokens_owed_0,
+                tokens_owed_1 = EXCLUDED.tokens_owed_1,
+                total_amount0_deposited = EXCLUDED.total_amount0_deposited,
+                total_amount1_deposited = EXCLUDED.total_amount1_deposited,
+                total_amount0_collected = EXCLUDED.total_amount0_collected,
+                total_amount1_collected = EXCLUDED.total_amount1_collected
            ",
         )
         .bind(chain_id as i32)
@@ -1879,7 +1910,13 @@ impl BlockchainCacheDatabase {
             ) AS t(pool_identifier, tick_value, liquidity_gross, liquidity_net,
                    fee_growth_outside_0, fee_growth_outside_1, initialized, last_updated_block)
             ON CONFLICT (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index, tick_value)
-            DO NOTHING
+            DO UPDATE SET
+                liquidity_gross = EXCLUDED.liquidity_gross,
+                liquidity_net = EXCLUDED.liquidity_net,
+                fee_growth_outside_0 = EXCLUDED.fee_growth_outside_0,
+                fee_growth_outside_1 = EXCLUDED.fee_growth_outside_1,
+                initialized = EXCLUDED.initialized,
+                last_updated_block = EXCLUDED.last_updated_block
            ",
         )
         .bind(chain_id as i32)

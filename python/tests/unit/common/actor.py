@@ -50,6 +50,32 @@ class TestStrategy(Strategy):
     pass
 
 
+class FailingStartStrategy(Strategy):
+    def on_start(self):
+        raise RuntimeError("simulated live node strategy start failure")
+
+
+class LifecycleProbeStrategy(Strategy):
+    started = 0
+    stopped = 0
+    disposed = 0
+
+    @classmethod
+    def reset(cls):
+        cls.started = 0
+        cls.stopped = 0
+        cls.disposed = 0
+
+    def on_start(self):
+        type(self).started += 1
+
+    def on_stop(self):
+        type(self).stopped += 1
+
+    def on_dispose(self):
+        type(self).disposed += 1
+
+
 class TestStrategyConfig(StrategyConfig):
     def __new__(cls, *args, strategy_id: str | None = None, **kwargs):
         instance = super().__new__(cls, *args, **kwargs)

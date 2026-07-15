@@ -121,3 +121,48 @@ def test_pyo3_cython_conversion_with_fees():
     equity_cython_dict = Equity.to_dict(equity_cython)
     equity_pyo3_back = nautilus_pyo3.Equity.from_dict(equity_cython_dict)
     assert equity_pyo3_back == equity_pyo3
+
+
+def test_legacy_equity_dict_round_trip_preserves_quantity_constraints():
+    # Arrange
+    equity_pyo3 = nautilus_pyo3.Equity(
+        instrument_id=InstrumentId.from_str("TEST.XNAS"),
+        raw_symbol=nautilus_pyo3.Symbol("TEST"),
+        isin=None,
+        currency=nautilus_pyo3.Currency.from_str("USD"),
+        price_precision=2,
+        price_increment=Price.from_str("0.01"),
+        lot_size=Quantity.from_int(100),
+        max_quantity=Quantity.from_int(10000),
+        min_quantity=Quantity.from_int(1),
+        max_price=None,
+        min_price=None,
+        margin_init=Decimal(0),
+        margin_maint=Decimal(0),
+        maker_fee=Decimal(0),
+        taker_fee=Decimal(0),
+        ts_event=0,
+        ts_init=0,
+    )
+    equity_cython = Equity.from_pyo3(equity_pyo3)
+
+    # Act
+    equity_back = Equity.from_dict(Equity.to_dict(equity_cython))
+
+    # Assert
+    assert equity_back.max_quantity == equity_cython.max_quantity
+    assert equity_back.min_quantity == equity_cython.min_quantity
+
+    # None values should also survive the round trip
+    equity_none = Equity.from_pyo3(TestInstrumentProviderPyo3.aapl_equity())
+    equity_none_back = Equity.from_dict(Equity.to_dict(equity_none))
+    assert equity_none_back.max_quantity is None
+    assert equity_none_back.min_quantity is None
+
+    # dicts from older catalogs without the keys must still deserialize
+    legacy_dict = Equity.to_dict(equity_cython)
+    del legacy_dict["max_quantity"]
+    del legacy_dict["min_quantity"]
+    equity_legacy = Equity.from_dict(legacy_dict)
+    assert equity_legacy.max_quantity is None
+    assert equity_legacy.min_quantity is None

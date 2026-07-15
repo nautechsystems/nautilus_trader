@@ -1904,9 +1904,13 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn update_position(&self, position: &Position) -> anyhow::Result<()> {
         let position_id = position.id;
-        let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
-        let payload = self.serialize_position_event(position)?;
-        self.append_list(key, payload)?;
+        if position.fill_voids.is_empty() {
+            let key = format!("{POSITIONS}{REDIS_DELIMITER}{position_id}");
+            let payload = self.serialize_position_event(position)?;
+            self.append_list(key, payload)?;
+        } else {
+            self.add_position_snapshot(&PositionSnapshot::from_replay_state(position, None))?;
+        }
 
         let position_id_bytes = Bytes::from(position_id.to_string());
 

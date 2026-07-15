@@ -17,7 +17,7 @@
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderType, TimeInForce},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -26,7 +26,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        enums::{BetfairOrderType, resolve_order_status},
+        enums::{BetfairOrderStatus, BetfairOrderType, resolve_order_status},
         parse::{
             make_instrument_id, parse_betfair_price, parse_betfair_quantity,
             parse_betfair_timestamp,
@@ -59,7 +59,15 @@ pub fn parse_current_order_report(
 
     // Include lapsed/voided in the closed quantity for status resolution
     let size_closed = size_cancelled + size_lapsed + size_voided;
-    let order_status = resolve_order_status(order.status, size_matched, size_closed);
+    let order_status = if order.status == BetfairOrderStatus::ExecutionComplete
+        && size_voided > Decimal::ZERO
+        && size_cancelled.is_zero()
+        && size_lapsed.is_zero()
+    {
+        OrderStatus::Voided
+    } else {
+        resolve_order_status(order.status, size_matched, size_closed)
+    };
 
     // Prefer lifecycle sum when price_size.size is zero. Use bsp_liability for
     // on-close orders that report liability without stake/size.
@@ -319,6 +327,50 @@ mod tests {
         assert_eq!(report.filled_qty, Quantity::from("30.00"));
         assert_eq!(report.quantity, Quantity::from("50.00"));
         assert_eq!(report.avg_px, Some(Decimal::new(24, 1)));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_pure_void_is_terminal_voided() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut order = resp.current_orders[1].clone();
+        order.size_lapsed = Some(Decimal::ZERO);
+        order.size_cancelled = Some(Decimal::ZERO);
+
+        let report = parse_current_order_report(
+            &order,
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Voided);
+        assert_eq!(report.filled_qty, Quantity::from("30.00"));
+        assert_eq!(report.quantity, Quantity::from("50.00"));
+    }
+
+    #[rstest]
+    fn test_parse_current_order_working_after_partial_void_is_not_terminal() {
+        let data = load_test_json("rest/list_current_orders_lapsed.json");
+        let resp: CurrentOrderSummaryReport = parse_jsonrpc(&data);
+        let mut order = resp.current_orders[1].clone();
+        order.status = BetfairOrderStatus::Executable;
+        order.size_matched = Some(Decimal::new(20, 0));
+        order.size_remaining = Some(Decimal::new(20, 0));
+        order.size_lapsed = Some(Decimal::ZERO);
+        order.size_cancelled = Some(Decimal::ZERO);
+        order.size_voided = Some(Decimal::new(10, 0));
+
+        let report = parse_current_order_report(
+            &order,
+            AccountId::from("BETFAIR-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(report.filled_qty, Quantity::from("20.00"));
+        assert_eq!(report.quantity, Quantity::from("50.00"));
     }
 
     #[rstest]

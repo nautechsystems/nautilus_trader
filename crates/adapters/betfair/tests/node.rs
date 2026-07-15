@@ -65,7 +65,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderAccepted, OrderCanceled, OrderFilled, OrderRejected},
+    events::{OrderAccepted, OrderCanceled, OrderFillVoided, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     instruments::{Instrument, InstrumentAny, stubs::betting},
     orders::{Order, OrderTestBuilder},
@@ -160,6 +160,7 @@ struct LifecycleProbe {
     rejected: Arc<AtomicBool>,
     canceled: Arc<AtomicBool>,
     filled: Arc<AtomicBool>,
+    fill_voided: Arc<AtomicBool>,
 }
 
 // Submits one passive limit order on start, records each terminal order event via the probe, and
@@ -218,6 +219,10 @@ nautilus_strategy!(SubmitLimitOnStart, {
 
     fn on_order_filled(&mut self, _event: &OrderFilled) {
         self.probe.filled.store(true, Ordering::Relaxed);
+    }
+
+    fn on_order_fill_voided(&mut self, _event: &OrderFillVoided) {
+        self.probe.fill_voided.store(true, Ordering::Relaxed);
     }
 
     fn on_order_accepted(&mut self, event: OrderAccepted) {
@@ -548,4 +553,67 @@ async fn fill_routes_through_node_execution_manager() {
         .expect("filled order not in cache");
     assert_eq!(order.status(), OrderStatus::Filled);
     assert_eq!(order.filled_qty().as_decimal(), Decimal::from(10));
+}
+
+#[rstest]
+#[tokio::test]
+async fn fill_void_routes_through_node_execution_manager() {
+    let (addr, _mock_state) = start_mock_http().await;
+    let (stream_port, listener) = start_mock_stream().await;
+    let feeder = StreamFeeder::spawn(listener);
+
+    let probe = LifecycleProbe::default();
+    let instrument_id = betting().id();
+    let mut node = build_node("BetfairNodeFillVoid", addr, stream_port);
+    node.add_strategy(SubmitLimitOnStart::new(
+        instrument_id,
+        ClientId::from(BETFAIR),
+        false,
+        probe.clone(),
+    ))
+    .unwrap();
+
+    let handle = node.handle();
+    let stop_handle = handle.clone();
+    let accepted = probe.accepted.clone();
+    let filled = probe.filled.clone();
+    let fill_voided = probe.fill_voided.clone();
+
+    tokio::spawn(async move {
+        wait_until_async(|| async { stop_handle.is_running() }, DEADLINE).await;
+        wait_until_async(|| async { accepted.load(Ordering::Relaxed) }, DEADLINE).await;
+        feeder.feed("stream/ocm_harness_fill.json");
+        wait_until_async(|| async { filled.load(Ordering::Relaxed) }, DEADLINE).await;
+        feeder.feed("stream/ocm_harness_void.json");
+        wait_until_async(|| async { fill_voided.load(Ordering::Relaxed) }, DEADLINE).await;
+        stop_handle.stop();
+    });
+
+    let result = tokio::time::timeout(RUN_TIMEOUT, node.run()).await;
+
+    assert!(result.is_ok(), "node.run() did not complete within timeout");
+    assert!(result.unwrap().is_ok(), "node.run() returned an error");
+    assert!(
+        probe.filled.load(Ordering::Relaxed),
+        "strategy never received OrderFilled"
+    );
+    assert!(
+        probe.fill_voided.load(Ordering::Relaxed),
+        "strategy never received OrderFillVoided"
+    );
+    assert_eq!(handle.state(), NodeState::Stopped);
+
+    let cache = node.kernel().cache.borrow();
+    let order = cache
+        .order(&ClientOrderId::from(CLIENT_ORDER_ID))
+        .expect("voided order not in cache");
+    assert_eq!(order.status(), OrderStatus::Voided);
+    assert_eq!(order.filled_qty().as_decimal(), Decimal::ZERO);
+    assert_eq!(order.voided_qty().as_decimal(), Decimal::from(10));
+    assert!(
+        cache
+            .positions_open(None, Some(&instrument_id), None, None, None)
+            .is_empty(),
+        "voided fill left an open position",
+    );
 }

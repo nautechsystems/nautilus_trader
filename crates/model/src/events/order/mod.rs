@@ -39,6 +39,7 @@ pub mod denied;
 pub mod denied_reason;
 pub mod emulated;
 pub mod expired;
+pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
 pub mod modify_rejected;
@@ -77,6 +78,7 @@ pub enum OrderEventType {
     Updated,
     PartiallyFilled,
     Filled,
+    FillVoided,
 }
 
 pub trait OrderEvent: 'static + Send {
