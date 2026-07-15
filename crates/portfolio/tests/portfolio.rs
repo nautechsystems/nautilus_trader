@@ -592,6 +592,117 @@ fn test_pnl_resolves_account_via_position_when_venue_mismatches(
 }
 
 #[rstest]
+fn test_order_fill_resolves_pnl_before_position_cached_when_broker_routed(
+    mut simple_cache: Cache,
+    clock: TestClock,
+) {
+    let account_id = AccountId::new("IB-DUN433229");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .account_mut(&account_id)
+        .unwrap()
+        .set_calculate_account_state(true);
+
+    let quote = get_quote_tick(&instrument, 1.0010, 1.0011, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::from("1.00000"),
+        PositionId::new("P-FIRST-FILL"),
+    );
+
+    portfolio.update_order(&OrderEventAny::Filled(fill));
+
+    assert!(
+        portfolio.unrealized_pnl(&instrument_id).is_some(),
+        "first fill should resolve unrealized PnL via the order account",
+    );
+}
+
+#[rstest]
+fn test_equity_resolves_when_broker_routed_position_is_flat(
+    mut simple_cache: Cache,
+    clock: TestClock,
+) {
+    let account_id = AccountId::new("IB-DUN433229");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let quote = get_quote_tick(&instrument, 1.00010, 1.00011, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    let open_fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100000"),
+        Price::from("1.00000"),
+        PositionId::new("P-FLAT"),
+    );
+    let mut position = Position::new(&instrument, open_fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(&position)));
+
+    let close_fill = make_fill_for_account(
+        &instrument,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("100000"),
+        Price::from("1.00010"),
+        PositionId::new("P-FLAT"),
+    );
+    position.apply(&close_fill);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_close_position(
+        &position,
+    )));
+
+    let equity = portfolio.equity(&Venue::new("IBIS"), None);
+    assert!(
+        !equity.is_empty(),
+        "equity should resolve via the account that traded the now-flat venue",
+    );
+}
+
+#[rstest]
 fn test_net_position_when_no_positions_returns_zero(
     portfolio: Portfolio,
     instrument_audusd: InstrumentAny,

@@ -821,7 +821,7 @@ impl Portfolio {
                 Some(id) => cache.account(id),
                 None => cache.account_for_venue(venue).or_else(|| {
                     cache
-                        .positions_open(Some(venue), None, None, None, None)
+                        .positions(Some(venue), None, None, None, None)
                         .into_iter()
                         .next()
                         .and_then(|p| cache.account(&p.account_id))
@@ -2877,7 +2877,9 @@ fn update_order(
             config,
         };
 
-        match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id, None) {
+        match portfolio_clone
+            .calculate_unrealized_pnl(&order_filled.instrument_id, Some(&account_id))
+        {
             Some(unrealized_pnl) => {
                 inner
                     .borrow_mut()
