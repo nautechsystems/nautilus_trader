@@ -592,6 +592,68 @@ fn test_pnl_resolves_account_via_position_when_venue_mismatches(
 }
 
 #[rstest]
+fn test_initialize_positions_splits_margin_by_account_when_broker_routed(
+    mut simple_cache: Cache,
+    clock: TestClock,
+) {
+    let account_a = AccountId::new("IB-DUN433229");
+    let account_b = AccountId::new("IB-DUN558814");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    portfolio.update_account(&get_margin_account(Some(account_a.as_str())));
+    portfolio.update_account(&get_margin_account(Some(account_b.as_str())));
+
+    for (account_id, position_id) in [(account_a, "P-A"), (account_b, "P-B")] {
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            OrderSide::Buy,
+            Quantity::from("100000"),
+            Price::from("1.00000"),
+            PositionId::new(position_id),
+        );
+        let position = Position::new(&instrument, fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+    }
+
+    let quote = get_quote_tick(&instrument, 1.0010, 1.0011, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    portfolio.initialize_positions();
+    assert!(portfolio.is_initialized());
+
+    let has_margin = |account_id: &AccountId| {
+        matches!(
+            portfolio.cache().borrow().account_owned(account_id),
+            Some(AccountAny::Margin(m)) if m.margins.contains_key(&instrument_id)
+        )
+    };
+    assert!(
+        has_margin(&account_a),
+        "account A should carry its own margin"
+    );
+    assert!(
+        has_margin(&account_b),
+        "account B should carry its own margin"
+    );
+}
+
+#[rstest]
 fn test_order_fill_resolves_pnl_before_position_cached_when_broker_routed(
     mut simple_cache: Cache,
     clock: TestClock,
