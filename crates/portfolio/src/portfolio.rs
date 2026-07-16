@@ -1228,18 +1228,16 @@ impl Portfolio {
             return false;
         }
 
-        let equity_account_id = if mode == MarkValueMode::Equity {
-            account_id
-                .copied()
-                .or_else(|| cache.account_id(&venue).copied())
-        } else {
-            None
-        };
         let valuation_account = match account_id {
             Some(id) => cache.account(id),
             None => cache
                 .account_for_venue(&venue)
                 .or_else(|| positions.first().and_then(|p| cache.account(&p.account_id))),
+        };
+        let equity_account_id = if mode == MarkValueMode::Equity {
+            valuation_account.as_ref().map(|a| a.id())
+        } else {
+            None
         };
         let mut xrate_cache: AHashMap<Currency, Option<Decimal>> = AHashMap::new();
 
