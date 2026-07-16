@@ -96,10 +96,10 @@ use nautilus_model::{
     enums::AggregationSource,
     events::{
         AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
-        PositionClosed, PositionOpened, PositionSnapshot,
+        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
+        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     instruments::InstrumentAny,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -4327,6 +4327,7 @@ impl_catalog_path_prefix!(OrderReleased, "order_released");
 impl_catalog_path_prefix!(OrderModifyRejected, "order_modify_rejected");
 impl_catalog_path_prefix!(OrderUpdated, "order_updated");
 impl_catalog_path_prefix!(OrderFilled, "order_filled");
+impl_catalog_path_prefix!(OrderFillVoided, "order_fill_voided");
 impl_catalog_path_prefix!(PositionOpened, "position_opened");
 impl_catalog_path_prefix!(PositionChanged, "position_changed");
 impl_catalog_path_prefix!(PositionClosed, "position_closed");

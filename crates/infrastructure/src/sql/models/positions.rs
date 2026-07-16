@@ -91,6 +91,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             .map(UnixNanos::from);
         let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
         let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
+        let replay_state = row.try_get::<Option<serde_json::Value>, _>("replay_state")?;
 
         let snapshot = PositionSnapshot {
             trader_id,
@@ -119,6 +120,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             ts_closed,
             ts_last,
             ts_init,
+            replay_state,
         };
 
         Ok(Self(snapshot))

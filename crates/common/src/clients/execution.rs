@@ -27,6 +27,7 @@ use nautilus_model::{
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
+use rust_decimal::Decimal;
 
 use super::log_not_implemented;
 use crate::messages::execution::{
@@ -34,6 +35,10 @@ use crate::messages::execution::{
     GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
     ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
 };
+
+/// Default maximum absolute position difference tolerated during reconciliation.
+pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
+    Decimal::from_parts(1, 0, 0, false, 8);
 
 /// Defines the interface for an execution client managing order operations.
 ///
@@ -49,6 +54,11 @@ pub trait ExecutionClient {
     fn venue(&self) -> Venue;
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
+
+    /// Returns the maximum absolute position difference tolerated during reconciliation.
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        DEFAULT_POSITION_RECONCILIATION_TOLERANCE
+    }
 
     /// Returns whether this client can execute orders for the given instrument venue.
     ///

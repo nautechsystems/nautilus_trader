@@ -47,24 +47,25 @@ applies the event to the order, updates the `Cache`, and publishes it on the
 and triggered orders support additional transitions documented in the full
 [order state flow](../orders/index.md#order-state-flow).
 
-| Event                                             | Primary transition                 | Handler                    |
-|---------------------------------------------------|------------------------------------|----------------------------|
-| [`OrderInitialized`](order_initialized.md)        | (created locally)                  | `on_order_initialized`     |
-| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied              | `on_order_denied`          |
-| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated            | `on_order_emulated`        |
-| [`OrderReleased`](order_released.md)              | Emulated -> Released               | `on_order_released`        |
-| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted  | `on_order_submitted`       |
-| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted              | `on_order_accepted`        |
-| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected              | `on_order_rejected`        |
-| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered              | `on_order_triggered`       |
-| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate          | `on_order_pending_update`  |
-| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel          | `on_order_pending_cancel`  |
-| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status   | `on_order_updated`         |
-| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status   | `on_order_modify_rejected` |
-| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status   | `on_order_cancel_rejected` |
-| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled | `on_order_canceled`        |
-| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                | `on_order_expired`         |
-| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled | `on_order_filled`          |
+| Event                                             | Primary transition                        | Handler                    |
+|---------------------------------------------------|-------------------------------------------|----------------------------|
+| [`OrderInitialized`](order_initialized.md)        | (created locally)                         | `on_order_initialized`     |
+| [`OrderDenied`](order_denied.md)                  | Initialized -> Denied                     | `on_order_denied`          |
+| [`OrderEmulated`](order_emulated.md)              | Initialized -> Emulated                   | `on_order_emulated`        |
+| [`OrderReleased`](order_released.md)              | Emulated -> Released                      | `on_order_released`        |
+| [`OrderSubmitted`](order_submitted.md)            | Initialized/Released -> Submitted         | `on_order_submitted`       |
+| [`OrderAccepted`](order_accepted.md)              | Submitted -> Accepted                     | `on_order_accepted`        |
+| [`OrderRejected`](order_rejected.md)              | Submitted -> Rejected                     | `on_order_rejected`        |
+| [`OrderTriggered`](order_triggered.md)            | Accepted -> Triggered                     | `on_order_triggered`       |
+| [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                 | `on_order_pending_update`  |
+| [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                 | `on_order_pending_cancel`  |
+| [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status          | `on_order_updated`         |
+| [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status          | `on_order_modify_rejected` |
+| [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status          | `on_order_cancel_rejected` |
+| [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled        | `on_order_canceled`        |
+| [`OrderExpired`](order_expired.md)                | Accepted -> Expired                       | `on_order_expired`         |
+| [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled        | `on_order_filled`          |
+| [`OrderFillVoided`](order_fill_voided.md)         | Filled -> Voided/Accepted/PartiallyFilled | `on_order_fill_voided`     |
 
 ### Common order event fields
 
@@ -86,7 +87,8 @@ All order events share these fields:
 Each order event's page lists the type-specific fields it adds beyond this
 common set, plus which optional common fields are populated. For example,
 [`OrderFilled`](order_filled.md) adds `last_qty`, `last_px`, `trade_id`, and
-`commission`.
+`commission`. [`OrderFillVoided`](order_fill_voided.md) identifies the corrected trade and carries
+its cumulative voided quantity.
 
 :::tip
 Override `on_order_event` to handle all order events in one place. The specific
@@ -98,6 +100,9 @@ handlers fire first, so you can combine both approaches.
 Position events are a direct consequence of fill events. The `ExecutionEngine`
 processes each `OrderFilled`, updates or creates a position, and emits the
 corresponding position event.
+
+An `OrderFillVoided` rebuilds the cached position from its effective fill history. It does not emit
+an opposite fill or synthesize a position event.
 
 | Event                                    | When it fires                             | Handler               |
 |------------------------------------------|-------------------------------------------|-----------------------|

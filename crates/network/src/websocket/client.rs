@@ -145,8 +145,10 @@ impl WebSocketClientInner {
     /// # Errors
     ///
     /// Returns an error if the exponential backoff configuration is invalid.
+    #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "async signature for consistency with connect-based constructors"
     )]
     pub async fn new_with_writer(
@@ -518,8 +520,10 @@ impl WebSocketClientInner {
     /// under the simulator so any proxy URL is rejected up front.
     #[inline]
     #[cfg(feature = "turmoil")]
+    #[allow(unknown_lints, reason = "Clippy lint is unavailable on Rust 1.97")]
     #[expect(
         clippy::unused_async,
+        clippy::unused_async_trait_impl,
         reason = "signature mirrors the production variant; both are awaited in the dispatcher"
     )]
     async fn connect_tungstenite_via_proxy(

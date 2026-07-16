@@ -156,6 +156,12 @@ path = "bin/create_api_key.rs"
 doc = false
 test = false
 
+[[bin]]
+name = "polymarket-set-allowances"
+path = "bin/set_allowances.rs"
+doc = false
+test = false
+
 [[example]]
 name = "polymarket-data-tester"
 path = "examples/node_data_tester.rs"

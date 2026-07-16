@@ -24,7 +24,7 @@ mod execution;
 use std::fmt::{Debug, Display};
 
 pub use data::DataClient;
-pub use execution::ExecutionClient;
+pub use execution::{DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient};
 
 #[inline(always)]
 fn log_not_implemented<T: Debug>(cmd: &T) {

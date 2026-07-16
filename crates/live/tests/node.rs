@@ -38,6 +38,7 @@ use nautilus_common::{
     component::Component,
     enums::Environment,
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
+    live::dst,
     messages::{
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder},
         system::ShutdownSystem,
@@ -1380,7 +1381,11 @@ mod serial_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "current_thread")]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread")
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_startup_reconciliation_times_out_waiting_for_mass_status() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
@@ -1398,7 +1403,7 @@ mod serial_tests {
         );
         let handle = node.handle();
 
-        let result = tokio::time::timeout(Duration::from_secs(1), node.run()).await;
+        let result = dst::time::timeout(Duration::from_secs(1), node.run()).await;
 
         assert!(
             result.is_ok(),

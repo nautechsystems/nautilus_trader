@@ -752,7 +752,8 @@ pub fn dispatch_order_event(
         | OrderStatus::Initialized
         | OrderStatus::Denied
         | OrderStatus::Released
-        | OrderStatus::Emulated => DispatchOutcome::Tracked,
+        | OrderStatus::Emulated
+        | OrderStatus::Voided => DispatchOutcome::Tracked,
     }
 }
 

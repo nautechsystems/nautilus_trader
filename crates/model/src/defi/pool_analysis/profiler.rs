@@ -1489,6 +1489,14 @@ impl PoolProfiler {
             None
         };
 
+        for tick_value in [tick_lower, tick_upper] {
+            let liquidity_gross = self
+                .tick_map
+                .get_tick(tick_value)
+                .map_or(0, |tick| tick.liquidity_gross);
+            try_liquidity_math_add(liquidity_gross, liquidity_delta)?;
+        }
+
         // Update tickmaps.
         let flipped_lower = self.tick_map.update(
             tick_lower,

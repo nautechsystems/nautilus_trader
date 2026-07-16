@@ -374,9 +374,9 @@ pub struct DataApiPosition {
     pub asset: String,
     #[serde(alias = "conditionId", alias = "condition_id")]
     pub condition_id: String,
-    pub size: f64,
+    pub size: Decimal,
     #[serde(alias = "avgPrice", alias = "avg_price")]
-    pub avg_price: Option<f64>,
+    pub avg_price: Option<Decimal>,
 }
 
 /// A trade from the Polymarket Data API `GET /trades` endpoint.
@@ -834,24 +834,24 @@ mod tests {
             positions[0].condition_id,
             "0xc8f1cf5d4f26e0fd9c8fe89f2a7b3263b902cf14fde7bfccef525753bb492e47"
         );
-        assert_eq!(positions[0].size, 150.5);
-        assert_eq!(positions[0].avg_price, Some(0.55));
+        assert_eq!(positions[0].size, dec!(150.5));
+        assert_eq!(positions[0].avg_price, Some(dec!(0.55)));
 
         // Zero-size position
-        assert_eq!(positions[1].size, 0.0);
-        assert_eq!(positions[1].avg_price, Some(0.45));
+        assert_eq!(positions[1].size, dec!(0));
+        assert_eq!(positions[1].avg_price, Some(dec!(0.45)));
 
         // Third position
         assert_eq!(
             positions[2].condition_id,
             "0xabc123def456789012345678901234567890abcdef1234567890abcdef123456"
         );
-        assert_eq!(positions[2].size, 42.0);
-        assert_eq!(positions[2].avg_price, Some(0.3));
+        assert_eq!(positions[2].size, dec!(42));
+        assert_eq!(positions[2].avg_price, Some(dec!(0.3)));
 
         // Dust position (below DUST_POSITION_THRESHOLD)
-        assert_eq!(positions[3].size, 0.005);
-        assert_eq!(positions[3].avg_price, Some(0.7));
+        assert_eq!(positions[3].size, dec!(0.005));
+        assert_eq!(positions[3].avg_price, Some(dec!(0.7)));
     }
 
     #[rstest]

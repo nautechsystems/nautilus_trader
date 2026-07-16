@@ -643,6 +643,7 @@ typedef enum OtoTriggerMode {
  *  - `CANCELED`
  *  - `EXPIRED`
  *  - `FILLED`
+ *  - `VOIDED`
  */
 typedef enum OrderStatus {
     /**
@@ -701,6 +702,10 @@ typedef enum OrderStatus {
      * The order has been completely filled on a trading venue (closed/done).
      */
     FILLED = 14,
+    /**
+     * The order is terminal after an authoritative venue void or fill correction.
+     */
+    VOIDED = 15,
 } OrderStatus;
 
 /**

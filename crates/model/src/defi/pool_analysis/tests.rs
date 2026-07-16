@@ -3160,6 +3160,81 @@ fn test_process_burn_underflow_leaves_state_unchanged() {
 }
 
 #[rstest]
+fn test_process_burn_tick_underflow_leaves_state_unchanged() {
+    use crate::defi::pool_analysis::error::{PoolEventKind, PoolProfilerError};
+
+    let pool_definition = pool_definition(Some(500), Some(10), Some(encode_sqrt_ratio_x96(1, 1)));
+    let expected_instrument_id = pool_definition.instrument_id;
+    let expected_pool_identifier = pool_definition.pool_identifier;
+    let mut profiler = PoolProfiler::new(Arc::new(pool_definition));
+    profiler.initialize(encode_sqrt_ratio_x96(1, 1)).unwrap();
+
+    let tick_lower = -10;
+    let tick_upper = 10;
+    let position_liquidity: u128 = 1_000;
+    let owner = lp_address();
+    let mint = create_mint_event(owner, tick_lower, tick_upper, position_liquidity);
+    profiler
+        .process(&DexPoolData::LiquidityUpdate(mint))
+        .unwrap();
+
+    profiler
+        .tick_map
+        .get_tick_or_init(tick_lower)
+        .liquidity_gross = 0;
+
+    let burn = create_burn_event(owner, tick_lower, tick_upper, position_liquidity);
+    let expected_block = burn.block;
+    let expected_tx_index = burn.transaction_index;
+    let expected_log_index = burn.log_index;
+    let pre_active = profiler.tick_map.liquidity;
+    let pre_tick_lower = profiler.get_tick(tick_lower).copied();
+    let pre_tick_upper = profiler.get_tick(tick_upper).copied();
+    let pre_position_liquidity = profiler
+        .get_position(&owner, tick_lower, tick_upper)
+        .map(|position| position.liquidity)
+        .unwrap();
+    let pre_total_burns = profiler.analytics.total_burns;
+
+    let error = profiler
+        .process(&DexPoolData::LiquidityUpdate(burn))
+        .unwrap_err();
+    let profiler_error = error
+        .downcast_ref::<PoolProfilerError>()
+        .expect("expected PoolProfilerError");
+
+    match profiler_error {
+        PoolProfilerError::LiquidityUnderflow {
+            location,
+            current,
+            delta,
+        } => {
+            assert_eq!(*current, 0);
+            assert_eq!(*delta, position_liquidity);
+            assert_eq!(location.instrument_id, expected_instrument_id);
+            assert_eq!(location.pool_identifier, expected_pool_identifier);
+            assert_eq!(location.block, expected_block);
+            assert_eq!(location.transaction_index, expected_tx_index);
+            assert_eq!(location.log_index, expected_log_index);
+            assert_eq!(location.event_kind, PoolEventKind::Burn);
+        }
+        other => panic!("expected LiquidityUnderflow, was {other:?}"),
+    }
+
+    assert_eq!(profiler.tick_map.liquidity, pre_active);
+    assert_eq!(profiler.get_tick(tick_lower).copied(), pre_tick_lower);
+    assert_eq!(profiler.get_tick(tick_upper).copied(), pre_tick_upper);
+    assert_eq!(
+        profiler
+            .get_position(&owner, tick_lower, tick_upper)
+            .unwrap()
+            .liquidity,
+        pre_position_liquidity
+    );
+    assert_eq!(profiler.analytics.total_burns, pre_total_burns);
+}
+
+#[rstest]
 fn test_wrap_liquidity_error_rewraps_math_overflow() {
     use crate::defi::pool_analysis::error::{
         LiquidityMathError, PoolEventKind, PoolEventLocation, PoolProfilerError,

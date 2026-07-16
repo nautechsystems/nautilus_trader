@@ -656,7 +656,8 @@ impl Account for MarginAccount {
                 | InstrumentClass::BinaryOption
                 | InstrumentClass::Warrant
         ) {
-            let notional = instrument.calculate_notional_value(fill.last_qty, fill.last_px, None);
+            let notional =
+                instrument.try_calculate_notional_value(fill.last_qty, fill.last_px, None)?;
             let pnl = if fill.order_side == OrderSide::Buy {
                 Money::from_raw(-notional.raw, notional.currency)
             } else {
@@ -677,7 +678,8 @@ impl Account for MarginAccount {
                 fill.last_qty.raw.min(pos.quantity.raw),
                 fill.last_qty.precision,
             );
-            let pnl = pos.calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity);
+            let pnl =
+                pos.try_calculate_pnl(pos.avg_px_open, fill.last_px.as_f64(), pnl_quantity)?;
             pnls.push(pnl);
         }
 

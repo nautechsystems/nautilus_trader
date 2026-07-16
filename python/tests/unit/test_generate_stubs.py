@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import importlib
+import inspect
 import os
 import re
 import sys
@@ -1321,6 +1323,49 @@ def test_live_stub_exposes_builder_engine_config_methods():
         "def with_exec_engine_config(self, config: LiveExecEngineConfig) -> LiveNodeBuilder: ..."
         in live_stub
     )
+
+
+def test_catalog_stub_constructor_matches_runtime():
+    from nautilus_trader.persistence import ParquetDataCatalog
+
+    stub_module = ast.parse((STUB_ROOT / "persistence" / "__init__.pyi").read_text())
+    catalog_class = next(
+        node
+        for node in stub_module.body
+        if isinstance(node, ast.ClassDef) and node.name == "ParquetDataCatalog"
+    )
+    methods = {node.name: node for node in catalog_class.body if isinstance(node, ast.FunctionDef)}
+
+    assert "__init__" in methods
+    assert "new" not in methods
+
+    constructor = methods["__init__"]
+    stub_parameters = [argument.arg for argument in constructor.args.args[1:]]
+    runtime_signature = inspect.signature(ParquetDataCatalog)
+    runtime_parameters = list(runtime_signature.parameters)
+    stub_default_parameters = (
+        stub_parameters[-len(constructor.args.defaults) :] if constructor.args.defaults else []
+    )
+    stub_defaults = {
+        name: ast.literal_eval(default)
+        for name, default in zip(
+            stub_default_parameters,
+            constructor.args.defaults,
+            strict=True,
+        )
+    }
+    runtime_default_parameters = [
+        name
+        for name, parameter in runtime_signature.parameters.items()
+        if parameter.default is not inspect.Parameter.empty
+    ]
+    runtime_defaults = {
+        name: runtime_signature.parameters[name].default for name in runtime_default_parameters
+    }
+
+    assert stub_parameters == runtime_parameters
+    assert stub_default_parameters == runtime_default_parameters
+    assert stub_defaults == runtime_defaults
 
 
 def test_generated_config_stubs_include_signature_defaults():

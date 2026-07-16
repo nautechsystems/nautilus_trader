@@ -43,6 +43,7 @@ Instead, it logs a clear, explanatory error.
   - `CANCELED`
   - `EXPIRED`
   - `FILLED`
+  - `VOIDED`
 
 ### Order state flow
 
@@ -74,6 +75,7 @@ flowchart TB
         Canceled
         Expired
         Filled
+        Voided
     end
 
     Initialized -->|"Emulation trigger"| Emulated
@@ -100,6 +102,9 @@ flowchart TB
     Accepted --> Filled
     Triggered --> Filled
     PartiallyFilled --> Filled
+    Filled -->|"Fill correction"| Voided
+    Filled -->|"Explicit reopened correction"| Accepted
+    Filled -->|"Reopened correction with surviving fill"| PartiallyFilled
     PartiallyFilled --> Canceled
     Accepted --> Expired
 ```
@@ -122,6 +127,7 @@ flowchart TB
 | `PENDING_CANCEL`   | Order is pending a cancellation request on the venue.                                     |
 | `PARTIALLY_FILLED` | Order has been partially filled on the venue.                                             |
 | `FILLED`           | Order has been completely filled (terminal).                                              |
+| `VOIDED`           | Order is terminal after an authoritative fill correction.                                 |
 
 ## Execution instructions
 

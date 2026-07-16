@@ -15,6 +15,7 @@
 
 use std::{cmp::max, sync::Arc};
 
+use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::StreamExt;
 use nautilus_common::messages::DataEvent;
@@ -28,6 +29,7 @@ use nautilus_model::defi::{
     },
     pool_analysis::{compare::compare_pool_profiler_detailed, snapshot::PoolSnapshot},
     reporting::{BlockchainSyncReportItems, BlockchainSyncReporter},
+    tick_map::tick::PoolTick,
 };
 use nautilus_network::websocket::TransportBackend;
 
@@ -1357,10 +1359,41 @@ impl BlockchainDataClientCore {
             );
         }
 
-        let (profiler, from_position) = self
-            .seed_pool_profiler_from_latest_snapshot(pool, to_block)
-            .await?;
-        self.construct_pool_profiler_from_hypersync_rpc(profiler, from_position, to_block)
+        self.construct_pool_profiler_from_hypersync_rpc(
+            PoolProfiler::new(pool.clone()),
+            None,
+            to_block,
+        )
+        .await
+    }
+
+    /// Advances an RPC-hydrated profiler to a later checkpoint.
+    ///
+    /// The profiler must come from [`Self::bootstrap_pool_profiler_from_rpc_snapshot`] or an earlier
+    /// call to this method. This keeps one command incremental without trusting an unproven stored
+    /// snapshot as the topology source.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the profiler has no RPC snapshot watermark, the target precedes that
+    /// watermark, event streaming fails, or RPC hydration fails.
+    pub async fn advance_pool_profiler_from_rpc_snapshot(
+        &mut self,
+        profiler: PoolProfiler,
+        to_block: u64,
+    ) -> anyhow::Result<(PoolProfiler, bool)> {
+        let from_position = profiler.last_processed_event.clone().ok_or_else(|| {
+            anyhow::anyhow!("cannot advance an RPC profiler without a snapshot watermark")
+        })?;
+
+        if to_block < from_position.number {
+            anyhow::bail!(
+                "cannot advance RPC profiler from block {} to earlier block {to_block}",
+                from_position.number
+            );
+        }
+
+        self.construct_pool_profiler_from_hypersync_rpc(profiler, Some(from_position), to_block)
             .await
     }
 
@@ -1637,6 +1670,13 @@ impl BlockchainDataClientCore {
                     profiler.get_all_position_keys().len().separate_with_commas()
                 )
             })?;
+        Self::validate_rpc_snapshot_topology(&profiler, &on_chain_snapshot).with_context(|| {
+            format!(
+                "RPC snapshot topology validation failed for pool {} at block {}",
+                profiler.pool.address,
+                to_block.separate_with_commas()
+            )
+        })?;
         profiler.restore_from_snapshot(on_chain_snapshot)?;
 
         Ok((profiler, true))
@@ -1811,6 +1851,180 @@ impl BlockchainDataClientCore {
                 profiler.pool.dex.name
             )
         }
+    }
+
+    fn validate_rpc_snapshot_topology(
+        profiler: &PoolProfiler,
+        snapshot: &PoolSnapshot,
+    ) -> anyhow::Result<()> {
+        let tick_spacing = i32::try_from(
+            profiler
+                .pool
+                .tick_spacing
+                .context("pool tick spacing is not set")?,
+        )?;
+        let expected_positions: AHashMap<_, _> = profiler
+            .get_all_positions()
+            .into_iter()
+            .map(|position| {
+                (
+                    (position.owner, position.tick_lower, position.tick_upper),
+                    position.liquidity,
+                )
+            })
+            .collect();
+        let actual_positions: AHashMap<_, _> = snapshot
+            .positions
+            .iter()
+            .map(|position| {
+                (
+                    (position.owner, position.tick_lower, position.tick_upper),
+                    position.liquidity,
+                )
+            })
+            .collect();
+
+        if actual_positions.len() != snapshot.positions.len()
+            || actual_positions != expected_positions
+        {
+            anyhow::bail!(
+                "RPC positions do not match the complete HyperSync topology: expected {} positions, received {}",
+                expected_positions.len(),
+                actual_positions.len()
+            );
+        }
+
+        let actual_ticks: AHashMap<_, _> = snapshot
+            .ticks
+            .iter()
+            .map(|tick| (tick.value, tick))
+            .collect();
+
+        if actual_ticks.len() != snapshot.ticks.len() {
+            anyhow::bail!("RPC snapshot contains duplicate ticks");
+        }
+
+        let expected_tick_values = profiler.get_active_tick_values();
+        if actual_ticks.len() != expected_tick_values.len() {
+            anyhow::bail!(
+                "RPC ticks do not match the complete HyperSync topology: expected {} ticks, received {}",
+                expected_tick_values.len(),
+                actual_ticks.len()
+            );
+        }
+
+        for tick_value in expected_tick_values {
+            let expected_tick = profiler
+                .get_tick(tick_value)
+                .with_context(|| format!("missing replay tick {tick_value}"))?;
+            let actual_tick = actual_ticks
+                .get(&tick_value)
+                .with_context(|| format!("RPC snapshot omitted tick {tick_value}"))?;
+
+            if !actual_tick.initialized
+                || actual_tick.liquidity_gross == 0
+                || actual_tick.liquidity_gross != expected_tick.liquidity_gross
+                || actual_tick.liquidity_net != expected_tick.liquidity_net
+            {
+                anyhow::bail!(
+                    "RPC tick {tick_value} topology mismatch: expected gross={} net={}, received gross={} net={} initialized={}",
+                    expected_tick.liquidity_gross,
+                    expected_tick.liquidity_net,
+                    actual_tick.liquidity_gross,
+                    actual_tick.liquidity_net,
+                    actual_tick.initialized
+                );
+            }
+        }
+
+        let mut derived_ticks: AHashMap<i32, (u128, i128)> = AHashMap::new();
+        let mut active_liquidity = 0_u128;
+
+        for position in &snapshot.positions {
+            if position.tick_lower >= position.tick_upper
+                || position.tick_lower < PoolTick::MIN_TICK
+                || position.tick_upper > PoolTick::MAX_TICK
+                || position.tick_lower % tick_spacing != 0
+                || position.tick_upper % tick_spacing != 0
+            {
+                anyhow::bail!(
+                    "RPC position {} has invalid tick range [{}, {}) for spacing {tick_spacing}",
+                    position.owner,
+                    position.tick_lower,
+                    position.tick_upper
+                );
+            }
+
+            if position.liquidity == 0 {
+                continue;
+            }
+
+            let liquidity_net = i128::try_from(position.liquidity).with_context(|| {
+                format!(
+                    "RPC position {} liquidity exceeds i128::MAX",
+                    position.owner
+                )
+            })?;
+            let lower = derived_ticks.entry(position.tick_lower).or_default();
+            lower.0 = lower
+                .0
+                .checked_add(position.liquidity)
+                .context("lower tick liquidity gross overflow")?;
+            lower.1 = lower
+                .1
+                .checked_add(liquidity_net)
+                .context("lower tick liquidity net overflow")?;
+            let upper = derived_ticks.entry(position.tick_upper).or_default();
+            upper.0 = upper
+                .0
+                .checked_add(position.liquidity)
+                .context("upper tick liquidity gross overflow")?;
+            upper.1 = upper
+                .1
+                .checked_sub(liquidity_net)
+                .context("upper tick liquidity net underflow")?;
+
+            if position.tick_lower <= snapshot.state.current_tick
+                && snapshot.state.current_tick < position.tick_upper
+            {
+                active_liquidity = active_liquidity
+                    .checked_add(position.liquidity)
+                    .context("active position liquidity overflow")?;
+            }
+        }
+
+        if active_liquidity != snapshot.state.liquidity {
+            anyhow::bail!(
+                "RPC active liquidity mismatch: positions sum to {active_liquidity}, global state reports {}",
+                snapshot.state.liquidity
+            );
+        }
+
+        if derived_ticks.len() != actual_ticks.len() {
+            anyhow::bail!(
+                "RPC tick topology does not match positions: derived {} ticks, received {}",
+                derived_ticks.len(),
+                actual_ticks.len()
+            );
+        }
+
+        for (tick_value, (liquidity_gross, liquidity_net)) in derived_ticks {
+            let actual_tick = actual_ticks
+                .get(&tick_value)
+                .with_context(|| format!("RPC snapshot omitted position boundary {tick_value}"))?;
+
+            if actual_tick.liquidity_gross != liquidity_gross
+                || actual_tick.liquidity_net != liquidity_net
+            {
+                anyhow::bail!(
+                    "RPC tick {tick_value} does not match positions: derived gross={liquidity_gross} net={liquidity_net}, received gross={} net={}",
+                    actual_tick.liquidity_gross,
+                    actual_tick.liquidity_net
+                );
+            }
+        }
+
+        Ok(())
     }
 
     fn timestamp_for_on_chain_snapshot(
@@ -2006,9 +2220,15 @@ impl BlockchainDataClientCore {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{U160, address};
+    use alloy::primitives::{Address, U160, U256, address};
     use nautilus_core::UnixNanos;
-    use nautilus_model::defi::{Chain, Token};
+    use nautilus_model::defi::{
+        Chain, Token,
+        pool_analysis::{
+            position::PoolPosition,
+            snapshot::{PoolAnalytics, PoolState},
+        },
+    };
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
     use ustr::Ustr;
@@ -2061,6 +2281,63 @@ mod tests {
                 profiler.pool.address
             )
         );
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_accepts_consistent_snapshot() {
+        let (profiler, snapshot) = rpc_topology_fixture();
+
+        let result = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot);
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_missing_tick() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.ticks.pop();
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("expected 2 ticks, received 1"));
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_zeroed_position() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.positions[0].liquidity = 0;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("RPC positions do not match the complete HyperSync topology")
+        );
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_active_liquidity_mismatch() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.state.liquidity -= 1;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("RPC active liquidity mismatch"));
+    }
+
+    #[rstest]
+    fn validate_rpc_snapshot_topology_rejects_tick_liquidity_mismatch() {
+        let (profiler, mut snapshot) = rpc_topology_fixture();
+        snapshot.ticks[0].liquidity_gross -= 1;
+
+        let error = BlockchainDataClientCore::validate_rpc_snapshot_topology(&profiler, &snapshot)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("RPC tick -60 topology mismatch"));
     }
 
     #[rstest]
@@ -2321,6 +2598,53 @@ mod tests {
             Some(60),
             UnixNanos::default(),
         ))
+    }
+
+    fn rpc_topology_fixture() -> (PoolProfiler, PoolSnapshot) {
+        let pool = weth_usdt_pool();
+        let owner = Address::ZERO;
+        let liquidity = 1_000_u128;
+        let state = PoolState {
+            current_tick: 0,
+            liquidity,
+            ..Default::default()
+        };
+        let position = PoolPosition::new(owner, -60, 60, liquidity as i128);
+        let ticks = vec![
+            PoolTick::new(
+                -60,
+                liquidity,
+                liquidity as i128,
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+            PoolTick::new(
+                60,
+                liquidity,
+                -(liquidity as i128),
+                U256::ZERO,
+                U256::ZERO,
+                true,
+                0,
+            ),
+        ];
+        let timestamp = UnixNanos::from(1_700_000_000_000_000_000);
+        let snapshot = PoolSnapshot::new(
+            pool.instrument_id,
+            state,
+            vec![position],
+            ticks,
+            PoolAnalytics::default(),
+            BlockPosition::new(100, "0xabc".to_string(), 0, 0),
+            timestamp,
+            timestamp,
+        );
+        let mut profiler = PoolProfiler::new(pool);
+        profiler.restore_from_snapshot(snapshot.clone()).unwrap();
+
+        (profiler, snapshot)
     }
 
     fn test_block(number: u64, timestamp: UnixNanos) -> Block {

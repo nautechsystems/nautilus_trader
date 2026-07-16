@@ -26,10 +26,10 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{LiquiditySide, OrderStatus, OrderType},
     events::{
-        OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
-        OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCanceled, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
+        OrderRejected, OrderTriggered, OrderUpdated,
     },
-    identifiers::{AccountId, PositionId},
+    identifiers::{AccountId, PositionId, TradeId},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny, TRIGGERABLE_ORDER_TYPES},
     reports::{FillReport, OrderStatusReport},
@@ -60,9 +60,86 @@ pub fn generate_reconciliation_order_events(
     instrument: Option<&InstrumentAny>,
     ts_now: UnixNanos,
 ) -> Vec<OrderEventAny> {
+    generate_reconciliation_order_events_inner(
+        order,
+        report,
+        instrument,
+        ts_now,
+        report.order_status == OrderStatus::Voided,
+    )
+}
+
+/// Generates reconciliation events for an authoritative venue snapshot.
+///
+/// Unlike [`generate_reconciliation_order_events`], a material decrease in cumulative filled
+/// quantity is treated as evidence that previously applied fills were voided. This is intended for
+/// status reports paired with the snapshot's fill reports, where the caller can project the full
+/// venue state before applying corrections.
+#[must_use]
+pub fn generate_reconciliation_order_snapshot_events(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    generate_reconciliation_order_events_inner(order, report, instrument, ts_now, true)
+}
+
+fn generate_reconciliation_order_events_inner(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+    allow_fill_decrease: bool,
+) -> Vec<OrderEventAny> {
     if is_superseded_cancel_report(order, report) {
         let _ = reconcile_order_report(order, report, instrument, ts_now);
         return Vec::new();
+    }
+
+    if has_material_fill_decrease(order, report) {
+        if !allow_fill_decrease {
+            log::warn!(
+                "Ignoring fill decrease without explicit void evidence for {}: cached={}, venue={}",
+                order.client_order_id(),
+                order.filled_qty(),
+                report.filled_qty,
+            );
+            return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+        }
+
+        let mut working = order.clone();
+        let mut events = create_reconciliation_fill_voids(&working, report, ts_now);
+        if events.is_empty() {
+            return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+        }
+
+        for event in &events {
+            if let Err(e) = working.apply(event.clone()) {
+                log::warn!(
+                    "Cannot project reconciliation fill void for {}: {e}",
+                    order.client_order_id()
+                );
+                return reconcile_fill_decrease_terminal(order, report, instrument, ts_now);
+            }
+        }
+
+        if report_is_working(report) && should_reconciliation_update(&working, report) {
+            let updated = create_reconciliation_updated(&working, report, ts_now);
+            if let Err(e) = working.apply(updated.clone()) {
+                log::warn!(
+                    "Cannot project reopening reconciliation update for {}: {e}",
+                    order.client_order_id()
+                );
+            } else {
+                events.push(updated);
+            }
+        }
+
+        if let Some(terminal) = reconcile_order_report(&working, report, instrument, ts_now) {
+            events.push(terminal);
+        }
+        return events;
     }
 
     let (mut working, mut events) = prepare_reconciliation_order(order, report, ts_now);
@@ -105,6 +182,44 @@ pub fn generate_reconciliation_order_events(
     }
 
     events
+}
+
+fn has_material_fill_decrease(order: &OrderAny, report: &OrderStatusReport) -> bool {
+    if report.filled_qty >= order.filled_qty() {
+        return false;
+    }
+
+    let precision = order
+        .filled_qty()
+        .precision
+        .max(report.filled_qty.precision);
+    !is_within_single_unit_tolerance(
+        report.filled_qty.as_decimal(),
+        order.filled_qty().as_decimal(),
+        precision,
+    )
+}
+
+fn reconcile_fill_decrease_terminal(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let should_reconcile = report.order_status == OrderStatus::Voided
+        || (!order.is_closed()
+            && matches!(
+                report.order_status,
+                OrderStatus::Canceled | OrderStatus::Expired
+            ));
+
+    if !should_reconcile {
+        return Vec::new();
+    }
+
+    reconcile_order_report(order, report, instrument, ts_now)
+        .into_iter()
+        .collect()
 }
 
 /// Generates acceptance, amendment, and triggering events for a report paired with real fills.
@@ -273,6 +388,10 @@ pub fn reconcile_order_report(
             reconcile_fill_quantity_mismatch(order, report, instrument, ts_now)
         }
 
+        OrderStatus::Voided => {
+            create_reconciliation_terminal_fill_void(order, report, instrument, ts_now)
+        }
+
         OrderStatus::PendingUpdate | OrderStatus::PendingCancel => None,
 
         // Internal states - should not appear in venue reports
@@ -331,6 +450,38 @@ pub fn generate_external_order_status_events(
 
             events
         }
+        OrderStatus::Voided => {
+            let mut working = order.clone();
+            if let Err(e) = working.apply(accepted.clone()) {
+                log::warn!(
+                    "Cannot project external order acceptance for {}: {e}",
+                    order.client_order_id()
+                );
+                return vec![accepted];
+            }
+            let mut events = vec![accepted];
+
+            if !report.filled_qty.is_zero()
+                && let Some(filled) =
+                    create_inferred_fill(order, report, *account_id, instrument, ts_now, None)
+            {
+                if let Err(e) = working.apply(filled.clone()) {
+                    log::warn!(
+                        "Cannot project external order fill for {}: {e}",
+                        order.client_order_id()
+                    );
+                } else {
+                    events.push(filled);
+                }
+            }
+
+            if let Some(voided) =
+                create_reconciliation_terminal_fill_void(&working, report, Some(instrument), ts_now)
+            {
+                events.push(voided);
+            }
+            events
+        }
         OrderStatus::Canceled | OrderStatus::Expired => {
             let terminal = create_external_terminal_event(order, report, *account_id, ts_now);
             let mut events = vec![accepted];
@@ -377,6 +528,128 @@ pub fn generate_external_order_status_events(
             Vec::new()
         }
     }
+}
+
+fn create_reconciliation_fill_voids(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    ts_now: UnixNanos,
+) -> Vec<OrderEventAny> {
+    let mut remaining = order.filled_qty() - report.filled_qty;
+    let order_events = order.events();
+    let mut corrections = Vec::new();
+
+    for candidate in order_events.iter().rev() {
+        let OrderEventAny::Filled(fill) = candidate else {
+            continue;
+        };
+
+        if remaining.is_zero() {
+            break;
+        }
+        let previous = order_events.iter().rev().find_map(|event| match event {
+            OrderEventAny::FillVoided(voided) if voided.trade_id == fill.trade_id => Some(voided),
+            _ => None,
+        });
+        let prior_qty = previous.map_or_else(
+            || Quantity::zero(fill.last_qty.precision),
+            |voided| voided.voided_qty,
+        );
+        let effective = fill.last_qty - prior_qty;
+        if effective.is_zero() {
+            continue;
+        }
+        let removed = remaining.min(effective);
+        let mut event = OrderFillVoided::new(
+            fill.trader_id,
+            fill.strategy_id,
+            fill.instrument_id,
+            fill.client_order_id,
+            fill.venue_order_id,
+            fill.account_id,
+            Ustr::from(&format!(
+                "reconciliation-{}-{}",
+                report.report_id, fill.trade_id
+            )),
+            fill.trade_id,
+            prior_qty + removed,
+            previous.and_then(|voided| voided.commission_voided),
+            fill.order_side,
+            fill.order_type,
+            fill.last_px,
+            fill.currency,
+            fill.liquidity_side,
+            fill.position_id,
+            report.cancel_reason.as_deref().map(Ustr::from),
+            None,
+            UUID4::new(),
+            report.ts_last,
+            ts_now,
+            true,
+            report_is_working(report),
+        );
+        event.causation_id = Some(report.report_id);
+        corrections.push(OrderEventAny::FillVoided(event));
+        remaining = remaining - removed;
+    }
+
+    if !remaining.is_zero() {
+        log::warn!(
+            "Cannot reconcile fill decrease for {}: {} is outside retained fill history",
+            order.client_order_id(),
+            remaining
+        );
+        return Vec::new();
+    }
+    corrections
+}
+
+fn create_reconciliation_terminal_fill_void(
+    order: &OrderAny,
+    report: &OrderStatusReport,
+    instrument: Option<&InstrumentAny>,
+    ts_now: UnixNanos,
+) -> Option<OrderEventAny> {
+    let voided_qty = order.leaves_qty();
+    if voided_qty.is_zero() {
+        return None;
+    }
+    let instrument = instrument?;
+    let last_px = if let Some(avg_px) = report.avg_px {
+        Price::from_decimal_dp(avg_px, instrument.price_precision()).ok()?
+    } else {
+        report
+            .price
+            .or_else(|| order.price())
+            .unwrap_or_else(|| Price::zero(instrument.price_precision()))
+    };
+    let mut event = OrderFillVoided::new(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        report.venue_order_id,
+        report.account_id,
+        Ustr::from(&format!("reconciliation-{}", report.report_id)),
+        TradeId::new(format!("VOID-{}", report.venue_order_id)),
+        voided_qty,
+        None,
+        order.order_side(),
+        order.order_type(),
+        last_px,
+        instrument.quote_currency(),
+        LiquiditySide::NoLiquiditySide,
+        None,
+        report.cancel_reason.as_deref().map(Ustr::from),
+        None,
+        UUID4::new(),
+        report.ts_last,
+        ts_now,
+        true,
+        false,
+    );
+    event.causation_id = Some(report.report_id);
+    Some(OrderEventAny::FillVoided(event))
 }
 
 fn create_external_terminal_event(
@@ -960,6 +1233,13 @@ fn report_is_confirmed_state(report: &OrderStatusReport) -> bool {
             | OrderStatus::Filled
             | OrderStatus::Canceled
             | OrderStatus::Expired
+    )
+}
+
+fn report_is_working(report: &OrderStatusReport) -> bool {
+    matches!(
+        report.order_status,
+        OrderStatus::Accepted | OrderStatus::Triggered | OrderStatus::PartiallyFilled
     )
 }
 

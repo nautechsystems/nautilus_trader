@@ -111,6 +111,8 @@ mod tests {
     fn create_closed_position(entry: OrderSide) -> Position {
         Position {
             events: Vec::new(),
+            replay_events: Vec::new(),
+            fill_voids: Vec::new(),
             trader_id: trader_id(),
             strategy_id: strategy_id_ema_cross(),
             instrument_id: instrument_id_aud_usd_sim(),

@@ -208,15 +208,11 @@ impl OrderSubmitter {
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
 
-        // Wire amounts are mantissas at USDC_DECIMALS (10^6) scale. For BUY,
-        // the signed taker_amount is the exact share quantity the venue will
-        // fill against; for SELL, the original `amount` is already in base
-        // shares (book walk total is irrelevant since SELL is never quote-qty).
-        let usdc_scale = Decimal::from(1_000_000u32);
-        let signed_base_qty = match poly_side {
-            PolymarketOrderSide::Buy => poly_order.taker_amount / usdc_scale,
-            PolymarketOrderSide::Sell => amount_dec,
-        };
+        // Wire amounts are mantissas at USDC_DECIMALS (10^6) scale. The share-denominated leg is
+        // the exact base quantity signed for the venue: takerAmount for BUY and makerAmount for
+        // SELL. Market SELL signing truncates shares to two decimal places.
+        let signed_base_qty =
+            signed_base_quantity(poly_order.maker_amount, poly_order.taker_amount, poly_side);
         let expected_venue_order_id = self
             .order_builder
             .expected_order_id(&poly_order, neg_risk)?;
@@ -445,6 +441,18 @@ impl OrderSubmitter {
     }
 }
 
+fn signed_base_quantity(
+    maker_amount: Decimal,
+    taker_amount: Decimal,
+    side: PolymarketOrderSide,
+) -> Decimal {
+    let usdc_scale = Decimal::from(1_000_000u32);
+    match side {
+        PolymarketOrderSide::Buy => taker_amount / usdc_scale,
+        PolymarketOrderSide::Sell => maker_amount / usdc_scale,
+    }
+}
+
 // Converts a nanos expire time to the unix-seconds string expected by the
 // Polymarket API. Returns `"0"` when there is no expiration.
 fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
@@ -457,6 +465,7 @@ fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
 
@@ -468,5 +477,20 @@ mod tests {
     #[case::typical(Some(UnixNanos::from(1_735_689_600_000_000_000u64)), "1735689600")]
     fn test_limit_order_expiration(#[case] expire_time: Option<UnixNanos>, #[case] expected: &str) {
         assert_eq!(limit_order_expiration(expire_time), expected);
+    }
+
+    #[rstest]
+    #[case::buy(dec!(4_800_000), dec!(5_202_897), PolymarketOrderSide::Buy, dec!(5.202897))]
+    #[case::sell(dec!(5_200_000), dec!(4_992_000), PolymarketOrderSide::Sell, dec!(5.2))]
+    fn test_signed_base_quantity_uses_share_denominated_wire_leg(
+        #[case] maker_amount: Decimal,
+        #[case] taker_amount: Decimal,
+        #[case] side: PolymarketOrderSide,
+        #[case] expected: Decimal,
+    ) {
+        assert_eq!(
+            signed_base_quantity(maker_amount, taker_amount, side),
+            expected
+        );
     }
 }

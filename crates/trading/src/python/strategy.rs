@@ -62,10 +62,10 @@ use nautilus_model::{
     enums::{BookType, OmsType, OrderSide, PositionSide, TimeInForce},
     events::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId, StrategyId,
@@ -593,6 +593,19 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_order_fill_voided(&self, event: &OrderFillVoided) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                py_self.call_method1(
+                    py,
+                    "on_order_fill_voided",
+                    (event.clone().into_py_any_unwrap(py),),
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_position_opened(&self, event: PositionOpened) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -993,6 +1006,10 @@ impl Strategy for PyStrategyInner {
 
     fn on_order_filled(&mut self, event: &OrderFilled) {
         let _ = self.dispatch_on_order_filled(event);
+    }
+
+    fn on_order_fill_voided(&mut self, event: &OrderFillVoided) {
+        let _ = self.dispatch_on_order_fill_voided(event);
     }
 
     fn on_position_opened(&mut self, event: PositionOpened) {
@@ -2165,6 +2182,10 @@ impl PyStrategy {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
     fn py_on_order_filled(&mut self, event: OrderFilled) {}
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_order_fill_voided")]
+    fn py_on_order_fill_voided(&mut self, event: OrderFillVoided) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_position_opened")]

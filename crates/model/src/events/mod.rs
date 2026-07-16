@@ -40,6 +40,7 @@ pub use crate::events::{
         denied_reason::{OrderDeniedCode, OrderDeniedReason},
         emulated::OrderEmulated,
         expired::OrderExpired,
+        fill_voided::OrderFillVoided,
         filled::OrderFilled,
         initialized::OrderInitialized,
         modify_rejected::OrderModifyRejected,
@@ -168,6 +169,12 @@ impl HasTsInit for OrderFilled {
     }
 }
 
+impl HasTsInit for OrderFillVoided {
+    fn ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
 impl HasTsInit for OrderSnapshot {
     fn ts_init(&self) -> UnixNanos {
         self.ts_init
@@ -227,6 +234,7 @@ crate::impl_catalog_path_prefix!(OrderReleased, "order_released");
 crate::impl_catalog_path_prefix!(OrderModifyRejected, "order_modify_rejected");
 crate::impl_catalog_path_prefix!(OrderUpdated, "order_updated");
 crate::impl_catalog_path_prefix!(OrderFilled, "order_filled");
+crate::impl_catalog_path_prefix!(OrderFillVoided, "order_fill_voided");
 crate::impl_catalog_path_prefix!(PositionOpened, "position_opened");
 crate::impl_catalog_path_prefix!(PositionChanged, "position_changed");
 crate::impl_catalog_path_prefix!(PositionClosed, "position_closed");

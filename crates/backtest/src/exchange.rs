@@ -547,13 +547,11 @@ impl SimulatedExchange {
 
     /// Adjusts the account balance by the given amount.
     ///
-    /// # Panics
-    ///
-    /// Panics if generating account state fails during adjustment.
-    pub fn adjust_account(&mut self, adjustment: Money) {
+    /// Returns whether the adjustment was applied successfully.
+    pub fn adjust_account(&mut self, adjustment: Money) -> bool {
         if self.frozen_account {
             // Nothing to adjust
-            return;
+            return true;
         }
 
         if let Some(exec_client) = &self.exec_client {
@@ -564,8 +562,22 @@ impl SimulatedExchange {
                 if let Some(account) = cache.account_for_venue(&venue) {
                     if let Some(balance) = account.balance(Some(adjustment.currency)) {
                         let mut current_balance = *balance;
-                        current_balance.total = current_balance.total + adjustment;
-                        current_balance.free = current_balance.free + adjustment;
+                        let Some(total) = current_balance.total.checked_add(adjustment) else {
+                            log::error!(
+                                "Cannot adjust account: {} total exceeds Money bounds",
+                                adjustment.currency
+                            );
+                            return false;
+                        };
+                        let Some(free) = current_balance.free.checked_add(adjustment) else {
+                            log::error!(
+                                "Cannot adjust account: {} free balance exceeds Money bounds",
+                                adjustment.currency
+                            );
+                            return false;
+                        };
+                        current_balance.total = total;
+                        current_balance.free = free;
 
                         let margins = match &*account {
                             AccountAny::Margin(margin_account) => margin_account.margins.clone(),
@@ -591,11 +603,17 @@ impl SimulatedExchange {
             };
 
             if let Some((balances, margins, ts_event)) = account_state {
-                exec_client
-                    .generate_account_state(balances, margins, true, ts_event)
-                    .unwrap();
+                if let Err(e) =
+                    exec_client.generate_account_state(balances, margins, true, ts_event)
+                {
+                    log::error!("Cannot adjust account: failed to generate account state: {e}");
+                    return false;
+                }
+            } else {
+                return false;
             }
         }
+        true
     }
 
     /// Returns whether there are pending commands at or before `ts_now`.
@@ -994,7 +1012,10 @@ impl SimulatedExchange {
             if next_funding_ns <= self.clock.borrow().timestamp_ns() {
                 self.pending_funding_rates
                     .remove(&funding_rate.instrument_id);
-                self.settle_funding_rate(funding_rate, next_funding_ns);
+                if !self.settle_funding_rate(&funding_rate, next_funding_ns) {
+                    self.pending_funding_rates
+                        .insert(funding_rate.instrument_id, funding_rate);
+                }
                 return None;
             }
 
@@ -1004,7 +1025,10 @@ impl SimulatedExchange {
         }
 
         if Self::is_interval_funding_boundary(&funding_rate) {
-            self.settle_funding_rate(funding_rate, funding_rate.ts_event);
+            if !self.settle_funding_rate(&funding_rate, funding_rate.ts_event) {
+                self.pending_funding_rates
+                    .insert(funding_rate.instrument_id, funding_rate);
+            }
         } else {
             log::debug!(
                 "Funding rate update for {} does not define a settlement boundary",
@@ -1030,16 +1054,23 @@ impl SimulatedExchange {
             return;
         }
 
-        self.settle_funding_rate(funding_rate, ts_event);
+        if !self.settle_funding_rate(&funding_rate, ts_event) {
+            self.pending_funding_rates
+                .insert(funding_rate.instrument_id, funding_rate);
+        }
     }
 
-    fn settle_funding_rate(&mut self, funding_rate: FundingRateUpdate, ts_event: UnixNanos) {
+    fn settle_funding_rate(
+        &mut self,
+        funding_rate: &FundingRateUpdate,
+        ts_event: UnixNanos,
+    ) -> bool {
         if self
             .funding_settled_through
             .get(&funding_rate.instrument_id)
             .is_some_and(|settled_through| *settled_through >= ts_event)
         {
-            return;
+            return true;
         }
 
         let Some(exec_client) = &self.exec_client else {
@@ -1047,9 +1078,10 @@ impl SimulatedExchange {
                 "Cannot settle funding for {}: execution client is not registered",
                 funding_rate.instrument_id
             );
-            return;
+            return false;
         };
         let account_id = exec_client.account_id();
+        let account_venue = exec_client.venue();
 
         if !self
             .matching_engines
@@ -1066,14 +1098,14 @@ impl SimulatedExchange {
                         "Cannot settle funding for {}: failed to add instrument: {e}",
                         funding_rate.instrument_id
                     );
-                    return;
+                    return false;
                 }
             } else {
                 log::warn!(
                     "Cannot settle funding for {}: no matching engine or instrument",
                     funding_rate.instrument_id
                 );
-                return;
+                return false;
             }
         }
 
@@ -1083,7 +1115,7 @@ impl SimulatedExchange {
                 "Cannot settle funding for {}: no mark price or top-of-book price",
                 funding_rate.instrument_id
             );
-            return;
+            return false;
         };
 
         let open_positions: Vec<Position> = {
@@ -1101,14 +1133,118 @@ impl SimulatedExchange {
                 .collect()
         };
 
-        self.funding_settled_through
-            .insert(funding_rate.instrument_id, ts_event);
-
         if open_positions.is_empty() {
-            return;
+            self.funding_settled_through
+                .insert(funding_rate.instrument_id, ts_event);
+            return true;
         }
 
-        let currency = open_positions[0].settlement_currency;
+        let mut valued_positions = Vec::with_capacity(open_positions.len());
+        let mut account_adjustments: AHashMap<Currency, Money> = AHashMap::new();
+
+        for position in open_positions {
+            let notional = match position.try_notional_value(settlement_price) {
+                Ok(notional) => notional,
+                Err(e) => {
+                    log::error!(
+                        "Cannot settle funding for position {}: invalid notional value: {e}",
+                        position.id
+                    );
+                    return false;
+                }
+            };
+            let side = if position.signed_qty > 0.0 {
+                -Decimal::ONE
+            } else {
+                Decimal::ONE
+            };
+            let Some(amount) = notional
+                .as_decimal()
+                .checked_mul(funding_rate.rate)
+                .and_then(|value| value.checked_mul(side))
+            else {
+                log::error!(
+                    "Cannot settle funding for position {}: funding amount overflow",
+                    position.id
+                );
+                return false;
+            };
+            let pnl_change = match Money::from_decimal(amount, notional.currency) {
+                Ok(money) => money,
+                Err(e) => {
+                    log::error!(
+                        "Cannot settle funding for position {}: invalid funding amount: {e}",
+                        position.id
+                    );
+                    return false;
+                }
+            };
+
+            if let Some(realized) = position.realized_pnl {
+                if realized.currency != pnl_change.currency {
+                    log::error!(
+                        "Cannot settle funding for position {}: realized PnL currency {} differs from funding currency {}",
+                        position.id,
+                        realized.currency,
+                        pnl_change.currency
+                    );
+                    return false;
+                }
+
+                if realized.checked_add(pnl_change).is_none() {
+                    log::error!(
+                        "Cannot settle funding for position {}: realized PnL overflow",
+                        position.id
+                    );
+                    return false;
+                }
+            }
+            let total_adjustment =
+                if let Some(current) = account_adjustments.get(&pnl_change.currency).copied() {
+                    let Some(total) = current.checked_add(pnl_change) else {
+                        log::error!(
+                            "Cannot settle funding for {}: aggregate account adjustment overflow",
+                            funding_rate.instrument_id
+                        );
+                        return false;
+                    };
+                    total
+                } else {
+                    pnl_change
+                };
+            account_adjustments.insert(pnl_change.currency, total_adjustment);
+            valued_positions.push((position, pnl_change));
+        }
+
+        if !self.frozen_account {
+            let cache = self.cache.borrow();
+            let Some(account) = cache.account_for_venue(&account_venue) else {
+                log::error!("Cannot settle funding: no account for venue {account_venue}");
+                return false;
+            };
+
+            for adjustment in account_adjustments.values() {
+                let Some(balance) = account.balance(Some(adjustment.currency)) else {
+                    log::error!(
+                        "Cannot settle funding: no account balance for currency {}",
+                        adjustment.currency
+                    );
+                    return false;
+                };
+
+                if balance.total.checked_add(*adjustment).is_none()
+                    || balance.free.checked_add(*adjustment).is_none()
+                {
+                    log::error!(
+                        "Cannot settle funding: {} account adjustment exceeds Money bounds",
+                        adjustment.currency
+                    );
+                    return false;
+                }
+            }
+        }
+
+        let currency = valued_positions[0].0.settlement_currency;
         let ts_init = self.clock.borrow().timestamp_ns();
         let settlement = FundingSettlement::new(
             msgbus::get_message_bus().borrow().trader_id,
@@ -1121,84 +1257,83 @@ impl SimulatedExchange {
             ts_event,
             ts_init,
         );
-        let settlement_topic = switchboard::get_funding_settlement_topic(settlement.instrument_id);
-        msgbus::publish_any(settlement_topic, &settlement);
-
-        let mut account_adjustments: AHashMap<Currency, Decimal> = AHashMap::new();
-        let mut position_events = Vec::new();
+        let mut adjusted_positions = Vec::with_capacity(valued_positions.len());
+        for (original, pnl_change) in valued_positions {
+            let mut adjusted = original.clone();
+            let adjustment = PositionAdjusted::new(
+                settlement.trader_id,
+                adjusted.strategy_id,
+                adjusted.instrument_id,
+                adjusted.id,
+                adjusted.account_id,
+                PositionAdjustmentType::Funding,
+                None,
+                Some(pnl_change),
+                Some(Ustr::from(&format!(
+                    "funding_settlement:{}",
+                    settlement.event_id
+                ))),
+                UUID4::new(),
+                settlement.ts_event,
+                settlement.ts_init,
+            );
+            adjusted.apply_adjustment(adjustment);
+            adjusted_positions.push((original, adjusted, adjustment));
+        }
 
         {
             let mut cache = self.cache.borrow_mut();
 
-            for mut position in open_positions {
-                let notional = position.notional_value(settlement_price);
-                let side = if position.signed_qty > 0.0 {
-                    -Decimal::ONE
-                } else {
-                    Decimal::ONE
-                };
-                let amount = notional.as_decimal() * funding_rate.rate * side;
-
-                let pnl_change = match Money::from_decimal(amount, notional.currency) {
-                    Ok(money) => money,
-                    Err(e) => {
-                        log::error!(
-                            "Cannot settle funding for position {}: invalid funding amount: {e}",
-                            position.id
-                        );
-                        continue;
-                    }
-                };
-
-                let adjustment = PositionAdjusted::new(
-                    settlement.trader_id,
-                    position.strategy_id,
-                    position.instrument_id,
-                    position.id,
-                    position.account_id,
-                    PositionAdjustmentType::Funding,
-                    None,
-                    Some(pnl_change),
-                    Some(Ustr::from(&format!(
-                        "funding_settlement:{}",
-                        settlement.event_id
-                    ))),
-                    UUID4::new(),
-                    settlement.ts_event,
-                    settlement.ts_init,
-                );
-                position.apply_adjustment(adjustment);
-
-                if let Err(e) = cache.update_position(&position) {
+            for (index, (_, adjusted, _)) in adjusted_positions.iter().enumerate() {
+                if let Err(e) = cache.update_position(adjusted) {
                     log::error!(
                         "Cannot update position {} after funding settlement: {e}",
-                        position.id
+                        adjusted.id
                     );
-                    continue;
+
+                    for (original, _, _) in adjusted_positions[..index].iter().rev() {
+                        if let Err(rollback_error) = cache.update_position(original) {
+                            log::error!(
+                                "Cannot roll back position {} after failed funding settlement: {rollback_error}",
+                                original.id
+                            );
+                        }
+                    }
+                    return false;
                 }
-
-                account_adjustments
-                    .entry(pnl_change.currency)
-                    .and_modify(|current| *current += pnl_change.as_decimal())
-                    .or_insert_with(|| pnl_change.as_decimal());
-                position_events.push(PositionEvent::PositionAdjusted(adjustment));
             }
         }
 
-        for (currency, amount) in account_adjustments {
-            match Money::from_decimal(amount, currency) {
-                Ok(adjustment) => self.adjust_account(adjustment),
-                Err(e) => log::error!("Cannot apply funding account adjustment: {e}"),
+        for adjustment in account_adjustments.values() {
+            if !self.adjust_account(*adjustment) {
+                let mut cache = self.cache.borrow_mut();
+                for (original, _, _) in adjusted_positions.iter().rev() {
+                    if let Err(e) = cache.update_position(original) {
+                        log::error!(
+                            "Cannot roll back position {} after failed account adjustment: {e}",
+                            original.id
+                        );
+                    }
+                }
+                return false;
             }
         }
 
-        for event in position_events {
+        self.funding_settled_through
+            .insert(funding_rate.instrument_id, ts_event);
+        let settlement_topic = switchboard::get_funding_settlement_topic(settlement.instrument_id);
+        msgbus::publish_any(settlement_topic, &settlement);
+
+        for (_, _, adjustment) in adjusted_positions {
+            let event = PositionEvent::PositionAdjusted(adjustment);
             let PositionEvent::PositionAdjusted(adjustment) = &event else {
                 continue;
             };
             let topic = switchboard::get_event_position_topic(adjustment.strategy_id);
             msgbus::publish_position_event(topic, &event);
         }
+
+        true
     }
 
     fn funding_settlement_price(&self, instrument_id: InstrumentId) -> Option<Price> {

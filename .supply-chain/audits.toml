@@ -273,6 +273,12 @@ criteria = "safe-to-deploy"
 delta = "0.53.0 -> 0.54.0"
 notes = "Crate code unchanged; only bumps dbn to 0.62.0 with changelog and CI workflow updates. No source logic, build script, feature, or network behavior changes in databento itself."
 
+[[audits.databento]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.54.0 -> 0.55.0"
+notes = "Published crate code only bumps dbn to 0.63.0 and updates the changelog. No source logic, build script, feature, or network behavior changes in databento itself."
+
 [[audits.dbn]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -309,6 +315,12 @@ criteria = "safe-to-deploy"
 delta = "0.59.0 -> 0.62.0"
 notes = "Adds RecordDecoder::seek_to and dynamic-reader is_compressed helpers, MatchAlgorithm::Allocation and StatType MWCB/auction-collar variants, renames the CGIF venue/dataset/publisher to MAIN plus new Cboe Titanium publishers, and sets the default record size field to 0. No new unsafe, build script, filesystem, or network behavior."
 
+[[audits.dbn]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.62.0 -> 0.63.0"
+notes = "Adds a stable u8 representation and Python integer conversion for VersionUpgradePolicy. No new unsafe, dependencies, build script, filesystem, or network behavior."
+
 [[audits.dbn-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -344,6 +356,12 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.59.0 -> 0.62.0"
 notes = "No source changes; version bump only to stay in lockstep with dbn 0.62.0."
+
+[[audits.dbn-macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.62.0 -> 0.63.0"
+notes = "No source changes; version bump only to stay in lockstep with dbn 0.63.0."
 
 [[audits.enum-ordinalize]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -494,6 +512,18 @@ criteria = "safe-to-deploy"
 delta = "1.2.4 -> 1.3.0"
 notes = "Adds optional Bloom command support, numbered DB support for cluster clients, and a cluster retry backoff bound fix. No new build-script, filesystem, process, or suspicious network behavior."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.3.0 -> 1.4.0"
+notes = "Adds Valkey Bloom support, configurable write backpressure, command encoding optimizations, and background cluster replica repair with same-shard fallback. No new unsafe, build script, filesystem, process, external endpoint, or credential behavior."
+
+[[audits.rustls]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.23.41 -> 0.23.42"
+notes = "Adds optional RFC 9149 TLS ticket requests with client and server controls. Both defaults preserve prior behavior; no new unsafe, dependencies, build script, filesystem, or network destination behavior."
+
 [[audits.rustls-native-certs]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -595,17 +625,47 @@ criteria = "safe-to-deploy"
 delta = "0.28.0 -> 0.29.0"
 notes = "Bumps tungstenite dep to 0.29.0, README updates only"
 
+[[audits.tokio-tungstenite]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.30.0"
+notes = "Bumps tungstenite to 0.30.0, raises MSRV to 1.85, and documents read cancel safety. No new runtime logic, build script, filesystem, process, or network destination behavior in the wrapper."
+
+[[audits.toml]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.2+spec-1.1.0 -> 1.1.3+spec-1.1.0"
+notes = "Removes redundant Span clones and bumps toml_writer for its long-quote overflow fix. No new unsafe, build script, filesystem, process, or network behavior."
+
 [[audits.toml_edit]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.25.9+spec-1.1.0 -> 0.25.11+spec-1.1.0"
 notes = "Span tracking for array and inline table close brackets. Parser-only change."
 
+[[audits.toml_edit]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.25.12+spec-1.1.0 -> 0.25.13+spec-1.1.0"
+notes = "Refactors Option filtering without behavior changes and updates version metadata. No new unsafe, dependencies, build script, filesystem, process, or network behavior."
+
+[[audits.toml_writer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.1.1+spec-1.1.0 -> 1.1.2+spec-1.1.0"
+notes = "Uses saturating quote counters to prevent overflow on strings with more than 255 consecutive quotes. No new unsafe, dependencies, build script, filesystem, process, or network behavior."
+
 [[audits.tungstenite]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.28.0 -> 0.29.0"
 notes = "Inlines utf-8 crate, supports non-ASCII HTTP headers per RFC 7230, MSRV bump to 1.71"
+
+[[audits.tungstenite]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.29.0 -> 0.30.0"
+notes = "Rejects malformed WebSocket keys, checks 64-bit frame lengths before narrowing on 32-bit targets, updates rand and sha1, and raises MSRV to 1.85. No new build script, filesystem, process, or network destination behavior."
 
 [[audits.unicode-segmentation]]
 who = "Chris Sellers <chris@cjdsellers.io>"

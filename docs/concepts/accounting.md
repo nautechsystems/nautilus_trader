@@ -79,6 +79,35 @@ The helpers clamp the derived field to `[0, total]` when `total >= 0`, so
 transient overshoots from venue rounding never leave the account in a broken
 state.
 
+## Currency and valuation contracts
+
+Accounting values retain their source currency until an explicit conversion succeeds. This prevents a valid
+number from being labeled with the wrong currency or an unavailable value from being treated as zero.
+
+| Value                        | Currency contract                                              |
+|------------------------------|----------------------------------------------------------------|
+| Instrument cost currency     | Base for inverse, settlement for quanto, and quote otherwise.  |
+| Position PnL                 | Instrument cost currency captured when the position opens.     |
+| Calculated locks and margins | Each calculated amount's currency, converted independently.    |
+| Portfolio aggregates         | Native buckets, or the account base after conversion succeeds. |
+
+Aggregations combine only compatible `Money` values. An account without a base currency keeps separate native
+currency buckets. A single-instrument realized PnL query returns unavailable instead of combining mixed
+currencies.
+
+The accounting and valuation paths also follow these rules:
+
+- Invalid or unrepresentable notional, PnL, fee, locked-balance, and margin results produce an error,
+  unavailable value, or unpriced state. They do not substitute zero. A failed realized PnL recalculation also
+  clears any earlier cached result.
+- `equity()` counts a credited non-inverse base asset once for a multi-currency cash account without a base
+  currency. `mark_values()` remains a gross position-value query and includes that asset.
+- MTM snapshots distinguish carried stale inputs from positions that have never had complete valuation data.
+  Stale-price metadata covers only open instrument and position-side pairs.
+
+See [Portfolio](portfolio.md#equity-and-mark-to-market) for equity formulas, price and xrate selection, snapshot
+metadata, and missing-price query scope.
+
 ## Margin scopes
 
 A `MarginBalance` has four fields: `initial`, `maintenance`, `currency`, and an

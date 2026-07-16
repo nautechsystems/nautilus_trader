@@ -67,12 +67,16 @@ use nautilus_model::{
         Instrument, InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt, xbtusd_bitmex},
     },
-    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{
+        Order, OrderAny, OrderTestBuilder,
+        stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
+    },
     position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
 #[cfg(all(feature = "simulation", madsim))]
@@ -3734,7 +3738,7 @@ async fn test_no_inferred_fill_when_already_in_sync() {
 }
 
 #[tokio::test]
-async fn test_fill_qty_mismatch_venue_less_logs_error() {
+async fn test_fill_qty_mismatch_venue_less_generates_fill_void() {
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let client_order_id = ClientOrderId::from("O-MISMATCH");
@@ -3751,22 +3755,14 @@ async fn test_fill_qty_mismatch_venue_less_logs_error() {
         "3000.00",
         venue_order_id,
     );
-    let fill = TestOrderEventStubs::filled(
-        &order,
-        &test_instrument(),
-        None,                        // trade_id
-        None,                        // position_id
-        None,                        // last_px
-        Some(Quantity::from("5.0")), // last_qty
-        None,                        // liquidity_side
-        None,                        // commission
-        None,                        // ts_filled_ns
-        None,                        // account_id
-    );
+    let fill = OrderFilledTestBuilder::new(&order, &test_instrument())
+        .last_qty(Quantity::from("5.0"))
+        .without_position_id()
+        .build();
     order.apply(fill).unwrap();
     ctx.add_order(order);
 
-    // Venue reports LESS filled than we have (anomaly)
+    // Venue reports less filled than Nautilus has applied.
     let mut mass_status = ExecutionMassStatus::new(
         test_client_id(),
         test_account_id(),
@@ -3790,8 +3786,21 @@ async fn test_fill_qty_mismatch_venue_less_logs_error() {
         .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
         .await;
 
-    // Should not generate events (error condition)
-    assert!(result.events.is_empty());
+    let order = ctx
+        .cache
+        .borrow()
+        .order_owned(&client_order_id)
+        .expect("order cached");
+
+    assert_eq!(result.events.len(), 1);
+    let OrderEventAny::FillVoided(voided) = &result.events[0] else {
+        panic!("expected OrderFillVoided event");
+    };
+    assert_eq!(voided.voided_qty, Quantity::from("2.0"));
+    assert!(voided.is_reopened);
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.filled_qty(), Quantity::from("3.0"));
+    assert_eq!(order.voided_qty(), Quantity::from("2.0"));
 }
 
 #[tokio::test]
@@ -9028,6 +9037,7 @@ struct MockPositionExecutionClient {
     order_reports: RefCell<Vec<OrderStatusReport>>,
     position_reports: RefCell<Vec<PositionStatusReport>>,
     fail_position_reports: bool,
+    position_reconciliation_tolerance: Decimal,
 }
 
 impl MockPositionExecutionClient {
@@ -9042,7 +9052,13 @@ impl MockPositionExecutionClient {
             order_reports: RefCell::new(order_reports),
             position_reports: RefCell::new(position_reports),
             fail_position_reports: false,
+            position_reconciliation_tolerance: dec!(0.00000001),
         }
+    }
+
+    fn with_position_reconciliation_tolerance(mut self, tolerance: Decimal) -> Self {
+        self.position_reconciliation_tolerance = tolerance;
+        self
     }
 
     fn failing_position_reports() -> Self {
@@ -9053,6 +9069,7 @@ impl MockPositionExecutionClient {
             order_reports: RefCell::new(Vec::new()),
             position_reports: RefCell::new(Vec::new()),
             fail_position_reports: true,
+            position_reconciliation_tolerance: dec!(0.00000001),
         }
     }
 }
@@ -9081,6 +9098,10 @@ impl ExecutionClient for MockPositionExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         None
+    }
+
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        self.position_reconciliation_tolerance
     }
 
     fn generate_account_state(
@@ -9150,6 +9171,117 @@ impl ExecutionClient for MockPositionExecutionClient {
 
         Ok(self.position_reports.borrow().clone())
     }
+}
+
+#[tokio::test]
+async fn test_position_check_uses_client_tolerance_for_missing_dust_report() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-DUST-MISSING"),
+        OrderSide::Buy,
+        "0.008007",
+        "3000.00",
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-SMOKE-DIFFERENCE"),
+        OrderSide::Buy,
+        "5.202897",
+        "3000.00",
+    );
+    // The venue report includes a pre-existing 0.005103-share balance in addition to this order.
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.208000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn test_position_check_reconciles_at_client_tolerance_boundary() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-TOLERANCE-BOUNDARY"),
+        OrderSide::Buy,
+        "5.200000",
+        "3000.00",
+    );
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.210000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_reconciliation_tolerance(dec!(0.009999));
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events
+        .iter()
+        .any(|event| matches!(event, OrderEventAny::Filled(fill) if fill.last_qty == Quantity::from("0.010000"))));
 }
 
 #[tokio::test]

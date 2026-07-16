@@ -186,9 +186,10 @@ macro_rules! impl_instrument_common_pymethods {
                 quantity: Quantity,
                 price: Price,
                 use_quote_for_inverse: bool,
-            ) -> Money {
+            ) -> pyo3::PyResult<Money> {
                 use crate::instruments::Instrument;
-                self.calculate_notional_value(quantity, price, Some(use_quote_for_inverse))
+                self.try_calculate_notional_value(quantity, price, Some(use_quote_for_inverse))
+                    .map_err(nautilus_core::python::to_pyvalue_err)
             }
         }
     };

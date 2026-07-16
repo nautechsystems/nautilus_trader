@@ -16,9 +16,12 @@
 import pytest
 
 from nautilus_trader.model import AccountType
+from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentClass
 from nautilus_trader.model import MarketStatus
 from nautilus_trader.model import OmsType
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import OrderType
 from nautilus_trader.model import OtoTriggerMode
 from nautilus_trader.model import PoolLiquidityUpdateType
 from nautilus_trader.model import TradingState
@@ -48,3 +51,9 @@ def test_model_enums_from_str(enum_type, member, name):
 
 def test_pool_liquidity_update_type_from_str():
     assert PoolLiquidityUpdateType.from_str("Mint") == PoolLiquidityUpdateType.MINT
+
+
+@pytest.mark.parametrize("enum_type", [BookType, OrderSide, OrderType])
+def test_workflow_enums_reject_malformed_values(enum_type):
+    with pytest.raises(ValueError, match="Matching variant not found"):
+        enum_type.from_str("NOT_A_VARIANT")

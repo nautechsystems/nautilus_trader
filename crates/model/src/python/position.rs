@@ -41,6 +41,8 @@ impl Position {
     ///
     /// The position ID may be assigned at the trading venue, or can be system
     /// generated depending on a strategies OMS (Order Management System) settings.
+    /// Replay events and cumulative fill corrections preserve derived state across close and reopen
+    /// cycles.
     #[new]
     fn py_new(py: Python, instrument: Py<PyAny>, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
@@ -312,14 +314,16 @@ impl Position {
 
     /// Returns unrealized P&L based on the last price.
     #[pyo3(name = "unrealized_pnl")]
-    fn py_unrealized_pnl(&self, last: Price) -> Money {
-        self.unrealized_pnl(last)
+    fn py_unrealized_pnl(&self, last: Price) -> PyResult<Money> {
+        self.try_unrealized_pnl(last)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Returns total P&L (realized + unrealized) based on the last price.
     #[pyo3(name = "total_pnl")]
-    fn py_total_pnl(&self, last: Price) -> Money {
-        self.total_pnl(last)
+    fn py_total_pnl(&self, last: Price) -> PyResult<Money> {
+        self.try_total_pnl(last)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Returns the cumulative commissions for the position as a vector.
@@ -366,14 +370,21 @@ impl Position {
 
     /// Calculates profit and loss from the given prices and quantity.
     #[pyo3(name = "calculate_pnl")]
-    fn py_calculate_pnl(&self, avg_px_open: f64, avg_px_close: f64, quantity: Quantity) -> Money {
-        self.calculate_pnl(avg_px_open, avg_px_close, quantity)
+    fn py_calculate_pnl(
+        &self,
+        avg_px_open: f64,
+        avg_px_close: f64,
+        quantity: Quantity,
+    ) -> PyResult<Money> {
+        self.try_calculate_pnl(avg_px_open, avg_px_close, quantity)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Calculates the notional value based on the last price.
     #[pyo3(name = "notional_value")]
-    fn py_notional_value(&self, price: Price) -> Money {
-        self.notional_value(price)
+    fn py_notional_value(&self, price: Price) -> PyResult<Money> {
+        self.try_notional_value(price)
+            .map_err(nautilus_core::python::to_pyvalue_err)
     }
 
     /// Constructs a [`Position`] from a Python dict.

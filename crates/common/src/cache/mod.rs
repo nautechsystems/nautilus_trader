@@ -2695,7 +2695,13 @@ impl Cache {
             PositionSide::Short => quote.ask_price,
         };
 
-        Some(position.unrealized_pnl(last))
+        match position.try_unrealized_pnl(last) {
+            Ok(pnl) => Some(pnl),
+            Err(e) => {
+                log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
+                None
+            }
+        }
     }
 
     /// Checks integrity of data within the cache.

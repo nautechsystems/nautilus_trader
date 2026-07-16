@@ -398,7 +398,7 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
                             .unwrap_or_default();
                         let reject = state
                             .subscribe_failures
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                                 remaining.checked_sub(1)
                             })
                             .is_ok();
@@ -426,7 +426,7 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
                         }
                         let deferred = state
                             .deferred_subscribe_responses
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                                 remaining.checked_sub(1)
                             })
                             .is_ok();
@@ -474,7 +474,7 @@ async fn handle_ws(socket: WebSocket, state: WsState) {
                         }
                         let reject = state
                             .unsubscribe_failures
-                            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                                 remaining.checked_sub(1)
                             })
                             .is_ok();
