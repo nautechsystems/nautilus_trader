@@ -84,6 +84,13 @@ static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("RECONCI
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
 type FillKey = (AccountId, InstrumentId, TradeId);
 
+/// Execution clients responsible for reporting one cached entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ReportClientCoverage {
+    Resolved(IndexSet<ClientId>),
+    Unresolved,
+}
+
 /// Metadata for an external order that needs to be registered with the execution client.
 #[derive(Debug, Clone)]
 pub struct ExternalOrderMetadata {
@@ -117,6 +124,7 @@ pub struct InflightCheckResult {
 pub(crate) struct OpenOrderReportCheck {
     pub command: GenerateOrderStatusReports,
     pub filtered_orders: Vec<OrderAny>,
+    pub client_coverage: IndexMap<ClientOrderId, ReportClientCoverage>,
     pub start: Option<UnixNanos>,
 }
 
@@ -125,6 +133,7 @@ pub(crate) struct OpenOrderReportCheck {
 pub(crate) struct PositionReportCheck {
     pub command: GeneratePositionStatusReports,
     pub positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>>,
+    pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
 }
 
 struct RetainedFillState {
@@ -287,6 +296,8 @@ pub struct ExecutionManager {
     position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
     position_reconciliation_tolerances: IndexMap<(Venue, AccountId), Decimal>,
     recent_fills_cache: RecencyMap<FillKey>,
+    missing_order_coverage_warnings: IndexSet<ClientOrderId>,
+    unresolved_order_coverage: IndexSet<ClientOrderId>,
 }
 
 impl Debug for ExecutionManager {
@@ -322,6 +333,8 @@ impl ExecutionManager {
             position_recon_retries: IndexMap::new(),
             position_reconciliation_tolerances: IndexMap::new(),
             recent_fills_cache: RecencyMap::default(),
+            missing_order_coverage_warnings: IndexSet::new(),
+            unresolved_order_coverage: IndexSet::new(),
         }
     }
 
@@ -1069,10 +1082,43 @@ impl ExecutionManager {
 
     /// Prepares a bulk open-order report request and snapshots cached open orders.
     pub(crate) fn prepare_open_order_report_check(
-        &self,
+        &mut self,
         command_id: UUID4,
+        clients: &[&dyn ExecutionClient],
     ) -> OpenOrderReportCheck {
         let filtered_orders = self.filtered_open_orders_for_reconciliation();
+        let active_order_ids: IndexSet<ClientOrderId> = filtered_orders
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect();
+        self.missing_order_coverage_warnings
+            .retain(|client_order_id| active_order_ids.contains(client_order_id));
+        self.unresolved_order_coverage
+            .retain(|client_order_id| active_order_ids.contains(client_order_id));
+
+        let mut client_coverage = IndexMap::new();
+
+        for order in &filtered_orders {
+            let client_order_id = order.client_order_id();
+            let coverage = self.resolve_order_report_client_coverage(order, clients);
+
+            match &coverage {
+                ReportClientCoverage::Resolved(_) => {
+                    if self
+                        .unresolved_order_coverage
+                        .shift_remove(&client_order_id)
+                    {
+                        self.missing_order_coverage_warnings
+                            .shift_remove(&client_order_id);
+                    }
+                }
+                ReportClientCoverage::Unresolved => {
+                    self.unresolved_order_coverage.insert(client_order_id);
+                }
+            }
+
+            client_coverage.insert(client_order_id, coverage);
+        }
 
         log::debug!(
             "Found {} order{} open in cache",
@@ -1101,7 +1147,42 @@ impl ExecutionManager {
         OpenOrderReportCheck {
             command,
             filtered_orders,
+            client_coverage,
             start,
+        }
+    }
+
+    fn resolve_order_report_client_coverage(
+        &self,
+        order: &OrderAny,
+        clients: &[&dyn ExecutionClient],
+    ) -> ReportClientCoverage {
+        if let Some(client_id) = self.cache.borrow().client_id(&order.client_order_id()) {
+            return ReportClientCoverage::Resolved(IndexSet::from([*client_id]));
+        }
+
+        if let Some(account_id) = order.account_id() {
+            let account_clients = clients
+                .iter()
+                .filter(|client| client.account_id() == account_id)
+                .map(|client| client.client_id())
+                .collect::<IndexSet<_>>();
+
+            if !account_clients.is_empty() {
+                return ReportClientCoverage::Resolved(account_clients);
+            }
+        }
+
+        let venue_clients = clients
+            .iter()
+            .filter(|client| client.handles_order_venue(order.instrument_id().venue))
+            .map(|client| client.client_id())
+            .collect::<IndexSet<_>>();
+
+        if venue_clients.is_empty() {
+            ReportClientCoverage::Unresolved
+        } else {
+            ReportClientCoverage::Resolved(venue_clients)
         }
     }
 
@@ -1211,15 +1292,21 @@ impl ExecutionManager {
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking order consistency between cached-state and venues");
 
-        let check = self.prepare_open_order_report_check(UUID4::new());
+        let check = self.prepare_open_order_report_check(UUID4::new(), clients);
         let mut all_reports = Vec::new();
+        let mut queried_clients = IndexSet::new();
+        let mut failed_clients = IndexSet::new();
 
         for client in clients {
+            let client_id = client.client_id();
+            queried_clients.insert(client_id);
+
             match client.generate_order_status_reports(&check.command).await {
                 Ok(reports) => {
                     all_reports.extend(reports);
                 }
                 Err(e) => {
+                    failed_clients.insert(client_id);
                     log::warn!(
                         "Failed to query order reports from {}: {e}",
                         client.client_id()
@@ -1228,7 +1315,7 @@ impl ExecutionManager {
             }
         }
 
-        self.reconcile_open_order_reports(&check, all_reports)
+        self.reconcile_open_order_reports(&check, all_reports, &queried_clients, &failed_clients)
     }
 
     /// Reconciles bulk open-order report responses against a cached order snapshot.
@@ -1236,12 +1323,36 @@ impl ExecutionManager {
         &mut self,
         check: &OpenOrderReportCheck,
         all_reports: Vec<OrderStatusReport>,
+        queried_clients: &IndexSet<ClientId>,
+        failed_clients: &IndexSet<ClientId>,
     ) -> Vec<OrderEventAny> {
         let mut venue_reported_ids = IndexSet::new();
 
         for report in &all_reports {
             if let Some(client_order_id) = &report.client_order_id {
                 venue_reported_ids.insert(*client_order_id);
+                self.missing_order_coverage_warnings
+                    .shift_remove(client_order_id);
+                // A positive report is proof the venue still knows the order:
+                // reset the missing-order ladder so only consecutive misses
+                // accumulate (mirrors the Python engine's per-report clear).
+                self.recon_check_retries.shift_remove(client_order_id);
+            } else {
+                let mapped_client_order_id = self
+                    .cache
+                    .borrow()
+                    .client_order_id(&report.venue_order_id)
+                    .copied();
+
+                // The mapped order was positively reported: it must receive
+                // the full positive-report bookkeeping or the missing-order
+                // loop below immediately re-increments the cleared counter.
+                if let Some(client_order_id) = mapped_client_order_id {
+                    venue_reported_ids.insert(client_order_id);
+                    self.missing_order_coverage_warnings
+                        .shift_remove(&client_order_id);
+                    self.recon_check_retries.shift_remove(&client_order_id);
+                }
             }
         }
 
@@ -1314,14 +1425,64 @@ impl ExecutionManager {
             } else {
                 check.filtered_orders.iter().collect()
             };
-            let cached_ids: IndexSet<ClientOrderId> =
-                candidates.iter().map(|o| o.client_order_id()).collect();
-            let missing_at_venue: IndexSet<ClientOrderId> = cached_ids
-                .difference(&venue_reported_ids)
-                .copied()
-                .collect();
 
-            for client_order_id in missing_at_venue {
+            for order in candidates {
+                let client_order_id = order.client_order_id();
+                if venue_reported_ids.contains(&client_order_id) {
+                    continue;
+                }
+
+                let coverage = check
+                    .client_coverage
+                    .get(&client_order_id)
+                    .unwrap_or(&ReportClientCoverage::Unresolved);
+
+                let ReportClientCoverage::Resolved(responsible_clients) = coverage else {
+                    if self.missing_order_coverage_warnings.insert(client_order_id) {
+                        log::warn!(
+                            "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
+                        );
+                    }
+                    continue;
+                };
+
+                if responsible_clients.is_empty() {
+                    if self.missing_order_coverage_warnings.insert(client_order_id) {
+                        log::warn!(
+                            "Skipping order reconciliation for {client_order_id}: responsible execution client coverage is unresolved"
+                        );
+                    }
+                    continue;
+                }
+
+                let missing_clients = responsible_clients
+                    .difference(queried_clients)
+                    .copied()
+                    .collect::<IndexSet<_>>();
+
+                if !missing_clients.is_empty() {
+                    if self.missing_order_coverage_warnings.insert(client_order_id) {
+                        log::warn!(
+                            "Skipping order reconciliation for {client_order_id}: responsible execution clients were not queried: {missing_clients:?}"
+                        );
+                    }
+                    continue;
+                }
+
+                let failed_responsible_clients = responsible_clients
+                    .intersection(failed_clients)
+                    .copied()
+                    .collect::<IndexSet<_>>();
+
+                if !failed_responsible_clients.is_empty() {
+                    log::warn!(
+                        "Skipping order reconciliation for {client_order_id}: failed to query responsible execution clients: {failed_responsible_clients:?}"
+                    );
+                    continue;
+                }
+
+                self.missing_order_coverage_warnings
+                    .shift_remove(&client_order_id);
                 events.extend(self.handle_missing_order(client_order_id));
             }
         }
@@ -1331,8 +1492,21 @@ impl ExecutionManager {
 
     /// Prepares a bulk position report request and snapshots cached positions.
     #[must_use]
-    pub(crate) fn prepare_position_report_check(&self, command_id: UUID4) -> PositionReportCheck {
+    pub(crate) fn prepare_position_report_check(
+        &self,
+        command_id: UUID4,
+        clients: &[&dyn ExecutionClient],
+    ) -> PositionReportCheck {
         let positions_by_key = self.open_positions_by_key_for_reconciliation();
+        let client_coverage = positions_by_key
+            .keys()
+            .map(|key| {
+                (
+                    *key,
+                    Self::resolve_position_report_client_coverage(*key, clients),
+                )
+            })
+            .collect();
 
         log::debug!(
             "Found {} unique instrument/account combination{} with open positions",
@@ -1354,6 +1528,34 @@ impl ExecutionManager {
         PositionReportCheck {
             command,
             positions_by_key,
+            client_coverage,
+        }
+    }
+
+    fn resolve_position_report_client_coverage(
+        key: InstrumentAccountKey,
+        clients: &[&dyn ExecutionClient],
+    ) -> ReportClientCoverage {
+        let account_clients = clients
+            .iter()
+            .filter(|client| client.account_id() == key.1)
+            .map(|client| client.client_id())
+            .collect::<IndexSet<_>>();
+
+        if !account_clients.is_empty() {
+            return ReportClientCoverage::Resolved(account_clients);
+        }
+
+        let venue_clients = clients
+            .iter()
+            .filter(|client| client.handles_order_venue(key.0.venue))
+            .map(|client| client.client_id())
+            .collect::<IndexSet<_>>();
+
+        if venue_clients.is_empty() {
+            ReportClientCoverage::Unresolved
+        } else {
+            ReportClientCoverage::Resolved(venue_clients)
         }
     }
 
@@ -1370,11 +1572,14 @@ impl ExecutionManager {
         &mut self,
         clients: &[&dyn ExecutionClient],
     ) -> Vec<OrderEventAny> {
-        let check = self.prepare_position_report_check(UUID4::new());
+        let check = self.prepare_position_report_check(UUID4::new(), clients);
         let mut reports = Vec::new();
-        let mut failed_venues = IndexSet::new();
+        let mut queried_clients = IndexSet::new();
+        let mut failed_clients = IndexSet::new();
 
         for client in clients {
+            let client_id = client.client_id();
+            queried_clients.insert(client_id);
             self.set_position_reconciliation_tolerance(
                 client.venue(),
                 client.account_id(),
@@ -1389,7 +1594,7 @@ impl ExecutionManager {
                     reports.extend(client_reports);
                 }
                 Err(e) => {
-                    failed_venues.insert(client.venue());
+                    failed_clients.insert(client_id);
                     log::warn!(
                         "Failed to query position reports from {}: {e}",
                         client.client_id()
@@ -1398,7 +1603,7 @@ impl ExecutionManager {
             }
         }
 
-        self.reconcile_position_reports(&check, reports, &failed_venues)
+        self.reconcile_position_reports(&check, reports, &queried_clients, &failed_clients)
     }
 
     /// Reconciles cached positions against venue position reports.
@@ -1407,7 +1612,8 @@ impl ExecutionManager {
         &mut self,
         check: &PositionReportCheck,
         reports: Vec<PositionStatusReport>,
-        failed_venues: &IndexSet<Venue>,
+        queried_clients: &IndexSet<ClientId>,
+        failed_clients: &IndexSet<ClientId>,
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
 
@@ -1426,14 +1632,53 @@ impl ExecutionManager {
         for (key, cached_positions) in &check.positions_by_key {
             let venue_report = venue_positions.get(key);
 
-            if venue_report.is_none()
-                && Self::position_query_failed_for_instrument(failed_venues, &key.0)
-            {
-                log::warn!(
-                    "Skipping position reconciliation for {}: failed to query venue position status",
-                    key.0
-                );
-                continue;
+            if venue_report.is_none() {
+                match check.client_coverage.get(key) {
+                    Some(ReportClientCoverage::Resolved(responsible_clients))
+                        if !responsible_clients.is_empty()
+                            && responsible_clients.is_subset(queried_clients)
+                            && responsible_clients.is_disjoint(failed_clients) => {}
+                    Some(ReportClientCoverage::Resolved(responsible_clients))
+                        if responsible_clients.is_empty() =>
+                    {
+                        log::warn!(
+                            "Skipping position reconciliation for {}/{}: responsible execution client coverage is unresolved",
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Some(ReportClientCoverage::Resolved(responsible_clients))
+                        if !responsible_clients.is_subset(queried_clients) =>
+                    {
+                        log::warn!(
+                            "Skipping position reconciliation for {}/{}: responsible execution clients were not all queried",
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Some(ReportClientCoverage::Resolved(responsible_clients)) => {
+                        let failed_responsible_clients = responsible_clients
+                            .intersection(failed_clients)
+                            .copied()
+                            .collect::<IndexSet<_>>();
+                        log::warn!(
+                            "Skipping position reconciliation for {}/{}: failed to query responsible execution clients: {failed_responsible_clients:?}",
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                    Some(ReportClientCoverage::Unresolved) | None => {
+                        log::warn!(
+                            "Skipping position reconciliation for {}/{}: responsible execution client coverage is unresolved",
+                            key.0,
+                            key.1,
+                        );
+                        continue;
+                    }
+                }
             }
 
             if let Some(discrepancy_events) =
@@ -1474,13 +1719,6 @@ impl ExecutionManager {
             .retain(|k, _| active_keys.contains(k));
 
         events
-    }
-
-    fn position_query_failed_for_instrument(
-        failed_venues: &IndexSet<Venue>,
-        instrument_id: &InstrumentId,
-    ) -> bool {
-        failed_venues.contains(&instrument_id.venue)
     }
 
     fn position_snapshot_avg_px(cached_positions: &[Position]) -> Option<Decimal> {
@@ -1535,6 +1773,9 @@ impl ExecutionManager {
     pub fn clear_recon_tracking(&mut self, client_order_id: &ClientOrderId, drop_last_query: bool) {
         self.inflight_checks.shift_remove(client_order_id);
         self.recon_check_retries.shift_remove(client_order_id);
+        self.missing_order_coverage_warnings
+            .shift_remove(client_order_id);
+        self.unresolved_order_coverage.shift_remove(client_order_id);
 
         if drop_last_query {
             self.order_query_recency.remove(client_order_id);
@@ -1590,6 +1831,16 @@ impl ExecutionManager {
     #[must_use]
     pub fn position_recon_retry_count(&self, key: &InstrumentAccountKey) -> u32 {
         self.position_recon_retries.get(key).copied().unwrap_or(0)
+    }
+
+    /// Returns the current missing-order reconciliation retry count for the
+    /// given client order ID, or zero if no entry exists.
+    #[must_use]
+    pub fn recon_check_retry_count(&self, client_order_id: &ClientOrderId) -> u32 {
+        self.recon_check_retries
+            .get(client_order_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Observes a local order event and updates tracking state.
@@ -1844,6 +2095,18 @@ impl ExecutionManager {
             return events;
         };
 
+        // The order may have closed while the report request was in flight;
+        // the check must come before the retry increment or the stale empty
+        // response recreates tracking state that nothing prunes afterwards.
+        if order.status().is_closed() {
+            log::debug!(
+                "Skipping missing-order resolution for {client_order_id}: already {}",
+                order.status()
+            );
+            self.clear_recon_tracking(&client_order_id, true);
+            return events;
+        }
+
         // Recent local activity is the real-time settling window for missing
         // orders. Venue/domain timestamps can be ahead of the trading clock and
         // must not stall reconciliation.
@@ -1858,18 +2121,65 @@ impl ExecutionManager {
         let retries = self.recon_check_retries.entry(client_order_id).or_insert(0);
         *retries += 1;
 
-        // If max retries exceeded, generate rejection event
+        // If max retries exceeded, resolve according to the current order status.
         if *retries >= self.config.open_check_missing_retries {
-            log::warn!(
-                "Order {client_order_id} not found at venue after {retries} retries, marking as REJECTED"
-            );
-
             let ts_now = self.clock.borrow().timestamp_ns();
 
-            if let Some(rejected) =
-                create_reconciliation_rejected(&order, Some("NOT_FOUND_AT_VENUE"), ts_now)
-            {
-                events.push(rejected);
+            match order.status() {
+                OrderStatus::Accepted | OrderStatus::Submitted => {
+                    log::warn!(
+                        "Order {client_order_id} not found at venue after {retries} retries, marking as REJECTED"
+                    );
+
+                    if let Some(rejected) =
+                        create_reconciliation_rejected(&order, Some("NOT_FOUND_AT_VENUE"), ts_now)
+                    {
+                        events.push(rejected);
+                    }
+                }
+                OrderStatus::PartiallyFilled => {
+                    log::warn!(
+                        "Order {client_order_id} not found at venue after {retries} retries, marking as CANCELED"
+                    );
+                    events.push(OrderEventAny::Canceled(OrderCanceled::new(
+                        order.trader_id(),
+                        order.strategy_id(),
+                        order.instrument_id(),
+                        client_order_id,
+                        UUID4::new(),
+                        ts_now,
+                        ts_now,
+                        true,
+                        order.venue_order_id(),
+                        order.account_id(),
+                    )));
+                }
+                OrderStatus::PendingUpdate | OrderStatus::PendingCancel => {
+                    log::debug!(
+                        "Deferring resolution for {client_order_id}: still inflight as {}",
+                        order.status()
+                    );
+                    // Narrow tracking reset mirroring the Python engine:
+                    // zero the retry ladder and stamp the query time so the
+                    // inflight checker first observes a full threshold delay
+                    // and then retries from scratch. The order must stay
+                    // registered in `inflight_checks` - the inflight checker
+                    // walks that map, unlike Python which rescans cached
+                    // inflight orders every cycle - and keeps its
+                    // local-activity mark.
+                    self.recon_check_retries.shift_remove(&client_order_id);
+                    if let Some(check) = self.inflight_checks.get_mut(&client_order_id) {
+                        check.retry_count = 0;
+                        check.last_query_at = Some(dst::time::Instant::now());
+                    }
+                    self.order_query_recency.mark(client_order_id);
+                    return events;
+                }
+                status => {
+                    log::warn!(
+                        "Skipping missing-order resolution for {client_order_id}: unexpected status {status}"
+                    );
+                }
             }
 
             self.clear_recon_tracking(&client_order_id, true);
@@ -3201,7 +3511,7 @@ mod tests {
         let lookback_ns = lookback_mins * 60 * NANOSECONDS_IN_SECOND;
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let manager = ExecutionManager::new(
+        let mut manager = ExecutionManager::new(
             clock.clone(),
             cache.clone(),
             ExecutionManagerConfig {
@@ -3244,7 +3554,7 @@ mod tests {
 
         let ts_now = clock.borrow().timestamp_ns();
         let command_id = UUID4::new();
-        let check = manager.prepare_open_order_report_check(command_id);
+        let check = manager.prepare_open_order_report_check(command_id, &[]);
 
         assert_eq!(check.command.command_id, command_id);
         assert_eq!(check.command.ts_init, ts_now);
@@ -3303,7 +3613,7 @@ mod tests {
 
         let ts_now = clock.borrow().timestamp_ns();
         let command_id = UUID4::new();
-        let check = manager.prepare_position_report_check(command_id);
+        let check = manager.prepare_position_report_check(command_id, &[]);
         let key = (
             included_position.instrument_id,
             included_position.account_id,

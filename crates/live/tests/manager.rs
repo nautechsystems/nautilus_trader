@@ -8032,7 +8032,10 @@ struct MockExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    handled_venues: Option<IndexSet<Venue>>,
     order_reports: RefCell<Vec<OrderStatusReport>>,
+    fail_order_reports: bool,
+    on_order_reports_query: RefCell<Option<Box<dyn FnOnce()>>>,
 }
 
 impl MockExecutionClient {
@@ -8041,8 +8044,50 @@ impl MockExecutionClient {
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
+            handled_venues: None,
             order_reports: RefCell::new(order_reports),
+            fail_order_reports: false,
+            on_order_reports_query: RefCell::new(None),
         }
+    }
+
+    fn for_venue(client_id: ClientId, venue: Venue, order_reports: Vec<OrderStatusReport>) -> Self {
+        Self {
+            client_id,
+            account_id: test_account_id(),
+            venue,
+            handled_venues: None,
+            order_reports: RefCell::new(order_reports),
+            fail_order_reports: false,
+            on_order_reports_query: RefCell::new(None),
+        }
+    }
+
+    fn failing(client_id: ClientId, venue: Venue) -> Self {
+        Self {
+            client_id,
+            account_id: test_account_id(),
+            venue,
+            handled_venues: None,
+            order_reports: RefCell::new(Vec::new()),
+            fail_order_reports: true,
+            on_order_reports_query: RefCell::new(None),
+        }
+    }
+
+    fn with_account_id(mut self, account_id: AccountId) -> Self {
+        self.account_id = account_id;
+        self
+    }
+
+    fn with_handled_venues(mut self, handled_venues: IndexSet<Venue>) -> Self {
+        self.handled_venues = Some(handled_venues);
+        self
+    }
+
+    fn with_on_order_reports_query(self, callback: Box<dyn FnOnce()>) -> Self {
+        *self.on_order_reports_query.borrow_mut() = Some(callback);
+        self
     }
 }
 
@@ -8062,6 +8107,12 @@ impl ExecutionClient for MockExecutionClient {
 
     fn venue(&self) -> Venue {
         self.venue
+    }
+
+    fn handles_order_venue(&self, venue: Venue) -> bool {
+        self.handled_venues
+            .as_ref()
+            .map_or(self.venue == venue, |handled| handled.contains(&venue))
     }
 
     fn oms_type(&self) -> OmsType {
@@ -8126,6 +8177,14 @@ impl ExecutionClient for MockExecutionClient {
         &self,
         _cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        if let Some(callback) = self.on_order_reports_query.borrow_mut().take() {
+            callback();
+        }
+
+        if self.fail_order_reports {
+            anyhow::bail!("order reports unavailable");
+        }
+
         Ok(self.order_reports.borrow().clone())
     }
 }
@@ -8688,6 +8747,495 @@ async fn test_check_open_orders_submitted_missing_at_venue_generates_rejected() 
     }
 }
 
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_partially_filled_missing_at_venue_generates_canceled() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+
+    let client_order_id = ClientOrderId::from("O-PARTIAL-MISSING");
+    let venue_order_id = VenueOrderId::from("V-PARTIAL-MISSING");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let fill = OrderFilledTestBuilder::new(&order, &instrument)
+        .last_qty(Quantity::from("4.0"))
+        .without_position_id()
+        .build();
+    ctx.cache.borrow_mut().update_order(&fill).unwrap();
+
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], OrderEventAny::Canceled(canceled) if canceled.client_order_id == client_order_id),
+        "expected OrderCanceled event, was {:?}",
+        events[0],
+    );
+
+    ctx.cache.borrow_mut().update_order(&events[0]).unwrap();
+    let order = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.filled_qty(), Quantity::from("4.0"));
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_failed_client_does_not_advance_missing_retries() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 2,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+    ctx.add_instrument(test_instrument2());
+
+    let healthy_order_id = ClientOrderId::from("O-HEALTHY-MISSING");
+    let failed_order_id = ClientOrderId::from("O-FAILED-VENUE");
+    let healthy_client_id = test_client_id();
+    let failed_client_id = ClientId::from("BITMEX");
+    let failed_venue = Venue::from("BITMEX");
+
+    insert_accepted_limit_order(
+        &ctx,
+        healthy_order_id,
+        VenueOrderId::from("V-HEALTHY-MISSING"),
+        healthy_client_id,
+    );
+    insert_accepted_limit_order_for_instrument(
+        &ctx,
+        failed_order_id,
+        VenueOrderId::from("V-FAILED-VENUE"),
+        test_instrument_id2(),
+        failed_client_id,
+    );
+
+    let healthy_client = MockExecutionClient::for_venue(healthy_client_id, test_venue(), vec![]);
+    let failed_client = MockExecutionClient::failing(failed_client_id, failed_venue);
+    let clients: Vec<&dyn ExecutionClient> = vec![&healthy_client, &failed_client];
+
+    let first_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(first_events.is_empty());
+
+    advance_clock(dst::time::Duration::from_millis(1)).await;
+
+    let recovered_client = MockExecutionClient::for_venue(failed_client_id, failed_venue, vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&healthy_client, &recovered_client];
+    let second_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(second_events.len(), 1);
+    assert!(
+        matches!(&second_events[0], OrderEventAny::Rejected(rejected) if rejected.client_order_id == healthy_order_id),
+        "only the healthy venue order should exhaust its retry budget",
+    );
+    assert_eq!(
+        ctx.get_order(&failed_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_failed_routing_client_does_not_resolve_exchange_order() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let client_order_id = ClientOrderId::from("O-FAILED-ROUTING");
+    let routing_client_id = ClientId::from("IB");
+    ctx.add_instrument(instrument);
+    insert_accepted_limit_order(
+        &ctx,
+        client_order_id,
+        VenueOrderId::from("V-FAILED-ROUTING"),
+        routing_client_id,
+    );
+
+    let routing_client = MockExecutionClient::failing(routing_client_id, Venue::from("IB"))
+        .with_account_id(AccountId::from("IB-001"))
+        .with_handled_venues(IndexSet::from([instrument_id.venue]));
+    let clients: Vec<&dyn ExecutionClient> = vec![&routing_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_failed_client_does_not_suppress_healthy_client_same_venue() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let failed_order_id = ClientOrderId::from("O-FAILED-SHARED-VENUE");
+    let healthy_order_id = ClientOrderId::from("O-HEALTHY-SHARED-VENUE");
+    let failed_client_id = ClientId::from("SHARED-FAILED");
+    let healthy_client_id = ClientId::from("SHARED-HEALTHY");
+    insert_accepted_limit_order(
+        &ctx,
+        failed_order_id,
+        VenueOrderId::from("V-FAILED-SHARED-VENUE"),
+        failed_client_id,
+    );
+    insert_accepted_limit_order(
+        &ctx,
+        healthy_order_id,
+        VenueOrderId::from("V-HEALTHY-SHARED-VENUE"),
+        healthy_client_id,
+    );
+
+    let failed_client = MockExecutionClient::failing(failed_client_id, test_venue());
+    let healthy_client = MockExecutionClient::for_venue(healthy_client_id, test_venue(), vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&failed_client, &healthy_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert_eq!(events.len(), 1);
+    assert!(
+        matches!(&events[0], OrderEventAny::Rejected(rejected) if rejected.client_order_id == healthy_order_id),
+        "only the healthy-client order should be rejected",
+    );
+    assert_eq!(
+        ctx.get_order(&failed_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_failed_routing_client_fallback_coverage_does_not_advance() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let client_order_id = ClientOrderId::from("O-FAILED-ROUTING-FALLBACK");
+    ctx.add_instrument(instrument);
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .quantity(Quantity::from("10.0"))
+        .price(Price::from("100.0"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    ctx.add_order(order);
+    let order = ctx.cache.borrow_mut().update_order(&submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(
+        &order,
+        test_account_id(),
+        VenueOrderId::from("V-FAILED-ROUTING-FALLBACK"),
+    );
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let routing_client = MockExecutionClient::failing(ClientId::from("IB"), Venue::from("IB"))
+        .with_account_id(AccountId::from("IB-001"))
+        .with_handled_venues(IndexSet::from([instrument_id.venue]));
+    let clients: Vec<&dyn ExecutionClient> = vec![&routing_client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_positive_report_resets_missing_retry_ladder() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 2,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-RETRY-RESET");
+    let venue_order_id = VenueOrderId::from("V-RETRY-RESET");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+
+    let empty_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&empty_client];
+    let first_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(first_events.is_empty());
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+
+    advance_clock(dst::time::Duration::from_millis(1)).await;
+
+    let report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::Accepted,
+        Quantity::from("10.0"),
+        Quantity::from("0.0"),
+    );
+    let reporting_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&reporting_client];
+    let second_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        !second_events
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Rejected(_) | OrderEventAny::Canceled(_))),
+        "a positive matching report must not resolve the order",
+    );
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 0);
+
+    advance_clock(dst::time::Duration::from_millis(1)).await;
+
+    let empty_again = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&empty_again];
+    let third_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        third_events.is_empty(),
+        "non-consecutive misses must not exhaust the retry budget",
+    );
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_venue_id_only_report_resets_missing_retry_ladder() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 2,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-VENUE-ID-ONLY");
+    let venue_order_id = VenueOrderId::from("V-VENUE-ID-ONLY");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+
+    let empty_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&empty_client];
+    let first_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(first_events.is_empty());
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+
+    advance_clock(dst::time::Duration::from_millis(1)).await;
+
+    // The report carries no client order ID; the manager must map it through
+    // the cached venue-order-ID index and give it full positive-report
+    // bookkeeping, not walk it as missing in the same pass.
+    let report = create_order_status_report(
+        None,
+        venue_order_id,
+        test_instrument_id(),
+        OrderStatus::Accepted,
+        Quantity::from("10.0"),
+        Quantity::from("0.0"),
+    );
+    let reporting_client = MockExecutionClient::new(vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&reporting_client];
+    let second_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        !second_events
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Rejected(_) | OrderEventAny::Canceled(_))),
+        "a venue-ID-only positive report must not resolve the order",
+    );
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 0);
+
+    advance_clock(dst::time::Duration::from_millis(1)).await;
+
+    let empty_again = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&empty_again];
+    let third_events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(
+        third_events.is_empty(),
+        "a single miss after a venue-ID-only positive report must not reject",
+    );
+    assert_eq!(ctx.manager.recon_check_retry_count(&client_order_id), 1);
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Accepted,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_order_closed_during_query_leaves_no_retry_state() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 2,
+        open_check_open_only: false,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-CLOSED-DURING-QUERY");
+    let venue_order_id = VenueOrderId::from("V-CLOSED-DURING-QUERY");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+
+    // The callback fires inside the report query, after the prepare-time
+    // snapshot captured the order as an open missing-candidate.
+    let cache = ctx.cache.clone();
+    let client =
+        MockExecutionClient::new(vec![]).with_on_order_reports_query(Box::new(move || {
+            let order = cache.borrow().order(&client_order_id).unwrap().clone();
+            let canceled =
+                TestOrderEventStubs::canceled(&order, test_account_id(), Some(venue_order_id));
+            cache.borrow_mut().update_order(&canceled).unwrap();
+        }));
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let events = ctx.manager.check_open_orders(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager.recon_check_retry_count(&client_order_id),
+        0,
+        "an order that closed during the query must leave no retry state behind",
+    );
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::Canceled,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_check_open_orders_deferred_pending_order_keeps_inflight_registration() {
+    let config = ExecutionManagerConfig {
+        open_check_threshold_ns: 0,
+        open_check_missing_retries: 1,
+        open_check_open_only: false,
+        inflight_threshold_ms: 100,
+        inflight_max_retries: 2,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    ctx.add_instrument(test_instrument());
+
+    let client_order_id = ClientOrderId::from("O-PENDING-DEFER");
+    let venue_order_id = VenueOrderId::from("V-PENDING-DEFER");
+    insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let pending = OrderEventAny::PendingCancel(
+        OrderPendingCancelSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(client_order_id)
+            .account_id(test_account_id())
+            .venue_order_id(venue_order_id)
+            .build(),
+    );
+    ctx.cache.borrow_mut().update_order(&pending).unwrap();
+    assert_eq!(
+        ctx.get_order(&client_order_id).unwrap().status(),
+        OrderStatus::PendingCancel,
+    );
+    ctx.manager.register_inflight(client_order_id);
+
+    // Prime one inflight retry so the retained check carries a nonzero count
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
+    let primed = ctx.manager.check_inflight_orders();
+    assert!(primed.events.is_empty());
+    assert_eq!(primed.queries.len(), 1);
+
+    // Missing at venue at max retries: the inflight status defers resolution
+    let mock_client = MockExecutionClient::new(vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+    let events = ctx.manager.check_open_orders(&clients).await;
+    assert!(events.is_empty());
+
+    // The deferral must not unregister the order from inflight recovery, and
+    // must reset the inflight retry ladder: past the threshold the checker
+    // queries again from scratch instead of escalating to a stale-count
+    // cancellation
+    ctx.advance_both(dst::time::Duration::from_millis(200))
+        .await;
+    let result = ctx.manager.check_inflight_orders();
+    assert!(
+        result.events.is_empty(),
+        "deferral must reset the inflight retry ladder, was {:?}",
+        result.events,
+    );
+    assert_eq!(
+        result.queries.len(),
+        1,
+        "deferred pending order should remain registered for inflight recovery",
+    );
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_check_open_orders_open_only_missing_venue_order_does_not_reject() {
@@ -9034,6 +9582,7 @@ struct MockPositionExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    handled_venues: Option<IndexSet<Venue>>,
     order_reports: RefCell<Vec<OrderStatusReport>>,
     position_reports: RefCell<Vec<PositionStatusReport>>,
     fail_position_reports: bool,
@@ -9049,6 +9598,7 @@ impl MockPositionExecutionClient {
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
+            handled_venues: None,
             order_reports: RefCell::new(order_reports),
             position_reports: RefCell::new(position_reports),
             fail_position_reports: false,
@@ -9066,9 +9616,29 @@ impl MockPositionExecutionClient {
             client_id: test_client_id(),
             account_id: test_account_id(),
             venue: test_venue(),
+            handled_venues: None,
             order_reports: RefCell::new(Vec::new()),
             position_reports: RefCell::new(Vec::new()),
             fail_position_reports: true,
+            position_reconciliation_tolerance: dec!(0.00000001),
+        }
+    }
+
+    fn configured(
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        handled_venues: IndexSet<Venue>,
+        fail_position_reports: bool,
+    ) -> Self {
+        Self {
+            client_id,
+            account_id,
+            venue,
+            handled_venues: Some(handled_venues),
+            order_reports: RefCell::new(Vec::new()),
+            position_reports: RefCell::new(Vec::new()),
+            fail_position_reports,
             position_reconciliation_tolerance: dec!(0.00000001),
         }
     }
@@ -9090,6 +9660,12 @@ impl ExecutionClient for MockPositionExecutionClient {
 
     fn venue(&self) -> Venue {
         self.venue
+    }
+
+    fn handles_order_venue(&self, venue: Venue) -> bool {
+        self.handled_venues
+            .as_ref()
+            .map_or(self.venue == venue, |handled| handled.contains(&venue))
     }
 
     fn oms_type(&self) -> OmsType {
@@ -9285,7 +9861,7 @@ async fn test_position_check_reconciles_at_client_tolerance_boundary() {
 }
 
 #[tokio::test]
-async fn test_position_check_failed_venue_query_skips_cached_position() {
+async fn test_position_check_failed_client_query_skips_cached_position() {
     let config = ExecutionManagerConfig {
         position_check_retries: 3,
         position_check_threshold_ns: 0,
@@ -9329,6 +9905,119 @@ async fn test_position_check_failed_venue_query_skips_cached_position() {
         ctx.manager
             .position_recon_retry_count(&(instrument_id, test_account_id())),
         1
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_failed_routing_client_leaves_exchange_retry_untouched() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = AccountId::from("IB-001");
+    let position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-FAILED-ROUTING"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        account_id,
+    );
+    ctx.add_margin_account(account_id);
+    ctx.add_position(&position);
+
+    let routing_client = MockPositionExecutionClient::configured(
+        ClientId::from("IB"),
+        account_id,
+        Venue::from("IB"),
+        IndexSet::from([instrument_id.venue]),
+        true,
+    );
+    let clients: Vec<&dyn ExecutionClient> = vec![&routing_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_id)),
+        0,
+    );
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_failed_client_does_not_suppress_healthy_account_same_venue() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let failed_account_id = AccountId::from("BINANCE-FAILED");
+    let healthy_account_id = AccountId::from("BINANCE-HEALTHY");
+    let failed_position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-FAILED-SHARED-VENUE"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+        failed_account_id,
+    );
+    let healthy_position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-HEALTHY-SHARED-VENUE"),
+        OrderSide::Buy,
+        "7.0",
+        "3000.00",
+        healthy_account_id,
+    );
+    ctx.add_margin_account(failed_account_id);
+    ctx.add_margin_account(healthy_account_id);
+    ctx.add_position(&failed_position);
+    ctx.add_position(&healthy_position);
+
+    let failed_client = MockPositionExecutionClient::configured(
+        ClientId::from("SHARED-FAILED"),
+        failed_account_id,
+        test_venue(),
+        IndexSet::from([instrument_id.venue]),
+        true,
+    );
+    let healthy_client = MockPositionExecutionClient::configured(
+        ClientId::from("SHARED-HEALTHY"),
+        healthy_account_id,
+        test_venue(),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    );
+    let clients: Vec<&dyn ExecutionClient> = vec![&failed_client, &healthy_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, failed_account_id)),
+        0,
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, healthy_account_id)),
+        1,
     );
 }
 
