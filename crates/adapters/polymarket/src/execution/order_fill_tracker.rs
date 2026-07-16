@@ -13,35 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Per-order fill tracking with dust detection for the Polymarket adapter.
+//! Per-order fill tracking with terminal quantity normalization for the Polymarket adapter.
 
 use std::sync::Mutex;
 
 use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
-use nautilus_core::{MUTEX_POISONED, UUID4, UnixNanos};
+use nautilus_core::MUTEX_POISONED;
+#[cfg(test)]
+use nautilus_model::identifiers::InstrumentId;
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide},
+    enums::OrderSide,
     events::OrderFilled,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId},
+    identifiers::{ClientOrderId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::Quantity,
 };
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use crate::common::consts::DUST_SNAP_THRESHOLD;
+use crate::common::consts::DUST_SNAP_THRESHOLD_DEC;
 
 /// Cumulative fill state for a single order.
 #[derive(Debug, Clone, Copy)]
 struct OrderFillState {
     submitted_qty: Quantity,
-    cumulative_filled: f64,
-    last_fill_px: f64,
-    last_fill_ts: UnixNanos,
+    cumulative_filled: Quantity,
     order_side: OrderSide,
-    instrument_id: InstrumentId,
-    size_precision: u8,
-    price_precision: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -91,29 +89,15 @@ impl OrderFillTrackerMap {
         }
     }
 
-    #[expect(clippy::too_many_arguments)]
     pub(crate) fn restore_order(
         &self,
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
         filled_qty: Quantity,
-        last_fill_px: f64,
-        last_fill_ts: UnixNanos,
         order_side: OrderSide,
-        instrument_id: InstrumentId,
-        size_precision: u8,
-        price_precision: u8,
     ) {
-        let mut state = new_order_state(
-            submitted_qty,
-            order_side,
-            instrument_id,
-            size_precision,
-            price_precision,
-        );
-        state.cumulative_filled = filled_qty.as_f64();
-        state.last_fill_px = last_fill_px;
-        state.last_fill_ts = last_fill_ts;
+        let mut state = new_order_state(submitted_qty, order_side);
+        state.cumulative_filled = filled_qty;
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
@@ -140,13 +124,13 @@ impl OrderFillTrackerMap {
             .orders
             .get(venue_order_id)
         {
-            Some(s) => s.cumulative_filled > 0.0,
+            Some(s) => !s.cumulative_filled.is_zero(),
             None => true, // Removed = already settled
         }
     }
 
     /// Returns the cumulative filled quantity for an order, if tracked.
-    pub(crate) fn get_cumulative_filled(&self, venue_order_id: &VenueOrderId) -> Option<f64> {
+    pub(crate) fn get_cumulative_filled(&self, venue_order_id: &VenueOrderId) -> Option<Quantity> {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
@@ -155,18 +139,14 @@ impl OrderFillTrackerMap {
             .map(|s| s.cumulative_filled)
     }
 
-    /// Returns `true` if cumulative fills have reached the submitted quantity
-    /// (within a tight tolerance to account for f64 accumulation noise).
+    /// Returns `true` if cumulative fills have reached the submitted quantity.
     pub(crate) fn is_fully_filled(&self, venue_order_id: &VenueOrderId) -> bool {
         self.inner
             .lock()
             .expect(MUTEX_POISONED)
             .orders
             .get(venue_order_id)
-            .is_some_and(|s| {
-                let leaves = s.submitted_qty.as_f64() - s.cumulative_filled;
-                leaves < 1e-9
-            })
+            .is_some_and(|s| s.cumulative_filled >= s.submitted_qty)
     }
 
     /// Records a tracked fill, or buffers it until the order is registered, atomically.
@@ -182,13 +162,7 @@ impl OrderFillTrackerMap {
     ) -> Option<FillReport> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         if guard.orders.get(&venue_order_id).is_some() {
-            record_fill_in(
-                &mut guard.orders,
-                &venue_order_id,
-                report.last_qty.as_f64(),
-                report.last_px.as_f64(),
-                report.ts_event,
-            );
+            record_fill_in(&mut guard.orders, &venue_order_id, report.last_qty);
             Some(report)
         } else {
             push_buffered(
@@ -227,28 +201,17 @@ impl OrderFillTrackerMap {
     /// Registration and the drain are a single critical section, so a concurrent
     /// [`Self::accept_or_buffer_fill`] cannot read the order as unregistered and buffer a fill into
     /// the window after this drain.
-    #[expect(clippy::too_many_arguments)]
     pub(crate) fn register_and_take_pending_fills(
         &self,
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
         submitted_qty: Quantity,
         order_side: OrderSide,
-        instrument_id: InstrumentId,
-        size_precision: u8,
-        price_precision: u8,
     ) -> Vec<BufferedFill> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
-        guard.orders.insert(
-            venue_order_id,
-            new_order_state(
-                submitted_qty,
-                order_side,
-                instrument_id,
-                size_precision,
-                price_precision,
-            ),
-        );
+        guard
+            .orders
+            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
         take_and_prepare_fills(&mut guard, venue_order_id, client_order_id)
     }
 
@@ -256,31 +219,20 @@ impl OrderFillTrackerMap {
     ///
     /// Used by the unknown-submit path, where acceptance is deferred until a buffered fill proves
     /// the venue took the order. Returns `None` (registering nothing) when no fill is buffered.
-    #[expect(clippy::too_many_arguments)]
     pub(crate) fn register_and_take_pending_fills_if_buffered(
         &self,
         venue_order_id: VenueOrderId,
         client_order_id: Option<ClientOrderId>,
         submitted_qty: Quantity,
         order_side: OrderSide,
-        instrument_id: InstrumentId,
-        size_precision: u8,
-        price_precision: u8,
     ) -> Option<Vec<BufferedFill>> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         if !guard.pending_fills.contains_key(&venue_order_id) {
             return None;
         }
-        guard.orders.insert(
-            venue_order_id,
-            new_order_state(
-                submitted_qty,
-                order_side,
-                instrument_id,
-                size_precision,
-                price_precision,
-            ),
-        );
+        guard
+            .orders
+            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
         Some(take_and_prepare_fills(
             &mut guard,
             venue_order_id,
@@ -333,11 +285,7 @@ impl OrderFillTrackerMap {
 
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         if guard.voided_trades.contains(&correction.correction_key) {
-            reverse_fill_in(
-                &mut guard.orders,
-                &fill.venue_order_id,
-                fill.last_qty.as_f64(),
-            );
+            reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
             return false;
         }
 
@@ -369,11 +317,7 @@ impl OrderFillTrackerMap {
             .unwrap_or_default();
 
         for fill in &fills {
-            reverse_fill_in(
-                &mut guard.orders,
-                &fill.venue_order_id,
-                fill.last_qty.as_f64(),
-            );
+            reverse_fill_in(&mut guard.orders, &fill.venue_order_id, fill.last_qty);
         }
         fills
     }
@@ -399,7 +343,7 @@ impl OrderFillTrackerMap {
         reverse_fill_in(
             &mut self.inner.lock().expect(MUTEX_POISONED).orders,
             venue_order_id,
-            quantity.as_f64(),
+            quantity,
         );
     }
 
@@ -419,16 +363,15 @@ impl OrderFillTrackerMap {
     }
 
     /// Snap a single fill qty DOWN to `submitted_qty` when the venue reports
-    /// dust overfill (within `DUST_SNAP_THRESHOLD`).
+    /// dust overfill (within `DUST_SNAP_THRESHOLD_DEC`).
     ///
     /// Overfill snapping is required because the engine rejects fills past
     /// `submitted_qty`. Underfill is intentionally left alone here: a single
     /// partial fill that happens to land near submitted_qty might still be
     /// followed by additional matches, or the order might end up canceled
-    /// with the dust remaining as legitimate leaves. The
-    /// `check_dust_and_build_fill` synthetic-fill mechanism handles the CLOB
-    /// cent-tick truncation case at MATCHED status, where the order's
-    /// terminal state is known.
+    /// with the dust remaining as legitimate leaves. Terminal quantity
+    /// normalization handles the CLOB cent-tick truncation
+    /// case after all associated trades confirm.
     ///
     /// See `docs/integrations/polymarket.md` (Fill quantity normalization).
     pub(crate) fn snap_fill_qty(
@@ -463,71 +406,37 @@ impl OrderFillTrackerMap {
         buy_overfill_bump_in(&mut guard.orders, venue_order_id)
     }
 
-    /// Check if an order has a dust residual after all fills.
-    /// Returns `Some(FillReport)` if a synthetic fill should be emitted.
-    /// Removes the entry on dust settlement to prevent duplicate synthetic
-    /// fills from repeated MATCHED events.
-    #[expect(clippy::too_many_arguments)]
-    pub(crate) fn check_dust_and_build_fill(
+    /// Returns the venue-filled quantity when a terminal order has sub-cent-share leaves.
+    ///
+    /// The returned quantity is used for an order-only reconciliation update. It is not a fill and
+    /// must not change positions, balances, or commissions. The entry is removed on normalization
+    /// so repeated terminal messages are idempotent.
+    pub(crate) fn check_terminal_quantity_normalization(
         &self,
         venue_order_id: &VenueOrderId,
-        account_id: AccountId,
-        order_id: &str,
-        fallback_px: f64,
-        currency: Currency,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Option<FillReport> {
+    ) -> Option<Quantity> {
         let mut guard = self.inner.lock().expect(MUTEX_POISONED);
         let s = guard.orders.get(venue_order_id)?;
-        let leaves = s.submitted_qty.as_f64() - s.cumulative_filled;
+        if s.cumulative_filled >= s.submitted_qty {
+            return None;
+        }
+        let leaves = s.submitted_qty.as_decimal() - s.cumulative_filled.as_decimal();
 
-        if leaves > 0.0 && leaves < DUST_SNAP_THRESHOLD {
-            // Copy fields before removing the entry
-            let size_precision = s.size_precision;
-            let price_precision = s.price_precision;
-            let last_fill_px = s.last_fill_px;
-            let order_side = s.order_side;
-            let instrument_id = s.instrument_id;
+        if leaves > Decimal::ZERO && leaves < DUST_SNAP_THRESHOLD_DEC {
+            let filled_qty = s.cumulative_filled;
 
             log::debug!(
-                "Order {venue_order_id} MATCHED with dust residual {leaves:.6} -- \
-                 emitting synthetic fill to reach FILLED"
+                "Normalizing terminal order {venue_order_id} quantity from {} to {filled_qty} \
+                 (non-economic leaves={leaves})",
+                s.submitted_qty,
             );
-            let dust_qty = Quantity::new(leaves, size_precision);
-            let px = if last_fill_px > 0.0 {
-                last_fill_px
-            } else {
-                fallback_px
-            };
-            let fill_px = Price::new(px, price_precision);
-            let trade_id = TradeId::from(format!("{order_id:.27}-dust").as_str());
-
-            // Remove entry: order is settled, prevents duplicate dust fills
             guard.orders.remove(venue_order_id);
-
-            Some(FillReport {
-                account_id,
-                instrument_id,
-                venue_order_id: *venue_order_id,
-                trade_id,
-                order_side,
-                last_qty: dust_qty,
-                last_px: fill_px,
-                commission: Money::zero(currency),
-                liquidity_side: LiquiditySide::NoLiquiditySide,
-                avg_px: None,
-                report_id: UUID4::new(),
-                ts_event,
-                ts_init,
-                client_order_id: None,
-                venue_position_id: None,
-            })
+            Some(filled_qty)
         } else {
-            if leaves >= DUST_SNAP_THRESHOLD {
+            if leaves >= DUST_SNAP_THRESHOLD_DEC {
                 log::debug!(
                     "Order {venue_order_id} MATCHED with significant residual \
-                     {leaves:.6} (filled {}/{})",
+                     {leaves} (filled {}/{})",
                     s.cumulative_filled,
                     s.submitted_qty,
                 );
@@ -535,24 +444,33 @@ impl OrderFillTrackerMap {
             None
         }
     }
+
+    /// Returns the real unfilled remainder of a terminal IOC order.
+    ///
+    /// The entry is removed so duplicate `CONFIRMED` trade messages cannot emit repeated
+    /// cancellations. The caller must use this only after a taker trade confirms: that proves the
+    /// FAK order has finished matching and the venue has killed the returned remainder.
+    pub(crate) fn take_terminal_ioc_remainder(
+        &self,
+        venue_order_id: &VenueOrderId,
+    ) -> Option<Quantity> {
+        let mut guard = self.inner.lock().expect(MUTEX_POISONED);
+        let state = guard.orders.get(venue_order_id)?;
+        if state.cumulative_filled.is_zero() || state.cumulative_filled >= state.submitted_qty {
+            return None;
+        }
+
+        let remainder = state.submitted_qty - state.cumulative_filled;
+        guard.orders.remove(venue_order_id);
+        Some(remainder)
+    }
 }
 
-fn new_order_state(
-    submitted_qty: Quantity,
-    order_side: OrderSide,
-    instrument_id: InstrumentId,
-    size_precision: u8,
-    price_precision: u8,
-) -> OrderFillState {
+fn new_order_state(submitted_qty: Quantity, order_side: OrderSide) -> OrderFillState {
     OrderFillState {
         submitted_qty,
-        cumulative_filled: 0.0,
-        last_fill_px: 0.0,
-        last_fill_ts: UnixNanos::default(),
+        cumulative_filled: Quantity::zero(submitted_qty.precision),
         order_side,
-        instrument_id,
-        size_precision,
-        price_precision,
     }
 }
 
@@ -565,10 +483,9 @@ fn buy_overfill_bump_in(
         return None;
     }
 
-    let filled = Quantity::new(state.cumulative_filled, state.size_precision);
-    if filled > state.submitted_qty {
-        state.submitted_qty = filled;
-        Some(filled)
+    if state.cumulative_filled > state.submitted_qty {
+        state.submitted_qty = state.cumulative_filled;
+        Some(state.cumulative_filled)
     } else {
         None
     }
@@ -590,13 +507,7 @@ fn take_and_prepare_fills(
             buffered.report.client_order_id = client_order_id;
             buffered.report.last_qty =
                 snap_fill_qty_in(&inner.orders, &venue_order_id, buffered.report.last_qty);
-            record_fill_in(
-                &mut inner.orders,
-                &venue_order_id,
-                buffered.report.last_qty.as_f64(),
-                buffered.report.last_px.as_f64(),
-                buffered.report.ts_event,
-            );
+            record_fill_in(&mut inner.orders, &venue_order_id, buffered.report.last_qty);
             buffered
         })
         .collect()
@@ -622,36 +533,23 @@ impl OrderFillTrackerMap {
         venue_order_id: VenueOrderId,
         submitted_qty: Quantity,
         order_side: OrderSide,
-        instrument_id: InstrumentId,
-        size_precision: u8,
-        price_precision: u8,
+        _instrument_id: InstrumentId,
+        _size_precision: u8,
+        _price_precision: u8,
     ) {
-        self.inner.lock().expect(MUTEX_POISONED).orders.insert(
-            venue_order_id,
-            new_order_state(
-                submitted_qty,
-                order_side,
-                instrument_id,
-                size_precision,
-                price_precision,
-            ),
-        );
+        self.inner
+            .lock()
+            .expect(MUTEX_POISONED)
+            .orders
+            .insert(venue_order_id, new_order_state(submitted_qty, order_side));
     }
 
     /// Records a fill against a registered order, for tests that drive fill accumulation directly.
-    pub(crate) fn record_fill(
-        &self,
-        venue_order_id: &VenueOrderId,
-        qty: f64,
-        px: f64,
-        ts: UnixNanos,
-    ) {
+    pub(crate) fn record_fill(&self, venue_order_id: &VenueOrderId, qty: Quantity) {
         record_fill_in(
             &mut self.inner.lock().expect(MUTEX_POISONED).orders,
             venue_order_id,
             qty,
-            px,
-            ts,
         );
     }
 
@@ -713,24 +611,24 @@ impl OrderFillTrackerMap {
 fn record_fill_in(
     orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
     venue_order_id: &VenueOrderId,
-    qty: f64,
-    px: f64,
-    ts: UnixNanos,
+    qty: Quantity,
 ) {
     if let Some(s) = orders.get_mut(venue_order_id) {
-        s.cumulative_filled += qty;
-        s.last_fill_px = px;
-        s.last_fill_ts = ts;
+        s.cumulative_filled = s.cumulative_filled + qty;
     }
 }
 
 fn reverse_fill_in(
     orders: &mut FifoCacheMap<VenueOrderId, OrderFillState, 10_000>,
     venue_order_id: &VenueOrderId,
-    qty: f64,
+    qty: Quantity,
 ) {
     if let Some(state) = orders.get_mut(venue_order_id) {
-        state.cumulative_filled = (state.cumulative_filled - qty).max(0.0);
+        state.cumulative_filled = if qty >= state.cumulative_filled {
+            Quantity::zero(state.cumulative_filled.precision)
+        } else {
+            state.cumulative_filled - qty
+        };
     }
 }
 
@@ -741,10 +639,10 @@ fn snap_fill_qty_in(
 ) -> Quantity {
     match orders.get(venue_order_id) {
         Some(s) => {
-            let diff = s.submitted_qty.as_f64() - fill_qty.as_f64();
-            if diff < 0.0 && diff.abs() < DUST_SNAP_THRESHOLD {
+            let diff = s.submitted_qty.as_decimal() - fill_qty.as_decimal();
+            if diff < Decimal::ZERO && diff.abs() < DUST_SNAP_THRESHOLD_DEC {
                 log::debug!(
-                    "Snapping overfill {fill_qty} -> {} (dust={diff:+.6})",
+                    "Snapping overfill {fill_qty} -> {} (dust={diff})",
                     s.submitted_qty,
                 );
                 s.submitted_qty
@@ -758,6 +656,12 @@ fn snap_fill_qty_in(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_model::{
+        enums::LiquiditySide,
+        identifiers::{AccountId, TradeId},
+        types::{Currency, Money, Price},
+    };
     use rstest::rstest;
 
     use super::*;
@@ -829,9 +733,6 @@ mod tests {
             Some(ClientOrderId::from("O-FAILED-BEFORE-DRAIN")),
             Quantity::new(10.0, 6),
             OrderSide::Buy,
-            instrument_id,
-            6,
-            2,
         );
         let buffered = &drained[0];
         let fill = OrderFilled::new(
@@ -866,16 +767,18 @@ mod tests {
         assert_eq!(drained.len(), 1);
         assert!(!emitted);
         assert!(!was_emitted.get());
-        assert_eq!(tracker.get_cumulative_filled(&venue_order_id), Some(0.0));
+        assert_eq!(
+            tracker.get_cumulative_filled(&venue_order_id),
+            Some(Quantity::zero(6))
+        );
     }
 
     // snap_fill_qty is overfill-only. Underfill is preserved so partial fills
-    // followed by cancel keep their venue-reported size; the synthetic dust
-    // fill at MATCHED status handles CLOB cent-tick truncation.
+    // followed by cancel keep their venue-reported size; terminal quantity
+    // normalization handles CLOB cent-tick truncation without a synthetic fill.
     #[rstest]
     // Underfill within the dust band: NOT snapped. The fill is recorded
-    // as-is; if the order reaches MATCHED, the synthetic dust mechanism
-    // emits the missing leaves at that point.
+    // as-is; terminal normalization later lowers the order quantity.
     #[case::underfill_dust_preserved(23.696681, 23.690000, 23.690000)]
     #[case::underfill_near_band_preserved(100.000000, 99.990100, 99.990100)]
     // Underfill at exactly the band: NOT snapped.
@@ -1023,26 +926,12 @@ mod tests {
             2,
         );
 
-        tracker.record_fill(&vid, 50.0, 0.55, UnixNanos::from(1_000u64));
-        tracker.record_fill(&vid, 49.997714, 0.55, UnixNanos::from(2_000u64));
+        tracker.record_fill(&vid, Quantity::new(50.0, 6));
+        tracker.record_fill(&vid, Quantity::new(49.997714, 6));
 
-        // Dust check: 100.0 - 99.997714 = 0.002286 < 0.01 -> emit
-        let dust_fill = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "order-1",
-            0.55,
-            pusd(),
-            UnixNanos::from(3_000u64),
-            UnixNanos::from(4_000u64),
-        );
-        assert!(dust_fill.is_some());
-        let fill = dust_fill.unwrap();
-        assert!((fill.last_qty.as_f64() - 0.002286).abs() < 1e-9);
-        assert_eq!(fill.order_side, OrderSide::Buy);
-        assert_eq!(fill.liquidity_side, LiquiditySide::NoLiquiditySide);
-        assert_eq!(fill.ts_event, UnixNanos::from(3_000u64));
-        assert_eq!(fill.ts_init, UnixNanos::from(4_000u64));
+        let normalized = tracker.check_terminal_quantity_normalization(&vid);
+
+        assert_eq!(normalized, Some(Quantity::new(99.997714, 6)));
     }
 
     #[rstest]
@@ -1059,18 +948,13 @@ mod tests {
         );
 
         // Exact fill
-        tracker.record_fill(&vid, 100.0, 0.55, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(100.0, 6));
 
-        let dust_fill = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "order-1",
-            0.55,
-            pusd(),
-            UnixNanos::from(2_000u64),
-            UnixNanos::from(2_000u64),
+        assert!(
+            tracker
+                .check_terminal_quantity_normalization(&vid)
+                .is_none()
         );
-        assert!(dust_fill.is_none());
     }
 
     #[rstest]
@@ -1087,18 +971,57 @@ mod tests {
         );
 
         // Only half filled, residual = 50 >> 0.01
-        tracker.record_fill(&vid, 50.0, 0.55, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(50.0, 6));
 
-        let dust_fill = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "order-1",
-            0.55,
-            pusd(),
-            UnixNanos::from(2_000u64),
-            UnixNanos::from(2_000u64),
+        assert!(
+            tracker
+                .check_terminal_quantity_normalization(&vid)
+                .is_none()
         );
-        assert!(dust_fill.is_none());
+    }
+
+    #[rstest]
+    fn test_take_terminal_ioc_remainder_is_exact_and_idempotent() {
+        let tracker = OrderFillTrackerMap::new();
+        let vid = VenueOrderId::from("order-partial-ioc");
+        tracker.register(
+            vid,
+            Quantity::from("30.000000"),
+            OrderSide::Buy,
+            InstrumentId::from("TEST.POLYMARKET"),
+            6,
+            3,
+        );
+        tracker.record_fill(&vid, Quantity::from("20.000000"));
+
+        let remainder = tracker.take_terminal_ioc_remainder(&vid);
+
+        assert_eq!(remainder, Some(Quantity::from("10.000000")));
+        assert!(!tracker.contains(&vid));
+        assert!(tracker.take_terminal_ioc_remainder(&vid).is_none());
+    }
+
+    #[rstest]
+    fn test_take_terminal_ioc_remainder_requires_a_partial_fill() {
+        let tracker = OrderFillTrackerMap::new();
+        let unfilled = VenueOrderId::from("order-unfilled-ioc");
+        let filled = VenueOrderId::from("order-filled-ioc");
+        for venue_order_id in [unfilled, filled] {
+            tracker.register(
+                venue_order_id,
+                Quantity::from("20.000000"),
+                OrderSide::Buy,
+                InstrumentId::from("TEST.POLYMARKET"),
+                6,
+                3,
+            );
+        }
+        tracker.record_fill(&filled, Quantity::from("20.000000"));
+
+        assert!(tracker.take_terminal_ioc_remainder(&unfilled).is_none());
+        assert!(tracker.take_terminal_ioc_remainder(&filled).is_none());
+        assert!(tracker.contains(&unfilled));
+        assert!(tracker.contains(&filled));
     }
 
     #[rstest]
@@ -1106,47 +1029,11 @@ mod tests {
         let tracker = OrderFillTrackerMap::new();
         let vid = VenueOrderId::from("unknown");
 
-        let dust_fill = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "unknown",
-            0.55,
-            pusd(),
-            UnixNanos::from(1_000u64),
-            UnixNanos::from(1_000u64),
+        assert!(
+            tracker
+                .check_terminal_quantity_normalization(&vid)
+                .is_none()
         );
-        assert!(dust_fill.is_none());
-    }
-
-    #[rstest]
-    fn test_dust_fill_uses_last_fill_price() {
-        let tracker = OrderFillTrackerMap::new();
-        let vid = VenueOrderId::from("order-1");
-        tracker.register(
-            vid,
-            Quantity::new(100.0, 6),
-            OrderSide::Buy,
-            InstrumentId::from("TEST.POLYMARKET"),
-            6,
-            2,
-        );
-
-        tracker.record_fill(&vid, 99.995, 0.60, UnixNanos::from(1_000u64));
-
-        let dust_fill = tracker
-            .check_dust_and_build_fill(
-                &vid,
-                AccountId::from("POLY-001"),
-                "order-1",
-                0.50, // fallback, should NOT be used
-                pusd(),
-                UnixNanos::from(2_000u64),
-                UnixNanos::from(2_000u64),
-            )
-            .unwrap();
-
-        // Should use last fill price (0.60), not fallback (0.50)
-        assert_eq!(dust_fill.last_px, Price::new(0.60, 2));
     }
 
     #[rstest]
@@ -1162,32 +1049,18 @@ mod tests {
             2,
         );
 
-        tracker.record_fill(&vid, 99.995, 0.55, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(99.995, 6));
 
-        // First check returns dust
-        let dust_fill = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "order-1",
-            0.55,
-            pusd(),
-            UnixNanos::from(2_000u64),
-            UnixNanos::from(2_000u64),
-        );
-        assert!(dust_fill.is_some());
+        let normalized = tracker.check_terminal_quantity_normalization(&vid);
+        assert_eq!(normalized, Some(Quantity::new(99.995, 6)));
 
-        // Entry should be removed, second check returns None (no duplicate)
+        // Entry should be removed, second check returns None (no duplicate).
         assert!(!tracker.contains(&vid));
-        let dust_fill2 = tracker.check_dust_and_build_fill(
-            &vid,
-            AccountId::from("POLY-001"),
-            "order-1",
-            0.55,
-            pusd(),
-            UnixNanos::from(3_000u64),
-            UnixNanos::from(3_000u64),
+        assert!(
+            tracker
+                .check_terminal_quantity_normalization(&vid)
+                .is_none()
         );
-        assert!(dust_fill2.is_none());
     }
 
     #[rstest]
@@ -1204,7 +1077,7 @@ mod tests {
         );
 
         let filled = tracker.get_cumulative_filled(&vid);
-        assert_eq!(filled, Some(0.0));
+        assert_eq!(filled, Some(Quantity::zero(6)));
     }
 
     #[rstest]
@@ -1220,11 +1093,11 @@ mod tests {
             2,
         );
 
-        tracker.record_fill(&vid, 30.0, 0.5, UnixNanos::from(1_000u64));
-        tracker.record_fill(&vid, 20.0, 0.5, UnixNanos::from(2_000u64));
+        tracker.record_fill(&vid, Quantity::new(30.0, 6));
+        tracker.record_fill(&vid, Quantity::new(20.0, 6));
 
         let filled = tracker.get_cumulative_filled(&vid);
-        assert_eq!(filled, Some(50.0));
+        assert_eq!(filled, Some(Quantity::new(50.0, 6)));
     }
 
     #[rstest]
@@ -1254,7 +1127,7 @@ mod tests {
             2,
         );
 
-        tracker.record_fill(&vid, 50.0, 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(50.0, 6));
         assert!(!tracker.is_fully_filled(&vid));
     }
 
@@ -1271,8 +1144,8 @@ mod tests {
             2,
         );
 
-        tracker.record_fill(&vid, 60.0, 0.5, UnixNanos::from(1_000u64));
-        tracker.record_fill(&vid, 40.0, 0.5, UnixNanos::from(2_000u64));
+        tracker.record_fill(&vid, Quantity::new(60.0, 6));
+        tracker.record_fill(&vid, Quantity::new(40.0, 6));
         assert!(tracker.is_fully_filled(&vid));
     }
 
@@ -1304,7 +1177,7 @@ mod tests {
         register_buy(&tracker, vid, 10.0);
 
         // Exact fill: cumulative equals submitted, no raise.
-        tracker.record_fill(&vid, 10.0, 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(10.0, 6));
         assert!(tracker.buy_overfill_bump(&vid).is_none());
     }
 
@@ -1322,7 +1195,7 @@ mod tests {
         );
 
         // A SELL is share-denominated; even an over-report does not raise the quantity.
-        tracker.record_fill(&vid, 12.0, 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(12.0, 6));
         assert!(tracker.buy_overfill_bump(&vid).is_none());
     }
 
@@ -1333,7 +1206,7 @@ mod tests {
         register_buy(&tracker, vid, 10.0);
 
         // Marketable BUY fills below its limit: 12 shares against a nominal 10.
-        tracker.record_fill(&vid, 12.0, 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(12.0, 6));
 
         let bumped = tracker.buy_overfill_bump(&vid).expect("expected a raise");
         assert_eq!(bumped, Quantity::new(12.0, 6));
@@ -1350,18 +1223,18 @@ mod tests {
         register_buy(&tracker, vid, 10.0);
 
         // First partial stays within the nominal qty: no raise.
-        tracker.record_fill(&vid, 6.0, 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, Quantity::new(6.0, 6));
         assert!(tracker.buy_overfill_bump(&vid).is_none());
 
         // Second partial crosses the nominal qty: raise to cumulative 14.
-        tracker.record_fill(&vid, 8.0, 0.5, UnixNanos::from(2_000u64));
+        tracker.record_fill(&vid, Quantity::new(8.0, 6));
         assert_eq!(
             tracker.buy_overfill_bump(&vid),
             Some(Quantity::new(14.0, 6))
         );
 
         // Third partial crosses again: raise to cumulative 20.
-        tracker.record_fill(&vid, 6.0, 0.5, UnixNanos::from(3_000u64));
+        tracker.record_fill(&vid, Quantity::new(6.0, 6));
         assert_eq!(
             tracker.buy_overfill_bump(&vid),
             Some(Quantity::new(20.0, 6))
@@ -1380,7 +1253,7 @@ mod tests {
         let snapped = tracker.snap_fill_qty(&vid, raw);
         assert_eq!(snapped, Quantity::new(100.0, 6));
 
-        tracker.record_fill(&vid, snapped.as_f64(), 0.5, UnixNanos::from(1_000u64));
+        tracker.record_fill(&vid, snapped);
         assert!(tracker.buy_overfill_bump(&vid).is_none());
     }
 }

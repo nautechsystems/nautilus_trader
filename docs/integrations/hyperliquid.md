@@ -590,6 +590,7 @@ The adapter supports the following data subscriptions. All perpetual data types
 | Data type         | Sub. | Snapshot | Hist. | Nautilus type                 | Notes                                 |
 |-------------------|------|----------|-------|-------------------------------|---------------------------------------|
 | Trade ticks       | ✓    | -        | ✓     | `TradeTick`                   | WebSocket trades; `recentTrades`.     |
+| Public trades     | ✓    | -        | ✓     | `HyperliquidPublicTrade`      | Opt‑in custom data with counterparties and hash. |
 | Quote ticks       | ✓    | -        | -     | `QuoteTick`                   | Best bid/offer.                       |
 | Order book deltas | ✓    | ✓        | -     | `OrderBookDelta`              | L2 snapshots.                         |
 | Order book depth  | ✓    | -        | -     | `OrderBookDepth10`            | Top-10 L2 snapshots.                  |
@@ -645,7 +646,7 @@ Book deltas and depth10 snapshots for the same instrument share one venue
 
 ### Hyperliquid specific data
 
-The adapter emits two Hyperliquid-specific custom data types:
+The adapter emits Hyperliquid-specific custom data types:
 
 - `HyperliquidAllMids` from the WebSocket `allMids` feed. Each update carries
   all currently reported mid prices in one payload.
@@ -654,6 +655,8 @@ The adapter emits two Hyperliquid-specific custom data types:
   the default perp dex and HIP-3 builder dexes.
 - `HyperliquidOpenInterest` from the shared `activeAssetCtx` feed used by
   mark prices, index prices, and funding rates.
+- `HyperliquidPublicTrade` from `trades` and `recentTrades`. Each event is
+  self-contained and includes the buyer, seller, and venue hash.
 
 | Field      | Type             | Description                                              |
 |------------|------------------|----------------------------------------------------------|
@@ -704,6 +707,31 @@ self.subscribe_data(
 `activeAssetCtx` venue subscription that already backs mark prices, index
 prices, and funding rates for the same coin. Adding OI does not open a second
 parallel `activeAssetCtx` subscription.
+
+`HyperliquidPublicTrade` is an opt-in alternative to generic `TradeTick` for
+public order-flow research. It has `instrument_id`, `price`, `size`,
+`aggressor_side`, `trade_id`, `buyer`, `seller`, `hash`, `ts_event`, and
+`ts_init`. Subscribe with the same canonical instrument metadata:
+
+```python
+from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
+from nautilus_trader.adapters.hyperliquid import HyperliquidPublicTrade
+from nautilus_trader.model.data import DataType
+
+self.subscribe_data(
+    data_type=DataType(
+        HyperliquidPublicTrade,
+        metadata={"instrument_id": str(self.instrument_id)},
+    ),
+    client_id=HYPERLIQUID_CLIENT_ID,
+)
+```
+
+It shares the one venue `trades` subscription with `TradeTick` when both are
+requested. Unlike a sidecar `users` event, each `HyperliquidPublicTrade` is
+independently Arrow-serializable and can be recorded to and queried from a
+Nautilus catalog without a join. `RequestCustomData` for this type uses the
+same recent-only `recentTrades` snapshot as historical trade requests.
 
 In a Python strategy running inside a `TradingNode`, the payload is delivered
 to `on_data` as the concrete custom data type itself:

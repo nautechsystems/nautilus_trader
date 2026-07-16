@@ -914,6 +914,7 @@ mod tests {
     #[case(dec!(0.50), dec!(50), PolymarketOrderSide::Buy, 2, dec!(50_000_000), dec!(100_000_000))]
     #[case(dec!(0.50), dec!(100), PolymarketOrderSide::Sell, 2, dec!(100_000_000), dec!(50_000_000))]
     #[case(dec!(0.75), dec!(150), PolymarketOrderSide::Buy, 2, dec!(150_000_000), dec!(200_000_000))]
+    #[case(dec!(0.96), dec!(5.208), PolymarketOrderSide::Sell, 2, dec!(5_200_000), dec!(4_992_000))]
     // amt=23.696681 → trunc(2)=23.69, taker=(23.69*0.211).trunc(5)=4.99859→4_998_590
     #[case(dec!(0.211), dec!(23.696681), PolymarketOrderSide::Sell, 3, dec!(23_690_000), dec!(4_998_590))]
     fn test_compute_market_maker_taker_amounts(

@@ -1162,12 +1162,13 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_start_aborts_startup_when_mass_status_unavailable() {
+    async fn test_start_continues_when_mass_status_unavailable() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
+            delay_post_stop: Duration::ZERO,
             timeout_disconnection: Duration::from_millis(50),
             ..Default::default()
         };
@@ -1178,18 +1179,19 @@ mod serial_tests {
         );
         let handle = node.handle();
 
-        let err = node.start().await.expect_err("start should fail");
+        let result = node.start().await;
 
-        assert!(
-            err.to_string().contains("No mass status available"),
-            "unexpected error: {err:#}"
-        );
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(!state.connected.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Running);
+        assert!(state.connected.load(Ordering::Relaxed));
+
+        node.stop().await.unwrap();
 
         node.dispose();
 
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
         assert!(node.kernel().trader().borrow().is_disposed());
         assert_eq!(node.kernel().trader().borrow().component_count(), 0);
     }
@@ -1293,12 +1295,13 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_run_aborts_startup_when_mass_status_unavailable() {
+    async fn test_run_continues_when_mass_status_unavailable() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
                 reconciliation: true,
                 ..Default::default()
             },
+            delay_post_stop: Duration::ZERO,
             timeout_disconnection: Duration::from_millis(50),
             ..Default::default()
         };
@@ -1308,13 +1311,20 @@ mod serial_tests {
             StartupMassStatusBehavior::Unavailable,
         );
         let handle = node.handle();
+        let stop_handle = handle.clone();
 
-        let err = node.run().await.expect_err("run should fail");
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { stop_handle.is_running() },
+                Duration::from_secs(5),
+            )
+            .await;
+            stop_handle.stop();
+        });
 
-        assert!(
-            err.to_string().contains("No mass status available"),
-            "unexpected error: {err:#}"
-        );
+        let result = node.run().await;
+
+        assert!(result.is_ok(), "unexpected error: {result:#?}");
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));

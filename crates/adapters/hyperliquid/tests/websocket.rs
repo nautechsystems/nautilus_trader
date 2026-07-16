@@ -38,7 +38,7 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_hyperliquid::{
     common::enums::HyperliquidEnvironment,
-    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidAllMids},
+    data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidPublicTrade},
     websocket::{client::HyperliquidWebSocketClient, messages::NautilusWsMessage},
 };
 use nautilus_model::{
@@ -163,7 +163,9 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
             "px": "98450.00",
             "sz": "0.5",
             "time": 1703875200000u64,
-            "hash": "0xabc123"
+            "tid": 123456u64,
+            "hash": "0xabc123",
+            "users": ["0xbuyer", "0xseller"]
         }]
     });
 
@@ -651,6 +653,159 @@ async fn test_subscribe_trades() {
     assert!(
         events.iter().any(|(t, ok)| t == "trades" && *ok),
         "Expected trades subscription success"
+    );
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_subscribe_public_trades_emits_complete_custom_data() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_public_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe failed");
+
+    let msg = tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if let Some(msg) = client.next_event().await {
+                break msg;
+            }
+        }
+    })
+    .await
+    .expect("timeout waiting for public trade");
+
+    let NautilusWsMessage::CustomData(Data::Custom(custom)) = msg else {
+        panic!("Expected custom public trade");
+    };
+    let trade = custom
+        .data
+        .as_any()
+        .downcast_ref::<HyperliquidPublicTrade>()
+        .expect("expected HyperliquidPublicTrade");
+    assert_eq!(trade.trade_id, "123456");
+    assert_eq!(trade.buyer, "0xbuyer");
+    assert_eq!(trade.seller, "0xseller");
+    assert_eq!(trade.hash, "0xabc123");
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_public_and_generic_trades_share_one_venue_subscription() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_trades(instrument_id)
+        .await
+        .expect("subscribe ticks failed");
+    client
+        .subscribe_public_trades(instrument_id)
+        .await
+        .expect("subscribe public trades failed");
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.subscription_events().await.len() == 1 }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+    assert_eq!(state.subscription_events().await.len(), 1);
+
+    client
+        .unsubscribe_trades(instrument_id)
+        .await
+        .expect("unsubscribe ticks failed");
+    assert!(state.unsubscriptions.lock().await.is_empty());
+
+    client
+        .unsubscribe_public_trades(instrument_id)
+        .await
+        .expect("unsubscribe public trades failed");
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.unsubscriptions.lock().await.is_empty() }
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    client.disconnect().await.expect("close failed");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_public_trade_replay_is_suppressed_after_reconnection() {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws");
+
+    let mut client = connect_client(&ws_url, None).await;
+    client.connect().await.expect("connect failed");
+    wait_until_active(&client, 2.0)
+        .await
+        .expect("client inactive");
+
+    client
+        .subscribe_public_trades(InstrumentId::from("BTC-USD-PERP.HYPERLIQUID"))
+        .await
+        .expect("subscribe public trades failed");
+
+    tokio::time::timeout(Duration::from_secs(2), client.next_event())
+        .await
+        .expect("timeout waiting for initial public trade")
+        .expect("public trade stream closed");
+
+    assert!(
+        client.request_reconnect(),
+        "an active connection must accept the reconnect request"
+    );
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .filter(|(topic, ok)| topic == "trades" && *ok)
+                    .count()
+                    >= 2
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let replay = tokio::time::timeout(Duration::from_millis(250), client.next_event()).await;
+    assert!(
+        replay.is_err(),
+        "replayed public trade must not reach the strategy-facing stream: {replay:?}"
     );
 
     client.disconnect().await.expect("close failed");

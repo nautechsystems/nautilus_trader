@@ -275,6 +275,42 @@ impl HyperliquidHttpClient {
         })
     }
 
+    /// Request the recent public trade snapshot for an instrument.
+    ///
+    /// Hyperliquid's `recentTrades` endpoint is a bounded newest-first snapshot,
+    /// rather than a range-query endpoint. The returned trades are normalized to
+    /// ascending event time and then constrained to the requested window.
+    ///
+    /// A self-hosted node without the indexer responds with HTTP 422. This is
+    /// treated as no available coverage so requests can still complete.
+    #[pyo3(name = "request_public_trades", signature = (instrument_id, start=None, end=None, limit=None))]
+    #[gen_stub(override_return_type(type_repr = "typing.Any", imports = ("typing",)))]
+    fn py_request_public_trades<'py>(
+        &self,
+        py: Python<'py>,
+        instrument_id: InstrumentId,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        end: Option<chrono::DateTime<chrono::Utc>>,
+        limit: Option<u32>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let trades = client
+                .request_public_trades(instrument_id, start, end, limit.map(|limit| limit as usize))
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| {
+                let pylist = PyList::new(
+                    py,
+                    trades.into_iter().map(|trade| trade.into_py_any_unwrap(py)),
+                )?;
+                Ok(pylist.into_py_any_unwrap(py))
+            })
+        })
+    }
+
     /// Request historical bars for an instrument.
     ///
     /// Fetches candle data from the Hyperliquid API and converts it to Nautilus bars.

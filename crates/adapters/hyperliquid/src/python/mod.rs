@@ -20,6 +20,8 @@
     reason = "errors documented on underlying Rust methods"
 )]
 
+#[cfg(feature = "arrow")]
+pub mod arrow;
 pub mod config;
 pub mod enums;
 pub mod factories;
@@ -46,7 +48,7 @@ use crate::{
     config::{HyperliquidDataClientConfig, HyperliquidExecClientConfig},
     data_types::{
         HyperliquidAllDexsAssetCtxs, HyperliquidAllMids, HyperliquidOpenInterest,
-        register_hyperliquid_custom_data,
+        HyperliquidPublicTrade, register_hyperliquid_custom_data,
     },
     factories::{
         HyperliquidDataClientFactory, HyperliquidExecFactoryConfig,
@@ -245,11 +247,13 @@ pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<HyperliquidAllDexsAssetCtxs>()?;
     m.add_class::<HyperliquidAllMids>()?;
     m.add_class::<HyperliquidOpenInterest>()?;
+    m.add_class::<HyperliquidPublicTrade>()?;
 
     register_hyperliquid_custom_data();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllDexsAssetCtxs>();
     let _result = ensure_rust_extractor_registered::<HyperliquidAllMids>();
     let _result = ensure_rust_extractor_registered::<HyperliquidOpenInterest>();
+    let _result = ensure_rust_extractor_registered::<HyperliquidPublicTrade>();
 
     let registry = get_global_pyo3_registry();
 

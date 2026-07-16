@@ -30,6 +30,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import ensure_pydatetime_utc
 from nautilus_trader.data.messages import RequestBars
+from nautilus_trader.data.messages import RequestData
 from nautilus_trader.data.messages import RequestInstrument
 from nautilus_trader.data.messages import RequestInstruments
 from nautilus_trader.data.messages import RequestQuoteTicks
@@ -60,12 +61,14 @@ from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import FundingRateUpdate
 from nautilus_trader.model.data import capsule_to_data
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import book_type_to_str
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import instruments_from_pyo3
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 _PYO3HyperliquidAllMids: Any = getattr(nautilus_pyo3, "HyperliquidAllMids", None)
@@ -77,6 +80,11 @@ _PYO3HyperliquidAllDexsAssetCtxs: Any = getattr(
 _PYO3HyperliquidOpenInterest: Any = getattr(
     nautilus_pyo3,
     "HyperliquidOpenInterest",
+    None,
+)
+_PYO3HyperliquidPublicTrade: Any = getattr(
+    nautilus_pyo3,
+    "HyperliquidPublicTrade",
     None,
 )
 
@@ -150,6 +158,88 @@ class HyperliquidOpenInterest(Data):
             open_interest=Decimal(str(pyo3_open_interest.open_interest)),
             ts_event=pyo3_open_interest.ts_event,
             ts_init=pyo3_open_interest.ts_init,
+        )
+
+
+class HyperliquidPublicTrade(Data):
+    """
+    Complete public Hyperliquid trade, including buyer/seller wallet addresses.
+
+    This self-contained custom data type can be recorded to and read from a
+    catalog without joining a separate sidecar stream to ``TradeTick``.
+
+    """
+
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        trade_id: str,
+        buyer: str,
+        seller: str,
+        hash: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.price = price
+        self.size = size
+        self.aggressor_side = aggressor_side
+        self.trade_id = trade_id
+        self.buyer = buyer
+        self.seller = seller
+        self.hash = hash
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+    @staticmethod
+    def from_pyo3(pyo3_public_trade: Any) -> HyperliquidPublicTrade:
+        aggressor_name = getattr(
+            pyo3_public_trade.aggressor_side,
+            "name",
+            str(pyo3_public_trade.aggressor_side),
+        )
+        return HyperliquidPublicTrade(
+            instrument_id=InstrumentId.from_str(str(pyo3_public_trade.instrument_id)),
+            price=Price.from_str(str(pyo3_public_trade.price)),
+            size=Quantity.from_str(str(pyo3_public_trade.size)),
+            aggressor_side=AggressorSide[aggressor_name],
+            trade_id=pyo3_public_trade.trade_id,
+            buyer=pyo3_public_trade.buyer,
+            seller=pyo3_public_trade.seller,
+            hash=pyo3_public_trade.hash,
+            ts_event=pyo3_public_trade.ts_event,
+            ts_init=pyo3_public_trade.ts_init,
+        )
+
+    def to_pyo3(self) -> Any:
+        """
+        Convert this Python wrapper to the Arrow-serializable PyO3 type.
+        """
+        if _PYO3HyperliquidPublicTrade is None:
+            raise RuntimeError("HyperliquidPublicTrade PyO3 bindings are unavailable")
+
+        return _PYO3HyperliquidPublicTrade(
+            self.instrument_id.to_pyo3(),
+            str(self.price),
+            str(self.size),
+            self.aggressor_side.name,
+            self.trade_id,
+            self.buyer,
+            self.seller,
+            self.hash,
+            self.ts_event,
+            self.ts_init,
         )
 
 
@@ -459,7 +549,7 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         if not instrument_id:
             self._log.warning(
-                f"Unsupported Hyperliquid open interest {action}: "
+                f"Unsupported Hyperliquid custom data {action}: "
                 "metadata['instrument_id'] is required",
             )
             return None
@@ -499,6 +589,16 @@ class HyperliquidDataClient(LiveMarketDataClient):
                     inner = HyperliquidOpenInterest.from_pyo3(msg.data)
                     data_type = DataType(
                         HyperliquidOpenInterest,
+                        metadata=msg.data_type.metadata,
+                    )
+                    self._handle_data(CustomData(data_type=data_type, data=inner))
+                elif _PYO3HyperliquidPublicTrade is not None and isinstance(
+                    msg.data,
+                    _PYO3HyperliquidPublicTrade,
+                ):
+                    inner = HyperliquidPublicTrade.from_pyo3(msg.data)
+                    data_type = DataType(
+                        HyperliquidPublicTrade,
                         metadata=msg.data_type.metadata,
                     )
                     self._handle_data(CustomData(data_type=data_type, data=inner))
@@ -590,6 +690,14 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         await subscribe_open_interest(instrument_id)
 
+    async def _subscribe_public_trades(self, data_type: DataType) -> None:
+        instrument_id = self._custom_instrument_id(data_type, action="subscription")
+
+        if instrument_id is None:
+            return
+
+        await self._ws_client.subscribe_public_trades(instrument_id)
+
     async def _subscribe(self, command: SubscribeData) -> None:
         data_type = command.data_type
         data_type_name = data_type.type.__name__
@@ -604,6 +712,10 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         if data_type_name == "HyperliquidOpenInterest":
             await self._subscribe_open_interest(data_type)
+            return
+
+        if data_type_name == "HyperliquidPublicTrade":
+            await self._subscribe_public_trades(data_type)
             return
 
         self._log.warning(f"Unsupported custom data subscription: {data_type_name}")
@@ -730,6 +842,14 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         await unsubscribe_open_interest(instrument_id)
 
+    async def _unsubscribe_public_trades(self, data_type: DataType) -> None:
+        instrument_id = self._custom_instrument_id(data_type, action="unsubscription")
+
+        if instrument_id is None:
+            return
+
+        await self._ws_client.unsubscribe_public_trades(instrument_id)
+
     async def _unsubscribe(self, command: UnsubscribeData) -> None:
         data_type = command.data_type
         data_type_name = data_type.type.__name__
@@ -744,6 +864,10 @@ class HyperliquidDataClient(LiveMarketDataClient):
 
         if data_type_name == "HyperliquidOpenInterest":
             await self._unsubscribe_open_interest(data_type)
+            return
+
+        if data_type_name == "HyperliquidPublicTrade":
+            await self._unsubscribe_public_trades(data_type)
             return
 
         self._log.warning(f"Unsupported custom data unsubscription: {data_type_name}")
@@ -791,6 +915,61 @@ class HyperliquidDataClient(LiveMarketDataClient):
         await self._ws_client.unsubscribe_funding_rates(pyo3_instrument_id)
 
     # -- REQUESTS -----------------------------------------------------------------------------------
+
+    async def _request(self, request: RequestData) -> None:
+        if request.data_type.type == HyperliquidPublicTrade:
+            await self._request_public_trades(request)
+            return
+
+        raise NotImplementedError(
+            f"Cannot request {request.data_type.type} (not implemented)",
+        )
+
+    async def _request_public_trades(self, request: RequestData) -> None:
+        pyo3_instrument_id = self._custom_instrument_id(
+            request.data_type,
+            action="request",
+        )
+
+        if pyo3_instrument_id is None:
+            return
+
+        response_data_type = DataType(
+            HyperliquidPublicTrade,
+            metadata={"instrument_id": pyo3_instrument_id.value},
+            identifier=pyo3_instrument_id.value,
+        )
+        start = ensure_pydatetime_utc(request.start) if request.start else None
+        end = ensure_pydatetime_utc(request.end) if request.end else None
+        limit = request.limit if request.limit > 0 else None
+
+        try:
+            pyo3_trades = await self._http_client.request_public_trades(
+                pyo3_instrument_id,
+                start,
+                end,
+                limit,
+            )
+            trades = [
+                CustomData(
+                    data_type=response_data_type,
+                    data=HyperliquidPublicTrade.from_pyo3(trade),
+                )
+                for trade in pyo3_trades
+            ]
+            self._handle_data_response(
+                data_type=response_data_type,
+                data=trades,
+                correlation_id=request.id,
+                start=request.start,
+                end=request.end,
+                params=request.params,
+            )
+        except Exception as e:
+            self._log.exception(
+                f"Error requesting public trades for {pyo3_instrument_id}",
+                e,
+            )
 
     async def _request_instrument(self, request: RequestInstrument) -> None:
         instrument = self.instrument_provider.find(request.instrument_id)

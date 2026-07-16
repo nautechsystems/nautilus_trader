@@ -99,6 +99,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true }
 nautilus-trading = { workspace = true }
 
@@ -107,6 +108,7 @@ criterion = { workspace = true }
 dotenvy = { workspace = true }
 futures-util = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 toml = { workspace = true }
 
 [[bench]]

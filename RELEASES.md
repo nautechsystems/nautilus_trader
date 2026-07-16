@@ -93,12 +93,16 @@ adapter set. The following limits remain deferred:
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 - Changed v2 order-event serialization to carry `activation_price` on `OrderInitialized`/`OrderSnapshot` and `info` on `OrderFilled`; catalog data written before this change cannot be read
+- Changed v2 `BettingInstrument`, `BinaryOption`, `FuturesContract`, and `OptionContract` Arrow schemas to carry every instrument constraint in the standard column order; catalog data written before this change cannot be read
 - Changed v2 `TrailingStopMarketOrder`/`TrailingStopLimitOrder`, `OrderInitialized`, and `OrderFilled` Python and PyO3 constructors to accept `activation_price`/`info` parameters
 - Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
 - Changed index option settlement to require `IndexPriceUpdate` for underlying levels (#4430, #4431), thanks @taozle
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
+- Fixed v2 `BettingInstrument` catalog round trips deriving `raw_symbol` from the instrument ID and rebuilding `price_increment`/`size_increment` from precision, corrupting their values
+- Fixed v2 `FuturesContract`, `OptionContract`, `BinaryOption`, and `BettingInstrument` catalog round trips dropping quantity, price, and notional constraints, margins, and fees
+- Fixed `OrderFactory.bracket` `tp_post_only` docs (#4437), thanks for reporting @jh171717 and for the patch @chang-pro
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
 - Fixed v2 portfolio snapshots retaining stale-price flags after the affected position side closed
 - Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
@@ -184,6 +188,7 @@ adapter set. The following limits remain deferred:
 - Fixed Binance Futures algo orders to consume USD-M order-count limits (#4395), thanks for reporting @cjdsellers
 - Fixed Binance Futures inflight query falsely rejecting untriggered algo orders (#4411), thanks @reijz
 - Fixed Binance Futures historical algo order queries (#4449), thanks @KaizynX
+- Fixed Polymarket v1 and v2 allowance commands to approve the current Neg Risk adapter
 - Fixed Binance Futures startup reconciliation omitting and truncating venue fill history
 - Fixed Binance Spot startup reconciliation omitting and truncating venue fill history
 - Fixed Binance Spot instrument loading after the SBE schema `3:5` rollout (#4407), thanks for reporting @learnerLj
@@ -191,10 +196,8 @@ adapter set. The following limits remain deferred:
 - Fixed Blockchain RPC pool snapshots panicking on incomplete tick and position topology
 - Fixed Databento OPRA option contract multipliers (#4388), thanks for reporting @pjlegato
 - Fixed Databento MBO fill/no-action decoding and replay gating (#4446), thanks @taozle
-- Fixed Deribit live execution routing tracked fills and amendments through order events while
-  preserving reports for external orders
-- Fixed Derive execution WebSocket connect and reconnect handling to reject failed private
-  subscriptions, retry authentication, refresh balances, and reconcile execution state
+- Fixed Deribit live execution routing tracked fills and amendments through order events while preserving reports for external orders
+- Fixed Derive execution WebSocket connect and reconnect handling
 - Fixed Derive perpetual quote and settlement currency to USDC (venue reports quote as `USD`)
 - Fixed Derive option `scheduled_activation` parsing as UNIX seconds (was parsed as milliseconds)
 - Fixed Derive response decoding to tolerate unknown venue enum values and salvage undecodable trade rows with a log
@@ -203,11 +206,9 @@ adapter set. The following limits remain deferred:
 - Fixed Derive instrument loading to skip absent product types and malformed rows without panicking
 - Fixed Derive fill reconciliation dropping fills on retry after a discarded snapshot
 - Fixed Derive null cancel acknowledgements being reported as failures
-- Fixed Derive cancellation, replacement, and nonce failure lifecycle events, and rejected
-  execution configs without a positive `max_fee_per_contract`
+- Fixed Derive cancellation, replacement, and nonce failure lifecycle events, and rejected execution configs without a positive `max_fee_per_contract`
 - Fixed Derive shared market data channel ownership, unsubscribe races, and stale quote-cache reuse
-- Fixed Derive HTTP and WebSocket request pacing, signed-write expiry, null-id error handling, and
-  handler blocking during reconnects
+- Fixed Derive HTTP and WebSocket request pacing, signed-write expiry, null-id error handling, and handler blocking during reconnects
 - Fixed Architect AX market data subscriptions to use trade-only streams and suppress unrequested trade/ticker events
 - Fixed Architect AX `/transactions` requests to include the required bounded time range
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
@@ -216,10 +217,12 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
+- Fixed Polymarket market SELL sizing, terminal IOC remainders, and sub-cent reconciliation that created synthetic position fills
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
 - Fixed Hyperliquid PyO3 order book depth subscriptions (#4381), thanks @graceyangfan
+- Fixed Hyperliquid Rust public trade responses dropping instrument identifiers
 - Fixed Hyperliquid order modification to use cached CLOID targets when safe, with a numeric OID fallback
 - Fixed Hyperliquid rapid chained order modifications to preserve each in-flight cancel-replace, so a later modify no longer drops an earlier one's cancel-suppression and a failed modify no longer clears newer queued modifications
 - Fixed Interactive Brokers execution timestamp parsing for non-UTC time zones (#4396), thanks for reporting @dfjmax
@@ -230,8 +233,7 @@ adapter set. The following limits remain deferred:
 - Fixed Lighter batch orders to use correlated sequential WebSocket transactions
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
-- Fixed Lighter modify validation, conditional order acknowledgements, approval nonce recovery,
-  auth refresh, and WebSocket timeouts
+- Fixed Lighter modify validation, conditional order acknowledgements, approval nonce recovery, auth refresh, and WebSocket timeouts
 - Fixed Lighter ambiguous send outcomes, hashless response attribution, historical order identity, order-index collisions, and GTD expiry validation
 
 ### Internal Improvements

@@ -1304,7 +1304,7 @@ cdef class OrderFactory:
             The trailing offset for the take-profit order's price (LIMIT).
         tp_time_in_force : TimeInForce, default ``GTC``
             The take-profit orders time in force.
-        tp_post_only : bool, default False
+        tp_post_only : bool, default True
             If the take-profit order will only provide liquidity (make a market).
         tp_exec_algorithm_id : ExecAlgorithmId, optional
             The take-profit order execution algorithm ID.

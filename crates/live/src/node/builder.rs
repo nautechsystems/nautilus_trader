@@ -19,6 +19,7 @@ use std::{cell::RefCell, collections::HashMap, fmt::Debug, rc::Rc, time::Duratio
 
 use nautilus_common::{
     cache::CacheConfig,
+    clients::ExecutionClient,
     clock::Clock,
     enums::Environment,
     factories::{
@@ -693,11 +694,19 @@ impl LiveNodeBuilder {
 
         let exec_manager_config = ExecutionManagerConfig::from(&self.config.exec_engine)
             .with_trader_id(self.config.trader_id);
-        let exec_manager = ExecutionManager::new(
+        let mut exec_manager = ExecutionManager::new(
             kernel.clock.clone(),
             kernel.cache.clone(),
             exec_manager_config,
         );
+
+        for client in &exec_clients {
+            exec_manager.set_position_reconciliation_tolerance(
+                client.venue(),
+                client.account_id(),
+                client.position_reconciliation_tolerance(),
+            );
+        }
 
         let node = LiveNode::new_from_builder(
             kernel,

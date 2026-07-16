@@ -30,10 +30,10 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::{DUST_SNAP_THRESHOLD, USDC_DECIMALS},
+        consts::{DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
         enums::{
             PolymarketEventType, PolymarketLiquiditySide, PolymarketOrderSide,
-            PolymarketOrderStatus,
+            PolymarketOrderStatus, PolymarketOrderType,
         },
         models::PolymarketMakerOrder,
     },
@@ -128,7 +128,14 @@ pub fn parse_order_status_report(
     let venue_order_id = VenueOrderId::from(order.id.as_str());
     let order_side = OrderSide::from(order.side);
     let time_in_force = TimeInForce::from(order.order_type);
-    let order_status = OrderStatus::from(order.status);
+    let order_status = if order.status == PolymarketOrderStatus::Matched
+        && order.order_type == PolymarketOrderType::FAK
+        && order.size_matched < order.original_size
+    {
+        OrderStatus::Canceled
+    } else {
+        OrderStatus::from(order.status)
+    };
     let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
@@ -427,7 +434,7 @@ pub(crate) fn weighted_average_price(
 }
 
 /// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
-/// difference is within `DUST_SNAP_THRESHOLD`. Polymarket reports `size_matched`
+/// difference is within `DUST_SNAP_THRESHOLD_DEC`. Polymarket reports `size_matched`
 /// directly from venue truncation: CLOB cent-tick rounding (underfill) or V2
 /// market-BUY USDC-scale truncation (overfill). Without this snap an order at
 /// `MATCHED` can show non-zero leaves to the engine.
@@ -441,8 +448,8 @@ pub(crate) fn snap_filled_qty_to_quantity(
     if order_status != OrderStatus::Filled {
         return filled_qty;
     }
-    let diff = quantity.as_f64() - filled_qty.as_f64();
-    if diff != 0.0 && diff.abs() < DUST_SNAP_THRESHOLD {
+    let diff = quantity.as_decimal() - filled_qty.as_decimal();
+    if !diff.is_zero() && diff.abs() < DUST_SNAP_THRESHOLD_DEC {
         quantity
     } else {
         filled_qty
@@ -1306,6 +1313,42 @@ mod tests {
             report.quantity,
             Quantity::new(original_size.try_into().unwrap_or(0.0), 6)
         );
+    }
+
+    #[rstest]
+    fn test_parse_order_status_report_maps_partial_fak_match_to_canceled() {
+        let order = PolymarketOpenOrder {
+            associate_trades: Some(vec!["trade-partial-fak".to_string()]),
+            id: "0xpartial-fak".to_string(),
+            status: PolymarketOrderStatus::Matched,
+            market: Ustr::from("0xmarket"),
+            original_size: dec!(30),
+            outcome: PolymarketOutcome::yes(),
+            maker_address: "0xmaker".to_string(),
+            owner: "owner".to_string(),
+            price: dec!(0.093),
+            side: PolymarketOrderSide::Buy,
+            size_matched: dec!(20),
+            asset_id: Ustr::from("token"),
+            expiration: Some("0".to_string()),
+            order_type: PolymarketOrderType::FAK,
+            created_at: 1_784_118_677,
+        };
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            3,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        );
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.time_in_force, TimeInForce::Ioc);
+        assert_eq!(report.quantity, Quantity::from("30.000000"));
+        assert_eq!(report.filled_qty, Quantity::from("20.000000"));
     }
 
     #[rstest]

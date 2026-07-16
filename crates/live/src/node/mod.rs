@@ -706,7 +706,7 @@ impl LiveNode {
                     }
                 }
                 Ok(None) => {
-                    anyhow::bail!(
+                    log::warn!(
                         "No mass status available from {client_id} \
                          (likely adapter error when generating reports)"
                     );

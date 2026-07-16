@@ -1684,6 +1684,23 @@ class TestOrders:
         assert bracket.orders[2].parent_order_id == ClientOrderId("O-19700101-000000-000-001-1")
         assert bracket.ts_init == 0
 
+    def test_bracket_default_post_only(self):
+        # The entry defaults to not post-only, and the limit take-profit defaults
+        # to post-only (`tp_post_only=True`)
+        # Arrange, Act
+        bracket = self.order_factory.bracket(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("0.99990"),
+            tp_price=Price.from_str("1.00010"),
+        )
+
+        # Assert
+        assert bracket.orders[0].is_post_only is False
+        assert bracket.orders[2].order_type == OrderType.LIMIT
+        assert bracket.orders[2].is_post_only is True
+
     def test_bracket_limit_entry_order_list(self):
         # Arrange, Act
         bracket = self.order_factory.bracket(

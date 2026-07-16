@@ -61,6 +61,7 @@ use nautilus_model::{
     types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
+use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
 use ustr::Ustr;
 
@@ -257,6 +258,10 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn position_reconciliation_tolerance(&self) -> Decimal {
+        crate::common::consts::POSITION_RECONCILIATION_TOLERANCE
     }
 
     fn generate_account_state(

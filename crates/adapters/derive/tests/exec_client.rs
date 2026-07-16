@@ -454,7 +454,7 @@ async fn handle_ws(mut socket: WebSocket, state: WsState) {
                                 let reject_reconnect = login_count > 1
                                     && state
                                         .login_failures_after_first
-                                        .fetch_update(
+                                        .try_update(
                                             Ordering::SeqCst,
                                             Ordering::SeqCst,
                                             |remaining| remaining.checked_sub(1),

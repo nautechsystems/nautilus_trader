@@ -33,6 +33,7 @@ use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
     consts::NAUTILUS_USER_AGENT,
+    datetime::datetime_to_unix_nanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
@@ -74,6 +75,7 @@ use crate::{
         },
     },
     data::candle_to_bar,
+    data_types::HyperliquidPublicTrade,
     http::{
         error::{Error, Result},
         models::{
@@ -92,10 +94,10 @@ use crate::{
             SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
-            HyperliquidInstrumentDef, instruments_from_defs_owned, parse_fill_report,
-            parse_order_status_report_from_basic, parse_outcome_instruments,
+            HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
+            parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
             parse_perp_instruments_with_settlement, parse_position_status_report,
-            parse_spot_instruments, parse_spot_position_status_report,
+            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
             resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
@@ -2812,6 +2814,68 @@ impl HyperliquidHttpClient {
             candles.len() - bars.len()
         );
         Ok(bars)
+    }
+
+    /// Request the recent public trade snapshot for an instrument.
+    ///
+    /// Hyperliquid's `recentTrades` endpoint is a bounded newest-first snapshot,
+    /// rather than a range-query endpoint. The returned trades are normalized to
+    /// ascending event time and then constrained to the requested window.
+    ///
+    /// A self-hosted node without the indexer responds with HTTP 422. This is
+    /// treated as no available coverage so requests can still complete.
+    pub async fn request_public_trades(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<chrono::DateTime<chrono::Utc>>,
+        end: Option<chrono::DateTime<chrono::Utc>>,
+        limit: Option<usize>,
+    ) -> Result<Vec<HyperliquidPublicTrade>> {
+        let symbol = instrument_id.symbol;
+        let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
+        let alias = cache_alias_for_symbol(symbol.as_str())
+            .map(|alias| Ustr::from(alias.as_str()))
+            .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
+        let instrument = self
+            .get_or_create_instrument(&alias, product_type)
+            .ok_or_else(|| {
+                Error::bad_request(InstrumentLookupError::not_found(instrument_id).to_string())
+            })?;
+
+        let raw_trades = match self
+            .info_recent_trades(instrument.raw_symbol().as_ref())
+            .await
+        {
+            Ok(trades) => trades,
+            Err(e) if e.is_unprocessable_entity() => {
+                log::warn!(
+                    "Recent public trades endpoint unavailable for {instrument_id} \
+                     (requires the Hyperliquid indexer); returning empty response"
+                );
+                Vec::new()
+            }
+            Err(e) => return Err(e),
+        };
+
+        let mut trades: Vec<HyperliquidPublicTrade> = raw_trades
+            .iter()
+            .filter_map(|raw| match parse_recent_public_trade(raw, &instrument) {
+                Ok(trade) => Some(trade),
+                Err(e) => {
+                    log::warn!("Skipping recent public trade for {instrument_id}: {e}");
+                    None
+                }
+            })
+            .collect();
+        trades.sort_by_key(|trade| trade.ts_event);
+
+        Ok(filter_recent_public_trades(
+            trades,
+            datetime_to_unix_nanos(start),
+            datetime_to_unix_nanos(end),
+            limit.filter(|limit| *limit > 0),
+            instrument_id,
+        ))
     }
 
     /// Submits an order to the exchange.

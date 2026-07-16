@@ -15,22 +15,23 @@
 
 import os
 
-from web3 import Web3
-from web3.constants import MAX_INT
-from web3.middleware import ExtraDataToPOAMiddleware
-
 
 # Before running this script you will need the following:
 # - Install the web3 Python package (pip install -U web3==7.12.1)
-# - A Polygon wallet funded with some MATIC
+# - A Polygon wallet funded with some POL
 
-rpc_url = "https://polygon-rpc.com/"
-priv_key = os.environ["POLYGON_PRIVATE_KEY"]
-pub_key_raw = os.environ["POLYGON_PUBLIC_KEY"]
+DEFAULT_POLYGON_RPC_URL = "https://polygon.drpc.org"
+CHAIN_ID = 137
 
-chain_id = 137
+PUSD_COLLATERAL = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+CONDITIONAL_TOKENS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"  # gitleaks:allow
+CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B"
+NEG_RISK_CTF_EXCHANGE = "0xe2222d279d744050d28e00520010520000310F59"
+NEG_RISK_ADAPTER = "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
+APPROVAL_TARGETS = (CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE, NEG_RISK_ADAPTER)
+MAX_UINT256 = (1 << 256) - 1
 
-erc20_approve_abi = [
+ERC20_APPROVE_ABI = [
     {
         "constant": False,
         "inputs": [{"name": "_spender", "type": "address"}, {"name": "_value", "type": "uint256"}],
@@ -41,7 +42,7 @@ erc20_approve_abi = [
         "type": "function",
     },
 ]
-erc1155_set_approval_abi = [
+ERC1155_SET_APPROVAL_ABI = [
     {
         "inputs": [
             {"internalType": "address", "name": "operator", "type": "address"},
@@ -54,117 +55,84 @@ erc1155_set_approval_abi = [
     },
 ]
 
-web3 = Web3(Web3.HTTPProvider(rpc_url))
-web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
-# Convert addresses to checksum format
-pub_key = Web3.to_checksum_address(pub_key_raw)
-# Polymarket pUSD collateral token contract
-collateral_address = Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB")
-# Polymarket CTF contract
-ctf_address = Web3.to_checksum_address("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045")
+def main() -> None:
+    from web3 import Web3
+    from web3.middleware import ExtraDataToPOAMiddleware
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
+    private_key = os.environ["POLYGON_PRIVATE_KEY"]
+    public_key = os.environ["POLYGON_PUBLIC_KEY"]
+    rpc_url = os.getenv("POLYGON_RPC_URL", DEFAULT_POLYGON_RPC_URL)
 
-collateral = web3.eth.contract(address=collateral_address, abi=erc20_approve_abi)
-ctf = web3.eth.contract(address=ctf_address, abi=erc1155_set_approval_abi)
+    web3 = Web3(Web3.HTTPProvider(rpc_url))
+    web3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    set_allowances(web3, private_key, public_key)
 
-# CTF Exchange
-raw_collateral_approve_txn = collateral.functions.approve(
-    Web3.to_checksum_address("0xE111180000d2663C0091e4f400237545B87B996B"),
-    int(MAX_INT, 16),
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_collateral_approve_tx = web3.eth.account.sign_transaction(
-    raw_collateral_approve_txn,
-    private_key=priv_key,
-)
-send_collateral_approve_tx = web3.eth.send_raw_transaction(
-    signed_collateral_approve_tx.raw_transaction,
-)
-collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
-    send_collateral_approve_tx,
-    600,
-)
-print(collateral_approve_tx_receipt)
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
+def set_allowances(web3, private_key: str, public_key: str) -> None:
+    public_key = web3.to_checksum_address(public_key)
+    collateral = web3.eth.contract(
+        address=web3.to_checksum_address(PUSD_COLLATERAL),
+        abi=ERC20_APPROVE_ABI,
+    )
+    ctf = web3.eth.contract(
+        address=web3.to_checksum_address(CONDITIONAL_TOKENS),
+        abi=ERC1155_SET_APPROVAL_ABI,
+    )
+    nonce = web3.eth.get_transaction_count(public_key, "pending")
 
-raw_ctf_approval_txn = ctf.functions.setApprovalForAll(
-    Web3.to_checksum_address("0xE111180000d2663C0091e4f400237545B87B996B"),
-    True,
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_ctf_approval_tx = web3.eth.account.sign_transaction(
-    raw_ctf_approval_txn,
-    private_key=priv_key,
-)
-send_ctf_approval_tx = web3.eth.send_raw_transaction(signed_ctf_approval_tx.raw_transaction)
-ctf_approval_tx_receipt = web3.eth.wait_for_transaction_receipt(send_ctf_approval_tx, 600)
-print(ctf_approval_tx_receipt)
+    for raw_target in APPROVAL_TARGETS:
+        target = web3.to_checksum_address(raw_target)
+        print(_approve_collateral(web3, collateral, target, private_key, public_key, nonce))
+        nonce += 1
+        print(_approve_ctf(web3, ctf, target, private_key, public_key, nonce))
+        nonce += 1
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
-# Neg Risk CTF Exchange
-raw_collateral_approve_txn = collateral.functions.approve(
-    Web3.to_checksum_address("0xe2222d279d744050d28e00520010520000310F59"),
-    int(MAX_INT, 16),
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_collateral_approve_tx = web3.eth.account.sign_transaction(
-    raw_collateral_approve_txn,
-    private_key=priv_key,
-)
-send_collateral_approve_tx = web3.eth.send_raw_transaction(
-    signed_collateral_approve_tx.raw_transaction,
-)
-collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
-    send_collateral_approve_tx,
-    600,
-)
-print(collateral_approve_tx_receipt)
+def _approve_collateral(
+    web3,
+    collateral,
+    target: str,
+    private_key: str,
+    public_key: str,
+    nonce: int,
+):
+    transaction = collateral.functions.approve(target, MAX_UINT256).build_transaction(
+        {
+            "chainId": CHAIN_ID,
+            "from": public_key,
+            "nonce": nonce,
+        },
+    )
+    return _send_transaction(web3, transaction, private_key)
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
-raw_ctf_approval_txn = ctf.functions.setApprovalForAll(
-    Web3.to_checksum_address("0xe2222d279d744050d28e00520010520000310F59"),
-    True,
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_ctf_approval_tx = web3.eth.account.sign_transaction(
-    raw_ctf_approval_txn,
-    private_key=priv_key,
-)
-send_ctf_approval_tx = web3.eth.send_raw_transaction(signed_ctf_approval_tx.raw_transaction)
-ctf_approval_tx_receipt = web3.eth.wait_for_transaction_receipt(send_ctf_approval_tx, 600)
-print(ctf_approval_tx_receipt)
+def _approve_ctf(
+    web3,
+    ctf,
+    target: str,
+    private_key: str,
+    public_key: str,
+    nonce: int,
+):
+    transaction = ctf.functions.setApprovalForAll(target, True).build_transaction(
+        {
+            "chainId": CHAIN_ID,
+            "from": public_key,
+            "nonce": nonce,
+        },
+    )
+    return _send_transaction(web3, transaction, private_key)
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
-# Neg Risk Adapter
-raw_collateral_approve_txn = collateral.functions.approve(
-    Web3.to_checksum_address("0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"),
-    int(MAX_INT, 16),
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_collateral_approve_tx = web3.eth.account.sign_transaction(
-    raw_collateral_approve_txn,
-    private_key=priv_key,
-)
-send_collateral_approve_tx = web3.eth.send_raw_transaction(
-    signed_collateral_approve_tx.raw_transaction,
-)
-collateral_approve_tx_receipt = web3.eth.wait_for_transaction_receipt(
-    send_collateral_approve_tx,
-    600,
-)
-print(collateral_approve_tx_receipt)
+def _send_transaction(web3, transaction, private_key: str):
+    signed_transaction = web3.eth.account.sign_transaction(transaction, private_key=private_key)
+    transaction_hash = web3.eth.send_raw_transaction(signed_transaction.raw_transaction)
+    receipt = web3.eth.wait_for_transaction_receipt(transaction_hash, 600)
+    if receipt["status"] != 1:
+        raise RuntimeError(f"Approval transaction {transaction_hash.hex()} failed")
+    return receipt
 
-nonce = web3.eth.get_transaction_count(pub_key, "pending")
 
-raw_ctf_approval_txn = ctf.functions.setApprovalForAll(
-    Web3.to_checksum_address("0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"),
-    True,
-).build_transaction({"chainId": chain_id, "from": pub_key, "nonce": nonce})
-signed_ctf_approval_tx = web3.eth.account.sign_transaction(
-    raw_ctf_approval_txn,
-    private_key=priv_key,
-)
-send_ctf_approval_tx = web3.eth.send_raw_transaction(signed_ctf_approval_tx.raw_transaction)
-ctf_approval_tx_receipt = web3.eth.wait_for_transaction_receipt(send_ctf_approval_tx, 600)
-print(ctf_approval_tx_receipt)
+if __name__ == "__main__":
+    main()

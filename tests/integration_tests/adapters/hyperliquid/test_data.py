@@ -13,10 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import UTC
+from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 import nautilus_trader.adapters.hyperliquid.data as hyperliquid_data_module
@@ -27,15 +32,21 @@ from nautilus_trader.adapters.hyperliquid.data import HyperliquidAllMids
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDataClient
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidDexAssetCtx
 from nautilus_trader.adapters.hyperliquid.data import HyperliquidOpenInterest
+from nautilus_trader.adapters.hyperliquid.data import HyperliquidPublicTrade
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import RequestData
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.hyperliquid.conftest import _create_ws_mock
 
 
@@ -130,6 +141,32 @@ class _FakePyo3HyperliquidOpenInterest:
     @property
     def ts_init(self) -> int:
         return self._ts_init
+
+
+class _FakePyo3HyperliquidPublicTrade:
+    def __init__(
+        self,
+        instrument_id: str,
+        price: str,
+        size: str,
+        aggressor_side: object,
+        trade_id: str,
+        buyer: str,
+        seller: str,
+        hash: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None:
+        self.instrument_id = instrument_id
+        self.price = price
+        self.size = size
+        self.aggressor_side = aggressor_side
+        self.trade_id = trade_id
+        self.buyer = buyer
+        self.seller = seller
+        self.hash = hash
+        self.ts_event = ts_event
+        self.ts_init = ts_init
 
 
 class _FakePyo3CustomData:
@@ -710,6 +747,109 @@ async def test_subscribe_custom_data_open_interest(data_client_builder, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_subscribe_custom_data_public_trades(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.subscribe_public_trades.reset_mock()
+        command = SimpleNamespace(
+            data_type=DataType(
+                type=HyperliquidPublicTrade,
+                metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
+            ),
+        )
+
+        await client._subscribe(command)
+
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.subscribe_public_trades.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_request_custom_data_public_trades_returns_historical_response(
+    data_client_builder,
+    instrument,
+    monkeypatch,
+):
+    client, _, http_client, _ = data_client_builder(monkeypatch)
+    http_client.request_public_trades = AsyncMock(
+        return_value=[
+            _FakePyo3HyperliquidPublicTrade(
+                instrument_id=instrument.id.value,
+                price="100000.5",
+                size="0.123",
+                aggressor_side=SimpleNamespace(name="BUYER"),
+                trade_id="123456",
+                buyer="0xbuyer",
+                seller="0xseller",
+                hash="0xhash",
+                ts_event=2_000,
+                ts_init=2_001,
+            ),
+        ],
+    )
+    client._handle_data_response = MagicMock()
+    start = pd.Timestamp(datetime(2025, 1, 1, tzinfo=UTC))
+    end = start + timedelta(minutes=1)
+    data_type = DataType(
+        HyperliquidPublicTrade,
+        metadata={"instrument_id": instrument.id.value},
+    )
+    assert data_type.identifier is None
+    request = RequestData(
+        data_type=data_type,
+        instrument_id=instrument.id,
+        start=start,
+        end=end,
+        limit=10,
+        client_id=ClientId("HYPERLIQUID"),
+        venue=None,
+        callback=None,
+        request_id=UUID4(),
+        ts_init=0,
+        params={"request_source": "test"},
+    )
+
+    await client._request(request)
+
+    expected_id = nautilus_pyo3.InstrumentId.from_str(instrument.id.value)
+    http_client.request_public_trades.assert_awaited_once_with(
+        expected_id,
+        start.to_pydatetime(),
+        end.to_pydatetime(),
+        10,
+    )
+    client._handle_data_response.assert_called_once()
+    response = client._handle_data_response.call_args.kwargs
+    expected_data_type = DataType(
+        HyperliquidPublicTrade,
+        metadata={"instrument_id": instrument.id.value},
+        identifier=instrument.id.value,
+    )
+    assert response["data_type"] == expected_data_type
+    assert response["data_type"].identifier == instrument.id.value
+    assert response["correlation_id"] == request.id
+    assert response["start"] == start
+    assert response["end"] == end
+    assert response["params"] == {"request_source": "test"}
+    assert len(response["data"]) == 1
+    custom = response["data"][0]
+    assert isinstance(custom, CustomData)
+    assert custom.data_type == expected_data_type
+    assert custom.data_type.identifier == instrument.id.value
+    trade = custom.data
+    assert isinstance(trade, HyperliquidPublicTrade)
+    assert trade.instrument_id == instrument.id
+    assert trade.price == Price.from_str("100000.5")
+    assert trade.size == Quantity.from_str("0.123")
+    assert trade.aggressor_side == AggressorSide.BUYER
+    assert trade.trade_id == "123456"
+
+
+@pytest.mark.asyncio
 async def test_unsubscribe_custom_data_open_interest(data_client_builder, monkeypatch):
     client, ws_client, _, _ = data_client_builder(monkeypatch)
 
@@ -728,6 +868,28 @@ async def test_unsubscribe_custom_data_open_interest(data_client_builder, monkey
 
         expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
         ws_client.unsubscribe_open_interest.assert_awaited_once_with(expected_id)
+    finally:
+        await client._disconnect()
+
+
+@pytest.mark.asyncio
+async def test_unsubscribe_custom_data_public_trades(data_client_builder, monkeypatch):
+    client, ws_client, _, _ = data_client_builder(monkeypatch)
+
+    await client._connect()
+    try:
+        ws_client.unsubscribe_public_trades.reset_mock()
+        command = SimpleNamespace(
+            data_type=DataType(
+                type=HyperliquidPublicTrade,
+                metadata={"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
+            ),
+        )
+
+        await client._unsubscribe(command)
+
+        expected_id = nautilus_pyo3.InstrumentId.from_str("BTC-USD-PERP.HYPERLIQUID")
+        ws_client.unsubscribe_public_trades.assert_awaited_once_with(expected_id)
     finally:
         await client._disconnect()
 
@@ -959,3 +1121,50 @@ async def test_handle_msg_custom_data_open_interest_forwarded(data_client_builde
         HyperliquidOpenInterest,
         {"instrument_id": "BTC-USD-PERP.HYPERLIQUID"},
     )
+
+
+@pytest.mark.asyncio
+async def test_handle_msg_custom_data_public_trade_forwards_counterparties(
+    data_client_builder,
+    monkeypatch,
+):
+    client, _, _, _ = data_client_builder(monkeypatch)
+    monkeypatch.setattr(
+        hyperliquid_data_module,
+        "_PYO3HyperliquidPublicTrade",
+        _FakePyo3HyperliquidPublicTrade,
+    )
+    monkeypatch.setattr(
+        hyperliquid_data_module.nautilus_pyo3,
+        "CustomData",
+        _FakePyo3CustomData,
+    )
+    client._handle_data = MagicMock()
+    payload = _FakePyo3HyperliquidPublicTrade(
+        instrument_id="BTC-USD-PERP.HYPERLIQUID",
+        price="100000.5",
+        size="0.123",
+        aggressor_side=SimpleNamespace(name="BUYER"),
+        trade_id="123456",
+        buyer="0xbuyer",
+        seller="0xseller",
+        hash="0xhash",
+        ts_event=2_000,
+        ts_init=2_001,
+    )
+
+    client._handle_msg(
+        _FakePyo3CustomData(
+            data_type=_FakePyo3DataType({"instrument_id": "BTC-USD-PERP.HYPERLIQUID"}),
+            data=payload,
+        ),
+    )
+
+    client._handle_data.assert_called_once()
+    forwarded = client._handle_data.call_args.args[0]
+    assert isinstance(forwarded, CustomData)
+    assert isinstance(forwarded.data, HyperliquidPublicTrade)
+    assert forwarded.data.trade_id == "123456"
+    assert forwarded.data.buyer == "0xbuyer"
+    assert forwarded.data.seller == "0xseller"
+    assert forwarded.data.hash == "0xhash"

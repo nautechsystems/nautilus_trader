@@ -83,6 +83,7 @@ use crate::{
             NautilusWsMessage, PostRequest, PostResponse, PostResponsePayload, SubscriptionRequest,
         },
         post::{PostIds, PostRouter},
+        trades::{TradeStreamRegistry, TradeStreamUse},
     },
 };
 
@@ -129,6 +130,8 @@ pub struct HyperliquidWebSocketClient {
     auth_tracker: AuthTracker,
     subscriptions: SubscriptionState,
     book_streams: BookStreamRegistry,
+    trade_streams: TradeStreamRegistry,
+    trade_stream_lock: Arc<Mutex<()>>,
     quote_streams: Arc<DashMap<Ustr, ()>>,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
     bar_types: Arc<AtomicMap<String, BarType>>,
@@ -156,6 +159,8 @@ impl Clone for HyperliquidWebSocketClient {
             auth_tracker: self.auth_tracker.clone(),
             subscriptions: self.subscriptions.clone(),
             book_streams: self.book_streams.clone(),
+            trade_streams: self.trade_streams.clone(),
+            trade_stream_lock: Arc::clone(&self.trade_stream_lock),
             quote_streams: Arc::clone(&self.quote_streams),
             instruments: Arc::clone(&self.instruments),
             bar_types: Arc::clone(&self.bar_types),
@@ -200,6 +205,8 @@ impl HyperliquidWebSocketClient {
             auth_tracker: AuthTracker::new(),
             subscriptions: SubscriptionState::new(':'),
             book_streams: BookStreamRegistry::default(),
+            trade_streams: TradeStreamRegistry::default(),
+            trade_stream_lock: Arc::new(Mutex::new(())),
             quote_streams: Arc::new(DashMap::new()),
             instruments: Arc::new(AtomicMap::new()),
             bar_types: Arc::new(AtomicMap::new()),
@@ -278,6 +285,12 @@ impl HyperliquidWebSocketClient {
             && let Err(e) = cmd_tx.send(HandlerCommand::InitializeInstruments(instruments_vec))
         {
             log::error!("Failed to send InitializeInstruments: {e}");
+        }
+
+        for (coin, uses) in self.trade_streams.snapshot() {
+            if let Err(e) = cmd_tx.send(HandlerCommand::UpdateTradeSubs { coin, uses }) {
+                log::error!("Failed to send UpdateTradeSubs: {e}");
+            }
         }
 
         let all_dex_asset_ctxs_instrument_ids = self
@@ -413,6 +426,28 @@ impl HyperliquidWebSocketClient {
         if let Some(handle) = self.task_handle.take() {
             handle.abort();
         }
+    }
+
+    /// Replaces state owned by a terminated WebSocket generation.
+    ///
+    /// This must run only after the handler task has stopped. Replacing the
+    /// shared containers, rather than clearing them, prevents old clones or
+    /// in-flight work from mutating a subsequent connection generation.
+    pub(crate) fn reset_runtime_state(&mut self) {
+        self.subscriptions = SubscriptionState::new(':');
+        self.book_streams = BookStreamRegistry::default();
+        self.trade_streams = TradeStreamRegistry::default();
+        self.trade_stream_lock = Arc::new(Mutex::new(()));
+        self.quote_streams = Arc::new(DashMap::new());
+        self.instruments = Arc::new(AtomicMap::new());
+        self.bar_types = Arc::new(AtomicMap::new());
+        self.asset_context_subs = Arc::new(DashMap::new());
+        self.all_dex_asset_ctxs_instrument_ids = Arc::new(AtomicMap::new());
+        self.cloid_cache = Arc::new(Mutex::new(FifoCacheMap::new()));
+        self.out_rx = None;
+        self.connection_mode
+            .store(Arc::new(AtomicU8::new(ConnectionMode::Closed as u8)));
+        self.signal.store(false, Ordering::Relaxed);
     }
 
     /// Disconnects the WebSocket connection.
@@ -1372,6 +1407,21 @@ impl HyperliquidWebSocketClient {
 
     /// Subscribe to trades for an instrument.
     pub async fn subscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_trade_stream(instrument_id, TradeStreamUse::Ticks)
+            .await
+    }
+
+    /// Subscribe to complete public trades for an instrument.
+    pub async fn subscribe_public_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.subscribe_trade_stream(instrument_id, TradeStreamUse::PublicTrades)
+            .await
+    }
+
+    async fn subscribe_trade_stream(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: TradeStreamUse,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
@@ -1384,13 +1434,24 @@ impl HyperliquidWebSocketClient {
             .send(HandlerCommand::UpdateInstrument(instrument.clone()))
             .map_err(|e| anyhow::anyhow!("Failed to send UpdateInstrument command: {e}"))?;
 
-        let subscription = SubscriptionRequest::Trades { coin };
-
+        // Keep registry mutations and their handler commands ordered across
+        // concurrent generic/custom subscriptions for the same coin.
+        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let registration = self.trade_streams.register(coin, stream_use);
         cmd_tx
-            .send(HandlerCommand::Subscribe {
-                subscriptions: vec![subscription],
+            .send(HandlerCommand::UpdateTradeSubs {
+                coin,
+                uses: registration.uses,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateTradeSubs command: {e}"))?;
+
+        if registration.subscribe {
+            cmd_tx
+                .send(HandlerCommand::Subscribe {
+                    subscriptions: vec![SubscriptionRequest::Trades { coin }],
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to send subscribe command: {e}"))?;
+        }
         Ok(())
     }
 
@@ -1687,20 +1748,48 @@ impl HyperliquidWebSocketClient {
 
     /// Unsubscribe from trades for an instrument.
     pub async fn unsubscribe_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        self.unsubscribe_trade_stream(instrument_id, TradeStreamUse::Ticks)
+            .await
+    }
+
+    /// Unsubscribe from complete public trades for an instrument.
+    pub async fn unsubscribe_public_trades(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        self.unsubscribe_trade_stream(instrument_id, TradeStreamUse::PublicTrades)
+            .await
+    }
+
+    async fn unsubscribe_trade_stream(
+        &self,
+        instrument_id: InstrumentId,
+        stream_use: TradeStreamUse,
+    ) -> anyhow::Result<()> {
         let instrument = self
             .get_instrument(&instrument_id)
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
         let coin = instrument.raw_symbol().inner();
 
-        let subscription = SubscriptionRequest::Trades { coin };
-
-        self.cmd_tx
-            .read()
-            .await
-            .send(HandlerCommand::Unsubscribe {
-                subscriptions: vec![subscription],
+        let cmd_tx = self.cmd_tx.read().await;
+        // Keep registry mutations and their handler commands ordered across
+        // concurrent generic/custom unsubscriptions for the same coin.
+        let _trade_stream_guard = self.trade_stream_lock.lock().expect(MUTEX_POISONED);
+        let release = self.trade_streams.release(&coin, stream_use);
+        cmd_tx
+            .send(HandlerCommand::UpdateTradeSubs {
+                coin,
+                uses: release.uses,
             })
-            .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to send UpdateTradeSubs command: {e}"))?;
+
+        if release.unsubscribe {
+            cmd_tx
+                .send(HandlerCommand::Unsubscribe {
+                    subscriptions: vec![SubscriptionRequest::Trades { coin }],
+                })
+                .map_err(|e| anyhow::anyhow!("Failed to send unsubscribe command: {e}"))?;
+        }
         Ok(())
     }
 

@@ -34,12 +34,13 @@ use ustr::Ustr;
 use super::{
     PolymarketExecutionClient,
     parse::{
-        parse_balance_allowance, parse_order_status_report, snap_filled_qty_to_quantity,
-        sum_filled_quantity, weighted_average_price,
+        parse_balance_allowance, parse_order_status_report, sum_filled_quantity,
+        weighted_average_price,
     },
     reconciliation::{
         FillContext, apply_fill_filters, build_fill_reports_from_trades, build_position_reports,
         cap_order_report_filled_qty, confirmed_filled_quantities,
+        normalize_terminal_order_report_quantity,
     },
 };
 use crate::{
@@ -197,13 +198,8 @@ impl PolymarketExecutionClient {
             .max()
             .unwrap_or(ts_init);
 
-        let dust_diff = (quantity.as_decimal() - raw_filled_qty.as_decimal()).abs();
-        let order_status = if raw_filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
-            OrderStatus::Filled
-        } else {
-            OrderStatus::Canceled
-        };
-        let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
+        let order_status = recovered_terminal_order_status(cached_tif, quantity, raw_filled_qty);
+        let filled_qty = raw_filled_qty;
 
         log::debug!(
             "Recovered {} status for {venue_order_id} from {} trade(s) (filled_qty={filled_qty}, quantity={quantity})",
@@ -233,6 +229,7 @@ impl PolymarketExecutionClient {
         );
         report.price = cached_price;
         report.avg_px = avg_px;
+        normalize_terminal_order_report_quantity(&mut report);
 
         Ok(Some(report))
     }
@@ -299,10 +296,7 @@ impl PolymarketExecutionClient {
                     let venue_order_id = VenueOrderId::from(venue_order_id.as_str());
                     let tracked_filled = fill_tracker
                         .get_cumulative_filled(&venue_order_id)
-                        .map_or_else(
-                            || Quantity::zero(size_prec),
-                            |qty| Quantity::new(qty, size_prec),
-                        );
+                        .unwrap_or_else(|| Quantity::zero(size_prec));
                     let local_filled = cached_filled.max(tracked_filled);
                     let confirmed_filled = if report.filled_qty > local_filled {
                         let ctx = FillContext {
@@ -409,10 +403,7 @@ impl PolymarketExecutionClient {
             let tracked_filled = self
                 .fill_tracker
                 .get_cumulative_filled(&venue_order_id)
-                .map_or_else(
-                    || Quantity::zero(size_prec),
-                    |qty| Quantity::new(qty, size_prec),
-                );
+                .unwrap_or_else(|| Quantity::zero(size_prec));
             let local_filled = cached_filled.max(tracked_filled);
             let confirmed_filled = if report.filled_qty > local_filled {
                 match fetch_confirmed_fill_reports(
@@ -512,10 +503,7 @@ impl PolymarketExecutionClient {
             let tracked_filled = self
                 .fill_tracker
                 .get_cumulative_filled(&report.venue_order_id)
-                .map_or_else(
-                    || Quantity::zero(report.quantity.precision),
-                    |qty| Quantity::new(qty, report.quantity.precision),
-                );
+                .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             cap_order_report_filled_qty(
                 report,
                 cached_filled.max(tracked_filled),
@@ -604,6 +592,23 @@ impl PolymarketExecutionClient {
     }
 }
 
+fn recovered_terminal_order_status(
+    time_in_force: TimeInForce,
+    quantity: Quantity,
+    filled_qty: Quantity,
+) -> OrderStatus {
+    if time_in_force == TimeInForce::Ioc && filled_qty < quantity {
+        return OrderStatus::Canceled;
+    }
+
+    let dust_diff = (quantity.as_decimal() - filled_qty.as_decimal()).abs();
+    if filled_qty >= quantity || dust_diff < DUST_SNAP_THRESHOLD_DEC {
+        OrderStatus::Filled
+    } else {
+        OrderStatus::Canceled
+    }
+}
+
 async fn fetch_confirmed_fill_reports(
     http_client: &PolymarketClobHttpClient,
     ctx: &FillContext<'_>,
@@ -672,4 +677,32 @@ pub(super) async fn fetch_collateral_balance_pusd(
 
     let usdc_scale = Decimal::from(1_000_000u32);
     Ok(balance_allowance.balance / usdc_scale)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::ioc_dust(TimeInForce::Ioc, "5.202910", "5.202897", OrderStatus::Canceled)]
+    #[case::ioc_partial(TimeInForce::Ioc, "30", "20", OrderStatus::Canceled)]
+    #[case::fok_dust(TimeInForce::Fok, "5.202910", "5.202897", OrderStatus::Filled)]
+    #[case::gtc_dust(TimeInForce::Gtc, "5.202910", "5.202897", OrderStatus::Filled)]
+    fn test_recovered_terminal_order_status(
+        #[case] time_in_force: TimeInForce,
+        #[case] quantity: &str,
+        #[case] filled_qty: &str,
+        #[case] expected: OrderStatus,
+    ) {
+        assert_eq!(
+            recovered_terminal_order_status(
+                time_in_force,
+                Quantity::from(quantity),
+                Quantity::from(filled_qty),
+            ),
+            expected
+        );
+    }
 }

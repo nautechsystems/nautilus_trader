@@ -121,7 +121,7 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
                         let reject_reconnect = login_count > 1
                             && state
                                 .login_failures_after_first
-                                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                                .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                                     remaining.checked_sub(1)
                                 })
                                 .is_ok();
@@ -155,7 +155,7 @@ async fn handle_socket(mut socket: WebSocket, state: ServerState) {
                         let reject_reconnect = subscribe_count > 1
                             && state
                                 .subscribe_failures_after_first
-                                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                                .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                                     remaining.checked_sub(1)
                                 })
                                 .is_ok();

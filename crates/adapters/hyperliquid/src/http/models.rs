@@ -557,10 +557,14 @@ pub struct HyperliquidRecentTrade {
         deserialize_with = "deserialize_decimal_from_str"
     )]
     pub sz: Decimal,
+    /// Hyperliquid trade hash.
+    pub hash: String,
     /// Trade timestamp in milliseconds.
     pub time: u64,
     /// Venue trade identifier.
     pub tid: u64,
+    /// Buyer and seller wallet addresses, in that order.
+    pub users: [String; 2],
 }
 
 /// Represents an individual fill from user fills.
