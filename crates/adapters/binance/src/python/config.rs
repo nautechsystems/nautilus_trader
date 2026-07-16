@@ -40,6 +40,7 @@ impl BinanceDataClientConfig {
     #[new]
     #[pyo3(signature = (
         product_type = None,
+        margin_isolated_symbol = None,
         environment = None,
         base_url_http = None,
         base_url_ws = None,
@@ -52,6 +53,7 @@ impl BinanceDataClientConfig {
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         product_type: Option<BinanceProductType>,
+        margin_isolated_symbol: Option<String>,
         environment: Option<BinanceEnvironment>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
@@ -64,6 +66,7 @@ impl BinanceDataClientConfig {
         let defaults = Self::default();
         Self {
             product_type: product_type.unwrap_or(defaults.product_type),
+            margin_isolated_symbol: margin_isolated_symbol.or(defaults.margin_isolated_symbol),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http: base_url_http.or(defaults.base_url_http),
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
@@ -94,6 +97,7 @@ impl BinanceExecClientConfig {
         trader_id,
         account_id,
         product_type = None,
+        margin_isolated_symbol = None,
         environment = None,
         base_url_http = None,
         base_url_ws = None,
@@ -116,6 +120,7 @@ impl BinanceExecClientConfig {
         trader_id: TraderId,
         account_id: AccountId,
         product_type: Option<BinanceProductType>,
+        margin_isolated_symbol: Option<String>,
         environment: Option<BinanceEnvironment>,
         base_url_http: Option<String>,
         base_url_ws: Option<String>,
@@ -138,6 +143,7 @@ impl BinanceExecClientConfig {
             trader_id,
             account_id,
             product_type: product_type.unwrap_or(defaults.product_type),
+            margin_isolated_symbol: margin_isolated_symbol.or(defaults.margin_isolated_symbol),
             environment: environment.unwrap_or(defaults.environment),
             base_url_http: base_url_http.or(defaults.base_url_http),
             base_url_ws: base_url_ws.or(defaults.base_url_ws),

@@ -97,6 +97,9 @@ impl DataClientFactory for BinanceDataClientFactory {
                     BinanceFuturesDataClient::new(client_id, binance_config, product_type)?;
                 Ok(Box::new(client))
             }
+            BinanceProductType::Margin => {
+                anyhow::bail!("Binance margin data client not yet implemented")
+            }
             _ => {
                 anyhow::bail!("Unsupported product type for Binance data client: {product_type:?}")
             }
@@ -194,6 +197,9 @@ impl ExecutionClientFactory for BinanceExecutionClientFactory {
 
                 let client = BinanceFuturesExecutionClient::new(core, binance_config)?;
                 Ok(Box::new(client))
+            }
+            BinanceProductType::Margin => {
+                anyhow::bail!("Binance margin execution client not yet implemented")
             }
             _ => {
                 anyhow::bail!(
