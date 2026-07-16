@@ -798,6 +798,7 @@ async def test_request_custom_data_public_trades_returns_historical_response(
         HyperliquidPublicTrade,
         metadata={"instrument_id": instrument.id.value},
     )
+    assert data_type.identifier is None
     request = RequestData(
         data_type=data_type,
         instrument_id=instrument.id,
@@ -823,7 +824,13 @@ async def test_request_custom_data_public_trades_returns_historical_response(
     )
     client._handle_data_response.assert_called_once()
     response = client._handle_data_response.call_args.kwargs
-    assert response["data_type"] == data_type
+    expected_data_type = DataType(
+        HyperliquidPublicTrade,
+        metadata={"instrument_id": instrument.id.value},
+        identifier=instrument.id.value,
+    )
+    assert response["data_type"] == expected_data_type
+    assert response["data_type"].identifier == instrument.id.value
     assert response["correlation_id"] == request.id
     assert response["start"] == start
     assert response["end"] == end
@@ -831,7 +838,8 @@ async def test_request_custom_data_public_trades_returns_historical_response(
     assert len(response["data"]) == 1
     custom = response["data"][0]
     assert isinstance(custom, CustomData)
-    assert custom.data_type == data_type
+    assert custom.data_type == expected_data_type
+    assert custom.data_type.identifier == instrument.id.value
     trade = custom.data
     assert isinstance(trade, HyperliquidPublicTrade)
     assert trade.instrument_id == instrument.id

@@ -934,6 +934,11 @@ class HyperliquidDataClient(LiveMarketDataClient):
         if pyo3_instrument_id is None:
             return
 
+        response_data_type = DataType(
+            HyperliquidPublicTrade,
+            metadata={"instrument_id": pyo3_instrument_id.value},
+            identifier=pyo3_instrument_id.value,
+        )
         start = ensure_pydatetime_utc(request.start) if request.start else None
         end = ensure_pydatetime_utc(request.end) if request.end else None
         limit = request.limit if request.limit > 0 else None
@@ -947,13 +952,13 @@ class HyperliquidDataClient(LiveMarketDataClient):
             )
             trades = [
                 CustomData(
-                    data_type=request.data_type,
+                    data_type=response_data_type,
                     data=HyperliquidPublicTrade.from_pyo3(trade),
                 )
                 for trade in pyo3_trades
             ]
             self._handle_data_response(
-                data_type=request.data_type,
+                data_type=response_data_type,
                 data=trades,
                 correlation_id=request.id,
                 start=request.start,
