@@ -18,7 +18,7 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering},
     },
     time::Duration,
@@ -44,8 +44,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        AuthTracker, PingHandler, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        AuthTracker, PingHandler, ReconnectHeaders, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -124,6 +124,7 @@ pub struct AxOrdersWebSocketClient {
     clock: &'static AtomicTime,
     url: String,
     heartbeat: Option<u64>,
+    reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxOrdersWsMessage>>>,
@@ -155,6 +156,7 @@ impl Clone for AxOrdersWebSocketClient {
             clock: self.clock,
             url: self.url.clone(),
             heartbeat: self.heartbeat,
+            reconnect_headers: Arc::clone(&self.reconnect_headers),
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None, // Each clone gets its own receiver
@@ -192,6 +194,7 @@ impl AxOrdersWebSocketClient {
             clock: get_atomic_clock_realtime(),
             url,
             heartbeat: Some(heartbeat),
+            reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
@@ -258,6 +261,29 @@ impl AxOrdersWebSocketClient {
                 m.insert(inst.symbol().inner(), inst.clone());
             }
         });
+    }
+
+    /// Updates the token used by future automatic reconnect attempts.
+    ///
+    /// Updating the token does not interrupt the active WebSocket connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reconnect header cannot be updated.
+    pub fn update_auth_token(&self, token: &str) -> AxOrdersWsResult<()> {
+        let value = format!("Bearer {token}");
+
+        if let Some(headers) = self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            headers
+                .update("Authorization", &value)
+                .map_err(|e| AxOrdersWsClientError::Transport(e.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Returns a cached instrument by symbol.
@@ -466,6 +492,10 @@ impl AxOrdersWebSocketClient {
         };
 
         self.connection_mode.store(client.connection_mode_atomic());
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxOrdersWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -475,11 +505,7 @@ impl AxOrdersWebSocketClient {
 
         self.send_cmd(HandlerCommand::SetClient(client)).await?;
 
-        // Bearer token is passed in connection headers
-        self.send_cmd(HandlerCommand::Authenticate {
-            token: bearer_token.to_string(),
-        })
-        .await?;
+        self.send_cmd(HandlerCommand::SessionAuthenticated).await?;
 
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
@@ -770,6 +796,10 @@ impl AxOrdersWebSocketClient {
                 }
             }
         }
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     async fn send_cmd(&self, cmd: HandlerCommand) -> AxOrdersWsResult<()> {

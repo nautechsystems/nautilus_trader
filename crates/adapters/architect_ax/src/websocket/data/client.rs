@@ -33,8 +33,8 @@ use nautilus_network::{
     http::USER_AGENT,
     mode::ConnectionMode,
     websocket::{
-        PingHandler, SubscriptionState, TransportBackend, WebSocketClient, WebSocketConfig,
-        channel_message_handler,
+        PingHandler, ReconnectHeaders, SubscriptionState, TransportBackend, WebSocketClient,
+        WebSocketConfig, channel_message_handler,
     },
 };
 use ustr::Ustr;
@@ -129,7 +129,8 @@ impl SymbolDataTypes {
 pub struct AxMdWebSocketClient {
     url: String,
     heartbeat: Option<u64>,
-    auth_token: Option<String>,
+    auth_token: Arc<Mutex<Option<String>>>,
+    reconnect_headers: Arc<Mutex<Option<ReconnectHeaders>>>,
     connection_mode: Arc<ArcSwap<AtomicU8>>,
     cmd_tx: Arc<tokio::sync::RwLock<tokio::sync::mpsc::UnboundedSender<HandlerCommand>>>,
     out_rx: Option<Arc<tokio::sync::mpsc::UnboundedReceiver<AxDataWsMessage>>>,
@@ -159,7 +160,8 @@ impl Clone for AxMdWebSocketClient {
         Self {
             url: self.url.clone(),
             heartbeat: self.heartbeat,
-            auth_token: self.auth_token.clone(),
+            auth_token: Arc::clone(&self.auth_token),
+            reconnect_headers: Arc::clone(&self.reconnect_headers),
             connection_mode: Arc::clone(&self.connection_mode),
             cmd_tx: Arc::clone(&self.cmd_tx),
             out_rx: None,
@@ -196,7 +198,8 @@ impl AxMdWebSocketClient {
         Self {
             url,
             heartbeat: Some(heartbeat),
-            auth_token: Some(auth_token),
+            auth_token: Arc::new(Mutex::new(Some(auth_token))),
+            reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
@@ -230,7 +233,8 @@ impl AxMdWebSocketClient {
         Self {
             url,
             heartbeat: Some(heartbeat),
-            auth_token: None,
+            auth_token: Arc::new(Mutex::new(None)),
+            reconnect_headers: Arc::new(Mutex::new(None)),
             connection_mode,
             cmd_tx: Arc::new(tokio::sync::RwLock::new(cmd_tx)),
             out_rx: None,
@@ -255,8 +259,35 @@ impl AxMdWebSocketClient {
     /// Sets the authentication token for subsequent connections.
     ///
     /// This should be called before `connect()` if authentication is required.
-    pub fn set_auth_token(&mut self, token: String) {
-        self.auth_token = Some(token);
+    pub fn set_auth_token(&self, token: String) {
+        *self
+            .auth_token
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(token);
+    }
+
+    /// Updates the token used by future automatic reconnect attempts.
+    ///
+    /// Updating the token does not interrupt the active WebSocket connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reconnect header cannot be updated.
+    pub fn update_auth_token(&self, token: String) -> AxWsResult<()> {
+        let value = format!("Bearer {token}");
+
+        if let Some(headers) = self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+        {
+            headers
+                .update("Authorization", &value)
+                .map_err(|e| AxWsClientError::Transport(e.to_string()))?;
+        }
+        self.set_auth_token(token);
+        Ok(())
     }
 
     /// Returns whether the client is currently connected and active.
@@ -323,7 +354,13 @@ impl AxMdWebSocketClient {
 
         let mut headers = vec![(USER_AGENT.to_string(), NAUTILUS_USER_AGENT.to_string())];
 
-        if let Some(ref token) = self.auth_token {
+        let auth_token = self
+            .auth_token
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+
+        if let Some(token) = auth_token {
             headers.push(("Authorization".to_string(), format!("Bearer {token}")));
         }
 
@@ -415,6 +452,10 @@ impl AxMdWebSocketClient {
         };
 
         self.connection_mode.store(client.connection_mode_atomic());
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(client.reconnect_headers());
 
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<AxDataWsMessage>();
         self.out_rx = Some(Arc::new(out_rx));
@@ -991,6 +1032,11 @@ impl AxMdWebSocketClient {
                 }
             }
         }
+
+        *self
+            .reconnect_headers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
     }
 
     async fn send_cmd(&self, cmd: HandlerCommand) -> AxWsResult<()> {

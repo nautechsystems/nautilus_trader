@@ -177,6 +177,7 @@ def _create_ws_mock() -> MagicMock:
     mock.unsubscribe_bars = AsyncMock()
     mock.cache_instrument = MagicMock()
     mock.set_auth_token = MagicMock()
+    mock.update_auth_token = MagicMock()
     return mock
 
 
@@ -194,6 +195,7 @@ def _create_orders_ws_mock() -> MagicMock:
     mock.submit_order = AsyncMock()
     mock.cancel_order = AsyncMock()
     mock.cache_instrument = MagicMock()
+    mock.update_auth_token = MagicMock()
     return mock
 
 

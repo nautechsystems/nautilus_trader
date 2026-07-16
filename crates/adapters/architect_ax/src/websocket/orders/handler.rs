@@ -57,11 +57,8 @@ pub enum HandlerCommand {
     SetClient(WebSocketClient),
     /// Disconnect the WebSocket connection.
     Disconnect,
-    /// Authenticate with the provided token.
-    Authenticate {
-        /// Bearer token for authentication.
-        token: String,
-    },
+    /// Mark the current handshake-authenticated session as ready.
+    SessionAuthenticated,
     /// Place an order.
     PlaceOrder {
         /// Request ID for correlation.
@@ -99,8 +96,8 @@ pub(crate) struct AxOrdersWsFeedHandler {
     message_queue: VecDeque<AxOrdersWsMessage>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
     cid_to_client_order_id: Arc<DashMap<u64, ClientOrderId>>,
-    bearer_token: Option<String>,
-    needs_reauthentication: bool,
+    has_authenticated_session: bool,
+    needs_session_restore: bool,
 }
 
 impl AxOrdersWsFeedHandler {
@@ -124,22 +121,22 @@ impl AxOrdersWsFeedHandler {
             message_queue: VecDeque::new(),
             orders_metadata,
             cid_to_client_order_id,
-            bearer_token: None,
-            needs_reauthentication: false,
+            has_authenticated_session: false,
+            needs_session_restore: false,
         }
     }
 
-    async fn reauthenticate(&mut self) {
-        if self.bearer_token.is_some() {
-            log::debug!("Re-authenticating after reconnection");
+    fn restore_authenticated_session(&mut self) {
+        if self.has_authenticated_session {
+            log::debug!("Restoring authenticated session after reconnection");
 
-            // Ax uses Bearer token in connection headers which persist across reconnect
+            // The reconnect handshake has already succeeded with the current Bearer header.
             self.auth_tracker.succeed();
             self.message_queue
                 .push_back(AxOrdersWsMessage::Authenticated);
-            log::debug!("Re-authentication completed");
+            log::debug!("Authenticated session restored");
         } else {
-            log::warn!("Cannot re-authenticate: no bearer token stored");
+            log::warn!("Cannot restore authentication before the initial session succeeds");
         }
     }
 
@@ -148,9 +145,9 @@ impl AxOrdersWsFeedHandler {
     /// This method blocks until a message is available or the handler is stopped.
     pub(crate) async fn next(&mut self) -> Option<AxOrdersWsMessage> {
         loop {
-            if self.needs_reauthentication && self.message_queue.is_empty() {
-                self.needs_reauthentication = false;
-                self.reauthenticate().await;
+            if self.needs_session_restore && self.message_queue.is_empty() {
+                self.needs_session_restore = false;
+                self.restore_authenticated_session();
             }
 
             if let Some(msg) = self.message_queue.pop_front() {
@@ -216,11 +213,9 @@ impl AxOrdersWsFeedHandler {
                     inner.disconnect().await;
                 }
             }
-            HandlerCommand::Authenticate { token } => {
-                log::debug!("Authenticate command received");
-                self.bearer_token = Some(token);
-
-                // Ax uses Bearer token in connection headers (handled at connect time)
+            HandlerCommand::SessionAuthenticated => {
+                log::debug!("Session authenticated command received");
+                self.has_authenticated_session = true;
                 self.auth_tracker.succeed();
                 self.message_queue
                     .push_back(AxOrdersWsMessage::Authenticated);
@@ -318,7 +313,7 @@ impl AxOrdersWsFeedHandler {
                 if text == nautilus_network::RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
                     self.auth_tracker.fail("Reconnecting");
-                    self.needs_reauthentication = true;
+                    self.needs_session_restore = true;
                     return Some(vec![AxOrdersWsMessage::Reconnected]);
                 }
 
@@ -468,5 +463,23 @@ mod tests {
         let event = AxWsOrderEvent::Heartbeat;
         let result = handler.handle_event(event);
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_authenticated_session_is_restored_after_reconnect() {
+        let mut handler = test_handler();
+
+        handler
+            .handle_command(HandlerCommand::SessionAuthenticated)
+            .await;
+        let initial = handler.message_queue.pop_front();
+        handler.auth_tracker.fail("Reconnecting");
+        handler.restore_authenticated_session();
+        let restored = handler.message_queue.pop_front();
+
+        assert!(handler.has_authenticated_session);
+        assert!(matches!(initial, Some(AxOrdersWsMessage::Authenticated)));
+        assert!(matches!(restored, Some(AxOrdersWsMessage::Authenticated)));
+        assert!(handler.auth_tracker.is_authenticated());
     }
 }

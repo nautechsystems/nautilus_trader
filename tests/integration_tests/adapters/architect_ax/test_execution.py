@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -107,7 +108,7 @@ async def test_connect_success(exec_client_builder, monkeypatch):
     try:
         # Assert
         instrument_provider.initialize.assert_awaited_once()
-        http_client.authenticate_auto.assert_awaited_once()
+        http_client.authenticate_auto.assert_awaited_once_with(3600)
         http_client.request_account_state.assert_awaited_once()
         ws_client.connect.assert_awaited_once()
     finally:
@@ -146,6 +147,56 @@ async def test_disconnect_success(exec_client_builder, monkeypatch):
     # Assert
     http_client.cancel_all_requests.assert_called_once()
     ws_client.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_retries_and_updates_orders_websocket_token(
+    exec_client_builder,
+    monkeypatch,
+):
+    client, ws_client, http_client, _ = exec_client_builder(monkeypatch)
+    refreshed = asyncio.Event()
+    block_second_refresh = asyncio.Event()
+    refresh_count = 0
+    sleep_delays = []
+    delays_at_auth_attempt = []
+    real_sleep = asyncio.sleep
+
+    async def record_sleep(delay):
+        sleep_delays.append(delay)
+        await real_sleep(0)
+
+    async def authenticate_auto(expiration_seconds):
+        nonlocal refresh_count
+        refresh_count += 1
+        delays_at_auth_attempt.append(list(sleep_delays))
+
+        if refresh_count == 1:
+            raise RuntimeError("temporary authentication failure")
+        if refresh_count > 2:
+            await block_second_refresh.wait()
+        refreshed.set()
+        return "refreshed_bearer_token"
+
+    monkeypatch.setattr(
+        "nautilus_trader.adapters.architect_ax.execution.asyncio.sleep",
+        record_sleep,
+    )
+    http_client.authenticate_auto = AsyncMock(side_effect=authenticate_auto)
+    client._ws_orders_client = ws_client
+    refresh_task = asyncio.create_task(client._refresh_auth_token())
+    client._auth_refresh_task = refresh_task
+
+    await asyncio.wait_for(refreshed.wait(), timeout=1)
+    await real_sleep(0)
+    await client._stop_auth_refresh()
+
+    http_client.authenticate_auto.assert_awaited_with(3600)
+    assert http_client.authenticate_auto.await_count >= 2
+    ws_client.update_auth_token.assert_called_once_with("refreshed_bearer_token")
+    assert delays_at_auth_attempt[:2] == [[1800], [1800, 30]]
+    assert client._auth_refresh_task is None
+    assert refresh_task.cancelled()
 
 
 @pytest.mark.asyncio

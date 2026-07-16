@@ -58,8 +58,9 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        auth::spawn_auth_token_refresh,
         consts::{
-            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_EXEC_SECS, AX_POST_ONLY_REJECT,
+            AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS, AX_AUTH_TOKEN_TTL_SECS, AX_POST_ONLY_REJECT,
             AX_VENUE,
         },
         credential::Credential,
@@ -89,6 +90,7 @@ pub struct AxExecutionClient {
     http_client: AxHttpClient,
     ws_orders: AxOrdersWebSocketClient,
     ws_stream_handle: Option<JoinHandle<()>>,
+    auth_refresh_handle: Option<JoinHandle<()>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
 }
 
@@ -138,20 +140,17 @@ impl AxExecutionClient {
             http_client,
             ws_orders,
             ws_stream_handle: None,
+            auth_refresh_handle: None,
             pending_tasks: Mutex::new(Vec::new()),
         })
     }
 
-    async fn authenticate(&self) -> anyhow::Result<String> {
-        let credential =
-            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
-                .context("API credentials not configured")?;
-
+    async fn authenticate(&self, credential: &Credential) -> anyhow::Result<String> {
         self.http_client
             .authenticate(
                 credential.api_key(),
                 credential.api_secret(),
-                AX_AUTH_TOKEN_TTL_EXEC_SECS,
+                AX_AUTH_TOKEN_TTL_SECS,
             )
             .await
             .map_err(|e| anyhow::anyhow!("Authentication failed: {e}"))
@@ -414,6 +413,10 @@ impl ExecutionClient for AxExecutionClient {
         // Reset so requests work after a previous disconnect
         self.http_client.reset_cancellation_token();
 
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
+
         if !self.core.instruments_initialized() {
             let instruments = self
                 .http_client
@@ -431,7 +434,10 @@ impl ExecutionClient for AxExecutionClient {
             self.core.set_instruments_initialized();
         }
 
-        let token = self.authenticate().await?;
+        let credential =
+            Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
+                .context("API credentials not configured")?;
+        let token = self.authenticate(&credential).await?;
         self.ws_orders.connect(&token).await?;
         log::debug!("Connected to orders WebSocket");
 
@@ -482,6 +488,12 @@ impl ExecutionClient for AxExecutionClient {
             .await?;
 
         self.core.set_connected();
+        let ws_orders = self.ws_orders.clone();
+        self.auth_refresh_handle = Some(spawn_auth_token_refresh(
+            self.http_client.clone(),
+            credential,
+            move |token| ws_orders.update_auth_token(&token),
+        ));
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
     }
@@ -491,6 +503,10 @@ impl ExecutionClient for AxExecutionClient {
             return Ok(());
         }
 
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
         self.abort_pending_tasks();
         self.http_client.cancel_all_requests();
 
@@ -592,8 +608,38 @@ impl ExecutionClient for AxExecutionClient {
         if let Some(handle) = self.ws_stream_handle.take() {
             handle.abort();
         }
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
         self.abort_pending_tasks();
         log::info!("Stopped: client_id={}", self.core.client_id);
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.ws_stream_handle.take() {
+            handle.abort();
+        }
+        self.abort_pending_tasks();
+        self.core.set_disconnected();
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
+
+        if let Some(handle) = self.ws_stream_handle.take() {
+            handle.abort();
+        }
+        self.abort_pending_tasks();
+        self.core.set_disconnected();
         Ok(())
     }
 

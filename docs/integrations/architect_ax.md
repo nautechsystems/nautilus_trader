@@ -305,7 +305,9 @@ AX Exchange uses bearer token authentication:
 
 1. API key and secret obtain a session token via `/authenticate`.
 2. The session token is used as a bearer token for subsequent REST and WebSocket requests.
-3. Session tokens expire after a configurable period (default: 86400 seconds).
+3. The adapter requests one-hour session tokens and refreshes them every 30 minutes.
+4. A refresh updates REST authentication and the token used by the next WebSocket reconnect without
+   interrupting the active connection.
 
 ## Configuration
 

@@ -27,7 +27,7 @@
 
 use nautilus_architect_ax::{
     common::{
-        consts::AX_AUTH_TOKEN_TTL_EXEC_SECS,
+        consts::AX_AUTH_TOKEN_TTL_SECS,
         enums::{AxEnvironment, AxOrderSide, AxTimeInForce},
     },
     http::{
@@ -69,7 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let token = client
-        .authenticate(&api_key, &api_secret, AX_AUTH_TOKEN_TTL_EXEC_SECS)
+        .authenticate(&api_key, &api_secret, AX_AUTH_TOKEN_TTL_SECS)
         .await?;
     client.set_session_token(token.token);
     log::info!("Authenticated");

@@ -25,7 +25,7 @@ pub mod types;
 
 // Re-export main types for convenience
 pub use auth::AuthTracker;
-pub use client::{WebSocketClient, WebSocketClientInner};
+pub use client::{ReconnectHeaders, WebSocketClient, WebSocketClientInner};
 pub use config::{TransportBackend, WebSocketConfig};
 pub use consts::{AUTHENTICATION_TIMEOUT_SECS, TEXT_PING, TEXT_PONG};
 pub use subscription::{SubscriptionState, split_topic};

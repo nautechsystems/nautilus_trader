@@ -48,9 +48,19 @@ pub const AX_WS_SANDBOX_PUBLIC_URL: &str = "wss://gateway.sandbox.architect.exch
 pub const AX_WS_PRIVATE_URL: &str = "wss://gateway.architect.exchange/orders/ws";
 pub const AX_WS_SANDBOX_PRIVATE_URL: &str = "wss://gateway.sandbox.architect.exchange/orders/ws";
 
-// Authentication token TTL (seconds)
-pub const AX_AUTH_TOKEN_TTL_DATA_SECS: i32 = 86_400;
-pub const AX_AUTH_TOKEN_TTL_EXEC_SECS: i32 = 3_600;
+/// Authentication token lifetime requested from AX.
+pub const AX_AUTH_TOKEN_TTL_SECS: i32 = 3_600;
+
+/// Delay before refreshing a valid authentication token.
+pub const AX_AUTH_TOKEN_REFRESH_INTERVAL: std::time::Duration =
+    std::time::Duration::from_secs(30 * 60);
+
+/// Timeout for one authentication-token request.
+pub const AX_AUTH_TOKEN_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Delay before retrying a failed authentication-token refresh.
+pub const AX_AUTH_TOKEN_REFRESH_RETRY_DELAY: std::time::Duration =
+    std::time::Duration::from_secs(30);
 
 /// Timeout for awaiting account registration during execution client connect.
 pub const AX_ACCOUNT_REGISTRATION_TIMEOUT_SECS: f64 = 30.0;

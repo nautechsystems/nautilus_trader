@@ -22,9 +22,14 @@ WebSocket clients exposed via PyO3 for performance.
 """
 
 import asyncio
+import contextlib
 from typing import Any
 
 from nautilus_trader.adapters.architect_ax.config import AxExecClientConfig
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_TTL_SECS
 from nautilus_trader.adapters.architect_ax.constants import AX_SUPPORTED_ORDER_TYPES
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
 from nautilus_trader.adapters.architect_ax.constants import AX_WS_ORDERS_PRODUCTION_URL
@@ -135,6 +140,7 @@ class AxExecutionClient(LiveExecutionClient):
 
         self._http_client = client
         self._ws_orders_client: nautilus_pyo3.AxOrdersWebSocketClient | None = None
+        self._auth_refresh_task: asyncio.Task | None = None
         self._has_credentials = False
 
         if config.base_url_ws:
@@ -145,11 +151,13 @@ class AxExecutionClient(LiveExecutionClient):
             self._ws_orders_url = AX_WS_ORDERS_PRODUCTION_URL
 
     async def _connect(self) -> None:
+        await self._stop_auth_refresh()
+        self._has_credentials = False
         await self._instrument_provider.initialize()
         self._cache_instruments()
 
         try:
-            bearer_token = await self._http_client.authenticate_auto()
+            bearer_token = await self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS)
             self._log.info("Authenticated with AX Exchange", LogColor.BLUE)
             self._has_credentials = True
 
@@ -174,6 +182,7 @@ class AxExecutionClient(LiveExecutionClient):
                 bearer_token=bearer_token,
             )
             self._log.info("Connected to AX orders WebSocket", LogColor.BLUE)
+            self._auth_refresh_task = self.create_task(self._refresh_auth_token())
         except ValueError as e:
             err_str = str(e)
             if "Missing credentials" in err_str or "MissingCredentials" in err_str:
@@ -201,6 +210,7 @@ class AxExecutionClient(LiveExecutionClient):
             self._http_client.cache_instrument(inst)
 
     async def _disconnect(self) -> None:
+        await self._stop_auth_refresh()
         self._http_client.cancel_all_requests()
 
         if self._ws_orders_client and not self._ws_orders_client.is_closed():
@@ -208,6 +218,39 @@ class AxExecutionClient(LiveExecutionClient):
             await self._ws_orders_client.close()
 
         self._log.info("Disconnected from AX Exchange execution API", LogColor.BLUE)
+
+    async def _refresh_auth_token(self) -> None:
+        next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+
+        while True:
+            try:
+                await asyncio.sleep(next_delay)
+                token = await asyncio.wait_for(
+                    self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS),
+                    timeout=AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS,
+                )
+
+                if self._ws_orders_client is None:
+                    return
+                self._ws_orders_client.update_auth_token(token)
+                next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+                self._log.debug("Refreshed AX authentication token")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self._log.error(f"Failed to refresh AX authentication token: {e}")
+                next_delay = AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+
+    async def _stop_auth_refresh(self) -> None:
+        if self._auth_refresh_task is None:
+            return
+
+        task = self._auth_refresh_task
+        self._auth_refresh_task = None
+        task.cancel()
+
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     async def generate_order_status_report(
         self,

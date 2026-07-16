@@ -178,6 +178,7 @@ pub struct KrakenFuturesBatchSendItem {
     pub order: String,
 
     /// An order tag to correlate batch responses with requests.
+    #[serde(rename = "order_tag")]
     pub order_tag: String,
 
     /// The symbol of the futures contract.
@@ -244,6 +245,7 @@ pub struct KrakenFuturesBatchEditItem {
     pub order: String,
 
     /// An order tag to correlate batch responses with requests.
+    #[serde(rename = "order_tag")]
     pub order_tag: String,
 
     /// The venue order ID to edit.
@@ -543,12 +545,20 @@ mod tests {
             .unwrap();
 
         let item = KrakenFuturesBatchSendItem::from_params(params, "1");
-        let json = serde_json::to_string(&item).unwrap();
+        let value = serde_json::to_value(&item).unwrap();
 
-        assert!(json.contains("\"order\":\"send\""));
-        assert!(json.contains("\"orderTag\":\"1\""));
-        assert!(json.contains("\"orderType\":\"mkt\""));
-        assert!(json.contains("\"reduceOnly\":true"));
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "order": "send",
+                "order_tag": "1",
+                "symbol": "PI_XBTUSD",
+                "side": "sell",
+                "orderType": "mkt",
+                "size": "500",
+                "reduceOnly": true,
+            }),
+        );
     }
 
     #[rstest]
@@ -578,12 +588,17 @@ mod tests {
             .unwrap();
 
         let item = KrakenFuturesBatchEditItem::from_params(params, "2");
-        let json = serde_json::to_string(&item).unwrap();
+        let value = serde_json::to_value(&item).unwrap();
 
-        assert!(json.contains("\"order\":\"edit\""));
-        assert!(json.contains("\"orderTag\":\"2\""));
-        assert!(json.contains("\"cliOrdId\":\"my-order\""));
-        assert!(json.contains("\"limitPrice\":\"55000.0\""));
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "order": "edit",
+                "order_tag": "2",
+                "cliOrdId": "my-order",
+                "limitPrice": "55000.0",
+            }),
+        );
     }
 
     #[rstest]

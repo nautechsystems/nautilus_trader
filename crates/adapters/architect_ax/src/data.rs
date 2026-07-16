@@ -66,7 +66,8 @@ use ustr::Ustr;
 
 use crate::{
     common::{
-        consts::{AX_AUTH_TOKEN_TTL_DATA_SECS, AX_FUNDING_RATE_LOOKBACK_DAYS, AX_VENUE},
+        auth::spawn_auth_token_refresh,
+        consts::{AX_AUTH_TOKEN_TTL_SECS, AX_FUNDING_RATE_LOOKBACK_DAYS, AX_VENUE},
         credential::Credential,
         enums::{AxCandleWidth, AxInstrumentState, AxMarketDataLevel},
         parse::{ax_timestamp_stn_to_unix_nanos, map_bar_spec_to_candle_width},
@@ -108,6 +109,7 @@ pub struct AxDataClient {
     cancellation_token: CancellationToken,
     /// Background task handles.
     tasks: Vec<JoinHandle<()>>,
+    auth_refresh_handle: Option<JoinHandle<()>>,
     /// Channel sender for emitting data events to the DataEngine.
     data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
     /// Cached instruments by symbol (shared with HTTP client).
@@ -144,6 +146,7 @@ impl AxDataClient {
             is_connected: Arc::new(AtomicBool::new(false)),
             cancellation_token: CancellationToken::new(),
             tasks: Vec::new(),
+            auth_refresh_handle: None,
             data_sender,
             instruments,
             clock,
@@ -350,6 +353,10 @@ impl DataClient for AxDataClient {
 
     fn stop(&mut self) -> anyhow::Result<()> {
         log::debug!("Stopping {}", self.client_id);
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
         self.abort_all_tasks();
         self.is_connected.store(false, Ordering::Release);
         Ok(())
@@ -357,6 +364,10 @@ impl DataClient for AxDataClient {
 
     fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting {}", self.client_id);
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
         self.abort_all_tasks();
         self.funding_rate_cache
             .lock()
@@ -368,6 +379,10 @@ impl DataClient for AxDataClient {
 
     fn dispose(&mut self) -> anyhow::Result<()> {
         log::debug!("Disposing {}", self.client_id);
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
         self.abort_all_tasks();
         self.is_connected.store(false, Ordering::Release);
         Ok(())
@@ -392,7 +407,11 @@ impl DataClient for AxDataClient {
         // Recreate token so a previous disconnect/stop doesn't block new operations
         self.cancellation_token = CancellationToken::new();
 
-        if self.config.has_api_credentials() {
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+        }
+
+        let credential = if self.config.has_api_credentials() {
             let credential =
                 Credential::resolve(self.config.api_key.clone(), self.config.api_secret.clone())
                     .context("API credentials not configured")?;
@@ -402,13 +421,16 @@ impl DataClient for AxDataClient {
                 .authenticate(
                     credential.api_key(),
                     credential.api_secret(),
-                    AX_AUTH_TOKEN_TTL_DATA_SECS,
+                    AX_AUTH_TOKEN_TTL_SECS,
                 )
                 .await
                 .context("Failed to authenticate with Ax")?;
             log::debug!("Authenticated with Ax");
             self.ws_client.set_auth_token(token);
-        }
+            Some(credential)
+        } else {
+            None
+        };
 
         let instruments = self
             .http_client
@@ -442,6 +464,15 @@ impl DataClient for AxDataClient {
         self.spawn_instrument_refresh();
 
         self.is_connected.store(true, Ordering::Release);
+
+        if let Some(credential) = credential {
+            let ws_client = self.ws_client.clone();
+            self.auth_refresh_handle = Some(spawn_auth_token_refresh(
+                self.http_client.clone(),
+                credential,
+                move |token| ws_client.update_auth_token(token),
+            ));
+        }
         log::info!("Connected {}", self.client_id);
 
         Ok(())
@@ -449,6 +480,11 @@ impl DataClient for AxDataClient {
 
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting {}", self.client_id);
+
+        if let Some(handle) = self.auth_refresh_handle.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
         self.ws_client.close().await;
         self.abort_all_tasks();
         self.funding_rate_cache

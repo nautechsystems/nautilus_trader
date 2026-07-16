@@ -100,6 +100,7 @@ adapter set. The following limits remain deferred:
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
+- Fixed Architect AX data and execution clients not refreshing authentication tokens for REST requests and WebSocket reconnects
 - Fixed v2 `BettingInstrument` catalog round trips deriving `raw_symbol` from the instrument ID and rebuilding `price_increment`/`size_increment` from precision, corrupting their values
 - Fixed v2 `FuturesContract`, `OptionContract`, `BinaryOption`, and `BettingInstrument` catalog round trips dropping quantity, price, and notional constraints, margins, and fees
 - Fixed `OrderFactory.bracket` `tp_post_only` docs (#4437), thanks for reporting @jh171717 and for the patch @chang-pro
@@ -230,6 +231,7 @@ adapter set. The following limits remain deferred:
 - Fixed Interactive Brokers v2 tracked fills to emit `OrderFilled` after `OrderAccepted`, emit `OrderRejected` on gateway submission failure, and retain fill identity across terminal callbacks
 - Fixed Interactive Brokers `IneligibilityReason` serialization (#4380), thanks @xxxxxx-oss
 - Fixed Interactive Brokers Docker gateway startup to ignore the active Docker context
+- Fixed Kraken Futures batch order `order_tag` serialization (#4459), thanks for reporting @Andreas197510
 - Fixed Lighter batch orders to use correlated sequential WebSocket transactions
 - Fixed Lighter reconciliation cursor loops, fill deduplication, and trailing fill identity
 - Fixed Lighter instrument parsing, gap candle filtering, and spot quote currencies
@@ -240,6 +242,7 @@ adapter set. The following limits remain deferred:
 - Improved core decimal deserialization to round fractional scales above 28 digits instead of erroring
 - Improved live reconciliation recency tracking with `RecencyMap` (#4386), thanks @folknor
 - Improved portfolio statistics test coverage with canonical worked examples
+- Improved Lighter signing latency through faster quintic field multiplication and squaring
 - Improved Lighter signing and execution coverage for conditional, IOC, cancel-all, and leverage transactions
 - Made portfolio reference-count clones explicit (#4364), thanks @ChrisAB
 - Upgraded Binance Spot SBE REST and WebSocket API requests to schema `3:5` (Rust)

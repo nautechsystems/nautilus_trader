@@ -28,7 +28,7 @@ use std::{
     fmt::Debug,
     pin::pin,
     sync::{
-        Arc, OnceLock,
+        Arc, OnceLock, RwLock,
         atomic::{AtomicBool, AtomicU8, Ordering},
     },
     time::Duration,
@@ -88,6 +88,70 @@ use crate::{
     transport::{BoxedWsTransport, Message, TransportError, tungstenite::TungsteniteTransport},
 };
 
+/// Shared headers used by future automatic WebSocket reconnects.
+///
+/// Updating these headers does not affect the active connection or trigger a reconnect.
+#[derive(Clone)]
+pub struct ReconnectHeaders {
+    inner: Arc<RwLock<Vec<(String, String)>>>,
+}
+
+impl ReconnectHeaders {
+    fn new(headers: Vec<(String, String)>) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(headers)),
+        }
+    }
+
+    /// Replaces a header used by future automatic reconnect attempts.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the header name or value is invalid, or if the shared state is poisoned.
+    pub fn update(&self, name: &str, value: &str) -> Result<(), TransportError> {
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+            TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid WebSocket reconnect header name: {e}"),
+            ))
+        })?;
+        HeaderValue::from_str(value).map_err(|e| {
+            TransportError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("Invalid WebSocket reconnect header value: {e}"),
+            ))
+        })?;
+
+        let name = name.as_str();
+        let mut headers = self.inner.write().map_err(|_| {
+            TransportError::Io(std::io::Error::other(
+                "WebSocket reconnect headers lock poisoned",
+            ))
+        })?;
+        headers.retain(|(existing, _)| !existing.eq_ignore_ascii_case(name));
+        headers.push((name.to_string(), value.to_string()));
+        Ok(())
+    }
+
+    fn snapshot(&self) -> Result<Vec<(String, String)>, TransportError> {
+        self.inner
+            .read()
+            .map(|headers| headers.clone())
+            .map_err(|_| {
+                TransportError::Io(std::io::Error::other(
+                    "WebSocket reconnect headers lock poisoned",
+                ))
+            })
+    }
+}
+
+impl Debug for ReconnectHeaders {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(ReconnectHeaders))
+            .finish_non_exhaustive()
+    }
+}
+
 /// `WebSocketClient` connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
@@ -105,6 +169,7 @@ use crate::{
 /// frequently - than the required amount.
 pub struct WebSocketClientInner {
     config: WebSocketConfig,
+    reconnect_headers: ReconnectHeaders,
     /// The function to handle incoming messages (stored separately from config).
     message_handler: Option<MessageHandler>,
     /// The handler for incoming pings (stored separately from config).
@@ -152,7 +217,7 @@ impl WebSocketClientInner {
         reason = "async signature for consistency with connect-based constructors"
     )]
     pub async fn new_with_writer(
-        config: WebSocketConfig,
+        mut config: WebSocketConfig,
         writer: MessageWriter,
     ) -> Result<Self, TransportError> {
         install_cryptographic_provider();
@@ -209,8 +274,11 @@ impl WebSocketClientInner {
         let reconnect_max_attempts = None; // Stream mode does not reconnect
         let reconnect_timeout = Duration::from_secs(10);
 
+        let reconnect_headers = ReconnectHeaders::new(std::mem::take(&mut config.headers));
+
         Ok(Self {
             config,
+            reconnect_headers,
             message_handler: None, // Stream mode has no handler
             ping_handler: None,
             writer_tx,
@@ -274,6 +342,8 @@ impl WebSocketClientInner {
         } else {
             Duration::from_millis(config.reconnect_timeout_ms.unwrap_or(10_000))
         };
+
+        let reconnect_headers = ReconnectHeaders::new(config.headers.clone());
 
         // Bound the dial: a server that accepts TCP but never upgrades must not hang the caller
         let (writer, reader) = dst::time::timeout(
@@ -346,8 +416,12 @@ impl WebSocketClientInner {
             TransportError::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e))
         })?;
 
+        let mut config = config;
+        config.headers.clear();
+
         Ok(Self {
             config,
+            reconnect_headers,
             message_handler,
             ping_handler,
             read_task,
@@ -896,7 +970,7 @@ impl WebSocketClientInner {
             self.reconnect_timeout,
             Self::connect_with_server(
                 &self.config.url,
-                self.config.headers.clone(),
+                self.reconnect_headers.snapshot()?,
                 self.config.backend,
                 self.config.proxy_url.as_deref(),
             ),
@@ -1483,6 +1557,7 @@ pub struct WebSocketClient {
     pub(crate) writer_tx: tokio::sync::mpsc::UnboundedSender<WriterCommand>,
     auth_tracker: Arc<OnceLock<AuthTracker>>,
     reconnect_buffer_waits_for_auth: Arc<AtomicBool>,
+    reconnect_headers: ReconnectHeaders,
 }
 
 impl Debug for WebSocketClient {
@@ -1546,6 +1621,7 @@ impl WebSocketClient {
         let reconnect_timeout = inner.reconnect_timeout;
         let auth_tracker = Arc::clone(&inner.auth_tracker);
         let reconnect_buffer_waits_for_auth = Arc::clone(&inner.reconnect_buffer_waits_for_auth);
+        let reconnect_headers = inner.reconnect_headers.clone();
         let keyed_quotas = keyed_quotas
             .into_iter()
             .map(|(key, quota)| (Ustr::from(&key), quota))
@@ -1572,6 +1648,7 @@ impl WebSocketClient {
                 writer_tx,
                 auth_tracker,
                 reconnect_buffer_waits_for_auth,
+                reconnect_headers,
             },
         ))
     }
@@ -1655,6 +1732,7 @@ impl WebSocketClient {
         let reconnect_timeout = inner.reconnect_timeout;
         let auth_tracker = Arc::clone(&inner.auth_tracker);
         let reconnect_buffer_waits_for_auth = Arc::clone(&inner.reconnect_buffer_waits_for_auth);
+        let reconnect_headers = inner.reconnect_headers.clone();
 
         let controller_task = Self::spawn_controller_task(
             inner,
@@ -1673,7 +1751,14 @@ impl WebSocketClient {
             writer_tx,
             auth_tracker,
             reconnect_buffer_waits_for_auth,
+            reconnect_headers,
         })
+    }
+
+    /// Returns shared headers used by future automatic reconnect attempts.
+    #[must_use]
+    pub fn reconnect_headers(&self) -> ReconnectHeaders {
+        self.reconnect_headers.clone()
     }
 
     /// Returns the current connection mode.
@@ -2209,7 +2294,7 @@ impl Drop for WebSocketClient {
 #[cfg(not(all(feature = "simulation", madsim)))] // transport-layer I/O not simulated
 #[cfg(target_os = "linux")] // Only run network tests on Linux (CI stability)
 mod tests {
-    use std::{num::NonZeroU32, sync::Arc};
+    use std::{num::NonZeroU32, sync::Arc, time::Duration};
 
     use futures_util::{SinkExt, StreamExt};
     use tokio::{
@@ -2407,6 +2492,88 @@ mod tests {
         // Cleanup
         client.disconnect().await;
         assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    #[allow(clippy::result_large_err)]
+    async fn test_reconnect_uses_updated_headers_without_interrupting_active_connection() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (header_tx, mut header_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server_task = task::spawn(async move {
+            loop {
+                let (conn, _) = listener.accept().await.unwrap();
+                let header_tx = header_tx.clone();
+                let mut websocket = accept_hdr_async(
+                    conn,
+                    move |request: &server::Request, response: server::Response| {
+                        let values = request
+                            .headers()
+                            .get_all("authorization")
+                            .iter()
+                            .map(|value| value.to_str().unwrap().to_string())
+                            .collect::<Vec<_>>();
+                        header_tx.send(values).unwrap();
+                        Ok(response)
+                    },
+                )
+                .await
+                .unwrap();
+
+                task::spawn(async move {
+                    while let Some(Ok(msg)) = websocket.next().await {
+                        if matches!(&msg, WsMessage::Text(text) if text.as_str() == "close-now") {
+                            let _ = websocket.close(None).await;
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+
+        let config = WebSocketConfig {
+            url: format!("ws://127.0.0.1:{port}"),
+            headers: vec![("Authorization".into(), "Bearer initial".into())],
+            heartbeat: None,
+            heartbeat_msg: None,
+            reconnect_timeout_ms: Some(1_000),
+            reconnect_delay_initial_ms: Some(50),
+            reconnect_delay_max_ms: Some(50),
+            reconnect_backoff_factor: Some(1.0),
+            reconnect_jitter_ms: Some(0),
+            reconnect_max_attempts: None,
+            idle_timeout_ms: None,
+            backend: TransportBackend::Tungstenite,
+            proxy_url: None,
+        };
+        let client =
+            WebSocketClient::connect(config, Some(Arc::new(|_| {})), None, None, vec![], None)
+                .await
+                .unwrap();
+
+        let initial = header_rx.recv().await.unwrap();
+        let reconnect_headers = client.reconnect_headers();
+        reconnect_headers
+            .update("authorization", "Bearer refreshed")
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert_eq!(initial, vec!["Bearer initial"]);
+        assert!(client.is_active());
+        assert!(header_rx.try_recv().is_err());
+        assert!(!format!("{reconnect_headers:?}").contains("refreshed"));
+
+        client.send_text("close-now".into(), None).await.unwrap();
+        let refreshed = tokio::time::timeout(Duration::from_secs(3), header_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(refreshed, vec!["Bearer refreshed"]);
+
+        client.disconnect().await;
+        server_task.abort();
     }
 
     #[tokio::test]

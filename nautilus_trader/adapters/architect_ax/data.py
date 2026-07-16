@@ -22,11 +22,16 @@ PyO3 for performance.
 """
 
 import asyncio
+import contextlib
 from datetime import timedelta
 
 import pandas as pd
 
 from nautilus_trader.adapters.architect_ax.config import AxDataClientConfig
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS
+from nautilus_trader.adapters.architect_ax.constants import AX_AUTH_TOKEN_TTL_SECS
 from nautilus_trader.adapters.architect_ax.constants import AX_VENUE
 from nautilus_trader.adapters.architect_ax.providers import AxInstrumentProvider
 from nautilus_trader.cache.cache import Cache
@@ -120,6 +125,7 @@ class AxDataClient(LiveMarketDataClient):
 
         self._http_client = client
         self._ws_client: nautilus_pyo3.AxMdWebSocketClient | None = None
+        self._auth_refresh_task: asyncio.Task | None = None
 
         if config.base_url_ws:
             self._ws_url = config.base_url_ws
@@ -139,6 +145,7 @@ class AxDataClient(LiveMarketDataClient):
         return self._instrument_provider
 
     async def _connect(self) -> None:
+        await self._stop_auth_refresh()
         await self._instrument_provider.initialize()
         self._send_all_instruments_to_data_engine()
 
@@ -148,8 +155,9 @@ class AxDataClient(LiveMarketDataClient):
             proxy_url=self._config.proxy_url,
         )
 
+        auth_token = None
         try:
-            auth_token = await self._http_client.authenticate_auto()
+            auth_token = await self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS)
             self._ws_client.set_auth_token(auth_token)
             self._log.info("Authenticated with AX Exchange", LogColor.BLUE)
         except ValueError as e:
@@ -166,12 +174,16 @@ class AxDataClient(LiveMarketDataClient):
         await self._ws_client.connect(self._loop, self._handle_msg)
         self._log.info("Connected to AX Exchange market data WebSocket", LogColor.BLUE)
 
+        if auth_token is not None:
+            self._auth_refresh_task = self.create_task(self._refresh_auth_token())
+
         if self._update_instruments_interval_mins:
             self._update_instruments_task = self.create_task(
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
     async def _disconnect(self) -> None:
+        await self._stop_auth_refresh()
         self._http_client.cancel_all_requests()
 
         if self._update_instruments_task:
@@ -193,6 +205,39 @@ class AxDataClient(LiveMarketDataClient):
             await self._ws_client.close()
             self._ws_client = None
             self._log.info("Disconnected from AX Exchange", LogColor.BLUE)
+
+    async def _refresh_auth_token(self) -> None:
+        next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+
+        while True:
+            try:
+                await asyncio.sleep(next_delay)
+                token = await asyncio.wait_for(
+                    self._http_client.authenticate_auto(AX_AUTH_TOKEN_TTL_SECS),
+                    timeout=AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS,
+                )
+
+                if self._ws_client is None:
+                    return
+                self._ws_client.update_auth_token(token)
+                next_delay = AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS
+                self._log.debug("Refreshed AX authentication token")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self._log.error(f"Failed to refresh AX authentication token: {e}")
+                next_delay = AX_AUTH_TOKEN_REFRESH_RETRY_SECS
+
+    async def _stop_auth_refresh(self) -> None:
+        if self._auth_refresh_task is None:
+            return
+
+        task = self._auth_refresh_task
+        self._auth_refresh_task = None
+        task.cancel()
+
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for currency in self._instrument_provider.currencies().values():

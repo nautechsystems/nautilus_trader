@@ -24,6 +24,11 @@ AX: Final[str] = "AX"
 AX_VENUE: Final[Venue] = Venue(AX)
 AX_CLIENT_ID: Final[ClientId] = ClientId(AX)
 
+AX_AUTH_TOKEN_TTL_SECS: Final[int] = 60 * 60
+AX_AUTH_TOKEN_REFRESH_INTERVAL_SECS: Final[int] = 30 * 60
+AX_AUTH_TOKEN_REQUEST_TIMEOUT_SECS: Final[int] = 60
+AX_AUTH_TOKEN_REFRESH_RETRY_SECS: Final[int] = 30
+
 AX_SUPPORTED_ORDER_TYPES = (OrderType.MARKET, OrderType.LIMIT, OrderType.STOP_LIMIT)
 
 AX_WS_ORDERS_SANDBOX_URL = "wss://gateway.sandbox.architect.exchange/orders/ws"

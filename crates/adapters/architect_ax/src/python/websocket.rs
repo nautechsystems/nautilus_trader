@@ -149,8 +149,15 @@ impl PyAxMdWebSocketClient {
     }
 
     #[pyo3(name = "set_auth_token")]
-    fn py_set_auth_token(&mut self, token: String) {
+    fn py_set_auth_token(&self, token: String) {
         self.inner.set_auth_token(token);
+    }
+
+    #[pyo3(name = "update_auth_token")]
+    fn py_update_auth_token(&self, token: String) -> PyResult<()> {
+        self.inner
+            .update_auth_token(token)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "cache_instrument")]
@@ -527,6 +534,13 @@ impl PyAxOrdersWebSocketClient {
         self.inner
             .cache_instrument(pyobject_to_instrument_any(py, instrument)?);
         Ok(())
+    }
+
+    #[pyo3(name = "update_auth_token")]
+    fn py_update_auth_token(&self, token: &str) -> PyResult<()> {
+        self.inner
+            .update_auth_token(token)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "register_external_order")]
