@@ -180,7 +180,7 @@ mod tests {
     #[rstest]
     fn test_data_client_py_new_uses_defaults_for_omitted_fields() {
         let config =
-            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None, None);
+            BinanceDataClientConfig::py_new(None, None, None, None, None, None, None, None, None, None);
         let defaults = BinanceDataClientConfig::default();
 
         assert_eq!(config.product_type, defaults.product_type);
@@ -200,6 +200,7 @@ mod tests {
     fn test_data_client_py_new_uses_explicit_overrides() {
         let config = BinanceDataClientConfig::py_new(
             Some(BinanceProductType::UsdM),
+            None,
             Some(BinanceEnvironment::Testnet),
             Some("https://http.example".to_string()),
             Some("wss://ws.example".to_string()),
@@ -232,7 +233,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
             trader_id, account_id, None, None, None, None, None, true, true, None, None, None,
-            None, None, None, false, false, None, None,
+            None, None, None, false, false, None, None, None
         );
         let defaults = BinanceExecClientConfig::default();
 
@@ -318,6 +319,7 @@ mod tests {
         let config = BinanceExecClientConfig::py_new(
             TraderId::from("TRADER-003"),
             AccountId::from("BINANCE-003"),
+            None,
             None,
             None,
             None,
