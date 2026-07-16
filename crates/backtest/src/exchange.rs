@@ -135,7 +135,7 @@ pub struct SimulatedExchange {
     fill_model: FillModelHandle,
     latency_model: Option<Box<dyn LatencyModel>>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
-    matching_engines: AHashMap<InstrumentId, OrderMatchingEngine>,
+    matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     settlement_prices: AHashMap<InstrumentId, Price>,
     pending_funding_rates: AHashMap<InstrumentId, FundingRateUpdate>,
     funding_settled_through: AHashMap<InstrumentId, UnixNanos>,
@@ -220,7 +220,7 @@ impl SimulatedExchange {
             fill_model: config.fill_model,
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
-            matching_engines: AHashMap::new(),
+            matching_engines: IndexMap::new(),
             settlement_prices: config.settlement_prices,
             pending_funding_rates: AHashMap::new(),
             funding_settled_through: AHashMap::new(),
@@ -466,7 +466,7 @@ impl SimulatedExchange {
 
     /// Returns a reference to all matching engines keyed by instrument ID.
     #[must_use]
-    pub const fn get_matching_engines(&self) -> &AHashMap<InstrumentId, OrderMatchingEngine> {
+    pub const fn get_matching_engines(&self) -> &IndexMap<InstrumentId, OrderMatchingEngine> {
         &self.matching_engines
     }
 
@@ -1216,6 +1216,9 @@ impl SimulatedExchange {
             valued_positions.push((position, pnl_change));
         }
 
+        let mut account_adjustments = account_adjustments.into_values().collect::<Vec<_>>();
+        account_adjustments.sort_unstable_by_key(|adjustment| adjustment.currency.code);
+
         if !self.frozen_account {
             let cache = self.cache.borrow();
             let Some(account) = cache.account_for_venue(&account_venue) else {
@@ -1223,7 +1226,7 @@ impl SimulatedExchange {
                 return false;
             };
 
-            for adjustment in account_adjustments.values() {
+            for adjustment in &account_adjustments {
                 let Some(balance) = account.balance(Some(adjustment.currency)) else {
                     log::error!(
                         "Cannot settle funding: no account balance for currency {}",
@@ -1304,7 +1307,7 @@ impl SimulatedExchange {
             }
         }
 
-        for adjustment in account_adjustments.values() {
+        for adjustment in &account_adjustments {
             if !self.adjust_account(*adjustment) {
                 let mut cache = self.cache.borrow_mut();
                 for (original, _, _) in adjusted_positions.iter().rev() {

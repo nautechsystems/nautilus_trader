@@ -3899,8 +3899,7 @@ fn test_list_venues_multiple() {
         )
         .unwrap();
 
-    let mut venues = engine.list_venues();
-    venues.sort_by_key(|v| v.to_string());
+    let venues = engine.list_venues();
     assert_eq!(venues.len(), 2);
     assert_eq!(venues[0], Venue::from("BINANCE"));
     assert_eq!(venues[1], Venue::from("BITMEX"));

@@ -24,6 +24,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use nautilus_analysis::analyzer::PortfolioAnalyzer;
 use nautilus_common::{
     actor::{DataActor, DataActorNative},
@@ -94,7 +95,7 @@ pub struct BacktestEngine {
     accumulator: TimeEventAccumulator,
     run_config_id: Option<String>,
     run_id: Option<UUID4>,
-    venues: AHashMap<Venue, Rc<RefCell<SimulatedExchange>>>,
+    venues: IndexMap<Venue, Rc<RefCell<SimulatedExchange>>>,
     exec_clients: Vec<BacktestExecutionClient>,
     has_data: AHashSet<InstrumentId>,
     has_book_data: AHashSet<InstrumentId>,
@@ -159,7 +160,7 @@ impl BacktestEngine {
             accumulator: TimeEventAccumulator::new(),
             run_config_id: None,
             run_id: None,
-            venues: AHashMap::new(),
+            venues: IndexMap::new(),
             exec_clients: Vec::new(),
             has_data: AHashSet::new(),
             has_book_data: AHashSet::new(),

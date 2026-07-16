@@ -15,7 +15,10 @@
 
 //! Time event accumulation and scheduling for the backtest engine.
 
-use std::{cmp::Reverse, collections::BinaryHeap};
+use std::{
+    cmp::{Ordering, Reverse},
+    collections::BinaryHeap,
+};
 
 use nautilus_common::{clock::TestClock, timer::TimeEventHandler};
 use nautilus_core::UnixNanos;
@@ -26,7 +29,47 @@ use nautilus_core::UnixNanos;
 /// retrieval of the next event to process.
 #[derive(Debug)]
 pub struct TimeEventAccumulator {
-    heap: BinaryHeap<Reverse<TimeEventHandler>>,
+    heap: BinaryHeap<Reverse<AccumulatedTimeEventHandler>>,
+    next_sequence: u64,
+}
+
+#[derive(Debug)]
+struct AccumulatedTimeEventHandler {
+    handler: TimeEventHandler,
+    // Replaces the handler's random event ID as the final heap tie-break.
+    sequence: u64,
+}
+
+impl AccumulatedTimeEventHandler {
+    fn cmp_key(&self, other: &Self) -> Ordering {
+        self.handler
+            .event
+            .ts_event
+            .cmp(&other.handler.event.ts_event)
+            .then_with(|| self.handler.event.name.cmp(&other.handler.event.name))
+            .then_with(|| self.handler.event.ts_init.cmp(&other.handler.event.ts_init))
+            .then_with(|| self.sequence.cmp(&other.sequence))
+    }
+}
+
+impl PartialOrd for AccumulatedTimeEventHandler {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for AccumulatedTimeEventHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp_key(other).is_eq()
+    }
+}
+
+impl Eq for AccumulatedTimeEventHandler {}
+
+impl Ord for AccumulatedTimeEventHandler {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.cmp_key(other)
+    }
 }
 
 impl TimeEventAccumulator {
@@ -35,7 +78,18 @@ impl TimeEventAccumulator {
     pub fn new() -> Self {
         Self {
             heap: BinaryHeap::new(),
+            next_sequence: 0,
         }
+    }
+
+    fn push(&mut self, handler: TimeEventHandler) {
+        let sequence = self.next_sequence;
+        self.next_sequence = self
+            .next_sequence
+            .checked_add(1)
+            .expect("Time event accumulator sequence overflow");
+        self.heap
+            .push(Reverse(AccumulatedTimeEventHandler { handler, sequence }));
     }
 
     /// Advance the given clock to the `to_time_ns` and push events to the heap.
@@ -43,7 +97,7 @@ impl TimeEventAccumulator {
         let events = clock.advance_time(to_time_ns, set_time);
         let handlers = clock.match_handlers(events);
         for handler in handlers {
-            self.heap.push(Reverse(handler));
+            self.push(handler);
         }
     }
 
@@ -52,15 +106,19 @@ impl TimeEventAccumulator {
     /// Returns `None` if the heap is empty.
     #[must_use]
     pub fn peek_next_time(&self) -> Option<UnixNanos> {
-        self.heap.peek().map(|h| h.0.event.ts_event)
+        self.heap.peek().map(|h| h.0.handler.event.ts_event)
     }
 
     /// Pop the next event if its timestamp is at or before `ts`.
     ///
     /// Returns `None` if the heap is empty or the next event is after `ts`.
     pub fn pop_next_at_or_before(&mut self, ts: UnixNanos) -> Option<TimeEventHandler> {
-        if self.heap.peek().is_some_and(|h| h.0.event.ts_event <= ts) {
-            self.heap.pop().map(|h| h.0)
+        if self
+            .heap
+            .peek()
+            .is_some_and(|h| h.0.handler.event.ts_event <= ts)
+        {
+            self.heap.pop().map(|h| h.0.handler)
         } else {
             None
         }
@@ -81,6 +139,7 @@ impl TimeEventAccumulator {
     /// Clear all events from the heap.
     pub fn clear(&mut self) {
         self.heap.clear();
+        self.next_sequence = 0;
     }
 
     /// Drain all events from the heap in timestamp order.
@@ -90,7 +149,7 @@ impl TimeEventAccumulator {
     pub fn drain(&mut self) -> Vec<TimeEventHandler> {
         let mut handlers = Vec::with_capacity(self.heap.len());
         while let Some(scheduled) = self.heap.pop() {
-            handlers.push(scheduled.0);
+            handlers.push(scheduled.0.handler);
         }
         handlers
     }
@@ -100,6 +159,42 @@ impl Default for TimeEventAccumulator {
     /// Creates a new default [`TimeEventAccumulator`] instance.
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod determinism_tests {
+    use nautilus_common::timer::{TimeEvent, TimeEventCallback};
+    use nautilus_core::UUID4;
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use super::*;
+
+    #[rstest]
+    fn test_accumulator_preserves_fifo_order_for_identical_timer_keys() {
+        let callback = TimeEventCallback::from(|_: TimeEvent| {});
+        let first_event = TimeEvent::new(
+            Ustr::from("REBALANCE"),
+            UUID4::from("ffffffff-ffff-4fff-bfff-ffffffffffff"),
+            100.into(),
+            100.into(),
+        );
+        let second_event = TimeEvent::new(
+            Ustr::from("REBALANCE"),
+            UUID4::from("00000000-0000-4000-8000-000000000000"),
+            100.into(),
+            100.into(),
+        );
+
+        let mut accumulator = TimeEventAccumulator::new();
+        accumulator.push(TimeEventHandler::new(first_event.clone(), callback.clone()));
+        accumulator.push(TimeEventHandler::new(second_event, callback));
+
+        let popped = accumulator
+            .pop_next_at_or_before(100.into())
+            .expect("Expected first accumulated timer");
+        assert_eq!(popped.event.event_id, first_event.event_id);
     }
 }
 
@@ -147,9 +242,9 @@ mod tests {
             let handler2 = TimeEventHandler::new(time_event2.clone(), callback.clone());
             let handler3 = TimeEventHandler::new(time_event3.clone(), callback);
 
-            accumulator.heap.push(Reverse(handler1));
-            accumulator.heap.push(Reverse(handler2));
-            accumulator.heap.push(Reverse(handler3));
+            accumulator.push(handler1);
+            accumulator.push(handler2);
+            accumulator.push(handler3);
             assert_eq!(accumulator.len(), 3);
 
             let popped1 = accumulator.pop_next_at_or_before(1000.into()).unwrap();
@@ -188,14 +283,11 @@ mod tests {
                 100.into(),
             );
 
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
+            accumulator.push(TimeEventHandler::new(
                 time_bar_event.clone(),
                 callback.clone(),
-            )));
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
-                spread_event.clone(),
-                callback,
-            )));
+            ));
+            accumulator.push(TimeEventHandler::new(spread_event.clone(), callback));
 
             let popped1 = accumulator.pop_next_at_or_before(100.into()).unwrap();
             assert_eq!(popped1.event.ts_event, spread_event.ts_event);
@@ -231,14 +323,8 @@ mod tests {
 
             let callback = TimeEventCallback::from(py_append.into_any());
 
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
-                time_event1.clone(),
-                callback.clone(),
-            )));
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
-                time_event2.clone(),
-                callback,
-            )));
+            accumulator.push(TimeEventHandler::new(time_event1.clone(), callback.clone()));
+            accumulator.push(TimeEventHandler::new(time_event2.clone(), callback));
 
             let popped1 = accumulator.pop_next_at_or_before(200.into()).unwrap();
             assert_eq!(popped1.event.ts_event, time_event1.ts_event);
@@ -275,15 +361,10 @@ mod tests {
                 100.into(),
             );
 
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
-                time_event1,
-                callback.clone(),
-            )));
+            accumulator.push(TimeEventHandler::new(time_event1, callback.clone()));
             assert_eq!(accumulator.peek_next_time(), Some(200.into()));
 
-            accumulator
-                .heap
-                .push(Reverse(TimeEventHandler::new(time_event2, callback)));
+            accumulator.push(TimeEventHandler::new(time_event2, callback));
             assert_eq!(accumulator.peek_next_time(), Some(100.into()));
         });
     }
@@ -300,9 +381,7 @@ mod tests {
 
             for ts in [300u64, 100, 200] {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
-                accumulator
-                    .heap
-                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
+                accumulator.push(TimeEventHandler::new(event, callback.clone()));
             }
 
             let handlers = accumulator.drain();
@@ -328,9 +407,7 @@ mod tests {
 
             for ts in [100u64, 300] {
                 let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), ts.into(), ts.into());
-                accumulator
-                    .heap
-                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
+                accumulator.push(TimeEventHandler::new(event, callback.clone()));
             }
 
             let handler = accumulator.pop_next_at_or_before(1000.into()).unwrap();
@@ -338,9 +415,7 @@ mod tests {
 
             // Simulate callback scheduling new event at 150 (between popped 100 and pending 300)
             let event = TimeEvent::new(Ustr::from("NEW"), UUID4::new(), 150.into(), 150.into());
-            accumulator
-                .heap
-                .push(Reverse(TimeEventHandler::new(event, callback)));
+            accumulator.push(TimeEventHandler::new(event, callback));
 
             while let Some(handler) = accumulator.pop_next_at_or_before(1000.into()) {
                 popped_timestamps.push(handler.event.ts_event.as_u64());
@@ -367,9 +442,7 @@ mod tests {
                     100.into(),
                     100.into(),
                 );
-                accumulator
-                    .heap
-                    .push(Reverse(TimeEventHandler::new(event, callback.clone())));
+                accumulator.push(TimeEventHandler::new(event, callback.clone()));
             }
 
             let mut count = 0;
@@ -393,19 +466,17 @@ mod tests {
             let mut accumulator = TimeEventAccumulator::new();
 
             let event = TimeEvent::new(Ustr::from("TEST"), UUID4::new(), 100.into(), 100.into());
-            accumulator
-                .heap
-                .push(Reverse(TimeEventHandler::new(event, callback)));
+            accumulator.push(TimeEventHandler::new(event, callback));
 
             let handler = accumulator.pop_next_at_or_before(100.into());
             assert!(handler.is_some());
             assert_eq!(handler.unwrap().event.ts_event.as_u64(), 100);
 
             let event2 = TimeEvent::new(Ustr::from("TEST2"), UUID4::new(), 200.into(), 200.into());
-            accumulator.heap.push(Reverse(TimeEventHandler::new(
+            accumulator.push(TimeEventHandler::new(
                 event2,
                 TimeEventCallback::from(Py::from(py_list.getattr("append").unwrap()).into_any()),
-            )));
+            ));
 
             assert!(accumulator.pop_next_at_or_before(199.into()).is_none());
             assert!(accumulator.pop_next_at_or_before(200.into()).is_some());
