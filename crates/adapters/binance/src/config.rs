@@ -68,6 +68,12 @@ pub struct BinanceDataClientConfig {
     /// Product type to subscribe to.
     #[builder(default = BinanceProductType::Spot)]
     pub product_type: BinanceProductType,
+    /// Isolated margin trading pair symbol (e.g. "BTCUSDT").
+    ///
+    /// Only applicable when `product_type` is `Margin`. If `None`, cross
+    /// margin is used. If `Some(symbol)`, the client operates in isolated
+    /// margin mode for that specific pair.
+    pub margin_isolated_symbol: Option<String>,
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
@@ -134,6 +140,12 @@ pub struct BinanceExecClientConfig {
     /// Product type to trade.
     #[builder(default = BinanceProductType::Spot)]
     pub product_type: BinanceProductType,
+    /// Isolated margin trading pair symbol (e.g. "BTCUSDT").
+    ///
+    /// Only applicable when `product_type` is `Margin`. If `None`, cross
+    /// margin is used. If `Some(symbol)`, the client operates in isolated
+    /// margin mode for that specific pair.
+    pub margin_isolated_symbol: Option<String>,
     /// Environment (live, testnet, or demo).
     #[builder(default = BinanceEnvironment::Live)]
     pub environment: BinanceEnvironment,
