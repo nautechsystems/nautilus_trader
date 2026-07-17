@@ -23,13 +23,14 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick,
+        Bar, CustomData, DataType, FundingRateUpdate, Participant, ParticipantProfile, QuoteTick,
+        TradeTick,
         greeks::{GreeksData, YieldCurveData},
     },
     events::{OrderEventAny, OrderSnapshot, position::snapshot::PositionSnapshot},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
-        TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, ParticipantId, PositionId,
+        StrategyId, TraderId, Venue, VenueOrderId,
     },
     instruments::{InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -144,6 +145,57 @@ pub trait CacheDatabaseAdapter {
     ///
     /// Returns an error if loading positions fails.
     async fn load_positions(&self) -> anyhow::Result<AHashMap<PositionId, Position>>;
+
+    /// Inserts new participants and extends the observed range of existing participants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if participant persistence is unsupported or the write cannot be enqueued.
+    fn upsert_participants(&self, _participants: &[Participant]) -> anyhow::Result<()> {
+        anyhow::bail!("Participant persistence is not supported by this cache database adapter")
+    }
+
+    /// Loads a participant by its venue-scoped identity.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if participant persistence is unsupported or loading fails.
+    async fn load_participant(
+        &self,
+        _venue: &Venue,
+        _participant_id: &ParticipantId,
+    ) -> anyhow::Result<Option<Participant>> {
+        anyhow::bail!("Participant persistence is not supported by this cache database adapter")
+    }
+
+    /// Loads participants whose profiles are due for refresh.
+    ///
+    /// Returns participants where `profile_next_refresh_ns <= ts_now` and `profile_state`
+    /// is schedulable (not `FAILED`), ordered by refresh time. Results are limited to
+    /// `batch_size` rows for bounded batch claiming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if participant persistence is unsupported or the query fails.
+    fn load_participants_profile_due(
+        &self,
+        _ts_now: UnixNanos,
+        _batch_size: u32,
+    ) -> anyhow::Result<Vec<Participant>> {
+        anyhow::bail!("Participant persistence is not supported by this cache database adapter")
+    }
+
+    /// Persists one or more participant profiles. Fire-and-forget: the write is
+    /// enqueued to a background task.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the write cannot be enqueued.
+    fn upsert_participant_profiles(&self, _profiles: &[ParticipantProfile]) -> anyhow::Result<()> {
+        anyhow::bail!(
+            "Participant profile persistence is not supported by this cache database adapter"
+        )
+    }
 
     /// Loads all [`GreeksData`] from the cache.
     ///

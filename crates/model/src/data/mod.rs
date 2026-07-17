@@ -28,6 +28,7 @@ pub mod funding;
 pub mod greeks;
 pub mod option_chain;
 pub mod order;
+pub mod participant;
 pub mod prices;
 pub mod quote;
 pub mod registry;
@@ -74,6 +75,10 @@ pub use greeks::{
 };
 pub use option_chain::{OptionChainSlice, OptionGreeks, OptionStrikeData, StrikeRange};
 pub use order::{BookOrder, NULL_ORDER};
+pub use participant::{
+    Participant, ParticipantKind, ParticipantProfile, ParticipantTransaction, ProfileState,
+    TransactionMethod,
+};
 pub use prices::{IndexPriceUpdate, MarkPriceUpdate};
 pub use quote::QuoteTick;
 #[cfg(feature = "arrow")]
@@ -112,6 +117,8 @@ pub enum Data {
     OptionGreeks(OptionGreeks),
     InstrumentStatus(InstrumentStatus),
     InstrumentClose(InstrumentClose),
+    Participants(Vec<Participant>),
+    ParticipantProfiles(Vec<ParticipantProfile>),
     Custom(CustomData),
     #[cfg(feature = "defi")]
     Defi(Box<DefiData>), // This variant is significantly larger
@@ -161,6 +168,12 @@ impl TryFrom<Data> for DataFFI {
                 anyhow::bail!("Cannot convert Data::InstrumentStatus to DataFFI")
             }
             Data::InstrumentClose(x) => Ok(Self::InstrumentClose(x)),
+            Data::Participants(_) => {
+                anyhow::bail!("Cannot convert Data::Participants to DataFFI")
+            }
+            Data::ParticipantProfiles(_) => {
+                anyhow::bail!("Cannot convert Data::ParticipantProfiles to DataFFI")
+            }
             Data::Custom(_) => anyhow::bail!("Cannot convert Data::Custom to DataFFI"),
             #[cfg(feature = "defi")]
             Data::Defi(_) => anyhow::bail!("Cannot convert Data::Defi to DataFFI"),
@@ -235,6 +248,12 @@ impl<'de> Deserialize<'de> for Data {
             "InstrumentClose" => Ok(Self::InstrumentClose(
                 serde_json::from_value(value).map_err(D::Error::custom)?,
             )),
+            "Participants" => Ok(Self::Participants(
+                serde_json::from_value(value).map_err(D::Error::custom)?,
+            )),
+            "ParticipantProfiles" => Ok(Self::ParticipantProfiles(
+                serde_json::from_value(value).map_err(D::Error::custom)?,
+            )),
             _ => {
                 if let Some(data) =
                     deserialize_custom_from_json(&type_name, &value).map_err(D::Error::custom)?
@@ -263,6 +282,8 @@ impl Clone for Data {
             Self::OptionGreeks(x) => Self::OptionGreeks(*x),
             Self::InstrumentStatus(x) => Self::InstrumentStatus(*x),
             Self::InstrumentClose(x) => Self::InstrumentClose(*x),
+            Self::Participants(x) => Self::Participants(x.clone()),
+            Self::ParticipantProfiles(x) => Self::ParticipantProfiles(x.clone()),
             Self::Custom(x) => Self::Custom(x.clone()),
             #[cfg(feature = "defi")]
             Self::Defi(x) => Self::Defi(x.clone()),
@@ -285,6 +306,8 @@ impl PartialEq for Data {
             (Self::OptionGreeks(a), Self::OptionGreeks(b)) => a == b,
             (Self::InstrumentStatus(a), Self::InstrumentStatus(b)) => a == b,
             (Self::InstrumentClose(a), Self::InstrumentClose(b)) => a == b,
+            (Self::Participants(a), Self::Participants(b)) => a == b,
+            (Self::ParticipantProfiles(a), Self::ParticipantProfiles(b)) => a == b,
             (Self::Custom(a), Self::Custom(b)) => a == b,
             #[cfg(feature = "defi")]
             (Self::Defi(a), Self::Defi(b)) => a == b,
@@ -311,6 +334,8 @@ impl Serialize for Data {
             Self::OptionGreeks(x) => x.serialize(serializer),
             Self::InstrumentStatus(x) => x.serialize(serializer),
             Self::InstrumentClose(x) => x.serialize(serializer),
+            Self::Participants(x) => x.serialize(serializer),
+            Self::ParticipantProfiles(x) => x.serialize(serializer),
             Self::Custom(x) => x.serialize(serializer),
             #[cfg(feature = "defi")]
             Self::Defi(_) => Err(serde::ser::Error::custom(
@@ -358,6 +383,28 @@ impl_try_from_data!(OptionGreeks, OptionGreeks);
 impl_try_from_data!(InstrumentStatus, InstrumentStatus);
 impl_try_from_data!(InstrumentClose, InstrumentClose);
 
+impl TryFrom<Data> for Vec<Participant> {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::Participants(participants) => Ok(participants),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<Data> for Vec<ParticipantProfile> {
+    type Error = ();
+
+    fn try_from(value: Data) -> Result<Self, Self::Error> {
+        match value {
+            Data::ParticipantProfiles(profiles) => Ok(profiles),
+            _ => Err(()),
+        }
+    }
+}
+
 /// Converts a vector of `Data` items to a specific variant type.
 ///
 /// Filters and converts the data vector, keeping only items that can be
@@ -386,6 +433,7 @@ impl Data {
             Self::OptionGreeks(greeks) => greeks.instrument_id,
             Self::InstrumentStatus(status) => status.instrument_id,
             Self::InstrumentClose(close) => close.instrument_id,
+            Self::Participants(_) | Self::ParticipantProfiles(_) => InstrumentId::from("NULL.NULL"),
             Self::Custom(custom) => custom
                 .data_type
                 .identifier()
@@ -477,6 +525,8 @@ impl HasTsInit for Data {
             Self::OptionGreeks(g) => g.ts_init,
             Self::InstrumentStatus(s) => s.ts_init,
             Self::InstrumentClose(c) => c.ts_init,
+            Self::Participants(ps) => ps.first().map(|p| p.ts_init).unwrap_or_default(),
+            Self::ParticipantProfiles(ps) => ps.first().map(|p| p.ts_init).unwrap_or_default(),
             Self::Custom(c) => c.data.ts_init(),
             #[cfg(feature = "defi")]
             Self::Defi(d) => d.ts_init(),
@@ -561,6 +611,18 @@ impl From<InstrumentStatus> for Data {
 impl From<InstrumentClose> for Data {
     fn from(value: InstrumentClose) -> Self {
         Self::InstrumentClose(value)
+    }
+}
+
+impl From<Vec<Participant>> for Data {
+    fn from(value: Vec<Participant>) -> Self {
+        Self::Participants(value)
+    }
+}
+
+impl From<Vec<ParticipantProfile>> for Data {
+    fn from(value: Vec<ParticipantProfile>) -> Self {
+        Self::ParticipantProfiles(value)
     }
 }
 

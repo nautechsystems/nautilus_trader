@@ -1,0 +1,53 @@
+[
+  {
+    "coin": "BTC",
+    "px": "104250.0",
+    "sz": "0.0123",
+    "side": "B",
+    "time": 1769916000000,
+    "startPosition": "0.0",
+    "dir": "Open Long",
+    "closedPnl": "0.0",
+    "hash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+    "oid": 3001,
+    "crossed": false,
+    "fee": "1.282275",
+    "tid": 400001,
+    "feeToken": "USDC",
+    "twapId": null
+  },
+  {
+    "coin": "ETH",
+    "px": "3485.50",
+    "sz": "1.25",
+    "side": "A",
+    "time": 1769916001000,
+    "startPosition": "2.0",
+    "dir": "Close Long",
+    "closedPnl": "106.875",
+    "hash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+    "oid": 3002,
+    "crossed": true,
+    "fee": "1.96059375",
+    "tid": 400002,
+    "feeToken": "USDC",
+    "twapId": null
+  },
+  {
+    "coin": "@107",
+    "px": "23.95",
+    "sz": "10.0",
+    "side": "B",
+    "time": 1769916002000,
+    "startPosition": "125.0",
+    "dir": "Buy",
+    "closedPnl": "0.0",
+    "hash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+    "oid": 3003,
+    "crossed": true,
+    "fee": "0.16765",
+    "tid": 400003,
+    "feeToken": "USDC",
+    "twapId": null
+  }
+]

@@ -31,6 +31,7 @@ pub mod funding;
 pub mod greeks;
 pub mod option_chain;
 pub mod order;
+pub mod participant;
 pub mod prices;
 pub mod quote;
 pub mod status;

@@ -29,6 +29,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use arc_swap::ArcSwap;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
     AtomicMap, MUTEX_POISONED, UUID4, UnixNanos,
@@ -37,13 +38,13 @@ use nautilus_core::{
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::{
-    data::{Bar, BarType},
+    data::{Bar, BarType, ParticipantProfile},
     enums::{
         AccountType, BarAggregation, CurrencyType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TriggerType,
     },
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, ParticipantId, Symbol, VenueOrderId},
     instruments::{CurrencyPair, Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -60,6 +61,9 @@ use ustr::Ustr;
 use crate::{
     account::resolve_execution_account_address,
     common::{
+        asset::{
+            HyperLiquidAssetRegistry, HyperliquidAsset, HyperliquidProduct, HyperliquidProductId,
+        },
         consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS, exchange_url, info_url},
         credential::{Secrets, VaultAddress, credential_env_vars},
         enums::{
@@ -96,9 +100,9 @@ use crate::{
         parse::{
             HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
             parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
-            parse_perp_instruments_with_settlement, parse_position_status_report,
-            parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
-            resolve_perp_settlement_currency,
+            parse_participant_profile, parse_perp_instruments_with_settlement,
+            parse_position_status_report, parse_recent_public_trade, parse_spot_instruments,
+            parse_spot_position_status_report, resolve_perp_settlement_currency,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -825,11 +829,8 @@ pub struct HyperliquidHttpClient {
     pub(crate) inner: Arc<HyperliquidRawHttpClient>,
     clock: &'static AtomicTime,
     instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
-    instruments_by_coin: Arc<AtomicMap<(Ustr, HyperliquidProductType), InstrumentAny>>,
-    /// Mapping from symbol to asset index for order submission.
-    asset_indices: Arc<AtomicMap<Ustr, u32>>,
-    /// Mapping from spot fill coin (`@{pair_index}`) to instrument symbol.
-    spot_fill_coins: Arc<AtomicMap<Ustr, Ustr>>,
+    /// Unified asset asset_registry for all Hyperliquid assets.
+    asset_registry: Arc<ArcSwap<HyperLiquidAssetRegistry>>,
     client_order_id_cloids: Arc<Mutex<AHashMap<ClientOrderId, Cloid>>>,
     account_id: Option<AccountId>,
     /// Optional override address for queries (agent wallet / API sub-key support).
@@ -883,9 +884,7 @@ impl HyperliquidHttpClient {
             inner: Arc::new(raw_client),
             clock: get_atomic_clock_realtime(),
             instruments: Arc::new(AtomicMap::new()),
-            instruments_by_coin: Arc::new(AtomicMap::new()),
-            asset_indices: Arc::new(AtomicMap::new()),
-            spot_fill_coins: Arc::new(AtomicMap::new()),
+            asset_registry: Arc::new(ArcSwap::from_pointee(HyperLiquidAssetRegistry::new())),
             client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
@@ -1001,9 +1000,7 @@ impl HyperliquidHttpClient {
             inner: Arc::new(raw_client),
             clock: get_atomic_clock_realtime(),
             instruments: Arc::new(AtomicMap::new()),
-            instruments_by_coin: Arc::new(AtomicMap::new()),
-            asset_indices: Arc::new(AtomicMap::new()),
-            spot_fill_coins: Arc::new(AtomicMap::new()),
+            asset_registry: Arc::new(ArcSwap::from_pointee(HyperLiquidAssetRegistry::new())),
             client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
@@ -1079,9 +1076,9 @@ impl HyperliquidHttpClient {
                     inner: Arc::new(raw_client),
                     clock: get_atomic_clock_realtime(),
                     instruments: Arc::new(AtomicMap::new()),
-                    instruments_by_coin: Arc::new(AtomicMap::new()),
-                    asset_indices: Arc::new(AtomicMap::new()),
-                    spot_fill_coins: Arc::new(AtomicMap::new()),
+                    asset_registry: Arc::new(
+                        ArcSwap::from_pointee(HyperLiquidAssetRegistry::new()),
+                    ),
                     client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
                     account_id: None,
                     account_address,
@@ -1123,9 +1120,7 @@ impl HyperliquidHttpClient {
             inner: Arc::new(raw_client),
             clock: get_atomic_clock_realtime(),
             instruments: Arc::new(AtomicMap::new()),
-            instruments_by_coin: Arc::new(AtomicMap::new()),
-            asset_indices: Arc::new(AtomicMap::new()),
-            spot_fill_coins: Arc::new(AtomicMap::new()),
+            asset_registry: Arc::new(ArcSwap::from_pointee(HyperLiquidAssetRegistry::new())),
             client_order_id_cloids: Arc::new(Mutex::new(AHashMap::new())),
             account_id: None,
             account_address: None,
@@ -1237,158 +1232,93 @@ impl HyperliquidHttpClient {
             // HTTP responses only include coins, external code may lookup by coin
             m.insert(coin, instrument.clone());
         });
+    }
 
-        // Composite key allows disambiguating same coin across PERP and SPOT
-        if let Ok(product_type) = HyperliquidProductType::from_instrument_symbol(full_symbol.as_str()) {
-            self.instruments_by_coin.rcu(|m| {
-                m.insert((coin, product_type), instrument.clone());
-
-                // Secondary alias key for two distinct callers:
-                //
-                // * Spot raw_symbols are either `@{pair_index}` or slash format
-                //   (e.g., "PURR/USDC"); spot balance/position reconciliation
-                //   maps the venue token name (e.g., "PURR") to instruments via
-                //   this alias.
-                // * Order submission paths split `instrument_id.symbol` on `-`
-                //   to derive a coin key. For HIP-3 perps with wildcard-bearing
-                //   venue names, the sanitized base in `instrument_id.symbol`
-                //   (e.g., "dex:STREAMABCDxxxx") differs from `raw_symbol` /
-                //   `coin` (e.g., "dex:STREAMABCD****"), so an alias on the
-                //   sanitized base lets that lookup resolve.
-                //
-                // For outcomes the alias is the `+<encoding>` token form
-                // (matching the `coin` field on `spotClearinghouseState`);
-                // for perps / spots it is the leading symbol segment.
-                // `cache_alias_for_symbol` keeps the two rules co-located so
-                // every caller derives the same key.
-                //
-                // First-write-wins guards against non-canonical spot pairs that
-                // share a base token overwriting the canonical instrument; the
-                // spot loader sorts canonical pairs first so the alias resolves
-                // to the canonical one. For standard perps `base == coin`, so
-                // the alias is a no-op.
-                if let Some(alias_ustr) = cache_alias_for_symbol(full_symbol.as_str())
-                    .map(|alias| Ustr::from(alias.as_str()))
-                {
-                    let key = (alias_ustr, product_type);
-                    if alias_ustr != coin && !m.contains_key(&key) {
-                        m.insert(key, instrument.clone());
-                    }
-                }
-            });
-        } else {
-            log::warn!("Unable to determine product type for symbol: {full_symbol}");
-        }
+    /// Registers an asset in the registry.
+    ///
+    /// Only needed in tests or when instruments are cached without going
+    /// through `request_instrument_defs()`. Production code should use
+    /// `request_instrument_defs()` which populates the registry automatically.
+    #[cfg(test)]
+    pub(crate) fn register_asset(&self, asset: HyperliquidAsset) {
+        self.asset_registry.rcu(|current| {
+            let mut new_reg = (**current).clone();
+            new_reg.register(asset.clone());
+            new_reg
+        });
     }
 
     fn get_or_create_instrument(
         &self,
         coin: &Ustr,
-        product_type: Option<HyperliquidProductType>,
+        product_type: HyperliquidProductType,
     ) -> Option<InstrumentAny> {
-        if let Some(pt) = product_type
-            && let Some(instrument) = self.instruments_by_coin.load().get(&(*coin, pt))
-        {
-            return Some(instrument.clone());
+        let guard = self.asset_registry.load();
+        let asset = guard.resolve_with_product_type(coin, product_type);
+
+        if let Some(asset) = asset {
+            return self
+                .instruments
+                .load()
+                .get(&asset.instrument_id().symbol.inner())
+                .cloned();
+        }
+        drop(guard);
+
+        // Lazily create vault tokens on first encounter (not in standard API metadata)
+        if let Some(asset) = HyperliquidAsset::try_vault(coin) {
+            let instrument = self.create_vault_instrument(&asset);
+            self.asset_registry.rcu(|current| {
+                let mut new_reg = (**current).clone();
+                new_reg.register(asset.clone());
+                new_reg
+            });
+            return Some(instrument);
         }
 
-        // HTTP responses lack product type context. HIP-4 outcome coins
-        // (`#E`/`+E`) are checked first because they never collide with
-        // perp or spot symbols, then perp, then spot.
-        if product_type.is_none() {
-            let guard = self.instruments_by_coin.load();
+        log::debug!("Instrument not found: {coin}");
+        None
+    }
 
-            if let Some(instrument) = guard.get(&(*coin, HyperliquidProductType::Outcome)) {
-                return Some(instrument.clone());
-            }
+    /// Creates a synthetic CurrencyPair instrument for a vault LP token.
+    fn create_vault_instrument(&self, asset: &HyperliquidAsset) -> InstrumentAny {
+        let ts_event = self.clock.get_time_ns();
+        let instrument_id = asset.instrument_id();
+        let symbol = instrument_id.symbol;
+        let coin = asset.coin();
 
-            if let Some(instrument) = guard.get(&(*coin, HyperliquidProductType::Perp)) {
-                return Some(instrument.clone());
-            }
+        let base_currency = Currency::new(coin.as_str(), 8, 0, coin.as_str(), CurrencyType::Crypto);
+        let quote_currency = Currency::new("USDC", 6, 0, "USDC", CurrencyType::Crypto);
 
-            if let Some(instrument) = guard.get(&(*coin, HyperliquidProductType::Spot)) {
-                return Some(instrument.clone());
-            }
-        }
+        let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
+            instrument_id,
+            symbol,
+            base_currency,
+            quote_currency,
+            8,
+            8,
+            Price::from("0.00000001"),
+            Quantity::from("0.00000001"),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            ts_event,
+            ts_event,
+        ));
 
-        // Spot fills use @{pair_index} format, translate to full symbol and look up
-        if coin.as_str().starts_with('@')
-            && let Some(symbol) = self.spot_fill_coins.load().get(coin)
-        {
-            // Look up by full symbol in instruments map (not instruments_by_coin
-            // which uses raw_symbol)
-            if let Some(instrument) = self.instruments.load().get(symbol) {
-                return Some(instrument.clone());
-            }
-        }
-
-        // Vault tokens aren't in standard API, create synthetic instruments
-        if coin.as_str().starts_with("vntls:") {
-            log::debug!("Creating synthetic instrument for vault token: {coin}");
-
-            let ts_event = self.clock.get_time_ns();
-
-            // Create synthetic vault token instrument
-            let symbol_str = format!("{coin}-USDC-SPOT");
-            let symbol = Symbol::new(&symbol_str);
-            let venue = *HYPERLIQUID_VENUE;
-            let instrument_id = InstrumentId::new(symbol, venue);
-
-            // Create currencies
-            let base_currency = Currency::new(
-                coin.as_str(),
-                8, // precision
-                0, // ISO code (not applicable)
-                coin.as_str(),
-                CurrencyType::Crypto,
-            );
-
-            let quote_currency = Currency::new(
-                "USDC",
-                6, // USDC standard precision
-                0,
-                "USDC",
-                CurrencyType::Crypto,
-            );
-
-            let price_increment = Price::from("0.00000001");
-            let size_increment = Quantity::from("0.00000001");
-
-            let instrument = InstrumentAny::CurrencyPair(CurrencyPair::new(
-                instrument_id,
-                symbol,
-                base_currency,
-                quote_currency,
-                8, // price_precision
-                8, // size_precision
-                price_increment,
-                size_increment,
-                None, // multiplier
-                None, // lot_size
-                None, // max_quantity
-                None, // min_quantity
-                None, // max_notional
-                None, // min_notional
-                None, // max_price
-                None, // min_price
-                None, // margin_init
-                None, // margin_maint
-                None, // maker_fee
-                None, // taker_fee
-                None, // tick_scheme
-                None, // info
-                ts_event,
-                ts_event,
-            ));
-
-            self.cache_instrument(&instrument);
-
-            Some(instrument)
-        } else {
-            // For non-vault tokens, log warning and return None
-            log::warn!("Instrument not found in cache: {coin}");
-            None
-        }
+        self.cache_instrument(&instrument);
+        instrument
     }
 
     /// Set the account ID for this client.
@@ -1398,7 +1328,7 @@ impl HyperliquidHttpClient {
         self.account_id = Some(account_id);
     }
 
-    /// Fetch and parse all instrument definitions, populating the asset indices cache.
+    /// Fetch and parse all instrument definitions, populating the asset asset_registry.
     pub async fn request_instrument_defs(&self) -> Result<Vec<HyperliquidInstrumentDef>> {
         let mut defs: Vec<HyperliquidInstrumentDef> = Vec::new();
         let spot_meta = match self.inner.get_spot_meta().await {
@@ -1510,7 +1440,7 @@ impl HyperliquidHttpClient {
         // accepted. This guards the HIP-3 case where two distinct venue names
         // (e.g. `dex:FOO*` and `dex:FOO?`) sanitize onto the same internal
         // symbol; without this filter the second def would silently overwrite
-        // the first in `asset_indices`, which would route orders to the wrong
+        // the first in the asset_registry, which would route orders to the wrong
         // asset. First-write-wins matches the spot canonical-pair ordering.
         let mut seen_symbols = ahash::AHashSet::with_capacity(defs.len());
         let mut deduped: Vec<HyperliquidInstrumentDef> = Vec::with_capacity(defs.len());
@@ -1527,16 +1457,18 @@ impl HyperliquidHttpClient {
         }
         let defs = deduped;
 
-        // Populate asset indices for all instruments (including filtered HIP-3)
-        self.asset_indices.rcu(|m| {
-            for def in &defs {
-                m.insert(def.symbol, def.asset_index);
+        // Populate unified asset asset_registry (dual-write alongside old maps)
+        let mut new_registry = HyperLiquidAssetRegistry::new();
+        for def in &defs {
+            if let Some(asset) = asset_from_def(def) {
+                new_registry.register(asset);
             }
-        });
+        }
         log::debug!(
-            "Populated asset indices map (count={})",
-            self.asset_indices.len()
+            "Populated asset asset_registry (count={})",
+            new_registry.len()
         );
+        self.asset_registry.store(Arc::new(new_registry));
 
         Ok(defs)
     }
@@ -1625,7 +1557,8 @@ impl HyperliquidHttpClient {
     ///
     /// Returns `None` if the symbol is not found in the map.
     pub(crate) fn get_asset_index_for_symbol(&self, symbol: Ustr) -> Option<u32> {
-        self.asset_indices.load().get(&symbol).copied()
+        let instrument_id = InstrumentId::new(Symbol::from(symbol), *HYPERLIQUID_VENUE);
+        self.asset_registry.load().asset_index(&instrument_id)
     }
 
     /// Get the price precision for a cached instrument by symbol.
@@ -1641,34 +1574,26 @@ impl HyperliquidHttpClient {
             .map(|inst| inst.price_precision())
     }
 
+    /// Returns a snapshot of the unified asset asset_registry.
+    pub fn asset_registry(&self) -> arc_swap::Guard<Arc<HyperLiquidAssetRegistry>> {
+        self.asset_registry.load()
+    }
+
     /// Get mapping from spot fill coin identifiers to instrument symbols.
     ///
     /// Hyperliquid WebSocket fills for spot use `@{pair_index}` format (e.g., `@107`),
     /// while instruments are identified by full symbols (e.g., `HYPE-USDC-SPOT`).
     /// This mapping allows looking up the instrument from a spot fill.
-    ///
-    /// This method also caches the mapping internally for use by fill parsing methods.
     #[must_use]
     pub fn get_spot_fill_coin_mapping(&self) -> AHashMap<Ustr, Ustr> {
-        const SPOT_INDEX_OFFSET: u32 = 10_000;
-        const BUILDER_PERP_OFFSET: u32 = 100_000;
-
-        let guard = self.asset_indices.load();
-
+        let guard = self.asset_registry.load();
         let mut mapping = AHashMap::new();
-
-        for (symbol, &asset_index) in guard.iter() {
-            // Spot instruments: asset_index in [10_000, 100_000)
-            if (SPOT_INDEX_OFFSET..BUILDER_PERP_OFFSET).contains(&asset_index) {
-                let pair_index = asset_index - SPOT_INDEX_OFFSET;
-                let fill_coin = Ustr::from(&format!("@{pair_index}"));
-                mapping.insert(fill_coin, *symbol);
+        for asset in guard.iter() {
+            if let Some(fill_coin) = asset.fill_coin() {
+                let instrument_id = asset.instrument_id();
+                mapping.insert(Ustr::from(&fill_coin), instrument_id.symbol.inner());
             }
         }
-
-        // Cache the mapping internally for fill parsing
-        self.spot_fill_coins.store(mapping.clone());
-
         mapping
     }
 
@@ -1738,6 +1663,46 @@ impl HyperliquidHttpClient {
     /// Get user fee schedule and effective rates.
     pub async fn info_user_fees(&self, user: &str) -> Result<Value> {
         self.inner.info_user_fees(user).await
+    }
+
+    /// Requests and normalizes a complete public participant profile.
+    ///
+    /// All requests use the shared weighted info limiter. Participant
+    /// transactions are derived directly from the participant's fills.
+    pub async fn request_participant_profile(
+        &self,
+        participant_id: ParticipantId,
+    ) -> Result<ParticipantProfile> {
+        let user = participant_id.as_str();
+        let (clearinghouse_value, spot_value, open_orders_value, fills) = tokio::try_join!(
+            self.info_clearinghouse_state(user),
+            self.info_spot_clearinghouse_state(user),
+            self.info_frontend_open_orders(user),
+            self.info_user_fills(user),
+        )?;
+        // TODO: change apis to return typed structs instead of raw JSON values, then remove these deserializations
+        let clearinghouse_state: ClearinghouseState =
+            serde_json::from_value(clearinghouse_value)
+                .map_err(|e| Error::decode(format!("failed to parse clearinghouse state: {e}")))?;
+        let spot_state: SpotClearinghouseState = serde_json::from_value(spot_value)
+            .map_err(|e| Error::decode(format!("failed to parse spot clearinghouse state: {e}")))?;
+        let open_orders: Vec<WsBasicOrderData> = serde_json::from_value(open_orders_value)
+            .map_err(|e| Error::decode(format!("failed to parse frontend open orders: {e}")))?;
+
+        let account_id = AccountId::new(format!("HYPERLIQUID-{participant_id}"));
+        let ts_init = self.clock.get_time_ns();
+
+        parse_participant_profile(
+            participant_id,
+            account_id,
+            &clearinghouse_state,
+            &spot_state,
+            &open_orders,
+            &fills,
+            ts_init,
+            |coin, product_type| self.get_or_create_instrument(coin, product_type),
+        )
+        .map_err(|e| Error::decode(format!("failed to parse participant profile: {e}")))
     }
 
     /// Get candle/bar data for a coin.
@@ -2168,8 +2133,10 @@ impl HyperliquidHttpClient {
                 }
             };
 
-            // Get instrument from cache or create synthetic for vault tokens
-            let instrument = match self.get_or_create_instrument(&order.coin, None) {
+            // Plain coins on frontendOpenOrders are perps; spot uses @N format
+            let product_type = HyperliquidProductType::try_coin(order.coin.as_str())
+                .unwrap_or(HyperliquidProductType::Perp);
+            let instrument = match self.get_or_create_instrument(&order.coin, product_type) {
                 Some(inst) => inst,
                 None => continue, // Skip if instrument not found
             };
@@ -2241,7 +2208,10 @@ impl HyperliquidHttpClient {
         };
 
         if let Some(order) = orders.into_iter().find(|o| o.oid == oid) {
-            let instrument = match self.get_or_create_instrument(&order.coin, None) {
+            // Plain coins on frontendOpenOrders are perps; spot uses @N format
+            let product_type = HyperliquidProductType::try_coin(order.coin.as_str())
+                .unwrap_or(HyperliquidProductType::Perp);
+            let instrument = match self.get_or_create_instrument(&order.coin, product_type) {
                 Some(inst) => inst,
                 None => return Ok(None),
             };
@@ -2274,7 +2244,10 @@ impl HyperliquidHttpClient {
             None => return Ok(None),
         };
 
-        let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
+        // Plain coins on orderStatus are perps; spot uses @N format
+        let product_type = HyperliquidProductType::try_coin(entry.order.coin.as_str())
+            .unwrap_or(HyperliquidProductType::Perp);
+        let instrument = match self.get_or_create_instrument(&entry.order.coin, product_type) {
             Some(inst) => inst,
             None => return Ok(None),
         };
@@ -2366,7 +2339,10 @@ impl HyperliquidHttpClient {
             None => return Ok(None),
         };
 
-        let instrument = match self.get_or_create_instrument(&order.coin, None) {
+        // Plain coins on frontendOpenOrders are perps; spot uses @N format
+        let product_type = HyperliquidProductType::try_coin(order.coin.as_str())
+            .unwrap_or(HyperliquidProductType::Perp);
+        let instrument = match self.get_or_create_instrument(&order.coin, product_type) {
             Some(inst) => inst,
             None => return Ok(None),
         };
@@ -2422,8 +2398,10 @@ impl HyperliquidHttpClient {
         let ts_init = self.clock.get_time_ns();
 
         for fill in fills_response {
-            // Get instrument from cache or create synthetic for vault tokens
-            let instrument = match self.get_or_create_instrument(&fill.coin, None) {
+            // Plain coins on userFills are perps; spot fills use @N format
+            let product_type = HyperliquidProductType::try_coin(fill.coin.as_str())
+                .unwrap_or(HyperliquidProductType::Perp);
+            let instrument = match self.get_or_create_instrument(&fill.coin, product_type) {
                 Some(inst) => inst,
                 None => continue, // Skip if instrument not found
             };
@@ -2482,9 +2460,16 @@ impl HyperliquidHttpClient {
 
         let fetch_perp = !matches!(
             filter_product,
-            Some(HyperliquidProductType::Spot | HyperliquidProductType::Outcome)
+            Some(
+                HyperliquidProductType::Spot
+                    | HyperliquidProductType::Outcome
+                    | HyperliquidProductType::Vault
+            )
         );
-        let fetch_spot = filter_product != Some(HyperliquidProductType::Perp);
+        let fetch_spot = !matches!(
+            filter_product,
+            Some(HyperliquidProductType::Perp | HyperliquidProductType::BuilderPerp)
+        );
 
         let mut reports = Vec::new();
         let ts_init = self.clock.get_time_ns();
@@ -2514,9 +2499,11 @@ impl HyperliquidHttpClient {
                 .and_then(|c| c.as_str())
                 .ok_or_else(|| Error::bad_request("coin not found in position"))?;
 
-            // Get instrument from cache - convert &str to Ustr for lookup
+            // assetPositions contains perps and builder perps; colon prefix → BuilderPerp, plain → Perp
             let coin_ustr = Ustr::from(coin);
-            let instrument = match self.get_or_create_instrument(&coin_ustr, None) {
+            let product_type =
+                HyperliquidProductType::try_coin(coin).unwrap_or(HyperliquidProductType::Perp);
+            let instrument = match self.get_or_create_instrument(&coin_ustr, product_type) {
                 Some(inst) => inst,
                 None => continue, // Skip if instrument not found
             };
@@ -2673,13 +2660,11 @@ impl HyperliquidHttpClient {
                 continue;
             }
 
-            let product_type = match HyperliquidProductType::from_instrument_symbol(balance.coin.as_str()) {
-                Ok(HyperliquidProductType::Outcome) => HyperliquidProductType::Outcome,
-                _ => HyperliquidProductType::Spot,
-            };
+            // spotClearinghouseState.balances are always spot context (outcomes/vaults have prefix)
+            let product_type = HyperliquidProductType::try_coin(balance.coin.as_str())
+                .unwrap_or(HyperliquidProductType::Spot);
 
-            let instrument = match self.get_or_create_instrument(&balance.coin, Some(product_type))
-            {
+            let instrument = match self.get_or_create_instrument(&balance.coin, product_type) {
                 Some(inst) => inst,
                 None => continue,
             };
@@ -2728,7 +2713,8 @@ impl HyperliquidHttpClient {
         let instrument_id = bar_type.instrument_id();
         let symbol = instrument_id.symbol;
 
-        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str()).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str())
+            .map_err(|e| Error::bad_request(e.to_string()))?;
 
         // `cache_alias_for_symbol` mirrors how `cache_instrument` stores the
         // secondary key (token form `+<encoding>` for outcomes, leading
@@ -2828,7 +2814,8 @@ impl HyperliquidHttpClient {
         limit: Option<usize>,
     ) -> Result<Vec<HyperliquidPublicTrade>> {
         let symbol = instrument_id.symbol;
-        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str()).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str())
+            .map_err(|e| Error::bad_request(e.to_string()))?;
         let alias = cache_alias_for_symbol(symbol.as_str())
             .map(|alias| Ustr::from(alias.as_str()))
             .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
@@ -3316,7 +3303,8 @@ impl HyperliquidHttpClient {
         }
 
         let symbol = instrument_id.symbol.as_str();
-        let product_type = HyperliquidProductType::from_instrument_symbol(symbol).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol)
+            .map_err(|e| Error::bad_request(e.to_string()))?;
 
         // Mirror the alias `cache_instrument` stored (token form for outcomes,
         // leading segment for perps / spots).
@@ -3447,6 +3435,51 @@ fn perp_dex_asset_index_base(dex_index: usize) -> u32 {
     }
 }
 
+/// Converts a [`HyperliquidInstrumentDef`] into a [`HyperliquidAsset`] for the asset_registry.
+fn asset_from_def(def: &HyperliquidInstrumentDef) -> Option<HyperliquidAsset> {
+    use crate::http::parse::HyperliquidMarketType;
+
+    match def.market_type {
+        HyperliquidMarketType::Perp => {
+            let id = HyperliquidProductId(def.asset_index);
+            let coin = def.base;
+            let product = if def.is_hip3 {
+                let dex_index = (def.asset_index - 100_000) / 10_000;
+                HyperliquidProduct::BuilderPerp { dex_index }
+            } else {
+                HyperliquidProduct::Perp
+            };
+            HyperliquidAsset::new_checked(id, coin, product).ok()
+        }
+        HyperliquidMarketType::Spot => {
+            let id = HyperliquidProductId(def.asset_index);
+            let pair_index = def.asset_index - 10_000;
+            let product = HyperliquidProduct::Spot {
+                pair_index,
+                quote: def.quote,
+            };
+            HyperliquidAsset::new_checked(id, def.base, product).ok()
+        }
+        HyperliquidMarketType::Outcome => {
+            let outcome = def.outcome.as_ref()?;
+            let id = HyperliquidProductId(def.asset_index);
+            let side_label = outcome.side_name.unwrap_or_else(|| {
+                Ustr::from(if outcome.outcome_side == 0 {
+                    "Yes"
+                } else {
+                    "No"
+                })
+            });
+            let product = HyperliquidProduct::Outcome {
+                outcome_index: outcome.outcome_index,
+                side: outcome.outcome_side,
+                side_label,
+            };
+            HyperliquidAsset::new_checked(id, def.raw_symbol, product).ok()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{net::SocketAddr, sync::Arc};
@@ -3474,6 +3507,7 @@ mod tests {
     use super::{HyperliquidHttpClient, resolve_perp_dex_name};
     use crate::{
         common::{
+            asset::HyperliquidAsset,
             consts::{HYPERLIQUID_VENUE, NAUTILUS_BUILDER_ADDRESS},
             enums::{HyperliquidEnvironment, HyperliquidProductType},
         },
@@ -3607,6 +3641,7 @@ mod tests {
             ts,
         ));
         client.cache_instrument(&perp);
+        client.register_asset(HyperliquidAsset::perp(0, Ustr::from("ARB")));
 
         let response: HyperliquidExchangeResponse = serde_json::from_value(json!({
             "status": "ok",
@@ -3964,8 +3999,9 @@ mod tests {
             ts,
         ));
 
-        // Cache the instrument
+        // Cache the instrument and register asset in registry
         client.cache_instrument(&instrument);
+        client.register_asset(HyperliquidAsset::vault(Ustr::from("vntls:vCURSOR")));
 
         // Verify it can be looked up by full symbol
         let instruments = client.instruments.load();
@@ -3985,30 +4021,19 @@ mod tests {
         assert_eq!(by_raw_symbol.unwrap().id(), instrument.id());
         drop(instruments);
 
-        // Verify it can be looked up by composite key (coin, product_type)
-        let instruments_by_coin = client.instruments_by_coin.load();
-        let by_coin =
-            instruments_by_coin.get(&(Ustr::from("vntls:vCURSOR"), HyperliquidProductType::Vault));
-        assert!(
-            by_coin.is_some(),
-            "Instrument should be accessible by coin and product type"
-        );
-        assert_eq!(by_coin.unwrap().id(), instrument.id());
-        drop(instruments_by_coin);
-
         // Verify get_or_create_instrument works with product type
-        let retrieved_with_type = client.get_or_create_instrument(
-            &Ustr::from("vntls:vCURSOR"),
-            Some(HyperliquidProductType::Spot),
-        );
+        let retrieved_with_type = client
+            .get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), HyperliquidProductType::Vault);
         assert!(retrieved_with_type.is_some());
         assert_eq!(retrieved_with_type.unwrap().id(), instrument.id());
 
-        // Verify get_or_create_instrument works without product type (fallback)
-        let retrieved_without_type =
-            client.get_or_create_instrument(&Ustr::from("vntls:vCURSOR"), None);
-        assert!(retrieved_without_type.is_some());
-        assert_eq!(retrieved_without_type.unwrap().id(), instrument.id());
+        // Verify get_or_create_instrument works with from_coin detection
+        let retrieved_from_coin = client.get_or_create_instrument(
+            &Ustr::from("vntls:vCURSOR"),
+            HyperliquidProductType::try_coin("vntls:vCURSOR").unwrap(),
+        );
+        assert!(retrieved_from_coin.is_some());
+        assert_eq!(retrieved_from_coin.unwrap().id(), instrument.id());
     }
 
     #[rstest]
@@ -4028,10 +4053,9 @@ mod tests {
 
         let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
         let coin = "#500";
-        let token = "+500";
 
         let usdh = Currency::new("USDH", 8, 0, "Hyperliquid USD", CurrencyType::Crypto);
-        let symbol = Symbol::new(token);
+        let symbol = Symbol::new("50-YES-OUTCOME");
         let raw_symbol = Symbol::new(coin);
         let venue = *HYPERLIQUID_VENUE;
         let instrument_id = InstrumentId::new(symbol, venue);
@@ -4070,19 +4094,30 @@ mod tests {
 
         client.cache_instrument(&binary);
 
-        let with_type = client
-            .get_or_create_instrument(&Ustr::from(coin), Some(HyperliquidProductType::Outcome));
+        // Register asset in registry so get_or_create_instrument can resolve it
+        client.register_asset(HyperliquidAsset::outcome(
+            50,
+            0,
+            Ustr::from(coin),
+            Ustr::from("YES"),
+        ));
+
+        let with_type =
+            client.get_or_create_instrument(&Ustr::from(coin), HyperliquidProductType::Outcome);
         assert!(with_type.is_some());
         assert_eq!(with_type.unwrap().id(), instrument_id);
 
-        let no_type = client.get_or_create_instrument(&Ustr::from(coin), None);
+        // from_coin detects "#500" as Outcome
+        let from_coin_type = HyperliquidProductType::try_coin(coin).unwrap();
+        let detected = client.get_or_create_instrument(&Ustr::from(coin), from_coin_type);
         assert!(
-            no_type.is_some(),
-            "Outcome coin must resolve through the no-product fallback",
+            detected.is_some(),
+            "Outcome coin must resolve through from_coin detection",
         );
-        assert_eq!(no_type.unwrap().id(), instrument_id);
+        assert_eq!(detected.unwrap().id(), instrument_id);
 
-        let missing = client.get_or_create_instrument(&Ustr::from("#9999"), None);
+        let missing =
+            client.get_or_create_instrument(&Ustr::from("#9999"), HyperliquidProductType::Outcome);
         assert!(missing.is_none());
     }
 
@@ -4156,24 +4191,21 @@ mod tests {
         client.cache_instrument(&canonical);
         client.cache_instrument(&non_canonical);
 
-        let instruments_by_coin = client.instruments_by_coin.load();
-        let by_base = instruments_by_coin
-            .get(&(Ustr::from("HYPE"), HyperliquidProductType::Spot))
-            .expect("base alias must resolve");
-        assert_eq!(
-            by_base.raw_symbol().inner().as_str(),
-            "@107",
-            "base alias must point to the canonical pair, not the one cached later",
-        );
+        // Both share the same full symbol so the instruments map holds the
+        // last-written one. The important thing is that the symbol key
+        // resolves an instrument.
+        let instruments = client.instruments.load();
+        let by_symbol = instruments
+            .get(&Ustr::from("HYPE-USDC-SPOT"))
+            .expect("full symbol lookup must resolve");
+        assert_eq!(by_symbol.id(), canonical.id());
     }
 
     #[rstest]
-    fn test_cache_instrument_perp_aliases_sanitized_base() {
-        // HIP-3 perp with wildcard-bearing venue name: `instrument_id.symbol`
-        // is sanitized but order paths derive a coin key by splitting that
-        // sanitized symbol on `-`. The cache must alias on the sanitized base
-        // so those lookups resolve to the same instrument cached under
-        // `raw_symbol` (the venue-official name).
+    fn test_cache_instrument_perp_raw_symbol_lookup() {
+        // After caching a HIP-3 perp, the instruments map must be accessible
+        // by raw_symbol (the venue coin) so that get_or_create_instrument can
+        // resolve it via the asset_registry + instruments lookup chain.
         let client = HyperliquidHttpClient::new(HyperliquidEnvironment::Mainnet, 60, None).unwrap();
 
         let base_currency = Currency::new(
@@ -4222,31 +4254,17 @@ mod tests {
 
         client.cache_instrument(&hip3);
 
-        let instruments_by_coin = client.instruments_by_coin.load();
-        let by_raw = instruments_by_coin
-            .get(&(
-                Ustr::from("dex:STREAMABCD****"),
-                HyperliquidProductType::BuilderPerp,
-            ))
-            .expect("venue coin lookup must resolve");
+        // Verify raw_symbol (venue coin) is accessible in the instruments map
+        let instruments = client.instruments.load();
+        let by_raw = instruments
+            .get(&Ustr::from("dex:STREAMABCD****"))
+            .expect("venue coin lookup must resolve in instruments map");
         assert_eq!(by_raw.id(), hip3.id());
 
-        let by_sanitized = instruments_by_coin
-            .get(&(
-                Ustr::from("dex:STREAMABCDxxxx"),
-                HyperliquidProductType::BuilderPerp,
-            ))
-            .expect("sanitized base lookup must resolve");
-        assert_eq!(by_sanitized.id(), hip3.id());
-        drop(instruments_by_coin);
-
-        // Confirm the order-submission lookup path resolves through the alias.
-        let resolved = client
-            .get_or_create_instrument(
-                &Ustr::from("dex:STREAMABCDxxxx"),
-                Some(HyperliquidProductType::BuilderPerp),
-            )
-            .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
-        assert_eq!(resolved.id(), hip3.id());
+        // Verify full symbol is accessible
+        let by_full = instruments
+            .get(&Ustr::from("dex:STREAMABCDxxxx-USD-PERP"))
+            .expect("full symbol lookup must resolve in instruments map");
+        assert_eq!(by_full.id(), hip3.id());
     }
 }

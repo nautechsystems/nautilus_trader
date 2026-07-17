@@ -76,10 +76,11 @@ use nautilus_common::{
         DataResponse, ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars,
         RequestCommand, RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades,
         SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+        SubscribeCommand, SubscribeOptionChain, SubscribeParticipantProfiles, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
         self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -99,7 +100,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, Data, DataType, FundingRateUpdate, HasTsInit, IndexPriceUpdate,
         InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth10, Participant, ParticipantProfile, QuoteTick, TradeTick,
         option_chain::{OptionGreeks, StrikeRange},
     },
     enums::{
@@ -174,6 +175,7 @@ pub struct DataEngine {
     continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
     continuous_future_subscriptions: AHashMap<BarType, ContinuousFutureSubscriptionState>,
     continuous_future_roller: Option<Rc<ContinuousFutureRoller>>,
+    profile_refresher: Option<Rc<ProfileRefresher>>,
     spread_quote_aggregators: AHashMap<InstrumentId, Rc<RefCell<SpreadQuoteAggregator>>>,
     spread_quote_handlers: AHashMap<InstrumentId, Vec<(InstrumentId, TypedHandler<QuoteTick>)>>,
     option_chain_managers: AHashMap<OptionSeriesId, Rc<RefCell<OptionChainManager>>>,
@@ -257,6 +259,7 @@ impl DataEngine {
             continuous_future_requests: AHashMap::new(),
             continuous_future_subscriptions: AHashMap::new(),
             continuous_future_roller: None,
+            profile_refresher: None,
             spread_quote_aggregators: AHashMap::new(),
             spread_quote_handlers: AHashMap::new(),
             option_chain_managers: AHashMap::new(),
@@ -292,6 +295,7 @@ impl DataEngine {
         let weak = WeakCell::from(Rc::downgrade(engine));
         engine.borrow_mut().continuous_future_roller =
             Some(Rc::new(ContinuousFutureRoller::new(engine)));
+        engine.borrow_mut().profile_refresher = Some(Rc::new(ProfileRefresher::new(engine)));
 
         let weak1 = weak.clone();
         msgbus::register_data_command_endpoint(
@@ -570,6 +574,8 @@ impl DataEngine {
                 .borrow_mut()
                 .start_timer(Some(aggregator.clone()));
         }
+
+        self.schedule_profile_refresh();
     }
 
     /// Stops all registered data clients and bar aggregator timers.
@@ -587,6 +593,8 @@ impl DataEngine {
         for aggregator in self.spread_quote_aggregators.values() {
             aggregator.borrow_mut().stop_timer();
         }
+
+        self.cancel_profile_refresh();
     }
 
     /// Resets all registered data clients and clears engine state.
@@ -1777,6 +1785,8 @@ impl DataEngine {
             }
             Data::InstrumentClose(close) => self.handle_instrument_close(close),
             Data::Custom(custom) => self.handle_custom_data(&custom),
+            Data::Participants(participants) => self.handle_participants(participants),
+            Data::ParticipantProfiles(profiles) => self.handle_participant_profiles(profiles),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
@@ -1834,6 +1844,8 @@ impl DataEngine {
             Data::InstrumentStatus(status) => self.handle_instrument_status_pipeline(status),
             Data::InstrumentClose(close) => self.handle_instrument_close_pipeline(close),
             Data::Custom(custom) => self.handle_custom_data_pipeline(&custom),
+            Data::Participants(participants) => self.handle_participants(participants),
+            Data::ParticipantProfiles(profiles) => self.handle_participant_profiles(profiles),
             #[cfg(feature = "defi")]
             Data::Defi(_) => unreachable!("handled before market data dispatch"),
         }
@@ -2783,6 +2795,43 @@ impl DataEngine {
         log::debug!("Processing custom data: {}", custom.data.type_name());
         let topic = switchboard::get_custom_topic(&custom.data_type);
         msgbus::publish_any(topic, custom);
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn handle_participants(&self, participants: Vec<Participant>) {
+        if let Err(e) = self.cache.borrow_mut().upsert_participants(&participants) {
+            log::error!("Failed to persist participants: {e}");
+        }
+
+        // Publish to MessageBus so subscribed actors receive on_participants
+        if let Some(first) = participants.first() {
+            // log::info!(
+            //     "Publishing {} participants to MessageBus for venue {}",
+            //     participants.len(),
+            //     first.venue
+            // );
+            let topic = switchboard::get_participants_topic(first.venue);
+            msgbus::publish_participants(topic, &participants);
+        }
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn handle_participant_profiles(&self, profiles: Vec<ParticipantProfile>) {
+        if let Err(e) = self
+            .cache
+            .borrow_mut()
+            .upsert_participant_profiles(&profiles)
+        {
+            log::error!("Failed to persist participant profiles: {e}");
+        }
+
+        // Publish to MessageBus so subscribed actors receive on_participant_profiles
+        if let Some(first) = profiles.first()
+            && let Some(participant) = self.cache.borrow().participant(&first.participant_id)
+        {
+            let topic = switchboard::get_participant_profiles_topic(participant.venue);
+            msgbus::publish_participant_profiles(topic, &profiles);
+        }
     }
 
     fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
@@ -3908,6 +3957,110 @@ impl DataEngine {
             .expect(FAILED);
 
         self.book_snapshotters.insert(interval_ms, snapshotter);
+    }
+
+    fn schedule_profile_refresh(&self) {
+        let Some(interval_ms) = self.config.profile_refresh_interval_ms else {
+            return;
+        };
+        if interval_ms == 0 {
+            return;
+        }
+
+        let interval_ns = interval_ms * 1_000_000;
+        let now_ns = self.clock.borrow().timestamp_ns().as_u64();
+        let start_time_ns = now_ns + interval_ns;
+
+        let Some(refresher) = self.profile_refresher.clone() else {
+            log::error!("Cannot schedule profile refresh: refresher not initialized");
+            return;
+        };
+
+        let timer_name = "ProfileRefreshScheduler";
+        let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| refresher.on_tick(event));
+        let callback = TimeEventCallback::from(callback_fn);
+
+        self.clock
+            .borrow_mut()
+            .set_timer_ns(
+                timer_name,
+                interval_ns,
+                Some(start_time_ns.into()),
+                None,
+                Some(callback),
+                None,
+                None,
+            )
+            .expect(FAILED);
+
+        log::info!(
+            "Profile refresh scheduler started: interval={interval_ms}ms, batch_size={}",
+            self.config.profile_refresh_batch_size,
+        );
+    }
+
+    fn cancel_profile_refresh(&self) {
+        if self.config.profile_refresh_interval_ms.is_none() {
+            return;
+        }
+        let timer_name = Ustr::from("ProfileRefreshScheduler");
+        let mut clock = self.clock.borrow_mut();
+        if clock.timer_exists(&timer_name) {
+            clock.cancel_timer(&timer_name);
+            log::info!("Profile refresh scheduler stopped");
+        }
+    }
+
+    fn refresh_participant_profiles(&mut self) {
+        log::info!("Refreshing participant profiles");
+        let batch_size = self.config.profile_refresh_batch_size;
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        let due = match self
+            .cache
+            .borrow()
+            .load_participants_profile_due(ts_now, batch_size)
+        {
+            Ok(participants) => participants,
+            Err(e) => {
+                log::error!("Profile refresh claim failed: {e}");
+                return;
+            }
+        };
+
+        if due.is_empty() {
+            log::info!("Profile refresh: no participants due");
+            return;
+        }
+
+        log::info!("Profile refresh: {} participants due", due.len());
+
+        // Group by venue and dispatch subscribe commands
+        let mut by_venue: indexmap::IndexMap<Venue, Vec<_>> = indexmap::IndexMap::new();
+        for participant in &due {
+            by_venue
+                .entry(participant.venue)
+                .or_default()
+                .push(participant.id);
+        }
+
+        for (venue, participant_ids) in by_venue {
+            let cmd = SubscribeCommand::ParticipantProfiles(SubscribeParticipantProfiles::new(
+                participant_ids,
+                None,
+                Some(venue),
+                UUID4::new(),
+                ts_now,
+            ));
+
+            if let Some(client) = self.get_command_client(cmd.client_id(), cmd.venue()) {
+                client.execute_subscribe(cmd);
+            } else {
+                log::error!(
+                    "Cannot subscribe participant profiles: no client found for venue={venue}"
+                );
+            }
+        }
     }
 
     fn handle_instrument_response(&self, instrument: InstrumentAny) {
@@ -5112,7 +5265,10 @@ fn streaming_payload_type(cmd: &SubscribeCommand) -> Option<BusPayloadType> {
         SubscribeCommand::OptionGreeks(_) => Some(BusPayloadType::OptionGreeks),
         SubscribeCommand::InstrumentStatus(_)
         | SubscribeCommand::InstrumentClose(_)
-        | SubscribeCommand::OptionChain(_) => None,
+        | SubscribeCommand::OptionChain(_)
+        | SubscribeCommand::Participants(_)
+        | SubscribeCommand::AllParticipants(_)
+        | SubscribeCommand::ParticipantProfiles(_) => None,
     }
 }
 
@@ -5197,6 +5353,31 @@ impl ContinuousFutureRoller {
             engine
                 .borrow_mut()
                 .handle_continuous_future_subscription_transition(event);
+        }
+    }
+}
+
+/// Routes profile refresh timer events back to the `DataEngine`.
+///
+/// Same weak-reference pattern as `ContinuousFutureRoller`.
+#[derive(Debug)]
+struct ProfileRefresher {
+    engine: WeakCell<DataEngine>,
+}
+
+impl ProfileRefresher {
+    fn new(engine: &Rc<RefCell<DataEngine>>) -> Self {
+        Self {
+            engine: WeakCell::from(Rc::downgrade(engine)),
+        }
+    }
+
+    fn on_tick(&self, _event: TimeEvent) {
+        if let Some(engine) = self.engine.upgrade() {
+            match engine.try_borrow_mut() {
+                Ok(mut eng) => eng.refresh_participant_profiles(),
+                Err(_) => log::debug!("Profile refresh skipped: engine already borrowed"),
+            }
         }
     }
 }

@@ -79,11 +79,11 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
+        HyperliquidProductId,
         enums::{
             HyperliquidBarInterval::{self, *},
             HyperliquidOrderStatus, HyperliquidTpSl,
         },
-        asset::HyperliquidProductId,
     },
     http::models::{
         ClearinghouseState, Cloid, HyperliquidExchangeResponse,
@@ -252,110 +252,24 @@ pub fn millis_to_nanos(millis: u64) -> anyhow::Result<UnixNanos> {
 /// Hyperliquid represents outcome spot coins as `#<encoding>` and outcome
 /// token names as `+<encoding>`, where `encoding = 10 * outcome + side`.
 ///
+/// Parses a `#<encoding>` or `+<encoding>` wire symbol into a `HyperliquidAssetId`.
+///
 /// # Errors
 ///
-/// Returns an error if the symbol is not an outcome symbol, the encoding is
-/// not numeric, overflows the asset id range, or carries an invalid side digit.
+/// Returns an error if the symbol is not a valid outcome wire format.
 pub fn parse_outcome_symbol(symbol: &str) -> anyhow::Result<HyperliquidProductId> {
-    let encoding = parse_outcome_symbol_encoding(symbol)?;
-    HyperliquidProductId::from_outcome_encoding(encoding).with_context(|| {
-        format!(
-            "Invalid Hyperliquid outcome symbol '{symbol}': encoding must fit u32 and end with side digit 0 or 1"
-        )
-    })
-}
-
-fn parse_outcome_symbol_encoding(symbol: &str) -> anyhow::Result<u32> {
-    let encoding = symbol
-        .strip_prefix('#')
-        .or_else(|| symbol.strip_prefix('+'))
-        .with_context(|| {
-            format!(
-                "Invalid Hyperliquid outcome symbol '{symbol}': expected #<encoding> or +<encoding>"
-            )
-        })?;
-
-    if encoding.is_empty() {
-        anyhow::bail!("Invalid Hyperliquid outcome symbol '{symbol}': encoding must not be empty");
-    }
-
-    if !encoding.bytes().all(|b| b.is_ascii_digit()) {
-        anyhow::bail!("Invalid Hyperliquid outcome symbol '{symbol}': encoding must be numeric");
-    }
-
-    encoding
-        .parse::<u32>()
+    HyperliquidProductId::from_outcome_wire(symbol)
         .with_context(|| format!("Invalid Hyperliquid outcome symbol '{symbol}'"))
-}
-
-/// Suffix shared by every Nautilus outcome symbol, mirroring `-PERP` / `-SPOT`.
-pub const OUTCOME_SYMBOL_SUFFIX: &str = "-OUTCOME";
-/// Yes-side label on Nautilus outcome symbols.
-pub const OUTCOME_SIDE_YES: &str = "YES";
-/// No-side label on Nautilus outcome symbols.
-pub const OUTCOME_SIDE_NO: &str = "NO";
-
-/// Parses a Nautilus outcome instrument symbol of the form
-/// `{outcome_index}-{YES|NO}-OUTCOME` into `(outcome_index, side)` where side
-/// is `0` for Yes and `1` for No.
-///
-/// Returns `None` if the symbol does not match the expected shape or if the
-/// `(outcome_index, side)` pair would not encode into a valid HIP-4
-/// `HyperliquidProductId` (i.e. `100_000_000 + 10 * outcome_index + side`
-/// would overflow `u32`). The legacy `#E` / `+E` wire parser already rejects
-/// out-of-range encodings; this keeps the two paths in parity so downstream
-/// arithmetic on the returned pair cannot overflow.
-#[must_use]
-pub fn parse_outcome_nautilus_symbol(symbol: &str) -> Option<(u32, u8)> {
-    let rest = symbol.strip_suffix(OUTCOME_SYMBOL_SUFFIX)?;
-    let (index_str, side_str) = rest.rsplit_once('-')?;
-    let outcome_index = index_str.parse::<u32>().ok()?;
-    let side = match side_str {
-        OUTCOME_SIDE_YES => 0,
-        OUTCOME_SIDE_NO => 1,
-        _ => return None,
-    };
-    let encoding = outcome_index
-        .checked_mul(10)?
-        .checked_add(u32::from(side))?;
-    HyperliquidProductId::from_outcome_encoding(encoding)?;
-    Some((outcome_index, side))
-}
-
-/// Formats an `(outcome_index, side)` pair into the Nautilus outcome symbol
-/// form `{outcome_index}-{YES|NO}-OUTCOME`.
-#[must_use]
-pub fn format_outcome_nautilus_symbol(outcome_index: u32, side: u8) -> String {
-    let side_label = match side {
-        0 => OUTCOME_SIDE_YES,
-        _ => OUTCOME_SIDE_NO,
-    };
-    format!("{outcome_index}-{side_label}{OUTCOME_SYMBOL_SUFFIX}")
-}
-
-/// Returns the `+<encoding>` token form for the side token referenced by a
-/// Nautilus outcome symbol, or `None` if the symbol is not an outcome.
-#[must_use]
-pub fn outcome_token_from_nautilus_symbol(symbol: &str) -> Option<String> {
-    let (outcome_index, side) = parse_outcome_nautilus_symbol(symbol)?;
-    let encoding = 10 * outcome_index + u32::from(side);
-    Some(format!("+{encoding}"))
 }
 
 /// Returns the secondary cache-alias key for a Nautilus instrument symbol.
 ///
-/// For outcome symbols, this is the `+<encoding>` token form (matching the
-/// `coin` field on `spotClearinghouseState` balances). For perp / spot
-/// symbols it is the leading segment before the first `-` (the base asset
-/// or sanitized base for HIP-3 perps). Returns `None` for an empty symbol.
-///
-/// Used by `cache_instrument`, order-response report builders, and the bar
-/// lookup so all three derive the same alias and stay in sync as the symbol
-/// shape evolves.
+/// For outcome symbols, this is the `+<encoding>` token form. For perp / spot
+/// symbols it is the leading segment before the first `-`.
 #[must_use]
 pub fn cache_alias_for_symbol(symbol: &str) -> Option<String> {
-    if let Some(token) = outcome_token_from_nautilus_symbol(symbol) {
-        return Some(token);
+    if let Some(asset_id) = HyperliquidProductId::from_outcome_symbol(symbol) {
+        return asset_id.to_outcome_token();
     }
 
     let leading = symbol.split('-').next()?;
@@ -1159,8 +1073,9 @@ mod tests {
         #[case] outcome_index: u32,
         #[case] side: u8,
     ) {
-        let parsed = parse_outcome_nautilus_symbol(symbol).unwrap();
-        assert_eq!(parsed, (outcome_index, side));
+        let asset_id = HyperliquidProductId::from_outcome_symbol(symbol).unwrap();
+        assert_eq!(asset_id.outcome_index().unwrap(), outcome_index);
+        assert_eq!(asset_id.outcome_side().unwrap(), side);
     }
 
     #[rstest]
@@ -1172,7 +1087,7 @@ mod tests {
     #[case("25-YES-outcome")]
     #[case("25-YES")]
     fn test_parse_outcome_nautilus_symbol_rejects_invalid(#[case] symbol: &str) {
-        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+        assert!(HyperliquidProductId::from_outcome_symbol(symbol).is_none());
     }
 
     #[rstest]
@@ -1183,7 +1098,7 @@ mod tests {
     // u32::MAX itself; rejected on the multiply.
     #[case("4294967295-NO-OUTCOME")]
     fn test_parse_outcome_nautilus_symbol_rejects_overflow(#[case] symbol: &str) {
-        assert!(parse_outcome_nautilus_symbol(symbol).is_none());
+        assert!(HyperliquidProductId::from_outcome_symbol(symbol).is_none());
     }
 
     #[rstest]
@@ -1195,10 +1110,9 @@ mod tests {
         #[case] side: u8,
         #[case] expected: &str,
     ) {
-        assert_eq!(
-            format_outcome_nautilus_symbol(outcome_index, side),
-            expected,
-        );
+        let asset_id = HyperliquidProductId::outcome(outcome_index, side);
+        let instrument_id = asset_id.to_outcome_instrument_id().unwrap();
+        assert_eq!(instrument_id.symbol.as_str(), expected);
     }
 
     #[rstest]
@@ -1211,7 +1125,9 @@ mod tests {
         #[case] symbol: &str,
         #[case] expected: Option<String>,
     ) {
-        assert_eq!(outcome_token_from_nautilus_symbol(symbol), expected);
+        let result =
+            HyperliquidProductId::from_outcome_symbol(symbol).and_then(|id| id.to_outcome_token());
+        assert_eq!(result, expected);
     }
 
     #[rstest]
@@ -1228,20 +1144,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case("10", "expected #<encoding> or +<encoding>")]
-    #[case("#", "encoding must not be empty")]
-    #[case("#1a", "encoding must be numeric")]
-    #[case("#12", "side digit 0 or 1")]
-    #[case("#4294967295", "fit u32")]
-    fn test_parse_outcome_symbol_rejects_invalid_values(
-        #[case] symbol: &str,
-        #[case] expected_error: &str,
-    ) {
-        let err = parse_outcome_symbol(symbol).unwrap_err();
-        assert!(
-            err.to_string().contains(expected_error),
-            "expected error to contain '{expected_error}', received '{err}'",
-        );
+    #[case("10")]
+    #[case("#")]
+    #[case("#1a")]
+    #[case("#12")]
+    #[case("#4294967295")]
+    fn test_parse_outcome_symbol_rejects_invalid_values(#[case] symbol: &str) {
+        assert!(parse_outcome_symbol(symbol).is_err());
     }
 
     #[rstest]

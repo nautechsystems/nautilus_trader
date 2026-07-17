@@ -614,3 +614,129 @@ CREATE TABLE IF NOT EXISTS "pool_tick" (
     FOREIGN KEY (chain_id, pool_identifier, snapshot_block, snapshot_transaction_index, snapshot_log_index)
         REFERENCES pool_snapshot(chain_id, pool_identifier, block, transaction_index, log_index) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS "participant" (
+    participant_pk BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    venue TEXT NOT NULL,
+    participant_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    -- first time the participant was observed
+    first_seen_ns BIGINT NOT NULL,
+    -- last time the participant was observed
+    last_seen_ns BIGINT NOT NULL,
+    -- when the in-memory participant object was initialized
+    ts_init_ns BIGINT NOT NULL,
+
+    CONSTRAINT uq_participant_venue_id
+        UNIQUE (venue, participant_id),
+    CONSTRAINT ck_participant_kind
+        CHECK (kind IN ('WALLET', 'PERSON', 'ORGANIZATION')),
+    CONSTRAINT ck_participant_seen_range
+        CHECK (first_seen_ns >= 0 AND last_seen_ns >= first_seen_ns),
+    CONSTRAINT ck_participant_ts_init
+        CHECK (ts_init_ns >= 0),
+    CONSTRAINT ck_participant_venue_length
+        CHECK (octet_length(venue) BETWEEN 1 AND 64),
+    CONSTRAINT ck_participant_id_length
+        CHECK (octet_length(participant_id) BETWEEN 1 AND 255)
+) WITH (fillfactor = 85);
+
+-- Profile scheduling metadata (one-to-one with participant)
+CREATE TABLE IF NOT EXISTS "participant_profile" (
+    participant_pk BIGINT PRIMARY KEY
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    profile_state TEXT NOT NULL DEFAULT 'MISSING',
+    profile_ttl_seconds INTEGER NOT NULL DEFAULT 86400,
+    profile_next_refresh_ns BIGINT DEFAULT NULL,
+    ts_init_ns BIGINT NOT NULL DEFAULT 0,
+
+    CONSTRAINT ck_pp_state
+        CHECK (profile_state IN ('MISSING', 'IN_FLIGHT', 'READY', 'RETRY', 'FAILED')),
+    CONSTRAINT ck_pp_ttl
+        CHECK (profile_ttl_seconds > 0),
+    CONSTRAINT ck_pp_failed_schedule
+        CHECK (profile_state <> 'FAILED' OR profile_next_refresh_ns IS NULL)
+);
+
+CREATE INDEX IF NOT EXISTS ix_participant_profile_due
+    ON participant_profile (profile_next_refresh_ns, participant_pk)
+    WHERE profile_state NOT IN ('FAILED', 'IN_FLIGHT')
+      AND profile_next_refresh_ns IS NOT NULL;
+
+-- Balances at last profile fetch
+CREATE TABLE IF NOT EXISTS "participant_profile_balance" (
+    participant_pk BIGINT NOT NULL
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    currency TEXT NOT NULL,
+    total TEXT NOT NULL,
+    locked TEXT NOT NULL,
+    free TEXT NOT NULL,
+    ts_init_ns BIGINT NOT NULL,
+
+    PRIMARY KEY (participant_pk, currency)
+);
+
+-- Margin balances at last profile fetch
+CREATE TABLE IF NOT EXISTS "participant_profile_margin" (
+    participant_pk BIGINT NOT NULL
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    currency TEXT NOT NULL,
+    instrument_id TEXT,
+    initial TEXT NOT NULL,
+    maintenance TEXT NOT NULL,
+    ts_init_ns BIGINT NOT NULL,
+
+    PRIMARY KEY (participant_pk, currency, instrument_id)
+);
+
+-- Transactions (append-only, deduplicated by hash)
+CREATE TABLE IF NOT EXISTS "participant_profile_transaction" (
+    participant_pk BIGINT NOT NULL
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    hash TEXT NOT NULL,
+    method TEXT NOT NULL,
+    ts_event_ns BIGINT NOT NULL,
+    amount TEXT NOT NULL,
+    instrument_id TEXT NOT NULL,
+    price TEXT NOT NULL,
+    value_amount TEXT NOT NULL,
+    value_currency TEXT NOT NULL,
+    ts_init_ns BIGINT NOT NULL,
+
+    PRIMARY KEY (participant_pk, hash)
+);
+
+CREATE INDEX IF NOT EXISTS ix_participant_profile_transaction_time
+    ON participant_profile_transaction (participant_pk, ts_event_ns DESC);
+
+-- Positions at last profile fetch
+CREATE TABLE IF NOT EXISTS "participant_profile_position" (
+    participant_pk BIGINT NOT NULL
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    instrument_id TEXT NOT NULL,
+    side TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    signed_qty TEXT NOT NULL,
+    avg_px_open TEXT,
+    ts_last_ns BIGINT NOT NULL,
+    ts_init_ns BIGINT NOT NULL,
+
+    PRIMARY KEY (participant_pk, instrument_id)
+);
+
+-- Open orders at last profile fetch
+CREATE TABLE IF NOT EXISTS "participant_profile_open_order" (
+    participant_pk BIGINT NOT NULL
+        REFERENCES participant(participant_pk) ON DELETE CASCADE,
+    venue_order_id TEXT NOT NULL,
+    instrument_id TEXT NOT NULL,
+    order_side TEXT NOT NULL,
+    order_type TEXT NOT NULL,
+    price TEXT,
+    quantity TEXT NOT NULL,
+    filled_qty TEXT NOT NULL,
+    order_status TEXT NOT NULL,
+    ts_init_ns BIGINT NOT NULL,
+
+    PRIMARY KEY (participant_pk, venue_order_id)
+);

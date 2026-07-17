@@ -1,0 +1,36 @@
+[package]
+name = "nautilus-strategies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Custom trading strategies for the Nautilus trading engine"
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_strategies"
+crate-type = ["rlib"]
+
+[dependencies]
+ahash = { workspace = true }
+anyhow = { workspace = true }
+bon = { workspace = true }
+dotenvy = { workspace = true }
+log = { workspace = true }
+nautilus-common = { workspace = true }
+nautilus-core = { workspace = true }
+nautilus-hyperliquid = { workspace = true, features = ["high-precision"] }
+nautilus-infrastructure = { workspace = true, features = ["postgres"] }
+nautilus-live = { workspace = true, features = ["node"] }
+nautilus-model = { workspace = true }
+nautilus-trading = { workspace = true }
+tokio = { workspace = true }
+ustr = { workspace = true }
+
+[[bin]]
+name = "stra-discv"
+path = "bin/stra_discv.rs"
+required-features = []

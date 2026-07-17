@@ -13,16 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use ahash::AHashMap;
+use anyhow::Context;
 use nautilus_common::signal::Signal;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, HasTsInit, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, HasTsInit, Participant, ParticipantKind, ParticipantProfile,
+        QuoteTick, TradeTick,
+    },
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
     },
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, InstrumentId, ParticipantId, PositionId, Venue,
+    },
     instruments::{Instrument, InstrumentAny},
     orders::OrderAny,
     position::Position,
@@ -30,8 +39,9 @@ use nautilus_model::{
 };
 use sqlx::{PgPool, Postgres, Row, Transaction};
 
-use super::models::{
-    orders::OrderSnapshotModel, positions::PositionSnapshotModel, types::SignalModel,
+use super::{
+    cache::{read_unix_nanos, unix_nanos_to_i64},
+    models::{orders::OrderSnapshotModel, positions::PositionSnapshotModel, types::SignalModel},
 };
 use crate::sql::models::{
     accounts::AccountEventModel,
@@ -1543,5 +1553,450 @@ impl DatabaseQueries {
             results.push(custom);
         }
         Ok(results)
+    }
+
+    /// Upsert participants into the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn upsert_participants(
+        pool: &PgPool,
+        participants: &[Participant],
+    ) -> anyhow::Result<()> {
+        if participants.is_empty() {
+            return Ok(());
+        }
+
+        let mut venues: Vec<String> = Vec::with_capacity(participants.len());
+        let mut participant_ids = Vec::with_capacity(participants.len());
+        let mut kinds = Vec::with_capacity(participants.len());
+        let mut first_seen_ns = Vec::with_capacity(participants.len());
+        let mut last_seen_ns = Vec::with_capacity(participants.len());
+        let mut ts_init_ns = Vec::with_capacity(participants.len());
+
+        for participant in participants {
+            venues.push(participant.venue.to_string());
+            participant_ids.push(participant.id.to_string());
+            kinds.push(participant.kind.as_ref().to_owned());
+            first_seen_ns.push(unix_nanos_to_i64(
+                participant.first_seen_at,
+                "first_seen_at",
+            )?);
+            last_seen_ns.push(unix_nanos_to_i64(participant.last_seen_at, "last_seen_at")?);
+            ts_init_ns.push(unix_nanos_to_i64(participant.ts_init, "ts_init")?);
+        }
+
+        // Upsert participants and bootstrap profile scheduling rows for new ones.
+        // The CTE returns the PKs of all touched participants; the second INSERT
+        // creates a MISSING profile row (immediately due) for any participant that
+        // doesn't already have one.
+        sqlx::query(
+            "
+            WITH upserted AS (
+                INSERT INTO participant AS p (
+                    venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns
+                )
+                SELECT *
+                FROM UNNEST($1::TEXT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::BIGINT[], $6::BIGINT[])
+                ON CONFLICT (venue, participant_id) DO UPDATE
+                SET first_seen_ns = LEAST(p.first_seen_ns, EXCLUDED.first_seen_ns),
+                    last_seen_ns = GREATEST(p.last_seen_ns, EXCLUDED.last_seen_ns)
+                WHERE EXCLUDED.first_seen_ns < p.first_seen_ns
+                   OR EXCLUDED.last_seen_ns > p.last_seen_ns
+                RETURNING participant_pk, ts_init_ns
+            )
+            INSERT INTO participant_profile (participant_pk, profile_state, ts_init_ns, profile_next_refresh_ns)
+            SELECT participant_pk, 'MISSING', ts_init_ns, ts_init_ns + 5000000000
+            FROM upserted
+            ON CONFLICT (participant_pk) DO NOTHING
+            ",
+        )
+        .bind(venues)
+        .bind(participant_ids)
+        .bind(kinds)
+        .bind(first_seen_ns)
+        .bind(last_seen_ns)
+        .bind(ts_init_ns)
+        .execute(pool)
+        .await
+        .context("Failed to upsert participants")?;
+
+        Ok(())
+    }
+
+    /// Load a participant from the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn load_participant(
+        pool: &PgPool,
+        venue: &Venue,
+        participant_id: &ParticipantId,
+    ) -> anyhow::Result<Option<Participant>> {
+        let row = sqlx::query(
+            "
+            SELECT venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns
+            FROM participant
+            WHERE venue = $1 AND participant_id = $2
+            ",
+        )
+        .bind(venue.as_str())
+        .bind(participant_id.as_str())
+        .fetch_optional(pool)
+        .await
+        .context("Failed to load participant")?;
+
+        row.map(|row| {
+            let venue = Venue::new_checked(row.try_get::<String, _>("venue")?)
+                .context("Invalid participant venue in database")?;
+            let participant_id =
+                ParticipantId::new_checked(row.try_get::<String, _>("participant_id")?)
+                    .context("Invalid participant identifier in database")?;
+            let kind = ParticipantKind::from_str(row.try_get::<String, _>("kind")?.as_str())
+                .context("Invalid participant kind in database")?;
+            let first_seen_at = read_unix_nanos(&row, "first_seen_ns")?;
+            let last_seen_at = read_unix_nanos(&row, "last_seen_ns")?;
+            let ts_init = read_unix_nanos(&row, "ts_init_ns")?;
+
+            Participant::new_checked(
+                participant_id,
+                venue,
+                kind,
+                first_seen_at,
+                last_seen_at,
+                ts_init,
+            )
+            .context("Invalid participant seen range in database")
+        })
+        .transpose()
+    }
+
+    /// Load participants whose profiles are due for refresh.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn load_participants_profile_due(
+        pool: &PgPool,
+        ts_now: UnixNanos,
+        batch_size: u32,
+    ) -> anyhow::Result<Vec<Participant>> {
+        let ts_now_i64 = unix_nanos_to_i64(ts_now, "ts_now")?;
+
+        let rows = sqlx::query(
+            "
+            SELECT p.venue, p.participant_id, p.kind,
+                   p.first_seen_ns, p.last_seen_ns, p.ts_init_ns
+            FROM participant_profile pp
+            JOIN participant p ON p.participant_pk = pp.participant_pk
+            WHERE pp.profile_state NOT IN ('FAILED', 'IN_FLIGHT')
+              AND pp.profile_next_refresh_ns IS NOT NULL
+              AND pp.profile_next_refresh_ns <= $1
+            ORDER BY pp.profile_next_refresh_ns, pp.participant_pk
+            LIMIT $2
+            ",
+        )
+        .bind(ts_now_i64)
+        .bind(i32::try_from(batch_size).context("batch_size exceeds i32::MAX")?)
+        .fetch_all(pool)
+        .await
+        .context("Failed to load due participants")?;
+
+        rows.into_iter()
+            .map(|row| {
+                let venue = Venue::new_checked(row.try_get::<String, _>("venue")?)
+                    .context("Invalid participant venue in database")?;
+                let participant_id =
+                    ParticipantId::new_checked(row.try_get::<String, _>("participant_id")?)
+                        .context("Invalid participant identifier in database")?;
+                let kind = ParticipantKind::from_str(row.try_get::<String, _>("kind")?.as_str())
+                    .context("Invalid participant kind in database")?;
+                let first_seen_at = read_unix_nanos(&row, "first_seen_ns")?;
+                let last_seen_at = read_unix_nanos(&row, "last_seen_ns")?;
+                let ts_init = read_unix_nanos(&row, "ts_init_ns")?;
+
+                Participant::new_checked(
+                    participant_id,
+                    venue,
+                    kind,
+                    first_seen_at,
+                    last_seen_at,
+                    ts_init,
+                )
+                .context("Invalid participant seen range in database")
+            })
+            .collect()
+    }
+
+    /// Upsert participant profiles into the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a profile's participant ID is not found in the resolved PKs.
+    #[allow(clippy::too_many_lines)]
+    pub async fn upsert_participant_profiles(
+        pool: &PgPool,
+        profiles: &[ParticipantProfile],
+    ) -> anyhow::Result<()> {
+        if profiles.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = pool.begin().await?;
+
+        let pids: Vec<String> = profiles
+            .iter()
+            .map(|p| p.participant_id.to_string())
+            .collect();
+
+        let rows = sqlx::query_as::<_, (i64, String)>(
+            "
+            SELECT p.participant_pk, p.participant_id
+              FROM UNNEST($1::TEXT[]) AS req(participant_id)
+              JOIN participant p ON p.participant_id = req.participant_id
+              FOR UPDATE OF p
+            ",
+        )
+        .bind(&pids)
+        .fetch_all(&mut *tx)
+        .await
+        .context("Failed to batch-resolve participant PKs")?;
+
+        if rows.len() != profiles.len() {
+            anyhow::bail!(
+                "Expected {} participants but resolved {} — some participants do not exist",
+                profiles.len(),
+                rows.len(),
+            );
+        }
+
+        let pk_map: std::collections::HashMap<&str, i64> =
+            rows.iter().map(|(pk, pid)| (pid.as_str(), *pk)).collect();
+
+        let mut meta_pks: Vec<i64> = Vec::with_capacity(profiles.len());
+        let mut meta_ts: Vec<i64> = Vec::with_capacity(profiles.len());
+
+        for profile in profiles {
+            let pk = *pk_map.get(profile.participant_id.as_str()).unwrap();
+            meta_pks.push(pk);
+            meta_ts.push(unix_nanos_to_i64(profile.ts_init, "profile.ts_init")?);
+        }
+
+        sqlx::query(
+            "
+            INSERT INTO participant_profile (participant_pk, profile_state, ts_init_ns, profile_next_refresh_ns)
+            SELECT pk, 'READY', ts, ts + 86400::BIGINT * 1000000000
+              FROM UNNEST($1::BIGINT[], $2::BIGINT[]) AS t(pk, ts)
+                ON CONFLICT (participant_pk)
+                DO UPDATE SET profile_state = 'READY',
+                              ts_init_ns = EXCLUDED.ts_init_ns,
+                              profile_next_refresh_ns = EXCLUDED.ts_init_ns
+                                  + participant_profile.profile_ttl_seconds::BIGINT * 1000000000
+            ",
+        )
+        .bind(&meta_pks)
+        .bind(&meta_ts)
+        .execute(&mut *tx)
+        .await
+        .context("Failed to batch upsert participant profile metadata")?;
+
+        let all_pks: Vec<i64> = meta_pks.clone();
+
+        // Balances
+        sqlx::query("DELETE FROM participant_profile_balance WHERE participant_pk = ANY($1)")
+            .bind(&all_pks)
+            .execute(&mut *tx)
+            .await?;
+        {
+            let mut b_pks: Vec<i64> = Vec::new();
+            let mut b_currencies: Vec<String> = Vec::new();
+            let mut b_totals: Vec<String> = Vec::new();
+            let mut b_lockeds: Vec<String> = Vec::new();
+            let mut b_frees: Vec<String> = Vec::new();
+            let mut b_ts: Vec<i64> = Vec::new();
+
+            for (i, profile) in profiles.iter().enumerate() {
+                let pk = meta_pks[i];
+                let ts = meta_ts[i];
+                if let Some(balances) = &profile.balances {
+                    for b in balances {
+                        b_pks.push(pk);
+                        b_currencies.push(b.currency.code.to_string());
+                        b_totals.push(b.total.to_string());
+                        b_lockeds.push(b.locked.to_string());
+                        b_frees.push(b.free.to_string());
+                        b_ts.push(ts);
+                    }
+                }
+            }
+
+            if !b_pks.is_empty() {
+                sqlx::query(
+                    "
+                    INSERT INTO participant_profile_balance
+                        (participant_pk, currency, total, locked, free, ts_init_ns)
+                    SELECT * FROM UNNEST($1::BIGINT[], $2::TEXT[], $3::TEXT[], $4::TEXT[], $5::TEXT[], $6::BIGINT[])
+                    ",
+                )
+                .bind(&b_pks).bind(&b_currencies).bind(&b_totals)
+                .bind(&b_lockeds).bind(&b_frees).bind(&b_ts)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        // Margins
+        sqlx::query("DELETE FROM participant_profile_margin WHERE participant_pk = ANY($1)")
+            .bind(&all_pks)
+            .execute(&mut *tx)
+            .await?;
+        {
+            let mut m_pks: Vec<i64> = Vec::new();
+            let mut m_currencies: Vec<String> = Vec::new();
+            let mut m_instrument_ids: Vec<String> = Vec::new();
+            let mut m_initials: Vec<String> = Vec::new();
+            let mut m_maintenances: Vec<String> = Vec::new();
+            let mut m_ts: Vec<i64> = Vec::new();
+
+            for (i, profile) in profiles.iter().enumerate() {
+                let pk = meta_pks[i];
+                let ts = meta_ts[i];
+                if let Some(margins) = &profile.margins {
+                    for m in margins {
+                        m_pks.push(pk);
+                        m_currencies.push(m.currency.code.to_string());
+                        m_instrument_ids
+                            .push(m.instrument_id.map(|id| id.to_string()).unwrap_or_default());
+                        m_initials.push(m.initial.to_string());
+                        m_maintenances.push(m.maintenance.to_string());
+                        m_ts.push(ts);
+                    }
+                }
+            }
+
+            if !m_pks.is_empty() {
+                sqlx::query(
+                    "
+                    INSERT INTO participant_profile_margin
+                        (participant_pk, currency, instrument_id, initial, maintenance, ts_init_ns)
+                    SELECT * FROM UNNEST($1::BIGINT[], $2::TEXT[], $3::TEXT[], $4::TEXT[], $5::TEXT[], $6::BIGINT[])
+                    ",
+                )
+                .bind(&m_pks).bind(&m_currencies).bind(&m_instrument_ids)
+                .bind(&m_initials).bind(&m_maintenances).bind(&m_ts)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        // Positions
+        sqlx::query("DELETE FROM participant_profile_position WHERE participant_pk = ANY($1)")
+            .bind(&all_pks)
+            .execute(&mut *tx)
+            .await?;
+        {
+            let mut p_pks: Vec<i64> = Vec::new();
+            let mut p_instrument_ids: Vec<String> = Vec::new();
+            let mut p_sides: Vec<String> = Vec::new();
+            let mut p_quantities: Vec<String> = Vec::new();
+            let mut p_signed_qtys: Vec<String> = Vec::new();
+            let mut p_avg_pxs: Vec<Option<String>> = Vec::new();
+            let mut p_ts_lasts: Vec<i64> = Vec::new();
+            let mut p_ts: Vec<i64> = Vec::new();
+
+            for (i, profile) in profiles.iter().enumerate() {
+                let pk = meta_pks[i];
+                let ts = meta_ts[i];
+                if let Some(positions) = &profile.positions {
+                    for p in positions {
+                        p_pks.push(pk);
+                        p_instrument_ids.push(p.instrument_id.to_string());
+                        p_sides.push(p.position_side.to_string());
+                        p_quantities.push(p.quantity.to_string());
+                        p_signed_qtys.push(p.signed_decimal_qty.to_string());
+                        p_avg_pxs.push(p.avg_px_open.map(|v| v.to_string()));
+                        p_ts_lasts.push(unix_nanos_to_i64(p.ts_last, "position.ts_last")?);
+                        p_ts.push(ts);
+                    }
+                }
+            }
+
+            if !p_pks.is_empty() {
+                sqlx::query(
+                    "
+                    INSERT INTO participant_profile_position
+                        (participant_pk, instrument_id, side, quantity, signed_qty, avg_px_open, ts_last_ns, ts_init_ns)
+                    SELECT * FROM UNNEST($1::BIGINT[], $2::TEXT[], $3::TEXT[], $4::TEXT[], $5::TEXT[], $6::TEXT[], $7::BIGINT[], $8::BIGINT[])
+                    ",
+                )
+                .bind(&p_pks).bind(&p_instrument_ids).bind(&p_sides)
+                .bind(&p_quantities).bind(&p_signed_qtys).bind(&p_avg_pxs)
+                .bind(&p_ts_lasts).bind(&p_ts)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        // Open orders
+        sqlx::query("DELETE FROM participant_profile_open_order WHERE participant_pk = ANY($1)")
+            .bind(&all_pks)
+            .execute(&mut *tx)
+            .await?;
+        {
+            let mut o_pks: Vec<i64> = Vec::new();
+            let mut o_venue_order_ids: Vec<String> = Vec::new();
+            let mut o_instrument_ids: Vec<String> = Vec::new();
+            let mut o_order_sides: Vec<String> = Vec::new();
+            let mut o_order_types: Vec<String> = Vec::new();
+            let mut o_prices: Vec<Option<String>> = Vec::new();
+            let mut o_quantities: Vec<String> = Vec::new();
+            let mut o_filled_qtys: Vec<String> = Vec::new();
+            let mut o_statuses: Vec<String> = Vec::new();
+            let mut o_ts: Vec<i64> = Vec::new();
+
+            for (i, profile) in profiles.iter().enumerate() {
+                let pk = meta_pks[i];
+                let ts = meta_ts[i];
+                if let Some(orders) = &profile.open_orders {
+                    for o in orders {
+                        o_pks.push(pk);
+                        o_venue_order_ids.push(o.venue_order_id.to_string());
+                        o_instrument_ids.push(o.instrument_id.to_string());
+                        o_order_sides.push(o.order_side.to_string());
+                        o_order_types.push(o.order_type.to_string());
+                        o_prices.push(o.price.map(|p| p.to_string()));
+                        o_quantities.push(o.quantity.to_string());
+                        o_filled_qtys.push(o.filled_qty.to_string());
+                        o_statuses.push(o.order_status.to_string());
+                        o_ts.push(ts);
+                    }
+                }
+            }
+
+            if !o_pks.is_empty() {
+                sqlx::query(
+                    "
+                    INSERT INTO participant_profile_open_order
+                        (participant_pk, venue_order_id, instrument_id, order_side, order_type, price, quantity, filled_qty, order_status, ts_init_ns)
+                    SELECT * FROM UNNEST($1::BIGINT[], $2::TEXT[], $3::TEXT[], $4::TEXT[], $5::TEXT[], $6::TEXT[], $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::BIGINT[])
+                    ",
+                )
+                .bind(&o_pks).bind(&o_venue_order_ids).bind(&o_instrument_ids)
+                .bind(&o_order_sides).bind(&o_order_types).bind(&o_prices)
+                .bind(&o_quantities).bind(&o_filled_qtys).bind(&o_statuses).bind(&o_ts)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        tx.commit()
+            .await
+            .context("Failed to commit participant profiles")
     }
 }

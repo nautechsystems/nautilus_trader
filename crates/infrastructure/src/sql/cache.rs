@@ -16,6 +16,7 @@
 use std::{collections::VecDeque, fmt::Debug, ops::ControlFlow, pin::Pin, time::Duration};
 
 use ahash::AHashMap;
+use anyhow::Context;
 use bytes::Bytes;
 use nautilus_common::{
     cache::{
@@ -29,14 +30,17 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, FundingRateUpdate, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, Participant, ParticipantProfile, QuoteTick,
+        TradeTick,
+    },
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
     },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
-        TraderId, VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, ParticipantId, PositionId,
+        StrategyId, TraderId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
@@ -45,7 +49,7 @@ use nautilus_model::{
     types::{Currency, Money},
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, postgres::PgConnectOptions};
+use sqlx::{PgPool, Row, postgres::PgConnectOptions};
 use tokio::{time::Instant, try_join};
 use ustr::Ustr;
 
@@ -146,6 +150,17 @@ mod tests {
 
         assert!(error.to_string().contains("unknown field `type`"));
     }
+
+    #[test]
+    fn unix_nanos_to_i64_rejects_values_above_bigint() {
+        let error = unix_nanos_to_i64(UnixNanos::from(u64::MAX), "ts_init").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("ts_init exceeds PostgreSQL BIGINT")
+        );
+    }
 }
 
 #[async_trait::async_trait]
@@ -202,6 +217,8 @@ pub enum DatabaseQuery {
     UpdateOrder(OrderEventAny),
     UpdatePosition(OrderFilled),
     IndexOrderPosition(ClientOrderId, PositionId),
+    UpsertParticipants(Vec<Participant>),
+    UpsertParticipantProfiles(Vec<ParticipantProfile>),
 }
 
 impl PostgresCacheDatabase {
@@ -588,6 +605,64 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             }
         });
         rx.recv()?
+    }
+
+    fn upsert_participants(&self, participants: &[Participant]) -> anyhow::Result<()> {
+        let query = DatabaseQuery::UpsertParticipants(participants.to_vec());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query upsert_participants to database message handler: {e}"
+            )
+        })
+    }
+
+    async fn load_participant(
+        &self,
+        venue: &Venue,
+        participant_id: &ParticipantId,
+    ) -> anyhow::Result<Option<Participant>> {
+        let pool = self.pool.clone();
+        let venue = venue.to_owned();
+        let participant_id = participant_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_participant(&pool, &venue, &participant_id).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_participant result: {e:?}");
+            }
+        });
+        rx.recv()?
+    }
+
+    fn load_participants_profile_due(
+        &self,
+        ts_now: UnixNanos,
+        batch_size: u32,
+    ) -> anyhow::Result<Vec<Participant>> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        get_runtime().spawn(async move {
+            let result =
+                DatabaseQueries::load_participants_profile_due(&pool, ts_now, batch_size).await;
+            if let Err(e) = tx.send(result) {
+                log::error!("Failed to send load_participants_profile_due result: {e:?}");
+            }
+        });
+        rx.recv()?
+    }
+
+    fn upsert_participant_profiles(&self, profiles: &[ParticipantProfile]) -> anyhow::Result<()> {
+        if profiles.is_empty() {
+            return Ok(());
+        }
+        let query = DatabaseQuery::UpsertParticipantProfiles(profiles.to_vec());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to send query upsert_participant_profiles to database message handler: {e}"
+            )
+        })
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
@@ -1186,6 +1261,20 @@ fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
         .ok_or_else(|| anyhow::anyhow!("Cannot persist position with no events: {}", position.id))
 }
 
+pub(crate) fn unix_nanos_to_i64(value: UnixNanos, field: &str) -> anyhow::Result<i64> {
+    i64::try_from(value.as_u64()).with_context(|| format!("{field} exceeds PostgreSQL BIGINT"))
+}
+
+pub(crate) fn read_unix_nanos(
+    row: &sqlx::postgres::PgRow,
+    field: &str,
+) -> anyhow::Result<UnixNanos> {
+    let value = row.try_get::<i64, _>(field)?;
+    let value = u64::try_from(value)
+        .with_context(|| format!("Invalid negative {field} value in database"))?;
+    Ok(UnixNanos::from(value))
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "database command dispatch enumerates each cache query variant explicitly"
@@ -1308,6 +1397,12 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             }
             DatabaseQuery::IndexOrderPosition(client_order_id, position_id) => {
                 DatabaseQueries::index_order_position(pool, client_order_id, position_id).await
+            }
+            DatabaseQuery::UpsertParticipants(participants) => {
+                DatabaseQueries::upsert_participants(pool, &participants).await
+            }
+            DatabaseQuery::UpsertParticipantProfiles(profiles) => {
+                DatabaseQueries::upsert_participant_profiles(pool, &profiles).await
             }
         };
 

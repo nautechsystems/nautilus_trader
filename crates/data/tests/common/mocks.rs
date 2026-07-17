@@ -37,15 +37,17 @@ use nautilus_common::{
     messages::data::{
         DataCommand, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
         RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
-        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades,
+        SubscribeAllParticipants, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks,
+        SubscribeParticipantProfiles, SubscribeParticipants, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+        UnsubscribeParticipants, UnsubscribeQuotes, UnsubscribeTrades,
     },
 };
 use nautilus_model::identifiers::{ClientId, Venue};
@@ -192,6 +194,36 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Subscribe(SubscribeCommand::Trades(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_participants(&mut self, cmd: SubscribeParticipants) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::Participants(cmd)));
+        }
+        Ok(())
+    }
+
+    fn subscribe_all_participants(&mut self, cmd: SubscribeAllParticipants) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Subscribe(SubscribeCommand::AllParticipants(
+                    cmd,
+                )));
+        }
+        Ok(())
+    }
+
+    fn subscribe_participant_profiles(
+        &mut self,
+        cmd: SubscribeParticipantProfiles,
+    ) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut().push(DataCommand::Subscribe(
+                SubscribeCommand::ParticipantProfiles(cmd),
+            ));
         }
         Ok(())
     }
@@ -387,6 +419,16 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Unsubscribe(UnsubscribeCommand::Trades(
+                    cmd.clone(),
+                )));
+        }
+        Ok(())
+    }
+
+    fn unsubscribe_participants(&mut self, cmd: &UnsubscribeParticipants) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Unsubscribe(UnsubscribeCommand::Participants(
                     cmd.clone(),
                 )));
         }

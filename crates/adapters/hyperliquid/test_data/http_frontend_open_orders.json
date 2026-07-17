@@ -1,0 +1,38 @@
+[
+  {
+    "coin": "BTC",
+    "isPositionTpsl": false,
+    "isTrigger": false,
+    "limitPx": "95000.0",
+    "oid": 2001,
+    "orderType": "Limit",
+    "origSz": "0.10",
+    "reduceOnly": false,
+    "side": "B",
+    "sz": "0.05",
+    "timestamp": 1769916000000,
+    "triggerCondition": "N/A",
+    "triggerPx": "0.0",
+    "tif": "Alo",
+    "cloid": "0xaabbccdd00112233aabbccdd00112233"
+  },
+  {
+    "coin": "ETH",
+    "isPositionTpsl": true,
+    "isTrigger": true,
+    "limitPx": "2400.0",
+    "oid": 2002,
+    "orderType": "Stop Market",
+    "origSz": "1.25",
+    "reduceOnly": true,
+    "side": "A",
+    "sz": "1.25",
+    "timestamp": 1769916001000,
+    "triggerCondition": "Mark Px <= 2450.0",
+    "triggerPx": "2450.0",
+    "isMarket": true,
+    "tpsl": "sl",
+    "triggerActivated": true,
+    "cloid": null
+  }
+]

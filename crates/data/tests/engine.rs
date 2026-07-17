@@ -44,16 +44,17 @@ use nautilus_common::{
         InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDeltas,
         RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
         RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        RequestJoin, RequestQuotes, RequestTrades, SubscribeAllParticipants, SubscribeBars,
+        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+        SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeParticipants,
+        SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeParticipants, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{
         self, BusPayloadType, BusTap, Endpoint, MStr, MessageBus, Topic, TypedHandler,
@@ -87,7 +88,8 @@ use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, CustomData, DEPTH10_LEN, Data, DataType, FundingRateUpdate,
         IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate, OrderBookDelta,
-        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDeltas_API, OrderBookDepth10, Participant, ParticipantKind,
+        ParticipantProfile, QuoteTick, TradeTick,
         greeks::OptionGreekValues,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
         stubs::{
@@ -98,7 +100,9 @@ use nautilus_model::{
         AggressorSide, AssetClass, BookType, GreeksConvention, InstrumentClass,
         InstrumentCloseType, MarketStatusAction, OptionKind, PriceType, RecordFlag,
     },
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
+    identifiers::{
+        ClientId, InstrumentId, OptionSeriesId, ParticipantId, Symbol, TradeId, TraderId, Venue,
+    },
     instruments::{
         CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny, OptionContract,
         SyntheticInstrument,
@@ -22035,4 +22039,263 @@ fn test_subscribed_bars_includes_internal_aggregations(
     // Internally aggregated subscriptions never reach a client, but must still
     // be reported (v1 parity)
     assert!(data_engine.subscribed_bars().contains(&bar_type));
+}
+
+// --------------------------------------------------------------------------------------------
+// Participant subscription tests
+// --------------------------------------------------------------------------------------------
+
+#[rstest]
+fn test_execute_subscribe_participants(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::Participants(SubscribeParticipants::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    // Command should be forwarded to the client
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_execute_subscribe_all_participants(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub_cmd = DataCommand::Subscribe(SubscribeCommand::AllParticipants(
+        SubscribeAllParticipants::new(
+            Some(client_id),
+            venue,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(sub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), std::slice::from_ref(&sub_cmd));
+}
+
+#[rstest]
+fn test_execute_unsubscribe_participants(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let sub_cmd =
+        DataCommand::Subscribe(SubscribeCommand::Participants(SubscribeParticipants::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
+    data_engine.execute(sub_cmd.clone());
+
+    let unsub_cmd = DataCommand::Unsubscribe(UnsubscribeCommand::Participants(
+        UnsubscribeParticipants::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ),
+    ));
+    data_engine.execute(unsub_cmd.clone());
+
+    assert_eq!(recorder.borrow().as_slice(), &[sub_cmd, unsub_cmd]);
+}
+
+#[rstest]
+fn test_handle_participants_publishes_to_msgbus(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let venue = Venue::new("SIM");
+    let topic = switchboard::get_participants_topic(venue);
+    let saved: Rc<RefCell<Vec<Vec<Participant>>>> = Rc::new(RefCell::new(Vec::new()));
+    let saved_clone = saved.clone();
+    let handler = TypedHandler::from(move |participants: &Vec<Participant>| {
+        saved_clone.borrow_mut().push(participants.clone());
+    });
+    msgbus::subscribe_participants(topic.into(), handler, None);
+
+    let participant = Participant::new(
+        ParticipantId::new("0x0123456789abcdef0123456789abcdef01234567"),
+        venue,
+        ParticipantKind::Wallet,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        UnixNanos::from(3),
+    );
+
+    data_engine.process_data(Data::Participants(vec![participant.clone()]));
+
+    assert_eq!(saved.borrow().len(), 1);
+    assert_eq!(saved.borrow()[0], vec![participant.clone()]);
+
+    // Verify participant was cached
+    assert!(cache.borrow().participant(&participant.id).is_some());
+}
+
+#[rstest]
+fn test_handle_participants_routes_profile_subscription_by_venue(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        Some(venue),
+        &recorder,
+        &mut data_engine.borrow_mut(),
+    );
+
+    let participant_id = ParticipantId::new("0x0123456789abcdef0123456789abcdef01234567");
+    let participant = Participant::new(
+        participant_id,
+        venue,
+        ParticipantKind::Wallet,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        UnixNanos::from(3),
+    );
+
+    data_engine
+        .borrow_mut()
+        .process_data(Data::Participants(vec![participant]));
+
+    let commands = recorder.borrow();
+    assert_eq!(commands.len(), 1);
+    let DataCommand::Subscribe(SubscribeCommand::ParticipantProfiles(cmd)) = &commands[0] else {
+        panic!(
+            "expected participant profile subscription, was {:?}",
+            commands[0]
+        );
+    };
+    assert_eq!(cmd.participant_ids, vec![participant_id]);
+    assert_eq!(cmd.client_id, None);
+    assert_eq!(cmd.venue, Some(venue));
+}
+
+#[rstest]
+fn test_handle_participant_profiles_publishes_to_msgbus(stub_msgbus: Rc<RefCell<MessageBus>>) {
+    let _ = stub_msgbus;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock, cache.clone(), None);
+
+    let venue = Venue::new("SIM");
+    let participant_id = ParticipantId::new("0x0123456789abcdef0123456789abcdef01234567");
+
+    // Add participant to cache first so profile routing works
+    let participant = Participant::new(
+        participant_id,
+        venue,
+        ParticipantKind::Wallet,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        UnixNanos::from(3),
+    );
+    cache.borrow_mut().add_participant(participant);
+
+    // Subscribe to profiles topic
+    let topic = switchboard::get_participant_profiles_topic(venue);
+    let saved: Rc<RefCell<Vec<Vec<ParticipantProfile>>>> = Rc::new(RefCell::new(Vec::new()));
+    let saved_clone = saved.clone();
+    let handler = TypedHandler::from(move |profiles: &Vec<ParticipantProfile>| {
+        saved_clone.borrow_mut().push(profiles.clone());
+    });
+    msgbus::subscribe_participant_profiles(topic.into(), handler, None);
+
+    let profile = ParticipantProfile::new(
+        participant_id,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::from(10),
+    );
+
+    data_engine.process_data(Data::ParticipantProfiles(vec![profile.clone()]));
+
+    assert_eq!(saved.borrow().len(), 1);
+    assert_eq!(saved.borrow()[0], vec![profile.clone()]);
+
+    // Verify profile was cached
+    assert!(
+        cache
+            .borrow()
+            .participant_profile(&participant_id)
+            .is_some()
+    );
 }

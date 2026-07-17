@@ -63,7 +63,7 @@ use nautilus_model::defi::{Block, Pool, PoolFeeCollect, PoolFlash, PoolLiquidity
 use nautilus_model::{
     data::{
         Bar, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth10, Participant, ParticipantProfile, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -148,6 +148,10 @@ thread_local! {
     pub(super) static POSITION_EVENT_HANDLERS: RefCell<SmallVec<[TypedHandler<PositionEvent>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
     pub(super) static INSTRUMENT_HANDLERS: RefCell<SmallVec<[TypedHandler<InstrumentAny>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static PARTICIPANTS_HANDLERS: RefCell<SmallVec<[TypedHandler<Vec<Participant>>; HANDLER_BUFFER_CAP]>> =
+        RefCell::new(SmallVec::new());
+    pub(super) static PARTICIPANT_PROFILES_HANDLERS: RefCell<SmallVec<[TypedHandler<Vec<ParticipantProfile>>; HANDLER_BUFFER_CAP]>> =
         RefCell::new(SmallVec::new());
 
     #[cfg(feature = "defi")]

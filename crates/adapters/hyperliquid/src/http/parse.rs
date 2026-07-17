@@ -16,12 +16,14 @@
 use anyhow::Context;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
-    data::TradeTick,
+    data::{ParticipantProfile, ParticipantTransaction, TradeTick, TransactionMethod},
     enums::{
         AggressorSide, AssetClass, CurrencyType, LiquiditySide, OrderSide, OrderStatus, OrderType,
         PositionSideSpecified, TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, ParticipantId, Symbol, TradeId, VenueOrderId,
+    },
     instruments::{BinaryOption, CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -32,21 +34,21 @@ use serde_json::{Value, json};
 use ustr::Ustr;
 
 use super::models::{
-    AssetPosition, HyperliquidFill, HyperliquidRecentTrade, OutcomeMarket, OutcomeMeta,
-    OutcomeQuestion, PerpMeta, SpotBalance, SpotMeta,
+    AssetPosition, ClearinghouseState, HyperliquidFill, HyperliquidRecentTrade, OutcomeMarket,
+    OutcomeMeta, OutcomeQuestion, PerpMeta, SpotBalance, SpotClearinghouseState, SpotMeta,
 };
 use crate::{
     common::{
+        HyperliquidProductId,
         consts::HYPERLIQUID_VENUE,
         enums::{
             HyperliquidFillDirection, HyperliquidOrderStatus as HyperliquidOrderStatusEnum,
-            HyperliquidSide, HyperliquidTimeInForce,
+            HyperliquidProductType, HyperliquidSide, HyperliquidTimeInForce,
         },
         parse::{
-            format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
-            millis_to_nanos, parse_trigger_order_type,
+            is_conditional_order_data, make_fill_trade_id, millis_to_nanos,
+            parse_combined_account_balances_and_margins, parse_trigger_order_type,
         },
-        asset::HyperliquidProductId,
     },
     data_types::HyperliquidPublicTrade,
     websocket::messages::{WsBasicOrderData, WsOrderData},
@@ -397,7 +399,10 @@ fn build_outcome_def(
 
     let token = format!("+{encoding}");
     let coin = format!("#{encoding}");
-    let symbol = format_outcome_nautilus_symbol(outcome_index, side);
+    let instrument_id = asset_id.to_outcome_instrument_id().ok_or_else(|| {
+        format!("Cannot derive InstrumentId for outcome={outcome_index} side={side}")
+    })?;
+    let symbol = instrument_id.symbol.to_string();
 
     let side_name = market
         .side_specs
@@ -1327,6 +1332,174 @@ pub fn parse_spot_position_status_report(
     ))
 }
 
+/// Parses public Hyperliquid account payloads into a participant profile.
+///
+/// Individual records with unknown instruments or invalid fields are skipped,
+/// matching the existing report request behavior. A section is always `Some`
+/// when its source request completed successfully, including when it is empty.
+///
+/// # Errors
+///
+/// Returns an error if account balances cannot be normalized.
+#[expect(clippy::too_many_arguments)]
+pub fn parse_participant_profile<F>(
+    participant_id: ParticipantId,
+    account_id: AccountId,
+    clearinghouse_state: &ClearinghouseState,
+    spot_state: &SpotClearinghouseState,
+    open_orders: &[WsBasicOrderData],
+    fills: &[HyperliquidFill],
+    ts_init: UnixNanos,
+    mut resolve_instrument: F,
+) -> anyhow::Result<ParticipantProfile>
+where
+    F: FnMut(&Ustr, HyperliquidProductType) -> Option<InstrumentAny>,
+{
+    let (balances, margins) =
+        parse_combined_account_balances_and_margins(clearinghouse_state, spot_state)?;
+
+    let mut positions = Vec::new();
+    for asset_position in &clearinghouse_state.asset_positions {
+        let coin = asset_position.position.coin;
+        // assetPositions contains perps and builder perps; colon prefix → BuilderPerp, plain → Perp
+        let product_type =
+            HyperliquidProductType::try_coin(coin.as_str()).unwrap_or(HyperliquidProductType::Perp);
+        let Some(instrument) = resolve_instrument(&coin, product_type) else {
+            continue;
+        };
+        let value = serde_json::to_value(asset_position)?;
+        match parse_position_status_report(&value, &instrument, account_id, ts_init) {
+            Ok(report) => positions.push(report),
+            Err(e) => log::warn!("Failed to parse participant position for {coin}: {e}"),
+        }
+    }
+
+    for balance in &spot_state.balances {
+        if balance.total.is_zero() || balance.coin.as_str() == "USDC" {
+            continue;
+        }
+        // spotClearinghouseState.balances are always spot context (outcomes/vaults have prefix)
+        let product_type = HyperliquidProductType::try_coin(balance.coin.as_str())
+            .unwrap_or(HyperliquidProductType::Spot);
+        let Some(instrument) = resolve_instrument(&balance.coin, product_type) else {
+            continue;
+        };
+        match parse_spot_position_status_report(balance, &instrument, account_id, ts_init) {
+            Ok(report) => positions.push(report),
+            Err(e) => log::warn!(
+                "Failed to parse participant spot position for {}: {e}",
+                balance.coin,
+            ),
+        }
+    }
+
+    let mut order_reports = Vec::new();
+    for order in open_orders {
+        // Plain coins on frontendOpenOrders are perps; spot uses @N format
+        let product_type = HyperliquidProductType::try_coin(order.coin.as_str())
+            .unwrap_or(HyperliquidProductType::Perp);
+        let Some(instrument) = resolve_instrument(&order.coin, product_type) else {
+            continue;
+        };
+        match parse_order_status_report_from_basic(
+            order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            account_id,
+            ts_init,
+        ) {
+            Ok(report) => order_reports.push(report),
+            Err(e) => log::warn!("Failed to parse participant order for {}: {e}", order.coin),
+        }
+    }
+
+    let mut transactions = Vec::new();
+    for fill in fills {
+        // Plain coins on userFills are perps; spot fills use @N format
+        let product_type = HyperliquidProductType::try_coin(fill.coin.as_str())
+            .unwrap_or(HyperliquidProductType::Perp);
+        let Some(instrument) = resolve_instrument(&fill.coin, product_type) else {
+            continue;
+        };
+        match parse_participant_transaction(fill, &instrument) {
+            Ok(transaction) => transactions.push(transaction),
+            Err(e) => log::warn!(
+                "Failed to parse participant transaction for {} tid={}: {e}",
+                fill.coin,
+                fill.tid,
+            ),
+        }
+    }
+
+    Ok(ParticipantProfile::new(
+        participant_id,
+        Some(balances),
+        Some(margins),
+        Some(positions),
+        Some(order_reports),
+        Some(transactions),
+        ts_init,
+    ))
+}
+
+fn parse_participant_transaction(
+    fill: &HyperliquidFill,
+    instrument: &dyn Instrument,
+) -> anyhow::Result<ParticipantTransaction> {
+    let amount = match fill.side {
+        HyperliquidSide::Buy => fill.sz,
+        HyperliquidSide::Sell => -fill.sz,
+    };
+
+    let method = transaction_method_from_fill(fill);
+
+    let price = Price::from_decimal_dp(fill.px, instrument.price_precision())?;
+    let value = Money::from_decimal((fill.sz * fill.px).abs(), instrument.quote_currency())?;
+    let ts_event = millis_to_nanos(fill.time)?;
+
+    Ok(ParticipantTransaction::new(
+        Ustr::from(fill.hash.as_str()),
+        method,
+        ts_event,
+        amount,
+        instrument.id(),
+        price,
+        value,
+    ))
+}
+
+fn transaction_method_from_fill(fill: &HyperliquidFill) -> TransactionMethod {
+    if fill.twap_id.is_some() {
+        return TransactionMethod::Twap;
+    }
+
+    fill.dir.into()
+}
+
+impl From<HyperliquidFillDirection> for TransactionMethod {
+    fn from(value: HyperliquidFillDirection) -> Self {
+        match value {
+            HyperliquidFillDirection::OpenLong => Self::OpenLong,
+            HyperliquidFillDirection::OpenShort => Self::OpenShort,
+            HyperliquidFillDirection::CloseLong => Self::CloseLong,
+            HyperliquidFillDirection::CloseShort => Self::CloseShort,
+            HyperliquidFillDirection::LongToShort => Self::LongToShort,
+            HyperliquidFillDirection::ShortToLong => Self::ShortToLong,
+            HyperliquidFillDirection::AutoDeleveraging => Self::AutoDeleveraging,
+            HyperliquidFillDirection::NetChildVaults => Self::NetChildVaults,
+            HyperliquidFillDirection::Buy => Self::Buy,
+            HyperliquidFillDirection::Sell => Self::Sell,
+            HyperliquidFillDirection::SpotDustConversion => Self::SpotDustConversion,
+            HyperliquidFillDirection::Settlement => Self::Settlement,
+            HyperliquidFillDirection::SplitOutcome => Self::SplitOutcome,
+            HyperliquidFillDirection::MergeOutcome => Self::MergeOutcome,
+            HyperliquidFillDirection::MergeQuestion => Self::MergeQuestion,
+            HyperliquidFillDirection::NegateOutcome => Self::NegateOutcome,
+            HyperliquidFillDirection::Unknown => Self::Other,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -1452,6 +1625,7 @@ mod tests {
             hash: "0xhash".to_string(),
             time: 1_769_916_000_000,
             tid: 987_654_321,
+
             users: ["0xbuyer".to_string(), "0xseller".to_string()],
         };
 
@@ -1469,6 +1643,85 @@ mod tests {
         // Historical trades carry ts_init == ts_event so the engine's window
         // trimming (by ts_init) keeps bounded requests.
         assert_eq!(tick.ts_init, tick.ts_event);
+    }
+
+    #[rstest]
+    fn test_parse_participant_transaction_derives_signed_amount_from_fill_side() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        let fill = HyperliquidFill {
+            coin: Ustr::from("BTC"),
+            px: dec!(50000.0),
+            sz: dec!(0.5),
+            side: HyperliquidSide::Sell,
+            time: 1_769_916_000_000,
+            start_position: dec!(1.0),
+            dir: HyperliquidFillDirection::OpenShort,
+            closed_pnl: Decimal::ZERO,
+            hash: "0xfeed".to_string(),
+            tid: 987_654_321,
+            oid: 123,
+            crossed: true,
+            fee: Decimal::ZERO,
+            fee_token: Ustr::from("USDC"),
+            twap_id: None,
+        };
+        let transaction = parse_participant_transaction(&fill, &instrument).unwrap();
+
+        assert_eq!(transaction.hash, Ustr::from("0xfeed"));
+        assert_eq!(transaction.method, TransactionMethod::OpenShort);
+        assert_eq!(transaction.amount, dec!(-0.5));
+        assert_eq!(transaction.instrument_id, instrument.id());
+        assert_eq!(transaction.price.as_decimal(), dec!(50000));
+        assert_eq!(transaction.value.as_decimal(), dec!(25000));
+    }
+
+    #[rstest]
+    fn test_parse_participant_profile_populates_transactions() {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        let participant_id = ParticipantId::new("0xseller");
+        let fill = HyperliquidFill {
+            coin: Ustr::from("BTC"),
+            px: dec!(50000.0),
+            sz: dec!(0.5),
+            side: HyperliquidSide::Sell,
+            time: 1_769_916_000_000,
+            start_position: dec!(1.0),
+            dir: HyperliquidFillDirection::OpenShort,
+            closed_pnl: Decimal::ZERO,
+            hash: "0xfeed".to_string(),
+            tid: 987_654_321,
+            oid: 123,
+            crossed: true,
+            fee: Decimal::ZERO,
+            fee_token: Ustr::from("USDC"),
+            twap_id: None,
+        };
+        let clearinghouse_state: ClearinghouseState =
+            serde_json::from_value(json!({"assetPositions": []})).unwrap();
+        let spot_state = SpotClearinghouseState::default();
+
+        let profile = parse_participant_profile(
+            participant_id,
+            AccountId::from("HYPERLIQUID-001"),
+            &clearinghouse_state,
+            &spot_state,
+            &[],
+            &[fill],
+            UnixNanos::from(1),
+            |coin, _| (coin == "BTC").then(|| instrument.clone()),
+        )
+        .unwrap();
+
+        let transactions = profile
+            .transactions
+            .expect("transactions should be available");
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].method, TransactionMethod::OpenShort);
+        assert_eq!(transactions[0].amount, dec!(-0.5));
     }
 
     #[rstest]
@@ -2220,10 +2473,12 @@ mod tests {
             dir: HyperliquidFillDirection::OpenLong,
             closed_pnl: dec!(0.0),
             hash: "0xfeed".to_string(),
+            tid: 1,
             oid: 99_001,
             crossed: true,
             fee: dec!(0.0),
             fee_token: Ustr::from("+420"),
+            twap_id: None,
         };
 
         let account_id = AccountId::from("HYPERLIQUID-001");

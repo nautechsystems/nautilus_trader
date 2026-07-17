@@ -21,7 +21,7 @@ use nautilus_core::serialization::{
 use nautilus_model::{
     data::{
         Bar, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas,
-        OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDepth10, Participant, QuoteTick, TradeTick,
     },
     reports::{FillReport, OrderStatusReport},
 };
@@ -916,6 +916,7 @@ mod tests {
     use serde_json;
 
     use super::*;
+    use crate::common::testing::load_test_data;
 
     #[rstest]
     fn test_subscription_request_serialization() {
@@ -980,6 +981,29 @@ mod tests {
         assert_eq!(trade.coin, "BTC");
         assert_eq!(trade.side, HyperliquidSide::Buy);
         assert_eq!(trade.px, dec!(50000.0));
+    }
+
+    #[rstest]
+    fn test_frontend_open_orders_fixture_deserialization() {
+        let orders: Vec<WsBasicOrderData> = load_test_data("http_frontend_open_orders.json");
+
+        assert_eq!(orders.len(), 2);
+
+        let limit = &orders[0];
+        assert_eq!(limit.coin, "BTC");
+        assert_eq!(limit.limit_px, dec!(95000.0));
+        assert_eq!(limit.sz, dec!(0.05));
+        assert_eq!(limit.orig_sz, dec!(0.10));
+        assert_eq!(limit.tif, Some(HyperliquidTimeInForce::Alo));
+        assert_eq!(limit.reduce_only, Some(false));
+
+        let stop = &orders[1];
+        assert_eq!(stop.coin, "ETH");
+        assert_eq!(stop.trigger_px, Some(dec!(2450.0)));
+        assert_eq!(stop.is_market, Some(true));
+        assert_eq!(stop.tpsl, Some(HyperliquidTpSl::Sl));
+        assert_eq!(stop.trigger_activated, Some(true));
+        assert_eq!(stop.reduce_only, Some(true));
     }
 
     #[rstest]
@@ -1194,6 +1218,8 @@ pub enum NautilusWsMessage {
     ExecutionReports(Vec<ExecutionReport>),
     /// Parsed trade ticks.
     Trades(Vec<TradeTick>),
+    /// Participants discovered from venue activity.
+    Participants(Vec<Participant>),
     /// Parsed quote tick (from BBO).
     Quote(QuoteTick),
     /// Parsed order book deltas.

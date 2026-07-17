@@ -78,6 +78,13 @@ pub struct DataEngineConfig {
     /// If debug mode is active (will provide extra debug logging).
     #[builder(default)]
     pub debug: bool,
+    /// Interval (milliseconds) for the profile refresh scheduler.
+    /// When set, the engine periodically claims due participants from the database
+    /// and dispatches profile fetch commands to the appropriate adapter.
+    pub profile_refresh_interval_ms: Option<u64>,
+    /// Maximum number of participant profiles to claim per refresh tick.
+    #[builder(default = 100)]
+    pub profile_refresh_batch_size: u32,
 }
 
 impl Default for DataEngineConfig {

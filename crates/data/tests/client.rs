@@ -41,6 +41,7 @@ use nautilus_common::{
             RequestQuotes,
             RequestTrades,
             // Subscription commands
+            SubscribeAllParticipants,
             SubscribeBars,
             SubscribeBookDeltas,
             SubscribeBookDepth10,
@@ -52,6 +53,7 @@ use nautilus_common::{
             SubscribeInstrumentStatus,
             SubscribeInstruments,
             SubscribeMarkPrices,
+            SubscribeParticipants,
             SubscribeQuotes,
             SubscribeTrades,
             UnsubscribeBars,
@@ -65,6 +67,7 @@ use nautilus_common::{
             UnsubscribeInstrumentStatus,
             UnsubscribeInstruments,
             UnsubscribeMarkPrices,
+            UnsubscribeParticipants,
             UnsubscribeQuotes,
             UnsubscribeTrades,
         },
@@ -2036,4 +2039,82 @@ fn test_defi_pool_swaps_unsubscribe_idempotent(
 
     // Expect adapter state cleared and no panic on second unsubscribe
     assert!(!adapter.subscriptions_pool_swaps.contains(&instrument_id));
+}
+
+// --------------------------------------------------------------------------------------------
+// Participant subscription tests
+// --------------------------------------------------------------------------------------------
+
+#[rstest]
+fn test_participants_subscription(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let client = Box::new(MockDataClient::new(clock, cache, client_id, Some(venue)));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let instrument = audusd_sim();
+    let inst_id = instrument.id;
+
+    let sub = SubscribeCommand::Participants(SubscribeParticipants::new(
+        inst_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    adapter.execute_subscribe(sub.clone());
+    assert!(adapter.subscriptions_participant.contains(&inst_id));
+
+    // Idempotency check
+    adapter.execute_subscribe(sub.clone());
+    assert_eq!(adapter.subscriptions_participant.len(), 1);
+
+    let unsub = UnsubscribeCommand::Participants(UnsubscribeParticipants::new(
+        inst_id,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+    adapter.execute_unsubscribe(&unsub);
+    assert!(!adapter.subscriptions_participant.contains(&inst_id));
+}
+
+#[rstest]
+fn test_all_participants_subscription_is_forwarded_once(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let mut adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+    let sub = SubscribeCommand::AllParticipants(SubscribeAllParticipants::new(
+        Some(client_id),
+        venue,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    ));
+
+    adapter.execute_subscribe(sub.clone());
+    adapter.execute_subscribe(sub);
+
+    assert!(adapter.subscriptions_all_participants);
+    assert_eq!(recorder.borrow().len(), 1);
 }

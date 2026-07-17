@@ -402,12 +402,21 @@ impl HyperliquidWebSocketClient {
                             log::trace!("Received WebSocket message: {msg:?}");
 
                             match msg {
-                                NautilusWsMessage::Trades(trade_ticks) => {
+                                NautilusWsMessage::Trades(trades) => {
                                     Python::attach(|py| {
-                                        for tick in trade_ticks {
+                                        for tick in trades {
                                             let py_obj = data_to_pycapsule(py, Data::Trade(tick));
                                             call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                         }
+                                    });
+                                }
+                                NautilusWsMessage::Participants(participants) => {
+                                    Python::attach(|py| {
+                                        let py_obj = data_to_pycapsule(
+                                            py,
+                                            Data::Participants(participants),
+                                        );
+                                        call_python_threadsafe(py, &call_soon, &callback, py_obj);
                                     });
                                 }
                                 NautilusWsMessage::Quote(quote_tick) => {

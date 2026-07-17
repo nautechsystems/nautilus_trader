@@ -19,7 +19,7 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{BarType, DataType, option_chain::StrikeRange},
     enums::BookType,
-    identifiers::{ClientId, InstrumentId, OptionSeriesId, Venue},
+    identifiers::{ClientId, InstrumentId, OptionSeriesId, ParticipantId, Venue},
 };
 use serde::{Deserialize, Serialize};
 
@@ -613,6 +613,100 @@ impl SubscribeOptionChain {
             ts_init,
             client_id,
             venue,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscribeParticipantProfiles {
+    pub participant_ids: Vec<ParticipantId>,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+}
+
+impl SubscribeParticipantProfiles {
+    /// Creates a new [`SubscribeParticipantProfiles`] instance.
+    pub fn new(
+        participant_ids: Vec<ParticipantId>,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            participant_ids,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscribeParticipants {
+    pub instrument_id: InstrumentId,
+    pub client_id: Option<ClientId>,
+    pub venue: Option<Venue>,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
+    pub params: Option<Params>,
+}
+
+impl SubscribeParticipants {
+    /// Creates a new [`SubscribeParticipants`] instance.
+    pub fn new(
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        venue: Option<Venue>,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+        params: Option<Params>,
+    ) -> Self {
+        check_client_id_or_venue(&client_id, &venue);
+        Self {
+            instrument_id,
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            correlation_id,
+            params,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SubscribeAllParticipants {
+    pub client_id: Option<ClientId>,
+    pub venue: Venue,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
+    pub correlation_id: Option<UUID4>,
+    pub params: Option<Params>,
+}
+
+impl SubscribeAllParticipants {
+    /// Creates a new [`SubscribeAllParticipants`] instance.
+    pub fn new(
+        client_id: Option<ClientId>,
+        venue: Venue,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: Option<UUID4>,
+        params: Option<Params>,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            command_id,
+            ts_init,
+            correlation_id,
             params,
         }
     }

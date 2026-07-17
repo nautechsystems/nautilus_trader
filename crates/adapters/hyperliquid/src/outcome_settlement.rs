@@ -36,7 +36,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    common::{converters::outcome_asset_id_to_instrument_id, asset::HyperliquidProductId},
+    common::HyperliquidProductId,
     http::{
         models::SpotClearinghouseState,
         parse::{
@@ -127,12 +127,11 @@ pub fn build_settlement_fills(
             continue;
         };
 
-        let instrument_id = match outcome_asset_id_to_instrument_id(asset_id) {
-            Ok(id) => id,
-            Err(e) => {
-                log::warn!("Outcome settlement skipped, instrument id resolution failed: {e}",);
-                continue;
-            }
+        let Some(instrument_id) = asset_id.to_outcome_instrument_id() else {
+            log::warn!(
+                "Outcome settlement skipped, instrument id resolution failed for: {asset_id}",
+            );
+            continue;
         };
 
         if let Some(fill) = build_close_fill(

@@ -34,7 +34,8 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        MarkPriceUpdate, OrderBookDelta, OrderBookDeltas, OrderBookDepth10, Participant,
+        ParticipantProfile, QuoteTick, TradeTick,
         close::InstrumentClose,
         option_chain::{OptionChainSlice, OptionGreeks, StrikeRange},
     },
@@ -68,17 +69,18 @@ use crate::{
             DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
             QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
             RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+            RequestInstruments, RequestQuotes, RequestTrades, SubscribeAllParticipants,
+            SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
+            SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
+            SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks,
+            SubscribeParticipants, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
         system::ShutdownSystem,
     },
@@ -90,7 +92,8 @@ use crate::{
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
             get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
-            get_option_greeks_topic, get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_option_greeks_topic, get_participant_profiles_topic, get_participants_topic,
+            get_quotes_topic, get_signal_pattern, get_trades_topic,
         },
     },
     signal::Signal,
@@ -703,6 +706,26 @@ pub trait DataActor: Component {
         Ok(())
     }
 
+    /// Actions to be performed when receiving participants.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler fails.
+    #[allow(unused_variables)]
+    fn on_participants(&mut self, participants: &[Participant]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Actions to be performed when receiving a participant profiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the handler fails.
+    #[allow(unused_variables)]
+    fn on_participant_profiles(&mut self, profiles: &[ParticipantProfile]) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Returns the user-facing clock API.
     fn clock(&self) -> ClockApi<'_>
     where
@@ -932,6 +955,34 @@ pub trait DataActor: Component {
         }
 
         if let Err(e) = self.on_trade(trade) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles a received participant batch.
+    fn handle_participants(&mut self, participants: &[Participant]) {
+        log_received(&participants);
+
+        if self.not_running() {
+            log_not_running(&participants);
+            return;
+        }
+
+        if let Err(e) = self.on_participants(participants) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles receiving participant profiles.
+    fn handle_participant_profiles(&mut self, profiles: &[ParticipantProfile]) {
+        log_received(&profiles);
+
+        if self.not_running() {
+            log_not_running(&profiles);
+            return;
+        }
+
+        if let Err(e) = self.on_participant_profiles(profiles) {
             log_error(&e);
         }
     }
@@ -1561,6 +1612,70 @@ pub trait DataActor: Component {
         );
     }
 
+    /// Subscribe to participant batches discovered for an instrument.
+    fn subscribe_participants(&mut self, instrument_id: InstrumentId)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        // data.participants.<venue>
+        let topic = get_participants_topic(instrument_id.venue);
+        let handler = TypedHandler::from(move |participants: &Vec<Participant>| {
+            get_actor_unchecked::<Self>(&actor_id).handle_participants(participants);
+        });
+
+        DataActorCore::subscribe_participants(
+            self.core_mut(),
+            topic,
+            handler,
+            instrument_id,
+            None,
+            None,
+        );
+    }
+
+    /// Subscribe to participant batches discovered across all venue instruments.
+    fn subscribe_all_participants(&mut self, venue: Venue)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        let topic = get_participants_topic(venue);
+        let handler = TypedHandler::from(move |participants: &Vec<Participant>| {
+            get_actor_unchecked::<Self>(&actor_id).handle_participants(participants);
+        });
+
+        DataActorCore::subscribe_all_participants(
+            self.core_mut(),
+            topic,
+            handler,
+            venue,
+            None,
+            None,
+        );
+    }
+
+    /// Subscribe to participant profiles published for `venue`.
+    ///
+    /// This is a local-only subscription (msgbus topic attachment).
+    /// No command is sent to the adapter; profiles are produced as a
+    /// side-effect of `subscribe_participants`.
+    fn subscribe_participant_profiles(&mut self, venue: Venue)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        let topic = get_participant_profiles_topic(venue);
+        let handler = TypedHandler::from(move |profiles: &Vec<ParticipantProfile>| {
+            get_actor_unchecked::<Self>(&actor_id).handle_participant_profiles(profiles);
+        });
+
+        DataActorCore::subscribe_participant_profiles(self.core_mut(), topic, handler);
+    }
+
     /// Subscribe to streaming [`Bar`] data for the `bar_type`.
     fn subscribe_bars(
         &mut self,
@@ -2065,6 +2180,24 @@ pub trait DataActor: Component {
         Self: 'static + Debug + Sized,
     {
         DataActorCore::unsubscribe_trades(self.core_mut(), instrument_id, client_id, params);
+    }
+
+    /// Unsubscribe from participant batches discovered for `venue`.
+    fn unsubscribe_participants(&mut self, venue: Venue)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_participants(self.core_mut(), venue);
+    }
+
+    /// Unsubscribe from participant profiles for `venue`.
+    fn unsubscribe_participant_profiles(&mut self, venue: Venue)
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        DataActorCore::unsubscribe_participant_profiles(self.core_mut(), venue);
     }
 
     /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
@@ -2739,6 +2872,8 @@ pub struct DataActorCore {
     book_handlers: AHashMap<MStr<Topic>, TypedHandler<OrderBook>>,
     quote_handlers: AHashMap<MStr<Topic>, TypedHandler<QuoteTick>>,
     trade_handlers: AHashMap<MStr<Topic>, TypedHandler<TradeTick>>,
+    participant_handlers: AHashMap<MStr<Topic>, TypedHandler<Vec<Participant>>>,
+    participant_profile_handlers: AHashMap<MStr<Topic>, TypedHandler<Vec<ParticipantProfile>>>,
     bar_handlers: AHashMap<MStr<Topic>, TypedHandler<Bar>>,
     mark_price_handlers: AHashMap<MStr<Topic>, TypedHandler<MarkPriceUpdate>>,
     index_price_handlers: AHashMap<MStr<Topic>, TypedHandler<IndexPriceUpdate>>,
@@ -2850,10 +2985,55 @@ impl DataActorCore {
         msgbus::subscribe_trades(topic.into(), handler, None);
     }
 
+    pub(crate) fn add_participant_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Vec<Participant>>,
+    ) {
+        if self.participant_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate participant subscription to '{topic}'",
+                self.actor_id,
+            );
+            return;
+        }
+        self.participant_handlers.insert(topic, handler.clone());
+        msgbus::subscribe_participants(topic.into(), handler, None);
+    }
+
     #[allow(dead_code)]
     pub(crate) fn remove_trade_subscription(&mut self, topic: MStr<Topic>) {
         if let Some(handler) = self.trade_handlers.remove(&topic) {
             msgbus::unsubscribe_trades(topic.into(), &handler);
+        }
+    }
+
+    pub(crate) fn remove_participant_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.participant_handlers.remove(&topic) {
+            msgbus::unsubscribe_participants(topic.into(), &handler);
+        }
+    }
+
+    pub(crate) fn add_participant_profile_subscription(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Vec<ParticipantProfile>>,
+    ) {
+        if self.participant_profile_handlers.contains_key(&topic) {
+            log::warn!(
+                "Actor {} attempted duplicate participant profile subscription to '{topic}'",
+                self.actor_id,
+            );
+            return;
+        }
+        self.participant_profile_handlers
+            .insert(topic, handler.clone());
+        msgbus::subscribe_participant_profiles(topic.into(), handler, None);
+    }
+
+    pub(crate) fn remove_participant_profile_subscription(&mut self, topic: MStr<Topic>) {
+        if let Some(handler) = self.participant_profile_handlers.remove(&topic) {
+            msgbus::unsubscribe_participant_profiles(topic.into(), &handler);
         }
     }
 
@@ -3276,6 +3456,8 @@ impl DataActorCore {
             book_handlers: AHashMap::new(),
             quote_handlers: AHashMap::new(),
             trade_handlers: AHashMap::new(),
+            participant_handlers: AHashMap::new(),
+            participant_profile_handlers: AHashMap::new(),
             bar_handlers: AHashMap::new(),
             mark_price_handlers: AHashMap::new(),
             index_price_handlers: AHashMap::new(),
@@ -3904,6 +4086,68 @@ impl DataActorCore {
         self.send_data_cmd(DataCommand::Subscribe(command));
     }
 
+    /// Registers a local participant topic subscription.
+    pub fn subscribe_participants(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Vec<Participant>>,
+        instrument_id: InstrumentId,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+
+        // First subscribe frm the msgbus
+        self.add_participant_subscription(topic, handler);
+
+        // Then send command to data engine to subscribe for participants to start receiving data
+        let command = SubscribeCommand::Participants(SubscribeParticipants::new(
+            instrument_id,
+            client_id,
+            Some(instrument_id.venue),
+            UUID4::new(),
+            self.timestamp_ns(),
+            None,
+            params,
+        ));
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Registers a local participant subscription and requests all venue instruments.
+    pub fn subscribe_all_participants(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Vec<Participant>>,
+        venue: Venue,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) {
+        self.check_registered();
+        self.add_participant_subscription(topic, handler);
+
+        let command = SubscribeCommand::AllParticipants(SubscribeAllParticipants::new(
+            client_id,
+            venue,
+            UUID4::new(),
+            self.timestamp_ns(),
+            None,
+            params,
+        ));
+
+        self.send_data_cmd(DataCommand::Subscribe(command));
+    }
+
+    /// Registers a local participant profiles topic subscription (msgbus only, no command).
+    pub fn subscribe_participant_profiles(
+        &mut self,
+        topic: MStr<Topic>,
+        handler: TypedHandler<Vec<ParticipantProfile>>,
+    ) {
+        self.check_registered();
+        self.add_participant_profile_subscription(topic, handler);
+    }
+
     /// Helper method for registering bars subscriptions from the trait.
     pub fn subscribe_bars(
         &mut self,
@@ -4349,6 +4593,18 @@ impl DataActorCore {
         });
 
         self.send_data_cmd(DataCommand::Unsubscribe(command));
+    }
+
+    /// Removes a local participant topic subscription.
+    pub fn unsubscribe_participants(&mut self, venue: Venue) {
+        self.check_registered();
+        self.remove_participant_subscription(get_participants_topic(venue));
+    }
+
+    /// Removes a local participant profiles topic subscription (msgbus only).
+    pub fn unsubscribe_participant_profiles(&mut self, venue: Venue) {
+        self.check_registered();
+        self.remove_participant_profile_subscription(get_participant_profiles_topic(venue));
     }
 
     /// Helper method for unsubscribing from bars.

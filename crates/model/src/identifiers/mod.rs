@@ -18,8 +18,6 @@
 //! # Design notes
 //!
 //! - `TradeId` remains a fixed-size `StackStr` with a 36-character limit.
-//! - High-cardinality external IDs must not use `Ustr`, because interning
-//!   unique values grows process memory without bound.
 //! - Some identifiers still use fixed-size `repr(C)` storage because the
 //!   current Cython/C ABI shares raw layout by value.
 //! - A deeper storage redesign is deferred to V2, when the ABI can move to
@@ -39,6 +37,7 @@ pub mod exec_algorithm_id;
 pub mod instrument_id;
 pub mod option_series_id;
 pub mod order_list_id;
+pub mod participant_id;
 pub mod position_id;
 pub mod strategy_id;
 pub mod symbol;
@@ -61,6 +60,7 @@ pub use crate::identifiers::{
     instrument_id::{GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, InstrumentIdError},
     option_series_id::{OptionSeriesId, OptionSeriesIdError},
     order_list_id::OrderListId,
+    participant_id::ParticipantId,
     position_id::PositionId,
     strategy_id::{StrategyId, normalize_order_id_tag},
     symbol::Symbol,
@@ -77,6 +77,7 @@ impl_from_str_for_identifier!(client_order_id::ClientOrderId);
 impl_from_str_for_identifier!(component_id::ComponentId);
 impl_from_str_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
 impl_from_str_for_identifier!(order_list_id::OrderListId);
+impl_from_str_for_identifier!(participant_id::ParticipantId);
 impl_from_str_for_identifier!(position_id::PositionId);
 impl_from_str_for_identifier!(strategy_id::StrategyId);
 impl_from_str_for_identifier!(symbol::Symbol);
@@ -92,6 +93,7 @@ impl_serialization_for_identifier!(client_order_id::ClientOrderId);
 impl_serialization_for_identifier!(component_id::ComponentId);
 impl_serialization_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
 impl_serialization_for_identifier!(order_list_id::OrderListId);
+impl_serialization_for_identifier!(participant_id::ParticipantId);
 impl_serialization_for_identifier!(position_id::PositionId);
 impl_serialization_for_identifier!(strategy_id::StrategyId);
 impl_serialization_for_identifier!(symbol::Symbol);
@@ -106,6 +108,7 @@ impl_as_ref_for_identifier!(client_order_id::ClientOrderId);
 impl_as_ref_for_identifier!(component_id::ComponentId);
 impl_as_ref_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
 impl_as_ref_for_identifier!(order_list_id::OrderListId);
+impl_as_ref_for_identifier!(participant_id::ParticipantId);
 impl_as_ref_for_identifier!(position_id::PositionId);
 impl_as_ref_for_identifier!(strategy_id::StrategyId);
 impl_as_ref_for_identifier!(symbol::Symbol);

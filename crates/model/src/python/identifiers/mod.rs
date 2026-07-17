@@ -36,6 +36,7 @@ identifier_for_python!(crate::identifiers::ClientOrderId);
 identifier_for_python!(crate::identifiers::ComponentId);
 identifier_for_python!(crate::identifiers::ExecAlgorithmId);
 identifier_for_python!(crate::identifiers::OrderListId);
+identifier_for_python!(crate::identifiers::ParticipantId);
 identifier_for_python!(crate::identifiers::PositionId);
 identifier_for_python!(crate::identifiers::StrategyId);
 identifier_for_python!(crate::identifiers::TraderId);

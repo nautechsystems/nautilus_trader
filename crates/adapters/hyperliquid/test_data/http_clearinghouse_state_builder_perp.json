@@ -1,0 +1,88 @@
+{
+    "assetPositions": [
+        {
+            "position": {
+                "coin": "BTC",
+                "cumFunding": {
+                    "allTime": "-12.345678",
+                    "sinceOpen": "-1.234567",
+                    "sinceChange": "-0.123456"
+                },
+                "entryPx": "98450.0",
+                "leverage": {
+                    "type": "cross",
+                    "value": 5
+                },
+                "liquidationPx": "80000.0",
+                "marginUsed": "1969.0",
+                "maxLeverage": 40,
+                "positionValue": "9845.0",
+                "returnOnEquity": "0.025",
+                "szi": "0.1",
+                "unrealizedPnl": "246.125"
+            },
+            "type": "oneWay"
+        },
+        {
+            "position": {
+                "coin": "xyz:TSLA",
+                "cumFunding": {
+                    "allTime": "5.123",
+                    "sinceOpen": "1.5",
+                    "sinceChange": "0.3"
+                },
+                "entryPx": "275.50",
+                "leverage": {
+                    "type": "cross",
+                    "value": 3
+                },
+                "liquidationPx": "180.0",
+                "marginUsed": "918.33",
+                "maxLeverage": 10,
+                "positionValue": "2755.0",
+                "returnOnEquity": "0.012",
+                "szi": "10.0",
+                "unrealizedPnl": "33.12"
+            },
+            "type": "oneWay"
+        },
+        {
+            "position": {
+                "coin": "cash:NVDA",
+                "cumFunding": {
+                    "allTime": "-2.0",
+                    "sinceOpen": "-0.5",
+                    "sinceChange": "-0.1"
+                },
+                "entryPx": "135.20",
+                "leverage": {
+                    "type": "cross",
+                    "value": 2
+                },
+                "liquidationPx": "50.0",
+                "marginUsed": "338.0",
+                "maxLeverage": 5,
+                "positionValue": "676.0",
+                "returnOnEquity": "-0.005",
+                "szi": "-5.0",
+                "unrealizedPnl": "-1.69"
+            },
+            "type": "oneWay"
+        }
+    ],
+    "marginSummary": {
+        "accountValue": "15246.125",
+        "totalMarginUsed": "3225.33",
+        "totalNtlPos": "13276.0",
+        "totalRawUsd": "5401.125"
+    },
+    "crossMarginSummary": {
+        "accountValue": "15246.125",
+        "totalMarginUsed": "3225.33",
+        "totalNtlPos": "13276.0",
+        "totalRawUsd": "5401.125"
+    },
+    "crossMaintenanceMarginUsed": "806.33",
+    "withdrawable": "12020.795",
+    "time": 1784050800000
+}

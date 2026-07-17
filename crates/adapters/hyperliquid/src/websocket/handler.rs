@@ -29,8 +29,8 @@ use nautilus_core::{
     AtomicTime, MUTEX_POISONED, Params, nanos::UnixNanos, time::get_atomic_clock_realtime,
 };
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType},
-    identifiers::{AccountId, InstrumentId},
+    data::{BarType, CustomData, Data, DataType, Participant, ParticipantKind},
+    identifiers::{AccountId, InstrumentId, ParticipantId},
     instruments::{Instrument, InstrumentAny},
     types::Price,
 };
@@ -775,6 +775,7 @@ impl FeedHandler {
     ) -> Vec<NautilusWsMessage> {
         let mut trade_ticks = Vec::new();
         let mut public_trades = Vec::new();
+        let mut participants = Vec::new();
 
         for trade in data {
             if let Some(instrument) = instruments.get(&trade.coin) {
@@ -810,6 +811,23 @@ impl FeedHandler {
                         }
                     }
                 }
+
+                // Extract participants — DB upsert handles deduplication
+                let ts_event = UnixNanos::from(trade.time * 1_000_000);
+                for raw_id in &trade.users {
+                    let Ok(participant_id) = ParticipantId::new_checked(raw_id) else {
+                        log::warn!("Invalid participant ID in trade {}: {raw_id}", trade.tid);
+                        continue;
+                    };
+                    participants.push(Participant::new(
+                        participant_id,
+                        instrument.id().venue,
+                        ParticipantKind::Wallet,
+                        ts_event,
+                        ts_event,
+                        ts_init,
+                    ));
+                }
             } else {
                 log::debug!("No instrument found for coin: {}", trade.coin);
             }
@@ -818,6 +836,9 @@ impl FeedHandler {
         let mut result = Vec::with_capacity(1 + public_trades.len());
         if !trade_ticks.is_empty() {
             result.push(NautilusWsMessage::Trades(trade_ticks));
+        }
+        if !participants.is_empty() {
+            result.push(NautilusWsMessage::Participants(participants));
         }
         result.extend(public_trades.into_iter().map(|trade| {
             let instrument_id = trade.instrument_id;
@@ -1294,7 +1315,7 @@ mod tests {
     };
 
     use ahash::{AHashMap, AHashSet};
-    use nautilus_common::cache::fifo::FifoCacheMap;
+    use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
     use nautilus_core::nanos::UnixNanos;
     use nautilus_model::{
         data::Data,
@@ -1314,14 +1335,14 @@ mod tests {
             client::{AssetContextDataType, CLOID_CACHE_CAPACITY, CloidCache},
             messages::{
                 NautilusWsMessage, PerpsAssetCtx, PostRequest, SharedAssetCtx, SpotAssetCtx,
-                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData,
+                WsActiveAssetCtxData, WsAllDexsAssetCtxsData, WsBookData, WsLevelData, WsTradeData,
             },
             post::PostRouter,
         },
         AssetContextCaches, FeedHandler, HandlerCommand,
     };
     use crate::{
-        common::consts::HYPERLIQUID_VENUE,
+        common::{consts::HYPERLIQUID_VENUE, enums::HyperliquidSide},
         data_types::{HyperliquidAllDexsAssetCtxs, HyperliquidOpenInterest},
     };
 
@@ -1373,6 +1394,64 @@ mod tests {
             ],
             time: 1_700_000_000_000,
         }
+    }
+
+    #[rstest]
+    fn test_handle_trades_returns_deduplicated_participants() {
+        let instruments = AHashMap::from([(Ustr::from("BTC"), btc_perp())]);
+        let trades = vec![
+            WsTradeData {
+                coin: Ustr::from("BTC"),
+                side: HyperliquidSide::Buy,
+                px: dec!(100.0),
+                sz: dec!(1.0),
+                hash: "0x01".to_string(),
+                time: 1_000,
+                tid: 1,
+                users: ["0xbuyer".to_string(), "0xseller".to_string()],
+            },
+            WsTradeData {
+                coin: Ustr::from("BTC"),
+                side: HyperliquidSide::Sell,
+                px: dec!(101.0),
+                sz: dec!(2.0),
+                hash: "0x02".to_string(),
+                time: 2_000,
+                tid: 2,
+                users: ["0xseller".to_string(), "0xbuyer".to_string()],
+            },
+        ];
+
+        let trade_subs: AHashMap<Ustr, crate::websocket::trades::TradeStreamUses> = {
+            let mut m = AHashMap::new();
+            m.insert(
+                Ustr::from("BTC"),
+                crate::websocket::trades::TradeStreamUses {
+                    ticks: true,
+                    public_trades: false,
+                },
+            );
+            m
+        };
+        let mut processed_ids = FifoCache::<(Ustr, u64), 10_000>::default();
+
+        let messages = FeedHandler::handle_trades(
+            &trades,
+            &instruments,
+            &trade_subs,
+            &mut processed_ids,
+            UnixNanos::from(3),
+        );
+        let NautilusWsMessage::Trades(trades) = &messages[0] else {
+            panic!("expected trades message");
+        };
+        let NautilusWsMessage::Participants(participants) = &messages[1] else {
+            panic!("expected participants message");
+        };
+
+        assert_eq!(trades.len(), 2);
+        // 4 participants total (2 per trade) — DB upsert handles deduplication
+        assert_eq!(participants.len(), 4);
     }
 
     fn btc_active_spot_asset_ctx() -> WsActiveAssetCtxData {

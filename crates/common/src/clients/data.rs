@@ -22,14 +22,15 @@ use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
     RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    RequestQuotes, RequestTrades, SubscribeAllParticipants, SubscribeBars, SubscribeBookDeltas,
+    SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeParticipantProfiles,
+    SubscribeParticipants, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
     UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
-    UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+    UnsubscribeOptionGreeks, UnsubscribeParticipants, UnsubscribeQuotes, UnsubscribeTrades,
 };
 #[cfg(feature = "defi")]
 use crate::messages::defi::{
@@ -181,6 +182,26 @@ pub trait DataClient {
         Ok(())
     }
 
+    /// Subscribes to participant updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscribe operation fails.
+    fn subscribe_participants(&mut self, cmd: SubscribeParticipants) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Subscribes to participant updates for all supported venue instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscribe operation fails.
+    fn subscribe_all_participants(&mut self, cmd: SubscribeAllParticipants) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
     /// Subscribes to mark price updates for the specified instrument.
     ///
     /// # Errors
@@ -250,6 +271,22 @@ pub trait DataClient {
     ///
     /// Returns an error if the subscription operation fails.
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Subscribes to participant profile refreshes for the given IDs.
+    ///
+    /// The adapter adds these IDs to its tracked set and begins continuous
+    /// profile enrichment. This is not a one-shot request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the subscription operation fails.
+    fn subscribe_participant_profiles(
+        &mut self,
+        cmd: SubscribeParticipantProfiles,
+    ) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }
@@ -389,6 +426,16 @@ pub trait DataClient {
     ///
     /// Returns an error if the unsubscribe operation fails.
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        log_not_implemented(&cmd);
+        Ok(())
+    }
+
+    /// Unsubscribes from participant updates for the specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the unsubscribe operation fails.
+    fn unsubscribe_participants(&mut self, cmd: &UnsubscribeParticipants) -> anyhow::Result<()> {
         log_not_implemented(&cmd);
         Ok(())
     }

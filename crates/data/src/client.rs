@@ -32,15 +32,16 @@ use nautilus_common::{
     messages::data::{
         RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
         RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        RequestQuotes, RequestTrades, SubscribeAllParticipants, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeParticipants, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
         UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks,
+        UnsubscribeParticipants, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{self, switchboard::get_custom_topic},
 };
@@ -67,6 +68,8 @@ pub struct DataClientAdapter {
     pub subscriptions_book_depth10: AHashSet<InstrumentId>,
     pub subscriptions_quotes: AHashSet<InstrumentId>,
     pub subscriptions_trades: AHashSet<InstrumentId>,
+    pub subscriptions_participant: AHashSet<InstrumentId>,
+    pub subscriptions_all_participants: bool,
     pub subscriptions_bars: AHashSet<BarType>,
     pub subscriptions_instrument_status: AHashSet<InstrumentId>,
     pub subscriptions_instrument_close: AHashSet<InstrumentId>,
@@ -117,6 +120,8 @@ impl Debug for DataClientAdapter {
             .field("subscriptions_book_depth10", &self.subscriptions_book_depth10)
             .field("subscriptions_quotes", &self.subscriptions_quotes)
             .field("subscriptions_trades", &self.subscriptions_trades)
+            .field("subscriptions_participant", &self.subscriptions_participant)
+            .field("subscriptions_all_participants", &self.subscriptions_all_participants)
             .field("subscriptions_bars", &self.subscriptions_bars)
             .field("subscriptions_mark_prices", &self.subscriptions_mark_prices)
             .field("subscriptions_index_prices", &self.subscriptions_index_prices)
@@ -149,6 +154,8 @@ impl DataClientAdapter {
             subscriptions_book_depth10: AHashSet::new(),
             subscriptions_quotes: AHashSet::new(),
             subscriptions_trades: AHashSet::new(),
+            subscriptions_participant: AHashSet::new(),
+            subscriptions_all_participants: false,
             subscriptions_mark_prices: AHashSet::new(),
             subscriptions_index_prices: AHashSet::new(),
             subscriptions_funding_rates: AHashSet::new(),
@@ -217,6 +224,11 @@ impl DataClientAdapter {
             SubscribeCommand::InstrumentClose(cmd) => self.subscribe_instrument_close(cmd),
             SubscribeCommand::OptionGreeks(cmd) => self.subscribe_option_greeks(cmd),
             SubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
+            SubscribeCommand::Participants(cmd) => self.subscribe_participants(cmd),
+            SubscribeCommand::AllParticipants(cmd) => self.subscribe_all_participants(cmd),
+            SubscribeCommand::ParticipantProfiles(cmd) => {
+                self.client.subscribe_participant_profiles(cmd)
+            }
         } {
             log_command_error(&cmd_debug, &e);
         }
@@ -241,6 +253,8 @@ impl DataClientAdapter {
             UnsubscribeCommand::InstrumentClose(cmd) => self.unsubscribe_instrument_close(cmd),
             UnsubscribeCommand::OptionGreeks(cmd) => self.unsubscribe_option_greeks(cmd),
             UnsubscribeCommand::OptionChain(_) => Ok(()), // Handled internally by engine
+            UnsubscribeCommand::Participants(cmd) => self.unsubscribe_participants(cmd),
+            UnsubscribeCommand::ParticipantProfiles(_) => Ok(()), // Handled internally by engine
         } {
             log_command_error(&cmd, &e);
         }
@@ -450,6 +464,33 @@ impl DataClientAdapter {
         Ok(())
     }
 
+    /// Subscribes to participant discovery for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client subscribe operation fails.
+    fn subscribe_participants(&mut self, cmd: SubscribeParticipants) -> anyhow::Result<()> {
+        if Self::track_subscribe(
+            &mut self.subscriptions_participant,
+            cmd.instrument_id,
+            "participant",
+        ) {
+            // NOTE: we only need subscribe once from the client, thats why we use the
+            // Self::track_subscribe here to avoid duplicated subscriptions
+            self.client.subscribe_participants(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Subscribes to participant discovery for every instrument supported by the client.
+    fn subscribe_all_participants(&mut self, cmd: SubscribeAllParticipants) -> anyhow::Result<()> {
+        if !self.subscriptions_all_participants {
+            self.client.subscribe_all_participants(cmd)?;
+            self.subscriptions_all_participants = true;
+        }
+        Ok(())
+    }
+
     /// Unsubscribes from trades for an instrument, updating internal state and forwarding to the client.
     ///
     /// # Errors
@@ -458,6 +499,22 @@ impl DataClientAdapter {
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         if Self::track_unsubscribe(&mut self.subscriptions_trades, cmd.instrument_id, "trades") {
             self.client.unsubscribe_trades(cmd)?;
+        }
+        Ok(())
+    }
+
+    /// Unsubscribes from participant discovery for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying client unsubscribe operation fails.
+    fn unsubscribe_participants(&mut self, cmd: &UnsubscribeParticipants) -> anyhow::Result<()> {
+        if Self::track_unsubscribe(
+            &mut self.subscriptions_participant,
+            cmd.instrument_id,
+            "participant",
+        ) {
+            self.client.unsubscribe_participants(cmd)?;
         }
         Ok(())
     }

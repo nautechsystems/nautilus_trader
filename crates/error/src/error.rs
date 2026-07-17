@@ -69,10 +69,10 @@ impl NautilusError {
     /// If an operation was already set, the previous one is pushed
     /// into context as `"called"` to preserve the call chain.
     #[inline]
+    #[must_use]
     pub fn with_operation(mut self, operation: &'static str) -> Self {
         if !self.operation.is_empty() {
-            self.context
-                .push(("called", self.operation.to_string()));
+            self.context.push(("called", self.operation.to_string()));
         }
         self.operation = operation;
         self
@@ -80,6 +80,7 @@ impl NautilusError {
 
     /// Adds a key-value context pair to the error.
     #[inline]
+    #[must_use]
     pub fn with_context(mut self, key: &'static str, value: impl Into<String>) -> Self {
         self.context.push((key, value.into()));
         self
@@ -87,6 +88,7 @@ impl NautilusError {
 
     /// Sets the error status to temporary (retryable).
     #[inline]
+    #[must_use]
     pub fn set_temporary(mut self) -> Self {
         self.status = ErrorStatus::Temporary;
         self
@@ -94,6 +96,7 @@ impl NautilusError {
 
     /// Sets the error status to persistent (was temporary, retries exhausted).
     #[inline]
+    #[must_use]
     pub fn set_persistent(mut self) -> Self {
         self.status = ErrorStatus::Persistent;
         self
@@ -105,6 +108,7 @@ impl NautilusError {
     ///
     /// Debug-asserts that the source has not already been set.
     #[inline]
+    #[must_use]
     pub fn set_source(mut self, src: impl Into<anyhow::Error>) -> Self {
         debug_assert!(self.source.is_none(), "source error has already been set");
         self.source = Some(src.into());
@@ -155,10 +159,10 @@ impl fmt::Display for NautilusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{} ({}", self.kind, self.status)?;
 
-        if !self.operation.is_empty() {
-            write!(f, ") at {}", self.operation)?;
-        } else {
+        if self.operation.is_empty() {
             write!(f, ")")?;
+        } else {
+            write!(f, ") at {}", self.operation)?;
         }
 
         if !self.context.is_empty() {
@@ -205,7 +209,9 @@ impl fmt::Debug for NautilusError {
 // -- std::error::Error impl --
 impl std::error::Error for NautilusError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        self.source.as_ref().map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
+        self.source
+            .as_ref()
+            .map(|e| e.as_ref() as &(dyn std::error::Error + 'static))
     }
 }
 
@@ -352,9 +358,8 @@ mod tests {
 
     #[test]
     fn std_error_trait() {
-        let err: Box<dyn std::error::Error> = Box::new(
-            NautilusError::new(ErrorKind::Unexpected, "something broke"),
-        );
+        let err: Box<dyn std::error::Error> =
+            Box::new(NautilusError::new(ErrorKind::Unexpected, "something broke"));
         assert!(err.to_string().contains("something broke"));
     }
 }

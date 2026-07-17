@@ -51,17 +51,18 @@ pub use response::{
     QuotesResponse, TradesResponse,
 };
 pub use subscribe::{
-    SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+    SubscribeAllParticipants, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+    SubscribeBookSnapshots, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeParticipantProfiles,
+    SubscribeParticipants, SubscribeQuotes, SubscribeTrades,
 };
 pub use unsubscribe::{
     UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
     UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
     UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-    UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-    UnsubscribeTrades,
+    UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+    UnsubscribeParticipantProfiles, UnsubscribeParticipants, UnsubscribeQuotes, UnsubscribeTrades,
 };
 
 #[cfg(feature = "defi")]
@@ -106,6 +107,9 @@ pub enum SubscribeCommand {
     InstrumentClose(SubscribeInstrumentClose),
     OptionGreeks(SubscribeOptionGreeks),
     OptionChain(SubscribeOptionChain),
+    Participants(SubscribeParticipants),
+    AllParticipants(SubscribeAllParticipants),
+    ParticipantProfiles(SubscribeParticipantProfiles),
 }
 
 impl PartialEq for SubscribeCommand {
@@ -130,6 +134,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.command_id,
             Self::Quotes(cmd) => cmd.command_id,
             Self::Trades(cmd) => cmd.command_id,
+            Self::Participants(cmd) => cmd.command_id,
+            Self::AllParticipants(cmd) => cmd.command_id,
             Self::Bars(cmd) => cmd.command_id,
             Self::MarkPrices(cmd) => cmd.command_id,
             Self::IndexPrices(cmd) => cmd.command_id,
@@ -137,6 +143,7 @@ impl SubscribeCommand {
             Self::InstrumentStatus(cmd) => cmd.command_id,
             Self::InstrumentClose(cmd) => cmd.command_id,
             Self::OptionGreeks(cmd) => cmd.command_id,
+            Self::ParticipantProfiles(cmd) => cmd.command_id,
             Self::OptionChain(cmd) => cmd.command_id,
         }
     }
@@ -151,6 +158,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.client_id.as_ref(),
             Self::Quotes(cmd) => cmd.client_id.as_ref(),
             Self::Trades(cmd) => cmd.client_id.as_ref(),
+            Self::Participants(cmd) => cmd.client_id.as_ref(),
+            Self::AllParticipants(cmd) => cmd.client_id.as_ref(),
             Self::MarkPrices(cmd) => cmd.client_id.as_ref(),
             Self::IndexPrices(cmd) => cmd.client_id.as_ref(),
             Self::FundingRates(cmd) => cmd.client_id.as_ref(),
@@ -159,6 +168,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
             Self::OptionGreeks(cmd) => cmd.client_id.as_ref(),
             Self::OptionChain(cmd) => cmd.client_id.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -172,6 +182,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.venue.as_ref(),
             Self::Quotes(cmd) => cmd.venue.as_ref(),
             Self::Trades(cmd) => cmd.venue.as_ref(),
+            Self::Participants(cmd) => cmd.venue.as_ref(),
+            Self::AllParticipants(cmd) => Some(&cmd.venue),
             Self::MarkPrices(cmd) => cmd.venue.as_ref(),
             Self::IndexPrices(cmd) => cmd.venue.as_ref(),
             Self::FundingRates(cmd) => cmd.venue.as_ref(),
@@ -180,6 +192,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
             Self::OptionGreeks(cmd) => cmd.venue.as_ref(),
             Self::OptionChain(cmd) => cmd.venue.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.venue.as_ref(),
         }
     }
 
@@ -193,6 +206,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.ts_init,
             Self::Quotes(cmd) => cmd.ts_init,
             Self::Trades(cmd) => cmd.ts_init,
+            Self::Participants(cmd) => cmd.ts_init,
+            Self::AllParticipants(cmd) => cmd.ts_init,
             Self::MarkPrices(cmd) => cmd.ts_init,
             Self::IndexPrices(cmd) => cmd.ts_init,
             Self::FundingRates(cmd) => cmd.ts_init,
@@ -201,6 +216,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
             Self::OptionGreeks(cmd) => cmd.ts_init,
             Self::OptionChain(cmd) => cmd.ts_init,
+            Self::ParticipantProfiles(cmd) => cmd.ts_init,
         }
     }
 
@@ -214,6 +230,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.correlation_id,
             Self::Quotes(cmd) => cmd.correlation_id,
             Self::Trades(cmd) => cmd.correlation_id,
+            Self::Participants(cmd) => cmd.correlation_id,
+            Self::AllParticipants(cmd) => cmd.correlation_id,
             Self::MarkPrices(cmd) => cmd.correlation_id,
             Self::IndexPrices(cmd) => cmd.correlation_id,
             Self::FundingRates(cmd) => cmd.correlation_id,
@@ -222,6 +240,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+            Self::ParticipantProfiles(_) => None,
         }
     }
 
@@ -235,6 +254,8 @@ impl SubscribeCommand {
             Self::BookSnapshots(cmd) => cmd.params.as_ref(),
             Self::Quotes(cmd) => cmd.params.as_ref(),
             Self::Trades(cmd) => cmd.params.as_ref(),
+            Self::Participants(cmd) => cmd.params.as_ref(),
+            Self::AllParticipants(cmd) => cmd.params.as_ref(),
             Self::Bars(cmd) => cmd.params.as_ref(),
             Self::MarkPrices(cmd) => cmd.params.as_ref(),
             Self::IndexPrices(cmd) => cmd.params.as_ref(),
@@ -243,6 +264,7 @@ impl SubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.params.as_ref(),
             Self::OptionGreeks(cmd) => cmd.params.as_ref(),
             Self::OptionChain(cmd) => cmd.params.as_ref(),
+            Self::ParticipantProfiles(_) => None,
         }
     }
 }
@@ -265,6 +287,8 @@ pub enum UnsubscribeCommand {
     InstrumentClose(UnsubscribeInstrumentClose),
     OptionGreeks(UnsubscribeOptionGreeks),
     OptionChain(UnsubscribeOptionChain),
+    Participants(UnsubscribeParticipants),
+    ParticipantProfiles(UnsubscribeParticipantProfiles),
 }
 
 impl PartialEq for UnsubscribeCommand {
@@ -297,6 +321,8 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.command_id,
             Self::OptionGreeks(cmd) => cmd.command_id,
             Self::OptionChain(cmd) => cmd.command_id,
+            Self::Participants(cmd) => cmd.command_id,
+            Self::ParticipantProfiles(cmd) => cmd.command_id,
         }
     }
 
@@ -318,6 +344,8 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.client_id.as_ref(),
             Self::OptionGreeks(cmd) => cmd.client_id.as_ref(),
             Self::OptionChain(cmd) => cmd.client_id.as_ref(),
+            Self::Participants(cmd) => cmd.client_id.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.client_id.as_ref(),
         }
     }
 
@@ -339,6 +367,8 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.venue.as_ref(),
             Self::OptionGreeks(cmd) => cmd.venue.as_ref(),
             Self::OptionChain(cmd) => cmd.venue.as_ref(),
+            Self::Participants(cmd) => cmd.venue.as_ref(),
+            Self::ParticipantProfiles(cmd) => cmd.venue.as_ref(),
         }
     }
 
@@ -360,6 +390,8 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.ts_init,
             Self::OptionGreeks(cmd) => cmd.ts_init,
             Self::OptionChain(cmd) => cmd.ts_init,
+            Self::Participants(cmd) => cmd.ts_init,
+            Self::ParticipantProfiles(cmd) => cmd.ts_init,
         }
     }
 
@@ -381,6 +413,8 @@ impl UnsubscribeCommand {
             Self::InstrumentClose(cmd) => cmd.correlation_id,
             Self::OptionGreeks(cmd) => cmd.correlation_id,
             Self::OptionChain(_) => None,
+            Self::Participants(cmd) => cmd.correlation_id,
+            Self::ParticipantProfiles(cmd) => cmd.correlation_id,
         }
     }
 }

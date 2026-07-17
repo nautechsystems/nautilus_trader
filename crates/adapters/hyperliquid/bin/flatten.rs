@@ -109,7 +109,7 @@ async fn main() -> anyhow::Result<()> {
     let perp_by_coin: AHashMap<Ustr, &InstrumentAny> = instruments
         .iter()
         .filter(|inst| {
-            HyperliquidProductType::from_symbol(inst.id().symbol.as_str())
+            HyperliquidProductType::from_instrument_symbol(inst.id().symbol.as_str())
                 .is_ok_and(|pt| pt == HyperliquidProductType::Perp)
         })
         .map(|inst| (inst.raw_symbol().inner(), inst))

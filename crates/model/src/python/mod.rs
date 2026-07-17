@@ -134,6 +134,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::data::option_chain::OptionGreeks>()?;
     m.add_class::<crate::data::option_chain::OptionChainSlice>()?;
     m.add_class::<crate::data::option_chain::OptionStrikeData>()?;
+    m.add_class::<crate::data::participant::ParticipantKind>()?;
+    m.add_class::<crate::data::participant::Participant>()?;
+    m.add_class::<crate::data::participant::ParticipantTransaction>()?;
+    m.add_class::<crate::data::participant::ParticipantProfile>()?;
     m.add_class::<crate::python::data::option_chain::PyStrikeRange>()?;
     m.add_class::<crate::data::forward::ForwardPrice>()?;
     m.add_function(wrap_pyfunction!(
@@ -195,6 +199,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::identifiers::ExecAlgorithmId>()?;
     m.add_class::<crate::identifiers::InstrumentId>()?;
     m.add_class::<crate::identifiers::OrderListId>()?;
+    m.add_class::<crate::identifiers::ParticipantId>()?;
     m.add_class::<crate::identifiers::PositionId>()?;
     m.add_class::<crate::identifiers::StrategyId>()?;
     m.add_class::<crate::identifiers::Symbol>()?;

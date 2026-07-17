@@ -6907,6 +6907,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-strategies"
+version = "0.61.0"
+dependencies = [
+ "ahash 0.8.12",
+ "anyhow",
+ "bon",
+ "dotenvy",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-hyperliquid",
+ "nautilus-infrastructure",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-trading",
+ "tokio",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-system"
 version = "0.61.0"
 dependencies = [

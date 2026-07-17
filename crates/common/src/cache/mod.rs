@@ -66,7 +66,8 @@ use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
         Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        MarkPriceUpdate, Participant, ParticipantProfile, QuoteTick, TradeTick, YieldCurveData,
+        option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
@@ -75,7 +76,7 @@ use nautilus_model::{
     events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Venue, VenueOrderId,
+        OrderListId, ParticipantId, PositionId, StrategyId, Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::{
@@ -2138,6 +2139,8 @@ pub struct Cache {
     order_lists: AHashMap<OrderListId, OrderList>,
     positions: AHashMap<PositionId, SharedCell<Position>>,
     position_snapshots: AHashMap<PositionId, Vec<Bytes>>,
+    participants: AHashMap<ParticipantId, Participant>,
+    participant_profiles: AHashMap<ParticipantId, ParticipantProfile>,
     #[cfg(feature = "defi")]
     pub(crate) defi: crate::defi::cache::DefiCache,
 }
@@ -2169,6 +2172,8 @@ impl Debug for Cache {
             .field("order_lists", &self.order_lists)
             .field("positions", &self.positions)
             .field("position_snapshots", &self.position_snapshots)
+            .field("participants", &self.participants)
+            .field("participant_profiles", &self.participant_profiles)
             .finish()
     }
 }
@@ -2223,6 +2228,8 @@ impl Cache {
             order_lists: AHashMap::new(),
             positions: AHashMap::new(),
             position_snapshots: AHashMap::new(),
+            participants: AHashMap::new(),
+            participant_profiles: AHashMap::new(),
             #[cfg(feature = "defi")]
             defi: crate::defi::cache::DefiCache::default(),
         }
@@ -7905,6 +7912,110 @@ impl Cache {
         }
 
         log::debug!("Completed own books audit in {:?}", start.elapsed());
+    }
+
+    /// Upserts a participant into the cache.
+    ///
+    /// Returns `true` if the participant was newly inserted (not previously tracked).
+    pub fn add_participant(&mut self, participant: Participant) -> bool {
+        use std::collections::hash_map::Entry;
+        match self.participants.entry(participant.id) {
+            Entry::Vacant(e) => {
+                e.insert(participant);
+                true
+            }
+            Entry::Occupied(mut e) => {
+                let existing = e.get_mut();
+                if participant.first_seen_at < existing.first_seen_at {
+                    existing.first_seen_at = participant.first_seen_at;
+                }
+                if participant.last_seen_at > existing.last_seen_at {
+                    existing.last_seen_at = participant.last_seen_at;
+                }
+                false
+            }
+        }
+    }
+
+    /// Upserts participants into the cache and persists to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting to the backing database fails.
+    pub fn upsert_participants(&mut self, participants: &[Participant]) -> anyhow::Result<()> {
+        for participant in participants {
+            self.add_participant(participant.clone());
+        }
+
+        if let Some(database) = &self.database {
+            database.upsert_participants(participants)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns a reference to the cached participant, if present.
+    #[must_use]
+    pub fn participant(&self, id: &ParticipantId) -> Option<&Participant> {
+        self.participants.get(id)
+    }
+
+    /// Returns all cached participants.
+    #[must_use]
+    pub fn participants(&self) -> Vec<&Participant> {
+        self.participants.values().collect()
+    }
+
+    /// Upserts a participant profile into the cache.
+    pub fn add_participant_profile(&mut self, profile: ParticipantProfile) {
+        self.participant_profiles
+            .insert(profile.participant_id, profile);
+    }
+
+    /// Upserts participant profiles into the cache and persists to the database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting to the backing database fails.
+    pub fn upsert_participant_profiles(
+        &mut self,
+        profiles: &[ParticipantProfile],
+    ) -> anyhow::Result<()> {
+        for profile in profiles {
+            self.participant_profiles
+                .insert(profile.participant_id, profile.clone());
+        }
+
+        if let Some(database) = &self.database {
+            database.upsert_participant_profiles(profiles)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns the cached profile for a participant, if present.
+    #[must_use]
+    pub fn participant_profile(&self, id: &ParticipantId) -> Option<&ParticipantProfile> {
+        self.participant_profiles.get(id)
+    }
+
+    /// Claims a batch of participants due for profile refresh from the database.
+    ///
+    /// Delegates to the underlying `CacheDatabaseAdapter`. Returns an empty vec
+    /// when no database adapter is configured.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database query fails.
+    pub fn load_participants_profile_due(
+        &self,
+        ts_now: UnixNanos,
+        batch_size: u32,
+    ) -> anyhow::Result<Vec<Participant>> {
+        match &self.database {
+            Some(db) => db.load_participants_profile_due(ts_now, batch_size),
+            None => Ok(Vec::new()),
+        }
     }
 }
 

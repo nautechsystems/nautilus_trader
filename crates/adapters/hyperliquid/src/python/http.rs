@@ -302,11 +302,10 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let py_trades = trades
-                    .into_iter()
-                    .map(|trade| trade.into_py_any(py))
-                    .collect::<PyResult<Vec<_>>>()?;
-                let pylist = PyList::new(py, py_trades)?;
+                let pylist = PyList::new(
+                    py,
+                    trades.into_iter().map(|trade| trade.into_py_any_unwrap(py)),
+                )?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })

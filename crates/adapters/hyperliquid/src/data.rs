@@ -35,12 +35,14 @@ use nautilus_common::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, FundingRatesResponse,
             InstrumentResponse, InstrumentsResponse, RequestBars, RequestBookSnapshot,
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
+            RequestTrades, SubscribeAllParticipants, SubscribeBars, SubscribeBookDeltas,
+            SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeInstrument, SubscribeMarkPrices, SubscribeParticipantProfiles,
+            SubscribeParticipants, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeParticipants,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -55,13 +57,13 @@ use nautilus_model::{
         OrderBookDeltas_API, TradeTick,
     },
     enums::{BarAggregation, BookType, OrderSide},
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId, ParticipantId, Venue},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
 use rust_decimal::Decimal;
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -92,8 +94,10 @@ pub struct HyperliquidDataClient {
     cancellation_token: CancellationToken,
     ws_stream_handle: Mutex<Option<JoinHandle<()>>>,
     stream_health_handle: Mutex<Option<JoinHandle<()>>>,
+    participant_profile_handle: Mutex<Option<JoinHandle<()>>>,
+    participant_profile_tx: Mutex<Option<mpsc::UnboundedSender<Vec<ParticipantId>>>>,
     pending_tasks: Mutex<Vec<JoinHandle<()>>>,
-    data_sender: tokio::sync::mpsc::UnboundedSender<DataEvent>,
+    data_sender: mpsc::UnboundedSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
@@ -173,6 +177,8 @@ impl HyperliquidDataClient {
             cancellation_token: CancellationToken::new(),
             ws_stream_handle: Mutex::new(None),
             stream_health_handle: Mutex::new(None),
+            participant_profile_handle: Mutex::new(None),
+            participant_profile_tx: Mutex::new(None),
             pending_tasks: Mutex::new(Vec::new()),
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
@@ -215,6 +221,22 @@ impl HyperliquidDataClient {
         }
     }
 
+    fn abort_participant_profile_task(&self) {
+        if let Some(handle) = self
+            .participant_profile_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take()
+        {
+            handle.abort();
+        }
+
+        self.participant_profile_tx
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take();
+    }
+
     async fn stop_stream_health_monitor(&self) {
         let handle = self
             .stream_health_handle
@@ -227,6 +249,27 @@ impl HyperliquidDataClient {
                 Ok(()) => {}
                 Err(e) if e.is_cancelled() => {}
                 Err(e) => log::warn!("Stream health monitor task failed: {e}"),
+            }
+        }
+    }
+
+    async fn stop_participant_profile_task(&self) {
+        self.participant_profile_tx
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take();
+
+        let handle = self
+            .participant_profile_handle
+            .lock()
+            .expect(MUTEX_POISONED)
+            .take();
+
+        if let Some(handle) = handle {
+            match handle.await {
+                Ok(()) => {}
+                Err(e) if e.is_cancelled() => {}
+                Err(e) => log::warn!("Participant profile worker failed: {e}"),
             }
         }
     }
@@ -299,6 +342,32 @@ impl HyperliquidDataClient {
         });
 
         *slot = Some(handle);
+    }
+
+    fn spawn_participant_profile_task(&self) {
+        let mut handle_slot = self
+            .participant_profile_handle
+            .lock()
+            .expect(MUTEX_POISONED);
+        if handle_slot
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+        {
+            return;
+        }
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        *self.participant_profile_tx.lock().expect(MUTEX_POISONED) = Some(tx);
+
+        let http = self.http_client.clone();
+        let sender = self.data_sender.clone();
+        let cancellation_token = self.cancellation_token.clone();
+
+        let handle = get_runtime().spawn(async move {
+            run_participant_profile_task(http, sender, rx, cancellation_token).await;
+        });
+
+        *handle_slot = Some(handle);
     }
 
     fn venue(&self) -> Venue {
@@ -422,6 +491,13 @@ impl HyperliquidDataClient {
                                         }
                                     }
                                 }
+                                NautilusWsMessage::Participants(participants) => {
+                                    if let Err(e) = data_sender.send(DataEvent::Data(
+                                        Data::Participants(participants),
+                                    )) {
+                                        log::error!("Failed to send participants: {e}");
+                                    }
+                                }
                                 NautilusWsMessage::Quote(quote) => {
                                     if let Err(e) = data_sender
                                         .send(DataEvent::Data(Data::Quote(quote)))
@@ -532,6 +608,7 @@ impl DataClient for HyperliquidDataClient {
         log::info!("Stopping Hyperliquid data client {}", self.client_id);
         self.cancellation_token.cancel();
         self.abort_stream_health_monitor();
+        self.abort_participant_profile_task();
         self.clear_stream_health();
         self.is_connected.store(false, Ordering::Relaxed);
         Ok(())
@@ -546,6 +623,7 @@ impl DataClient for HyperliquidDataClient {
         self.cancellation_token.cancel();
         self.abort_pending_tasks();
         self.abort_stream_health_monitor();
+        self.abort_participant_profile_task();
         self.clear_stream_health();
 
         if let Some(handle) = self.ws_stream_handle.lock().expect(MUTEX_POISONED).take() {
@@ -604,6 +682,7 @@ impl DataClient for HyperliquidDataClient {
             .await
             .context("failed to spawn WebSocket client")?;
         self.spawn_stream_health_monitor();
+        self.spawn_participant_profile_task();
 
         self.is_connected.store(true, Ordering::Relaxed);
         log::info!("Connected: client_id={}", self.client_id);
@@ -632,6 +711,7 @@ impl DataClient for HyperliquidDataClient {
         }
 
         self.stop_stream_health_monitor().await;
+        self.stop_participant_profile_task().await;
         self.clear_stream_health();
         self.instruments.store(AHashMap::new());
 
@@ -848,6 +928,56 @@ impl DataClient for HyperliquidDataClient {
         Ok(())
     }
 
+    fn subscribe_participants(
+        &mut self,
+        subscription: SubscribeParticipants,
+    ) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let instrument_id = subscription.instrument_id;
+
+        self.spawn_task("subscribe_participant", async move {
+            ws.subscribe_trades(instrument_id).await
+        });
+
+        Ok(())
+    }
+
+    fn subscribe_all_participants(&mut self, _cmd: SubscribeAllParticipants) -> anyhow::Result<()> {
+        let ws = self.ws_client.clone();
+        let mut instrument_ids: Vec<_> = self.instruments.load().keys().copied().collect();
+        instrument_ids.sort_unstable();
+
+        if instrument_ids.is_empty() {
+            anyhow::bail!("cannot subscribe all participants: instrument cache is empty");
+        }
+
+        self.spawn_task("subscribe_all_participants", async move {
+            log::info!(
+                "Subscribing to participant discovery for {} Hyperliquid instruments",
+                instrument_ids.len(),
+            );
+            let mut failures = 0usize;
+            let total = instrument_ids.len();
+            for instrument_id in instrument_ids {
+                if let Err(e) = ws.subscribe_trades(instrument_id).await {
+                    failures += 1;
+                    log::warn!(
+                        "Failed participant discovery subscription for {instrument_id}: {e}"
+                    );
+                }
+            }
+
+            if failures > 0 {
+                anyhow::bail!("failed to subscribe {failures} Hyperliquid instruments");
+            } else {
+                log::info!("Subscribed to {total} instruments for Hyperliquid");
+            }
+            Ok(())
+        });
+
+        Ok(())
+    }
+
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
         let ws = self.ws_client.clone();
         let instrument_id = cmd.instrument_id;
@@ -893,6 +1023,30 @@ impl DataClient for HyperliquidDataClient {
         self.spawn_task("subscribe_bars", async move {
             ws.subscribe_bars(bar_type).await
         });
+
+        Ok(())
+    }
+
+    fn subscribe_participant_profiles(
+        &mut self,
+        cmd: SubscribeParticipantProfiles,
+    ) -> anyhow::Result<()> {
+        if cmd.participant_ids.is_empty() {
+            return Ok(());
+        }
+
+        self.spawn_participant_profile_task();
+
+        let sender = self
+            .participant_profile_tx
+            .lock()
+            .expect(MUTEX_POISONED)
+            .clone()
+            .context("participant profile worker is not running")?;
+
+        sender
+            .send(cmd.participant_ids)
+            .map_err(|e| anyhow::anyhow!("failed to enqueue participant profile IDs: {e}"))?;
 
         Ok(())
     }
@@ -976,6 +1130,25 @@ impl DataClient for HyperliquidDataClient {
         let instrument_id = unsubscription.instrument_id;
 
         self.spawn_task("unsubscribe_trades", async move {
+            ws.unsubscribe_trades(instrument_id).await
+        });
+
+        Ok(())
+    }
+
+    fn unsubscribe_participants(
+        &mut self,
+        unsubscription: &UnsubscribeParticipants,
+    ) -> anyhow::Result<()> {
+        log::debug!(
+            "Unsubscribing from participants: {}",
+            unsubscription.instrument_id
+        );
+
+        let ws = self.ws_client.clone();
+        let instrument_id = unsubscription.instrument_id;
+
+        self.spawn_task("unsubscribe_participant", async move {
             ws.unsubscribe_trades(instrument_id).await
         });
 
@@ -1795,6 +1968,56 @@ async fn handle_stream_health_events(
     }
 }
 
+async fn run_participant_profile_task(
+    http: HyperliquidHttpClient,
+    sender: mpsc::UnboundedSender<DataEvent>,
+    mut rx: mpsc::UnboundedReceiver<Vec<ParticipantId>>,
+    cancellation_token: CancellationToken,
+) {
+    log::debug!("Hyperliquid participant profile task started");
+
+    loop {
+        let participant_ids = tokio::select! {
+            () = cancellation_token.cancelled() => {
+                log::debug!("Hyperliquid participant profile task cancelled");
+                break;
+            }
+            maybe_ids = rx.recv() => {
+                let Some(ids) = maybe_ids else {
+                    break;
+                };
+                ids
+            }
+        };
+
+        let mut profiles = Vec::with_capacity(participant_ids.len());
+        for participant_id in participant_ids {
+            let result = tokio::select! {
+                () = cancellation_token.cancelled() => {
+                    log::debug!("Hyperliquid participant profile task cancelled");
+                    return;
+                }
+                result = http.request_participant_profile(participant_id) => result,
+            };
+
+            match result {
+                Ok(profile) => profiles.push(profile),
+                Err(e) => {
+                    log::warn!("Failed to fetch participant profile for {participant_id}: {e:?}");
+                }
+            }
+        }
+
+        if !profiles.is_empty()
+            && let Err(e) = sender.send(DataEvent::Data(Data::ParticipantProfiles(profiles)))
+        {
+            log::error!("Failed to send participant profiles: {e}");
+        }
+    }
+
+    log::debug!("Hyperliquid participant profile task stopped");
+}
+
 // Applies the request window and limit to a snapshot of recent trades. `trades`
 // must be sorted ascending by `ts_event`. Returns the subset within `[start, end]`
 // (each bound unbounded when `None`), keeping at most the most recent `limit`
@@ -2208,7 +2431,7 @@ mod tests {
         #[case] stale_receive_timeout_secs: u64,
         #[case] check_interval_secs: u64,
     ) {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel();
         set_data_event_sender(tx);
         let client = HyperliquidDataClient::new(
             *crate::common::consts::HYPERLIQUID_CLIENT_ID,
@@ -2239,7 +2462,7 @@ mod tests {
 
     #[rstest]
     fn test_data_client_recovery_requires_positive_cooldown() {
-        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, _rx) = mpsc::unbounded_channel();
         set_data_event_sender(tx);
         let client = HyperliquidDataClient::new(
             *crate::common::consts::HYPERLIQUID_CLIENT_ID,

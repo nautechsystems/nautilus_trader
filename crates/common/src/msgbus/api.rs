@@ -33,7 +33,7 @@ use nautilus_model::defi::{
 use nautilus_model::{
     data::{
         Bar, CustomData, Data, FundingRateUpdate, GreeksData, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDeltas, OrderBookDepth10, QuoteTick, TradeTick,
+        OrderBookDeltas, OrderBookDepth10, Participant, ParticipantProfile, QuoteTick, TradeTick,
         option_chain::{OptionChainSlice, OptionGreeks},
     },
     events::{AccountState, OrderEventAny, PortfolioSnapshot, PositionEvent},
@@ -50,8 +50,9 @@ use super::{
     ACCOUNT_STATE_HANDLERS, ANY_HANDLERS, BAR_HANDLERS, BOOK_HANDLERS, BusPayloadType,
     DELTAS_HANDLERS, DEPTH10_HANDLERS, FUNDING_RATE_HANDLERS, GREEKS_HANDLERS, HANDLER_BUFFER_CAP,
     INDEX_PRICE_HANDLERS, INSTRUMENT_HANDLERS, MARK_PRICE_HANDLERS, OPTION_CHAIN_HANDLERS,
-    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS,
-    POSITION_EVENT_HANDLERS, QUOTE_HANDLERS, TRADE_HANDLERS,
+    OPTION_GREEKS_HANDLERS, ORDER_EVENT_HANDLERS, PARTICIPANT_PROFILES_HANDLERS,
+    PARTICIPANTS_HANDLERS, PORTFOLIO_SNAPSHOT_HANDLERS, POSITION_EVENT_HANDLERS, QUOTE_HANDLERS,
+    TRADE_HANDLERS,
     core::{MessageBus, Subscription},
     dispatch_tap_publish, dispatch_tap_response, dispatch_tap_send,
     external::forward_to_external_egress,
@@ -349,6 +350,30 @@ pub fn subscribe_trades(
         .subscribe(pattern, handler, priority.unwrap_or(0));
 }
 
+/// Subscribes a handler to participant batches matching a pattern.
+pub fn subscribe_participants(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<Vec<Participant>>,
+    priority: Option<u32>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_participants
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
+/// Subscribes a handler to participant profiles matching a pattern.
+pub fn subscribe_participant_profiles(
+    pattern: MStr<Pattern>,
+    handler: TypedHandler<Vec<ParticipantProfile>>,
+    priority: Option<u32>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_participant_profiles
+        .subscribe(pattern, handler, priority.unwrap_or(0));
+}
+
 /// Subscribes a handler to bars matching a pattern.
 pub fn subscribe_bars(pattern: MStr<Pattern>, handler: TypedHandler<Bar>, priority: Option<u32>) {
     get_message_bus()
@@ -624,6 +649,25 @@ pub fn unsubscribe_trades(pattern: MStr<Pattern>, handler: &TypedHandler<TradeTi
     get_message_bus()
         .borrow_mut()
         .router_trades
+        .unsubscribe(pattern, handler);
+}
+
+/// Unsubscribes a handler from participant batches.
+pub fn unsubscribe_participants(pattern: MStr<Pattern>, handler: &TypedHandler<Vec<Participant>>) {
+    get_message_bus()
+        .borrow_mut()
+        .router_participants
+        .unsubscribe(pattern, handler);
+}
+
+/// Unsubscribes a handler from participant profiles.
+pub fn unsubscribe_participant_profiles(
+    pattern: MStr<Pattern>,
+    handler: &TypedHandler<Vec<ParticipantProfile>>,
+) {
+    get_message_bus()
+        .borrow_mut()
+        .router_participant_profiles
         .unsubscribe(pattern, handler);
 }
 
@@ -1015,6 +1059,29 @@ pub fn publish_instrument(topic: MStr<Topic>, instrument: &InstrumentAny) {
     );
 
     forward_to_external_egress(topic, BusPayloadType::Instrument, instrument);
+}
+
+/// Publishes a batch of participants to subscribers on a topic.
+pub fn publish_participants(topic: MStr<Topic>, participants: &Vec<Participant>) {
+    publish_typed(
+        topic,
+        &PARTICIPANTS_HANDLERS,
+        |bus, h| bus.router_participants.fill_matching_handlers(topic, h),
+        participants,
+    );
+}
+
+/// Publishes a batch of participant profiles to subscribers on a topic.
+pub fn publish_participant_profiles(topic: MStr<Topic>, profiles: &Vec<ParticipantProfile>) {
+    publish_typed(
+        topic,
+        &PARTICIPANT_PROFILES_HANDLERS,
+        |bus, h| {
+            bus.router_participant_profiles
+                .fill_matching_handlers(topic, h);
+        },
+        profiles,
+    );
 }
 
 /// Publishes order book deltas to subscribers on a topic.

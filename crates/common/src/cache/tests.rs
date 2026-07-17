@@ -30,7 +30,7 @@ use nautilus_model::{
     accounts::AccountAny,
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick,
+        MarkPriceUpdate, Participant, ParticipantKind, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
@@ -48,7 +48,8 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId,
-        OrderListId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
+        OrderListId, ParticipantId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
+        VenueOrderId,
     },
     instruments::{
         CurrencyPair, Instrument, InstrumentAny, OptionContract, SyntheticInstrument, stubs::*,
@@ -79,6 +80,34 @@ use crate::{
     },
     signal::Signal,
 };
+
+#[rstest]
+fn test_add_participant_merges_seen_range_across_batches() {
+    let mut cache = Cache::default();
+    let participant_id = ParticipantId::new("0x0123456789abcdef0123456789abcdef01234567");
+    let venue = Venue::new("HYPERLIQUID");
+
+    assert!(cache.add_participant(Participant::new(
+        participant_id,
+        venue,
+        ParticipantKind::Wallet,
+        UnixNanos::from(20),
+        UnixNanos::from(30),
+        UnixNanos::from(31),
+    )));
+    assert!(!cache.add_participant(Participant::new(
+        participant_id,
+        venue,
+        ParticipantKind::Wallet,
+        UnixNanos::from(10),
+        UnixNanos::from(40),
+        UnixNanos::from(41),
+    )));
+
+    let participant = cache.participant(&participant_id).unwrap();
+    assert_eq!(participant.first_seen_at, UnixNanos::from(10));
+    assert_eq!(participant.last_seen_at, UnixNanos::from(40));
+}
 
 fn build_order_canceled(
     trader_id: TraderId,

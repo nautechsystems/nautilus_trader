@@ -1871,6 +1871,7 @@ impl HyperliquidExecutionClient {
                         }
                         // Handled by data client
                         NautilusWsMessage::Trades(_)
+                        | NautilusWsMessage::Participants(_)
                         | NautilusWsMessage::Quote(_)
                         | NautilusWsMessage::Deltas(_)
                         | NautilusWsMessage::Depth10(_)

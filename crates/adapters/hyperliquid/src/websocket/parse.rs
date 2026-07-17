@@ -557,7 +557,7 @@ mod tests {
         },
         websocket::messages::{
             FillLiquidationData, PerpsAssetCtx, SharedAssetCtx, SpotAssetCtx, WsBasicOrderData,
-            WsBookData, WsLevelData,
+            WsBookData, WsLevelData, WsTradeData,
         },
     };
 
@@ -592,6 +592,26 @@ mod tests {
             UnixNanos::default(),
             UnixNanos::default(),
         ))
+    }
+
+    #[rstest]
+    fn test_parse_ws_trade_tick() {
+        let instrument = create_test_instrument();
+        let trade = WsTradeData {
+            coin: Ustr::from("BTC"),
+            side: HyperliquidSide::Buy,
+            px: dec!(50000.00),
+            sz: dec!(0.500),
+            hash: "0xabc123".to_string(),
+            time: 1_704_470_400_000,
+            tid: 12_345,
+            users: ["0xbuyer".to_string(), "0xseller".to_string()],
+        };
+
+        let tick = parse_ws_trade_tick(&trade, &instrument, UnixNanos::default()).unwrap();
+
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.trade_id, TradeId::new("12345"));
     }
 
     #[rstest]

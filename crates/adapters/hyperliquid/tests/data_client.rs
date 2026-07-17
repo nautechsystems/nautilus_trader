@@ -48,8 +48,8 @@ use nautilus_common::{
         data::{
             RequestBookSnapshot, RequestCustomData, RequestFundingRates, RequestInstrument,
             RequestInstruments, RequestTrades, SubscribeBookDeltas, SubscribeCustomData,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
-            UnsubscribeMarkPrices,
+            SubscribeMarkPrices, SubscribeParticipant, SubscribeParticipantProfiles,
+            SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData, UnsubscribeMarkPrices,
         },
     },
     testing::wait_until_async,
@@ -69,13 +69,14 @@ use nautilus_hyperliquid::{
     },
 };
 use nautilus_model::{
-    data::{CustomData, Data, DataType},
+    data::{CustomData, Data, DataType, TransactionMethod},
     enums::BookType,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, ParticipantId},
     instruments::Instrument,
 };
 use nautilus_network::http::{HttpClient, Method};
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 #[derive(Clone, Default)]
@@ -262,14 +263,57 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
             },
             "crossMarginSummary": {
                 "accountValue": "10000.0",
-                "totalMarginUsed": "0.0",
+                "totalMarginUsed": "1969.0",
                 "totalNtlPos": "0.0",
                 "totalRawUsd": "10000.0"
             },
             "crossMaintenanceMarginUsed": "0.0",
             "withdrawable": "10000.0",
-            "assetPositions": []
+            "assetPositions": [{
+                "position": {
+                    "coin": "BTC",
+                    "cumFunding": {"allTime": "0.0", "sinceOpen": "0.0", "sinceChange": "0.0"},
+                    "entryPx": "98450.0",
+                    "leverage": {"type": "cross", "value": 5},
+                    "liquidationPx": "80000.0",
+                    "marginUsed": "1969.0",
+                    "positionValue": "9845.0",
+                    "returnOnEquity": "0.0",
+                    "szi": "0.1",
+                    "unrealizedPnl": "0.0"
+                },
+                "type": "oneWay"
+            }]
         }))
+        .into_response(),
+        "spotClearinghouseState" => Json(json!({"balances": []})).into_response(),
+        "frontendOpenOrders" => Json(json!([{
+            "coin": "BTC",
+            "side": "B",
+            "limitPx": "95000.0",
+            "sz": "0.05",
+            "oid": 2001u64,
+            "timestamp": 1769916000000u64,
+            "origSz": "0.05"
+        }]))
+        .into_response(),
+        "userFills" => Json(json!([{
+            "coin": "BTC",
+            "px": "104300.0",
+            "sz": "0.00500",
+            "side": "A",
+            "time": 1769916000000u64,
+            "startPosition": "0.00500",
+            "dir": "Open Short",
+            "closedPnl": "0.0",
+            "hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+            "tid": 300001u64,
+            "oid": 1001u64,
+            "crossed": true,
+            "fee": "0.0",
+            "feeToken": "USDC",
+            "twapId": null
+        }]))
         .into_response(),
         _ => Json(json!({})).into_response(),
     }
@@ -867,6 +911,120 @@ async fn test_data_client_emits_instruments_on_connect() {
 
 #[rstest]
 #[tokio::test]
+async fn test_data_client_subscribe_participant_profiles_emits_complete_profile() {
+    let state = TestServerState::default();
+    *state.recent_trades_unavailable.lock().await = true;
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    let participant_id = ParticipantId::new("0xseller1");
+    client
+        .subscribe_participant_profiles(SubscribeParticipantProfiles::new(
+            vec![participant_id],
+            Some(*HYPERLIQUID_CLIENT_ID),
+            Some(*HYPERLIQUID_VENUE),
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
+        .unwrap();
+
+    let profiles = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("data event channel closed");
+            if let DataEvent::Data(Data::ParticipantProfiles(profiles)) = event {
+                break profiles;
+            }
+        }
+    })
+    .await
+    .expect("participant profile event timed out");
+
+    assert_eq!(profiles.len(), 1);
+    let profile = &profiles[0];
+    assert_eq!(profile.participant_id, participant_id);
+
+    // -- Balances (from clearinghouseState crossMarginSummary) --
+    let balances = profile.balances.as_ref().unwrap();
+    assert_eq!(balances.len(), 1);
+    assert_eq!(balances[0].currency.code.as_str(), "USDC");
+    assert_eq!(balances[0].total.as_decimal(), dec!(10000));
+    assert_eq!(balances[0].free.as_decimal(), dec!(10000));
+
+    // -- Margins (from clearinghouseState crossMarginSummary) --
+    let margins = profile.margins.as_ref().unwrap();
+    assert_eq!(margins.len(), 1);
+    assert_eq!(margins[0].currency.code.as_str(), "USDC");
+    assert_eq!(margins[0].initial.as_decimal(), dec!(1969));
+    assert_eq!(margins[0].maintenance.as_decimal(), dec!(1969));
+    assert_eq!(margins[0].instrument_id, None);
+
+    // -- Positions (from clearinghouseState assetPositions) --
+    let positions = profile.positions.as_ref().unwrap();
+    assert_eq!(positions.len(), 1);
+    let pos = &positions[0];
+    assert_eq!(
+        pos.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+    );
+    assert_eq!(
+        pos.position_side,
+        nautilus_model::enums::PositionSideSpecified::Long
+    );
+    assert_eq!(pos.quantity.as_decimal(), dec!(0.1));
+    assert_eq!(pos.signed_decimal_qty, dec!(0.1));
+    assert_eq!(pos.avg_px_open, Some(dec!(98450.0)));
+
+    // -- Open Orders (from frontendOpenOrders) --
+    let orders = profile.open_orders.as_ref().unwrap();
+    assert_eq!(orders.len(), 1);
+    let order = &orders[0];
+    assert_eq!(
+        order.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+    );
+    assert_eq!(order.order_side, nautilus_model::enums::OrderSide::Buy);
+    assert_eq!(
+        order.order_status,
+        nautilus_model::enums::OrderStatus::Accepted
+    );
+    assert_eq!(order.quantity.as_decimal(), dec!(0.05));
+    assert_eq!(
+        order.price,
+        Some(nautilus_model::types::Price::from("95000.00"))
+    );
+    assert_eq!(
+        order.venue_order_id,
+        nautilus_model::identifiers::VenueOrderId::new("2001")
+    );
+
+    // -- Transactions (derived from userFills) --
+    let transactions = profile.transactions.as_ref().unwrap();
+    assert_eq!(transactions.len(), 1);
+    let tx = &transactions[0];
+    assert_eq!(tx.method, TransactionMethod::OpenShort);
+    assert_eq!(
+        tx.instrument_id,
+        InstrumentId::from("BTC-USD-PERP.HYPERLIQUID")
+    );
+    assert_eq!(tx.amount, dec!(-0.005));
+    assert_eq!(tx.price.as_decimal(), dec!(104300));
+    assert_eq!(tx.value.as_decimal(), dec!(521.5));
+    assert_eq!(
+        tx.hash.as_str(),
+        "0x0000000000000000000000000000000000000000000000000000000000000001"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_data_client_emits_hip3_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
@@ -939,21 +1097,84 @@ async fn test_data_client_subscribe_trades() {
     );
     client.subscribe_trades(cmd).unwrap();
 
-    // Drain until we get a trade (subscription is async via get_runtime)
-    wait_until_async(
-        || {
-            let found = loop {
-                match rx.try_recv() {
-                    Ok(DataEvent::Data(Data::Trade(_))) => break true,
-                    Ok(_) => {}
-                    Err(_) => break false,
-                }
-            };
-            async move { found }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    let (trade_received, participants) = tokio::time::timeout(Duration::from_secs(5), async {
+        let mut trade_received = false;
+        let mut participants = None;
+
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::Data(Data::Trade(_)) => trade_received = true,
+                DataEvent::Data(Data::Participants(batch)) => participants = Some(batch),
+                _ => {}
+            }
+
+            if trade_received && participants.is_some() {
+                break (trade_received, participants.unwrap());
+            }
+        }
+    })
+    .await
+    .expect("trade and participant events timed out");
+
+    assert!(trade_received);
+    assert_eq!(participants.len(), 2);
+    assert_eq!(participants[0].id, ParticipantId::new("0xbuyer"));
+    assert_eq!(participants[1].id, ParticipantId::new("0xseller"));
+    assert!(participants.iter().all(|participant| {
+        participant.venue == *HYPERLIQUID_VENUE
+            && participant.first_seen_at == UnixNanos::from(1_703_875_200_000_000_000)
+            && participant.last_seen_at == participant.first_seen_at
+    }));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_subscribe_participant_starts_discovery_stream() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    drain_initial_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_participant(SubscribeParticipant::new(
+            instrument_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            Some(*HYPERLIQUID_VENUE),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let participants = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = rx.recv().await.expect("data event channel closed");
+            if let DataEvent::Data(Data::Participants(participants)) = event {
+                break participants;
+            }
+        }
+    })
+    .await
+    .expect("participant discovery event timed out");
+
+    assert_eq!(participants.len(), 2);
+    assert_eq!(participants[0].id, ParticipantId::new("0xbuyer"));
+    assert_eq!(participants[1].id, ParticipantId::new("0xseller"));
+    assert!(
+        participants
+            .iter()
+            .all(|participant| participant.venue == *HYPERLIQUID_VENUE)
+    );
+
     client.disconnect().await.unwrap();
 }
 
