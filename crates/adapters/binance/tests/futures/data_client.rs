@@ -663,7 +663,7 @@ fn create_data_test_router(state: DataTestServerState) -> Router {
         .route("/dapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
             "/fapi/v1/exchangeInfo",
-            get(|| async { json_response(&load_fixture("exchange_info_delivery_usdm.json")) }),
+            get(|| async { json_response(&load_fixture("exchange_info_usdm.json")) }),
         )
         .route(
             "/dapi/v1/exchangeInfo",

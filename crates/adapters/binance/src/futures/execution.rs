@@ -3072,7 +3072,9 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
         BinanceProductType::UsdM => {
             matches!(
                 instrument,
-                InstrumentAny::CryptoFuture(_) | InstrumentAny::CryptoPerpetual(_)
+                InstrumentAny::CryptoFuture(_)
+                    | InstrumentAny::CryptoPerpetual(_)
+                    | InstrumentAny::PerpetualContract(_)
             ) && !instrument.is_inverse()
         }
         BinanceProductType::CoinM => {
@@ -3089,7 +3091,8 @@ fn is_instrument_for_product(instrument: &InstrumentAny, product_type: BinancePr
 mod tests {
     use nautilus_model::{
         instruments::stubs::{
-            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt, xbtusd_bitmex,
+            crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            perpetual_contract_eurusd, xbtusd_bitmex,
         },
         types::Price,
     };
@@ -3273,6 +3276,7 @@ mod tests {
     #[rstest]
     fn test_instrument_product_matching_distinguishes_futures_products_from_spot() {
         let usdm = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let generic_perpetual = InstrumentAny::PerpetualContract(perpetual_contract_eurusd());
         let coinm = InstrumentAny::CryptoPerpetual(xbtusd_bitmex());
         let delivery =
             || crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
@@ -3284,6 +3288,14 @@ mod tests {
 
         assert!(is_instrument_for_product(&usdm, BinanceProductType::UsdM));
         assert!(!is_instrument_for_product(&usdm, BinanceProductType::CoinM));
+        assert!(is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::UsdM
+        ));
+        assert!(!is_instrument_for_product(
+            &generic_perpetual,
+            BinanceProductType::CoinM
+        ));
         assert!(is_instrument_for_product(&coinm, BinanceProductType::CoinM));
         assert!(!is_instrument_for_product(&coinm, BinanceProductType::UsdM));
         assert!(is_instrument_for_product(

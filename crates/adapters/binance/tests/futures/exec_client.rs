@@ -123,7 +123,7 @@ fn load_fixture(name: &str) -> serde_json::Value {
 }
 
 fn exchange_info_response() -> serde_json::Value {
-    load_fixture("exchange_info_delivery_usdm.json")
+    load_fixture("exchange_info_usdm.json")
 }
 
 #[derive(Clone, Copy)]
