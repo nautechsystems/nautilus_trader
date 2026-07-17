@@ -271,6 +271,7 @@ mod tests {
             TraderId::from("TRADER-002"),
             AccountId::from("BINANCE-002"),
             Some(BinanceProductType::UsdM),
+            None,
             Some(BinanceEnvironment::Demo),
             Some("https://http.example".to_string()),
             Some("wss://stream.example".to_string()),
