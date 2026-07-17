@@ -15,7 +15,6 @@
 
 import enum
 from collections.abc import Generator
-from typing import Any
 from typing import NamedTuple
 
 from lxml.etree import _Element
@@ -130,13 +129,13 @@ class Product(NamedTuple):
     Interactive Brokers Web Product.
     """
 
-    ib_symbol: Any  # TODO: More specific type
-    description: Any  # TODO: More specific type
-    native_symbol: Any  # TODO: More specific type
-    currency: Any  # TODO: More specific type
+    ib_symbol: str
+    description: str
+    native_symbol: str
+    currency: str
 
 
-def _parse_products(table: _Element) -> Generator:
+def _parse_products(table: _Element) -> Generator[Product, None, None]:
     for row in table.xpath(".//tr")[1:]:
         ib_symbol, desc, symbol, currency = list(
             filter(None, map(str.strip, row.xpath(".//text()"))),
@@ -154,7 +153,7 @@ def load_product_list(
     product_class: ProductClass,
     limit: int = 500,
     debug: bool = False,
-) -> Generator:
+) -> Generator[Product, None, None]:
     """
     Load all instruments for a given `exchange` and `product_class` via the Interactive
     Brokers web interface.
