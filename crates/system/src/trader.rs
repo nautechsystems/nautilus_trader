@@ -808,6 +808,86 @@ impl Trader {
         Ok(strategy_id)
     }
 
+    /// Adds a constructed Python strategy instance to the trader.
+    ///
+    /// This is the instance-based counterpart to [`Self::add_strategy_from_importable_config`]:
+    /// the strategy is already constructed in Python, avoiding the `dict`-to-JSON round trip of
+    /// the importable-config path. The strategy ID, order ID tag, and logging flags are sourced
+    /// from the instance's retained `.config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy cannot be configured, registered, or tracked.
+    #[cfg(feature = "python")]
+    pub fn add_python_strategy_instance(
+        &mut self,
+        strategy: &Py<PyAny>,
+    ) -> anyhow::Result<StrategyId> {
+        self.validate_actor_or_strategy_registration()?;
+
+        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
+            let bound = strategy.bind(py);
+
+            let config_instance = bound
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none());
+
+            let mut py_strategy_ref = bound
+                .extract::<PyRefMut<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            if let Some(config_obj) = config_instance.as_ref() {
+                configure_py_strategy(&mut py_strategy_ref, config_obj)?;
+            }
+
+            py_strategy_ref.set_python_instance(strategy.clone_ref(py));
+            Ok(py_strategy_ref.strategy_id())
+        })?;
+
+        if self.strategy_ids.contains(&strategy_id) {
+            anyhow::bail!("Strategy {strategy_id} is already registered");
+        }
+
+        let component_id = ComponentId::new(strategy_id.inner().as_str());
+        let clock = self.create_component_clock(component_id);
+        let trader_id = self.trader_id;
+        let cache = self.cache.clone();
+        let portfolio = self.portfolio.clone();
+
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_strategy = strategy.bind(py);
+            let mut py_strategy_ref = py_strategy
+                .extract::<PyRefMut<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            py_strategy_ref
+                .register(trader_id, clock, cache, portfolio)
+                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
+
+            Ok(())
+        })?;
+
+        Python::attach(|py| -> anyhow::Result<()> {
+            let py_strategy = strategy.bind(py);
+            let py_strategy_ref = py_strategy
+                .cast::<PyStrategy>()
+                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
+            py_strategy_ref.borrow().register_in_global_registries();
+            Ok(())
+        })?;
+
+        self.add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)?;
+
+        log::info!(
+            "Registered Python strategy {strategy_id} with trader {}",
+            self.trader_id
+        );
+        Ok(strategy_id)
+    }
+
     /// Adds an execution algorithm to the trader.
     ///
     /// Execution algorithms are registered in both the component registry (for lifecycle

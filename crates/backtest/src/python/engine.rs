@@ -46,8 +46,7 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{
-        AccountId, ActorId, ClientId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId,
-        TraderId, Venue,
+        AccountId, ActorId, ClientId, ComponentId, ExecAlgorithmId, InstrumentId, TraderId, Venue,
     },
     python::instruments::pyobject_to_instrument_any,
     types::{Currency, Money, Price},
@@ -65,10 +64,7 @@ use nautilus_trading::examples::{
 use nautilus_trading::{
     ImportableExecAlgorithmConfig, ImportableStrategyConfig,
     algorithm::{TwapAlgorithm, TwapAlgorithmConfig},
-    python::{
-        algorithm::PyExecutionAlgorithm,
-        strategy::{PyStrategy, PyStrategyInner},
-    },
+    python::algorithm::PyExecutionAlgorithm,
 };
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -905,119 +901,13 @@ impl PyBacktestEngine {
         reason = "Required for Python strategy component registration"
     )]
     fn add_python_strategy(&mut self, strategy: &Py<PyAny>) -> PyResult<()> {
-        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
-            let bound = strategy.bind(py);
-
-            let config_instance = bound
-                .getattr("config")
-                .ok()
-                .filter(|config| !config.is_none());
-
-            let mut py_strategy_ref = bound
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            if let Some(config_obj) = config_instance.as_ref() {
-                if let Ok(strategy_id) = config_obj.getattr("strategy_id")
-                    && !strategy_id.is_none()
-                {
-                    let strategy_id_val = if let Ok(sid) = strategy_id.extract::<StrategyId>() {
-                        sid
-                    } else if let Ok(sid_str) = strategy_id.extract::<String>() {
-                        StrategyId::new_checked(&sid_str)?
-                    } else {
-                        anyhow::bail!("Invalid `strategy_id` type");
-                    };
-                    py_strategy_ref.set_strategy_id(strategy_id_val)?;
-                }
-
-                if let Ok(order_id_tag) = config_obj.getattr("order_id_tag")
-                    && !order_id_tag.is_none()
-                {
-                    let order_id_tag_val = order_id_tag
-                        .extract::<String>()
-                        .map_err(|e| anyhow::anyhow!("Invalid `order_id_tag` type: {e}"))?;
-                    py_strategy_ref.set_order_id_tag(&order_id_tag_val)?;
-                }
-
-                if let Ok(log_events) = config_obj.getattr("log_events")
-                    && let Ok(log_events_val) = log_events.extract::<bool>()
-                {
-                    py_strategy_ref.set_log_events(log_events_val);
-                }
-
-                if let Ok(log_commands) = config_obj.getattr("log_commands")
-                    && let Ok(log_commands_val) = log_commands.extract::<bool>()
-                {
-                    py_strategy_ref.set_log_commands(log_commands_val);
-                }
-            }
-
-            py_strategy_ref.set_python_instance(strategy.clone_ref(py));
-            let strategy_id = py_strategy_ref.strategy_id();
-
-            Ok(strategy_id)
-        })
-        .map_err(to_pyruntime_err)?;
-
-        if self
-            .0
-            .kernel()
-            .trader
-            .borrow()
-            .strategy_ids()
-            .contains(&strategy_id)
-        {
-            return Err(to_pyruntime_err(format!(
-                "Strategy '{strategy_id}' is already registered"
-            )));
-        }
-
-        let trader_id = self.0.kernel().config.trader_id();
-        let cache = self.0.kernel().cache.clone();
-        let portfolio = self.0.kernel().portfolio.clone();
-        let component_id = ComponentId::new(strategy_id.inner().as_str());
-        let clock = self
-            .0
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .create_component_clock(component_id);
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let mut py_strategy_ref = py_strategy
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            py_strategy_ref
-                .register(trader_id, clock, cache, portfolio)
-                .map_err(|e| anyhow::anyhow!("Failed to register PyStrategy: {e}"))?;
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let py_strategy = strategy.bind(py);
-            let py_strategy_ref = py_strategy
-                .cast::<PyStrategy>()
-                .map_err(|e| anyhow::anyhow!("Failed to downcast to PyStrategy: {e}"))?;
-            py_strategy_ref.borrow().register_in_global_registries();
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
         self.0
             .kernel_mut()
             .trader
             .borrow_mut()
-            .add_strategy_id_with_subscriptions::<PyStrategyInner>(strategy_id)
+            .add_python_strategy_instance(strategy)
             .map_err(to_pyruntime_err)?;
 
-        log::info!("Registered Python strategy {strategy_id}");
         Ok(())
     }
 

@@ -66,7 +66,7 @@ use crate::{
         LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
         PluginConfig,
     },
-    node::{LiveNode, config::RoutingConfig},
+    node::{LiveNode, NodeState, config::RoutingConfig},
     python::config::coerce_json_config,
 };
 
@@ -405,6 +405,73 @@ impl LiveNode {
             .map_err(to_pyruntime_err)?;
 
         log::info!("Registered Python actor {actor_id}");
+        Ok(())
+    }
+
+    /// Adds a strategy to the trader.
+    ///
+    /// Strategies are registered in both the component registry (for lifecycle management)
+    /// and the actor registry (for data callbacks via msgbus).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is currently running.
+    /// - A strategy with the same ID is already registered.
+    #[allow(
+        unsafe_code,
+        reason = "Required for Python strategy component registration"
+    )]
+    #[pyo3(name = "add_strategy")]
+    fn py_add_strategy(&mut self, strategy: &Bound<'_, PyAny>) -> PyResult<()> {
+        if self.state() != NodeState::Idle {
+            return Err(to_pyruntime_err(
+                "Cannot add strategy while node is running, add strategies before calling start()",
+            ));
+        }
+
+        log::debug!("`add_strategy` with a constructed instance");
+
+        let strategy = strategy.clone().unbind();
+
+        // Read `external_order_claims` (live-only) from the instance's `.config` and install
+        // them on the PyStrategy before registration, mirroring `add_strategy_from_config`.
+        let external_order_claims =
+            Python::attach(|py| -> anyhow::Result<Option<Vec<InstrumentId>>> {
+                let bound = strategy.bind(py);
+                let config_obj = bound
+                    .getattr("config")
+                    .ok()
+                    .filter(|config| !config.is_none());
+
+                let mut py_strategy_ref = bound
+                    .extract::<PyRefMut<PyStrategy>>()
+                    .map_err(Into::<PyErr>::into)
+                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+                if let Some(config_obj) = config_obj.as_ref()
+                    && let Some(claims) = extract_external_order_claims_config_attr(config_obj)?
+                {
+                    py_strategy_ref.set_external_order_claims(Some(claims));
+                }
+
+                Ok(py_strategy_ref.external_order_claims())
+            })
+            .map_err(to_pyruntime_err)?;
+
+        let strategy_id = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .add_python_strategy_instance(&strategy)
+            .map_err(to_pyruntime_err)?;
+
+        if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
+            self.register_external_order_claims(strategy_id, &claims)
+                .map_err(to_pyruntime_err)?;
+        }
+
+        log::info!("Registered Python strategy {strategy_id}");
         Ok(())
     }
 
@@ -2682,6 +2749,57 @@ class ClaimsStrategy(Strategy):
                 .to_string()
                 .contains("already exists for CLAIMS-001")
         );
+    }
+
+    #[rstest]
+    fn test_add_strategy_registers_constructed_python_instance() {
+        Python::initialize();
+
+        let module_name = "test_live_node_add_strategy_instance";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let strategy_id = StrategyId::from("CLAIMS-002");
+
+        Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("strategy_id", strategy_id.to_string())
+                .unwrap();
+            kwargs
+                .set_item("external_order_claims", vec![instrument_id.to_string()])
+                .unwrap();
+            let config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((config,))
+                .unwrap();
+
+            node.py_add_strategy(&strategy)
+                .expect("strategy should register");
+        });
+
+        {
+            let exec_engine = node.kernel().exec_engine.borrow();
+            assert_eq!(
+                exec_engine.get_external_order_claim(&instrument_id),
+                Some(strategy_id)
+            );
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
