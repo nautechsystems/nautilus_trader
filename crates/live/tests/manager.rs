@@ -9611,6 +9611,11 @@ impl MockPositionExecutionClient {
         self
     }
 
+    fn with_position_reports(mut self, position_reports: Vec<PositionStatusReport>) -> Self {
+        self.position_reports = RefCell::new(position_reports);
+        self
+    }
+
     fn failing_position_reports() -> Self {
         Self {
             client_id: test_client_id(),
@@ -9816,6 +9821,233 @@ async fn test_position_check_uses_client_tolerance_for_observed_smoke_difference
     let events = ctx.manager.check_positions_consistency(&clients).await;
 
     assert!(events.is_empty());
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_uses_routing_client_tolerance() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = AccountId::from("IB-ROUTING-CHECK");
+    let position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ROUTING-TOLERANCE-CHECK"),
+        OrderSide::Buy,
+        "5.000000",
+        "3000.00",
+        account_id,
+    );
+    let venue_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.005000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_margin_account(account_id);
+    ctx.add_position(&position);
+
+    let routing_client = MockPositionExecutionClient::configured(
+        ClientId::from("IB-ROUTING-CHECK"),
+        account_id,
+        Venue::from("IB"),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![venue_report])
+    .with_position_reconciliation_tolerance(dec!(0.010000));
+    let clients: Vec<&dyn ExecutionClient> = vec![&routing_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_mass_status_netting_uses_routing_client_tolerance() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_id = AccountId::from("IB-ROUTING-MASS-STATUS");
+    let position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ROUTING-TOLERANCE-MASS-STATUS"),
+        OrderSide::Buy,
+        "5.000000",
+        "3000.00",
+        account_id,
+    );
+    let matching_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.000000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_margin_account(account_id);
+    ctx.add_position(&position);
+
+    let routing_client = MockPositionExecutionClient::configured(
+        ClientId::from("IB-ROUTING-MASS-STATUS"),
+        account_id,
+        Venue::from("IB"),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![matching_report])
+    .with_position_reconciliation_tolerance(dec!(0.010000));
+    let clients: Vec<&dyn ExecutionClient> = vec![&routing_client];
+    // Seed the manager's per-account tolerance state (production seeds this in the builder);
+    // the matching report must not itself generate reconciliation events.
+    let seed_events = ctx.manager.check_positions_consistency(&clients).await;
+    assert!(seed_events.is_empty());
+
+    let mut mass_status = ExecutionMassStatus::new(
+        routing_client.client_id(),
+        account_id,
+        routing_client.venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    let drift_report = PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.005000"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    mass_status.add_position_reports(vec![drift_report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
+
+    assert!(result.events.is_empty());
+}
+
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_routing_clients_on_same_venue_use_account_tolerances_independently() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let tolerant_account_id = AccountId::from("IB-TOLERANT");
+    let strict_account_id = AccountId::from("IB-STRICT");
+    let tolerant_position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ROUTING-TOLERANT"),
+        OrderSide::Buy,
+        "5.000000",
+        "3000.00",
+        tolerant_account_id,
+    );
+    let strict_position = create_test_position_for_account(
+        &instrument,
+        PositionId::from("P-ROUTING-STRICT"),
+        OrderSide::Buy,
+        "5.000000",
+        "3000.00",
+        strict_account_id,
+    );
+    let tolerant_report = PositionStatusReport::new(
+        tolerant_account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.005000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    let strict_report = PositionStatusReport::new(
+        strict_account_id,
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("5.005000"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_margin_account(tolerant_account_id);
+    ctx.add_margin_account(strict_account_id);
+    ctx.add_position(&tolerant_position);
+    ctx.add_position(&strict_position);
+
+    let tolerant_client = MockPositionExecutionClient::configured(
+        ClientId::from("IB-TOLERANT"),
+        tolerant_account_id,
+        Venue::from("IB"),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![tolerant_report])
+    .with_position_reconciliation_tolerance(dec!(0.010000));
+    let strict_client = MockPositionExecutionClient::configured(
+        ClientId::from("IB-STRICT"),
+        strict_account_id,
+        Venue::from("IB"),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![strict_report])
+    .with_position_reconciliation_tolerance(dec!(0.001000));
+    let clients: Vec<&dyn ExecutionClient> = vec![&tolerant_client, &strict_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fill_account_ids = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.account_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fill_account_ids, vec![strict_account_id]);
 }
 
 #[tokio::test]

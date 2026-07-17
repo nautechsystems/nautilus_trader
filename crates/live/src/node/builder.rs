@@ -702,7 +702,6 @@ impl LiveNodeBuilder {
 
         for client in &exec_clients {
             exec_manager.set_position_reconciliation_tolerance(
-                client.venue(),
                 client.account_id(),
                 client.position_reconciliation_tolerance(),
             );
