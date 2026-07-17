@@ -553,7 +553,7 @@ fn create_reconciliation_fill_voids(
         });
         let prior_qty = previous.map_or_else(
             || Quantity::zero(fill.last_qty.precision),
-            |voided| voided.voided_qty,
+            |voided| voided.voided_qty.min(fill.last_qty),
         );
         let effective = fill.last_qty - prior_qty;
         if effective.is_zero() {

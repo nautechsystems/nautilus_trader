@@ -23,8 +23,8 @@ use nautilus_model::{
         OrderAccepted, OrderEventAny, OrderFilled, OrderPendingCancel, OrderPendingUpdate,
         OrderSubmitted,
         order::spec::{
-            OrderAcceptedSpec, OrderFilledSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-            OrderSubmittedSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderPendingCancelSpec,
+            OrderPendingUpdateSpec, OrderSubmittedSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -5268,6 +5268,84 @@ fn test_terminal_fill_void_uses_remaining_leaves_after_fill_correction(instrumen
     assert_eq!(after.status(), OrderStatus::Voided);
     assert_eq!(after.filled_qty(), Quantity::from(0));
     assert_eq!(after.voided_qty(), Quantity::from(100));
+}
+
+#[rstest]
+fn test_fill_void_stored_before_smaller_fill_does_not_underflow_snapshot_reconciliation(
+    instrument: InstrumentAny,
+) {
+    let client_order_id = ClientOrderId::from("O-FILL-VOID-OOO");
+    let venue_order_id = VenueOrderId::from("V-FILL-VOID-OOO");
+    let account_id = AccountId::from("SIM-001");
+    let trade_id = TradeId::from("T-FILL-VOID-OOO");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    // A void arriving before its fill is only bounded by the order quantity,
+    // so the stored voided_qty can exceed the eventual fill's last_qty
+    order
+        .apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(trade_id)
+                .voided_qty(Quantity::from(60))
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_px(Price::from("1.00000"))
+                .currency(instrument.quote_currency())
+                .is_reopened(true)
+                .build(),
+        ))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(trade_id)
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_qty(Quantity::from(40))
+                .last_px(Price::from("1.00000"))
+                .currency(instrument.quote_currency())
+                .build(),
+        ))
+        .unwrap();
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::Voided,
+        Quantity::from(100),
+        Quantity::from(0),
+    );
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_snapshot_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::from(10),
+    );
+    let after = apply_events(&order, &events);
+
+    assert_eq!(after.status(), OrderStatus::Voided);
+    assert_eq!(after.filled_qty(), Quantity::from(0));
 }
 
 #[rstest]

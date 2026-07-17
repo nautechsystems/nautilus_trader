@@ -412,7 +412,7 @@ impl Position {
             self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = if let Some(ts_closed) = self.ts_closed {
-                ts_closed.as_u64() - self.ts_opened.as_u64()
+                ts_closed.as_u64().saturating_sub(self.ts_opened.as_u64())
             } else {
                 0
             };
@@ -4747,6 +4747,57 @@ mod tests {
         assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
         assert_eq!(position.opening_order_id, order1.client_order_id());
         assert_eq!(position.events.len(), 2);
+    }
+
+    #[rstest]
+    fn test_position_close_before_open_clamps_duration(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let opening_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let closing_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let opening_fill = TestOrderEventStubs::filled(
+            &opening_order,
+            &audusd_sim,
+            Some(TradeId::new("OPEN")),
+            None,
+            Some(Price::from("1.00001")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(2_000u64)),
+            None,
+        );
+        let closing_fill = TestOrderEventStubs::filled(
+            &closing_order,
+            &audusd_sim,
+            Some(TradeId::new("CLOSE")),
+            None,
+            Some(Price::from("1.00002")),
+            None,
+            None,
+            None,
+            Some(UnixNanos::from(1_000u64)),
+            None,
+        );
+        let mut position = Position::new(&audusd_sim, opening_fill.into());
+
+        position.apply(&closing_fill.into());
+
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.ts_opened, UnixNanos::from(2_000u64));
+        assert_eq!(position.ts_closed, Some(UnixNanos::from(1_000u64)));
+        assert_eq!(position.duration_ns, 0);
+        assert_eq!(
+            position.closing_order_id,
+            Some(closing_order.client_order_id())
+        );
     }
 
     #[rstest]
