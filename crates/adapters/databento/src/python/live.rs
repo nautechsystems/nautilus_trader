@@ -17,12 +17,12 @@
 
 use std::path::PathBuf;
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
     identifiers::InstrumentId,
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use super::types::DatabentoSubscriptionAck;
 pub use crate::live::DatabentoLiveClient;
@@ -50,23 +50,31 @@ impl DatabentoLiveClient {
                         Err(e) => log::error!("Failed creating instrument: {e}"),
                     });
                 }
-                DatabentoMessage::Status(data) => Python::attach(|py| {
-                    let py_obj = data.into_py_any_unwrap(py);
-                    call_python(py, &callback_pyo3, py_obj);
-                }),
-                DatabentoMessage::Imbalance(data) => Python::attach(|py| {
-                    let py_obj = data.into_py_any_unwrap(py);
-                    call_python(py, &callback_pyo3, py_obj);
-                }),
-                DatabentoMessage::Statistics(data) => Python::attach(|py| {
-                    let py_obj = data.into_py_any_unwrap(py);
-                    call_python(py, &callback_pyo3, py_obj);
-                }),
-                DatabentoMessage::SubscriptionAck(ack) => Python::attach(|py| {
-                    let py_obj: DatabentoSubscriptionAck = ack.into();
-                    let py_obj = py_obj.into_py_any_unwrap(py);
-                    call_python(py, &callback_pyo3, py_obj);
-                }),
+                DatabentoMessage::Status(data) => {
+                    Python::attach(|py| -> PyResult<()> {
+                        call_python(py, &callback_pyo3, data.into_py_any(py)?);
+                        Ok(())
+                    })?;
+                }
+                DatabentoMessage::Imbalance(data) => {
+                    Python::attach(|py| -> PyResult<()> {
+                        call_python(py, &callback_pyo3, data.into_py_any(py)?);
+                        Ok(())
+                    })?;
+                }
+                DatabentoMessage::Statistics(data) => {
+                    Python::attach(|py| -> PyResult<()> {
+                        call_python(py, &callback_pyo3, data.into_py_any(py)?);
+                        Ok(())
+                    })?;
+                }
+                DatabentoMessage::SubscriptionAck(ack) => {
+                    Python::attach(|py| -> PyResult<()> {
+                        let py_obj = DatabentoSubscriptionAck::from(ack).into_py_any(py)?;
+                        call_python(py, &callback_pyo3, py_obj);
+                        Ok(())
+                    })?;
+                }
                 DatabentoMessage::Close => {
                     // Graceful close
                     break;

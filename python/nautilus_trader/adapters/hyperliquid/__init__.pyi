@@ -23,7 +23,6 @@ __all__ = [
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
     "HyperliquidPublicTrade",
-    "HyperliquidRawHttpClient",
     "HyperliquidTpSl",
     "HyperliquidTrailingOffsetType",
     "HyperliquidWebSocketClient",
@@ -331,9 +330,6 @@ class HyperliquidPublicTrade:
     def encode_record_batch_py(self, items: list) -> typing.Any: ...
     @staticmethod
     def to_arrow_record_batch_bytes(data: typing.Sequence[HyperliquidPublicTrade]) -> bytes: ...
-
-@typing.final
-class HyperliquidRawHttpClient: ...
 
 @typing.final
 class HyperliquidWebSocketClient:

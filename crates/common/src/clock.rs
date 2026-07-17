@@ -225,7 +225,7 @@ pub trait Clock: Debug + Any {
 
     /// Returns the time interval in which the timer `name` is triggered.
     ///
-    /// If the timer doesn't exist `None` is returned.
+    /// If no active (not expired) timer with `name` exists, `None` is returned.
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos>;
 
     /// Cancels the timer with `name`.
@@ -621,7 +621,7 @@ impl<'a> ClockApi<'a> {
         }
     }
 
-    /// Returns the next trigger timestamp for the timer `name`.
+    /// Returns the next trigger timestamp for the active (not expired) timer `name`.
     ///
     /// # Panics
     ///
@@ -1097,12 +1097,12 @@ impl Clock for TestClock {
         let (name, alert_time_ns) =
             validate_and_prepare_time_alert(name, alert_time_ns, allow_past, ts_now)?;
 
-        self.replace_existing_timer_if_needed(&name);
-
         check_predicate_true(
             callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
+
+        self.replace_existing_timer_if_needed(&name);
 
         if let Some(callback) = callback {
             self.callbacks.register_callback(name, callback);
@@ -1174,6 +1174,7 @@ impl Clock for TestClock {
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         self.timers
             .get(&Ustr::from(name))
+            .filter(|timer| !timer.is_expired())
             .map(TestTimer::next_time_ns)
     }
 
@@ -2061,6 +2062,33 @@ mod tests {
             err.to_string().contains("No callbacks provided"),
             "unexpected error: {err}"
         );
+    }
+
+    #[rstest]
+    fn test_failed_set_time_alert_ns_preserves_existing_timer() {
+        // Fresh clock with no default handler
+        let mut clock = TestClock::new();
+        let alert_time: UnixNanos = (*clock.timestamp_ns() + 1000).into();
+        let callback = TimeEventCallback::from(TestCallback::default());
+        clock
+            .set_time_alert_ns("alert", alert_time, Some(callback), None)
+            .unwrap();
+        assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
+
+        // Callbacks released (e.g. partial component teardown) while the alert still lives
+        clock.cancel_callbacks();
+
+        // Rescheduling without a callback fails the predicate check; the error
+        // return must not have destroyed the previously scheduled alert
+        let err = clock
+            .set_time_alert_ns("alert", (*alert_time + 1000).into(), None, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No callbacks provided"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(clock.timer_count(), 1);
+        assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
     }
 
     #[rstest]

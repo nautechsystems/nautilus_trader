@@ -143,10 +143,6 @@ impl AxEnvironment {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
-)]
 pub enum AxInstrumentState {
     /// Instrument is in pre-open state.
     PreOpen,
@@ -277,10 +273,6 @@ impl From<AxCategory> for AssetClass {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
-)]
 pub enum AxOrderSide {
     /// Buy order.
     #[serde(rename = "B", alias = "Buy")]
@@ -362,10 +354,6 @@ impl TryFrom<OrderSide> for AxOrderSide {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderStatus {
     /// Order is pending submission.
@@ -451,10 +439,6 @@ impl From<AxOrderStatus> for OrderStatus {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
-)]
 pub enum AxTimeInForce {
     /// Good-Till-Canceled: order remains active until filled or canceled.
     Gtc,
@@ -533,10 +517,6 @@ impl TryFrom<TimeInForce> for AxTimeInForce {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderType {
     /// Market order; execute immediately at best available price.
@@ -800,10 +780,6 @@ pub enum AxOrderRequestType {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
-)]
 pub enum AxMdWsMessageType {
     /// Heartbeat event.
     #[serde(rename = "h")]
@@ -864,10 +840,6 @@ pub enum AxMdWsMessageType {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxOrderWsMessageType {
     /// Heartbeat event.
@@ -944,10 +916,6 @@ pub enum AxOrderWsMessageType {
         rename_all = "SCREAMING_SNAKE_CASE",
     )
 )]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
-)]
 pub enum AxCancelReason {
     /// User requested cancellation.
     UserRequested,
@@ -987,10 +955,6 @@ pub enum AxCancelReason {
         from_py_object,
         rename_all = "SCREAMING_SNAKE_CASE",
     )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
 )]
 pub enum AxCancelRejectionReason {
     /// Order not found or already canceled.

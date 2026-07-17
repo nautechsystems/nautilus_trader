@@ -145,7 +145,7 @@ impl KrakenFuturesHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?).unwrap();
+                let pylist = PyList::new(py, py_instruments?)?;
                 Ok(pylist.unbind())
             })
         })
@@ -198,7 +198,7 @@ impl KrakenFuturesHttpClient {
                     .into_iter()
                     .map(|trade| trade.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_trades?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -283,7 +283,7 @@ impl KrakenFuturesHttpClient {
             Python::attach(|py| {
                 let py_bars: PyResult<Vec<_>> =
                     bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
-                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_bars?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -342,7 +342,7 @@ impl KrakenFuturesHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -371,7 +371,7 @@ impl KrakenFuturesHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -398,7 +398,7 @@ impl KrakenFuturesHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

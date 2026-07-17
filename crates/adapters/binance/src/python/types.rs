@@ -26,6 +26,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{
+    IntoPyObjectExt,
     basic::CompareOp,
     prelude::*,
     types::{PyDict, PyList},
@@ -424,8 +425,8 @@ impl BinanceFuturesOpenInterestHist {
             .points
             .iter()
             .cloned()
-            .map(|point| point.into_py_any_unwrap(py))
-            .collect::<Vec<_>>();
+            .map(|point| point.into_py_any(py))
+            .collect::<PyResult<Vec<_>>>()?;
         Ok(PyList::new(py, points)?.into())
     }
 

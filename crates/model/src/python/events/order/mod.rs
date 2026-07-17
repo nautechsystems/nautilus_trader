@@ -13,8 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
-use pyo3::{Py, PyAny, PyResult, Python};
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
 use crate::events::{
     OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,
@@ -49,23 +49,23 @@ pub mod updated;
 /// Returns a `PyErr` if conversion to a Python object fails.
 pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResult<Py<PyAny>> {
     match order_event {
-        OrderEventAny::Initialized(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Denied(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Emulated(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Released(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Submitted(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Accepted(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Rejected(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Canceled(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Expired(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Triggered(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::PendingUpdate(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::PendingCancel(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::ModifyRejected(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::CancelRejected(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Updated(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::Filled(event) => Ok(event.into_py_any_unwrap(py)),
-        OrderEventAny::FillVoided(event) => Ok(event.into_py_any_unwrap(py)),
+        OrderEventAny::Initialized(event) => event.into_py_any(py),
+        OrderEventAny::Denied(event) => event.into_py_any(py),
+        OrderEventAny::Emulated(event) => event.into_py_any(py),
+        OrderEventAny::Released(event) => event.into_py_any(py),
+        OrderEventAny::Submitted(event) => event.into_py_any(py),
+        OrderEventAny::Accepted(event) => event.into_py_any(py),
+        OrderEventAny::Rejected(event) => event.into_py_any(py),
+        OrderEventAny::Canceled(event) => event.into_py_any(py),
+        OrderEventAny::Expired(event) => event.into_py_any(py),
+        OrderEventAny::Triggered(event) => event.into_py_any(py),
+        OrderEventAny::PendingUpdate(event) => event.into_py_any(py),
+        OrderEventAny::PendingCancel(event) => event.into_py_any(py),
+        OrderEventAny::ModifyRejected(event) => event.into_py_any(py),
+        OrderEventAny::CancelRejected(event) => event.into_py_any(py),
+        OrderEventAny::Updated(event) => event.into_py_any(py),
+        OrderEventAny::Filled(event) => event.into_py_any(py),
+        OrderEventAny::FillVoided(event) => event.into_py_any(py),
     }
 }
 

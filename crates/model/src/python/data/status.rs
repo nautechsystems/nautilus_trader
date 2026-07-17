@@ -30,7 +30,7 @@ use nautilus_core::{
         msgpack::{FromMsgPack, ToMsgPack},
     },
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{IntoPyObjectExt, prelude::*, pyclass::CompareOp, types::PyDict};
 use ustr::Ustr;
 
 use crate::{
@@ -46,10 +46,6 @@ impl InstrumentStatus {
     /// # Errors
     ///
     /// Returns a `PyErr` if extracting any attribute or converting types fails.
-    ///
-    /// # Panics
-    ///
-    /// Panics if converting `action_u16` to `MarketStatusAction` fails.
     pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
         // Fast path: avoid property getters that trigger enum type deadlocks
         if let Ok(status) = obj.cast::<Self>() {
@@ -63,7 +59,8 @@ impl InstrumentStatus {
 
         let action_obj: Bound<'_, PyAny> = obj.getattr("action")?.extract()?;
         let action_u16: u16 = action_obj.getattr("value")?.extract()?;
-        let action = MarketStatusAction::from_u16(action_u16).unwrap();
+        let action = MarketStatusAction::from_u16(action_u16)
+            .ok_or_else(|| to_pyvalue_err(format!("Invalid action value: {action_u16}")))?;
 
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
@@ -229,14 +226,18 @@ impl InstrumentStatus {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 
@@ -257,8 +258,10 @@ impl InstrumentStatus {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{
+        IntoPyObjectExt, Python,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
     use rstest::rstest;
 
     use crate::data::{status::InstrumentStatus, stubs::stub_instrument_status};
@@ -287,9 +290,48 @@ mod tests {
     fn test_from_pyobject(stub_instrument_status: InstrumentStatus) {
         Python::initialize();
         Python::attach(|py| {
-            let status_pyobject = stub_instrument_status.into_py_any_unwrap(py);
+            let status_pyobject = stub_instrument_status.into_py_any(py).unwrap();
             let parsed_status = InstrumentStatus::from_pyobject(status_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_status, stub_instrument_status);
+        });
+    }
+
+    #[rstest]
+    fn test_from_pyobject_rejects_invalid_action() {
+        Python::initialize();
+        Python::attach(|py| {
+            let namespace = py
+                .import("types")
+                .unwrap()
+                .getattr("SimpleNamespace")
+                .unwrap();
+
+            let instrument_id_kwargs = PyDict::new(py);
+            instrument_id_kwargs.set_item("value", "AAPL.XNAS").unwrap();
+            let instrument_id = namespace.call((), Some(&instrument_id_kwargs)).unwrap();
+
+            let action_kwargs = PyDict::new(py);
+            action_kwargs.set_item("value", u16::MAX).unwrap();
+            let action = namespace.call((), Some(&action_kwargs)).unwrap();
+
+            let status_kwargs = PyDict::new(py);
+            status_kwargs
+                .set_item("instrument_id", instrument_id)
+                .unwrap();
+            status_kwargs.set_item("action", action).unwrap();
+            status_kwargs.set_item("ts_event", 1_u64).unwrap();
+            status_kwargs.set_item("ts_init", 2_u64).unwrap();
+            status_kwargs.set_item("reason", py.None()).unwrap();
+            status_kwargs.set_item("trading_event", py.None()).unwrap();
+            status_kwargs.set_item("is_trading", py.None()).unwrap();
+            status_kwargs.set_item("is_quoting", py.None()).unwrap();
+            status_kwargs
+                .set_item("is_short_sell_restricted", py.None())
+                .unwrap();
+            let status = namespace.call((), Some(&status_kwargs)).unwrap();
+
+            let err = InstrumentStatus::from_pyobject(&status).unwrap_err();
+            assert!(err.to_string().contains("Invalid action value: 65535"));
         });
     }
 }

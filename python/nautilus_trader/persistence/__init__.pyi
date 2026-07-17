@@ -32,7 +32,7 @@ class BarDataWrangler:
 
 @typing.final
 class DataBackendSession:
-    def new_session(self, chunk_size: int = 10000) -> DataBackendSession: ...
+    def __init__(self, chunk_size: int = 10000) -> None: ...
     def add_file(
         self,
         data_type: NautilusDataType,
@@ -313,22 +313,22 @@ class ParquetDataCatalog:
 
 @typing.final
 class StreamingFeatherWriter:
-    def new(
+    def __init__(
         self,
         path: str,
         cache: common.Cache,
         clock: common.Clock,
-        fs_protocol: str | None,
-        fs_storage_options: typing.Mapping[str, str] | None,
-        include_types: typing.Sequence[str] | None,
-        rotation_mode: int,
-        max_file_size: int,
+        fs_protocol: str | None = None,
+        fs_storage_options: typing.Mapping[str, str] | None = None,
+        include_types: typing.Sequence[str] | None = None,
+        rotation_mode: int = 3,
+        max_file_size: int = 1073741824,
         rotation_interval_ns: int | None = None,
         rotation_time_ns: int | None = None,
         rotation_timezone: str = "UTC",
         flush_interval_ms: int | None = None,
         replace: bool = False,
-    ) -> StreamingFeatherWriter: ...
+    ) -> None: ...
     def subscribe(self) -> None: ...
     def unsubscribe(self) -> None: ...
     def write(self, data: typing.Any) -> None: ...

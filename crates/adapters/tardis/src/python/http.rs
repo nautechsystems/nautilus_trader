@@ -15,10 +15,10 @@
 
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, enums::parse_enum, to_pyruntime_err},
+    python::{enums::parse_enum, to_pyruntime_err},
 };
 use nautilus_model::python::instruments::instrument_any_to_pyobject;
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     common::enums::TardisExchange,
@@ -124,7 +124,7 @@ impl TardisHttpClient {
                 for inst in instruments {
                     py_instruments.push(instrument_any_to_pyobject(py, inst)?);
                 }
-                Ok(py_instruments.into_py_any_unwrap(py))
+                py_instruments.into_py_any(py)
             })
         })
     }

@@ -254,9 +254,7 @@ impl MarginAccount {
     fn py_leverages(&self, py: Python) -> PyResult<Py<PyAny>> {
         let leverages = PyDict::new(py);
         for (key, &value) in &self.leverages {
-            leverages
-                .set_item(key.into_py_any_unwrap(py), value)
-                .unwrap();
+            leverages.set_item(key.into_py_any(py)?, value)?;
         }
         leverages.into_py_any(py)
     }
@@ -281,9 +279,7 @@ impl MarginAccount {
     fn py_initial_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
         let initial_margins = PyDict::new(py);
         for (key, &value) in &self.initial_margins() {
-            initial_margins
-                .set_item(key.into_py_any_unwrap(py), value.into_py_any_unwrap(py))
-                .unwrap();
+            initial_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
         }
         initial_margins.into_py_any(py)
     }
@@ -292,9 +288,7 @@ impl MarginAccount {
     fn py_maintenance_margins(&self, py: Python) -> PyResult<Py<PyAny>> {
         let maintenance_margins = PyDict::new(py);
         for (key, &value) in &self.maintenance_margins() {
-            maintenance_margins
-                .set_item(key.into_py_any_unwrap(py), value.into_py_any_unwrap(py))
-                .unwrap();
+            maintenance_margins.set_item(key.into_py_any(py)?, value.into_py_any(py)?)?;
         }
         maintenance_margins.into_py_any(py)
     }
@@ -486,7 +480,7 @@ impl MarginAccount {
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<Py<PyAny>>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();
-        dict.set_item("events", events_list.unwrap())?;
+        dict.set_item("events", events_list?)?;
         Ok(dict.into())
     }
 }

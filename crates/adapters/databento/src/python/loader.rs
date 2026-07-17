@@ -182,7 +182,7 @@ impl DatabentoDataLoader {
             data.push(py_object);
         }
 
-        let list = PyList::new(py, &data).expect("Invalid `ExactSizeIterator`");
+        let list = PyList::new(py, &data)?;
 
         Ok(list.into_py_any_unwrap(py))
     }

@@ -172,6 +172,7 @@ impl DydxWebSocketClient {
 
     /// Returns the URL of this WebSocket client.
     #[getter]
+    #[pyo3(name = "url")]
     fn py_url(&self) -> String {
         self.url().to_string()
     }

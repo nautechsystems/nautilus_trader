@@ -160,12 +160,12 @@ impl Clock for LiveClock {
         let (name, alert_time_ns) =
             validate_and_prepare_time_alert(name, alert_time_ns, allow_past, ts_now)?;
 
-        self.replace_existing_timer_if_needed(&name);
-
         check_predicate_true(
             callback.is_some() | self.callbacks.has_any_callback(&name),
             "No callbacks provided",
         )?;
+
+        self.replace_existing_timer_if_needed(&name);
 
         let callback = if let Some(callback) = callback {
             self.callbacks.register_callback(name, callback.clone());
@@ -258,6 +258,7 @@ impl Clock for LiveClock {
     fn next_time_ns(&self, name: &str) -> Option<UnixNanos> {
         self.timers
             .get(&Ustr::from(name))
+            .filter(|timer| !timer.is_expired())
             .map(LiveTimer::next_time_ns)
     }
 
@@ -472,11 +473,51 @@ mod tests {
         wait_until(|| clock.timer_count() == 0, Duration::from_secs(2));
 
         // An expired timer is purged only lazily on the next set/cancel call,
-        // so the entry still sits in the map; the three introspection surfaces
+        // so the entry still sits in the map; the introspection surfaces
         // must nevertheless agree it is gone
         assert!(clock.timers.contains_key(&name));
         assert!(!clock.timer_exists(&name));
         assert_eq!(clock.timer_count(), 0);
         assert!(clock.timer_names().is_empty());
+        assert!(clock.next_time_ns(name.as_str()).is_none());
+    }
+
+    #[rstest]
+    fn test_live_clock_failed_set_time_alert_ns_preserves_existing_timer() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sender = Arc::new(CollectingSender::new(Arc::clone(&events)));
+
+        // No default handler registered
+        let mut clock = LiveClock::new(Some(sender));
+
+        let now = clock.timestamp_ns();
+        let alert_time = now + Duration::from_mins(1).as_nanos() as u64;
+
+        clock
+            .set_time_alert_ns(
+                "alert",
+                alert_time,
+                Some(TimeEventCallback::from(|_| {})),
+                None,
+            )
+            .unwrap();
+        assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
+
+        // Callbacks released (e.g. partial component teardown) while the alert still lives
+        clock.cancel_callbacks();
+
+        // Rescheduling without a callback fails the predicate check; the error
+        // return must not have destroyed the previously scheduled alert
+        let err = clock
+            .set_time_alert_ns("alert", alert_time + 1000u64, None, None)
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("No callbacks provided"),
+            "unexpected error: {err}"
+        );
+        assert!(clock.timer_exists(&Ustr::from("alert")));
+        assert_eq!(clock.next_time_ns("alert"), Some(alert_time));
+
+        clock.cancel_timers();
     }
 }

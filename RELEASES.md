@@ -100,6 +100,7 @@ adapter set. The following limits remain deferred:
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 
 ### Fixes
+- Fixed v2 PyO3 API coverage and Python exception handling
 - Fixed Architect AX data and execution clients not refreshing authentication tokens for REST requests and WebSocket reconnects
 - Fixed v2 `BettingInstrument` catalog round trips deriving `raw_symbol` from the instrument ID and rebuilding `price_increment`/`size_increment` from precision, corrupting their values
 - Fixed v2 `FuturesContract`, `OptionContract`, `BinaryOption`, and `BettingInstrument` catalog round trips dropping quantity, price, and notional constraints, margins, and fees

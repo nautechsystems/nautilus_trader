@@ -50,7 +50,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     Params, UnixNanos, from_pydict,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
     data::{
@@ -83,6 +83,7 @@ use nautilus_model::{
 };
 use nautilus_portfolio::{portfolio::Portfolio, python::PyPortfolio};
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict, PyList},
 };
@@ -413,7 +414,7 @@ impl PyStrategyInner {
     fn dispatch_on_time_event(&self, event: &TimeEvent) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_time_event", (event.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_time_event", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -422,7 +423,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_initialized(&self, event: OrderInitialized) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_initialized", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_initialized", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -441,7 +442,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_denied(&self, event: OrderDenied) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_denied", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_denied", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -450,7 +451,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_emulated(&self, event: OrderEmulated) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_emulated", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_emulated", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -459,7 +460,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_released(&self, event: OrderReleased) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_released", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_released", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -468,7 +469,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_submitted(&self, event: OrderSubmitted) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_submitted", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_submitted", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -477,7 +478,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_rejected(&self, event: OrderRejected) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_rejected", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_rejected", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -486,7 +487,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_accepted(&self, event: OrderAccepted) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_accepted", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_accepted", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -495,7 +496,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_expired(&self, event: OrderExpired) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_expired", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_expired", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -504,7 +505,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_triggered(&self, event: OrderTriggered) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_triggered", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_triggered", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -513,11 +514,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_pending_update(&self, event: OrderPendingUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_order_pending_update",
-                    (event.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_order_pending_update", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -526,11 +523,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_pending_cancel(&self, event: OrderPendingCancel) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_order_pending_cancel",
-                    (event.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_order_pending_cancel", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -539,11 +532,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_modify_rejected(&self, event: OrderModifyRejected) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_order_modify_rejected",
-                    (event.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_order_modify_rejected", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -552,11 +541,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_cancel_rejected(&self, event: OrderCancelRejected) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_order_cancel_rejected",
-                    (event.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_order_cancel_rejected", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -565,7 +550,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_updated(&self, event: &OrderUpdated) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_updated", ((*event).into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_updated", ((*event).into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -574,7 +559,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_canceled(&self, event: OrderCanceled) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_order_canceled", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_order_canceled", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -583,11 +568,7 @@ impl PyStrategyInner {
     fn dispatch_on_order_filled(&self, event: &OrderFilled) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_order_filled",
-                    (event.clone().into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_order_filled", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -599,7 +580,7 @@ impl PyStrategyInner {
                 py_self.call_method1(
                     py,
                     "on_order_fill_voided",
-                    (event.clone().into_py_any_unwrap(py),),
+                    (event.clone().into_py_any(py)?,),
                 )
             })?;
         }
@@ -609,7 +590,7 @@ impl PyStrategyInner {
     fn dispatch_on_position_opened(&self, event: PositionOpened) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_position_opened", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_position_opened", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -619,10 +600,10 @@ impl PyStrategyInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
                 let py_event = match event {
-                    PositionEvent::PositionOpened(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionChanged(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionClosed(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionAdjusted(event) => event.into_py_any_unwrap(py),
+                    PositionEvent::PositionOpened(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionChanged(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionClosed(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionAdjusted(event) => event.into_py_any(py)?,
                 };
                 py_self.call_method1(py, "on_position_event", (py_event,))
             })?;
@@ -633,7 +614,7 @@ impl PyStrategyInner {
     fn dispatch_on_position_changed(&self, event: PositionChanged) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_position_changed", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_position_changed", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -642,7 +623,7 @@ impl PyStrategyInner {
     fn dispatch_on_position_closed(&self, event: PositionClosed) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_position_closed", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_position_closed", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -658,7 +639,7 @@ impl PyStrategyInner {
     fn dispatch_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -673,25 +654,21 @@ impl PyStrategyInner {
 
     fn dispatch_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_quote", (quote.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_trade", (trade.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_bar(&mut self, bar: Bar) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),)))?;
+            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any(py)?,)))?;
         }
         Ok(())
     }
@@ -699,11 +676,7 @@ impl PyStrategyInner {
     fn dispatch_on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_book_deltas",
-                    (deltas.clone().into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_book_deltas", (deltas.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -712,7 +685,7 @@ impl PyStrategyInner {
     fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -721,7 +694,7 @@ impl PyStrategyInner {
     fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_book", (book.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -730,7 +703,7 @@ impl PyStrategyInner {
     fn dispatch_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -739,7 +712,7 @@ impl PyStrategyInner {
     fn dispatch_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_index_price", (index_price.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -748,11 +721,7 @@ impl PyStrategyInner {
     fn dispatch_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_funding_rate",
-                    (funding_rate.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_funding_rate", (funding_rate.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -761,7 +730,7 @@ impl PyStrategyInner {
     fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_status", (data.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_instrument_status", (data.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -770,7 +739,7 @@ impl PyStrategyInner {
     fn dispatch_on_instrument_close(&mut self, update: InstrumentClose) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_close", (update.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_instrument_close", (update.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -779,7 +748,7 @@ impl PyStrategyInner {
     fn dispatch_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -788,11 +757,7 @@ impl PyStrategyInner {
     fn dispatch_on_option_chain(&mut self, slice: &OptionChainSlice) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_option_chain",
-                    (slice.clone().into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_option_chain", (slice.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -808,10 +773,10 @@ impl PyStrategyInner {
     fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_quotes: Vec<_> = quotes
+                let py_quotes = quotes
                     .into_iter()
-                    .map(|quote| quote.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|quote| quote.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_quotes", (py_quotes,))
             })?;
         }
@@ -821,10 +786,10 @@ impl PyStrategyInner {
     fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_trades: Vec<_> = trades
+                let py_trades = trades
                     .into_iter()
-                    .map(|trade| trade.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_trades", (py_trades,))
             })?;
         }
@@ -837,10 +802,10 @@ impl PyStrategyInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_funding_rates: Vec<_> = funding_rates
+                let py_funding_rates = funding_rates
                     .into_iter()
-                    .map(|rate| rate.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|rate| rate.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_funding_rates", (py_funding_rates,))
             })?;
         }
@@ -850,10 +815,10 @@ impl PyStrategyInner {
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_bars: Vec<_> = bars
+                let py_bars = bars
                     .into_iter()
-                    .map(|bar| bar.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_bars", (py_bars,))
             })?;
         }
@@ -866,10 +831,10 @@ impl PyStrategyInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_mark_prices: Vec<_> = mark_prices
+                let py_mark_prices = mark_prices
                     .into_iter()
-                    .map(|price| price.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|price| price.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_mark_prices", (py_mark_prices,))
             })?;
         }
@@ -882,10 +847,10 @@ impl PyStrategyInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_index_prices: Vec<_> = index_prices
+                let py_index_prices = index_prices
                     .into_iter()
-                    .map(|price| price.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|price| price.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_index_prices", (py_index_prices,))
             })?;
         }

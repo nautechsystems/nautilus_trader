@@ -24,7 +24,25 @@ __all__ = [
 ]
 
 @typing.final
-class DatabentoDataClient: ...
+class DatabentoDataClient:
+    def __init__(
+        self,
+        client_id: model.ClientId,
+        api_key: str,
+        publishers_filepath: str | os.PathLike | pathlib.Path,
+        use_exchange_as_venue: bool = True,
+        bars_timestamp_on_close: bool = True,
+    ) -> None: ...
+    @property
+    def client_id(self) -> model.ClientId: ...
+    @property
+    def is_connected(self) -> bool: ...
+    @property
+    def is_disconnected(self) -> bool: ...
+    @property
+    def api_key(self) -> str: ...
+    @property
+    def api_key_masked(self) -> str: ...
 
 @typing.final
 class DatabentoDataClientFactory:

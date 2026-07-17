@@ -242,6 +242,18 @@ impl DatabentoDataClient {
         })
     }
 
+    /// Returns the API key associated with this client.
+    #[must_use]
+    pub fn api_key(&self) -> &str {
+        self.config.api_key()
+    }
+
+    /// Returns a masked version of the API key for logging purposes.
+    #[must_use]
+    pub fn api_key_masked(&self) -> String {
+        self.config.api_key_masked()
+    }
+
     /// Gets the dataset for a given venue using the data loader.
     ///
     /// # Errors

@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import keyword
 import os
 import re
 import sys
@@ -1325,23 +1326,33 @@ def test_live_stub_exposes_builder_engine_config_methods():
     )
 
 
-def test_catalog_stub_constructor_matches_runtime():
-    from nautilus_trader.persistence import ParquetDataCatalog
-
-    stub_module = ast.parse((STUB_ROOT / "persistence" / "__init__.pyi").read_text())
-    catalog_class = next(
+@pytest.mark.parametrize(
+    ("module_name", "class_name"),
+    [
+        ("nautilus_trader.adapters.dydx", "DydxClientOrderIdEncoder"),
+        ("nautilus_trader.persistence", "DataBackendSession"),
+        ("nautilus_trader.persistence", "ParquetDataCatalog"),
+        ("nautilus_trader.persistence", "StreamingFeatherWriter"),
+    ],
+)
+def test_stub_constructor_matches_runtime(module_name, class_name):
+    runtime_class = getattr(importlib.import_module(module_name), class_name)
+    stub_path = STUB_ROOT.joinpath(*module_name.split(".")[1:], "__init__.pyi")
+    stub_module = ast.parse(stub_path.read_text())
+    stub_class = next(
         node
         for node in stub_module.body
-        if isinstance(node, ast.ClassDef) and node.name == "ParquetDataCatalog"
+        if isinstance(node, ast.ClassDef) and node.name == class_name
     )
-    methods = {node.name: node for node in catalog_class.body if isinstance(node, ast.FunctionDef)}
+    methods = {node.name: node for node in stub_class.body if isinstance(node, ast.FunctionDef)}
 
     assert "__init__" in methods
     assert "new" not in methods
+    assert "new_session" not in methods
 
     constructor = methods["__init__"]
     stub_parameters = [argument.arg for argument in constructor.args.args[1:]]
-    runtime_signature = inspect.signature(ParquetDataCatalog)
+    runtime_signature = inspect.signature(runtime_class)
     runtime_parameters = list(runtime_signature.parameters)
     stub_default_parameters = (
         stub_parameters[-len(constructor.args.defaults) :] if constructor.args.defaults else []
@@ -1366,6 +1377,272 @@ def test_catalog_stub_constructor_matches_runtime():
     assert stub_parameters == runtime_parameters
     assert stub_default_parameters == runtime_default_parameters
     assert stub_defaults == runtime_defaults
+
+
+def test_stub_members_match_runtime_names():
+    mismatches = []
+    raw_runtime_names = []
+
+    for stub_path in sorted(STUB_ROOT.rglob("__init__.pyi")):
+        relative_package = stub_path.relative_to(STUB_ROOT).parent
+        if any(part.startswith("_") for part in relative_package.parts):
+            continue
+
+        module_name = _module_name_from_stub_path(relative_package)
+        module = importlib.import_module(module_name)
+        stub_module = ast.parse(stub_path.read_text())
+        runtime_names = set(dir(module))
+        stub_names = {
+            node.name
+            for node in stub_module.body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        mismatches.extend(
+            f"{module_name}.{name}"
+            for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
+        )
+        raw_runtime_names.extend(
+            f"{module_name}.{name}" for name in sorted(runtime_names) if name.startswith("py_")
+        )
+
+        for stub_class in (node for node in stub_module.body if isinstance(node, ast.ClassDef)):
+            runtime_class = getattr(module, stub_class.name, None)
+            if not isinstance(runtime_class, type):
+                mismatches.append(f"{module_name}.{stub_class.name}")
+                continue
+
+            runtime_names = set(dir(runtime_class))
+            stub_names = {
+                node.name
+                for node in stub_class.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and (not node.name.startswith("__") or node.name in {"__init__", "__new__"})
+            }
+            mismatches.extend(
+                f"{module_name}.{stub_class.name}.{name}"
+                for name in sorted(_stub_names_missing_at_runtime(stub_names, runtime_names))
+            )
+            raw_runtime_names.extend(
+                f"{module_name}.{stub_class.name}.{name}"
+                for name in sorted(runtime_names)
+                if name.startswith("py_")
+            )
+
+    assert not mismatches, (
+        "Stub members missing at runtime; register intended public APIs or remove stale stub "
+        "metadata:\n" + "\n".join(mismatches)
+    )
+    assert not raw_runtime_names, "Raw Rust names exposed at runtime:\n" + "\n".join(
+        raw_runtime_names,
+    )
+
+
+def _stub_names_missing_at_runtime(stub_names, runtime_names):
+    return {
+        name
+        for name in stub_names
+        if name not in runtime_names
+        and not (name.endswith("_") and keyword.iskeyword(name[:-1]) and name[:-1] in runtime_names)
+    }
+
+
+def test_pylist_construction_propagates_pyresult_collections():
+    violations = []
+    list_pattern = re.compile(r"PyList::new\(py,\s*(\w+)(\?)?\)")
+
+    for rust_path in sorted((WORKSPACE_ROOT / "crates").rglob("*.rs")):
+        lines = rust_path.read_text().splitlines()
+        for index, line in enumerate(lines):
+            match = list_pattern.search(line)
+            if match is None or match.group(2) is not None:
+                continue
+
+            binding = re.escape(match.group(1))
+            preceding_lines = "\n".join(lines[max(0, index - 12) : index])
+            if re.search(rf"let\s+{binding}\s*:\s*PyResult<Vec<_>>", preceding_lines):
+                relative_path = rust_path.relative_to(WORKSPACE_ROOT)
+                violations.append(f"{relative_path}:{index + 1}")
+
+    assert not violations, "PyResult collections passed to PyList without `?`:\n" + "\n".join(
+        violations,
+    )
+
+
+def test_stub_signatures_match_runtime():
+    parameter_mismatches = []
+    default_mismatches = []
+
+    for stub_path in sorted(STUB_ROOT.rglob("__init__.pyi")):
+        relative_package = stub_path.relative_to(STUB_ROOT).parent
+        if any(part.startswith("_") for part in relative_package.parts):
+            continue
+
+        module_name = _module_name_from_stub_path(relative_package)
+        module = importlib.import_module(module_name)
+        stub_module = ast.parse(stub_path.read_text())
+        parameter_errors, default_errors = _module_signature_mismatches(
+            module_name,
+            stub_module,
+            module,
+        )
+        parameter_mismatches.extend(parameter_errors)
+        default_mismatches.extend(default_errors)
+
+        for stub_class in (node for node in stub_module.body if isinstance(node, ast.ClassDef)):
+            runtime_class = getattr(module, stub_class.name, None)
+            if not isinstance(runtime_class, type):
+                continue
+
+            parameter_errors, default_errors = _method_signature_mismatches(
+                module_name,
+                stub_class,
+                runtime_class,
+            )
+            parameter_mismatches.extend(parameter_errors)
+            default_mismatches.extend(default_errors)
+
+    assert not parameter_mismatches, "Stub parameter mismatches:\n" + "\n".join(
+        parameter_mismatches,
+    )
+    assert not default_mismatches, "Stub default mismatches:\n" + "\n".join(default_mismatches)
+
+
+def _module_signature_mismatches(module_name, stub_module, module):
+    parameter_mismatches = []
+    default_mismatches = []
+
+    for function_name, functions in _stub_methods_by_name(stub_module).items():
+        if len(functions) != 1:
+            continue
+
+        function = functions[0]
+        runtime_function = getattr(module, function_name)
+        try:
+            runtime_signature = inspect.signature(runtime_function)
+        except (TypeError, ValueError):
+            continue
+
+        stub_parameters, runtime_parameters = _normalized_parameter_names(
+            _stub_parameter_names(function),
+            list(runtime_signature.parameters),
+        )
+        label = f"{module_name}.{function_name}"
+
+        if stub_parameters != runtime_parameters:
+            parameter_mismatches.append(
+                f"{label}: stub={stub_parameters}, runtime={runtime_parameters}",
+            )
+            continue
+
+        for name, stub_default in _concrete_stub_defaults(function).items():
+            runtime_default = runtime_signature.parameters[name].default
+            if runtime_default is Ellipsis:
+                continue
+            if runtime_default is inspect.Parameter.empty or stub_default != runtime_default:
+                default_mismatches.append(
+                    f"{label}.{name}: stub={stub_default!r}, runtime={runtime_default!r}",
+                )
+
+    return parameter_mismatches, default_mismatches
+
+
+def _method_signature_mismatches(module_name, stub_class, runtime_class):
+    parameter_mismatches = []
+    default_mismatches = []
+
+    for method_name, methods in _stub_methods_by_name(stub_class).items():
+        if len(methods) != 1 or (method_name.startswith("__") and method_name != "__init__"):
+            continue
+
+        method = methods[0]
+        decorators = {ast.unparse(decorator) for decorator in method.decorator_list}
+        if "property" in decorators or any(
+            decorator.endswith(".setter") for decorator in decorators
+        ):
+            continue
+
+        runtime_method = (
+            runtime_class
+            if method_name == "__init__"
+            else getattr(runtime_class, method_name, None)
+        )
+        try:
+            runtime_signature = inspect.signature(runtime_method)
+        except (TypeError, ValueError):
+            continue
+
+        stub_parameters, runtime_parameters = _normalized_parameter_names(
+            _stub_parameter_names(method),
+            list(runtime_signature.parameters),
+        )
+        label = f"{module_name}.{stub_class.name}.{method_name}"
+
+        if stub_parameters != runtime_parameters:
+            parameter_mismatches.append(
+                f"{label}: stub={stub_parameters}, runtime={runtime_parameters}",
+            )
+            continue
+
+        for name, stub_default in _concrete_stub_defaults(method).items():
+            runtime_default = runtime_signature.parameters[name].default
+            if runtime_default is Ellipsis:
+                continue
+            if runtime_default is inspect.Parameter.empty or stub_default != runtime_default:
+                default_mismatches.append(
+                    f"{label}.{name}: stub={stub_default!r}, runtime={runtime_default!r}",
+                )
+
+    return parameter_mismatches, default_mismatches
+
+
+def _stub_methods_by_name(stub_class: ast.ClassDef | ast.Module):
+    methods = {}
+
+    for node in stub_class.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            methods.setdefault(node.name, []).append(node)
+    return methods
+
+
+def _stub_parameter_names(method: ast.FunctionDef | ast.AsyncFunctionDef):
+    names = [argument.arg for argument in method.args.posonlyargs + method.args.args]
+    if method.args.vararg:
+        names.append(method.args.vararg.arg)
+    names.extend(argument.arg for argument in method.args.kwonlyargs)
+    if method.args.kwarg:
+        names.append(method.args.kwarg.arg)
+    return names
+
+
+def _normalized_parameter_names(stub_parameters, runtime_parameters):
+    if stub_parameters and stub_parameters[0] in {"self", "cls"}:
+        if not runtime_parameters or runtime_parameters[0] not in {"self", "cls"}:
+            stub_parameters = stub_parameters[1:]
+    elif runtime_parameters and runtime_parameters[0] in {"self", "cls"}:
+        runtime_parameters = runtime_parameters[1:]
+    return stub_parameters, runtime_parameters
+
+
+def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef):
+    positional_arguments = method.args.posonlyargs + method.args.args
+    positional_defaults = [None] * (len(positional_arguments) - len(method.args.defaults)) + list(
+        method.args.defaults,
+    )
+    default_nodes = positional_defaults + list(method.args.kw_defaults)
+    default_names = [argument.arg for argument in positional_arguments + method.args.kwonlyargs]
+    defaults = {}
+
+    for name, default_node in zip(default_names, default_nodes, strict=True):
+        if default_node is None or (
+            isinstance(default_node, ast.Constant) and default_node.value is Ellipsis
+        ):
+            continue
+        try:
+            defaults[name] = ast.literal_eval(default_node)
+        except (TypeError, ValueError):
+            continue
+
+    return defaults
 
 
 def test_generated_config_stubs_include_signature_defaults():

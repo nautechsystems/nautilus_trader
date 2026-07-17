@@ -26,7 +26,7 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::{
     data::{CustomData, DataType},
@@ -44,6 +44,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyDict, PyList},
 };
@@ -192,7 +193,7 @@ impl PyExecutionAlgorithm {
     fn dispatch_time_event(&self, event: &TimeEvent) -> PyResult<()> {
         if let Some(ref py_self) = self.inner().py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_time_event", (event.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_time_event", (event.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -211,7 +212,7 @@ impl PyExecutionAlgorithm {
     fn dispatch_on_order_list(&self, order_list: OrderList, orders: Vec<OrderAny>) -> PyResult<()> {
         if let Some(ref py_self) = self.inner().py_self {
             Python::attach(|py| -> PyResult<()> {
-                let py_order_list = order_list.into_py_any_unwrap(py);
+                let py_order_list = order_list.into_py_any(py)?;
                 let py_orders: Vec<_> = orders
                     .into_iter()
                     .map(|order| nautilus_model::python::orders::order_any_to_pyobject(py, order))
@@ -252,10 +253,10 @@ impl PyExecutionAlgorithm {
         if let Some(ref py_self) = self.inner().py_self {
             Python::attach(|py| {
                 let py_event = match event {
-                    PositionEvent::PositionOpened(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionChanged(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionClosed(event) => event.into_py_any_unwrap(py),
-                    PositionEvent::PositionAdjusted(event) => event.into_py_any_unwrap(py),
+                    PositionEvent::PositionOpened(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionChanged(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionClosed(event) => event.into_py_any(py)?,
+                    PositionEvent::PositionAdjusted(event) => event.into_py_any(py)?,
                 };
                 py_self.call_method1(py, method_name, (py_event,))
             })?;

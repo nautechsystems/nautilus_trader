@@ -364,14 +364,18 @@ impl QuoteTick {
 
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "to_json_bytes")]
-    fn py_to_json_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_json_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_json_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_json_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 
     /// Return `MsgPack` encoded bytes representation of the object.
     #[pyo3(name = "to_msgpack_bytes")]
-    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> Py<PyAny> {
-        self.to_msgpack_bytes().unwrap().into_py_any_unwrap(py)
+    fn py_to_msgpack_bytes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        self.to_msgpack_bytes()
+            .map_err(to_pyvalue_err)?
+            .into_py_any(py)
     }
 }
 
@@ -392,8 +396,7 @@ impl QuoteTick {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::python::IntoPyObjectNautilusExt;
-    use pyo3::Python;
+    use pyo3::{IntoPyObjectExt, Python};
     use rstest::rstest;
 
     use crate::{
@@ -468,7 +471,7 @@ mod tests {
 
         Python::initialize();
         Python::attach(|py| {
-            let tick_pyobject = quote.into_py_any_unwrap(py);
+            let tick_pyobject = quote.into_py_any(py).unwrap();
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, quote);
         });

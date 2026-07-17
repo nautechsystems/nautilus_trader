@@ -28,7 +28,7 @@ use nautilus_model::{
     },
     types::{Price, Quantity},
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 use rust_decimal::Decimal;
 use serde_json::to_string;
 
@@ -302,10 +302,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    trades.into_iter().map(|trade| trade.into_py_any_unwrap(py)),
-                )?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -345,7 +346,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, bars.into_iter().map(|b| b.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -403,7 +408,7 @@ impl HyperliquidHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(report.into_py_any_unwrap(py)))
+            Python::attach(|py| report.into_py_any(py))
         })
     }
 
@@ -519,8 +524,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -554,8 +562,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -597,7 +608,7 @@ impl HyperliquidHttpClient {
                     .await
                     .map_err(to_pyvalue_err)?
             {
-                return Python::attach(|py| Ok(report.into_py_any_unwrap(py)));
+                return Python::attach(|py| report.into_py_any(py));
             }
 
             let report = if let Some(vid) = venue_order_id.as_ref() {
@@ -615,7 +626,7 @@ impl HyperliquidHttpClient {
             };
 
             Python::attach(|py| match report {
-                Some(r) => Ok(r.into_py_any_unwrap(py)),
+                Some(report) => report.into_py_any(py),
                 None => Ok(py.None()),
             })
         })
@@ -651,8 +662,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -698,8 +712,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -729,7 +746,7 @@ impl HyperliquidHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
@@ -755,8 +772,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, balances.into_iter().map(|b| b.into_py_any_unwrap(py)))?;
+                let py_balances = balances
+                    .into_iter()
+                    .map(|balance| balance.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_balances)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -793,8 +813,11 @@ impl HyperliquidHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })

@@ -257,7 +257,7 @@ impl BettingAccount {
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<Py<PyAny>>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();
-        dict.set_item("events", events_list.unwrap())?;
+        dict.set_item("events", events_list?)?;
         Ok(dict.into())
     }
 }

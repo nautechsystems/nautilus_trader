@@ -9,7 +9,6 @@ from nautilus_trader import network
 __all__ = [
     "BlockchainDataClientConfig",
     "BlockchainDataClientFactory",
-    "BlockchainExecutionClientFactory",
     "DexPoolFilters",
     "load_pool_snapshot",
 ]
@@ -51,9 +50,6 @@ class BlockchainDataClientFactory:
     def __init__(self) -> None: ...
     def name(self) -> str: ...
     def config_type(self) -> str: ...
-
-@typing.final
-class BlockchainExecutionClientFactory: ...
 
 @typing.final
 class DexPoolFilters:

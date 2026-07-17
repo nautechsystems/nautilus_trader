@@ -94,7 +94,7 @@ impl PyStreamingFeatherWriter {
         fs_storage_options=None,
         include_types=None,
         rotation_mode=3,
-        max_file_size=1024*1024*1024,
+        max_file_size=1_073_741_824,
         rotation_interval_ns=None,
         rotation_time_ns=None,
         rotation_timezone="UTC",
@@ -102,7 +102,7 @@ impl PyStreamingFeatherWriter {
         replace=false
     ))]
     #[expect(clippy::too_many_arguments, clippy::needless_pass_by_value)]
-    pub fn new(
+    pub fn py_new(
         path: String,
         cache: PyCache,
         clock: PyClock,

@@ -30,6 +30,7 @@ use nautilus_core::{
     },
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -145,7 +146,7 @@ impl FundingRateUpdate {
     }
 
     #[pyo3(name = "to_dict")]
-    fn py_to_dict(&self, py: Python<'_>) -> Py<PyAny> {
+    fn py_to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let mut dict = HashMap::new();
         dict.insert(
             "type".to_string(),
@@ -178,7 +179,7 @@ impl FundingRateUpdate {
             "ts_init".to_string(),
             self.ts_init.as_u64().into_py_any_unwrap(py),
         );
-        dict.into_py_any_unwrap(py)
+        dict.into_py_any(py)
     }
 
     #[staticmethod]
@@ -281,7 +282,7 @@ impl FundingRateUpdate {
         Ok(())
     }
 
-    fn __getstate__(&self, py: Python) -> Py<PyAny> {
+    fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
         (
             self.instrument_id.to_string(),
             self.rate.to_string(),
@@ -290,13 +291,13 @@ impl FundingRateUpdate {
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .into_py_any_unwrap(py)
+            .into_py_any(py)
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<Py<PyAny>> {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py);
-        Ok((safe_constructor, PyTuple::empty(py), state).into_py_any_unwrap(py))
+        let state = self.__getstate__(py)?;
+        (safe_constructor, PyTuple::empty(py), state).into_py_any(py)
     }
 
     #[staticmethod]

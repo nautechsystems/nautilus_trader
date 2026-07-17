@@ -17,8 +17,8 @@
 
 use std::path::PathBuf;
 
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_common::clients::DataClient;
+use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
 use nautilus_model::identifiers::ClientId;
 use pyo3::prelude::*;
 
@@ -49,8 +49,7 @@ impl DatabentoDataClient {
             bars_timestamp_on_close,
         );
 
-        Self::new(client_id, config, get_atomic_clock_realtime())
-            .map_err(to_pyruntime_err)
+        Self::new(client_id, config, get_atomic_clock_realtime()).map_err(to_pyruntime_err)
     }
 
     /// Returns the client ID.
@@ -75,13 +74,13 @@ impl DatabentoDataClient {
     #[getter]
     #[pyo3(name = "api_key")]
     pub fn py_api_key(&self) -> &str {
-        self.config.api_key()
+        self.api_key()
     }
 
     /// Returns a masked version of the API key for logging purposes.
     #[getter]
     #[pyo3(name = "api_key_masked")]
     pub fn py_api_key_masked(&self) -> String {
-        self.config.api_key_masked()
+        self.api_key_masked()
     }
 }

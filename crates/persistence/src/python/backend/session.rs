@@ -24,7 +24,7 @@ use nautilus_model::{
     python::data::{DATA_FFI_CVEC_CAPSULE_NAME, DataFfiCVec},
 };
 use nautilus_serialization::arrow::{ArrowSchemaProvider, custom::CustomDataDecoder};
-use pyo3::{prelude::*, types::PyCapsule};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
@@ -92,9 +92,14 @@ impl NautilusDataType {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl DataBackendSession {
+    /// Provides a DataFusion session and registers DataFusion queries.
+    ///
+    /// The session is used to register data sources and make queries on them. A
+    /// query returns a Chunk of Arrow records. It is decoded and converted into
+    /// a Vec of data by types that implement `DecodeDataFromRecordBatch`.
     #[new]
     #[pyo3(signature=(chunk_size=10_000))]
-    fn new_session(chunk_size: usize) -> PyResult<Self> {
+    fn py_new(chunk_size: usize) -> PyResult<Self> {
         if chunk_size == 0 {
             return Err(to_pyvalue_err("chunk_size must be positive"));
         }
@@ -311,7 +316,7 @@ impl DataQueryResult {
                         .into_iter()
                         .map(|item| data_to_pyobject(py, item))
                         .collect::<PyResult<_>>()?;
-                    Ok(Some(objects.into_py_any_unwrap(py)))
+                    Ok(Some(objects.into_py_any(py)?))
                 } else {
                     // Built-in types: FFI capsule path
                     let ffi_data: Vec<DataFFI> = acc

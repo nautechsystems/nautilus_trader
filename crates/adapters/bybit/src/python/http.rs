@@ -535,10 +535,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?)
-                    .unwrap()
-                    .into_any()
-                    .unbind();
+                let pylist = PyList::new(py, py_instruments?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -611,7 +608,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|ticker| Py::new(py, ticker))
                     .collect();
-                let pylist = PyList::new(py, py_tickers?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_tickers?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -839,7 +836,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -925,7 +922,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|trade| trade.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_trades?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_trades?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -967,10 +964,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|funding_rate| funding_rate.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_funding_rates?)
-                    .unwrap()
-                    .into_any()
-                    .unbind();
+                let pylist = PyList::new(py, py_funding_rates?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -1010,7 +1004,7 @@ impl BybitHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(deltas.into_py_any(py).unwrap()))
+            Python::attach(|py| deltas.into_py_any(py))
         })
     }
 
@@ -1057,7 +1051,7 @@ impl BybitHttpClient {
             Python::attach(|py| {
                 let py_bars: PyResult<Vec<_>> =
                     bars.into_iter().map(|bar| bar.into_py_any(py)).collect();
-                let pylist = PyList::new(py, py_bars?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_bars?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -1096,7 +1090,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|rate| Py::new(py, rate))
                     .collect();
-                let pylist = PyList::new(py, py_fee_rates?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_fee_rates?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -1177,7 +1171,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -1220,7 +1214,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -1259,7 +1253,7 @@ impl BybitHttpClient {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = PyList::new(py, py_reports?).unwrap().into_any().unbind();
+                let pylist = PyList::new(py, py_reports?)?.into_any().unbind();
                 Ok(pylist)
             })
         })

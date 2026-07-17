@@ -297,17 +297,16 @@ impl OKXHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let instruments_list = PyList::new(py, py_instruments?).unwrap();
+                let instruments_list = PyList::new(py, py_instruments?)?;
 
                 // Convert inst_id_codes to list of (inst_id: str, inst_id_code: int) tuples
                 let py_codes: Vec<_> = inst_id_codes
                     .into_iter()
                     .map(|(inst_id, code)| (inst_id.to_string(), code))
                     .collect();
-                let codes_list = PyList::new(py, py_codes).unwrap();
+                let codes_list = PyList::new(py, py_codes)?;
 
-                let result = PyTuple::new(py, [instruments_list.as_any(), codes_list.as_any()])
-                    .unwrap()
+                let result = PyTuple::new(py, [instruments_list.as_any(), codes_list.as_any()])?
                     .into_any()
                     .unbind();
                 Ok(result)
@@ -500,7 +499,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
@@ -528,7 +527,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -593,8 +596,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -621,7 +627,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(deltas.into_py_any_unwrap(py)))
+            Python::attach(|py| deltas.into_py_any(py))
         })
     }
 
@@ -649,7 +655,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, rates.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_rates = rates
+                    .into_iter()
+                    .map(|rate| rate.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_rates)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -677,12 +687,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    forward_prices
-                        .into_iter()
-                        .map(|price| price.into_py_any_unwrap(py)),
-                )?;
+                let py_prices = forward_prices
+                    .into_iter()
+                    .map(|price| price.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_prices)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -707,7 +716,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(mark_price.into_py_any_unwrap(py)))
+            Python::attach(|py| mark_price.into_py_any(py))
         })
     }
 
@@ -756,7 +765,7 @@ impl OKXHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(index_price.into_py_any_unwrap(py)))
+            Python::attach(|py| index_price.into_py_any(py))
         })
     }
 
@@ -801,8 +810,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -844,8 +856,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -873,7 +888,7 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| match report {
-                Some(report) => Ok(report.into_py_any_unwrap(py)),
+                Some(report) => report.into_py_any(py),
                 None => Ok(py.None()),
             })
         })
@@ -917,7 +932,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(py, trades.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -967,8 +986,11 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|t| t.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -1443,23 +1465,22 @@ impl OKXHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let results: Vec<_> = responses
+                let results = responses
                     .into_iter()
                     .map(|resp| {
                         let dict = PyDict::new(py);
-                        dict.set_item("algo_id", resp.algo_id).expect("set algo_id");
+                        dict.set_item("algo_id", resp.algo_id)?;
                         if let Some(s_code) = resp.s_code {
-                            dict.set_item("s_code", s_code).expect("set s_code");
+                            dict.set_item("s_code", s_code)?;
                         }
 
                         if let Some(s_msg) = resp.s_msg {
-                            dict.set_item("s_msg", s_msg).expect("set s_msg");
+                            dict.set_item("s_msg", s_msg)?;
                         }
-                        dict
+                        Ok(dict)
                     })
-                    .collect();
-                let pylist = PyList::new(py, results)?;
-                Ok(pylist.into_py_any_unwrap(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                Ok(PyList::new(py, results)?.into_any().unbind())
             })
         })
     }

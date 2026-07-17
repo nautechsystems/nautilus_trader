@@ -25,7 +25,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     python::data::data_to_pycapsule,
 };
-use pyo3::{prelude::*, types::PyList};
+use pyo3::{IntoPyObjectExt, prelude::*, types::PyList};
 
 use crate::{
     config::BookSnapshotOutput,
@@ -175,7 +175,7 @@ impl TardisMachineClient {
                 book_snapshot_output,
                 extract_bbo_as_quotes,
             )
-            .await;
+            .await?;
             Ok(())
         })
     }
@@ -230,9 +230,11 @@ impl TardisMachineClient {
             }
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))
-                        .expect("Invalid `ExactSizeIterator`");
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -279,7 +281,7 @@ impl TardisMachineClient {
                 book_snapshot_output,
                 extract_bbo_as_quotes,
             )
-            .await;
+            .await?;
             Ok(())
         })
     }
@@ -316,7 +318,8 @@ async fn handle_python_stream<S>(
     instrument_map: Option<AHashMap<TardisInstrumentKey, Arc<TardisInstrumentMiniInfo>>>,
     book_snapshot_output: BookSnapshotOutput,
     extract_bbo_as_quotes: bool,
-) where
+) -> PyResult<()>
+where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
     pin_mut!(stream);
@@ -369,10 +372,11 @@ async fn handle_python_stream<S>(
                         };
 
                         if should_emit {
-                            Python::attach(|py| {
-                                let py_obj = funding_rate.into_py_any_unwrap(py);
+                            Python::attach(|py| -> PyResult<()> {
+                                let py_obj = funding_rate.into_py_any(py)?;
                                 call_python(py, &callback, py_obj);
-                            });
+                                Ok(())
+                            })?;
                         }
                     }
                 }
@@ -383,4 +387,6 @@ async fn handle_python_stream<S>(
             }
         }
     }
+
+    Ok(())
 }

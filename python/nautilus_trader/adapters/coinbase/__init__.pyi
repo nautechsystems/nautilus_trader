@@ -14,9 +14,7 @@ __all__ = [
     "CoinbaseEnvironment",
     "CoinbaseExecClientConfig",
     "CoinbaseExecutionClientFactory",
-    "CoinbaseHttpClient",
     "CoinbaseMarginType",
-    "CoinbaseWebSocketClient",
 ]
 
 COINBASE: str
@@ -72,12 +70,6 @@ class CoinbaseExecClientConfig:
 class CoinbaseExecutionClientFactory:
     def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
     def name(self) -> str: ...
-
-@typing.final
-class CoinbaseHttpClient: ...
-
-@typing.final
-class CoinbaseWebSocketClient: ...
 
 @typing.final
 class CoinbaseEnvironment(enum.Enum):

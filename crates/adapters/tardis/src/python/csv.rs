@@ -274,7 +274,7 @@ pub fn py_convert_tardis_options_chain_csv(
 impl_tardis_stream_iterator!(
     TardisDeltaStreamIterator,
     OrderBookDelta,
-    "TardisDeltasStreamIterator"
+    "TardisDeltaStreamIterator"
 );
 
 /// Streams order book deltas from a Tardis CSV file.

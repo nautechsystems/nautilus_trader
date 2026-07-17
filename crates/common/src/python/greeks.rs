@@ -15,10 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{
-    UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyvalue_err},
-};
+use nautilus_core::{UnixNanos, python::to_pyvalue_err};
 use nautilus_model::{
     data::greeks::{GreeksData, PortfolioGreeks},
     enums::PositionSide,
@@ -26,7 +23,7 @@ use nautilus_model::{
     position::Position,
     types::Price,
 };
-use pyo3::prelude::*;
+use pyo3::{IntoPyObjectExt, prelude::*};
 
 use crate::{
     greeks::{GreeksCalculator, GreeksFilter},
@@ -239,11 +236,15 @@ impl PyGreeksCalculator {
         let greeks_filter: Option<GreeksFilter> = greeks_filter.map(|callback| {
             Box::new(move |data: &GreeksData| {
                 Python::attach(|py| {
-                    callback
-                        .bind(py)
-                        .call1((data.clone().into_py_any_unwrap(py),))
-                        .and_then(|result| result.extract::<bool>())
-                        .unwrap_or(false)
+                    let result = data
+                        .clone()
+                        .into_py_any(py)
+                        .and_then(|data| callback.bind(py).call1((data,)))
+                        .and_then(|result| result.extract::<bool>());
+                    result.unwrap_or_else(|e| {
+                        log::error!("Error calling Python greeks filter: {e}");
+                        false
+                    })
                 })
             }) as GreeksFilter
         });

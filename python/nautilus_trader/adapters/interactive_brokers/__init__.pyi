@@ -62,12 +62,10 @@ __all__ = [
     "IbTriggerMethod",
     "IbTwapStrategyType",
     "IbVolatilityType",
-    "InteractiveBrokersDataClient",
     "InteractiveBrokersDataClientConfig",
     "InteractiveBrokersDataClientFactory",
     "InteractiveBrokersErrorKind",
     "InteractiveBrokersExecClientConfig",
-    "InteractiveBrokersExecutionClient",
     "InteractiveBrokersExecutionClientFactory",
     "InteractiveBrokersInstrumentProvider",
     "InteractiveBrokersInstrumentProviderConfig",
@@ -152,9 +150,6 @@ class HistoricalInteractiveBrokersClient:
         instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         contracts: list | None = None,
     ) -> typing.Any: ...
-
-@typing.final
-class InteractiveBrokersDataClient: ...
 
 class InteractiveBrokersDataClientConfig:
     def __init__(
@@ -242,9 +237,6 @@ class InteractiveBrokersExecClientConfig:
     ) -> None: ...
 
 @typing.final
-class InteractiveBrokersExecutionClient: ...
-
-@typing.final
 class InteractiveBrokersExecutionClientFactory:
     def __init__(self, trader_id: model.TraderId, account_id: model.AccountId) -> None: ...
     def name(self) -> str: ...
@@ -262,14 +254,6 @@ class InteractiveBrokersInstrumentProvider:
     def instrument_id_to_ib_contract_details(
         self, instrument_id: model.InstrumentId
     ) -> typing.Any | None: ...
-    def batch_load(self, instrument_ids: typing.Sequence[model.InstrumentId]) -> typing.Any: ...
-    def fetch_option_chain_by_range(
-        self, underlying_symbol: str, expiry_min: str | None = None, expiry_max: str | None = None
-    ) -> typing.Any: ...
-    def fetch_futures_chain(
-        self, underlying_symbol: str, expiry_min: str | None = None, expiry_max: str | None = None
-    ) -> typing.Any: ...
-    def fetch_bag_contract(self, bag_contract: str) -> typing.Any: ...
     def save_cache(self, cache_path: str) -> typing.Any: ...
     def load_cache(self, cache_path: str) -> typing.Any: ...
 

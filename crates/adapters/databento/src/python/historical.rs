@@ -169,7 +169,7 @@ impl DatabentoHistoricalClient {
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect::<PyResult<Vec<Py<PyAny>>>>()?;
 
-                let list = PyList::new(py, &objs).expect("Invalid `ExactSizeIterator`");
+                let list = PyList::new(py, &objs)?;
                 Ok(list.into_py_any_unwrap(py))
             })
         })

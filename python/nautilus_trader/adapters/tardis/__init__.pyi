@@ -16,7 +16,6 @@ __all__ = [
     "TardisDepth10StreamIterator",
     "TardisFundingRateStreamIterator",
     "TardisHttpClient",
-    "TardisInstrumentKey",
     "TardisInstrumentMiniInfo",
     "TardisMachineClient",
     "TardisOptionsChainStreamIterator",
@@ -128,9 +127,6 @@ class TardisHttpClient:
         effective: int | None = None,
         ts_init: int | None = None,
     ) -> typing.Any: ...
-
-@typing.final
-class TardisInstrumentKey: ...
 
 @typing.final
 class TardisInstrumentMiniInfo:

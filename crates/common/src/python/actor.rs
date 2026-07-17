@@ -28,7 +28,7 @@ use indexmap::IndexMap;
 use nautilus_core::{
     from_pydict,
     nanos::UnixNanos,
-    python::{IntoPyObjectNautilusExt, to_pyruntime_err, to_pyvalue_err},
+    python::{to_pyruntime_err, to_pyvalue_err},
 };
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
@@ -54,6 +54,7 @@ use nautilus_model::{
     },
 };
 use pyo3::{
+    IntoPyObjectExt,
     prelude::*,
     types::{PyBytes, PyDict, PyList},
 };
@@ -297,7 +298,7 @@ impl PyDataActorInner {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| -> PyResult<()> {
                 if py_self.bind(py).hasattr("on_order_list")? {
-                    let py_order_list = order_list.into_py_any_unwrap(py);
+                    let py_order_list = order_list.into_py_any(py)?;
                     let py_orders = orders
                         .into_iter()
                         .map(|order| order_any_to_pyobject(py, order))
@@ -392,7 +393,7 @@ impl PyDataActorInner {
     fn dispatch_on_time_event(&mut self, event: TimeEvent) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_time_event", (event.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_time_event", (event.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -408,7 +409,7 @@ impl PyDataActorInner {
     fn dispatch_on_signal(&mut self, signal: &Signal) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_signal", (signal.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -423,25 +424,21 @@ impl PyDataActorInner {
 
     fn dispatch_on_quote(&mut self, quote: QuoteTick) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_quote", (quote.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_quote", (quote.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_trade(&mut self, trade: TradeTick) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_trade", (trade.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_trade", (trade.into_py_any(py)?,)))?;
         }
         Ok(())
     }
 
     fn dispatch_on_bar(&mut self, bar: Bar) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any_unwrap(py),)))?;
+            Python::attach(|py| py_self.call_method1(py, "on_bar", (bar.into_py_any(py)?,)))?;
         }
         Ok(())
     }
@@ -449,7 +446,7 @@ impl PyDataActorInner {
     fn dispatch_on_book_deltas(&mut self, deltas: OrderBookDeltas) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_book_deltas", (deltas.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -458,7 +455,7 @@ impl PyDataActorInner {
     fn dispatch_on_book_depth(&mut self, depth: &OrderBookDepth10) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_book_depth", ((*depth).into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -467,7 +464,7 @@ impl PyDataActorInner {
     fn dispatch_on_book(&mut self, book: &OrderBook) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_book", (book.clone().into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_book", (book.clone().into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -476,7 +473,7 @@ impl PyDataActorInner {
     fn dispatch_on_mark_price(&mut self, mark_price: MarkPriceUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_mark_price", (mark_price.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -485,7 +482,7 @@ impl PyDataActorInner {
     fn dispatch_on_index_price(&mut self, index_price: IndexPriceUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_index_price", (index_price.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_index_price", (index_price.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -494,11 +491,7 @@ impl PyDataActorInner {
     fn dispatch_on_funding_rate(&mut self, funding_rate: FundingRateUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_funding_rate",
-                    (funding_rate.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_funding_rate", (funding_rate.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -507,7 +500,7 @@ impl PyDataActorInner {
     fn dispatch_on_instrument_status(&mut self, data: InstrumentStatus) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_status", (data.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_instrument_status", (data.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -516,7 +509,7 @@ impl PyDataActorInner {
     fn dispatch_on_instrument_close(&mut self, update: InstrumentClose) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_instrument_close", (update.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_instrument_close", (update.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -525,7 +518,7 @@ impl PyDataActorInner {
     fn dispatch_on_option_greeks(&mut self, greeks: OptionGreeks) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_option_greeks", (greeks.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -534,7 +527,7 @@ impl PyDataActorInner {
     fn dispatch_on_option_chain(&mut self, slice: OptionChainSlice) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_option_chain", (slice.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_option_chain", (slice.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -550,10 +543,10 @@ impl PyDataActorInner {
     fn dispatch_on_historical_quotes(&mut self, quotes: Vec<QuoteTick>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_quotes: Vec<_> = quotes
+                let py_quotes = quotes
                     .into_iter()
-                    .map(|q| q.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|q| q.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_quotes", (py_quotes,))
             })?;
         }
@@ -563,10 +556,10 @@ impl PyDataActorInner {
     fn dispatch_on_historical_trades(&mut self, trades: Vec<TradeTick>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_trades: Vec<_> = trades
+                let py_trades = trades
                     .into_iter()
-                    .map(|t| t.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|t| t.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_trades", (py_trades,))
             })?;
         }
@@ -579,10 +572,10 @@ impl PyDataActorInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_rates: Vec<_> = funding_rates
+                let py_rates = funding_rates
                     .into_iter()
-                    .map(|r| r.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|r| r.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_funding_rates", (py_rates,))
             })?;
         }
@@ -592,7 +585,10 @@ impl PyDataActorInner {
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_bars: Vec<_> = bars.into_iter().map(|b| b.into_py_any_unwrap(py)).collect();
+                let py_bars = bars
+                    .into_iter()
+                    .map(|b| b.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_bars", (py_bars,))
             })?;
         }
@@ -605,10 +601,10 @@ impl PyDataActorInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_prices: Vec<_> = mark_prices
+                let py_prices = mark_prices
                     .into_iter()
-                    .map(|p| p.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|p| p.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_mark_prices", (py_prices,))
             })?;
         }
@@ -621,10 +617,10 @@ impl PyDataActorInner {
     ) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                let py_prices: Vec<_> = index_prices
+                let py_prices = index_prices
                     .into_iter()
-                    .map(|p| p.into_py_any_unwrap(py))
-                    .collect();
+                    .map(|p| p.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
                 py_self.call_method1(py, "on_historical_index_prices", (py_prices,))
             })?;
         }
@@ -634,9 +630,7 @@ impl PyDataActorInner {
     #[cfg(feature = "defi")]
     fn dispatch_on_block(&mut self, block: Block) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_block", (block.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_block", (block.into_py_any(py)?,)))?;
         }
         Ok(())
     }
@@ -644,9 +638,7 @@ impl PyDataActorInner {
     #[cfg(feature = "defi")]
     fn dispatch_on_pool(&mut self, pool: Pool) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
-            Python::attach(|py| {
-                py_self.call_method1(py, "on_pool", (pool.into_py_any_unwrap(py),))
-            })?;
+            Python::attach(|py| py_self.call_method1(py, "on_pool", (pool.into_py_any(py)?,)))?;
         }
         Ok(())
     }
@@ -655,7 +647,7 @@ impl PyDataActorInner {
     fn dispatch_on_pool_swap(&mut self, swap: PoolSwap) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_swap", (swap.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_pool_swap", (swap.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -665,11 +657,7 @@ impl PyDataActorInner {
     fn dispatch_on_pool_liquidity_update(&mut self, update: PoolLiquidityUpdate) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(
-                    py,
-                    "on_pool_liquidity_update",
-                    (update.into_py_any_unwrap(py),),
-                )
+                py_self.call_method1(py, "on_pool_liquidity_update", (update.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -679,7 +667,7 @@ impl PyDataActorInner {
     fn dispatch_on_pool_fee_collect(&mut self, collect: PoolFeeCollect) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_fee_collect", (collect.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_pool_fee_collect", (collect.into_py_any(py)?,))
             })?;
         }
         Ok(())
@@ -689,7 +677,7 @@ impl PyDataActorInner {
     fn dispatch_on_pool_flash(&mut self, flash: PoolFlash) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
-                py_self.call_method1(py, "on_pool_flash", (flash.into_py_any_unwrap(py),))
+                py_self.call_method1(py, "on_pool_flash", (flash.into_py_any(py)?,))
             })?;
         }
         Ok(())

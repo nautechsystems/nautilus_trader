@@ -163,7 +163,7 @@ impl HyperliquidWebSocketClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| match report {
-                Some(r) => Ok(r.into_py_any_unwrap(py)),
+                Some(report) => report.into_py_any(py),
                 None => Ok(py.None()),
             })
         })
@@ -201,8 +201,11 @@ impl HyperliquidWebSocketClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, reports.into_iter().map(|r| r.into_py_any_unwrap(py)))?;
+                let py_reports = reports
+                    .into_iter()
+                    .map(|report| report.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_reports)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })

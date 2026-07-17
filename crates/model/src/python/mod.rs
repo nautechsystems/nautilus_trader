@@ -94,6 +94,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::types::quantity::Quantity>()?;
     m.add_class::<crate::types::balance::AccountBalance>()?;
     m.add_class::<crate::types::balance::MarginBalance>()?;
+    m.add_class::<crate::python::common::EnumIterator>()?;
     // Data
     m.add_function(wrap_pyfunction!(data::drop_cvec_pycapsule, m)?)?;
     m.add_class::<crate::data::DataType>()?;
@@ -178,7 +179,9 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::enums::OrderType>()?;
     m.add_class::<crate::enums::PositionAdjustmentType>()?;
     m.add_class::<crate::enums::PositionSide>()?;
+    m.add_class::<crate::enums::PositionSideSpecified>()?;
     m.add_class::<crate::enums::PriceType>()?;
+    m.add_class::<crate::enums::RecordFlag>()?;
     m.add_class::<crate::enums::TimeInForce>()?;
     m.add_class::<crate::enums::TradingState>()?;
     m.add_class::<crate::enums::TrailingOffsetType>()?;
@@ -333,6 +336,12 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<crate::defi::dex::DexType>()?;
         m.add_class::<crate::defi::pool_analysis::PoolSnapshot>()?;
         m.add_class::<crate::defi::pool_analysis::PoolProfiler>()?;
+        m.add_class::<crate::defi::pool_analysis::position::PoolPosition>()?;
+        m.add_class::<crate::defi::pool_analysis::quote::SwapQuote>()?;
+        m.add_class::<crate::defi::pool_analysis::size_estimator::SizeForImpactResult>()?;
+        m.add_class::<crate::defi::pool_analysis::snapshot::PoolAnalytics>()?;
+        m.add_class::<crate::defi::pool_analysis::snapshot::PoolState>()?;
+        m.add_class::<crate::defi::tick_map::tick::PoolTick>()?;
     }
     Ok(())
 }

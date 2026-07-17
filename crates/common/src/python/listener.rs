@@ -17,8 +17,8 @@
 
 use bytes::Bytes;
 use futures::pin_mut;
-use nautilus_core::python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err};
-use pyo3::prelude::*;
+use nautilus_core::python::{call_python, to_pyruntime_err};
+use pyo3::{IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
 
 use crate::live::listener::MessageBusListener;
@@ -67,7 +67,10 @@ impl MessageBusListener {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream_rx);
             while let Some(msg) = stream_rx.recv().await {
-                Python::attach(|py| call_python(py, &callback, msg.into_py_any_unwrap(py)));
+                Python::attach(|py| -> PyResult<()> {
+                    call_python(py, &callback, msg.into_py_any(py)?);
+                    Ok(())
+                })?;
             }
             Ok(())
         })

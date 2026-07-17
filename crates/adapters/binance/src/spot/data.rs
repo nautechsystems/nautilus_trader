@@ -338,12 +338,14 @@ impl BinanceSpotDataClient {
         http_client: &BinanceSpotHttpClient,
         clock: &'static AtomicTime,
     ) {
+        let ts_init = clock.get_time_ns();
+
         match msg {
             BinanceSpotWsMessage::Trades(ref event) => {
                 let symbol = Ustr::from(&event.symbol);
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let trades = parse_trades_event(event, instrument);
+                    let trades = parse_trades_event(event, instrument, ts_init);
                     for data in trades {
                         Self::send_data(data_sender, data);
                     }
@@ -353,7 +355,7 @@ impl BinanceSpotDataClient {
                 let symbol = Ustr::from(&event.symbol);
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
-                    let quote = parse_bbo_event(event, instrument);
+                    let quote = parse_bbo_event(event, instrument, ts_init);
                     Self::send_data(data_sender, Data::from(quote));
                 }
             }
@@ -361,7 +363,7 @@ impl BinanceSpotDataClient {
                 let symbol = Ustr::from(&event.symbol);
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
-                    && let Some(deltas) = parse_depth_snapshot(event, instrument)
+                    && let Some(deltas) = parse_depth_snapshot(event, instrument, ts_init)
                 {
                     Self::send_data(data_sender, Data::Deltas(OrderBookDeltas_API::new(deltas)));
                 }
@@ -370,7 +372,7 @@ impl BinanceSpotDataClient {
                 let symbol = Ustr::from(&event.symbol);
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol)
-                    && let Some(deltas) = parse_depth_diff(event, instrument)
+                    && let Some(deltas) = parse_depth_diff(event, instrument, ts_init)
                 {
                     let first_update_id = event.first_book_update_id as u64;
                     let final_update_id = event.last_book_update_id as u64;
@@ -2043,24 +2045,94 @@ impl DataClient for BinanceSpotDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{
+        sync::{Arc, RwLock},
+        time::Duration,
+    };
 
-    use nautilus_core::nanos::UnixNanos;
+    use nautilus_common::messages::DataEvent;
+    use nautilus_core::{AtomicMap, nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
-        data::{BookOrder, OrderBookDelta, OrderBookDeltas},
+        data::{BookOrder, Data, OrderBookDelta, OrderBookDeltas},
         enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
+        instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
         types::{Price, Quantity},
     };
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use ustr::Ustr;
 
     use super::{
-        BinanceDepth, BinanceEnvironment, BinanceSpotMarketDataMode, BufferedDepthUpdate,
-        first_applicable_spot_update, parse_spot_depth_snapshot, resolve_spot_json_ws_url,
-        spot_continuity_ok, spot_overlap_valid, spot_snapshot_retry_backoff,
+        BinanceDepth, BinanceEnvironment, BinanceSpotDataClient, BinanceSpotMarketDataMode,
+        BookBuffer, BufferedDepthUpdate, first_applicable_spot_update, parse_spot_depth_snapshot,
+        resolve_spot_json_ws_url, spot_continuity_ok, spot_overlap_valid,
+        spot_snapshot_retry_backoff,
     };
-    use crate::{common::consts::BINANCE_SPOT_WS_URL, spot::http::BinancePriceLevel};
+    use crate::{
+        common::consts::BINANCE_SPOT_WS_URL,
+        spot::{
+            http::{BinancePriceLevel, BinanceSpotHttpClient},
+            sbe::stream::BestBidAskStreamEvent,
+            websocket::streams::messages::BinanceSpotWsMessage,
+        },
+    };
+
+    #[rstest]
+    fn handle_ws_message_uses_clock_timestamp_for_sbe_bbo_ts_init() {
+        let ts_init = UnixNanos::from(1_800_000_000_000_000_000u64);
+        let clock = Box::leak(Box::new(AtomicTime::new(false, ts_init)));
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+        let instruments = Arc::new(AtomicMap::new());
+        instruments.insert(instrument.id(), instrument.clone());
+        let ws_instruments = Arc::new(AtomicMap::new());
+        ws_instruments.insert(Ustr::from("BTCUSDT"), instrument);
+        let book_buffers = Arc::new(AtomicMap::<InstrumentId, BookBuffer>::new());
+        let book_subscriptions = Arc::new(AtomicMap::<InstrumentId, u32>::new());
+        let book_epoch = Arc::new(RwLock::new(0));
+        let http_client = BinanceSpotHttpClient::new(
+            BinanceEnvironment::Testnet,
+            clock,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let event_time_us = 1_700_000_000_000_000;
+        let message = BinanceSpotWsMessage::BestBidAsk(BestBidAskStreamEvent {
+            event_time_us,
+            book_update_id: 123,
+            price_exponent: -2,
+            qty_exponent: -4,
+            bid_price_mantissa: 12_345,
+            bid_qty_mantissa: 25_000,
+            ask_price_mantissa: 12_350,
+            ask_qty_mantissa: 30_000,
+            symbol: Ustr::from("BTCUSDT"),
+        });
+
+        BinanceSpotDataClient::handle_ws_message(
+            message,
+            &sender,
+            &instruments,
+            &ws_instruments,
+            &book_buffers,
+            &book_subscriptions,
+            &book_epoch,
+            &http_client,
+            clock,
+        );
+
+        let DataEvent::Data(Data::Quote(quote)) = receiver.try_recv().unwrap() else {
+            panic!("expected quote data event");
+        };
+        assert_eq!(quote.ts_event, UnixNanos::from_micros(event_time_us as u64));
+        assert_eq!(quote.ts_init, ts_init);
+    }
 
     #[rstest]
     fn overlap_accepts_first_diff_straddling_snapshot() {

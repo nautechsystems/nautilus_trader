@@ -149,10 +149,7 @@ impl DeribitHttpClient {
                     .into_iter()
                     .map(|inst| instrument_any_to_pyobject(py, inst))
                     .collect();
-                let pylist = PyList::new(py, py_instruments?)
-                    .unwrap()
-                    .into_any()
-                    .unbind();
+                let pylist = PyList::new(py, py_instruments?)?.into_any().unbind();
                 Ok(pylist)
             })
         })
@@ -237,7 +234,7 @@ impl DeribitHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(account_state.into_py_any_unwrap(py)))
+            Python::attach(|py| account_state.into_py_any(py))
         })
     }
 
@@ -283,10 +280,11 @@ impl DeribitHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist = PyList::new(
-                    py,
-                    trades.into_iter().map(|trade| trade.into_py_any_unwrap(py)),
-                )?;
+                let py_trades = trades
+                    .into_iter()
+                    .map(|trade| trade.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_trades)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -326,8 +324,11 @@ impl DeribitHttpClient {
                 .map_err(to_pyvalue_err)?;
 
             Python::attach(|py| {
-                let pylist =
-                    PyList::new(py, bars.into_iter().map(|bar| bar.into_py_any_unwrap(py)))?;
+                let py_bars = bars
+                    .into_iter()
+                    .map(|bar| bar.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                let pylist = PyList::new(py, py_bars)?;
                 Ok(pylist.into_py_any_unwrap(py))
             })
         })
@@ -364,7 +365,7 @@ impl DeribitHttpClient {
                 .await
                 .map_err(to_pyvalue_err)?;
 
-            Python::attach(|py| Ok(book.into_py_any_unwrap(py)))
+            Python::attach(|py| book.into_py_any(py))
         })
     }
 

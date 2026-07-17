@@ -42,10 +42,10 @@ pub mod string;
 pub mod uuid;
 pub mod version;
 
-use std::fmt::Display;
+use std::{convert::Infallible, fmt::Display};
 
 use pyo3::{
-    Py,
+    BoundObject, Py,
     conversion::IntoPyObjectExt,
     exceptions::{
         PyException, PyKeyError, PyNotImplementedError, PyRuntimeError, PyTypeError, PyValueError,
@@ -108,18 +108,18 @@ pub fn call_python_threadsafe(
     }
 }
 
-/// Extend `IntoPyObjectExt` helper trait to unwrap `Py<PyAny>` after conversion.
+/// Extends `IntoPyObjectExt` with an infallible conversion to `Py<PyAny>`.
 pub trait IntoPyObjectNautilusExt<'py>: IntoPyObjectExt<'py> {
-    /// Convert `self` into a [`Py<PyAny>`] while *panicking* if the conversion fails.
-    ///
-    /// This is a convenience wrapper around [`IntoPyObjectExt::into_py_any`] that avoids the
-    /// cumbersome `Result` handling when we are certain that the conversion cannot fail (for
-    /// instance when we are converting primitives or other types that already implement the
-    /// necessary PyO3 traits).
+    /// Converts `self` into a [`Py<PyAny>`] when the underlying conversion is infallible.
     #[inline]
-    fn into_py_any_unwrap(self, py: Python<'py>) -> Py<PyAny> {
-        self.into_py_any(py)
-            .expect("Failed to convert type to Py<PyAny>")
+    fn into_py_any_unwrap(self, py: Python<'py>) -> Py<PyAny>
+    where
+        Self: IntoPyObject<'py, Error = Infallible>,
+    {
+        match self.into_pyobject(py) {
+            Ok(obj) => obj.into_any().unbind(),
+            Err(never) => match never {},
+        }
     }
 }
 

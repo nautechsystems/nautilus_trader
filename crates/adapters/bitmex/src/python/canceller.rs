@@ -190,8 +190,7 @@ impl CancelBroadcaster {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = pyo3::types::PyList::new(py, py_reports?)
-                    .unwrap()
+                let pylist = pyo3::types::PyList::new(py, py_reports?)?
                     .into_any()
                     .unbind();
                 Ok(pylist)
@@ -223,8 +222,7 @@ impl CancelBroadcaster {
                     .into_iter()
                     .map(|report| report.into_py_any(py))
                     .collect();
-                let pylist = pyo3::types::PyList::new(py, py_reports?)
-                    .unwrap()
+                let pylist = pyo3::types::PyList::new(py, py_reports?)?
                     .into_any()
                     .unbind();
                 Ok(pylist)

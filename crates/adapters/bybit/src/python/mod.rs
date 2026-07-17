@@ -208,6 +208,9 @@ pub fn bybit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::client::BybitHttpClient>()?;
     m.add_class::<crate::http::client::BybitRawHttpClient>()?;
     m.add_class::<crate::http::models::BybitServerTime>()?;
+    m.add_class::<crate::http::models::BybitAccountDetails>()?;
+    m.add_class::<crate::http::models::BybitApiKeyPermissions>()?;
+    m.add_class::<crate::http::models::BybitFeeRate>()?;
     m.add_class::<crate::http::models::BybitOrder>()?;
     m.add_class::<crate::http::models::BybitOrderCursorList>()?;
     m.add_class::<crate::http::models::BybitTickerData>()?;

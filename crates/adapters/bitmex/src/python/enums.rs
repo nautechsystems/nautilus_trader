@@ -24,7 +24,6 @@ use strum::IntoEnumIterator;
 use crate::common::enums::{BitmexEnvironment, BitmexSymbolStatus};
 
 #[pymethods]
-#[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl BitmexSymbolStatus {
     /// Represents the status of a BitMEX symbol.
     #[new]
@@ -69,6 +68,7 @@ impl BitmexSymbolStatus {
     }
 
     #[classmethod]
+    #[pyo3(name = "from_str")]
     fn py_from_str(_cls: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
         let data_str: String = data.str()?.extract()?;
         Self::from_str(&data_str).map_err(to_pyvalue_err)

@@ -22,10 +22,10 @@ use nautilus_common::{
 };
 use nautilus_core::{
     UUID4,
-    python::{IntoPyObjectNautilusExt, call_python, to_pyruntime_err, to_pyvalue_err},
+    python::{call_python, to_pyruntime_err, to_pyvalue_err},
 };
 use nautilus_model::identifiers::TraderId;
-use pyo3::{prelude::*, pybacked::PyBackedBytes};
+use pyo3::{IntoPyObjectExt, prelude::*, pybacked::PyBackedBytes};
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -91,7 +91,10 @@ impl PyRedisMessageBusBacking {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
-                Python::attach(|py| call_python(py, &callback, msg.into_py_any_unwrap(py)));
+                Python::attach(|py| -> PyResult<()> {
+                    call_python(py, &callback, msg.into_py_any(py)?);
+                    Ok(())
+                })?;
             }
             Ok(())
         })
