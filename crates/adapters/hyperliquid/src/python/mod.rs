@@ -136,7 +136,7 @@ fn py_hyperliquid_cloid_from_client_order_id(client_order_id: ClientOrderId) -> 
 #[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.hyperliquid")]
 #[pyo3(name = "hyperliquid_product_type_from_symbol")]
 fn py_hyperliquid_product_type_from_symbol(symbol: &str) -> PyResult<HyperliquidProductType> {
-    HyperliquidProductType::from_symbol(symbol).map_err(to_pyvalue_err)
+    HyperliquidProductType::from_instrument_symbol(symbol).map_err(to_pyvalue_err)
 }
 
 /// Resolve the Hyperliquid execution account address for REST queries and WebSocket subscriptions.

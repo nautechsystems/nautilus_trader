@@ -46,7 +46,7 @@ use crate::{
             format_outcome_nautilus_symbol, is_conditional_order_data, make_fill_trade_id,
             millis_to_nanos, parse_trigger_order_type,
         },
-        types::HyperliquidAssetId,
+        asset::HyperliquidProductId,
     },
     data_types::HyperliquidPublicTrade,
     websocket::messages::{WsBasicOrderData, WsOrderData},
@@ -390,7 +390,7 @@ fn build_outcome_def(
     meta: &OutcomeMeta,
 ) -> Result<HyperliquidInstrumentDef, String> {
     let outcome_index = market.outcome;
-    let asset_id = HyperliquidAssetId::outcome(outcome_index, side);
+    let asset_id = HyperliquidProductId::outcome(outcome_index, side);
     let encoding = asset_id.outcome_encoding().ok_or_else(|| {
         format!("Invalid outcome encoding for outcome={outcome_index} side={side}")
     })?;

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod asset;
 pub mod builder_fee;
 pub mod consts;
 pub mod converters;
@@ -20,19 +21,20 @@ pub mod credential;
 pub mod enums;
 pub mod models;
 pub mod parse;
-pub mod types;
 
 #[cfg(test)]
 pub mod testing;
 
+pub use asset::{
+    HyperLiquidAssetRegistry, HyperliquidAsset, HyperliquidProduct, HyperliquidProductId,
+    HyperliquidProductType, VAULT_ASSET_ID,
+};
 pub use converters::{
     determine_tpsl_type, hyperliquid_conditional_to_nautilus, hyperliquid_order_type_to_nautilus,
     hyperliquid_time_in_force_to_nautilus, nautilus_order_type_to_hyperliquid,
     nautilus_time_in_force_to_hyperliquid, nautilus_to_hyperliquid_conditional,
-    outcome_asset_id_from_instrument_id, outcome_asset_id_to_coin,
-    outcome_asset_id_to_instrument_id, outcome_asset_id_to_token,
 };
-pub use enums::{HyperliquidOrderStatus, HyperliquidProductType};
+pub use enums::HyperliquidOrderStatus;
 pub use models::{
     ConversionError, HyperliquidAccountEvent, HyperliquidAccountState, HyperliquidBalance,
     HyperliquidDataConverter, HyperliquidInstrumentCache, HyperliquidInstrumentInfo,
