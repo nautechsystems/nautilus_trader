@@ -1,8 +1,8 @@
 #![no_main]
 
 use alloy_primitives::{Address, U256};
-use libfuzzer_sys::fuzz_target;
 use nautilus_derive::signing::modules::trade::TradeModuleData;
+use nautilus_live::fuzz::fuzz_target;
 use rust_decimal::Decimal;
 
 const INPUT_LEN: usize = 20 + 8 + (3 * 17) + 8 + 1;

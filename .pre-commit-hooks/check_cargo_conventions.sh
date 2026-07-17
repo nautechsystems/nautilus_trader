@@ -12,6 +12,7 @@
 # 8. Related dependency versions must be aligned (e.g., capnp/capnpc)
 # 9. Adapter dependencies section should only contain deps used exclusively by adapters
 # 10. Every name in [package.metadata.cargo-machete] ignored must be a declared dependency
+# 11. Adapter crates must obtain libfuzzer-sys through nautilus-live
 #
 # Dependency groups are typically organized as:
 # - Internal nautilus-* dependencies
@@ -578,6 +579,20 @@ if [[ -n "$stale_machete_violations" ]]; then
   VIOLATIONS=$((VIOLATIONS + $(echo "$stale_machete_violations" | grep -c . || true)))
 fi
 
+# Check 11: Adapter crates must obtain libfuzzer-sys through nautilus-live
+adapter_libfuzzer_violations=$(rg -n \
+  '^[[:space:]]*libfuzzer-sys[[:space:]]*=' \
+  crates/adapters \
+  -g 'Cargo.toml' 2> /dev/null || true)
+
+if [[ -n "$adapter_libfuzzer_violations" ]]; then
+  echo -e "${RED}Direct adapter libfuzzer-sys dependencies:${NC}"
+  echo "$adapter_libfuzzer_violations"
+  echo -e "${YELLOW}Enable nautilus-live/fuzz instead${NC}"
+  echo
+  VIOLATIONS=$((VIOLATIONS + $(echo "$adapter_libfuzzer_violations" | grep -c . || true)))
+fi
+
 if [[ $VIOLATIONS -gt 0 ]]; then
   echo -e "${RED}Found $VIOLATIONS Cargo.toml convention violation(s)${NC}"
   echo
@@ -597,6 +612,7 @@ if [[ $VIOLATIONS -gt 0 ]]; then
   echo "  - Remove unused dependencies from [workspace.dependencies] in root Cargo.toml"
   echo "  - Ensure related dependencies have matching versions (e.g., capnp and capnpc)"
   echo "  - Drop [package.metadata.cargo-machete] ignored entries whose dependency was removed"
+  echo "  - Obtain adapter libfuzzer-sys support through nautilus-live/fuzz"
   exit 1
 fi
 

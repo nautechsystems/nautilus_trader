@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_derive::signing::nonce::NonceManager;
+use nautilus_live::fuzz::fuzz_target;
 
 const CHUNK_LEN: usize = 38;
 const MAX_DOMAIN_NOW_MS: u64 = 4_102_444_800_000;

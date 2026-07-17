@@ -45,6 +45,7 @@ use crate::{
         PolymarketRtdsCryptoPrice, PolymarketRtdsEquityPrice, register_polymarket_custom_data,
     },
     factories::{PolymarketDataClientFactory, PolymarketExecutionClientFactory},
+    providers::build_gamma_params_from_hashmap,
 };
 
 fn getattr_optional<'py>(
@@ -94,6 +95,9 @@ fn py_scalar_to_string(value: &Bound<'_, PyAny>) -> PyResult<String> {
     }
 
     if let Ok(v) = value.extract::<f64>() {
+        if !v.is_finite() {
+            return Err(to_pyvalue_err("Gamma filter values must be finite"));
+        }
         return Ok(v.to_string());
     }
 
@@ -101,7 +105,38 @@ fn py_scalar_to_string(value: &Bound<'_, PyAny>) -> PyResult<String> {
         return Ok(v);
     }
 
-    value.str()?.extract()
+    Err(to_pyvalue_err(
+        "Gamma filter values must be bool, int, float, string, or a list of those values",
+    ))
+}
+
+fn py_filter_value_to_string(value: &Bound<'_, PyAny>) -> PyResult<String> {
+    if value.extract::<f64>().is_ok_and(|value| !value.is_finite()) {
+        return Err(to_pyvalue_err("Gamma filter values must be finite"));
+    }
+
+    if let Ok(value) = py_scalar_to_string(value) {
+        return Ok(value);
+    }
+
+    if value.cast::<PyDict>().is_ok() {
+        return Err(to_pyvalue_err("Gamma filter values cannot be dictionaries"));
+    }
+
+    if let Ok(iter) = value.try_iter() {
+        let values = iter
+            .map(|item| py_scalar_to_string(&item?))
+            .collect::<PyResult<Vec<_>>>()?;
+
+        if values.is_empty() {
+            return Err(to_pyvalue_err("Gamma filter lists cannot be empty"));
+        }
+        return Ok(values.join(","));
+    }
+
+    Err(to_pyvalue_err(
+        "Gamma filter values must be bool, int, float, string, or a list of those values",
+    ))
 }
 
 fn extract_string_map(
@@ -110,9 +145,27 @@ fn extract_string_map(
     let dict = value.cast::<PyDict>()?;
     let mut map = std::collections::HashMap::with_capacity(dict.len());
     for (key, value) in dict.iter() {
-        map.insert(key.extract::<String>()?, py_scalar_to_string(&value)?);
+        if value.is_none() {
+            continue;
+        }
+        map.insert(key.extract::<String>()?, py_filter_value_to_string(&value)?);
     }
     Ok(map)
+}
+
+fn validate_provider_config(config: &PolymarketInstrumentProviderConfig) -> PyResult<()> {
+    if let Some(filters) = config.filters.as_ref() {
+        build_gamma_params_from_hashmap(filters)
+            .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket Gamma filters: {e}")))?;
+    }
+    Ok(())
+}
+
+fn validate_data_config(config: &PolymarketDataClientConfig) -> PyResult<()> {
+    if let Some(instrument_config) = config.instrument_config.as_ref() {
+        validate_provider_config(instrument_config)?;
+    }
+    Ok(())
 }
 
 fn extract_event_slug_builder(
@@ -138,6 +191,7 @@ fn extract_provider_config_from_pyobject(
     obj: &Bound<'_, PyAny>,
 ) -> PyResult<PolymarketInstrumentProviderConfig> {
     if let Ok(config) = obj.extract::<PolymarketInstrumentProviderConfig>() {
+        validate_provider_config(&config)?;
         return Ok(config);
     }
 
@@ -170,7 +224,7 @@ fn extract_provider_config_from_pyobject(
         .transpose()?
         .unwrap_or(default.use_gamma_markets);
 
-    Ok(PolymarketInstrumentProviderConfig {
+    let config = PolymarketInstrumentProviderConfig {
         load_all: load_all || event_slug_builder.is_some(),
         load_ids,
         filters,
@@ -179,7 +233,9 @@ fn extract_provider_config_from_pyobject(
         event_slug_builder,
         log_warnings,
         use_gamma_markets,
-    })
+    };
+    validate_provider_config(&config)?;
+    Ok(config)
 }
 
 fn extract_data_config_from_pyobject(
@@ -187,6 +243,7 @@ fn extract_data_config_from_pyobject(
     config: &Py<PyAny>,
 ) -> PyResult<PolymarketDataClientConfig> {
     if let Ok(config) = config.extract::<PolymarketDataClientConfig>(py) {
+        validate_data_config(&config)?;
         return Ok(config);
     }
 
@@ -281,7 +338,7 @@ fn extract_data_config_from_pyobject(
         Some(value) => value.extract::<TransportBackend>()?,
         None => default.transport_backend,
     };
-    Ok(PolymarketDataClientConfig {
+    let config = PolymarketDataClientConfig {
         instrument_config,
         base_url_http,
         base_url_ws,
@@ -307,7 +364,9 @@ fn extract_data_config_from_pyobject(
         filters: Vec::new(),
         new_market_filter: None,
         transport_backend,
-    })
+    };
+    validate_data_config(&config)?;
+    Ok(config)
 }
 
 #[expect(clippy::needless_pass_by_value)]
@@ -432,13 +491,13 @@ mod tests {
         data::{CustomData, DataType, custom::CustomDataTrait, ensure_rust_extractor_registered},
         types::Price,
     };
-    use pyo3::{prelude::*, types::PyDict};
+    use pyo3::{exceptions::PyValueError, prelude::*, types::PyDict};
     use rstest::rstest;
     use serde_json::json;
 
     use super::extract_data_config_from_pyobject;
     use crate::{
-        config::PolymarketUpDownEventSlugConfig,
+        config::{PolymarketInstrumentProviderConfig, PolymarketUpDownEventSlugConfig},
         data_types::{PolymarketRtdsCryptoPrice, register_polymarket_custom_data},
     };
 
@@ -615,6 +674,122 @@ mod tests {
                 err.to_string()
                     .contains("Python callable event_slug_builder is not supported")
             );
+        });
+    }
+
+    #[rstest]
+    fn native_provider_config_rejects_invalid_gamma_filters_as_value_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let filters = PyDict::new(py);
+            filters.set_item("active", "yes").unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("filters", filters).unwrap();
+
+            let err = py
+                .get_type::<PolymarketInstrumentProviderConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert!(err.to_string().contains("must be true or false"));
+        });
+    }
+
+    #[rstest]
+    fn extract_data_config_accepts_v1_shaped_filter_values() {
+        Python::initialize();
+        Python::attach(|py| {
+            let types = py.import("types").expect("types");
+            let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+            let filters = PyDict::new(py);
+            filters.set_item("is_active", true).unwrap();
+            filters.set_item("id", vec![1, 2]).unwrap();
+            filters.set_item("volume_num_min", 1.25).unwrap();
+            filters.set_item("tag_id", py.None()).unwrap();
+            let instrument_kwargs = PyDict::new(py);
+            instrument_kwargs.set_item("filters", filters).unwrap();
+            let instrument_config = namespace
+                .call((), Some(&instrument_kwargs))
+                .expect("instrument namespace");
+            let config_kwargs = PyDict::new(py);
+            config_kwargs
+                .set_item("instrument_config", instrument_config)
+                .unwrap();
+            let config_obj = namespace
+                .call((), Some(&config_kwargs))
+                .expect("config namespace");
+
+            let rust_config = extract_data_config_from_pyobject(py, &config_obj.unbind())
+                .expect("v1-shaped filters should convert");
+            let filters = rust_config
+                .instrument_config
+                .and_then(|config| config.filters)
+                .expect("filters should be extracted");
+
+            assert_eq!(filters.get("is_active").map(String::as_str), Some("true"));
+            assert_eq!(filters.get("id").map(String::as_str), Some("1,2"));
+            assert_eq!(
+                filters.get("volume_num_min").map(String::as_str),
+                Some("1.25")
+            );
+            assert!(!filters.contains_key("tag_id"));
+        });
+    }
+
+    #[rstest]
+    fn extract_data_config_rejects_non_finite_filter_as_value_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let types = py.import("types").expect("types");
+            let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+            let filters = PyDict::new(py);
+            filters.set_item("volume_num_min", f64::NAN).unwrap();
+            let instrument_kwargs = PyDict::new(py);
+            instrument_kwargs.set_item("filters", filters).unwrap();
+            let instrument_config = namespace
+                .call((), Some(&instrument_kwargs))
+                .expect("instrument namespace");
+            let config_kwargs = PyDict::new(py);
+            config_kwargs
+                .set_item("instrument_config", instrument_config)
+                .unwrap();
+            let config_obj = namespace
+                .call((), Some(&config_kwargs))
+                .expect("config namespace");
+
+            let err = extract_data_config_from_pyobject(py, &config_obj.unbind()).unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert!(err.to_string().contains("must be finite"));
+        });
+    }
+
+    #[rstest]
+    fn extract_data_config_rejects_v1_shaped_unknown_filter_as_value_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let types = py.import("types").expect("types");
+            let namespace = types.getattr("SimpleNamespace").expect("SimpleNamespace");
+            let filters = PyDict::new(py);
+            filters.set_item("unsupported_filter", true).unwrap();
+            let instrument_kwargs = PyDict::new(py);
+            instrument_kwargs.set_item("filters", filters).unwrap();
+            let instrument_config = namespace
+                .call((), Some(&instrument_kwargs))
+                .expect("instrument namespace");
+            let config_kwargs = PyDict::new(py);
+            config_kwargs
+                .set_item("instrument_config", instrument_config)
+                .unwrap();
+            let config_obj = namespace
+                .call((), Some(&config_kwargs))
+                .expect("config namespace");
+
+            let err = extract_data_config_from_pyobject(py, &config_obj.unbind()).unwrap_err();
+
+            assert!(err.is_instance_of::<PyValueError>(py));
+            assert!(err.to_string().contains("Unknown Gamma market filter key"));
         });
     }
 

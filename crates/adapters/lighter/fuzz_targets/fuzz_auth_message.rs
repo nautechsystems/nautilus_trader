@@ -11,8 +11,8 @@
 //! Unicode catches any unsafe slicing or unchecked decode in the limb-pack
 //! path that future callers might exercise.
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::auth_token::hash_auth_message;
+use nautilus_live::fuzz::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     let Ok(s) = std::str::from_utf8(data) else {

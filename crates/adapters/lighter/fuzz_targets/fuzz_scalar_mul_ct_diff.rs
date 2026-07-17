@@ -14,8 +14,8 @@
 //! scalar field) and 40 bytes of base-point seed (mapped through `s * G`
 //! to land on a uniform group element).
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::curve::{Point, SCALAR_BYTES, Scalar};
+use nautilus_live::fuzz::fuzz_target;
 
 const INPUT_LEN: usize = SCALAR_BYTES + SCALAR_BYTES;
 

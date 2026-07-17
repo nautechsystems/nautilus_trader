@@ -12,10 +12,10 @@
 //! + 4 + 8 order, 8 + 4 + 4 + 1 attributes — totalling 84 bytes; we use 84
 //! and round up by reading 4 zero bytes at the tail.
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::tx::{
     CreateOrderTxInfo, L2TxAttributes, OrderInfo, TxContext, compute_tx_hash,
 };
+use nautilus_live::fuzz::fuzz_target;
 
 const INPUT_LEN: usize = 84;
 

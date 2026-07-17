@@ -71,6 +71,10 @@ pub trait ExecutionClient {
 
     /// Generates and publishes the account state event.
     ///
+    /// Implementations may publish synchronously. Callers must release shared state borrows,
+    /// including clock and cache borrows, before calling this method because subscribers may
+    /// access the same state.
+    ///
     /// # Errors
     ///
     /// Returns an error if generating the account state fails.

@@ -89,6 +89,7 @@ adapter set. The following limits remain deferred:
 
 ### Breaking Changes
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
+- Changed v2 portfolios to record daily equity snapshots by default; set `equity_curve=False` to opt out
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
@@ -108,8 +109,10 @@ adapter set. The following limits remain deferred:
 - Fixed v2 realized PnL returning zero for missing rates or range errors and panicking on overflow
 - Fixed v2 portfolio snapshots retaining stale-price flags after the affected position side closed
 - Fixed v2 portfolio snapshots dropping temporarily unpriced positions and hiding stale valuations
+- Fixed v2 equity curves omitting unrealized PnL between fills (#3899), thanks for reporting @q-learning-trader
 - Fixed v2 account-scoped valuations clearing other accounts' missing-price flags on shared venues
 - Fixed v2 account locks and margins using settlement currency instead of each calculated currency
+- Fixed v2 portfolio pending recovery discarding initial margin after recalculating maintenance margin
 - Fixed v2 invalid or out-of-range notional and PnL valuations panicking or falling back to zero
 - Fixed v2 multi-currency cash equity double-counting assets already credited to account balances
 - Fixed v2 quanto position notionals using quote currency instead of settlement currency
@@ -153,6 +156,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
+- Fixed v2 missing-order resolution and failed-report handling in live reconciliation (#4479), thanks @folknor
 - Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
 - Fixed Python v2 cached `OrderList` fields and concrete cache return types (#4453), thanks @JiajunWan
 - Fixed live fill deduplication dropping valid fills when trade IDs collide across accounts or instruments
@@ -216,6 +220,8 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
+- Fixed Polymarket Gamma market and event keyset filters, validation, and repeated query encoding
+- Fixed Polymarket Gamma discovery to use keyset pagination beyond the legacy offset cap
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation

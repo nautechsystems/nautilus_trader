@@ -84,6 +84,7 @@ use indexmap::IndexSet;
 use nautilus_common::{
     actor::{Actor, DataActor, DataActorNative},
     cache::database::CacheDatabaseAdapter,
+    clients::ExecutionClient,
     component::Component,
     enums::{Environment, LogColor},
     live::dst,
@@ -102,7 +103,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     events::OrderEventAny,
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, Venue},
+    identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId, TraderId},
     orders::Order,
     reports::{OrderStatusReport, PositionStatusReport},
 };
@@ -120,6 +121,7 @@ use crate::{
         client::LiveExecutionClient,
         manager::{
             ExecutionManager, ExecutionManagerConfig, OpenOrderReportCheck, PositionReportCheck,
+            TargetedOrderQuery, TargetedOrderReportResult, request_targeted_order_reports,
         },
     },
     runner::{AsyncRunner, AsyncRunnerChannels},
@@ -1065,6 +1067,7 @@ impl LiveNode {
         // Running phase: runs until shutdown deadline expires
         let mut residual_events = 0usize;
         let mut open_order_report_task: Option<OpenOrderReportTask> = None;
+        let mut targeted_order_report_task: Option<TargetedOrderReportTask> = None;
         let mut position_report_task: Option<PositionReportTask> = None;
         let ctrl_c = dst::signal::ctrl_c();
         let terminate = dst::signal::terminate();
@@ -1125,9 +1128,32 @@ impl LiveNode {
                     let maintenance_start = dst::time::Instant::now();
 
                     open_order_report_task = None;
-                    let events = self
-                        .exec_manager
-                        .reconcile_open_order_reports(&result.check, result.reports);
+                    let reconciliation = self.exec_manager.reconcile_open_order_reports(
+                        &result.check,
+                        result.reports,
+                        &result.queried_clients,
+                        &result.failed_clients,
+                    );
+                    self.process_reconciliation_events(&reconciliation.events);
+                    if !reconciliation.targeted_queries.is_empty() {
+                        targeted_order_report_task = Some(
+                            self.start_targeted_order_report_check(
+                                reconciliation.targeted_queries,
+                            ),
+                        );
+                    }
+                    record_runner_maintenance(&metrics, maintenance_start, metrics_start);
+                }
+                result = async {
+                    match targeted_order_report_task.as_mut() {
+                        Some(task) => task.future.as_mut().await,
+                        None => std::future::pending::<Vec<TargetedOrderReportResult>>().await,
+                    }
+                }, if targeted_order_report_task.is_some() => {
+                    let maintenance_start = dst::time::Instant::now();
+
+                    targeted_order_report_task = None;
+                    let events = self.exec_manager.reconcile_targeted_order_reports(result);
                     self.process_reconciliation_events(&events);
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
@@ -1143,7 +1169,8 @@ impl LiveNode {
                     let events = self.exec_manager.reconcile_position_reports(
                         &result.check,
                         result.reports,
-                        &result.failed_venues,
+                        &result.queried_clients,
+                        &result.failed_clients,
                     );
                     self.process_reconciliation_events(&events);
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
@@ -1177,6 +1204,7 @@ impl LiveNode {
                             last_open_check: &mut last_open_check,
                             last_position_check: &mut last_position_check,
                             open_order_report_task: &mut open_order_report_task,
+                            targeted_order_report_task: &mut targeted_order_report_task,
                             position_report_task: &mut position_report_task,
                         };
 
@@ -1373,6 +1401,7 @@ impl LiveNode {
         }
 
         drop(open_order_report_task.take());
+        drop(targeted_order_report_task.take());
         drop(position_report_task.take());
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
@@ -1928,7 +1957,7 @@ impl LiveNode {
             return;
         }
 
-        if state.open_order_report_task.is_some() {
+        if state.open_order_report_task.is_some() || state.targeted_order_report_task.is_some() {
             if open_due {
                 log::debug!("Open-order reconciliation already in progress");
                 *state.last_open_check = now;
@@ -1967,24 +1996,54 @@ impl LiveNode {
         }
     }
 
-    fn start_open_order_report_check(&self) -> Option<OpenOrderReportTask> {
+    fn start_open_order_report_check(&mut self) -> Option<OpenOrderReportTask> {
         if self.exec_clients.is_empty() {
             log::debug!("No execution clients to check orders consistency");
             return None;
         }
 
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
         let check = self
             .exec_manager
-            .prepare_open_order_report_check(UUID4::new());
+            .prepare_open_order_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
 
         Some(OpenOrderReportTask {
             future: Box::pin(async move {
-                let reports = request_open_order_reports(clients, command).await;
-                OpenOrderReportResult { check, reports }
+                let result = request_open_order_reports(clients, command).await;
+                OpenOrderReportResult {
+                    check,
+                    reports: result.reports,
+                    queried_clients: result.queried_clients,
+                    failed_clients: result.failed_clients,
+                }
             }),
         })
+    }
+
+    fn start_targeted_order_report_check(
+        &self,
+        queries: Vec<TargetedOrderQuery>,
+    ) -> TargetedOrderReportTask {
+        let clients = self.exec_clients.clone();
+        let query_delay = Duration::from_millis(u64::from(
+            self.config.exec_engine.single_order_query_delay_ms,
+        ));
+
+        TargetedOrderReportTask {
+            future: Box::pin(async move {
+                let client_refs = clients
+                    .iter()
+                    .map(|client| client as &dyn ExecutionClient)
+                    .collect::<Vec<_>>();
+                request_targeted_order_reports(&client_refs, queries, query_delay).await
+            }),
+        }
     }
 
     fn start_position_report_check(&self) -> Option<PositionReportTask> {
@@ -1993,9 +2052,14 @@ impl LiveNode {
             return None;
         }
 
+        let client_refs = self
+            .exec_clients
+            .iter()
+            .map(|client| client as &dyn ExecutionClient)
+            .collect::<Vec<_>>();
         let check = self
             .exec_manager
-            .prepare_position_report_check(UUID4::new());
+            .prepare_position_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
 
@@ -2005,7 +2069,8 @@ impl LiveNode {
                 PositionReportResult {
                     check,
                     reports: result.reports,
-                    failed_venues: result.failed_venues,
+                    queried_clients: result.queried_clients,
+                    failed_clients: result.failed_clients,
                 }
             }),
         })
@@ -2062,15 +2127,21 @@ async fn recv_external_msgbus_message(
 async fn request_open_order_reports(
     clients: Vec<LiveExecutionClient>,
     command: GenerateOrderStatusReports,
-) -> Vec<OrderStatusReport> {
+) -> OpenOrderReportQueryResult {
     let mut all_reports = Vec::new();
+    let mut queried_clients = IndexSet::new();
+    let mut failed_clients = IndexSet::new();
 
     for client in clients {
+        let client_id = client.client_id();
+        queried_clients.insert(client_id);
+
         match client.generate_order_status_reports(&command).await {
             Ok(reports) => {
                 all_reports.extend(reports);
             }
             Err(e) => {
+                failed_clients.insert(client_id);
                 log::warn!(
                     "Failed to generate order status reports from {}: {e}",
                     client.client_id()
@@ -2079,7 +2150,11 @@ async fn request_open_order_reports(
         }
     }
 
-    all_reports
+    OpenOrderReportQueryResult {
+        reports: all_reports,
+        queried_clients,
+        failed_clients,
+    }
 }
 
 async fn request_position_reports(
@@ -2087,16 +2162,19 @@ async fn request_position_reports(
     command: GeneratePositionStatusReports,
 ) -> PositionReportQueryResult {
     let mut all_reports = Vec::new();
-    let mut failed_venues = IndexSet::new();
+    let mut queried_clients = IndexSet::new();
+    let mut failed_clients = IndexSet::new();
 
     for client in clients {
-        let venue = client.venue();
+        let client_id = client.client_id();
+        queried_clients.insert(client_id);
+
         match client.generate_position_status_reports(&command).await {
             Ok(reports) => {
                 all_reports.extend(reports);
             }
             Err(e) => {
-                failed_venues.insert(venue);
+                failed_clients.insert(client_id);
                 log::warn!(
                     "Failed to generate position status reports from {}: {e}",
                     client.client_id()
@@ -2107,7 +2185,8 @@ async fn request_position_reports(
 
     PositionReportQueryResult {
         reports: all_reports,
-        failed_venues,
+        queried_clients,
+        failed_clients,
     }
 }
 
@@ -2134,6 +2213,7 @@ struct ReconciliationCheckState<'a> {
     last_open_check: &'a mut dst::time::Instant,
     last_position_check: &'a mut dst::time::Instant,
     open_order_report_task: &'a mut Option<OpenOrderReportTask>,
+    targeted_order_report_task: &'a mut Option<TargetedOrderReportTask>,
     position_report_task: &'a mut Option<PositionReportTask>,
 }
 
@@ -2146,6 +2226,20 @@ struct OpenOrderReportTask {
 struct OpenOrderReportResult {
     check: OpenOrderReportCheck,
     reports: Vec<OrderStatusReport>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
+}
+
+type TargetedOrderReportFuture = Pin<Box<dyn Future<Output = Vec<TargetedOrderReportResult>>>>;
+
+struct TargetedOrderReportTask {
+    future: TargetedOrderReportFuture,
+}
+
+struct OpenOrderReportQueryResult {
+    reports: Vec<OrderStatusReport>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
 }
 
 type PositionReportFuture = Pin<Box<dyn Future<Output = PositionReportResult>>>;
@@ -2157,12 +2251,14 @@ struct PositionReportTask {
 struct PositionReportResult {
     check: PositionReportCheck,
     reports: Vec<PositionStatusReport>,
-    failed_venues: IndexSet<Venue>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
 }
 
 struct PositionReportQueryResult {
     reports: Vec<PositionStatusReport>,
-    failed_venues: IndexSet<Venue>,
+    queried_clients: IndexSet<ClientId>,
+    failed_clients: IndexSet<ClientId>,
 }
 
 /// Flushes data events and commands from both `pending` and the channel receivers
@@ -2994,6 +3090,7 @@ mod tests {
         let mut last_open_check = last;
         let mut last_position_check = last;
         let mut open_order_report_task = None;
+        let mut targeted_order_report_task = None;
         let mut position_report_task = None;
 
         node.run_reconciliation_checks(
@@ -3008,6 +3105,7 @@ mod tests {
                 last_open_check: &mut last_open_check,
                 last_position_check: &mut last_position_check,
                 open_order_report_task: &mut open_order_report_task,
+                targeted_order_report_task: &mut targeted_order_report_task,
                 position_report_task: &mut position_report_task,
             },
         );
@@ -3016,6 +3114,7 @@ mod tests {
 
         assert!(commands.is_empty());
         assert!(open_order_report_task.is_none());
+        assert!(targeted_order_report_task.is_none());
         assert!(position_report_task.is_none());
 
         ExecutionEngine::register_msgbus_handlers(&node.kernel.exec_engine);

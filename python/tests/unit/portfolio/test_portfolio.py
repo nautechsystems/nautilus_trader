@@ -31,6 +31,17 @@ def test_portfolio_public_module_exports_pyo3_classes():
     assert portfolio.PortfolioConfig.__name__ == "PortfolioConfig"
 
 
+def test_portfolio_config_defaults_equity_curve_on_and_allows_opt_out():
+    from nautilus_trader.portfolio import PortfolioConfig
+
+    default = PortfolioConfig()
+    disabled = PortfolioConfig(equity_curve=False)
+
+    assert default.equity_curve is True
+    assert default.snapshot_interval_ms is None
+    assert disabled.equity_curve is False
+
+
 def test_portfolio_public_module_sets_runtime_module_names():
     script = textwrap.dedent(
         """

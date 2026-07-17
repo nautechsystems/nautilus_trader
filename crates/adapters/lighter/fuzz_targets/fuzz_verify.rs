@@ -15,11 +15,11 @@
 //! Inputs shorter than 200 bytes are skipped. The fuzz harness asserts the
 //! verify call returns a `bool` (no panic, no UB) — any divergence is a bug.
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::{
     field::Fp5,
     schnorr::{PublicKey, SIG_BYTES, Signature},
 };
+use nautilus_live::fuzz::fuzz_target;
 
 const PK_BYTES: usize = 40;
 const MSG_BYTES: usize = 40;

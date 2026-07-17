@@ -22,6 +22,7 @@
 use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use ahash::AHashMap;
+use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use nautilus_common::{actor::data_actor::ImportableActorConfig, python::actor::PyDataActor};
 use nautilus_common::{
@@ -119,7 +120,7 @@ pub struct Trader {
     /// Registered exec algorithm IDs (algorithms stored in global registry).
     exec_algorithm_ids: Vec<ExecAlgorithmId>,
     /// Component clocks for individual components.
-    clocks: AHashMap<ComponentId, Rc<RefCell<dyn Clock>>>,
+    clocks: IndexMap<ComponentId, Rc<RefCell<dyn Clock>>>,
     /// Timestamp when the trader was created.
     ts_created: UnixNanos,
     /// Timestamp when the trader was last started.
@@ -161,7 +162,7 @@ impl Trader {
             strategy_stop_fns: AHashMap::new(),
             strategy_handler_ids: AHashMap::new(),
             exec_algorithm_ids: Vec::new(),
-            clocks: AHashMap::new(),
+            clocks: IndexMap::new(),
             ts_created,
             ts_started: None,
             ts_stopped: None,
@@ -1157,7 +1158,7 @@ impl Trader {
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
-            self.clocks.remove(&component_id);
+            self.clocks.shift_remove(&component_id);
 
             // Remove only this strategy's own msgbus handlers
             if let Some((order_hid, position_hid)) = self.strategy_handler_ids.get(strategy_id) {
@@ -1196,7 +1197,7 @@ impl Trader {
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
-            self.clocks.remove(&component_id);
+            self.clocks.shift_remove(&component_id);
         }
 
         self.actor_ids.clear();
@@ -1219,7 +1220,7 @@ impl Trader {
             if let Some(clock) = self.clocks.get(&component_id) {
                 clock.borrow_mut().cancel_timers();
             }
-            self.clocks.remove(&component_id);
+            self.clocks.shift_remove(&component_id);
         }
 
         self.exec_algorithm_ids.clear();
@@ -1277,7 +1278,7 @@ impl Trader {
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
         }
-        self.clocks.remove(&component_id);
+        self.clocks.shift_remove(&component_id);
 
         log::info!("Removed actor {actor_id} from trader {}", self.trader_id);
         Ok(())
@@ -1403,7 +1404,7 @@ impl Trader {
         if let Some(clock) = self.clocks.get(&component_id) {
             clock.borrow_mut().cancel_timers();
         }
-        self.clocks.remove(&component_id);
+        self.clocks.shift_remove(&component_id);
 
         log::info!(
             "Removed strategy {strategy_id} from trader {}",
@@ -2678,6 +2679,32 @@ mod tests {
             primary_clock.as_ptr() as *const _
         );
         assert_ne!(clock_a.as_ptr() as *const _, clock_b.as_ptr() as *const _);
+    }
+
+    #[rstest]
+    fn test_get_component_clocks_returns_registration_order() {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let mut registered = Vec::new();
+
+        for index in 0..32 {
+            let component_id = ComponentId::new(format!("ACTOR-{index:02}").as_str());
+            registered.push(trader.create_component_clock(component_id));
+        }
+
+        let returned = trader.get_component_clocks();
+        assert_eq!(returned.len(), registered.len());
+        for (actual, expected) in returned.iter().zip(&registered) {
+            assert!(Rc::ptr_eq(actual, expected));
+        }
     }
 
     #[rstest]

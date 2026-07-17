@@ -179,7 +179,7 @@ impl PolymarketDataClient {
 
                 for chunk in condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
                     let params = GetGammaMarketsParams {
-                        condition_ids: Some(chunk.join(",")),
+                        condition_ids: Some(chunk.to_vec()),
                         ..Default::default()
                     };
 

@@ -100,6 +100,19 @@ impl LiveExecutionClient {
         clippy::await_holding_refcell_ref,
         reason = "live report polling runs on the single-threaded node runtime"
     )]
+    pub(crate) async fn generate_order_status_report(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> anyhow::Result<Option<OrderStatusReport>> {
+        let result = { self.client.borrow().generate_order_status_report(cmd).await };
+        self.flush_pending_instruments();
+        result
+    }
+
+    #[expect(
+        clippy::await_holding_refcell_ref,
+        reason = "live report polling runs on the single-threaded node runtime"
+    )]
     pub(crate) async fn generate_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
@@ -261,15 +274,11 @@ impl ExecutionClient for LiveExecutionClient {
         self.client.borrow().query_order(cmd)
     }
 
-    #[expect(
-        clippy::await_holding_refcell_ref,
-        reason = "report generation uses a shared client handle while the live loop keeps running"
-    )]
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        self.client.borrow().generate_order_status_report(cmd).await
+        Self::generate_order_status_report(self, cmd).await
     }
 
     async fn generate_order_status_reports(

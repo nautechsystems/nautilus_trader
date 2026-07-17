@@ -286,7 +286,7 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
         };
 
         let query_params = crate::http::query::GetGammaMarketsParams {
-            condition_ids: Some(condition_id),
+            condition_ids: Some(vec![condition_id]),
             ..Default::default()
         };
 

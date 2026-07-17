@@ -2,8 +2,8 @@
 
 use std::str::FromStr;
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_core::serialization::{deserialize_decimal, deserialize_optional_decimal};
+use nautilus_live::fuzz::fuzz_target;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};

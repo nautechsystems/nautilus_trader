@@ -181,6 +181,17 @@ Call `build_snapshot(account_id)` for an on-demand sample. Call `snapshots(accou
 to read the bounded recorded sequence. The methods are available from the Rust
 Portfolio and Strategy API and from the Python v2 Portfolio binding.
 
+### Automatic equity curve
+
+In v2, `PortfolioConfig.equity_curve=true` (the default) records and publishes a
+mark-to-market snapshot when each account registers, at every UTC midnight even while
+the account is flat, and when the backtest or live node shuts down. Set
+`equity_curve=false` for workloads such as optimizer runs that do not consume an equity
+curve. On-demand `equity()` and `build_snapshot()` calculations remain available.
+
+The separate `snapshot_interval_ms` setting remains opt-in. When set, it adds
+fine-grained snapshots only while the account has an open position.
+
 ### Missing-price tracking
 
 The tracker keeps the latest missing set for each account-filtered query scope
@@ -270,32 +281,39 @@ The analyzer tracks two distinct return series:
   instrument's price movement between entry and exit, independent of account size or
   leverage.
 - **Portfolio returns** (`analyzer.portfolio_returns()`) measure daily percentage change in
-  total account balance. A $900 gain on a $100,000 account reports roughly 0.9% for that day.
+  mark-to-market account equity. A $900 gain on a $100,000 account reports roughly 0.9%
+  for that day.
 
-When the analyzer has account state history spanning at least two distinct calendar days,
-it computes portfolio returns automatically and uses them as the primary series for
-statistics, tearsheets, and the monthly returns heatmap. Multiple snapshots on the same
-day count as one day, so intra-day trading alone does not produce portfolio returns. When
-portfolio returns are unavailable, it falls back to position returns.
+When complete portfolio snapshots span at least two distinct UTC dates, the analyzer
+uses the final snapshot from each date and computes portfolio returns automatically.
+It uses them as the primary series for statistics, tearsheets, and the monthly returns
+heatmap. A snapshot emitted exactly at UTC midnight closes the preceding date, keeping
+the daily tier consistent with fine-grained samples. The first valid registration sample
+anchors the opening value for a partial first date. Missing or unpriced account dates are
+forward-filled after every account has an initial valid sample. Multiple snapshots on the
+same date count as one date, so intra-day trading alone does not produce portfolio returns.
+When portfolio returns are unavailable, the analyzer falls back to position returns;
+Python tearsheets can also fall back to account reports.
 
 The convenience accessor `analyzer.returns()` resolves this preference: portfolio returns
 when present, position returns otherwise.
 
 ### Multi-currency accounts
 
-Portfolio returns require a single-currency balance history. When the account carries
-balances in multiple currencies, the analyzer cannot produce a single return series and
-falls back to position returns silently. Statistics and tearsheet charts use whichever
-series `returns()` resolves to.
+Portfolio returns require every account's snapshot equity to resolve to one common
+currency. Base-currency conversion normally provides that scalar. When snapshots expose
+multiple currencies or accounts resolve to different currencies, the analyzer falls back
+to position returns. An explicit tearsheet currency can select matching per-currency
+equity where available.
 
 If you need portfolio-level returns for a multi-currency account, compute them externally
 by converting balances to a common currency before calculating percentage changes.
 
-### Per-venue calculation
+### Multi-account calculation
 
-In the backtest engine, the analyzer runs per venue (`engine.pyx`). Each venue's account
-produces its own portfolio return series. The tearsheet aggregates across all cached
-accounts to produce a combined return series for multi-venue backtests.
+Backtest analysis aggregates all cached accounts after resolving them to a common
+currency. The tearsheet follows the same account-wide aggregation rule for multi-venue
+backtests.
 
 ## Backtest analysis
 

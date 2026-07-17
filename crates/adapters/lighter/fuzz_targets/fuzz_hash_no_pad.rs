@@ -15,8 +15,8 @@
 //! - Two invocations on the same input produce the same digest
 //!   (determinism).
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::{field::Fp, hash::hash_n_to_m_no_pad};
+use nautilus_live::fuzz::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if data.is_empty() {

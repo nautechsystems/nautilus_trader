@@ -142,9 +142,6 @@ jobs:
           cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
             --config .cargo/deny-fuzz.toml --locked --all-features check \
             advisories licenses sources bans
-          cargo deny --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
-            --config .cargo/deny-fuzz.toml --locked --all-features check \
-            advisories licenses sources bans
 
   # Supply chain security auditing (master only - gates releases)
   # https://mozilla.github.io/cargo-vet/configuring-ci.html
@@ -175,8 +172,6 @@ jobs:
         run: |
           cargo vet --locked
           cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
-            --store-path .supply-chain
-          cargo vet --locked --manifest-path crates/adapters/derive/fuzz/Cargo.toml \
             --store-path .supply-chain
 
   build-linux-x86:
@@ -854,7 +849,6 @@ jobs:
         run: |
           cargo audit --deny unsound
           cargo audit --deny unsound --file crates/adapters/lighter/fuzz/Cargo.lock
-          cargo audit --deny unsound --file crates/adapters/derive/fuzz/Cargo.lock
 
       - name: Run osv-scanner
         id: osv-scan
@@ -868,7 +862,6 @@ jobs:
             --output=/github/workspace/osv-results.json
             --lockfile=Cargo.lock
             --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
-            --lockfile=crates/adapters/derive/fuzz/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock
 

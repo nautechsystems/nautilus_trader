@@ -122,6 +122,11 @@ async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Valu
     Json(body)
 }
 
+async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Json<Value> {
+    let Json(markets) = handle_gamma_markets(State(state)).await;
+    Json(serde_json::json!({"markets": markets}))
+}
+
 async fn handle_book(State(state): State<TestServerState>) -> Json<Value> {
     let body = state
         .book_response
@@ -174,6 +179,7 @@ async fn handle_market_socket(mut socket: WebSocket, state: TestServerState) {
 fn create_router(state: TestServerState) -> Router {
     Router::new()
         .route("/markets", get(handle_gamma_markets))
+        .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/book", get(handle_book))
         .route("/trades", get(handle_trades))
         .route("/ws/market", get(handle_market_upgrade))

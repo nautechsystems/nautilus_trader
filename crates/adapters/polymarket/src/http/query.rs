@@ -15,7 +15,7 @@
 
 //! HTTP query and response model types for the Polymarket CLOB API.
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use derive_builder::Builder;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -146,20 +146,23 @@ pub struct OrderSubmission {
     pub post_only: bool,
 }
 
-/// Query parameters for Gamma API `GET /markets`.
+/// Query parameters for Gamma API `GET /markets/keyset`.
 #[derive(Clone, Debug, Default, Serialize, Builder)]
 #[builder(setter(into, strip_option), default)]
 pub struct GetGammaMarketsParams {
+    /// Compatibility filter retained from the legacy Gamma market query.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub closed: Option<bool>,
+    /// Compatibility filter retained from the legacy Gamma market query.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archived: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub id: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Client-side initial offset. Keyset requests never send this field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -167,50 +170,57 @@ pub struct GetGammaMarketsParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ascending: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<String>,
-    /// Comma-separated CLOB token IDs, sent as repeated query params.
+    pub slug: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub clob_token_ids: Option<String>,
-    /// Comma-separated condition IDs (max 100), sent as repeated query params.
+    pub clob_token_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub condition_ids: Option<String>,
+    pub condition_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub liquidity_num_min: Option<f64>,
+    pub question_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub liquidity_num_max: Option<f64>,
+    pub market_maker_address: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume_num_min: Option<f64>,
+    pub liquidity_num_min: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume_num_max: Option<f64>,
-    /// ISO 8601 date string.
+    pub liquidity_num_max: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_num_min: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_num_max: Option<Decimal>,
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_date_min: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_date_max: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_date_min: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_date_max: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag_id: Option<String>,
+    pub tag_id: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub related_tags: Option<String>,
+    pub related_tags: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub rewards_min_size: Option<f64>,
+    pub tag_match: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub include_tag: Option<bool>,
-    /// Comma-separated question IDs, sent as repeated query params.
+    pub decimalized: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub question_ids: Option<String>,
+    pub cyom: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rfq_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uma_resolution_status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sports_market_types: Option<String>,
+    pub sports_market_types: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub market_maker_address: Option<String>,
+    pub include_tag: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     /// Client-side cap on total markets to fetch across all pages.
     /// Not sent to the API, only used by the paginator to stop early.
     /// Each market produces 2 instruments (Yes/No outcomes).
@@ -218,59 +228,284 @@ pub struct GetGammaMarketsParams {
     pub max_markets: Option<u32>,
 }
 
-/// Query parameters for Gamma API `GET /events`.
+/// Query parameters for Gamma API `GET /events/keyset`.
 #[derive(Clone, Debug, Default, Serialize, Builder)]
 #[builder(setter(into, strip_option), default)]
 pub struct GetGammaEventsParams {
+    /// Compatibility filter retained from the legacy Gamma event query.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub closed: Option<bool>,
+    /// Compatibility filter retained from the legacy Gamma event query.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub archived: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub id: Option<Vec<u64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub slug: Option<String>,
+    pub slug: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tag_slug: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub exclude_tag_id: Option<String>,
+    pub live: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub featured: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub liquidity_min: Option<f64>,
+    pub cyom: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub liquidity_max: Option<f64>,
+    pub title_search: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume_min: Option<f64>,
+    pub liquidity_min: Option<Decimal>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub volume_max: Option<f64>,
-    /// ISO 8601 date string.
+    pub liquidity_max: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_min: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_max: Option<Decimal>,
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_date_min: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_date_max: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_date_min: Option<String>,
-    /// ISO 8601 date string.
+    /// ISO 8601 date or RFC 3339 date-time.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_date_max: Option<String>,
+    /// ISO 8601 date or RFC 3339 date-time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time_min: Option<String>,
+    /// ISO 8601 date or RFC 3339 date-time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time_max: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_id: Option<Vec<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude_tag_id: Option<Vec<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub related_tags: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tag_match: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub series_id: Option<Vec<u64>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_id: Option<Vec<u64>>,
+    /// ISO 8601 date or RFC 3339 date-time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_date: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event_week: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub featured_order: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recurrence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub created_by: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_event_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_children: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub partner_slug: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_chat: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_template: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub include_best_lines: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ascending: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
+    /// Client-side initial offset. Keyset requests never send this field.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u32>,
     /// Client-side cap on total events to fetch across all pages.
     #[serde(skip)]
     pub max_events: Option<u32>,
+}
+
+impl GetGammaMarketsParams {
+    /// Validates values and combinations used by the Gamma market keyset endpoint.
+    pub fn validate_keyset(&self) -> Result<(), String> {
+        validate_limit(self.limit, 100, "market")?;
+        validate_non_empty_values(self.id.as_deref(), "id")?;
+        validate_non_empty_list(self.slug.as_deref(), "slug")?;
+        validate_non_empty_list(self.clob_token_ids.as_deref(), "clob_token_ids")?;
+        validate_non_empty_list(self.condition_ids.as_deref(), "condition_ids")?;
+        validate_non_empty_list(self.question_ids.as_deref(), "question_ids")?;
+        validate_non_empty_list(self.market_maker_address.as_deref(), "market_maker_address")?;
+        validate_non_empty_values(self.tag_id.as_deref(), "tag_id")?;
+        validate_non_empty_list(self.sports_market_types.as_deref(), "sports_market_types")?;
+
+        if self
+            .condition_ids
+            .as_ref()
+            .is_some_and(|ids| ids.len() > 100)
+        {
+            return Err("condition_ids accepts at most 100 values".to_string());
+        }
+
+        validate_decimal_bounds(
+            self.liquidity_num_min,
+            self.liquidity_num_max,
+            "liquidity_num",
+        )?;
+        validate_decimal_bounds(self.volume_num_min, self.volume_num_max, "volume_num")?;
+        validate_date_bounds(
+            self.start_date_min.as_deref(),
+            self.start_date_max.as_deref(),
+            "start_date",
+        )?;
+        validate_date_bounds(
+            self.end_date_min.as_deref(),
+            self.end_date_max.as_deref(),
+            "end_date",
+        )?;
+        validate_non_empty_string(self.order.as_deref(), "order")?;
+        validate_non_empty_string(self.tag_match.as_deref(), "tag_match")?;
+        validate_non_empty_string(
+            self.uma_resolution_status.as_deref(),
+            "uma_resolution_status",
+        )?;
+        validate_non_empty_string(self.game_id.as_deref(), "game_id")?;
+        validate_non_empty_string(self.locale.as_deref(), "locale")
+    }
+}
+
+impl GetGammaEventsParams {
+    /// Validates values and combinations used by the Gamma event keyset endpoint.
+    pub fn validate_keyset(&self) -> Result<(), String> {
+        validate_limit(self.limit, 500, "event")?;
+        validate_non_empty_values(self.id.as_deref(), "id")?;
+        validate_non_empty_list(self.slug.as_deref(), "slug")?;
+        validate_non_empty_values(self.tag_id.as_deref(), "tag_id")?;
+        validate_non_empty_values(self.exclude_tag_id.as_deref(), "exclude_tag_id")?;
+        validate_non_empty_values(self.series_id.as_deref(), "series_id")?;
+        validate_non_empty_values(self.game_id.as_deref(), "game_id")?;
+        validate_non_empty_list(self.created_by.as_deref(), "created_by")?;
+
+        if let (Some(tag_ids), Some(excluded_ids)) = (&self.tag_id, &self.exclude_tag_id) {
+            let tag_ids: AHashSet<u64> = tag_ids.iter().copied().collect();
+            if excluded_ids.iter().any(|id| tag_ids.contains(id)) {
+                return Err("tag_id and exclude_tag_id cannot overlap".to_string());
+            }
+        }
+
+        validate_decimal_bounds(self.liquidity_min, self.liquidity_max, "liquidity")?;
+        validate_decimal_bounds(self.volume_min, self.volume_max, "volume")?;
+        validate_date_bounds(
+            self.start_date_min.as_deref(),
+            self.start_date_max.as_deref(),
+            "start_date",
+        )?;
+        validate_date_bounds(
+            self.end_date_min.as_deref(),
+            self.end_date_max.as_deref(),
+            "end_date",
+        )?;
+        validate_date_bounds(
+            self.start_time_min.as_deref(),
+            self.start_time_max.as_deref(),
+            "start_time",
+        )?;
+        validate_date_value(self.event_date.as_deref(), "event_date")?;
+        validate_non_empty_string(self.order.as_deref(), "order")?;
+        validate_non_empty_string(self.title_search.as_deref(), "title_search")?;
+        validate_non_empty_string(self.tag_slug.as_deref(), "tag_slug")?;
+        validate_non_empty_string(self.tag_match.as_deref(), "tag_match")?;
+        validate_non_empty_string(self.recurrence.as_deref(), "recurrence")?;
+        validate_non_empty_string(self.partner_slug.as_deref(), "partner_slug")?;
+        validate_non_empty_string(self.locale.as_deref(), "locale")
+    }
+}
+
+fn validate_limit(limit: Option<u32>, ceiling: u32, endpoint: &str) -> Result<(), String> {
+    if let Some(limit) = limit
+        && !(1..=ceiling).contains(&limit)
+    {
+        return Err(format!(
+            "{endpoint} limit must be between 1 and {ceiling}, was {limit}"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_non_empty_list(values: Option<&[String]>, name: &str) -> Result<(), String> {
+    if let Some(values) = values
+        && (values.is_empty() || values.iter().any(|value| value.trim().is_empty()))
+    {
+        return Err(format!("{name} must contain non-empty values"));
+    }
+    Ok(())
+}
+
+fn validate_non_empty_values<T>(values: Option<&[T]>, name: &str) -> Result<(), String> {
+    if values.is_some_and(<[T]>::is_empty) {
+        return Err(format!("{name} must contain at least one value"));
+    }
+    Ok(())
+}
+
+fn validate_decimal_bounds(
+    min: Option<Decimal>,
+    max: Option<Decimal>,
+    name: &str,
+) -> Result<(), String> {
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(format!("{name}_min cannot exceed {name}_max"));
+    }
+    Ok(())
+}
+
+fn validate_date_bounds(min: Option<&str>, max: Option<&str>, name: &str) -> Result<(), String> {
+    let min = parse_date_value(min, &format!("{name}_min"))?;
+    let max = parse_date_value(max, &format!("{name}_max"))?;
+    if let (Some(min), Some(max)) = (min, max)
+        && min > max
+    {
+        return Err(format!("{name}_min cannot exceed {name}_max"));
+    }
+    Ok(())
+}
+
+fn validate_date_value(value: Option<&str>, name: &str) -> Result<(), String> {
+    parse_date_value(value, name).map(|_| ())
+}
+
+fn parse_date_value(
+    value: Option<&str>,
+    name: &str,
+) -> Result<Option<chrono::DateTime<chrono::FixedOffset>>, String> {
+    value
+        .map(|value| {
+            chrono::DateTime::parse_from_rfc3339(value)
+                .or_else(|_| {
+                    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").map(|date| {
+                        date.and_hms_opt(0, 0, 0)
+                            .expect("midnight is a valid time")
+                            .and_utc()
+                            .fixed_offset()
+                    })
+                })
+                .map_err(|_| format!("{name} must be an ISO 8601 date or RFC 3339 date-time"))
+        })
+        .transpose()
+}
+
+fn validate_non_empty_string(value: Option<&str>, name: &str) -> Result<(), String> {
+    if value.is_some_and(|value| value.trim().is_empty()) {
+        return Err(format!("{name} cannot be empty"));
+    }
+    Ok(())
 }
 
 /// Query parameters for Gamma API `GET /public-search`.
@@ -470,7 +705,7 @@ mod tests {
     #[rstest]
     fn test_get_gamma_markets_params_slug() {
         let params = GetGammaMarketsParams {
-            slug: Some("btc-updown-15m-1741500000".to_string()),
+            slug: Some(vec!["btc-updown-15m-1741500000".to_string()]),
             ..Default::default()
         };
         let json = serde_json::to_string(&params).unwrap();
@@ -493,14 +728,14 @@ mod tests {
     #[rstest]
     fn test_get_gamma_markets_params_new_filter_fields() {
         let params = GetGammaMarketsParams {
-            volume_num_min: Some(1000.0),
-            tag_id: Some("politics".to_string()),
+            volume_num_min: Some(dec!(1000.0)),
+            tag_id: Some(vec![123]),
             end_date_min: Some("2025-06-01T00:00:00Z".to_string()),
             ..Default::default()
         };
         let json = serde_json::to_string(&params).unwrap();
-        assert!(json.contains("\"volume_num_min\":1000.0"));
-        assert!(json.contains("\"tag_id\":\"politics\""));
+        assert!(json.contains("\"volume_num_min\":\"1000.0\""));
+        assert!(json.contains("\"tag_id\":[123]"));
         assert!(json.contains("\"end_date_min\":\"2025-06-01T00:00:00Z\""));
         assert!(!json.contains("\"active\""));
         assert!(!json.contains("\"archived\""));
@@ -509,13 +744,13 @@ mod tests {
     #[rstest]
     fn test_get_gamma_markets_params_condition_ids() {
         let params = GetGammaMarketsParams {
-            condition_ids: Some("0xcond1,0xcond2".to_string()),
-            liquidity_num_min: Some(500.0),
+            condition_ids: Some(vec!["0xcond1".to_string(), "0xcond2".to_string()]),
+            liquidity_num_min: Some(dec!(500.0)),
             ..Default::default()
         };
         let json = serde_json::to_string(&params).unwrap();
-        assert!(json.contains("\"condition_ids\":\"0xcond1,0xcond2\""));
-        assert!(json.contains("\"liquidity_num_min\":500.0"));
+        assert!(json.contains("\"condition_ids\":[\"0xcond1\",\"0xcond2\"]"));
+        assert!(json.contains("\"liquidity_num_min\":\"500.0\""));
     }
 
     #[rstest]

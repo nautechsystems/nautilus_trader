@@ -66,6 +66,15 @@ pub struct PortfolioConfig {
     #[serde(default = "default_true")]
     #[builder(default = true)]
     pub convert_to_account_base_currency: bool,
+    /// If mark-to-market equity snapshots should be recorded and published for every account.
+    ///
+    /// Enabled by default. Records at account registration, every UTC midnight including
+    /// while flat, and shutdown. Disable for workloads such as optimizer runs that do not
+    /// consume an equity curve. This does not affect on-demand equity calculations or the
+    /// opt-in fine-grained `snapshot_interval_ms` stream.
+    #[serde(default = "default_true")]
+    #[builder(default = true)]
+    pub equity_curve: bool,
     /// The minimum interval (milliseconds) between logging account state events for the same account.
     /// When set, account state updates will only be logged if this much time has passed since the last log.
     /// Useful for HFT deployments to prevent excessive logging when account states change rapidly.
@@ -74,8 +83,8 @@ pub struct PortfolioConfig {
     /// The interval (milliseconds) between portfolio snapshot emissions per account.
     /// When set, a [`PortfolioSnapshot`] is emitted at this cadence while the
     /// account holds at least one open position, carrying continuous
-    /// mark-to-market equity. When `None` (the default), no periodic snapshots
-    /// are emitted.
+    /// mark-to-market equity. When `None` (the default), no fine-grained snapshots
+    /// are emitted; the `equity_curve` setting still controls daily snapshots.
     ///
     /// [`PortfolioSnapshot`]: nautilus_model::events::PortfolioSnapshot
     #[serde(default)]
@@ -149,6 +158,14 @@ mod tests {
     #[rstest]
     fn test_default_config_is_valid() {
         assert!(PortfolioConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_default_config_enables_daily_equity_curve_only() {
+        let config = PortfolioConfig::default();
+
+        assert!(config.equity_curve);
+        assert_eq!(config.snapshot_interval_ms, None);
     }
 
     #[rstest]

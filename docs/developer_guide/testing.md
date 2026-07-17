@@ -119,6 +119,17 @@ Fuzzing introduces unstructured or malicious data to the system to verify it fai
 - **Use cases:** Network boundaries, exchange data parsers (JSON, FIX, WebSocket feeds), and complex state machines.
 - **Goal:** The system returns a `Result::Err` and never panics, hangs, or leaks memory when encountering malformed data.
 
+Adapter fuzz binaries are registered in each adapter package behind its `fuzz` feature. Run all
+registered targets for one adapter from the repository root:
+
+```bash
+scripts/fuzz-adapter.sh derive
+```
+
+The workspace pins `libfuzzer-sys`, and `nautilus-live` owns the shared libFuzzer integration. A
+separate `publish = false` package is reserved for fuzz targets that require dependencies which
+must not enter a published adapter graph, such as Lighter's git-pinned Pornin differential oracle.
+
 When building or modifying core types, write property tests to cover the mathematical boundaries.
 
 Performance tests help evolve performance-critical components.

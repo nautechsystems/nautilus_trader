@@ -89,6 +89,9 @@ allow = [
   "bzip2-1.0.6",
 ]
 
+# libfuzzer-sys bundles LLVM's libFuzzer runtime under NCSA
+exceptions = [{ allow = ["NCSA"], crate = "libfuzzer-sys@0.4.13" }]
+
 confidence-threshold = 0.8
 
 # Clarify licenses for crates with missing/incorrect license metadata

@@ -21,8 +21,8 @@
 //!   in both implementations.
 
 use ecgfp5::{curve::Point as PorninPoint, scalar::Scalar as PorninScalar};
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::curve::{Point, SCALAR_BYTES, Scalar};
+use nautilus_live::fuzz::fuzz_target;
 
 const INPUT_LEN: usize = 2 * SCALAR_BYTES;
 

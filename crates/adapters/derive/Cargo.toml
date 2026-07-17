@@ -21,6 +21,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["high-precision"]
+fuzz = ["nautilus-live/fuzz"]
 examples = [
   "nautilus-live/node",
   "nautilus-network/transport-sockudo",
@@ -45,6 +46,9 @@ python = [
   "pyo3-stub-gen",
 ]
 high-precision = ["nautilus-model/high-precision"]
+
+[package.metadata]
+cargo-fuzz = true
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -125,6 +129,46 @@ name = "derive-spot-research"
 path = "bin/spot_research.rs"
 doc = false
 test = false
+
+[[bin]]
+name = "fuzz_ws_decode"
+path = "fuzz_targets/fuzz_ws_decode.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decimal_decode"
+path = "fuzz_targets/fuzz_decimal_decode.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_trade_module_encode"
+path = "fuzz_targets/fuzz_trade_module_encode.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_action_hash"
+path = "fuzz_targets/fuzz_action_hash.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_nonce_sequence"
+path = "fuzz_targets/fuzz_nonce_sequence.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false
 
 # Run with `cargo run --example derive-data-tester --package nautilus-derive --features examples`.
 [[example]]

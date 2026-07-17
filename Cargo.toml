@@ -182,6 +182,7 @@ http = "1.4.2"
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
+libfuzzer-sys = "0.4.13"
 log = { version = "0.4.33", features = [
   "std",
   "kv_unstable",

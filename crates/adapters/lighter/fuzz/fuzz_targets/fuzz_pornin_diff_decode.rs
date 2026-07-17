@@ -16,8 +16,8 @@
 //! reduced into the canonical range before being fed to either decoder.
 
 use ecgfp5::{curve::Point as PorninPoint, field::GFp5 as PorninFp5};
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::{curve::Point, field::Fp5};
+use nautilus_live::fuzz::fuzz_target;
 
 const INPUT_LEN: usize = 40;
 

@@ -1514,6 +1514,95 @@ mod tests {
     }
 
     #[rstest]
+    fn test_dispatch_late_fill_falls_back_to_report_after_identity_eviction() {
+        let trade: PolymarketUserTrade = load("ws_user_trade.json");
+        let market: GammaMarket = load("gamma_market_sports_market_money_line.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let instrument =
+            create_instrument_from_def(&defs[0], UnixNanos::from(1_000_000_000u64)).unwrap();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
+        let token_instruments = AtomicMap::new();
+        token_instruments.insert(trade.asset_id, instrument.clone());
+
+        let fill_tracker = OrderFillTrackerMap::new();
+        fill_tracker.register(
+            venue_order_id,
+            Quantity::from("100"),
+            OrderSide::Buy,
+            instrument.id(),
+            instrument.size_precision(),
+            instrument.price_precision(),
+        );
+
+        let pending_submits = PendingSubmitTracker::default();
+        let order_identities = OrderIdentityRegistry::default();
+        register_identity(
+            &order_identities,
+            venue_order_id,
+            instrument.id(),
+            "O-LATE-FILL",
+        );
+        assert!(order_identities.get(&venue_order_id).is_some());
+
+        for index in 0..10_000 {
+            let eviction_venue_order_id = VenueOrderId::from(format!("V-EVICT-{index}").as_str());
+            let eviction_client_order_id = format!("O-EVICT-{index}");
+            register_identity(
+                &order_identities,
+                eviction_venue_order_id,
+                instrument.id(),
+                &eviction_client_order_id,
+            );
+        }
+        assert!(order_identities.get(&venue_order_id).is_none());
+
+        let mut emitter = test_emitter();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+
+        let ctx = WsDispatchContext {
+            token_instruments: &token_instruments,
+            fill_tracker: &fill_tracker,
+            pending_submits: &pending_submits,
+            order_identities: &order_identities,
+            emitter: &emitter,
+            account_id: AccountId::from("POLY-001"),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+            user_address: "0xtest",
+            user_api_key: "test-key",
+        };
+        let mut state = WsDispatchState::default();
+
+        dispatch_user_message(&UserWsMessage::Trade(trade.clone()), &ctx, &mut state);
+
+        let event = receiver.try_recv().expect("expected late fill report");
+        let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event else {
+            panic!("expected fill report for evicted identity, was {event:?}");
+        };
+
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.trade_id, TradeId::from(trade.id.as_str()));
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(
+            report.last_qty.as_decimal(),
+            Decimal::from_str_exact(&trade.size).unwrap()
+        );
+        assert_eq!(
+            report.last_px.as_decimal(),
+            Decimal::from_str_exact(&trade.price).unwrap()
+        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(
+            report.commission.as_decimal(),
+            Decimal::from_str_exact("0.1875").unwrap()
+        );
+        assert_eq!(report.commission.currency, Currency::pUSD());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[rstest]
     fn test_dispatch_order_matched_caps_filled_qty_when_no_trades_tracked() {
         let order: PolymarketUserOrder = load("ws_user_order_matched.json");
         let instrument = test_instrument();

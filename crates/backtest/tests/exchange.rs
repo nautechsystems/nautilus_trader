@@ -172,6 +172,149 @@ fn test_cash_account_trading_futures_or_perpetuals(crypto_perpetual_ethusdt: Cry
 }
 
 #[rstest]
+fn test_matching_engine_iteration_order_is_stable_across_rebuilds(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let expected = vec![first_instrument.id(), second_instrument.id()];
+
+    for _ in 0..32 {
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            None,
+        );
+        exchange
+            .borrow_mut()
+            .add_instrument(first_instrument.clone())
+            .unwrap();
+        exchange
+            .borrow_mut()
+            .add_instrument(second_instrument.clone())
+            .unwrap();
+
+        let actual = exchange
+            .borrow()
+            .get_matching_engines()
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[rstest]
+fn test_same_timestamp_fills_follow_matching_engine_registration_order(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let saving_handler = register_order_event_saving_handler();
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt;
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let instruments = [&first_instrument, &second_instrument];
+    let expected = vec![first_instrument.id(), second_instrument.id()];
+
+    for rebuild in 0..32 {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let exchange = get_exchange(
+            Venue::new("BINANCE"),
+            AccountType::Margin,
+            BookType::L1_MBP,
+            Some(cache.clone()),
+        );
+
+        for (index, instrument) in instruments.iter().enumerate() {
+            exchange
+                .borrow_mut()
+                .add_instrument((*instrument).clone())
+                .unwrap();
+
+            let initial_quote = QuoteTick::new(
+                instrument.id(),
+                Price::from("1000.00"),
+                Price::from("1001.00"),
+                Quantity::from("10.000"),
+                Quantity::from("10.000"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            exchange.borrow_mut().process_quote_tick(&initial_quote);
+
+            let client_order_id = ClientOrderId::from(format!("O-{rebuild}-{index}").as_str());
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(instrument.id())
+                .client_order_id(client_order_id)
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("1.000"))
+                .price(Price::from("1000.00"))
+                .build();
+            submit_matching_option_limit(&exchange, &cache, &order, UnixNanos::from(2));
+
+            let closed = InstrumentStatus::new(
+                instrument.id(),
+                MarketStatusAction::Close,
+                UnixNanos::from(3),
+                UnixNanos::from(3),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            exchange.borrow_mut().process_instrument_status(closed);
+
+            let crossing_quote = QuoteTick::new(
+                instrument.id(),
+                Price::from("998.00"),
+                Price::from("999.00"),
+                Quantity::from("10.000"),
+                Quantity::from("10.000"),
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+            );
+            exchange.borrow_mut().process_quote_tick(&crossing_quote);
+
+            let reopened = InstrumentStatus::new(
+                instrument.id(),
+                MarketStatusAction::Trading,
+                UnixNanos::from(100),
+                UnixNanos::from(100),
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            exchange.borrow_mut().process_instrument_status(reopened);
+        }
+
+        saving_handler.clear();
+        exchange
+            .borrow_mut()
+            .iterate_matching_engines(UnixNanos::from(100));
+
+        let actual = saving_handler
+            .get_messages()
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.instrument_id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[rstest]
 fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let exchange = get_exchange(
         Venue::new("BINANCE"),

@@ -456,14 +456,172 @@ def _resolve_tearsheet_returns(
     Pick the best available returns series for the tearsheet.
 
     v2 exposes statistics snapshots rather than the mutable analyzer behind the
-    portfolio, so this reconstructs daily account returns from public account reports.
+    portfolio, so this uses complete, currency-compatible mark-to-market portfolio
+    snapshots when available and falls back to account reports otherwise.
 
     """
+    snapshot_returns = _calculate_snapshot_returns(engine=engine, currency=currency)
+    if snapshot_returns is not None and not snapshot_returns.empty:
+        return snapshot_returns
+
     account_returns = _calculate_account_returns(engine=engine, currency=currency)
     if account_returns is not None and not account_returns.empty:
         return account_returns
 
     return pd.Series(dtype=float)
+
+
+def _calculate_snapshot_returns(
+    engine: BacktestEngine,
+    currency=None,
+) -> pd.Series | None:
+    """
+    Compute daily returns from complete, currency-compatible portfolio snapshots.
+
+    Returns ``None`` when an account lacks usable snapshots or the account currencies
+    cannot be aggregated.
+
+    """
+    if engine is None:
+        return None
+
+    portfolio = getattr(engine, "portfolio", None)
+    cache = getattr(engine, "cache", None)
+    if portfolio is None or cache is None:
+        return None
+
+    venues = engine.list_venues()
+    if not venues:
+        return None
+
+    target_currency = getattr(currency, "code", str(currency)) if currency is not None else None
+    one_day_ns = pd.Timedelta(days=1).value
+    result = _collect_snapshot_equity(
+        venues=venues,
+        cache=cache,
+        portfolio=portfolio,
+        target_currency=target_currency,
+        one_day_ns=one_day_ns,
+    )
+
+    if result is None:
+        return None
+
+    equity_by_account, observed_currencies = result
+
+    if target_currency is None and len(observed_currencies) != 1:
+        return None
+
+    combined = pd.concat(equity_by_account.values(), axis=1).sort_index().ffill().dropna()
+    if combined.empty:
+        return None
+
+    return _calculate_daily_balance_returns(combined.sum(axis=1))
+
+
+def _collect_snapshot_equity(
+    venues,
+    cache,
+    portfolio,
+    target_currency: str | None,
+    one_day_ns: int,
+) -> tuple[dict[str, pd.Series], set[str]] | None:
+    observed_currencies = set()
+    equity_by_account: dict[str, pd.Series] = {}
+
+    for venue in venues:
+        account = cache.account_for_venue(venue)
+        if account is None:
+            return None
+
+        account_id = str(account.id)
+        if account_id in equity_by_account:
+            continue
+
+        snapshots = portfolio.snapshots(account.id)
+        if not snapshots:
+            return None
+
+        result = _snapshot_equity_series(
+            snapshots=snapshots,
+            target_currency=target_currency,
+            account_id=account_id,
+            one_day_ns=one_day_ns,
+        )
+
+        if result is None:
+            return None
+
+        account_equity, account_currencies = result
+        equity_by_account[account_id] = account_equity
+        observed_currencies.update(account_currencies)
+
+    if not equity_by_account:
+        return None
+
+    return equity_by_account, observed_currencies
+
+
+def _snapshot_equity_series(
+    snapshots,
+    target_currency: str | None,
+    account_id: str,
+    one_day_ns: int,
+) -> tuple[pd.Series, set[str]] | None:
+    values = []
+    timestamps = []
+    observed_currencies = set()
+
+    for snapshot in snapshots:
+        if getattr(snapshot, "unpriced_instruments", []):
+            continue
+
+        resolved = _resolve_snapshot_equity(snapshot, target_currency)
+        if resolved is None:
+            return None
+
+        value, observed_currency = resolved
+        values.append(value)
+        ts_event = snapshot.ts_event
+        if len(values) == 1:
+            ts_event = max(ts_event - (ts_event % one_day_ns) - 1, 0)
+        elif ts_event > 0 and ts_event % one_day_ns == 0:
+            ts_event -= 1
+        timestamps.append(ts_event)
+        observed_currencies.add(observed_currency)
+
+    if not values:
+        return None
+
+    series = pd.Series(
+        values,
+        index=pd.to_datetime(timestamps, unit="ns", utc=True),
+        dtype=float,
+        name=account_id,
+    )
+    return series.sort_index().groupby(level=0).last(), observed_currencies
+
+
+def _resolve_snapshot_equity(snapshot, target_currency: str | None) -> tuple[float, str] | None:
+    base_equity = snapshot.base_currency_equity
+    total_equity = snapshot.total_equity
+
+    if target_currency is not None:
+        if base_equity is not None and base_equity.currency.code == target_currency:
+            return base_equity.as_double(), target_currency
+
+        matching = [money for money in total_equity if money.currency.code == target_currency]
+        if len(matching) != 1:
+            return None
+        return matching[0].as_double(), target_currency
+
+    if len(total_equity) != 1:
+        return None
+
+    if base_equity is not None:
+        return base_equity.as_double(), base_equity.currency.code
+
+    return total_equity[0].as_double(), total_equity[0].currency.code
 
 
 def _calculate_account_returns(

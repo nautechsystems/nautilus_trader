@@ -733,6 +733,7 @@ impl NautilusKernel {
 
         // Execution and data clients are stopped by their engines via `stop_engines` below
 
+        self.portfolio.borrow_mut().finalize_equity_curve();
         self.stop_engines();
         self.cancel_timers();
 

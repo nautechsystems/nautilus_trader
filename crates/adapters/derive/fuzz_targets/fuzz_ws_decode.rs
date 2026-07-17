@@ -1,9 +1,9 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use nautilus_derive::websocket::{
     DeriveOrdersSubscriptionData, DeriveTradesSubscriptionData, DeriveWsFrame, parse_public_ws_data,
 };
+use nautilus_live::fuzz::fuzz_target;
 
 const CHANNELS: [&str; 7] = [
     "orderbook.ETH-PERP.1.10",

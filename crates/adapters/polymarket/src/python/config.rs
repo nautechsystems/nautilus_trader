@@ -13,9 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::identifiers::{AccountId, InstrumentId, TraderId};
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 
 use crate::{
     common::enums::SignatureType,
@@ -23,6 +24,7 @@ use crate::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
         PolymarketUpDownEventSlugConfig,
     },
+    providers::build_gamma_params_from_hashmap,
 };
 
 const PY_OPTION_U64_MISSING_SENTINEL: u64 = u64::MAX;
@@ -88,9 +90,9 @@ impl PolymarketInstrumentProviderConfig {
         event_slug_builder: Option<PolymarketUpDownEventSlugConfig>,
         log_warnings: Option<bool>,
         use_gamma_markets: Option<bool>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let default = Self::default();
-        Self {
+        let config = Self {
             load_all: load_all.unwrap_or(default.load_all),
             load_ids,
             filters,
@@ -99,7 +101,13 @@ impl PolymarketInstrumentProviderConfig {
             event_slug_builder,
             log_warnings: log_warnings.unwrap_or(default.log_warnings),
             use_gamma_markets: use_gamma_markets.unwrap_or(default.use_gamma_markets),
+        };
+
+        if let Some(filters) = config.filters.as_ref() {
+            build_gamma_params_from_hashmap(filters)
+                .map_err(|e| to_pyvalue_err(format!("Invalid Polymarket Gamma filters: {e}")))?;
         }
+        Ok(config)
     }
 
     fn __repr__(&self) -> String {

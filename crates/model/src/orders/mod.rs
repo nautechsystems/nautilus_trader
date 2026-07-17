@@ -1131,7 +1131,7 @@ impl OrderCore {
             }
             let removed = correction.map_or_else(
                 || Quantity::zero(fill.last_qty.precision),
-                |event| event.voided_qty,
+                |event| event.voided_qty.min(fill.last_qty),
             );
             let effective = fill.last_qty - removed;
             voided_raw = voided_raw.saturating_add(removed.raw);
@@ -1151,6 +1151,7 @@ impl OrderCore {
             if let Some(commission) = fill.commission {
                 let surviving = correction
                     .and_then(|event| event.commission_voided)
+                    .filter(|voided| !voided.is_zero())
                     .map_or(commission, |voided| commission - voided);
                 if !surviving.is_zero() {
                     commissions
@@ -1688,6 +1689,90 @@ mod tests {
         assert_eq!(order.voided_qty(), Quantity::from(40_000));
         assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert!(order.is_closed());
+    }
+
+    #[rstest]
+    fn test_fill_void_before_smaller_fill_clamps_recomputed_quantity() {
+        let trade_id = TradeId::from("TRADE-OUT-OF-ORDER");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let early_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(60_000))
+            .is_reopened(true)
+            .build();
+        let late_fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let recompute_trigger = OrderFillVoidedSpec::builder()
+            .trade_id(TradeId::from("TRADE-RECOMPUTE"))
+            .voided_qty(Quantity::from(10_000))
+            .is_reopened(true)
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        order.apply(OrderEventAny::FillVoided(early_void)).unwrap();
+        order.apply(OrderEventAny::Filled(late_fill)).unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(recompute_trigger))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.voided_qty(), Quantity::from(50_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(100_000));
+        assert!(order.is_open());
+    }
+
+    #[rstest]
+    fn test_zero_commission_fill_void_before_fill_in_other_currency() {
+        let trade_id = TradeId::from("TRADE-ZERO-COMMISSION");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let early_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(10_000))
+            .commission_voided(Money::from("0 USD"))
+            .is_reopened(true)
+            .build();
+        let late_fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(40_000))
+            .commission(Money::from("2 ETH"))
+            .build();
+        let recompute_trigger = OrderFillVoidedSpec::builder()
+            .trade_id(TradeId::from("TRADE-RECOMPUTE"))
+            .voided_qty(Quantity::from(10_000))
+            .is_reopened(true)
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+
+        order.apply(OrderEventAny::FillVoided(early_void)).unwrap();
+        order.apply(OrderEventAny::Filled(late_fill)).unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(recompute_trigger))
+            .unwrap();
+
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(30_000));
+        assert_eq!(order.voided_qty(), Quantity::from(20_000));
+        assert_eq!(
+            order.commissions().get(&Currency::ETH()),
+            Some(&Money::from("2 ETH"))
+        );
     }
 
     #[rstest]

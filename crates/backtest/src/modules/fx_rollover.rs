@@ -227,16 +227,19 @@ impl FXRolloverInterestModule {
             mid_prices.insert(*instrument_id, mid);
         }
 
-        for (instrument_id, &mid) in &mid_prices {
+        let mut mid_prices = mid_prices.into_iter().collect::<Vec<_>>();
+        mid_prices.sort_unstable_by_key(|(instrument_id, _)| *instrument_id);
+
+        for (instrument_id, mid) in mid_prices {
             let positions =
                 ctx.cache
-                    .positions_open(Some(&ctx.venue), Some(instrument_id), None, None, None);
+                    .positions_open(Some(&ctx.venue), Some(&instrument_id), None, None, None);
 
             if positions.is_empty() {
                 continue;
             }
 
-            let interest_rate = match self.calculator.calc_overnight_rate(*instrument_id, date) {
+            let interest_rate = match self.calculator.calc_overnight_rate(instrument_id, date) {
                 Ok(rate) => rate,
                 Err(e) => {
                     log::warn!("Skipping rollover for {instrument_id}: {e}");
@@ -253,7 +256,7 @@ impl FXRolloverInterestModule {
                 rollover *= 3.0;
             }
 
-            let instrument = &ctx.instruments[instrument_id];
+            let instrument = &ctx.instruments[&instrument_id];
             let currency = if let Some(base) = ctx.base_currency {
                 // Rollover math is still f64; convert the Decimal rate at the boundary
                 let xrate = ctx

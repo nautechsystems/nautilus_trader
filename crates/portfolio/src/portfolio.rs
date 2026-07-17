@@ -23,13 +23,16 @@ use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
 use nautilus_analysis::{analyzer::PortfolioAnalyzer, snapshot::PortfolioStatistics};
 use nautilus_common::{
-    cache::{AccountLookupError, Cache},
+    cache::{AccountLookupError, AccountRef, Cache},
     clock::Clock,
     enums::LogColor,
     msgbus::{self, MessagingSwitchboard, TypedHandler, TypedIntoHandler},
     timer::{TimeEvent, TimeEventCallback},
 };
-use nautilus_core::{UUID4, UnixNanos, WeakCell, datetime::NANOSECONDS_IN_MILLISECOND};
+use nautilus_core::{
+    UUID4, UnixNanos, WeakCell,
+    datetime::{NANOSECONDS_IN_DAY, NANOSECONDS_IN_MILLISECOND},
+};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{Bar, MarkPriceUpdate, QuoteTick},
@@ -73,6 +76,8 @@ struct PortfolioState {
     min_account_state_logging_interval_ns: u64,
     venues_missing_price: AHashMap<Venue, AHashMap<Option<AccountId>, AHashSet<InstrumentId>>>,
     account_open_positions: AHashMap<AccountId, usize>,
+    equity_curve_accounts: AHashSet<AccountId>,
+    equity_curve_finalized: bool,
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
     pre_position_fill_events: AHashSet<UUID4>,
 }
@@ -122,6 +127,8 @@ impl PortfolioState {
             min_account_state_logging_interval_ns,
             venues_missing_price: AHashMap::new(),
             account_open_positions: AHashMap::new(),
+            equity_curve_accounts: AHashSet::new(),
+            equity_curve_finalized: false,
             portfolio_snapshots: AHashMap::new(),
             pre_position_fill_events: AHashSet::new(),
         }
@@ -147,6 +154,8 @@ impl PortfolioState {
         self.last_account_state_log_ts.clear();
         self.venues_missing_price.clear();
         self.account_open_positions.clear();
+        self.equity_curve_accounts.clear();
+        self.equity_curve_finalized = false;
         self.portfolio_snapshots.clear();
         self.pre_position_fill_events.clear();
         self.analyzer.reset();
@@ -216,11 +225,13 @@ impl Portfolio {
         // Typed handlers for subscriptions
         let update_account_handler = {
             let cache = Rc::clone(cache);
+            let clock = Rc::clone(clock);
             let inner = WeakCell::clone(&inner_weak);
+
             TypedHandler::from(move |event: &AccountState| {
                 if let Some(inner_rc) = inner.upgrade() {
                     let inner_rc: Rc<RefCell<PortfolioState>> = inner_rc.into();
-                    update_account(&cache, &inner_rc, event);
+                    update_account(&clock, &cache, &inner_rc, config, event);
                 }
             })
         };
@@ -344,18 +355,32 @@ impl Portfolio {
 
     pub fn reset(&mut self) {
         log::debug!("RESETTING");
-        let account_ids: Vec<AccountId> = self
-            .inner
-            .borrow()
-            .account_open_positions
-            .keys()
-            .copied()
-            .collect();
+        let (snapshot_accounts, equity_curve_accounts) = {
+            let inner = self.inner.borrow();
+            (
+                inner
+                    .account_open_positions
+                    .keys()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                inner
+                    .equity_curve_accounts
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>(),
+            )
+        };
 
-        for account_id in account_ids {
+        for account_id in snapshot_accounts {
             self.clock
                 .borrow_mut()
                 .cancel_timer(&snapshot_timer_name(account_id));
+        }
+
+        for account_id in equity_curve_accounts {
+            self.clock
+                .borrow_mut()
+                .cancel_timer(&equity_curve_timer_name(account_id));
         }
         self.inner.borrow_mut().reset();
         log::debug!("READY");
@@ -819,7 +844,13 @@ impl Portfolio {
             let cache = self.cache.borrow();
             let account = match account_id {
                 Some(id) => cache.account(id),
-                None => cache.account_for_venue(venue),
+                None => cache.account_for_venue(venue).or_else(|| {
+                    cache
+                        .positions(Some(venue), None, None, None, None)
+                        .into_iter()
+                        .next()
+                        .and_then(|p| cache.account(&p.account_id))
+                }),
             };
 
             match account {
@@ -1069,10 +1100,11 @@ impl Portfolio {
 
     /// Returns the recorded portfolio snapshots for the given account, in order of emission.
     ///
-    /// Snapshots accumulate whenever `snapshot_interval_ms` is set and the account
-    /// holds at least one open position. The ring is bounded; long-lived live
-    /// deployments should consume snapshots via the message bus instead of relying
-    /// on this buffer. Cleared on [`Portfolio::reset`].
+    /// With `equity_curve` enabled, snapshots are recorded at account registration, every
+    /// UTC midnight including while flat, and shutdown. Setting `snapshot_interval_ms` adds
+    /// fine-grained samples while the account holds an open position. The ring is bounded;
+    /// long-lived live deployments should consume snapshots via the message bus instead of
+    /// relying on this buffer. Cleared on [`Portfolio::reset`].
     #[must_use]
     pub fn snapshots(&self, account_id: &AccountId) -> Vec<PortfolioSnapshot> {
         self.inner
@@ -1081,6 +1113,44 @@ impl Portfolio {
             .get(account_id)
             .map(|ring| ring.iter().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// Records one final equity-curve sample for every registered account and stops its timer.
+    ///
+    /// Has no effect when `equity_curve` is disabled. Calling this method more than once
+    /// before [`Portfolio::reset`] has no effect.
+    pub fn finalize_equity_curve(&mut self) {
+        if !self.config.equity_curve {
+            return;
+        }
+
+        let account_ids = {
+            let mut inner = self.inner.borrow_mut();
+            if inner.equity_curve_finalized {
+                return;
+            }
+            inner.equity_curve_finalized = true;
+            inner
+                .equity_curve_accounts
+                .iter()
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        let ts_event = self.clock.borrow().timestamp_ns();
+
+        for account_id in account_ids {
+            emit_snapshot(
+                &self.cache,
+                &self.clock,
+                &self.inner,
+                self.config,
+                account_id,
+                ts_event,
+            );
+            self.clock
+                .borrow_mut()
+                .cancel_timer(&equity_curve_timer_name(account_id));
+        }
     }
 
     /// Returns the instruments currently flagged as unpriceable for the given venue.
@@ -1222,16 +1292,16 @@ impl Portfolio {
             return false;
         }
 
-        let equity_account_id = if mode == MarkValueMode::Equity {
-            account_id
-                .copied()
-                .or_else(|| cache.account_id(&venue).copied())
-        } else {
-            None
-        };
         let valuation_account = match account_id {
             Some(id) => cache.account(id),
-            None => cache.account_for_venue(&venue),
+            None => cache
+                .account_for_venue(&venue)
+                .or_else(|| positions.first().and_then(|p| cache.account(&p.account_id))),
+        };
+        let equity_account_id = if mode == MarkValueMode::Equity {
+            valuation_account.as_ref().map(|a| a.id())
+        } else {
+            None
         };
         let mut xrate_cache: AHashMap<Currency, Option<Decimal>> = AHashMap::new();
 
@@ -1508,37 +1578,49 @@ impl Portfolio {
         };
 
         for (instrument, orders_open) in &orders_and_instruments {
-            let account = {
-                let cache = self.cache.borrow();
-                if let Some(account) = cache.account_for_venue(&instrument.id().venue) {
-                    account.clone()
-                } else {
-                    log::error!(
-                        "Cannot update initial (order) margin: no account registered for {}",
-                        instrument.id().venue
-                    );
-                    initialized = false;
-                    break;
-                }
-            };
+            let mut by_account: IndexMap<Option<AccountId>, Vec<&OrderAny>> = IndexMap::new();
+            for order in orders_open {
+                by_account
+                    .entry(order.account_id())
+                    .or_default()
+                    .push(order);
+            }
 
-            let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
-            let result = self.inner.borrow_mut().accounts.update_orders(
-                &account,
-                instrument,
-                &orders_open_refs,
-                self.clock.borrow().timestamp_ns(),
-            );
+            for (account_id, orders) in by_account {
+                let account = {
+                    let cache = self.cache.borrow();
+                    match resolve_account_for_instrument(
+                        &cache,
+                        &instrument.id(),
+                        account_id.as_ref(),
+                    ) {
+                        Some(account) => account.cloned(),
+                        None => {
+                            log::error!(
+                                "Cannot update initial (order) margin: no account registered for {}",
+                                instrument.id().venue
+                            );
+                            initialized = false;
+                            continue;
+                        }
+                    }
+                };
 
-            match result {
-                Some((updated_account, _)) => {
-                    self.cache
-                        .borrow_mut()
-                        .update_account(&updated_account)
-                        .unwrap();
-                }
-                None => {
-                    initialized = false;
+                let result = self.inner.borrow_mut().accounts.update_orders(
+                    &account,
+                    instrument,
+                    &orders,
+                    self.clock.borrow().timestamp_ns(),
+                );
+
+                match result {
+                    Some((updated_account, _)) => {
+                        self.cache
+                            .borrow_mut()
+                            .update_account(&updated_account)
+                            .unwrap();
+                    }
+                    None => initialized = false,
                 }
             }
         }
@@ -1623,51 +1705,57 @@ impl Portfolio {
                 self.inner.borrow_mut().pending_calcs.insert(instrument_id);
             }
 
-            let cache = self.cache.borrow();
-            let Some(account) = cache.account_for_venue_owned(&instrument_id.venue) else {
-                log::error!(
-                    "Cannot update maintenance (position) margin: no account registered for {}",
-                    instrument_id.venue
-                );
-                initialized = false;
-                break;
-            };
-
-            let account = match account {
-                AccountAny::Cash(_) | AccountAny::Betting(_) => continue,
-                AccountAny::Margin(margin_account) => margin_account,
-            };
-
-            let Some(instrument) = cache.instrument(&instrument_id).cloned() else {
-                log::error!(
-                    "Cannot update maintenance (position) margin: no instrument found for {instrument_id}"
-                );
-                initialized = false;
-                break;
-            };
-            let positions: Vec<Position> = cache
-                .positions_open(None, Some(&instrument_id), None, None, None)
-                .into_iter()
-                .map(|p| p.cloned())
-                .collect();
-            drop(cache);
-
-            let result = self.inner.borrow_mut().accounts.update_positions(
-                &account,
-                &instrument,
-                positions.iter().collect(),
-                self.clock.borrow().timestamp_ns(),
-            );
-
-            match result {
-                Some((updated_account, _)) => {
-                    self.cache
-                        .borrow_mut()
-                        .update_account(&AccountAny::Margin(updated_account))
-                        .unwrap();
-                }
-                None => {
+            let instrument = {
+                let cache = self.cache.borrow();
+                let Some(instrument) = cache.instrument(&instrument_id).cloned() else {
+                    log::error!(
+                        "Cannot update maintenance (position) margin: no instrument found for {instrument_id}"
+                    );
                     initialized = false;
+                    break;
+                };
+                instrument
+            };
+
+            let mut by_account: IndexMap<AccountId, Vec<&Position>> = IndexMap::new();
+            for position in &positions_open {
+                by_account
+                    .entry(position.account_id)
+                    .or_default()
+                    .push(position);
+            }
+
+            for (account_id, positions) in by_account {
+                let account = {
+                    let cache = self.cache.borrow();
+                    let Some(account) = cache.account(&account_id).map(|a| a.cloned()) else {
+                        log::error!(
+                            "Cannot update maintenance (position) margin: no account registered for {account_id}"
+                        );
+                        initialized = false;
+                        continue;
+                    };
+                    account
+                };
+                let AccountAny::Margin(margin_account) = account else {
+                    continue;
+                };
+
+                let result = self.inner.borrow_mut().accounts.update_positions(
+                    &margin_account,
+                    &instrument,
+                    positions,
+                    self.clock.borrow().timestamp_ns(),
+                );
+
+                match result {
+                    Some((updated_account, _)) => {
+                        self.cache
+                            .borrow_mut()
+                            .update_account(&AccountAny::Margin(updated_account))
+                            .unwrap();
+                    }
+                    None => initialized = false,
                 }
             }
         }
@@ -1713,7 +1801,7 @@ impl Portfolio {
 
     /// Updates portfolio with a new account state event.
     pub fn update_account(&mut self, event: &AccountState) {
-        update_account(&self.cache, &self.inner, event);
+        update_account(&self.clock, &self.cache, &self.inner, self.config, event);
     }
 
     /// Updates portfolio calculations based on an order event.
@@ -1756,8 +1844,21 @@ impl Portfolio {
         for position in &positions {
             snapshots.extend(cache.position_snapshots(Some(&position.id), None));
         }
-        let recorded = self.inner.borrow().analyzer.recorded_realized_pnls.clone();
-        PortfolioAnalyzer::from_accounts(&accounts, &positions, &snapshots, recorded).statistics()
+        let inner = self.inner.borrow();
+        let recorded = inner.analyzer.recorded_realized_pnls.clone();
+        let portfolio_snapshots = inner
+            .portfolio_snapshots
+            .values()
+            .flat_map(|ring| ring.iter())
+            .collect::<Vec<_>>();
+        PortfolioAnalyzer::from_accounts_with_snapshots(
+            &accounts,
+            &positions,
+            &snapshots,
+            portfolio_snapshots,
+            recorded,
+        )
+        .statistics()
     }
 
     /// Updates portfolio calculations based on a position event.
@@ -1791,10 +1892,7 @@ impl Portfolio {
         account_id: Option<&AccountId>,
     ) -> Option<Money> {
         let cache = self.cache.borrow();
-        let account = match account_id {
-            Some(id) => cache.account(id),
-            None => cache.account_for_venue(&instrument_id.venue),
-        };
+        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -2109,10 +2207,7 @@ impl Portfolio {
         self.ensure_snapshot_pnls_cached_for(instrument_id);
 
         let cache = self.cache.borrow();
-        let account = match account_id {
-            Some(id) => cache.account(id),
-            None => cache.account_for_venue(&instrument_id.venue),
-        };
+        let account = resolve_account_for_instrument(&cache, instrument_id, account_id);
         let account = if let Some(account) = account {
             account
         } else {
@@ -2609,6 +2704,26 @@ fn update_bar(
     update_instrument_id(cache, clock, inner, config, &instrument_id);
 }
 
+/// Account for an instrument. For broker-routed instruments the account lives
+/// under the broker venue (e.g. `IB`) while the instrument carries the exchange
+/// MIC (e.g. `IBIS`); on venue miss, fall back to the position-owning account.
+fn resolve_account_for_instrument<'a>(
+    cache: &'a Cache,
+    instrument_id: &InstrumentId,
+    account_id: Option<&AccountId>,
+) -> Option<AccountRef<'a>> {
+    match account_id {
+        Some(id) => cache.account(id),
+        None => cache.account_for_venue(&instrument_id.venue).or_else(|| {
+            cache
+                .positions(None, Some(instrument_id), None, None, None)
+                .into_iter()
+                .next()
+                .and_then(|p| cache.account(&p.account_id))
+        }),
+    }
+}
+
 fn update_instrument_id(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
@@ -2625,59 +2740,100 @@ fn update_instrument_id(
         return;
     }
 
-    let mut result_maint = None;
-
-    // Scoped borrow: must drop before calling AccountsManager (which borrows cache internally)
-    let (account, instrument, orders_open, positions_open) = {
-        let cache_ref = cache.borrow();
-        let account = if let Some(account) = cache_ref.account_for_venue(&instrument_id.venue) {
-            account.clone()
-        } else {
-            log::error!(
-                "Cannot update tick: no account registered for {}",
-                instrument_id.venue
-            );
-            return;
-        };
-        let instrument = if let Some(instrument) = cache_ref.instrument(instrument_id) {
-            instrument.clone()
-        } else {
+    let instrument = match cache.borrow().instrument(instrument_id) {
+        Some(instrument) => instrument.clone(),
+        None => {
             log::error!("Cannot update tick: no instrument found for {instrument_id}");
             return;
-        };
-        let orders_open: Vec<OrderAny> = cache_ref
+        }
+    };
+
+    let mut by_account: IndexMap<AccountId, (Vec<OrderAny>, Vec<Position>)> = IndexMap::new();
+    {
+        let cache_ref = cache.borrow();
+        for order in cache_ref
             .orders_open(None, Some(instrument_id), None, None, None)
             .iter()
             .map(|o| (*o).clone())
-            .collect();
-        let positions_open: Vec<Position> = cache_ref
+        {
+            if let Some(account_id) = order.account_id() {
+                by_account.entry(account_id).or_default().0.push(order);
+            }
+        }
+
+        for position in cache_ref
             .positions_open(None, Some(instrument_id), None, None, None)
             .iter()
             .map(|p| (*p).clone())
-            .collect();
-        (account, instrument, orders_open, positions_open)
-    };
+        {
+            by_account
+                .entry(position.account_id)
+                .or_default()
+                .1
+                .push(position);
+        }
 
-    // No cache borrow held: AccountsManager borrows cache internally for xrate lookups
-    let orders_open_refs: Vec<&OrderAny> = orders_open.iter().collect();
-    let result_init = inner.borrow().accounts.update_orders(
-        &account,
-        &instrument,
-        &orders_open_refs,
-        clock.borrow().timestamp_ns(),
-    );
-
-    if let AccountAny::Margin(ref margin_account) = account {
-        result_maint = inner.borrow().accounts.update_positions(
-            margin_account,
-            &instrument,
-            positions_open.iter().collect(),
-            clock.borrow().timestamp_ns(),
-        );
+        if by_account.is_empty()
+            && let Some(account) =
+                resolve_account_for_instrument(&cache_ref, instrument_id, None).map(|a| a.cloned())
+        {
+            by_account.entry(account.id()).or_default();
+        }
     }
 
-    if let Some((ref updated_account, _)) = result_init {
-        cache.borrow_mut().update_account(updated_account).unwrap();
+    if by_account.is_empty() {
+        log::error!(
+            "Cannot update tick: no account registered for {}",
+            instrument_id.venue
+        );
+        return;
+    }
+
+    let ts_event = clock.borrow().timestamp_ns();
+    let mut ok = true;
+    let mut any_margin = false;
+
+    for (account_id, (orders, positions)) in by_account {
+        let Some(mut account) = cache.borrow().account(&account_id).map(|a| a.cloned()) else {
+            log::error!("Cannot update tick: no account registered for {account_id}");
+            ok = false;
+            continue;
+        };
+
+        let orders_refs: Vec<&OrderAny> = orders.iter().collect();
+        let mut account_updated = inner
+            .borrow()
+            .accounts
+            .update_orders_in_place(&mut account, &instrument, &orders_refs, ts_event)
+            .is_some();
+
+        if !account_updated {
+            ok = false;
+        }
+
+        if let AccountAny::Margin(margin_account) = &mut account {
+            any_margin = true;
+
+            if inner
+                .borrow()
+                .accounts
+                .update_positions_in_place(
+                    margin_account,
+                    &instrument,
+                    positions.iter().collect(),
+                    ts_event,
+                )
+                .is_some()
+            {
+                account_updated = true;
+            } else {
+                ok = false;
+            }
+        }
+
+        if account_updated {
+            cache.borrow_mut().update_account(&account).unwrap();
+        }
     }
 
     let portfolio_clone = Portfolio {
@@ -2690,10 +2846,7 @@ fn update_instrument_id(
     let result_unrealized_pnl: Option<Money> =
         portfolio_clone.calculate_unrealized_pnl(instrument_id, None);
 
-    if result_init.is_some()
-        && (matches!(account, AccountAny::Cash(_) | AccountAny::Betting(_))
-            || (result_maint.is_some() && result_unrealized_pnl.is_some()))
-    {
+    if ok && (!any_margin || result_unrealized_pnl.is_some()) {
         inner.borrow_mut().pending_calcs.remove(instrument_id);
         if inner.borrow().pending_calcs.is_empty() {
             inner.borrow_mut().initialized = true;
@@ -2849,7 +3002,9 @@ fn update_order(
             config,
         };
 
-        match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id, None) {
+        match portfolio_clone
+            .calculate_unrealized_pnl(&order_filled.instrument_id, Some(&account_id))
+        {
             Some(unrealized_pnl) => {
                 inner
                     .borrow_mut()
@@ -3229,8 +3384,10 @@ fn converted_realized_pnl(
 }
 
 fn update_account(
+    clock: &Rc<RefCell<dyn Clock>>,
     cache: &Rc<RefCell<Cache>>,
     inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
     event: &AccountState,
 ) {
     let already_applied = {
@@ -3271,6 +3428,87 @@ fn update_account(
 
     if should_log {
         log::info!("Updated {event}");
+    }
+    drop(inner_ref);
+
+    register_equity_curve_account(clock, cache, inner, config, event.account_id);
+}
+
+fn equity_curve_timer_name(account_id: AccountId) -> String {
+    format!("portfolio_equity_curve.{account_id}")
+}
+
+fn register_equity_curve_account(
+    clock: &Rc<RefCell<dyn Clock>>,
+    cache: &Rc<RefCell<Cache>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    account_id: AccountId,
+) {
+    if !config.equity_curve {
+        return;
+    }
+
+    let is_new = {
+        let mut inner = inner.borrow_mut();
+        if inner.equity_curve_finalized {
+            return;
+        }
+        inner.equity_curve_accounts.insert(account_id)
+    };
+
+    if !is_new {
+        return;
+    }
+
+    arm_equity_curve_timer(clock, cache, inner, config, account_id);
+    let ts_event = clock.borrow().timestamp_ns();
+    emit_snapshot(cache, clock, inner, config, account_id, ts_event);
+}
+
+fn arm_equity_curve_timer(
+    clock: &Rc<RefCell<dyn Clock>>,
+    cache: &Rc<RefCell<Cache>>,
+    inner: &Rc<RefCell<PortfolioState>>,
+    config: PortfolioConfig,
+    account_id: AccountId,
+) {
+    let ts_now = clock.borrow().timestamp_ns().as_u64();
+    let Some(next_day) = (ts_now / NANOSECONDS_IN_DAY)
+        .checked_add(1)
+        .and_then(|day| day.checked_mul(NANOSECONDS_IN_DAY))
+    else {
+        log::error!("Failed to calculate next equity curve sample for {account_id}");
+        return;
+    };
+    let timer_name = equity_curve_timer_name(account_id);
+    let cache_weak = Rc::downgrade(cache);
+    let clock_weak = Rc::downgrade(clock);
+    let inner_weak = Rc::downgrade(inner);
+
+    let callback: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| {
+        let Some(cache) = cache_weak.upgrade() else {
+            return;
+        };
+        let Some(clock) = clock_weak.upgrade() else {
+            return;
+        };
+        let Some(inner) = inner_weak.upgrade() else {
+            return;
+        };
+        emit_snapshot(&cache, &clock, &inner, config, account_id, event.ts_event);
+    });
+
+    if let Err(e) = clock.borrow_mut().set_timer_ns(
+        &timer_name,
+        NANOSECONDS_IN_DAY,
+        Some(UnixNanos::from(next_day)),
+        None,
+        Some(TimeEventCallback::from(callback)),
+        Some(false),
+        Some(true),
+    ) {
+        log::error!("Failed to arm portfolio equity curve timer for {account_id}: {e}");
     }
 }
 

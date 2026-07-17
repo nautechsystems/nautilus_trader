@@ -10,11 +10,11 @@
 use ecgfp5::{
     curve::Point as PorninPoint, field::GFp5 as PorninFp5, scalar::Scalar as PorninScalar,
 };
-use libfuzzer_sys::fuzz_target;
 use nautilus_lighter::signing::{
     curve::{Point, SCALAR_BYTES, Scalar},
     field::Fp5,
 };
+use nautilus_live::fuzz::fuzz_target;
 
 const FP5_BYTES: usize = 40;
 const INPUT_LEN: usize = 4 * SCALAR_BYTES;

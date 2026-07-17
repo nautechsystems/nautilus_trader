@@ -1449,8 +1449,8 @@ name = "nautilus-lighter-fuzz"
 version = "0.0.0"
 dependencies = [
  "ecgfp5",
- "libfuzzer-sys",
  "nautilus-lighter",
+ "nautilus-live",
 ]
 
 [[package]]
@@ -1462,6 +1462,7 @@ dependencies = [
  "async-trait",
  "bon",
  "indexmap",
+ "libfuzzer-sys",
  "log",
  "nautilus-common",
  "nautilus-core",

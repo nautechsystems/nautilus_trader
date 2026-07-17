@@ -26,12 +26,14 @@ use crate::{
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PortfolioSnapshot {
-    /// Represents a point-in-time snapshot of portfolio state for a single account,
-    /// emitted periodically while the account holds open positions.
+    /// Represents a point-in-time snapshot of portfolio state for a single account.
     ///
     /// Unlike `AccountState`, which fires only on
     /// balance or margin changes, `PortfolioSnapshot` carries a continuous
     /// mark-to-market view by folding open-position valuations into the totals.
+    /// The default equity curve records one snapshot at account registration, at every
+    /// UTC midnight, and at shutdown, including while the account is flat. An optional
+    /// fine-grained stream records additional snapshots while positions are open.
     /// Totals span every venue the account holds positions on, so multi-venue
     /// accounts (e.g., a prime broker routing across exchanges) produce a single
     /// account-wide snapshot rather than per-venue slices.

@@ -333,10 +333,10 @@ pub struct TagFilter {
 
 impl TagFilter {
     /// Creates a new [`TagFilter`] from a known tag ID.
-    pub fn from_tag_id(tag_id: impl Into<String>) -> Self {
+    pub fn from_tag_id(tag_id: u64) -> Self {
         Self {
             inner: GammaQueryFilter::new(GetGammaMarketsParams {
-                tag_id: Some(tag_id.into()),
+                tag_id: Some(vec![tag_id]),
                 ..Default::default()
             }),
         }
@@ -593,7 +593,7 @@ mod tests {
 
     #[rstest]
     fn test_tag_filter_default_accept_new_market() {
-        let filter = TagFilter::from_tag_id("123");
+        let filter = TagFilter::from_tag_id(123);
         let nm = stub_new_market("nvda-market", vec!["stocks".to_string()], None);
         assert!(filter.accept_new_market(&nm)); // default: accept all
     }

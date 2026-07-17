@@ -55,6 +55,9 @@ perf.data
 **/fuzz/artifacts/
 **/fuzz/coverage/
 **/fuzz/target/
+crates/adapters/*/artifacts/
+crates/adapters/*/corpus/
+crates/adapters/*/coverage/
 
 # Python related
 *.pyc
@@ -88,6 +91,7 @@ env/
 !.pre-commit-hooks/*.sh
 !scripts/cargo-tool-version.sh
 !scripts/check-cargo-cooldown.sh
+!scripts/fuzz-adapter.sh
 !scripts/check-no-build-packages.sh
 !scripts/ci/check-crates-io-trusted-publishing.sh
 !scripts/ci/check-github-action-shas.sh

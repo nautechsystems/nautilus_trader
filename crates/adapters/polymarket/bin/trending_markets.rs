@@ -49,6 +49,7 @@ use nautilus_polymarket::{
     http::{gamma::PolymarketGammaHttpClient, query::GetGammaMarketsParams},
     providers::PolymarketInstrumentProvider,
 };
+use rust_decimal_macros::dec;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,7 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let params = GetGammaMarketsParams {
         active: Some(true),
         closed: Some(false),
-        volume_num_min: Some(1_000_000.0),
+        volume_num_min: Some(dec!(1_000_000)),
         order: Some("liquidity".into()),
         ascending: Some(false),
         max_markets: Some(20),

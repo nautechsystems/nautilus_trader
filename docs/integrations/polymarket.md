@@ -971,12 +971,58 @@ Pass `PolymarketInstrumentProviderConfig` as `instrument_config` on the data cli
 |----------------------|---------|-------------|
 | `load_all`           | `false` | Load the full venue catalogue at startup. |
 | `load_ids`           | `None`  | Load exact Nautilus instrument IDs. |
-| `filters`            | `None`  | Gamma query key/value filters. |
+| `filters`            | `None`  | Validated Gamma market keyset filters. |
 | `event_slugs`        | `None`  | Resolve all markets for the listed events at bootstrap. |
 | `market_slugs`       | `None`  | Load the listed Gamma market slugs at bootstrap. |
 | `event_slug_builder` | `None`  | Rust‑backed Up/Down event‑slug generator. |
 | `log_warnings`       | `true`  | Emit provider warnings. |
 | `use_gamma_markets`  | `false` | Compatibility field with no additional V2 behavior. |
+
+#### Gamma query filters
+
+The Rust v2 adapter uses the Gamma market and event keyset endpoints. It validates filters before
+the first HTTP request, follows `next_cursor`, and applies the endpoint page ceilings of 100 markets
+and 500 events.
+
+Market keyset fields:
+
+| Class         | Fields |
+|---------------|--------|
+| Scalar        | `limit`, `order`, `ascending`, `closed`, `decimalized`, `liquidity_num_min`, `liquidity_num_max`, `volume_num_min`, `volume_num_max`, `start_date_min`, `start_date_max`, `end_date_min`, `end_date_max`, `related_tags`, `tag_match`, `cyom`, `rfq_enabled`, `uma_resolution_status`, `game_id`, `include_tag`, `locale` |
+| Repeated      | `id`, `slug`, `clob_token_ids`, `condition_ids`, `question_ids`, `market_maker_address`, `tag_id`, `sports_market_types` |
+| Compatibility | `active`, `archived` |
+| Alias         | `is_active` |
+| Client only   | `offset`, `max_markets` |
+
+The provider `filters` dictionary accepts only market fields. Rust callers configure event
+discovery with `EventParamsFilter` and `GetGammaEventsParams`; event-only fields such as `live` or
+`tag_slug` are not valid provider dictionary keys.
+
+Event keyset fields:
+
+| Class         | Fields |
+|---------------|--------|
+| Scalar        | `limit`, `order`, `ascending`, `closed`, `live`, `featured`, `cyom`, `title_search`, `liquidity_min`, `liquidity_max`, `volume_min`, `volume_max`, `start_date_min`, `start_date_max`, `end_date_min`, `end_date_max`, `start_time_min`, `start_time_max`, `tag_slug`, `related_tags`, `tag_match`, `event_date`, `event_week`, `featured_order`, `recurrence`, `parent_event_id`, `include_children`, `partner_slug`, `include_chat`, `include_template`, `include_best_lines`, `locale` |
+| Repeated      | `id`, `slug`, `tag_id`, `exclude_tag_id`, `series_id`, `game_id`, `created_by` |
+| Compatibility | `active`, `archived` |
+| Client only   | `offset`, `max_events` |
+
+Repeated fields are sent as repeated query keys. `offset` is applied across returned keyset pages
+and is never sent to Gamma. `max_markets` caps markets locally, with each binary market normally
+producing two instruments. `max_events` caps events locally; each event can contain many markets.
+`condition_ids` accepts at most 100 values, and event `tag_id` values cannot overlap `exclude_tag_id`
+values.
+
+The provider `filters` dictionary accepts strings in the native Rust config and also accepts Python
+`bool`, `int`, finite `float`, string, or lists of those scalar values when converting a legacy
+Python-shaped config. The legacy-shaped conversion ignores `None` entries; native config entries
+must be strings. `is_active=true` supplies `active=true`, `archived=false`, and `closed=false`;
+explicit values override those defaults. Unknown keys, malformed values, empty lists, invalid date
+or numeric bounds, and invalid combinations raise `ValueError` during Python config conversion.
+
+See the official [market keyset](https://docs.polymarket.com/api-reference/markets/list-markets-keyset-pagination)
+and [event keyset](https://docs.polymarket.com/api-reference/events/list-events-keyset-pagination)
+references for the venue contract.
 
 #### Event slug builder
 

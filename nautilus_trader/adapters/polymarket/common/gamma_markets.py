@@ -18,19 +18,18 @@ Thin Gamma Markets API client utilities for Polymarket.
 Provides functions to fetch markets using server-side filters, returning
 raw market dictionaries ready for further client-side filtering.
 
-Gamma `/markets` server-side constraints honored here and by the provider:
+Gamma `/markets/keyset` constraints honored here and by the provider:
 
-- `limit` is silently capped at 100 items per page, so a larger requested
-  `limit` makes the "last page" check (`len < limit`) trip after page one.
-- `offset > 10000` is rejected with HTTP 422, so bulk paging cannot walk
-  the full universe; callers fetching many markets must use `condition_ids`
-  filtering.
+- `limit` accepts at most 100 items per page.
+- The endpoint rejects `offset`; `iter_markets` applies a requested initial
+  offset locally.
+- `next_cursor` is absent on the final page.
 - `condition_ids` accepts at most 100 IDs per request, so larger sets must
   be chunked and unioned.
 
 References
 ----------
-- Gamma Get Markets docs: https://docs.polymarket.com/developers/gamma-markets-api/get-markets
+- Gamma Get Markets Keyset docs: https://docs.polymarket.com/api-reference/markets/list-markets-keyset-pagination
 
 """
 
@@ -62,7 +61,7 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
     Build query params for Gamma Get Markets from a generic filter dict.
 
     Supported keys (passed through if present):
-    - active, archived, closed, limit, offset, order, ascending, id, slug,
+    - active, archived, closed, limit, order, ascending, id, slug,
       clob_token_ids, condition_ids,
       liquidity_num_min, liquidity_num_max,
       volume_num_min, volume_num_max,
@@ -72,7 +71,8 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
 
     Special handling:
     - is_active=True implies active=true, archived=false, closed=false
-    - next_cursor: will be added separately by the fetch function
+    - offset: applied locally by `iter_markets`, never sent to the keyset endpoint
+    - after_cursor: added by `_request_markets_keyset_page`
 
     """
     params: dict[str, Any] = {}
@@ -90,7 +90,6 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
         "archived",
         "closed",
         "limit",
-        "offset",
         "order",
         "ascending",
         "id",
@@ -116,24 +115,25 @@ def build_markets_query(filters: dict[str, Any] | None = None) -> dict[str, Any]
     return params
 
 
-async def _request_markets_page(
+async def _request_markets_keyset_page(
     http_client: HttpClient,
     base_url: str,
     params: dict[str, Any],
-    offset: int,
+    after_cursor: str | None,
     limit: int,
     timeout: float,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], str | None]:
     """
-    Fetch a single page of markets using limit/offset pagination.
+    Fetch a single page of markets using keyset pagination.
 
-    Returns a list of market dicts.
+    Returns the markets and the cursor for the next page.
 
     """
-    base_endpoint = f"{base_url}/markets"
+    base_endpoint = f"{base_url}/markets/keyset"
     effective_params = dict(params)
     effective_params["limit"] = limit
-    effective_params["offset"] = offset
+    if after_cursor is not None:
+        effective_params["after_cursor"] = after_cursor
 
     resp: HttpResponse = await http_client.get(
         base_endpoint,
@@ -144,16 +144,16 @@ async def _request_markets_page(
     if resp.status != 200:
         body = resp.body.decode("utf-8", errors="replace")
         raise RuntimeError(
-            f"Gamma Get Markets failed: {resp.status} for url {base_endpoint} with params {effective_params} and body {body}",
+            f"Gamma Get Markets Keyset failed: {resp.status} for url {base_endpoint} with params {effective_params} and body {body}",
         )
 
     data = msgspec.json.decode(resp.body)
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict) and "data" in data:
-        return data.get("data", []) or []
+    if isinstance(data, dict) and isinstance(data.get("markets"), list):
+        next_cursor = data.get("next_cursor")
+        if next_cursor is None or isinstance(next_cursor, str):
+            return data["markets"], next_cursor
 
-    raise RuntimeError("Unrecognized response schema from Gamma Get Markets")
+    raise RuntimeError("Unrecognized response schema from Gamma Get Markets Keyset")
 
 
 async def iter_markets(
@@ -167,30 +167,33 @@ async def iter_markets(
     """
     base = _normalize_base_url(base_url)
     params = build_markets_query(filters)
-    limit = (
+    requested_limit = (
         int(filters.get("limit", _GAMMA_MARKETS_PAGE_LIMIT))
         if filters
         else _GAMMA_MARKETS_PAGE_LIMIT
     )
-    offset = int(filters.get("offset", 0)) if filters else 0
+    limit = min(requested_limit, _GAMMA_MARKETS_PAGE_LIMIT)
+    remaining_offset = int(filters.get("offset", 0)) if filters else 0
+    after_cursor: str | None = None
 
     while True:
-        markets = await _request_markets_page(
+        markets, next_cursor = await _request_markets_keyset_page(
             http_client=http_client,
             base_url=base,
             params=params,
-            offset=offset,
+            after_cursor=after_cursor,
             limit=limit,
             timeout=timeout,
         )
 
-        if not markets:
-            break
         for market in markets:
+            if remaining_offset > 0:
+                remaining_offset -= 1
+                continue
             yield market
-        if len(markets) < limit:
+        if next_cursor is None:
             break
-        offset += limit
+        after_cursor = next_cursor
 
 
 def normalize_gamma_market_to_clob_format(gamma_market: dict[str, Any]) -> dict[str, Any]:
