@@ -1239,7 +1239,7 @@ impl HyperliquidHttpClient {
         });
 
         // Composite key allows disambiguating same coin across PERP and SPOT
-        if let Ok(product_type) = HyperliquidProductType::from_symbol(full_symbol.as_str()) {
+        if let Ok(product_type) = HyperliquidProductType::from_instrument_symbol(full_symbol.as_str()) {
             self.instruments_by_coin.rcu(|m| {
                 m.insert((coin, product_type), instrument.clone());
 
@@ -2478,7 +2478,7 @@ impl HyperliquidHttpClient {
             .ok_or_else(|| Error::bad_request("Account ID not set"))?;
 
         let filter_product = instrument_id
-            .and_then(|id| HyperliquidProductType::from_symbol(id.symbol.as_str()).ok());
+            .and_then(|id| HyperliquidProductType::from_instrument_symbol(id.symbol.as_str()).ok());
 
         let fetch_perp = !matches!(
             filter_product,
@@ -2673,7 +2673,7 @@ impl HyperliquidHttpClient {
                 continue;
             }
 
-            let product_type = match HyperliquidProductType::from_symbol(balance.coin.as_str()) {
+            let product_type = match HyperliquidProductType::from_instrument_symbol(balance.coin.as_str()) {
                 Ok(HyperliquidProductType::Outcome) => HyperliquidProductType::Outcome,
                 _ => HyperliquidProductType::Spot,
             };
@@ -2728,7 +2728,7 @@ impl HyperliquidHttpClient {
         let instrument_id = bar_type.instrument_id();
         let symbol = instrument_id.symbol;
 
-        let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str()).ok();
 
         // `cache_alias_for_symbol` mirrors how `cache_instrument` stores the
         // secondary key (token form `+<encoding>` for outcomes, leading
@@ -2828,7 +2828,7 @@ impl HyperliquidHttpClient {
         limit: Option<usize>,
     ) -> Result<Vec<HyperliquidPublicTrade>> {
         let symbol = instrument_id.symbol;
-        let product_type = HyperliquidProductType::from_symbol(symbol.as_str()).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol.as_str()).ok();
         let alias = cache_alias_for_symbol(symbol.as_str())
             .map(|alias| Ustr::from(alias.as_str()))
             .ok_or_else(|| Error::bad_request("Invalid instrument symbol"))?;
@@ -3316,7 +3316,7 @@ impl HyperliquidHttpClient {
         }
 
         let symbol = instrument_id.symbol.as_str();
-        let product_type = HyperliquidProductType::from_symbol(symbol).ok();
+        let product_type = HyperliquidProductType::from_instrument_symbol(symbol).ok();
 
         // Mirror the alias `cache_instrument` stored (token form for outcomes,
         // leading segment for perps / spots).
@@ -3988,7 +3988,7 @@ mod tests {
         // Verify it can be looked up by composite key (coin, product_type)
         let instruments_by_coin = client.instruments_by_coin.load();
         let by_coin =
-            instruments_by_coin.get(&(Ustr::from("vntls:vCURSOR"), HyperliquidProductType::Spot));
+            instruments_by_coin.get(&(Ustr::from("vntls:vCURSOR"), HyperliquidProductType::Vault));
         assert!(
             by_coin.is_some(),
             "Instrument should be accessible by coin and product type"
@@ -4226,7 +4226,7 @@ mod tests {
         let by_raw = instruments_by_coin
             .get(&(
                 Ustr::from("dex:STREAMABCD****"),
-                HyperliquidProductType::Perp,
+                HyperliquidProductType::BuilderPerp,
             ))
             .expect("venue coin lookup must resolve");
         assert_eq!(by_raw.id(), hip3.id());
@@ -4234,7 +4234,7 @@ mod tests {
         let by_sanitized = instruments_by_coin
             .get(&(
                 Ustr::from("dex:STREAMABCDxxxx"),
-                HyperliquidProductType::Perp,
+                HyperliquidProductType::BuilderPerp,
             ))
             .expect("sanitized base lookup must resolve");
         assert_eq!(by_sanitized.id(), hip3.id());
@@ -4244,7 +4244,7 @@ mod tests {
         let resolved = client
             .get_or_create_instrument(
                 &Ustr::from("dex:STREAMABCDxxxx"),
-                Some(HyperliquidProductType::Perp),
+                Some(HyperliquidProductType::BuilderPerp),
             )
             .expect("get_or_create_instrument must resolve sanitized base for HIP-3");
         assert_eq!(resolved.id(), hip3.id());

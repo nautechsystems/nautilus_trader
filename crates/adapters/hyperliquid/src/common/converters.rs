@@ -32,7 +32,7 @@ use super::{
         HyperliquidTpSl,
     },
     parse::{format_outcome_nautilus_symbol, parse_outcome_nautilus_symbol, parse_outcome_symbol},
-    types::HyperliquidAssetId,
+    asset::HyperliquidProductId,
 };
 
 /// Converts an outcome (HIP-4) asset ID to its spot coin representation.
@@ -40,7 +40,7 @@ use super::{
 /// # Errors
 ///
 /// Returns an error if `asset_id` is not a valid outcome asset ID.
-pub fn outcome_asset_id_to_coin(asset_id: HyperliquidAssetId) -> anyhow::Result<String> {
+pub fn outcome_asset_id_to_coin(asset_id: HyperliquidProductId) -> anyhow::Result<String> {
     let encoding = outcome_encoding(asset_id)?;
     Ok(format!("#{encoding}"))
 }
@@ -50,7 +50,7 @@ pub fn outcome_asset_id_to_coin(asset_id: HyperliquidAssetId) -> anyhow::Result<
 /// # Errors
 ///
 /// Returns an error if `asset_id` is not a valid outcome asset ID.
-pub fn outcome_asset_id_to_token(asset_id: HyperliquidAssetId) -> anyhow::Result<String> {
+pub fn outcome_asset_id_to_token(asset_id: HyperliquidProductId) -> anyhow::Result<String> {
     let encoding = outcome_encoding(asset_id)?;
     Ok(format!("+{encoding}"))
 }
@@ -67,7 +67,7 @@ pub fn outcome_asset_id_to_token(asset_id: HyperliquidAssetId) -> anyhow::Result
 ///
 /// Returns an error if `asset_id` is not a valid outcome asset ID.
 pub fn outcome_asset_id_to_instrument_id(
-    asset_id: HyperliquidAssetId,
+    asset_id: HyperliquidProductId,
 ) -> anyhow::Result<InstrumentId> {
     let encoding = outcome_encoding(asset_id)?;
     let outcome_index = encoding / 10;
@@ -87,17 +87,17 @@ pub fn outcome_asset_id_to_instrument_id(
 /// Returns an error if the symbol matches none of the supported forms.
 pub fn outcome_asset_id_from_instrument_id(
     instrument_id: InstrumentId,
-) -> anyhow::Result<HyperliquidAssetId> {
+) -> anyhow::Result<HyperliquidProductId> {
     let symbol = instrument_id.symbol.as_str();
 
     if let Some((outcome_index, side)) = parse_outcome_nautilus_symbol(symbol) {
-        return Ok(HyperliquidAssetId::outcome(outcome_index, side));
+        return Ok(HyperliquidProductId::outcome(outcome_index, side));
     }
 
     parse_outcome_symbol(symbol)
 }
 
-fn outcome_encoding(asset_id: HyperliquidAssetId) -> anyhow::Result<u32> {
+fn outcome_encoding(asset_id: HyperliquidProductId) -> anyhow::Result<u32> {
     asset_id
         .outcome_encoding()
         .with_context(|| format!("Invalid Hyperliquid outcome asset ID: {asset_id}"))
@@ -310,7 +310,7 @@ mod tests {
 
     #[rstest]
     fn test_outcome_asset_id_to_wire_symbols() {
-        let asset_id = HyperliquidAssetId::outcome(1, 0);
+        let asset_id = HyperliquidProductId::outcome(1, 0);
 
         assert_eq!(outcome_asset_id_to_coin(asset_id).unwrap(), "#10");
         assert_eq!(outcome_asset_id_to_token(asset_id).unwrap(), "+10");
@@ -318,7 +318,7 @@ mod tests {
 
     #[rstest]
     fn test_outcome_asset_id_to_wire_symbols_rejects_non_outcome() {
-        let err = outcome_asset_id_to_coin(HyperliquidAssetId::spot(7)).unwrap_err();
+        let err = outcome_asset_id_to_coin(HyperliquidProductId::spot(7)).unwrap_err();
         assert!(
             err.to_string()
                 .contains("Invalid Hyperliquid outcome asset ID"),
@@ -328,7 +328,7 @@ mod tests {
 
     #[rstest]
     fn test_outcome_asset_id_instrument_id_roundtrip() {
-        let asset_id = HyperliquidAssetId::outcome(3, 1);
+        let asset_id = HyperliquidProductId::outcome(3, 1);
         let instrument_id = outcome_asset_id_to_instrument_id(asset_id).unwrap();
 
         assert_eq!(
@@ -343,7 +343,7 @@ mod tests {
 
     #[rstest]
     fn test_outcome_asset_id_to_instrument_id_yes_side() {
-        let asset_id = HyperliquidAssetId::outcome(25, 0);
+        let asset_id = HyperliquidProductId::outcome(25, 0);
         let instrument_id = outcome_asset_id_to_instrument_id(asset_id).unwrap();
 
         assert_eq!(
@@ -365,7 +365,7 @@ mod tests {
         let instrument_id = InstrumentId::from(symbol);
         let asset_id = outcome_asset_id_from_instrument_id(instrument_id).unwrap();
 
-        assert_eq!(asset_id, HyperliquidAssetId::outcome(outcome_index, side));
+        assert_eq!(asset_id, HyperliquidProductId::outcome(outcome_index, side));
     }
 
     #[rstest]

@@ -19,7 +19,7 @@ use nautilus_model::enums::{AggressorSide, OrderSide, OrderStatus, OrderType};
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString};
 
-use super::{consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH, parse::OUTCOME_SYMBOL_SUFFIX};
+use super::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HyperliquidBarInterval {
@@ -969,78 +969,7 @@ pub enum HyperliquidLeverageType {
 }
 
 /// Hyperliquid product type.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    PartialEq,
-    Eq,
-    Hash,
-    AsRefStr,
-    EnumIter,
-    EnumString,
-    Serialize,
-    Deserialize,
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(
-        module = "nautilus_trader.core.nautilus_pyo3.hyperliquid",
-        from_py_object,
-        rename_all = "SCREAMING_SNAKE_CASE",
-    )
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.hyperliquid")
-)]
-#[serde(rename_all = "UPPERCASE")]
-#[strum(serialize_all = "UPPERCASE")]
-pub enum HyperliquidProductType {
-    /// Perpetual futures.
-    Perp,
-    /// Spot markets.
-    Spot,
-    /// HIP-4 binary outcome side tokens.
-    Outcome,
-}
-
-impl HyperliquidProductType {
-    /// Extract product type from an instrument symbol.
-    ///
-    /// Accepts both Nautilus instrument symbols (`{BASE}-USD-PERP`,
-    /// `{BASE}-{QUOTE}-SPOT`, `{N}-{YES|NO}-OUTCOME`) and venue wire coin
-    /// names (`#<encoding>` / `+<encoding>` for HIP-4 outcomes). Callers in
-    /// the adapter pass both forms.
-    ///
-    /// # Errors
-    ///
-    /// Returns error if symbol doesn't match any expected format.
-    pub fn from_symbol(symbol: &str) -> anyhow::Result<Self> {
-        if symbol.ends_with("-PERP") {
-            Ok(Self::Perp)
-        } else if symbol.ends_with("-SPOT") {
-            Ok(Self::Spot)
-        } else if symbol.ends_with(OUTCOME_SYMBOL_SUFFIX) || is_outcome_wire_symbol(symbol) {
-            Ok(Self::Outcome)
-        } else {
-            anyhow::bail!("Invalid Hyperliquid symbol format: {symbol}")
-        }
-    }
-}
-
-// Outcomes use the `#<encoding>` spot-coin form or the `+<encoding>` token
-// form, where the encoding is `10 * outcome + side` and must parse as `u32`.
-fn is_outcome_wire_symbol(symbol: &str) -> bool {
-    let Some(rest) = symbol
-        .strip_prefix('#')
-        .or_else(|| symbol.strip_prefix('+'))
-    else {
-        return false;
-    };
-    !rest.is_empty() && rest.parse::<u32>().is_ok()
-}
+pub use super::asset::HyperliquidProductType;
 
 /// Hyperliquid API environment.
 #[derive(
@@ -1737,41 +1666,5 @@ mod tests {
             let back_to_cond = HyperliquidConditionalOrderType::from(order_type);
             assert_eq!(cond_type, back_to_cond, "Roundtrip conversion failed");
         }
-    }
-
-    #[rstest]
-    #[case("BTC-USD-PERP", HyperliquidProductType::Perp)]
-    #[case("HYPE-USDC-SPOT", HyperliquidProductType::Spot)]
-    #[case("25-YES-OUTCOME", HyperliquidProductType::Outcome)]
-    #[case("25-NO-OUTCOME", HyperliquidProductType::Outcome)]
-    #[case("0-YES-OUTCOME", HyperliquidProductType::Outcome)]
-    #[case("#10", HyperliquidProductType::Outcome)]
-    #[case("+31", HyperliquidProductType::Outcome)]
-    #[case("#0", HyperliquidProductType::Outcome)]
-    fn test_product_type_from_symbol(
-        #[case] symbol: &str,
-        #[case] expected: HyperliquidProductType,
-    ) {
-        assert_eq!(
-            HyperliquidProductType::from_symbol(symbol).unwrap(),
-            expected
-        );
-    }
-
-    #[rstest]
-    #[case("")]
-    #[case("BTC")]
-    #[case("#")]
-    #[case("+")]
-    #[case("#abc")]
-    #[case("+12.5")]
-    #[case("@1")]
-    #[case("#-1")]
-    #[case("+-1")]
-    #[case("25-YES")]
-    #[case("OUTCOME")]
-    #[case("25-YES-outcome")]
-    fn test_product_type_from_symbol_rejects_invalid(#[case] symbol: &str) {
-        assert!(HyperliquidProductType::from_symbol(symbol).is_err());
     }
 }

@@ -83,7 +83,7 @@ use crate::{
             HyperliquidBarInterval::{self, *},
             HyperliquidOrderStatus, HyperliquidTpSl,
         },
-        types::HyperliquidAssetId,
+        asset::HyperliquidProductId,
     },
     http::models::{
         ClearinghouseState, Cloid, HyperliquidExchangeResponse,
@@ -256,9 +256,9 @@ pub fn millis_to_nanos(millis: u64) -> anyhow::Result<UnixNanos> {
 ///
 /// Returns an error if the symbol is not an outcome symbol, the encoding is
 /// not numeric, overflows the asset id range, or carries an invalid side digit.
-pub fn parse_outcome_symbol(symbol: &str) -> anyhow::Result<HyperliquidAssetId> {
+pub fn parse_outcome_symbol(symbol: &str) -> anyhow::Result<HyperliquidProductId> {
     let encoding = parse_outcome_symbol_encoding(symbol)?;
-    HyperliquidAssetId::from_outcome_encoding(encoding).with_context(|| {
+    HyperliquidProductId::from_outcome_encoding(encoding).with_context(|| {
         format!(
             "Invalid Hyperliquid outcome symbol '{symbol}': encoding must fit u32 and end with side digit 0 or 1"
         )
@@ -301,7 +301,7 @@ pub const OUTCOME_SIDE_NO: &str = "NO";
 ///
 /// Returns `None` if the symbol does not match the expected shape or if the
 /// `(outcome_index, side)` pair would not encode into a valid HIP-4
-/// `HyperliquidAssetId` (i.e. `100_000_000 + 10 * outcome_index + side`
+/// `HyperliquidProductId` (i.e. `100_000_000 + 10 * outcome_index + side`
 /// would overflow `u32`). The legacy `#E` / `+E` wire parser already rejects
 /// out-of-range encodings; this keeps the two paths in parity so downstream
 /// arithmetic on the returned pair cannot overflow.
@@ -318,7 +318,7 @@ pub fn parse_outcome_nautilus_symbol(symbol: &str) -> Option<(u32, u8)> {
     let encoding = outcome_index
         .checked_mul(10)?
         .checked_add(u32::from(side))?;
-    HyperliquidAssetId::from_outcome_encoding(encoding)?;
+    HyperliquidProductId::from_outcome_encoding(encoding)?;
     Some((outcome_index, side))
 }
 

@@ -36,7 +36,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    common::{converters::outcome_asset_id_to_instrument_id, types::HyperliquidAssetId},
+    common::{converters::outcome_asset_id_to_instrument_id, asset::HyperliquidProductId},
     http::{
         models::SpotClearinghouseState,
         parse::{
@@ -110,7 +110,7 @@ pub fn build_settlement_fills(
         }
 
         let asset_id =
-            HyperliquidAssetId::outcome(settlement.outcome_index, settlement.outcome_side);
+            HyperliquidProductId::outcome(settlement.outcome_index, settlement.outcome_side);
         let Some(encoding) = asset_id.outcome_encoding() else {
             continue;
         };

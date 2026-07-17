@@ -2214,7 +2214,7 @@ fn register_order_identity_into(state: &WsDispatchState, order: &OrderAny) {
 pub fn validate_order_for_hyperliquid(order: &OrderAny) -> anyhow::Result<()> {
     let instrument_id = order.instrument_id();
     let symbol = instrument_id.symbol.as_str();
-    let product_type = HyperliquidProductType::from_symbol(symbol).map_err(|_| {
+    let product_type = HyperliquidProductType::from_instrument_symbol(symbol).map_err(|_| {
         anyhow::anyhow!(
             "Unsupported instrument symbol format for Hyperliquid: {symbol} \
              (expected -PERP, -SPOT, or HIP-4 outcome `{{N}}-{{YES|NO}}-OUTCOME`)"
