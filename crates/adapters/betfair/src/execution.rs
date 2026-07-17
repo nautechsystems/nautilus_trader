@@ -76,9 +76,9 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
     instruments::InstrumentAny,
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, MarginBalance},
+    types::{AccountBalance, Currency, MarginBalance, Price},
 };
 use nautilus_network::socket::TcpMessageHandler;
 use rust_decimal::Decimal;
@@ -130,6 +130,27 @@ use crate::{
         parse::{FillVoidAllocation, has_cancel_quantity, parse_order_status_report},
     },
 };
+
+fn cached_fill_lots(order: &OrderAny) -> Vec<(TradeId, Decimal, Price, Decimal)> {
+    let events = order.events();
+    events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                let voided_qty =
+                    OrderFillVoided::find_catch_up_for_fill(events.iter().copied(), fill)
+                        .map_or(Decimal::ZERO, |voided| voided.voided_qty.as_decimal());
+                Some((
+                    fill.trade_id,
+                    fill.last_qty.as_decimal(),
+                    fill.last_px,
+                    voided_qty,
+                ))
+            }
+            _ => None,
+        })
+        .collect()
+}
 
 /// Betfair live execution client.
 #[derive(Debug)]
@@ -285,33 +306,7 @@ impl BetfairExecutionClient {
             .iter()
             .filter_map(|order| {
                 let bet_id = order.venue_order_id()?.to_string();
-                let events = order.events();
-                let fills = events
-                    .iter()
-                    .filter_map(|event| match event {
-                        OrderEventAny::Filled(fill) => {
-                            let voided_qty = events
-                                .iter()
-                                .rev()
-                                .find_map(|candidate| match candidate {
-                                    OrderEventAny::FillVoided(voided)
-                                        if voided.trade_id == fill.trade_id =>
-                                    {
-                                        Some(voided.voided_qty.as_decimal())
-                                    }
-                                    _ => None,
-                                })
-                                .unwrap_or(Decimal::ZERO);
-                            Some((
-                                fill.trade_id,
-                                fill.last_qty.as_decimal(),
-                                fill.last_px,
-                                voided_qty,
-                            ))
-                        }
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                let fills = cached_fill_lots(order);
                 Some((bet_id, order.voided_qty().as_decimal(), fills))
             })
             .collect::<Vec<_>>();
@@ -3296,7 +3291,9 @@ fn instruction_fallback(
 mod tests {
     use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
     use nautilus_model::{
+        events::order::spec::{OrderAcceptedSpec, OrderFillVoidedSpec, OrderFilledSpec},
         identifiers::{StrategyId, TraderId},
+        orders::OrderTestBuilder,
         types::Quantity,
     };
     use rstest::rstest;
@@ -4034,6 +4031,90 @@ mod tests {
         assert!(state.terminal_orders.contains("bet2"));
         let rfo2 = make_customer_order_ref("O-002");
         assert!(state.resolve_client_order_id(Some(&rfo2)).is_none());
+    }
+
+    #[rstest]
+    fn test_cache_resync_fill_lots_exclude_rejected_pre_fill_void() {
+        let trade_id = TradeId::from("T-REJECTED-CACHE-VOID");
+        let venue_order_id = VenueOrderId::from("V-REJECTED-CACHE-VOID");
+        let account_id = AccountId::from("BETFAIR-001");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("1.234567-12345-0.0.BETFAIR"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .price(Price::from("1.00000"))
+            .build();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .trade_id(trade_id)
+                    .voided_qty(Quantity::from(10))
+                    .order_side(OrderSide::Buy)
+                    .order_type(OrderType::Limit)
+                    .last_px(Price::from("9.99999"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(venue_order_id)
+                    .account_id(account_id)
+                    .trade_id(trade_id)
+                    .order_side(OrderSide::Buy)
+                    .order_type(OrderType::Limit)
+                    .last_qty(Quantity::from(40))
+                    .last_px(Price::from("1.00000"))
+                    .build(),
+            ))
+            .unwrap();
+
+        let fill_lots = cached_fill_lots(&order);
+
+        assert_eq!(fill_lots.len(), 1);
+        assert_eq!(fill_lots[0].0, trade_id);
+        assert_eq!(fill_lots[0].1, Decimal::from(40));
+        assert_eq!(fill_lots[0].3, Decimal::ZERO);
+
+        let bet_id = venue_order_id.to_string();
+        let mut state = OcmState::default();
+        for (trade_id, quantity, price, voided_qty) in fill_lots {
+            state
+                .fill_tracker
+                .sync_fill_lot(&bet_id, trade_id, quantity, price, voided_qty);
+        }
+        state.fill_tracker.sync_voided_qty(&bet_id, Decimal::ZERO);
+        let mut update = fill_unmatched_order(&bet_id, None, Decimal::from(40));
+        update.sv = Some(Decimal::from(10));
+
+        let corrections = state.fill_tracker.maybe_fill_voids(&update);
+
+        assert_eq!(corrections.len(), 1);
+        assert_eq!(corrections[0].trade_id, trade_id);
+        assert_eq!(corrections[0].voided_qty, Quantity::from("10.00"));
     }
 
     #[rstest]

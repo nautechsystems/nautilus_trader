@@ -138,6 +138,7 @@ pub mod matching_engine;
 pub mod models;
 pub mod order_emulator;
 pub mod order_manager;
+pub mod position;
 pub mod protection;
 pub mod reconciliation;
 pub mod trailing;

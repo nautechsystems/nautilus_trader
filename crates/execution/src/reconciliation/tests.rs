@@ -5405,6 +5405,88 @@ fn test_standalone_working_report_does_not_void_fill_without_explicit_evidence(
 }
 
 #[rstest]
+fn test_reconciliation_fill_void_excludes_rejected_pre_fill_baseline(instrument: InstrumentAny) {
+    let client_order_id = ClientOrderId::from("O-REJECTED-VOID-BASELINE");
+    let venue_order_id = VenueOrderId::from("V-REJECTED-VOID-BASELINE");
+    let account_id = AccountId::from("SIM-001");
+    let trade_id = TradeId::from("T-REJECTED-VOID-BASELINE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100))
+        .price(Price::from("1.00000"))
+        .build();
+    submit_accept(&mut order, account_id, venue_order_id);
+    order
+        .apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(trade_id)
+                .voided_qty(Quantity::from(10))
+                .commission_voided(Money::from("0 USD"))
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_px(Price::from("9.99999"))
+                .currency(instrument.quote_currency())
+                .is_reopened(true)
+                .build(),
+        ))
+        .unwrap();
+    order
+        .apply(OrderEventAny::Filled(
+            OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(trade_id)
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Limit)
+                .last_qty(Quantity::from(40))
+                .last_px(Price::from("1.00000"))
+                .currency(instrument.quote_currency())
+                .commission(Money::from("4 USD"))
+                .build(),
+        ))
+        .unwrap();
+    let mut report = create_test_order_status_report(
+        client_order_id,
+        venue_order_id,
+        instrument.id(),
+        OrderType::Limit,
+        OrderStatus::PartiallyFilled,
+        Quantity::from(100),
+        Quantity::from(30),
+    );
+    report.avg_px = Some(dec!(1.0));
+
+    let events = generate_reconciliation_order_snapshot_events(
+        &order,
+        &report,
+        Some(&instrument),
+        UnixNanos::from(10),
+    );
+
+    let correction = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::FillVoided(correction) => Some(correction),
+            _ => None,
+        })
+        .expect("fill decrease must emit a correction");
+    assert_eq!(correction.voided_qty, Quantity::from(10));
+    assert_eq!(correction.commission_voided, None);
+}
+
+#[rstest]
 fn test_continuous_reconciliation_converges_quantity_with_partial_fill(instrument: InstrumentAny) {
     // The venue reports both a new partial fill AND an increased total quantity
     // for the same order. A single reconciliation pass must converge the local

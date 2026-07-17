@@ -547,13 +547,10 @@ fn create_reconciliation_fill_voids(
         if remaining.is_zero() {
             break;
         }
-        let previous = order_events.iter().rev().find_map(|event| match event {
-            OrderEventAny::FillVoided(voided) if voided.trade_id == fill.trade_id => Some(voided),
-            _ => None,
-        });
-        let prior_qty = previous.map_or_else(
+        let previous = OrderFillVoided::find_catch_up_for_fill(order_events.iter().copied(), fill);
+        let prior_qty = previous.as_ref().map_or_else(
             || Quantity::zero(fill.last_qty.precision),
-            |voided| voided.voided_qty.min(fill.last_qty),
+            |voided| voided.voided_qty,
         );
         let effective = fill.last_qty - prior_qty;
         if effective.is_zero() {

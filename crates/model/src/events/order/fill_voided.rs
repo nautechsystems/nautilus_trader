@@ -20,7 +20,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
     },
-    events::OrderEvent,
+    events::{OrderEvent, OrderEventAny, OrderFilled},
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
@@ -72,7 +72,45 @@ pub struct OrderFillVoided {
     pub causation_id: Option<UUID4>,
 }
 
+/// Classification of the latest stored correction for a fill's trade.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CatchUpLookup {
+    NoSameTradeVoid,
+    Mismatched,
+    Matched(Box<OrderFillVoided>),
+}
+
 impl OrderFillVoided {
+    /// Classifies the latest stored correction for `fill`.
+    #[must_use]
+    pub fn classify_catch_up_for_fill<'a, I>(events: I, fill: &OrderFilled) -> CatchUpLookup
+    where
+        I: IntoIterator<Item = &'a OrderEventAny>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        let Some(latest) = events
+            .into_iter()
+            .rev()
+            .find_map(|candidate| match candidate {
+                OrderEventAny::FillVoided(event) if event.trade_id == fill.trade_id => Some(event),
+                _ => None,
+            })
+        else {
+            return CatchUpLookup::NoSameTradeVoid;
+        };
+
+        if latest.matches_fill(fill) {
+            CatchUpLookup::Matched(Box::new(latest.normalized_for_fill(fill)))
+        } else {
+            log::error!(
+                "Ignoring mismatched pre-fill void {} for fill {}",
+                latest.correction_id,
+                fill.trade_id
+            );
+            CatchUpLookup::Mismatched
+        }
+    }
+
     #[expect(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(
@@ -126,6 +164,63 @@ impl OrderFillVoided {
             is_reopened,
             causation_id: None,
         }
+    }
+
+    /// Selects the catch-up correction for `fill` from the order's event history.
+    ///
+    /// The rule is shared by `OrderCore::apply`, the execution engine, and event-store
+    /// replay so the three sites cannot disagree: take the LATEST stored void for the
+    /// fill's trade, then accept it only when it matches the fill. A mismatched latest
+    /// void yields no catch-up (the fill still applies, uncorrected) rather than
+    /// resurrecting an older correction the venue has since superseded.
+    #[must_use]
+    pub fn find_catch_up_for_fill<'a, I>(events: I, fill: &OrderFilled) -> Option<Self>
+    where
+        I: IntoIterator<Item = &'a OrderEventAny>,
+        I::IntoIter: DoubleEndedIterator,
+    {
+        match Self::classify_catch_up_for_fill(events, fill) {
+            CatchUpLookup::Matched(correction) => Some(*correction),
+            CatchUpLookup::NoSameTradeVoid | CatchUpLookup::Mismatched => None,
+        }
+    }
+
+    /// Returns whether this correction identifies the supplied fill.
+    #[must_use]
+    pub fn matches_fill(&self, fill: &OrderFilled) -> bool {
+        self.trade_id == fill.trade_id
+            && self.venue_order_id == fill.venue_order_id
+            && self.account_id == fill.account_id
+            && self.order_side == fill.order_side
+            && self.order_type == fill.order_type
+            && self.last_px == fill.last_px
+            && self.currency == fill.currency
+            && self.liquidity_side == fill.liquidity_side
+            && self
+                .position_id
+                .is_none_or(|position_id| Some(position_id) == fill.position_id)
+    }
+
+    /// Returns a correction bounded to the supplied fill's economic values.
+    #[must_use]
+    pub fn normalized_for_fill(&self, fill: &OrderFilled) -> Self {
+        let mut normalized = self.clone();
+        normalized.voided_qty = normalized.voided_qty.min(fill.last_qty);
+        normalized.commission_voided = match (self.commission_voided, fill.commission) {
+            (Some(voided), Some(commission))
+                if !voided.is_zero()
+                    && voided.currency == commission.currency
+                    && voided.raw.signum() == commission.raw.signum() =>
+            {
+                Some(Money::from_raw(
+                    voided.raw.abs().min(commission.raw.abs()) * voided.raw.signum(),
+                    voided.currency,
+                ))
+            }
+            _ => None,
+        };
+        normalized.position_id = normalized.position_id.or(fill.position_id);
+        normalized
     }
 }
 

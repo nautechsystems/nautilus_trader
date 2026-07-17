@@ -335,6 +335,10 @@ impl OrderManager {
                     None => order.filled_qty(),
                 };
 
+                if parent_filled_qty.is_zero() {
+                    return actions;
+                }
+
                 let linked_orders = if let Some(orders) = order.linked_order_ids() {
                     orders
                 } else {
@@ -386,6 +390,26 @@ impl OrderManager {
                 }
             }
             Some(ContingencyType::Oco) => {
+                let parent_filled_qty = match order.exec_spawn_id() {
+                    Some(spawn_id) => {
+                        if let Some(qty) = self
+                            .cache
+                            .borrow()
+                            .exec_spawn_total_filled_qty(&spawn_id, true)
+                        {
+                            qty
+                        } else {
+                            log::error!("Failed to get spawn filled quantity for {spawn_id}");
+                            return actions;
+                        }
+                    }
+                    None => order.filled_qty(),
+                };
+
+                if parent_filled_qty.is_zero() {
+                    return actions;
+                }
+
                 let linked_orders = if let Some(orders) = order.linked_order_ids() {
                     orders
                 } else {
@@ -593,7 +617,7 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         enums::{ContingencyType, OrderSide, OrderType, TriggerType},
-        events::order::spec::{OrderAcceptedSpec, OrderSubmittedSpec},
+        events::order::spec::{OrderAcceptedSpec, OrderFillVoidedSpec, OrderSubmittedSpec},
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
             VenueOrderId,
@@ -930,6 +954,35 @@ mod tests {
             OrderEventAny::Filled(event) => event,
             event => panic!("expected OrderFilled, was {event:?}"),
         };
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(filled.account_id)
+                    .build(),
+            ))
+            .expect("submit parent");
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(filled.venue_order_id)
+                    .account_id(filled.account_id)
+                    .build(),
+            ))
+            .expect("accept parent");
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(filled.clone()))
+            .expect("apply parent fill");
 
         let actions = manager.handle_order_filled(&filled);
 
@@ -1051,23 +1104,189 @@ mod tests {
 
         let actions = manager.handle_order_filled(&filled);
 
+        assert!(actions.is_empty());
+        assert!(
+            !manager
+                .submit_order_commands
+                .contains_key(&valid_client_order_id)
+        );
+    }
+
+    #[rstest]
+    fn test_fully_voided_catch_up_fill_produces_no_oco_actions() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let sibling_client_order_id = ClientOrderId::from("O-OCO-SIBLING");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-OCO-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oco)
+            .linked_order_ids(vec![sibling_client_order_id])
+            .build();
+        let sibling_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(sibling_client_order_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(sibling_order.clone(), None, None, false)
+            .unwrap();
+        manager
+            .submit_order_commands
+            .insert(sibling_client_order_id, make_submit_command(&sibling_order));
+        let filled = match TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        ) {
+            OrderEventAny::Filled(event) => event,
+            event => panic!("expected OrderFilled, was {event:?}"),
+        };
+
+        // The cached parent carries no surviving filled quantity (the catch-up fully
+        // voided the fill), so the OCO sibling must not be canceled.
+        let actions = manager.handle_order_filled(&filled);
+
+        assert!(actions.is_empty());
+        assert!(
+            manager
+                .submit_order_commands
+                .contains_key(&sibling_client_order_id)
+        );
+    }
+
+    #[rstest]
+    fn test_partial_catch_up_fill_modifies_oto_child_to_surviving_qty() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let child_client_order_id = ClientOrderId::from("O-OTO-CHILD");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-OTO-PARENT"))
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .contingency_type(ContingencyType::Oto)
+            .linked_order_ids(vec![child_client_order_id])
+            .build();
+        let child_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .client_order_id(child_client_order_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .emulation_trigger(TriggerType::NoTrigger)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(child_order, None, None, false)
+            .unwrap();
+        let filled = match TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            None,
+            None,
+            Some(Quantity::from(40_000)),
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        ) {
+            OrderEventAny::Filled(event) => event,
+            event => panic!("expected OrderFilled, was {event:?}"),
+        };
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .account_id(filled.account_id)
+                    .build(),
+            ))
+            .expect("submit parent");
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder()
+                    .trader_id(order.trader_id())
+                    .strategy_id(order.strategy_id())
+                    .instrument_id(order.instrument_id())
+                    .client_order_id(order.client_order_id())
+                    .venue_order_id(filled.venue_order_id)
+                    .account_id(filled.account_id)
+                    .build(),
+            ))
+            .expect("accept parent");
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(filled.clone()))
+            .expect("apply parent fill");
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trader_id(filled.trader_id)
+                    .strategy_id(filled.strategy_id)
+                    .instrument_id(filled.instrument_id)
+                    .client_order_id(filled.client_order_id)
+                    .venue_order_id(filled.venue_order_id)
+                    .account_id(filled.account_id)
+                    .trade_id(filled.trade_id)
+                    .voided_qty(Quantity::from(10_000))
+                    .order_side(filled.order_side)
+                    .order_type(filled.order_type)
+                    .last_px(filled.last_px)
+                    .currency(filled.currency)
+                    .liquidity_side(filled.liquidity_side)
+                    .maybe_position_id(filled.position_id)
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .expect("void part of parent fill");
+
+        // 40k filled minus the 10k void leaves 30k surviving; the OTO child follows the
+        // surviving quantity, not the raw fill.
+        let actions = manager.handle_order_filled(&filled);
+
         assert_eq!(actions.len(), 2);
         assert!(matches!(
             &actions[0],
             OrderManagerAction::ModifyLocalQuantity { order, quantity }
-                if order.client_order_id() == valid_client_order_id
-                    && *quantity == Quantity::zero(0)
+                if order.client_order_id() == child_client_order_id
+                    && *quantity == Quantity::from(30_000)
         ));
         assert!(matches!(
             &actions[1],
             OrderManagerAction::SubmitToRisk(command)
-                if command.client_order_id == valid_client_order_id
+                if command.client_order_id == child_client_order_id
         ));
-        assert!(
-            manager
-                .submit_order_commands
-                .contains_key(&valid_client_order_id)
-        );
     }
 
     #[rstest]

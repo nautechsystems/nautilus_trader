@@ -53,6 +53,7 @@ ustr = { workspace = true }
 
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["stubs"] }
+nautilus-portfolio = { workspace = true }
 
 async-trait = { workspace = true }
 criterion = { workspace = true }

@@ -16,7 +16,8 @@
 //! Tests module for `ExecutionEngine`.
 
 use std::{
-    cell::RefCell,
+    any::Any,
+    cell::{Cell, RefCell},
     collections::HashSet,
     future::Future,
     pin::pin,
@@ -38,8 +39,8 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessageBus, MessagingSwitchboard, TypedHandler, TypedIntoHandler,
-        stubs::get_any_saving_handler, switchboard,
+        self, BusTap, Endpoint, MStr, MessageBus, MessagingSwitchboard, Topic as BusTopic,
+        TypedHandler, TypedIntoHandler, stubs::get_any_saving_handler, switchboard,
     },
     timer::{TimeEvent, TimeEventCallback},
 };
@@ -59,9 +60,9 @@ use nautilus_model::{
         OrderType, PositionSide, PositionSideSpecified, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired, OrderFilled,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderUpdated,
-        PositionEvent,
+        AccountState, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
+        OrderFillVoided, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderUpdated, PositionEvent,
         order::spec::{
             OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec, OrderFillVoidedSpec,
             OrderFilledSpec, OrderModifyRejectedSpec, OrderPendingCancelSpec,
@@ -86,6 +87,7 @@ use nautilus_model::{
     stubs::{TestDefault, stub_position_long},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
+use nautilus_portfolio::Portfolio;
 use rstest::*;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -1772,6 +1774,621 @@ fn test_fill_void_position_validation_failure_leaves_order_unchanged(
     );
     assert_eq!(position.quantity, order.quantity());
     assert!(position.fill_voids.is_empty());
+}
+
+fn build_pre_fill_void(
+    instrument: &InstrumentAny,
+    order: &OrderAny,
+    trade_id: TradeId,
+    voided_qty: Quantity,
+    commission_voided: Option<Money>,
+) -> OrderEventAny {
+    OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-001"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .voided_qty(voided_qty)
+            .maybe_commission_voided(commission_voided)
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .is_reopened(true)
+            .build(),
+    )
+}
+
+fn build_catch_up_fill(
+    instrument: &InstrumentAny,
+    order: &OrderAny,
+    trade_id: TradeId,
+    commission: Option<Money>,
+) -> OrderFilled {
+    build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        trade_id,
+        order.order_side(),
+        order.order_type(),
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        commission,
+    )
+}
+
+fn attach_real_portfolio(execution_engine: &ExecutionEngine) -> Portfolio {
+    Portfolio::new(
+        Rc::new(RefCell::new(TestClock::new())),
+        execution_engine.cache().clone(),
+        None,
+    )
+}
+
+#[rstest]
+fn test_pre_fill_void_catch_up_keeps_order_position_and_portfolio_aligned(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-CATCH-UP-FULL");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(60_000),
+        None,
+    ));
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        TradeId::from("T-CATCH-UP-UNMATCHED"),
+        Quantity::from(10_000),
+        None,
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let corrected_position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("late fill should create a corrected position shell");
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(0));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(50_000));
+    assert_eq!(corrected_order.leaves_qty(), Quantity::from(100_000));
+    assert_eq!(corrected_position.quantity, Quantity::from(0));
+    assert_eq!(portfolio.net_position(&instrument.id()), Decimal::ZERO);
+}
+
+#[rstest]
+fn test_partial_pre_fill_void_catch_up_keeps_real_exposure_aligned(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-CATCH-UP-PARTIAL");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(10_000),
+        None,
+    ));
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let corrected_position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("late fill should create a position");
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(30_000));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(10_000));
+    assert_eq!(corrected_order.leaves_qty(), Quantity::from(70_000));
+    assert_eq!(corrected_position.quantity, Quantity::from(30_000));
+    assert_eq!(portfolio.net_position(&instrument.id()), dec!(30_000));
+}
+
+#[rstest]
+fn test_cross_currency_zero_commission_pre_fill_void_catches_up_without_panicking(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-CATCH-UP-ZERO-COMMISSION");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(10_000),
+        Some(Money::from("0 EUR")),
+    ));
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        Some(Money::from("2 USD")),
+    )));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let corrected_position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("late fill should create a position");
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(30_000));
+    assert_eq!(corrected_position.quantity, Quantity::from(30_000));
+    assert_eq!(corrected_position.commissions(), vec![Money::from("2 USD")]);
+    assert_eq!(corrected_position.fill_voids.len(), 1);
+    assert_eq!(corrected_position.fill_voids[0].commission_voided, None);
+    assert_eq!(portfolio.net_position(&instrument.id()), dec!(30_000));
+}
+
+#[rstest]
+fn test_projected_pre_fill_void_catch_up_does_not_mutate_positions(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let _portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-CATCH-UP-PROJECTION");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(10_000),
+        None,
+    ));
+    execution_engine.project_reconciliation_fill(&build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    ));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(30_000));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(10_000));
+    assert_eq!(cache.positions_total_count(None, None, None, None, None), 0);
+}
+
+/// Records dispatched bus traffic: whether any `OrderFillVoided` crossed the bus, and the
+/// ordered payload kinds of every order/position event publish.
+struct RecordingBusTap {
+    fill_voided_dispatched: Rc<Cell<bool>>,
+    published: Rc<RefCell<Vec<String>>>,
+}
+
+impl RecordingBusTap {
+    fn observe(&self, message: &dyn Any) {
+        if let Some(event) = message.downcast_ref::<OrderEventAny>() {
+            if matches!(event, OrderEventAny::FillVoided(_)) {
+                self.fill_voided_dispatched.set(true);
+            }
+        } else if message.downcast_ref::<OrderFillVoided>().is_some() {
+            self.fill_voided_dispatched.set(true);
+        }
+    }
+}
+
+impl BusTap for RecordingBusTap {
+    fn on_publish(&self, _topic: MStr<BusTopic>, message: &dyn Any) {
+        self.observe(message);
+
+        if let Some(event) = message.downcast_ref::<OrderEventAny>() {
+            let kind = match event {
+                OrderEventAny::Filled(_) => "OrderFilled",
+                OrderEventAny::FillVoided(_) => "OrderFillVoided",
+                _ => "OrderEventOther",
+            };
+            self.published.borrow_mut().push(kind.to_string());
+        } else if let Some(event) = message.downcast_ref::<PositionEvent>() {
+            let kind = match event {
+                PositionEvent::PositionOpened(_) => "PositionOpened",
+                PositionEvent::PositionChanged(_) => "PositionChanged",
+                PositionEvent::PositionClosed(_) => "PositionClosed",
+                PositionEvent::PositionAdjusted(_) => "PositionAdjusted",
+            };
+            self.published.borrow_mut().push(kind.to_string());
+        }
+    }
+
+    fn on_send(&self, _endpoint: MStr<Endpoint>, message: &dyn Any) {
+        self.observe(message);
+    }
+}
+
+fn install_recording_bus_tap() -> (Rc<Cell<bool>>, Rc<RefCell<Vec<String>>>) {
+    let fill_voided_dispatched = Rc::new(Cell::new(false));
+    let published = Rc::new(RefCell::new(Vec::new()));
+    msgbus::set_bus_tap(Rc::new(RecordingBusTap {
+        fill_voided_dispatched: Rc::clone(&fill_voided_dispatched),
+        published: Rc::clone(&published),
+    }));
+    (fill_voided_dispatched, published)
+}
+
+#[rstest]
+fn test_non_reopened_pre_fill_void_catch_up_settles_live_state(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-NON-REOPENED-FULL");
+
+    let mut early_void =
+        build_pre_fill_void(&instrument, &order, trade_id, Quantity::from(40_000), None);
+
+    if let OrderEventAny::FillVoided(event) = &mut early_void {
+        event.is_reopened = false;
+    }
+    execution_engine.process(&early_void);
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let corrected_position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("late fill should create a corrected position shell");
+    assert_eq!(corrected_order.status(), OrderStatus::Accepted);
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(0));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(40_000));
+    assert_eq!(corrected_order.leaves_qty(), Quantity::from(60_000));
+    assert_eq!(corrected_position.quantity, Quantity::from(0));
+    assert_eq!(portfolio.net_position(&instrument.id()), Decimal::ZERO);
+}
+
+#[rstest]
+fn test_non_reopened_partial_pre_fill_void_catch_up_keeps_surviving_exposure(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-NON-REOPENED-PARTIAL");
+
+    let mut early_void =
+        build_pre_fill_void(&instrument, &order, trade_id, Quantity::from(10_000), None);
+
+    if let OrderEventAny::FillVoided(event) = &mut early_void {
+        event.is_reopened = false;
+    }
+    execution_engine.process(&early_void);
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let corrected_position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("late fill should create a position");
+    assert_eq!(corrected_order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(30_000));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(10_000));
+    assert_eq!(corrected_order.leaves_qty(), Quantity::from(60_000));
+    assert_eq!(corrected_position.quantity, Quantity::from(30_000));
+    assert_eq!(portfolio.net_position(&instrument.id()), dec!(30_000));
+}
+
+#[rstest]
+fn test_superseded_mismatched_void_disables_catch_up_on_order_and_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-SUPERSEDED-VOID");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(10_000),
+        None,
+    ));
+    let mut junk_void =
+        build_pre_fill_void(&instrument, &order, trade_id, Quantity::from(20_000), None);
+    if let OrderEventAny::FillVoided(event) = &mut junk_void {
+        event.last_px = Price::from("9.99999");
+    }
+    execution_engine.process(&junk_void);
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+
+    // The LATEST void for the trade is authoritative; because it mismatches the fill,
+    // neither the order nor the position may apply a catch-up - the earlier matching
+    // void must not be resurrected on one side only.
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    let position = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .into_iter()
+        .next()
+        .expect("fill should open a position");
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(40_000));
+    assert_eq!(position.quantity, Quantity::from(40_000));
+    assert!(position.fill_voids.is_empty());
+    assert_eq!(portfolio.net_position(&instrument.id()), dec!(40_000));
+}
+
+#[rstest]
+fn test_pre_fill_void_catch_up_dispatches_no_fill_voided(mut execution_engine: ExecutionEngine) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let _portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-NO-VOID-DISPATCH");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(60_000),
+        None,
+    ));
+    let (fill_voided_dispatched, _published) = install_recording_bus_tap();
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+    msgbus::clear_bus_tap();
+
+    // The portfolio refresh rides the published position events; the stored void must
+    // not be re-dispatched on any endpoint or topic (it would be re-captured and break
+    // replay).
+    assert!(!fill_voided_dispatched.get());
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(0));
+}
+
+#[rstest]
+fn test_pre_fill_void_catch_up_publish_sequence_is_fill_then_correction(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let _portfolio = attach_real_portfolio(&execution_engine);
+    let trade_id = TradeId::from("T-CATCH-UP-SEQUENCE");
+
+    execution_engine.process(&build_pre_fill_void(
+        &instrument,
+        &order,
+        trade_id,
+        Quantity::from(60_000),
+        None,
+    ));
+    let (_fill_voided_dispatched, published) = install_recording_bus_tap();
+    execution_engine.process(&OrderEventAny::Filled(build_catch_up_fill(
+        &instrument,
+        &order,
+        trade_id,
+        None,
+    )));
+    msgbus::clear_bus_tap();
+
+    // Deliberate, documented staging: the raw fill and the uncorrected position event
+    // publish first (the honest audit history the event store replays), then the
+    // catch-up correction. Consumers see the same order live and on replay.
+    assert_eq!(
+        *published.borrow(),
+        vec![
+            "OrderFilled".to_string(),
+            "OrderFilled".to_string(),
+            "PositionOpened".to_string(),
+            "PositionClosed".to_string(),
+        ]
+    );
+}
+
+#[rstest]
+fn test_reduce_only_fill_on_closed_position_with_pre_fill_void_stays_coherent(
+    mut execution_engine: ExecutionEngine,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let (instrument, opener) = prepare_accepted_order(&mut execution_engine);
+    let trader_id = opener.trader_id();
+    let strategy_id = opener.strategy_id();
+
+    // Open then fully close the netting position so the reduce-only fill below targets a
+    // CLOSED position.
+    execution_engine.process(&OrderEventAny::Filled(build_order_filled(
+        trader_id,
+        strategy_id,
+        instrument.id(),
+        opener.client_order_id(),
+        VenueOrderId::from("V-001"),
+        AccountId::test_default(),
+        TradeId::from("T-RO-OPEN"),
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(10_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    )));
+    let closer = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-2"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(10_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(closer.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &closer,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &closer,
+        AccountId::test_default(),
+        VenueOrderId::from("V-002"),
+    ));
+    execution_engine.process(&OrderEventAny::Filled(build_order_filled(
+        trader_id,
+        strategy_id,
+        instrument.id(),
+        closer.client_order_id(),
+        VenueOrderId::from("V-002"),
+        AccountId::test_default(),
+        TradeId::from("T-RO-CLOSE"),
+        OrderSide::Sell,
+        OrderType::Market,
+        Quantity::from(10_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    )));
+    let position_id = PositionId::new(format!("{}-{}", instrument.id(), strategy_id));
+    assert!(
+        execution_engine
+            .cache()
+            .borrow()
+            .position(&position_id)
+            .is_some_and(|position| position.is_closed())
+    );
+
+    let reduce_only = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-19700101-000000-001-001-3"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .reduce_only(true)
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(
+            reduce_only.clone(),
+            None,
+            Some(ClientId::from("STUB")),
+            true,
+        )
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &reduce_only,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &reduce_only,
+        AccountId::test_default(),
+        VenueOrderId::from("V-003"),
+    ));
+
+    let trade_id = TradeId::from("T-RO-CATCH-UP");
+    execution_engine.process(&OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(trader_id)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(reduce_only.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-003"))
+            .account_id(AccountId::test_default())
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(60_000))
+            .order_side(OrderSide::Buy)
+            .order_type(OrderType::Market)
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::Maker)
+            .is_reopened(true)
+            .build(),
+    ));
+    let (_fill_voided_dispatched, published) = install_recording_bus_tap();
+    execution_engine.process(&OrderEventAny::Filled(build_order_filled(
+        trader_id,
+        strategy_id,
+        instrument.id(),
+        reduce_only.client_order_id(),
+        VenueOrderId::from("V-003"),
+        AccountId::test_default(),
+        trade_id,
+        OrderSide::Buy,
+        OrderType::Market,
+        Quantity::from(40_000),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    )));
+    msgbus::clear_bus_tap();
+
+    // The reduce-only reopen is rejected, so the fill never lands on the position; the
+    // order-level catch-up still settles, the fill still publishes, and no position
+    // catch-up runs against the closed position.
+    let cache = execution_engine.cache().borrow();
+    let corrected_order = cache.order(&reduce_only.client_order_id()).unwrap();
+    let position = cache.position(&position_id).unwrap();
+    assert_eq!(corrected_order.filled_qty(), Quantity::from(0));
+    assert_eq!(corrected_order.voided_qty(), Quantity::from(40_000));
+    assert!(position.is_closed());
+    assert!(position.fill_voids.is_empty());
+    assert!(published.borrow().iter().any(|kind| kind == "OrderFilled"));
 }
 
 #[rstest]

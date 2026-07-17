@@ -72,6 +72,8 @@ pyo3 = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-portfolio = { workspace = true }
+
 criterion = { workspace = true }
 proptest = { workspace = true }
 serde_json = { workspace = true }

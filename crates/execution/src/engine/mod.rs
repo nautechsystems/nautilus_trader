@@ -87,6 +87,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     client::ExecutionClientAdapter,
+    position::{merge_reopened_position_history, plan_position_flip},
     reconciliation::{
         check_position_reconciliation, generate_external_order_status_events,
         generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
@@ -2521,6 +2522,8 @@ impl ExecutionEngine {
 
                 let mut fill = fill.clone();
                 fill.position_id = Some(position_id);
+                let fill_void_catch_up =
+                    OrderFillVoided::find_catch_up_for_fill(order_before_fill.events(), &fill);
 
                 let validation = if apply_position {
                     self.validate_fill_for_order(&order_before_fill, &fill)
@@ -2534,11 +2537,56 @@ impl ExecutionEngine {
                         return;
                     };
 
-                    let position_events = if apply_position {
-                        self.handle_order_fill(&order, fill, oms_type)
+                    let mut position_events = if apply_position {
+                        self.handle_order_fill(&order, &fill, oms_type)
                     } else {
                         Vec::new()
                     };
+
+                    if apply_position
+                        && let Some(fill_voided) = fill_void_catch_up
+                        && fill.position_id.is_some_and(|position_id| {
+                            self.cache
+                                .borrow()
+                                .position(&position_id)
+                                .is_some_and(|position| {
+                                    position.trade_ids().contains(&fill.trade_id)
+                                })
+                        })
+                    {
+                        match self.prepare_order_fill_void_positions(&order, &fill_voided) {
+                            Ok(corrected_positions) => {
+                                for (position, corrected_qty) in corrected_positions {
+                                    if let Err(e) =
+                                        self.cache.borrow_mut().update_position(&position)
+                                    {
+                                        log::error!(
+                                            "Cannot cache catch-up fill void for position {}: {e}",
+                                            position.id
+                                        );
+                                        continue;
+                                    }
+
+                                    if self.config.snapshot_positions {
+                                        self.create_position_state_snapshot(&position, false);
+                                    }
+                                    position_events.push(Self::create_fill_void_position_event(
+                                        &position,
+                                        &fill_voided,
+                                        corrected_qty,
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                log::error!("Cannot catch up fill void on positions: {e}");
+                            }
+                        }
+                    }
+
+                    if apply_position {
+                        let topic = switchboard::get_order_filled_topic(fill.instrument_id);
+                        msgbus::publish_order_event(topic, &event);
+                    }
                     self.publish_order_event(&event);
                     self.publish_position_events(position_events);
                 }
@@ -3158,8 +3206,8 @@ impl ExecutionEngine {
             OrderEventAny::Canceled(_) => {
                 switchboard::get_order_canceled_topic(event.instrument_id())
             }
-            // Keep Filled out of this generic fanout: handle_order_fill publishes the instrument
-            // topic, while leg fills stay on the strategy topic.
+            // Keep Filled out of this generic fanout: the Filled arm publishes the instrument
+            // topic after position catch-up, while leg fills stay on the strategy topic.
             _ => return,
         };
 
@@ -3212,7 +3260,7 @@ impl ExecutionEngine {
     fn handle_order_fill(
         &mut self,
         order: &OrderAny,
-        fill: OrderFilled,
+        fill: &OrderFilled,
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let instrument =
@@ -3301,10 +3349,6 @@ impl ExecutionEngine {
             // For spread instruments, contingent orders can still be triggered
             // but without position linkage (since no position is created for spreads)
         }
-
-        let topic = switchboard::get_order_filled_topic(fill.instrument_id);
-        let event = OrderEventAny::Filled(fill);
-        msgbus::publish_order_event(topic, &event);
 
         position_events
     }
@@ -3642,13 +3686,8 @@ impl ExecutionEngine {
                 .and_then(|position_id| self.cache.borrow().position_owned(&position_id))
         });
         let mut position = Position::new(instrument, fill.clone());
-        if let Some(prior) = prior_position
-            && prior.id == position.id
-        {
-            let current_replay = position.replay_events.clone();
-            position.replay_events = prior.replay_events;
-            position.replay_events.extend(current_replay);
-            position.fill_voids = prior.fill_voids;
+        if let Some(prior) = prior_position {
+            merge_reopened_position_history(&prior, &mut position);
         }
         self.cache.borrow_mut().add_position(&position, oms_type)?;
 
@@ -3775,85 +3814,6 @@ impl ExecutionEngine {
         oms_type: OmsType,
     ) -> Vec<PositionEvent> {
         let mut position_events = Vec::new();
-        let difference = match position.side {
-            PositionSide::Long => Quantity::from_raw(
-                fill.last_qty.raw - position.quantity.raw,
-                position.size_precision,
-            ),
-            PositionSide::Short => Quantity::from_raw(
-                position.quantity.raw.abs_diff(fill.last_qty.raw), // Equivalent to Python's abs(position.quantity - fill.last_qty)
-                position.size_precision,
-            ),
-            _ => fill.last_qty,
-        };
-
-        // Split commission between two positions
-        let fill_percent = position.quantity.as_decimal() / fill.last_qty.as_decimal();
-        let (commission1, commission2) = if let Some(commission) = fill.commission {
-            let commission_currency = commission.currency;
-            let commission1 =
-                Money::from_decimal(commission.as_decimal() * fill_percent, commission_currency)
-                    .expect("Invalid split commission");
-            let commission2 = commission - commission1;
-            (Some(commission1), Some(commission2))
-        } else {
-            log::warn!(
-                "Commission is not available for position flip, splitting with no commission"
-            );
-            (None, None)
-        };
-
-        let mut fill_split1: Option<OrderFilled> = None;
-
-        if position.is_open() {
-            let mut split = OrderFilled::new(
-                fill.trader_id,
-                fill.strategy_id,
-                fill.instrument_id,
-                fill.client_order_id,
-                fill.venue_order_id,
-                fill.account_id,
-                fill.trade_id,
-                fill.order_side,
-                fill.order_type,
-                position.quantity,
-                fill.last_px,
-                fill.currency,
-                fill.liquidity_side,
-                fill.event_id,
-                fill.ts_event,
-                fill.ts_init,
-                fill.reconciliation,
-                fill.position_id,
-                commission1,
-                fill.info.clone(),
-            );
-            split.causation_id = fill.causation_id;
-            fill_split1 = Some(split);
-
-            if let Some(position_event) =
-                self.update_position(position, fill_split1.as_ref().unwrap())
-            {
-                position_events.push(position_event);
-            }
-
-            // Snapshot closed position before reusing ID (NETTING mode)
-            if oms_type == OmsType::Netting {
-                match self.cache.borrow_mut().snapshot_position(position) {
-                    Ok(snapshot_ref) => self.anchor_snapshot(snapshot_ref),
-                    Err(e) => log::warn!("Failed to snapshot position during flip: {e:?}"),
-                }
-            }
-        }
-
-        // Guard against flipping a position with a zero fill size
-        if difference.raw == 0 {
-            log::warn!(
-                "Zero fill size during position flip calculation, this could be caused by a mismatch between instrument `size_precision` and a quantity `size_precision`"
-            );
-            return position_events;
-        }
-
         let position_id_flip = if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
             && position_id.is_virtual()
@@ -3864,41 +3824,40 @@ impl ExecutionEngine {
             // Default: use the same position ID as the fill (Python behavior)
             fill.position_id
         };
+        let Some(position_id_flip) = position_id_flip else {
+            log::error!("Cannot flip position without a position ID: {fill}");
+            return position_events;
+        };
+        let fragments = plan_position_flip(position, fill, position_id_flip);
 
-        let mut fill_split2 = OrderFilled::new(
-            fill.trader_id,
-            fill.strategy_id,
-            fill.instrument_id,
-            fill.client_order_id,
-            fill.venue_order_id,
-            fill.account_id,
-            fill.trade_id,
-            fill.order_side,
-            fill.order_type,
-            difference,
-            fill.last_px,
-            fill.currency,
-            fill.liquidity_side,
-            UUID4::new(),
-            fill.ts_event,
-            fill.ts_init,
-            fill.reconciliation,
-            position_id_flip,
-            commission2,
-            fill.info.clone(),
-        );
-        fill_split2.causation_id = Some(fill.event_id);
+        if fill.commission.is_none() {
+            log::warn!(
+                "Commission is not available for position flip, splitting with no commission"
+            );
+        }
+
+        if let Some(position_event) = self.update_position(position, &fragments.closing) {
+            position_events.push(position_event);
+        }
+
+        // Snapshot closed position before reusing ID (NETTING mode)
+        if oms_type == OmsType::Netting {
+            match self.cache.borrow_mut().snapshot_position(position) {
+                Ok(snapshot_ref) => self.anchor_snapshot(snapshot_ref),
+                Err(e) => log::warn!("Failed to snapshot position during flip: {e:?}"),
+            }
+        }
 
         if oms_type == OmsType::Hedging
             && let Some(position_id) = fill.position_id
             && position_id.is_virtual()
         {
-            log::warn!("Closing position {fill_split1:?}");
-            log::warn!("Flipping position {fill_split2:?}");
+            log::warn!("Closing position {:?}", fragments.closing);
+            log::warn!("Flipping position {:?}", fragments.opening);
         }
 
         // Open flipped position
-        match self.open_position(instrument, None, fill_split2, oms_type) {
+        match self.open_position(instrument, None, fragments.opening, oms_type) {
             Ok(opened_events) => position_events.extend(opened_events),
             Err(e) => log::error!("Failed to open flipped position: {e:?}"),
         }

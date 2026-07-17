@@ -65,8 +65,8 @@ use crate::{
         PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        CatchUpLookup, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
         OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
         OrderSubmitted, OrderTriggered, OrderUpdated,
     },
@@ -293,6 +293,7 @@ impl OrderStatus {
             (Self::Filled, OrderEventAny::Updated(_)) => Self::Filled,
             (Self::Expired, OrderEventAny::FillVoided(_)) => Self::Expired,
             (Self::Expired, OrderEventAny::Updated(_)) => Self::Expired,
+            (Self::Voided, OrderEventAny::Filled(_)) => Self::Filled,
             (Self::Voided, OrderEventAny::FillVoided(_)) => Self::Voided,
             (Self::Voided, OrderEventAny::Canceled(_)) => Self::Canceled,
             (Self::Voided, OrderEventAny::Updated(_)) => Self::Voided,
@@ -716,6 +717,13 @@ where
     }
 }
 
+/// Aggregate results of replaying the stored fill and correction events.
+#[derive(Clone, Copy, Debug)]
+struct RecomputedFillState {
+    non_reopened_voided_qty: Quantity,
+    has_unresolved_non_reopened_void: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderCore {
     pub events: Vec<OrderEventAny>,
@@ -849,6 +857,22 @@ impl OrderCore {
             self.validate_fill_void(event)?;
         }
 
+        let fill_void_catch_up = if let OrderEventAny::Filled(fill) = &event {
+            Some(OrderFillVoided::classify_catch_up_for_fill(
+                self.events.iter(),
+                fill,
+            ))
+        } else {
+            None
+        };
+
+        if self.status == OrderStatus::Voided
+            && matches!(event, OrderEventAny::Filled(_))
+            && matches!(fill_void_catch_up, Some(CatchUpLookup::NoSameTradeVoid))
+        {
+            return Err(OrderError::InvalidStateTransition);
+        }
+
         // Save current status as previous_status for ALL transitions except:
         // - Initialized (no prior state exists)
         // - ModifyRejected/CancelRejected (need to preserve the pre Pending state)
@@ -905,6 +929,12 @@ impl OrderCore {
 
         self.ts_last = event.ts_event();
         self.events.push(event);
+
+        match fill_void_catch_up {
+            Some(CatchUpLookup::Matched(fill_voided)) => self.fill_voided(&fill_voided),
+            Some(CatchUpLookup::Mismatched) => self.rebuild_after_rejected_fill_void(),
+            Some(CatchUpLookup::NoSameTradeVoid) | None => {}
+        }
         Ok(())
     }
 
@@ -974,14 +1004,29 @@ impl OrderCore {
             return Err(OrderError::OverVoid(event.trade_id));
         }
 
-        let previous = self.latest_fill_void(event.trade_id);
-        if let Some(previous) = previous {
+        let previous = self.latest_fill_void(event.trade_id).and_then(|previous| {
+            fill.map_or_else(
+                || Some(previous.clone()),
+                |fill| {
+                    previous
+                        .matches_fill(fill)
+                        .then(|| previous.normalized_for_fill(fill))
+                },
+            )
+        });
+
+        if let Some(previous) = previous.as_ref() {
             if event.voided_qty < previous.voided_qty {
                 return Err(OrderError::StaleFillVoid(event.trade_id));
             }
 
+            // Canonicalize zero commissions to None: the stored baseline is normalized
+            // against its fill, which drops Some(zero), while a re-sent duplicate void
+            // may still carry the explicit zero.
+            let canonical = |commission: Option<Money>| commission.filter(|value| !value.is_zero());
+
             if event.voided_qty == previous.voided_qty
-                && event.commission_voided == previous.commission_voided
+                && canonical(event.commission_voided) == canonical(previous.commission_voided)
                 && event.is_reopened == previous.is_reopened
             {
                 return Err(OrderError::DuplicateFillVoid(event.trade_id));
@@ -1015,7 +1060,7 @@ impl OrderCore {
             return Err(OrderError::OverVoid(event.trade_id));
         }
 
-        self.validate_fill_void_commission(fill, event, previous)
+        self.validate_fill_void_commission(fill, event, previous.as_ref())
     }
 
     fn validate_fill_void_commission(
@@ -1059,7 +1104,9 @@ impl OrderCore {
             |candidate| matches!(candidate, OrderEventAny::Filled(fill) if fill.trade_id == event.trade_id),
         );
         let transition_status = self.status;
-        let non_reopened_voided_qty = self.recompute_fill_state(Some(event));
+        let non_reopened_voided_qty = self
+            .recompute_fill_state(Some(event))
+            .non_reopened_voided_qty;
         let unfilled_qty = self.quantity.saturating_sub(self.filled_qty);
         let working_leaves = unfilled_qty.saturating_sub(non_reopened_voided_qty);
 
@@ -1097,7 +1144,34 @@ impl OrderCore {
         }
     }
 
-    fn recompute_fill_state(&mut self, additional: Option<&OrderFillVoided>) -> Quantity {
+    fn rebuild_after_rejected_fill_void(&mut self) {
+        let recomputed = self.recompute_fill_state(None);
+
+        if recomputed.has_unresolved_non_reopened_void {
+            // Another trade's pre-fill non-reopened void is still unresolved: the
+            // order stays terminally voided regardless of the rejected correction.
+            self.status = OrderStatus::Voided;
+            self.leaves_qty = Quantity::zero(self.quantity.precision);
+            self.ts_closed = self.ts_closed.or(Some(self.ts_last));
+            return;
+        }
+
+        let unfilled_qty = self.quantity.saturating_sub(self.filled_qty);
+        self.leaves_qty = unfilled_qty.saturating_sub(recomputed.non_reopened_voided_qty);
+
+        if self.filled_qty >= self.quantity {
+            self.status = OrderStatus::Filled;
+            self.ts_closed = Some(self.ts_last);
+        } else {
+            self.status = OrderStatus::PartiallyFilled;
+            self.ts_closed = None;
+        }
+    }
+
+    fn recompute_fill_state(
+        &mut self,
+        additional: Option<&OrderFillVoided>,
+    ) -> RecomputedFillState {
         let mut corrections: IndexMap<TradeId, &OrderFillVoided> = IndexMap::new();
 
         for candidate in &self.events {
@@ -1119,7 +1193,7 @@ impl OrderCore {
         let mut last_trade_id = None;
         let mut position_id = None;
         let mut liquidity_side = Some(LiquiditySide::NoLiquiditySide);
-        let mut matched_corrections = AHashSet::new();
+        let mut resolved_corrections = AHashSet::new();
 
         for candidate in &self.events {
             let OrderEventAny::Filled(fill) = candidate else {
@@ -1127,15 +1201,18 @@ impl OrderCore {
             };
             let correction = corrections.get(&fill.trade_id).copied();
             if correction.is_some() {
-                matched_corrections.insert(fill.trade_id);
+                resolved_corrections.insert(fill.trade_id);
             }
-            let removed = correction.map_or_else(
+            let normalized = correction
+                .filter(|event| event.matches_fill(fill))
+                .map(|event| event.normalized_for_fill(fill));
+            let removed = normalized.as_ref().map_or_else(
                 || Quantity::zero(fill.last_qty.precision),
-                |event| event.voided_qty.min(fill.last_qty),
+                |event| event.voided_qty,
             );
             let effective = fill.last_qty - removed;
             voided_raw = voided_raw.saturating_add(removed.raw);
-            if correction.is_some_and(|event| !event.is_reopened) {
+            if normalized.as_ref().is_some_and(|event| !event.is_reopened) {
                 non_reopened_voided_raw = non_reopened_voided_raw.saturating_add(removed.raw);
             }
 
@@ -1149,7 +1226,8 @@ impl OrderCore {
             }
 
             if let Some(commission) = fill.commission {
-                let surviving = correction
+                let surviving = normalized
+                    .as_ref()
                     .and_then(|event| event.commission_voided)
                     .filter(|voided| !voided.is_zero())
                     .map_or(commission, |voided| commission - voided);
@@ -1162,9 +1240,12 @@ impl OrderCore {
             }
         }
 
+        let mut has_unresolved_non_reopened_void = false;
+
         for (trade_id, correction) in corrections {
-            if !matched_corrections.contains(&trade_id) {
+            if !resolved_corrections.contains(&trade_id) {
                 voided_raw = voided_raw.saturating_add(correction.voided_qty.raw);
+                has_unresolved_non_reopened_void |= !correction.is_reopened;
             }
         }
 
@@ -1178,7 +1259,13 @@ impl OrderCore {
         self.position_id = position_id;
         self.liquidity_side = liquidity_side;
 
-        Quantity::from_raw(non_reopened_voided_raw, self.quantity.precision)
+        RecomputedFillState {
+            non_reopened_voided_qty: Quantity::from_raw(
+                non_reopened_voided_raw,
+                self.quantity.precision,
+            ),
+            has_unresolved_non_reopened_void,
+        }
     }
 
     fn updated(&mut self, event: &OrderUpdated) {
@@ -1273,12 +1360,16 @@ impl OrderCore {
                 && !self.trade_ids.is_empty(),
             "Invariant: venue_order_id, last_trade_id and trade_ids must be set after fill"
         );
+        // A pre-fill void catch-up restores this invariant in the recompute that `apply`
+        // runs after pushing the fill, so the mid-apply state is exempt here.
         debug_assert!(
-            self.filled_qty
-                .raw
-                .saturating_add(self.voided_qty.raw)
-                .saturating_add(self.leaves_qty.raw)
-                >= self.quantity.raw,
+            self.latest_fill_void(event.trade_id).is_some()
+                || self
+                    .filled_qty
+                    .raw
+                    .saturating_add(self.voided_qty.raw)
+                    .saturating_add(self.leaves_qty.raw)
+                    >= self.quantity.raw,
             "Invariant: filled_qty + voided_qty + leaves_qty >= quantity (filled={}, voided={}, leaves={}, quantity={})",
             self.filled_qty,
             self.voided_qty,
@@ -1910,6 +2001,378 @@ mod tests {
         assert_eq!(order.voided_qty(), Quantity::from(40_000));
         assert_eq!(order.leaves_qty(), Quantity::zero(0));
         assert!(order.is_closed());
+    }
+
+    #[rstest]
+    fn test_non_reopened_pre_fill_void_full_catch_up_settles_order() {
+        let trade_id = TradeId::from("TRADE-NON-REOPENED-FULL");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let early_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(40_000))
+            .is_reopened(false)
+            .build();
+        let late_fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::FillVoided(early_void)).unwrap();
+        let status_while_voided = order.status();
+
+        order.apply(OrderEventAny::Filled(late_fill)).unwrap();
+
+        // The matched catch-up fill resurrects the order out of Voided; the non-reopened
+        // 40k stays permanently voided while the untouched 60k keeps working.
+        assert_eq!(status_while_voided, OrderStatus::Voided);
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+        assert_eq!(order.voided_qty(), Quantity::from(40_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(60_000));
+        assert!(order.is_open());
+    }
+
+    #[rstest]
+    fn test_non_reopened_pre_fill_void_partial_catch_up_keeps_surviving_fill() {
+        let trade_id = TradeId::from("TRADE-NON-REOPENED-PARTIAL");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let early_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(10_000))
+            .is_reopened(false)
+            .build();
+        let late_fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::FillVoided(early_void)).unwrap();
+        let status_while_voided = order.status();
+
+        order.apply(OrderEventAny::Filled(late_fill)).unwrap();
+
+        assert_eq!(status_while_voided, OrderStatus::Voided);
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(30_000));
+        assert_eq!(order.voided_qty(), Quantity::from(10_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(60_000));
+        assert!(order.is_open());
+    }
+
+    #[rstest]
+    fn test_voided_order_still_rejects_fill_without_matching_void() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let early_void = OrderFillVoidedSpec::builder()
+            .trade_id(TradeId::from("TRADE-VOIDED-GATE"))
+            .voided_qty(Quantity::from(10_000))
+            .is_reopened(false)
+            .build();
+        let unrelated_fill = OrderFilledSpec::builder()
+            .trade_id(TradeId::from("TRADE-UNRELATED"))
+            .last_qty(Quantity::from(40_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::FillVoided(early_void)).unwrap();
+
+        let result = order.apply(OrderEventAny::Filled(unrelated_fill));
+
+        // The (Voided, Filled) transition is gated: only the matched catch-up fill may
+        // resurrect the order; unrelated fills keep the status-quo rejection.
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.filled_qty(), Quantity::from(0));
+    }
+
+    #[rstest]
+    #[case(40_000, OrderStatus::PartiallyFilled, 60_000)]
+    #[case(100_000, OrderStatus::Filled, 0)]
+    fn test_non_reopened_mismatched_pre_fill_void_is_rejected_when_fill_arrives(
+        #[case] fill_qty: u64,
+        #[case] expected_status: OrderStatus,
+        #[case] expected_leaves: u64,
+    ) {
+        let trade_id = TradeId::from("TRADE-NON-REOPENED-MISMATCH");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let mismatched_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(10_000))
+            .last_px(Price::from("9.99999"))
+            .is_reopened(false)
+            .build();
+        let fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(fill_qty))
+            .last_px(Price::from("1.00000"))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(mismatched_void))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Voided);
+
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.filled_qty(), Quantity::from(fill_qty));
+        assert_eq!(order.voided_qty(), Quantity::from(0));
+        assert_eq!(order.leaves_qty(), Quantity::from(expected_leaves));
+    }
+
+    #[rstest]
+    fn test_mismatched_pre_fill_void_does_not_poison_fill() {
+        let trade_id = TradeId::from("TRADE-MISMATCHED-VOID");
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let junk_void = OrderFillVoidedSpec::builder()
+            .trade_id(trade_id)
+            .voided_qty(Quantity::from(10_000))
+            .last_px(Price::from("9.99999"))
+            .is_reopened(true)
+            .build();
+        let real_fill = OrderFilledSpec::builder()
+            .trade_id(trade_id)
+            .last_qty(Quantity::from(40_000))
+            .last_px(Price::from("1.00000"))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order.apply(OrderEventAny::FillVoided(junk_void)).unwrap();
+
+        order.apply(OrderEventAny::Filled(real_fill)).unwrap();
+
+        // A stored void whose metadata disagrees with the venue fill must neither error
+        // the fill nor apply as a catch-up correction.
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+        assert_eq!(order.voided_qty(), Quantity::from(0));
+    }
+
+    #[rstest]
+    fn test_recompute_does_not_apply_rejected_pre_fill_void() {
+        let rejected_trade_id = TradeId::from("TRADE-REJECTED-RECOMPUTE");
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(rejected_trade_id)
+                    .voided_qty(Quantity::from(10_000))
+                    .last_px(Price::from("9.99999"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(rejected_trade_id)
+                    .last_qty(Quantity::from(40_000))
+                    .last_px(Price::from("1.00000"))
+                    .build(),
+            ))
+            .unwrap();
+
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(TradeId::from("TRADE-UNRESOLVED-RECOMPUTE"))
+                    .voided_qty(Quantity::from(5_000))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+        assert_eq!(order.voided_qty(), Quantity::from(5_000));
+        assert_eq!(order.leaves_qty(), Quantity::from(60_000));
+    }
+
+    #[rstest]
+    fn test_valid_fill_void_after_rejected_pre_fill_void_has_no_rejected_baseline() {
+        let trade_id = TradeId::from("TRADE-REJECTED-BASELINE");
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(trade_id)
+                    .voided_qty(Quantity::from(10_000))
+                    .last_px(Price::from("9.99999"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(trade_id)
+                    .last_qty(Quantity::from(40_000))
+                    .last_px(Price::from("1.00000"))
+                    .build(),
+            ))
+            .unwrap();
+
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(trade_id)
+                    .voided_qty(Quantity::from(5_000))
+                    .last_px(Price::from("1.00000"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+
+        assert_eq!(order.filled_qty(), Quantity::from(35_000));
+        assert_eq!(order.voided_qty(), Quantity::from(5_000));
+    }
+
+    #[rstest]
+    fn test_rejected_fill_void_rebuild_keeps_other_unresolved_non_reopened_void_terminal() {
+        let unresolved_trade_id = TradeId::from("TRADE-UNRESOLVED-TERMINAL");
+        let mismatched_trade_id = TradeId::from("TRADE-MISMATCH-TERMINAL");
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(unresolved_trade_id)
+                    .voided_qty(Quantity::from(60_000))
+                    .is_reopened(false)
+                    .build(),
+            ))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Voided);
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(mismatched_trade_id)
+                    .voided_qty(Quantity::from(10_000))
+                    .last_px(Price::from("9.99999"))
+                    .is_reopened(false)
+                    .build(),
+            ))
+            .unwrap();
+
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(mismatched_trade_id)
+                    .last_qty(Quantity::from(40_000))
+                    .last_px(Price::from("1.00000"))
+                    .build(),
+            ))
+            .unwrap();
+
+        // The other trade's unresolved non-reopened void keeps the order terminally
+        // voided; the rejected mismatch must not resurrect it into PartiallyFilled.
+        assert_eq!(order.status(), OrderStatus::Voided);
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
+        assert_eq!(order.filled_qty(), Quantity::from(40_000));
+        assert_eq!(order.voided_qty(), Quantity::from(60_000));
+    }
+
+    #[rstest]
+    fn test_duplicate_zero_commission_fill_void_after_fill_is_rejected() {
+        let trade_id = TradeId::from("TRADE-DUP-ZERO-COMMISSION");
+        let mut order: MarketOrder = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build()
+            .try_into()
+            .unwrap();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::FillVoided(
+                OrderFillVoidedSpec::builder()
+                    .trade_id(trade_id)
+                    .voided_qty(Quantity::from(10_000))
+                    .commission_voided(Money::from("0 USD"))
+                    .is_reopened(true)
+                    .build(),
+            ))
+            .unwrap();
+        order
+            .apply(OrderEventAny::Filled(
+                OrderFilledSpec::builder()
+                    .trade_id(trade_id)
+                    .last_qty(Quantity::from(40_000))
+                    .build(),
+            ))
+            .unwrap();
+
+        let result = order.apply(OrderEventAny::FillVoided(
+            OrderFillVoidedSpec::builder()
+                .trade_id(trade_id)
+                .voided_qty(Quantity::from(10_000))
+                .commission_voided(Money::from("0 USD"))
+                .is_reopened(true)
+                .build(),
+        ));
+
+        // The stored baseline normalizes Some(zero) commission to None; the re-sent
+        // identical void must still be detected as a duplicate.
+        assert!(matches!(result, Err(OrderError::DuplicateFillVoid(id)) if id == trade_id));
     }
 
     #[rstest]
