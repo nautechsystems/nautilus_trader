@@ -21,6 +21,7 @@ use datafusion::{
     physical_plan::SendableRecordBatchStream, prelude::*,
 };
 use futures::StreamExt;
+use nautilus_common::live::get_runtime;
 use nautilus_core::{UnixNanos, ffi::cvec::CVec};
 use nautilus_model::data::{Data, HasTsInit};
 use nautilus_serialization::arrow::{
@@ -68,7 +69,7 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 )]
 pub struct DataBackendSession {
     pub chunk_size: usize,
-    pub runtime: Arc<tokio::runtime::Runtime>,
+    pub runtime: tokio::runtime::Handle,
     session_ctx: SessionContext,
     batch_streams: Vec<EagerStream<IntoIter<Data>>>,
     registered_tables: AHashSet<String>,
@@ -76,16 +77,8 @@ pub struct DataBackendSession {
 
 impl DataBackendSession {
     /// Creates a new [`DataBackendSession`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if Tokio cannot create the worker runtime.
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .unwrap();
         let session_cfg = SessionConfig::new()
             .set_str("datafusion.optimizer.repartition_file_scans", "false")
             .set_str("datafusion.optimizer.prefer_existing_sort", "true");
@@ -94,7 +87,7 @@ impl DataBackendSession {
             session_ctx,
             batch_streams: Vec::default(),
             chunk_size,
-            runtime: Arc::new(runtime),
+            runtime: get_runtime().handle().clone(),
             registered_tables: AHashSet::new(),
         }
     }
@@ -434,5 +427,22 @@ impl Drop for DataQueryResult {
     fn drop(&mut self) {
         self.drop_chunk();
         self.result.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::live::get_runtime;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn data_backend_sessions_share_global_runtime() {
+        let first = DataBackendSession::new(10);
+        let second = DataBackendSession::new(10);
+
+        assert_eq!(first.runtime.id(), second.runtime.id());
+        assert_eq!(first.runtime.id(), get_runtime().handle().id());
     }
 }

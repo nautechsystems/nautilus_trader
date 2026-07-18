@@ -13,11 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{sync::Arc, vec::IntoIter};
+use std::vec::IntoIter;
 
 use futures::{Stream, StreamExt};
 use tokio::{
-    runtime::Runtime,
     sync::mpsc::{self, Receiver},
     task::JoinHandle,
 };
@@ -30,11 +29,11 @@ use super::{
 pub struct EagerStream<T> {
     rx: Receiver<T>,
     task: JoinHandle<()>,
-    runtime: Arc<Runtime>,
+    runtime: tokio::runtime::Handle,
 }
 
 impl<T> EagerStream<T> {
-    pub fn from_stream_with_runtime<S>(stream: S, runtime: Arc<Runtime>) -> Self
+    pub fn from_stream_with_runtime<S>(stream: S, runtime: tokio::runtime::Handle) -> Self
     where
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
