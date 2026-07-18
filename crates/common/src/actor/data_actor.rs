@@ -92,8 +92,8 @@ use crate::{
             get_custom_topic, get_funding_rate_topic, get_index_price_topic,
             get_instrument_close_topic, get_instrument_status_topic, get_instrument_topic,
             get_instruments_pattern, get_mark_price_topic, get_option_chain_topic,
-            get_option_greeks_topic, get_participant_profiles_topic, get_participants_topic,
-            get_quotes_topic, get_signal_pattern, get_trades_topic,
+            get_option_greeks_topic, get_participants_topic, get_quotes_topic, get_signal_pattern,
+            get_trades_topic,
         },
     },
     signal::Signal,
@@ -1657,18 +1657,18 @@ pub trait DataActor: Component {
         );
     }
 
-    /// Subscribe to participant profiles published for `venue`.
+    /// Subscribe to participant profiles.
     ///
     /// This is a local-only subscription (msgbus topic attachment).
     /// No command is sent to the adapter; profiles are produced as a
     /// side-effect of `subscribe_participants`.
-    fn subscribe_participant_profiles(&mut self, venue: Venue)
+    fn subscribe_participant_profiles(&mut self)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
         let actor_id = self.core().actor_id().inner();
-        let topic = get_participant_profiles_topic(venue);
+        let topic = MessagingSwitchboard::get_participant_profiles_topic();
         let handler = TypedHandler::from(move |profiles: &Vec<ParticipantProfile>| {
             get_actor_unchecked::<Self>(&actor_id).handle_participant_profiles(profiles);
         });
@@ -2191,13 +2191,13 @@ pub trait DataActor: Component {
         DataActorCore::unsubscribe_participants(self.core_mut(), venue);
     }
 
-    /// Unsubscribe from participant profiles for `venue`.
-    fn unsubscribe_participant_profiles(&mut self, venue: Venue)
+    /// Unsubscribe from participant profiles.
+    fn unsubscribe_participant_profiles(&mut self)
     where
         Self: DataActorNative,
         Self: 'static + Debug + Sized,
     {
-        DataActorCore::unsubscribe_participant_profiles(self.core_mut(), venue);
+        DataActorCore::unsubscribe_participant_profiles(self.core_mut());
     }
 
     /// Unsubscribe from streaming [`Bar`] data for the `bar_type`.
@@ -4602,9 +4602,11 @@ impl DataActorCore {
     }
 
     /// Removes a local participant profiles topic subscription (msgbus only).
-    pub fn unsubscribe_participant_profiles(&mut self, venue: Venue) {
+    pub fn unsubscribe_participant_profiles(&mut self) {
         self.check_registered();
-        self.remove_participant_profile_subscription(get_participant_profiles_topic(venue));
+        self.remove_participant_profile_subscription(
+            MessagingSwitchboard::get_participant_profiles_topic(),
+        );
     }
 
     /// Helper method for unsubscribing from bars.

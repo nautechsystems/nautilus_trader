@@ -22268,7 +22268,7 @@ fn test_handle_participant_profiles_publishes_to_msgbus(stub_msgbus: Rc<RefCell<
     cache.borrow_mut().add_participant(participant);
 
     // Subscribe to profiles topic
-    let topic = switchboard::get_participant_profiles_topic(venue);
+    let topic = MessagingSwitchboard::get_participant_profiles_topic();
     let saved: Rc<RefCell<Vec<Vec<ParticipantProfile>>>> = Rc::new(RefCell::new(Vec::new()));
     let saved_clone = saved.clone();
     let handler = TypedHandler::from(move |profiles: &Vec<ParticipantProfile>| {

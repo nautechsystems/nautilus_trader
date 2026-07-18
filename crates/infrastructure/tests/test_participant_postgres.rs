@@ -529,4 +529,207 @@ mod tests {
 
         cleanup(&pool, pid).await;
     }
+
+    /// Generate N unique participant IDs with a common prefix for cleanup.
+    fn make_participant_ids(prefix: &str, count: usize) -> Vec<String> {
+        (0..count).map(|i| format!("{prefix}_{i:04}")).collect()
+    }
+
+    /// Cleanup all participants matching a prefix.
+    async fn cleanup_prefix(pool: &PgPool, prefix: &str) {
+        let pattern = format!("{prefix}%");
+        // Delete child rows first (FK ordering)
+        sqlx::query("DELETE FROM participant_profile_transaction WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant_profile_open_order WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant_profile_position WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant_profile_margin WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant_profile_balance WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant_profile WHERE participant_pk IN (SELECT participant_pk FROM participant WHERE participant_id LIKE $1)")
+            .bind(&pattern).execute(pool).await.unwrap();
+        sqlx::query("DELETE FROM participant WHERE participant_id LIKE $1")
+            .bind(&pattern)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_concurrent_upsert_participants_no_deadlock() {
+        let pool = setup_pool().await;
+        let prefix = "0xDEADLOCK_UPSERT";
+        cleanup_prefix(&pool, prefix).await;
+
+        let ids = make_participant_ids(prefix, 50);
+
+        // Build two overlapping batches in DIFFERENT orders to maximise
+        // deadlock potential if lock ordering is wrong.
+        let batch_a: Vec<Participant> = ids.iter().map(|id| test_participant(id)).collect();
+        let mut batch_b: Vec<Participant> = ids
+            .iter()
+            .rev()
+            .map(|id| {
+                Participant::new(
+                    ParticipantId::new(id),
+                    Venue::new("HYPERLIQUID"),
+                    ParticipantKind::Wallet,
+                    UnixNanos::from(500_000_000u64), // earlier first_seen
+                    UnixNanos::from(9_000_000_000u64), // later last_seen
+                    UnixNanos::from(10_000_000_000u64),
+                )
+            })
+            .collect();
+        // Shuffle batch_b further to break any accidental ordering
+        let rotate = batch_b.len() / 3;
+        batch_b.rotate_left(rotate);
+
+        let pool_a = pool.clone();
+        let pool_b = pool.clone();
+
+        // Fire both concurrently — should not deadlock
+        let (res_a, res_b) = tokio::join!(
+            DatabaseQueries::upsert_participants(&pool_a, &batch_a),
+            DatabaseQueries::upsert_participants(&pool_b, &batch_b),
+        );
+
+        res_a.expect("batch A should succeed without deadlock");
+        res_b.expect("batch B should succeed without deadlock");
+
+        // Verify all participants exist
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM participant WHERE participant_id LIKE $1")
+                .bind(format!("{prefix}%"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(count, 50);
+
+        cleanup_prefix(&pool, prefix).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_concurrent_upsert_participants_many_waves_no_deadlock() {
+        let pool = setup_pool().await;
+        let prefix = "0xDEADLOCK_WAVES";
+        cleanup_prefix(&pool, prefix).await;
+
+        let ids = make_participant_ids(prefix, 30);
+
+        // Launch 5 concurrent waves, each upserting the same 30 participants
+        // in a different rotation to stress lock ordering.
+        let mut handles = Vec::new();
+        for wave in 0..5u32 {
+            let pool_clone = pool.clone();
+            let ids_clone = ids.clone();
+            handles.push(tokio::spawn(async move {
+                let mut participants: Vec<Participant> = ids_clone
+                    .iter()
+                    .map(|id| {
+                        Participant::new(
+                            ParticipantId::new(id),
+                            Venue::new("HYPERLIQUID"),
+                            ParticipantKind::Wallet,
+                            UnixNanos::from(u64::from(wave) * 100_000_000),
+                            UnixNanos::from(u64::from(wave) * 100_000_000 + 1_000_000_000),
+                            UnixNanos::from(u64::from(wave) * 100_000_000 + 2_000_000_000),
+                        )
+                    })
+                    .collect();
+                let rotate = wave as usize % participants.len().max(1);
+                participants.rotate_left(rotate);
+                DatabaseQueries::upsert_participants(&pool_clone, &participants).await
+            }));
+        }
+
+        for (i, handle) in handles.into_iter().enumerate() {
+            handle
+                .await
+                .unwrap_or_else(|e| panic!("wave {i} panicked: {e}"))
+                .unwrap_or_else(|e| panic!("wave {i} deadlocked or failed: {e}"));
+        }
+
+        let count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM participant WHERE participant_id LIKE $1")
+                .bind(format!("{prefix}%"))
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+
+        assert_eq!(count, 30);
+
+        cleanup_prefix(&pool, prefix).await;
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_concurrent_upsert_participants_and_profiles_no_deadlock() {
+        let pool = setup_pool().await;
+        let prefix = "0xDEADLOCK_MIXED";
+        cleanup_prefix(&pool, prefix).await;
+
+        let ids = make_participant_ids(prefix, 20);
+
+        // First, seed all participants so profile upserts can resolve PKs
+        let seed: Vec<Participant> = ids.iter().map(|id| test_participant(id)).collect();
+        DatabaseQueries::upsert_participants(&pool, &seed)
+            .await
+            .unwrap();
+
+        // Now run concurrent: upsert_participants (updating timestamps) +
+        // upsert_participant_profiles (FOR UPDATE lock on participant rows).
+        let pool_participants = pool.clone();
+        let pool_profiles = pool.clone();
+        let ids_for_participants = ids.clone();
+        let ids_for_profiles = ids.clone();
+
+        let (res_parts, res_profs) = tokio::join!(
+            async {
+                let batch: Vec<Participant> = ids_for_participants
+                    .iter()
+                    .rev()
+                    .map(|id| {
+                        Participant::new(
+                            ParticipantId::new(id),
+                            Venue::new("HYPERLIQUID"),
+                            ParticipantKind::Wallet,
+                            UnixNanos::from(100_000_000u64),
+                            UnixNanos::from(99_000_000_000u64),
+                            UnixNanos::from(100_000_000_000u64),
+                        )
+                    })
+                    .collect();
+                DatabaseQueries::upsert_participants(&pool_participants, &batch).await
+            },
+            async {
+                let profiles: Vec<ParticipantProfile> =
+                    ids_for_profiles.iter().map(|id| test_profile(id)).collect();
+                DatabaseQueries::upsert_participant_profiles(&pool_profiles, &profiles).await
+            },
+        );
+
+        res_parts.expect("participant upsert should not deadlock");
+        res_profs.expect("profile upsert should not deadlock");
+
+        // Verify profiles were written
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM participant_profile pp
+             JOIN participant p ON p.participant_pk = pp.participant_pk
+             WHERE p.participant_id LIKE $1",
+        )
+        .bind(format!("{prefix}%"))
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(count, 20);
+
+        cleanup_prefix(&pool, prefix).await;
+    }
 }

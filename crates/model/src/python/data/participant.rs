@@ -93,6 +93,7 @@ impl ProfileState {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl Participant {
     #[new]
+    #[pyo3(signature = (id, venue, kind, first_seen_at, last_seen_at, ts_init, metadata=None))]
     fn py_new(
         id: ParticipantId,
         venue: Venue,
@@ -100,8 +101,9 @@ impl Participant {
         first_seen_at: u64,
         last_seen_at: u64,
         ts_init: u64,
+        metadata: Option<pyo3::Py<pyo3::types::PyAny>>,
     ) -> PyResult<Self> {
-        Self::new_checked(
+        let mut participant = Self::new_checked(
             id,
             venue,
             kind,
@@ -109,7 +111,21 @@ impl Participant {
             UnixNanos::from(last_seen_at),
             UnixNanos::from(ts_init),
         )
-        .map_err(to_pyvalue_err)
+        .map_err(to_pyvalue_err)?;
+
+        if let Some(meta) = metadata {
+            pyo3::Python::with_gil(|py| -> PyResult<()> {
+                let json_str = py
+                    .import("json")?
+                    .call_method1("dumps", (meta.bind(py),))?
+                    .extract::<String>()?;
+                participant.metadata =
+                    Some(serde_json::from_str(&json_str).map_err(to_pyvalue_err)?);
+                Ok(())
+            })?;
+        }
+
+        Ok(participant)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

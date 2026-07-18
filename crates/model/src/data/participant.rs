@@ -134,6 +134,9 @@ pub struct Participant {
     pub last_seen_at: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was created.
     pub ts_init: UnixNanos,
+    /// Optional structured metadata (e.g. tags, labels, external enrichment).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl Participant {
@@ -162,6 +165,7 @@ impl Participant {
             first_seen_at,
             last_seen_at,
             ts_init,
+            metadata: None,
         })
     }
 
@@ -181,6 +185,13 @@ impl Participant {
     ) -> Self {
         Self::new_checked(id, venue, kind, first_seen_at, last_seen_at, ts_init)
             .expect_display(FAILED)
+    }
+
+    /// Returns a new participant with the given metadata attached.
+    #[must_use]
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata = Some(metadata);
+        self
     }
 }
 

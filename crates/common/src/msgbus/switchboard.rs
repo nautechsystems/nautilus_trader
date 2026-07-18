@@ -59,6 +59,7 @@ static ORDER_EMULATOR_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ACCOUNT_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static PORTFOLIO_ORDER_ENDPOINT: OnceLock<MStr<Endpoint>> = OnceLock::new();
 static SHUTDOWN_SYSTEM_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
+static PARTICIPANT_PROFILES_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_ORDER_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_FILL_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
 static RECONCILIATION_RAW_POSITION_REPORT_TOPIC: OnceLock<MStr<Topic>> = OnceLock::new();
@@ -242,6 +243,13 @@ macro_rules! define_switchboard {
                 *SHUTDOWN_SYSTEM_TOPIC.get_or_init(|| "commands.system.shutdown".into())
             }
 
+            /// Pub/sub topic for participant profiles (venue-independent).
+            #[inline]
+            #[must_use]
+            pub fn get_participant_profiles_topic() -> MStr<Topic> {
+                *PARTICIPANT_PROFILES_TOPIC.get_or_init(|| "data.participant_profiles".into())
+            }
+
             /// Pub/sub topic carrying raw `OrderStatusReport`s that arrived from
             /// a venue client, published by the execution engine at the top of
             /// reconciliation before any state mutation.
@@ -416,10 +424,6 @@ define_switchboard! {
     participant_topics: Venue,
     get_participants_topic(venue: Venue) -> venue,
     "data.participants.{}", venue;
-
-    participant_profile_topics: Venue,
-    get_participant_profiles_topic(venue: Venue) -> venue,
-    "data.participant_profiles.{}", venue;
 
     order_submitted_topics: InstrumentId,
     get_order_submitted_topic(instrument_id: InstrumentId) -> instrument_id,
@@ -648,7 +652,6 @@ define_wrappers! {
     get_option_greeks_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_option_chain_topic(series_id: OptionSeriesId) -> MStr<Topic>,
     get_participants_topic(venue: Venue) -> MStr<Topic>,
-    get_participant_profiles_topic(venue: Venue) -> MStr<Topic>,
     get_pipeline_custom_topic(data_type: &DataType) -> MStr<Topic>,
     get_pipeline_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_pipeline_book_depth10_topic(instrument_id: InstrumentId) -> MStr<Topic>,

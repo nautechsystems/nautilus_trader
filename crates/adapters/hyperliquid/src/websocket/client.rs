@@ -334,16 +334,16 @@ impl HyperliquidWebSocketClient {
                     return;
                 }
 
-                log::info!(
-                    "Resubscribing to {} active subscriptions after reconnection",
-                    topics.len()
-                );
+                // Deduplicate: subscription_from_topic can produce the same
+                // WS channel key for different internal topics (e.g. perp and
+                // spot instruments sharing a coin). Send each unique channel
+                // only once to stay within Hyperliquid's 1000-channel limit.
+                let mut seen = std::collections::HashSet::new();
+                let mut deduped = Vec::new();
 
-                for topic in topics {
-                    match subscription_from_topic(&topic) {
+                for topic in &topics {
+                    match subscription_from_topic(topic) {
                         Ok(mut subscription) => {
-                            // Topic text cannot carry l2Book precision options;
-                            // replay the shape the stream was opened with
                             if let SubscriptionRequest::L2Book {
                                 coin,
                                 n_sig_figs,
@@ -355,10 +355,9 @@ impl HyperliquidWebSocketClient {
                                 *mantissa = options.mantissa;
                             }
 
-                            if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
-                                subscriptions: vec![subscription],
-                            }) {
-                                log::error!("Failed to send resubscribe command: {e}");
+                            let key = super::handler::subscription_to_key(&subscription);
+                            if seen.insert(key) {
+                                deduped.push(subscription);
                             }
                         }
                         Err(e) => {
@@ -367,6 +366,18 @@ impl HyperliquidWebSocketClient {
                             );
                         }
                     }
+                }
+
+                log::info!(
+                    "Resubscribing to {} unique channels after reconnection ({} topics deduplicated)",
+                    deduped.len(),
+                    topics.len() - deduped.len(),
+                );
+
+                if let Err(e) = cmd_tx_for_reconnect.send(HandlerCommand::Subscribe {
+                    subscriptions: deduped,
+                }) {
+                    log::error!("Failed to send resubscribe command: {e}");
                 }
             };
 

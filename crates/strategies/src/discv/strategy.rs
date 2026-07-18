@@ -51,7 +51,7 @@ impl DataActor for AddrDiscovery {
             "Subscribing to participant profiles for {}",
             *HYPERLIQUID_VENUE
         );
-        self.subscribe_participant_profiles(*HYPERLIQUID_VENUE);
+        self.subscribe_participant_profiles();
 
         log::info!("Subscribing to participant discovery for all Hyperliquid instruments");
         self.subscribe_all_participants(*HYPERLIQUID_VENUE);
@@ -66,7 +66,7 @@ impl DataActor for AddrDiscovery {
         );
 
         self.unsubscribe_participants(*HYPERLIQUID_VENUE);
-        self.unsubscribe_participant_profiles(*HYPERLIQUID_VENUE);
+        self.unsubscribe_participant_profiles();
         Ok(())
     }
 
@@ -74,13 +74,13 @@ impl DataActor for AddrDiscovery {
         for participant in participants {
             let id = participant.id.inner();
             if self.observed_addrs.insert(id) {
-                // log::info!(
-                //     "New participant: id={id} venue={} kind={} first_seen={} last_seen={}",
-                //     participant.venue,
-                //     participant.kind,
-                //     participant.first_seen_at,
-                //     participant.last_seen_at,
-                // );
+                log::info!(
+                    "New: id={id} venue={} kind={} first_seen={} last_seen={}",
+                    participant.venue,
+                    participant.kind,
+                    participant.first_seen_at,
+                    participant.last_seen_at,
+                );
             }
         }
 
@@ -98,7 +98,7 @@ impl DataActor for AddrDiscovery {
     fn on_participant_profiles(&mut self, profiles: &[ParticipantProfile]) -> anyhow::Result<()> {
         for profile in profiles {
             log::info!(
-                "Participant profile: id={} balances={} margins={} positions={} open_orders={} transactions={} ts_init={}",
+                "Participant: id={} b={} m={} p={} o={} t={} ts={}",
                 profile.participant_id,
                 profile.balances.as_ref().map_or(0, Vec::len),
                 profile.margins.as_ref().map_or(0, Vec::len),

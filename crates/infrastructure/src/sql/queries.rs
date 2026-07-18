@@ -1579,6 +1579,7 @@ impl DatabaseQueries {
         let mut first_seen_ns = Vec::with_capacity(sorted.len());
         let mut last_seen_ns = Vec::with_capacity(sorted.len());
         let mut ts_init_ns = Vec::with_capacity(sorted.len());
+        let mut metadata_vals: Vec<Option<serde_json::Value>> = Vec::with_capacity(sorted.len());
 
         for participant in &sorted {
             venues.push(participant.venue.to_string());
@@ -1590,6 +1591,7 @@ impl DatabaseQueries {
             )?);
             last_seen_ns.push(unix_nanos_to_i64(participant.last_seen_at, "last_seen_at")?);
             ts_init_ns.push(unix_nanos_to_i64(participant.ts_init, "ts_init")?);
+            metadata_vals.push(participant.metadata.clone());
         }
 
         // Upsert participants and bootstrap profile scheduling rows for new ones.
@@ -1602,20 +1604,22 @@ impl DatabaseQueries {
             "
             WITH sorted AS (
                 SELECT *
-                FROM UNNEST($1::TEXT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::BIGINT[], $6::BIGINT[])
-                    AS t(venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns)
+                FROM UNNEST($1::TEXT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::BIGINT[], $6::BIGINT[], $7::JSONB[])
+                    AS t(venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns, metadata)
                 ORDER BY venue, participant_id
             ),
             upserted AS (
                 INSERT INTO participant AS p (
-                    venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns
+                    venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns, metadata
                 )
                 SELECT * FROM sorted
                 ON CONFLICT (venue, participant_id) DO UPDATE
                 SET first_seen_ns = LEAST(p.first_seen_ns, EXCLUDED.first_seen_ns),
-                    last_seen_ns = GREATEST(p.last_seen_ns, EXCLUDED.last_seen_ns)
+                    last_seen_ns = GREATEST(p.last_seen_ns, EXCLUDED.last_seen_ns),
+                    metadata = COALESCE(EXCLUDED.metadata, p.metadata)
                 WHERE EXCLUDED.first_seen_ns < p.first_seen_ns
                    OR EXCLUDED.last_seen_ns > p.last_seen_ns
+                   OR EXCLUDED.metadata IS DISTINCT FROM p.metadata
                 RETURNING participant_pk, ts_init_ns
             )
             INSERT INTO participant_profile (participant_pk, profile_state, ts_init_ns, profile_next_refresh_ns)
@@ -1630,6 +1634,7 @@ impl DatabaseQueries {
         .bind(first_seen_ns)
         .bind(last_seen_ns)
         .bind(ts_init_ns)
+        .bind(metadata_vals)
         .execute(pool)
         .await
         .context("Failed to upsert participants")?;
@@ -1649,7 +1654,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<Option<Participant>> {
         let row = sqlx::query(
             "
-            SELECT venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns
+            SELECT venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns, metadata
             FROM participant
             WHERE venue = $1 AND participant_id = $2
             ",
@@ -1671,8 +1676,9 @@ impl DatabaseQueries {
             let first_seen_at = read_unix_nanos(&row, "first_seen_ns")?;
             let last_seen_at = read_unix_nanos(&row, "last_seen_ns")?;
             let ts_init = read_unix_nanos(&row, "ts_init_ns")?;
+            let metadata: Option<serde_json::Value> = row.try_get("metadata").ok().flatten();
 
-            Participant::new_checked(
+            let mut participant = Participant::new_checked(
                 participant_id,
                 venue,
                 kind,
@@ -1680,7 +1686,9 @@ impl DatabaseQueries {
                 last_seen_at,
                 ts_init,
             )
-            .context("Invalid participant seen range in database")
+            .context("Invalid participant seen range in database")?;
+            participant.metadata = metadata;
+            Ok(participant)
         })
         .transpose()
     }
@@ -1700,7 +1708,7 @@ impl DatabaseQueries {
         let rows = sqlx::query(
             "
             SELECT p.venue, p.participant_id, p.kind,
-                   p.first_seen_ns, p.last_seen_ns, p.ts_init_ns
+                   p.first_seen_ns, p.last_seen_ns, p.ts_init_ns, p.metadata
             FROM participant_profile pp
             JOIN participant p ON p.participant_pk = pp.participant_pk
             WHERE pp.profile_state NOT IN ('FAILED', 'IN_FLIGHT')
@@ -1728,8 +1736,9 @@ impl DatabaseQueries {
                 let first_seen_at = read_unix_nanos(&row, "first_seen_ns")?;
                 let last_seen_at = read_unix_nanos(&row, "last_seen_ns")?;
                 let ts_init = read_unix_nanos(&row, "ts_init_ns")?;
+                let metadata: Option<serde_json::Value> = row.try_get("metadata").ok().flatten();
 
-                Participant::new_checked(
+                let mut participant = Participant::new_checked(
                     participant_id,
                     venue,
                     kind,
@@ -1737,7 +1746,9 @@ impl DatabaseQueries {
                     last_seen_at,
                     ts_init,
                 )
-                .context("Invalid participant seen range in database")
+                .context("Invalid participant seen range in database")?;
+                participant.metadata = metadata;
+                Ok(participant)
             })
             .collect()
     }

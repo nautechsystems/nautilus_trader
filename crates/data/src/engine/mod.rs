@@ -2826,12 +2826,9 @@ impl DataEngine {
         }
 
         // Publish to MessageBus so subscribed actors receive on_participant_profiles
-        if let Some(first) = profiles.first()
-            && let Some(participant) = self.cache.borrow().participant(&first.participant_id)
-        {
-            let topic = switchboard::get_participant_profiles_topic(participant.venue);
-            msgbus::publish_participant_profiles(topic, &profiles);
-        }
+        // if !profiles.is_empty() {
+        let topic = MessagingSwitchboard::get_participant_profiles_topic();
+        msgbus::publish_participant_profiles(topic, &profiles);
 
         // Self-schedule: kick the next refresh cycle after cooldown
         self.schedule_profile_refresh();

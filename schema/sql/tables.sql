@@ -237,11 +237,9 @@ CREATE TABLE IF NOT EXISTS "position"(
     ts_closed TEXT,
     ts_init TEXT NOT NULL,
     ts_last TEXT NOT NULL,
-    replay_state JSONB,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
-ALTER TABLE "position" ADD COLUMN IF NOT EXISTS replay_state JSONB;
 
 CREATE TABLE IF NOT EXISTS "account_event"(
     id TEXT PRIMARY KEY NOT NULL,
@@ -626,6 +624,8 @@ CREATE TABLE IF NOT EXISTS "participant" (
     last_seen_ns BIGINT NOT NULL,
     -- when the in-memory participant object was initialized
     ts_init_ns BIGINT NOT NULL,
+    -- optional structured metadata (e.g. tags, labels, external enrichment)
+    metadata JSONB,
 
     CONSTRAINT uq_participant_venue_id
         UNIQUE (venue, participant_id),

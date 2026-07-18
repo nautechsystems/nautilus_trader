@@ -951,6 +951,19 @@ impl DataClient for HyperliquidDataClient {
             anyhow::bail!("cannot subscribe all participants: instrument cache is empty");
         }
 
+        // Hyperliquid allows max 1000 WS subscriptions per connection.
+        // Cap trade subscriptions to leave headroom for other channels
+        // (allMids, activeAssetCtx, l2Book, etc.).
+        const MAX_TRADE_SUBSCRIPTIONS: usize = 950;
+        if instrument_ids.len() > MAX_TRADE_SUBSCRIPTIONS {
+            log::warn!(
+                "Capping participant discovery from {} to {} instruments (WS 1000-channel limit)",
+                instrument_ids.len(),
+                MAX_TRADE_SUBSCRIPTIONS,
+            );
+            instrument_ids.truncate(MAX_TRADE_SUBSCRIPTIONS);
+        }
+
         self.spawn_task("subscribe_all_participants", async move {
             log::info!(
                 "Subscribing to participant discovery for {} Hyperliquid instruments",

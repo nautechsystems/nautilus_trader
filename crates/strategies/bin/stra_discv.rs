@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let data_engine_config = LiveDataEngineConfig::builder()
         .profile_refresh_cooldown_ms(5_000) // 5s cooldown between refresh cycles
-        .profile_refresh_batch_size(50)
+        .profile_refresh_batch_size(10)
         .build();
 
     // Read NAUTILUS_LOG env var for logging config (e.g. "stdout=Debug;print_config")
