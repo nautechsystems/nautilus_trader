@@ -1782,7 +1782,7 @@ async fn test_exec_client_demo_submit_confirmed_rejection_emits_order_rejected()
     assert_eq!(event.client_order_id, cid);
     assert_eq!(event.reason.to_string(), "EC_PostOnlyWillTakeLiquidity");
     assert!(!event.reconciliation);
-    assert!(!event.due_post_only);
+    assert!(event.due_post_only);
 
     client.disconnect().await.unwrap();
 }

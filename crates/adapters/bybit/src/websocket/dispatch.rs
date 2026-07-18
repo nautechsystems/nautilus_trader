@@ -55,8 +55,8 @@ use crate::{
     common::{
         enums::BybitOrderStatus,
         parse::{
-            make_bybit_symbol, parse_millis_timestamp, parse_price_with_precision,
-            parse_quantity_with_precision,
+            bybit_rejection_due_post_only, make_bybit_symbol, parse_millis_timestamp,
+            parse_price_with_precision, parse_quantity_with_precision,
         },
     },
     http::error::is_bybit_ambiguous_order_error_code,
@@ -459,7 +459,7 @@ fn dispatch_order_update(
                         client_order_id,
                         reason.as_str(),
                         ts_init,
-                        false,
+                        bybit_rejection_due_post_only(reason.as_str()),
                     );
                 }
             }

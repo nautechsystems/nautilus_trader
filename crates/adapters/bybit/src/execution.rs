@@ -65,8 +65,8 @@ use crate::{
             resolve_trigger_type,
         },
         parse::{
-            BybitTpSlParams, extract_raw_symbol, get_price_str, make_hedge_venue_position_id,
-            nanos_to_millis, parse_bybit_tp_sl_params,
+            BybitTpSlParams, bybit_rejection_due_post_only, extract_raw_symbol, get_price_str,
+            make_hedge_venue_position_id, nanos_to_millis, parse_bybit_tp_sl_params,
             resolve_position_idx as resolve_bybit_position_idx, spot_leverage, spot_market_unit,
             trigger_direction,
         },
@@ -1256,7 +1256,7 @@ impl ExecutionClient for BybitExecutionClient {
                             client_order_id,
                             reason,
                             ts_event,
-                            false,
+                            bybit_rejection_due_post_only(reason),
                         );
                         anyhow::bail!("submit order rejected: {reason}");
                     }
@@ -1559,7 +1559,7 @@ impl ExecutionClient for BybitExecutionClient {
                                 cid,
                                 reason,
                                 ts_event,
-                                false,
+                                bybit_rejection_due_post_only(reason),
                             );
                             continue;
                         }
