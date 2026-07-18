@@ -29,6 +29,7 @@ use crate::{
     },
 };
 
+/// https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/rate-limits-and-user-limits
 #[derive(Debug)]
 pub struct WeightedLimiter {
     capacity: f64,       // tokens per minute (e.g., 1200)
@@ -74,14 +75,16 @@ impl WeightedLimiter {
         }
     }
 
-    /// Post-response debit for per-items adders (can temporarily clamp to 0).
+    /// Post-response debit for per-items adders.
+    /// Tokens can go negative so the next `acquire()` naturally waits longer,
+    /// keeping the client-side accounting in sync with the server-side budget.
     pub async fn debit_extra(&self, extra: u32) {
         if extra == 0 {
             return;
         }
         let mut st = self.state.lock().await;
         Self::refill_locked(&mut st, self.refill_per_sec, self.capacity);
-        st.tokens = (st.tokens - extra as f64).max(0.0);
+        st.tokens -= extra as f64;
     }
 
     pub async fn snapshot(&self) -> RateLimitSnapshot {

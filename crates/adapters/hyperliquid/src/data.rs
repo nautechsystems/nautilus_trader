@@ -1990,8 +1990,24 @@ async fn run_participant_profile_task(
             }
         };
 
+        if participant_ids.is_empty() {
+            // Send empty batch so the engine still gets a completion signal
+            let _ = sender.send(DataEvent::Data(Data::ParticipantProfiles(Vec::new())));
+            continue;
+        }
+
+        log::info!(
+            "Profile refresh: requesting {} profiles",
+            participant_ids.len(),
+        );
+
+        // The rate limiter inside request_participant_profile blocks until
+        // tokens are available, naturally pacing the requests.
         let mut profiles = Vec::with_capacity(participant_ids.len());
-        for participant_id in participant_ids {
+        let mut failures = 0u32;
+
+        for (i, &participant_id) in participant_ids.iter().enumerate() {
+            let t0: Instant = Instant::now();
             let result = tokio::select! {
                 () = cancellation_token.cancelled() => {
                     log::debug!("Hyperliquid participant profile task cancelled");
@@ -2000,17 +2016,36 @@ async fn run_participant_profile_task(
                 result = http.request_participant_profile(participant_id) => result,
             };
 
+            let elapsed_ms = t0.elapsed().as_millis();
             match result {
-                Ok(profile) => profiles.push(profile),
+                Ok(profile) => {
+                    log::info!(
+                        "Profile [{}/{} ] for {participant_id} OK in {elapsed_ms}ms",
+                        i + 1,
+                        participant_ids.len(),
+                    );
+                    profiles.push(profile);
+                }
                 Err(e) => {
-                    log::warn!("Failed to fetch participant profile for {participant_id}: {e:?}");
+                    failures += 1;
+                    log::warn!(
+                        "Profile [{}/{}] for {participant_id} FAILED in {elapsed_ms}ms: {e:?}",
+                        i + 1,
+                        participant_ids.len(),
+                    );
                 }
             }
         }
 
-        if !profiles.is_empty()
-            && let Err(e) = sender.send(DataEvent::Data(Data::ParticipantProfiles(profiles)))
-        {
+        log::info!(
+            "Profile refresh complete: {} succeeded, {} failed",
+            profiles.len(),
+            failures,
+        );
+
+        // Always send the response (even if empty) so the engine gets the
+        // completion signal and schedules the next cycle
+        if let Err(e) = sender.send(DataEvent::Data(Data::ParticipantProfiles(profiles))) {
             log::error!("Failed to send participant profiles: {e}");
         }
     }

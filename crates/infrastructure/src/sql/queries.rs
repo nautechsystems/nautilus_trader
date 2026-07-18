@@ -1828,9 +1828,9 @@ impl DatabaseQueries {
                     for b in balances {
                         b_pks.push(pk);
                         b_currencies.push(b.currency.code.to_string());
-                        b_totals.push(b.total.to_string());
-                        b_lockeds.push(b.locked.to_string());
-                        b_frees.push(b.free.to_string());
+                        b_totals.push(b.total.as_decimal().to_string());
+                        b_lockeds.push(b.locked.as_decimal().to_string());
+                        b_frees.push(b.free.as_decimal().to_string());
                         b_ts.push(ts);
                     }
                 }
@@ -1873,8 +1873,8 @@ impl DatabaseQueries {
                         m_currencies.push(m.currency.code.to_string());
                         m_instrument_ids
                             .push(m.instrument_id.map(|id| id.to_string()).unwrap_or_default());
-                        m_initials.push(m.initial.to_string());
-                        m_maintenances.push(m.maintenance.to_string());
+                        m_initials.push(m.initial.as_decimal().to_string());
+                        m_maintenances.push(m.maintenance.as_decimal().to_string());
                         m_ts.push(ts);
                     }
                 }
@@ -1990,6 +1990,55 @@ impl DatabaseQueries {
                 .bind(&o_pks).bind(&o_venue_order_ids).bind(&o_instrument_ids)
                 .bind(&o_order_sides).bind(&o_order_types).bind(&o_prices)
                 .bind(&o_quantities).bind(&o_filled_qtys).bind(&o_statuses).bind(&o_ts)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+
+        // Transactions (append-only, deduplicated by hash)
+        {
+            let mut t_pks: Vec<i64> = Vec::new();
+            let mut t_hashes: Vec<String> = Vec::new();
+            let mut t_methods: Vec<String> = Vec::new();
+            let mut t_ts_events: Vec<i64> = Vec::new();
+            let mut t_amounts: Vec<String> = Vec::new();
+            let mut t_instrument_ids: Vec<String> = Vec::new();
+            let mut t_prices: Vec<String> = Vec::new();
+            let mut t_value_amounts: Vec<String> = Vec::new();
+            let mut t_value_currencies: Vec<String> = Vec::new();
+            let mut t_ts: Vec<i64> = Vec::new();
+
+            for (i, profile) in profiles.iter().enumerate() {
+                let pk = meta_pks[i];
+                let ts = meta_ts[i];
+                if let Some(transactions) = &profile.transactions {
+                    for t in transactions {
+                        t_pks.push(pk);
+                        t_hashes.push(t.hash.to_string());
+                        t_methods.push(t.method.to_string());
+                        t_ts_events.push(unix_nanos_to_i64(t.ts_event, "transaction.ts_event")?);
+                        t_amounts.push(t.amount.to_string());
+                        t_instrument_ids.push(t.instrument_id.to_string());
+                        t_prices.push(t.price.to_string());
+                        t_value_amounts.push(t.value.as_decimal().to_string());
+                        t_value_currencies.push(t.value.currency.code.to_string());
+                        t_ts.push(ts);
+                    }
+                }
+            }
+
+            if !t_pks.is_empty() {
+                sqlx::query(
+                    "
+                    INSERT INTO participant_profile_transaction
+                        (participant_pk, hash, method, ts_event_ns, amount, instrument_id, price, value_amount, value_currency, ts_init_ns)
+                    SELECT * FROM UNNEST($1::BIGINT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::TEXT[], $6::TEXT[], $7::TEXT[], $8::TEXT[], $9::TEXT[], $10::BIGINT[])
+                    ON CONFLICT (participant_pk, hash) DO NOTHING
+                    ",
+                )
+                .bind(&t_pks).bind(&t_hashes).bind(&t_methods)
+                .bind(&t_ts_events).bind(&t_amounts).bind(&t_instrument_ids)
+                .bind(&t_prices).bind(&t_value_amounts).bind(&t_value_currencies).bind(&t_ts)
                 .execute(&mut *tx)
                 .await?;
             }

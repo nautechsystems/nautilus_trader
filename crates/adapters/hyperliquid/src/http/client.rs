@@ -140,7 +140,7 @@ pub struct HyperliquidRawHttpClient {
     signer: Option<HyperliquidEip712Signer>,
     nonce_manager: Option<Arc<NonceManager>>,
     vault_address: Option<VaultAddress>,
-    rest_limiter: Arc<WeightedLimiter>,
+    pub(crate) rest_limiter: Arc<WeightedLimiter>,
     rate_limit_backoff_base: Duration,
     rate_limit_backoff_cap: Duration,
     rate_limit_max_attempts_info: u32,
@@ -485,7 +485,17 @@ impl HyperliquidRawHttpClient {
     async fn send_info_request(&self, request: &InfoRequest) -> Result<Value> {
         let base_w = info_base_weight(request);
         self.rest_limiter.acquire(base_w).await;
+        self.send_info_request_inner(request, base_w).await
+    }
 
+    /// Send an info request when the caller has already acquired `base_w`
+    /// tokens from `rest_limiter`.
+    async fn send_info_request_preacquired(&self, request: &InfoRequest) -> Result<Value> {
+        let base_w = info_base_weight(request);
+        self.send_info_request_inner(request, base_w).await
+    }
+
+    async fn send_info_request_inner(&self, request: &InfoRequest, base_w: u32) -> Result<Value> {
         let mut attempt = 0u32;
 
         loop {
@@ -1667,18 +1677,45 @@ impl HyperliquidHttpClient {
 
     /// Requests and normalizes a complete public participant profile.
     ///
-    /// All requests use the shared weighted info limiter. Participant
-    /// transactions are derived directly from the participant's fills.
+    /// Pre-acquires the total rate-limit weight for all four info requests
+    /// before firing them concurrently, so the limiter sees the full burst
+    /// cost atomically rather than four independent acquisitions racing.
     pub async fn request_participant_profile(
         &self,
         participant_id: ParticipantId,
     ) -> Result<ParticipantProfile> {
         let user = participant_id.as_str();
-        let (clearinghouse_value, spot_value, open_orders_value, fills) = tokio::try_join!(
-            self.info_clearinghouse_state(user),
-            self.info_spot_clearinghouse_state(user),
-            self.info_frontend_open_orders(user),
-            self.info_user_fills(user),
+
+        // Build requests to compute weights before acquiring
+        let req_clearinghouse = InfoRequest::clearinghouse_state(user);
+        let req_spot = InfoRequest::spot_clearinghouse_state(user);
+        let req_orders = InfoRequest::frontend_open_orders(user);
+        let req_fills = InfoRequest::user_fills(user);
+
+        let total_base_weight = info_base_weight(&req_clearinghouse)  // 2
+            + info_base_weight(&req_spot)                              // 2
+            + info_base_weight(&req_orders)                            // 20
+            + info_base_weight(&req_fills); // 20  = 44
+
+        let snapshot = self.inner.rest_limiter.snapshot().await;
+        log::info!(
+            "Profile request for {participant_id}: acquiring weight={total_base_weight}, limiter tokens={}/{}",
+            snapshot.tokens,
+            snapshot.capacity,
+        );
+
+        let acquire_start = std::time::Instant::now();
+        self.inner.rest_limiter.acquire(total_base_weight).await;
+        let acquire_ms = acquire_start.elapsed().as_millis();
+        if acquire_ms > 50 {
+            log::info!("Profile request for {participant_id}: limiter blocked for {acquire_ms}ms");
+        }
+
+        let (clearinghouse_value, spot_value, open_orders_value, fills_value) = tokio::try_join!(
+            self.inner.send_info_request_preacquired(&req_clearinghouse),
+            self.inner.send_info_request_preacquired(&req_spot),
+            self.inner.send_info_request_preacquired(&req_orders),
+            self.inner.send_info_request_preacquired(&req_fills),
         )?;
         // TODO: change apis to return typed structs instead of raw JSON values, then remove these deserializations
         let clearinghouse_state: ClearinghouseState =
@@ -1688,6 +1725,8 @@ impl HyperliquidHttpClient {
             .map_err(|e| Error::decode(format!("failed to parse spot clearinghouse state: {e}")))?;
         let open_orders: Vec<WsBasicOrderData> = serde_json::from_value(open_orders_value)
             .map_err(|e| Error::decode(format!("failed to parse frontend open orders: {e}")))?;
+        let fills: HyperliquidFills = serde_json::from_value(fills_value)
+            .map_err(|e| Error::decode(format!("failed to parse user fills: {e}")))?;
 
         let account_id = AccountId::new(format!("HYPERLIQUID-{participant_id}"));
         let ts_init = self.clock.get_time_ns();

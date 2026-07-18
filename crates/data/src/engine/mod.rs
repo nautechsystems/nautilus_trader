@@ -2832,6 +2832,9 @@ impl DataEngine {
             let topic = switchboard::get_participant_profiles_topic(participant.venue);
             msgbus::publish_participant_profiles(topic, &profiles);
         }
+
+        // Self-schedule: kick the next refresh cycle after cooldown
+        self.schedule_profile_refresh();
     }
 
     fn handle_delta_pipeline(&self, delta: OrderBookDelta) {
@@ -3960,59 +3963,62 @@ impl DataEngine {
     }
 
     fn schedule_profile_refresh(&self) {
-        let Some(interval_ms) = self.config.profile_refresh_interval_ms else {
+        let Some(cooldown_ms) = self.config.profile_refresh_cooldown_ms else {
             return;
         };
-        if interval_ms == 0 {
+        if cooldown_ms == 0 {
             return;
         }
 
-        let interval_ns = interval_ms * 1_000_000;
+        let cooldown_ns = cooldown_ms * 1_000_000;
         let now_ns = self.clock.borrow().timestamp_ns().as_u64();
-        let start_time_ns = now_ns + interval_ns;
+        let alert_ns = now_ns + cooldown_ns;
 
         let Some(refresher) = self.profile_refresher.clone() else {
             log::error!("Cannot schedule profile refresh: refresher not initialized");
             return;
         };
 
-        let timer_name = "ProfileRefreshScheduler";
+        let timer_name = "ProfileRefreshCycle";
+
+        // Cancel any pending one-shot before scheduling a new one
+        {
+            let timer_ustr = Ustr::from(timer_name);
+            let mut clock = self.clock.borrow_mut();
+            if clock.timer_exists(&timer_ustr) {
+                clock.cancel_timer(&timer_ustr);
+            }
+        }
+
         let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |event| refresher.on_tick(event));
         let callback = TimeEventCallback::from(callback_fn);
 
-        self.clock
-            .borrow_mut()
-            .set_timer_ns(
-                timer_name,
-                interval_ns,
-                Some(start_time_ns.into()),
-                None,
-                Some(callback),
-                None,
-                None,
-            )
-            .expect(FAILED);
+        if let Err(e) = self.clock.borrow_mut().set_time_alert_ns(
+            timer_name,
+            UnixNanos::from(alert_ns),
+            Some(callback),
+            Some(true),
+        ) {
+            log::error!("Failed to schedule profile refresh cycle: {e}");
+            return;
+        }
 
-        log::info!(
-            "Profile refresh scheduler started: interval={interval_ms}ms, batch_size={}",
-            self.config.profile_refresh_batch_size,
-        );
+        log::info!("Profile refresh cycle scheduled: cooldown={cooldown_ms}ms");
     }
 
     fn cancel_profile_refresh(&self) {
-        if self.config.profile_refresh_interval_ms.is_none() {
+        if self.config.profile_refresh_cooldown_ms.is_none() {
             return;
         }
-        let timer_name = Ustr::from("ProfileRefreshScheduler");
+        let timer_name = Ustr::from("ProfileRefreshCycle");
         let mut clock = self.clock.borrow_mut();
         if clock.timer_exists(&timer_name) {
             clock.cancel_timer(&timer_name);
-            log::info!("Profile refresh scheduler stopped");
+            log::info!("Profile refresh cycle cancelled");
         }
     }
 
     fn refresh_participant_profiles(&mut self) {
-        log::info!("Refreshing participant profiles");
         let batch_size = self.config.profile_refresh_batch_size;
         let ts_now = self.clock.borrow().timestamp_ns();
 
@@ -4024,12 +4030,16 @@ impl DataEngine {
             Ok(participants) => participants,
             Err(e) => {
                 log::error!("Profile refresh claim failed: {e}");
+                // Schedule next cycle even on failure so the loop continues
+                self.schedule_profile_refresh();
                 return;
             }
         };
 
         if due.is_empty() {
-            log::info!("Profile refresh: no participants due");
+            log::debug!("Profile refresh: no participants due");
+            // Schedule next cycle so we keep checking
+            self.schedule_profile_refresh();
             return;
         }
 
@@ -5374,10 +5384,7 @@ impl ProfileRefresher {
 
     fn on_tick(&self, _event: TimeEvent) {
         if let Some(engine) = self.engine.upgrade() {
-            match engine.try_borrow_mut() {
-                Ok(mut eng) => eng.refresh_participant_profiles(),
-                Err(_) => log::debug!("Profile refresh skipped: engine already borrowed"),
-            }
+            engine.borrow_mut().refresh_participant_profiles()
         }
     }
 }

@@ -33,7 +33,7 @@ use nautilus_live::node::{
 use nautilus_model::identifiers::TraderId;
 use nautilus_strategies::discv::{AddrDiscovery, AddrDiscoveryConfig};
 
-const TRADER_ID: &str = "ADDR-DISCV-001";
+const TRADER_ID: &str = "stra-discv";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .build();
 
     let data_engine_config = LiveDataEngineConfig::builder()
-        .profile_refresh_interval_ms(10_000) // 30s refresh cycle
+        .profile_refresh_cooldown_ms(5_000) // 5s cooldown between refresh cycles
         .profile_refresh_batch_size(50)
         .build();
 

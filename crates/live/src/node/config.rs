@@ -121,9 +121,9 @@ pub struct LiveDataEngineConfig {
     /// any value other than the default.
     #[builder(default = 100_000)]
     pub qsize: u32,
-    /// Interval (milliseconds) for the profile refresh scheduler.
-    pub profile_refresh_interval_ms: Option<u64>,
-    /// Maximum number of participant profiles to claim per refresh tick.
+    /// Cooldown delay (milliseconds) between profile refresh cycles.
+    pub profile_refresh_cooldown_ms: Option<u64>,
+    /// Maximum number of participant profiles to claim per refresh cycle.
     #[builder(default = 100)]
     pub profile_refresh_batch_size: u32,
 }
@@ -160,7 +160,7 @@ impl From<LiveDataEngineConfig> for DataEngineConfig {
             disable_historical_cache: false,
             external_clients: config.external_clients,
             debug: config.debug,
-            profile_refresh_interval_ms: config.profile_refresh_interval_ms,
+            profile_refresh_cooldown_ms: config.profile_refresh_cooldown_ms,
             profile_refresh_batch_size: config.profile_refresh_batch_size,
         }
     }
