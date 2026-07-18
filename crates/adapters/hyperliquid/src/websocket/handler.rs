@@ -776,6 +776,7 @@ impl FeedHandler {
         let mut trade_ticks = Vec::new();
         let mut public_trades = Vec::new();
         let mut participants = Vec::new();
+        let mut seen_participants = AHashSet::new();
 
         for trade in data {
             if let Some(instrument) = instruments.get(&trade.coin) {
@@ -812,21 +813,23 @@ impl FeedHandler {
                     }
                 }
 
-                // Extract participants — DB upsert handles deduplication
+                // Extract unique participants per batch (SQL requires no duplicates in UNNEST)
                 let ts_event = UnixNanos::from(trade.time * 1_000_000);
                 for raw_id in &trade.users {
                     let Ok(participant_id) = ParticipantId::new_checked(raw_id) else {
                         log::warn!("Invalid participant ID in trade {}: {raw_id}", trade.tid);
                         continue;
                     };
-                    participants.push(Participant::new(
-                        participant_id,
-                        instrument.id().venue,
-                        ParticipantKind::Wallet,
-                        ts_event,
-                        ts_event,
-                        ts_init,
-                    ));
+                    if seen_participants.insert(participant_id) {
+                        participants.push(Participant::new(
+                            participant_id,
+                            instrument.id().venue,
+                            ParticipantKind::Wallet,
+                            ts_event,
+                            ts_event,
+                            ts_init,
+                        ));
+                    }
                 }
             } else {
                 log::debug!("No instrument found for coin: {}", trade.coin);
@@ -1450,8 +1453,8 @@ mod tests {
         };
 
         assert_eq!(trades.len(), 2);
-        // 4 participants total (2 per trade) — DB upsert handles deduplication
-        assert_eq!(participants.len(), 4);
+        // 2 unique participants (deduped within batch for SQL compatibility)
+        assert_eq!(participants.len(), 2);
     }
 
     fn btc_active_spot_asset_ctx() -> WsActiveAssetCtxData {
