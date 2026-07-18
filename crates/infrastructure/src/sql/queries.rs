@@ -1568,14 +1568,19 @@ impl DatabaseQueries {
             return Ok(());
         }
 
-        let mut venues: Vec<String> = Vec::with_capacity(participants.len());
-        let mut participant_ids = Vec::with_capacity(participants.len());
-        let mut kinds = Vec::with_capacity(participants.len());
-        let mut first_seen_ns = Vec::with_capacity(participants.len());
-        let mut last_seen_ns = Vec::with_capacity(participants.len());
-        let mut ts_init_ns = Vec::with_capacity(participants.len());
+        // Sort by (venue, participant_id) to ensure consistent row-lock ordering
+        // and prevent deadlocks when concurrent sessions upsert overlapping sets.
+        let mut sorted: Vec<&Participant> = participants.iter().collect();
+        sorted.sort_by(|a, b| (&a.venue, &a.id).cmp(&(&b.venue, &b.id)));
 
-        for participant in participants {
+        let mut venues: Vec<String> = Vec::with_capacity(sorted.len());
+        let mut participant_ids = Vec::with_capacity(sorted.len());
+        let mut kinds = Vec::with_capacity(sorted.len());
+        let mut first_seen_ns = Vec::with_capacity(sorted.len());
+        let mut last_seen_ns = Vec::with_capacity(sorted.len());
+        let mut ts_init_ns = Vec::with_capacity(sorted.len());
+
+        for participant in &sorted {
             venues.push(participant.venue.to_string());
             participant_ids.push(participant.id.to_string());
             kinds.push(participant.kind.as_ref().to_owned());
@@ -1591,14 +1596,21 @@ impl DatabaseQueries {
         // The CTE returns the PKs of all touched participants; the second INSERT
         // creates a MISSING profile row (immediately due) for any participant that
         // doesn't already have one.
+        // Input arrays are pre-sorted by (venue, participant_id) to ensure
+        // consistent row-lock ordering and prevent deadlocks.
         sqlx::query(
             "
-            WITH upserted AS (
+            WITH sorted AS (
+                SELECT *
+                FROM UNNEST($1::TEXT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::BIGINT[], $6::BIGINT[])
+                    AS t(venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns)
+                ORDER BY venue, participant_id
+            ),
+            upserted AS (
                 INSERT INTO participant AS p (
                     venue, participant_id, kind, first_seen_ns, last_seen_ns, ts_init_ns
                 )
-                SELECT *
-                FROM UNNEST($1::TEXT[], $2::TEXT[], $3::TEXT[], $4::BIGINT[], $5::BIGINT[], $6::BIGINT[])
+                SELECT * FROM sorted
                 ON CONFLICT (venue, participant_id) DO UPDATE
                 SET first_seen_ns = LEAST(p.first_seen_ns, EXCLUDED.first_seen_ns),
                     last_seen_ns = GREATEST(p.last_seen_ns, EXCLUDED.last_seen_ns)
@@ -1760,6 +1772,7 @@ impl DatabaseQueries {
             SELECT p.participant_pk, p.participant_id
               FROM UNNEST($1::TEXT[]) AS req(participant_id)
               JOIN participant p ON p.participant_id = req.participant_id
+             ORDER BY p.participant_id
               FOR UPDATE OF p
             ",
         )
