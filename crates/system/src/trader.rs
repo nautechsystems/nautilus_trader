@@ -823,6 +823,21 @@ impl Trader {
         &mut self,
         strategy: &Py<PyAny>,
     ) -> anyhow::Result<StrategyId> {
+        self.prepare_python_strategy_instance(strategy)?;
+        self.commit_python_strategy_instance(strategy)
+    }
+
+    /// Prepares a constructed Python strategy instance for registration without committing it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy cannot be configured, or its ID or order ID tag is
+    /// already registered.
+    #[cfg(feature = "python")]
+    pub fn prepare_python_strategy_instance(
+        &mut self,
+        strategy: &Py<PyAny>,
+    ) -> anyhow::Result<StrategyId> {
         self.validate_actor_or_strategy_registration()?;
 
         let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
@@ -849,6 +864,33 @@ impl Trader {
         if self.strategy_ids.contains(&strategy_id) {
             anyhow::bail!("Strategy {strategy_id} is already registered");
         }
+
+        let existing_order_id_tags: Vec<&str> =
+            self.strategy_ids.iter().map(StrategyId::get_tag).collect();
+        ensure_unique_order_id_tag(&existing_order_id_tags, strategy_id.get_tag())?;
+
+        Ok(strategy_id)
+    }
+
+    /// Commits a previously prepared Python strategy instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the strategy cannot be registered or its subscriptions cannot be
+    /// installed.
+    #[cfg(feature = "python")]
+    pub fn commit_python_strategy_instance(
+        &mut self,
+        strategy: &Py<PyAny>,
+    ) -> anyhow::Result<StrategyId> {
+        let strategy_id = Python::attach(|py| -> anyhow::Result<StrategyId> {
+            Ok(strategy
+                .bind(py)
+                .extract::<PyRef<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?
+                .strategy_id())
+        })?;
 
         let component_id = ComponentId::new(strategy_id.inner().as_str());
         let clock = self.create_component_clock(component_id);

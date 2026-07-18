@@ -901,12 +901,32 @@ impl PyBacktestEngine {
         reason = "Required for Python strategy component registration"
     )]
     fn add_python_strategy(&mut self, strategy: &Py<PyAny>) -> PyResult<()> {
-        self.0
+        let strategy_id = self
+            .0
             .kernel_mut()
             .trader
             .borrow_mut()
             .add_python_strategy_instance(strategy)
             .map_err(to_pyruntime_err)?;
+
+        let oms_type = Python::attach(|py| -> PyResult<Option<OmsType>> {
+            Ok(strategy
+                .bind(py)
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none())
+                .and_then(|cfg| cfg.getattr("oms_type").ok())
+                .filter(|value| !value.is_none())
+                .and_then(|value| value.extract::<OmsType>().ok()))
+        })?;
+
+        if let Some(oms_type) = oms_type {
+            self.0
+                .kernel()
+                .exec_engine
+                .borrow_mut()
+                .register_oms_type(strategy_id, oms_type);
+        }
 
         Ok(())
     }

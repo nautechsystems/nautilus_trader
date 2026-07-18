@@ -31,6 +31,7 @@ use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
+use nautilus_model::enums::OmsType;
 use nautilus_model::identifiers::{
     ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
 };
@@ -434,10 +435,15 @@ impl LiveNode {
 
         let strategy = strategy.clone().unbind();
 
-        // Read `external_order_claims` (live-only) from the instance's `.config` and install
-        // them on the PyStrategy before registration, mirroring `add_strategy_from_config`.
-        let external_order_claims =
-            Python::attach(|py| -> anyhow::Result<Option<Vec<InstrumentId>>> {
+        let strategy_id = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .prepare_python_strategy_instance(&strategy)
+            .map_err(to_pyruntime_err)?;
+
+        let (external_order_claims, oms_type) = Python::attach(
+            |py| -> anyhow::Result<(Option<Vec<InstrumentId>>, Option<OmsType>)> {
                 let bound = strategy.bind(py);
                 let config_obj = bound
                     .getattr("config")
@@ -455,20 +461,34 @@ impl LiveNode {
                     py_strategy_ref.set_external_order_claims(Some(claims));
                 }
 
-                Ok(py_strategy_ref.external_order_claims())
-            })
-            .map_err(to_pyruntime_err)?;
+                let claims = py_strategy_ref.external_order_claims();
+                let oms_type = config_obj
+                    .as_ref()
+                    .and_then(|cfg| cfg.getattr("oms_type").ok())
+                    .filter(|value| !value.is_none())
+                    .and_then(|value| value.extract::<OmsType>().ok());
 
-        let strategy_id = self
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .add_python_strategy_instance(&strategy)
-            .map_err(to_pyruntime_err)?;
+                Ok((claims, oms_type))
+            },
+        )
+        .map_err(to_pyruntime_err)?;
 
         if let Some(claims) = external_order_claims.filter(|claims| !claims.is_empty()) {
             self.register_external_order_claims(strategy_id, &claims)
                 .map_err(to_pyruntime_err)?;
+        }
+
+        self.kernel_mut()
+            .trader
+            .borrow_mut()
+            .commit_python_strategy_instance(&strategy)
+            .map_err(to_pyruntime_err)?;
+
+        if let Some(oms_type) = oms_type {
+            self.kernel()
+                .exec_engine
+                .borrow_mut()
+                .register_oms_type(strategy_id, oms_type);
         }
 
         log::info!("Registered Python strategy {strategy_id}");
