@@ -61,9 +61,15 @@ impl DerefMut for BookLevel_API {
 
 #[unsafe(no_mangle)]
 #[cfg_attr(feature = "high-precision", allow(improper_ctypes_definitions))]
-pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -> BookLevel_API {
-    let CVec { ptr, len, cap } = orders;
-    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
+/// # Safety
+///
+/// `orders` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
+pub unsafe extern "C" fn level_new(
+    order_side: OrderSide,
+    price: Price,
+    orders: CVec,
+) -> BookLevel_API {
+    let orders = unsafe { orders.into_vec::<BookOrder>() };
     let price = BookPrice {
         value: price,
         side: order_side.as_specified(),
@@ -117,45 +123,47 @@ pub extern "C" fn level_exposure(level: &BookLevel_API) -> f64 {
 
 /// Drops a `CVec` of `BookLevel_API` values.
 ///
-/// # Panics
+/// # Safety
 ///
-/// Panics if `CVec` invariants are violated (corrupted metadata).
+/// `v` must uniquely own a valid `Vec<BookLevel_API>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_drop_book_levels(v: CVec) {
-    if v.ptr.is_null() {
-        return;
-    }
-
-    let CVec { ptr, len, cap } = v;
-
-    assert!(
-        len <= cap,
-        "vec_drop_book_levels: len ({len}) > cap ({cap})"
-    );
-
-    let data: Vec<BookLevel_API> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<BookLevel_API>(), len, cap) };
+pub unsafe extern "C" fn vec_drop_book_levels(v: CVec) {
+    let data = unsafe { v.into_vec::<BookLevel_API>() };
     drop(data); // Memory freed here
 }
 
 /// Drops a `CVec` of `BookOrder` values.
 ///
-/// # Panics
+/// # Safety
 ///
-/// Panics if `CVec` invariants are violated (corrupted metadata).
+/// `v` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_drop_book_orders(v: CVec) {
-    if v.ptr.is_null() {
-        return;
+pub unsafe extern "C" fn vec_drop_book_orders(v: CVec) {
+    let orders = unsafe { v.into_vec::<BookOrder>() };
+    drop(orders); // Memory freed here
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::data::stubs::stub_book_order;
+
+    #[rstest]
+    fn test_empty_typed_drops_return_without_panic() {
+        unsafe { vec_drop_book_levels(CVec::empty()) };
+        unsafe { vec_drop_book_orders(CVec::empty()) };
     }
 
-    let CVec { ptr, len, cap } = v;
+    #[rstest]
+    fn test_level_new_preserves_valid_behavior() {
+        let order = stub_book_order();
+        let price = order.price;
+        let level = unsafe { level_new(order.side, price, vec![order].into()) };
 
-    assert!(
-        len <= cap,
-        "vec_drop_book_orders: len ({len}) > cap ({cap})"
-    );
-
-    let orders: Vec<BookOrder> = unsafe { Vec::from_raw_parts(ptr.cast::<BookOrder>(), len, cap) };
-    drop(orders); // Memory freed here
+        assert_eq!(level.price.value, price);
+        assert_eq!(level.len(), 1);
+        assert_eq!(level.first(), Some(&order));
+    }
 }
