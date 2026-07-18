@@ -308,8 +308,8 @@ mod tests {
     use crate::{
         clock::{Clock, TestClock},
         python::clock::PyClock,
-        runner::{TimeEventSender, set_time_event_sender},
-        timer::{TimeEventCallback, TimeEventHandler},
+        runner::{TimeEventMessage, TimeEventSender, set_time_event_sender},
+        timer::TimeEventCallback,
     };
 
     fn ensure_sender() {
@@ -323,7 +323,7 @@ mod tests {
     struct DummySender;
 
     impl TimeEventSender for DummySender {
-        fn send(&self, _handler: TimeEventHandler) {}
+        fn send(&self, _message: TimeEventMessage) {}
     }
 
     #[fixture]

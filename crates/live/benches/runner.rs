@@ -22,7 +22,7 @@ use nautilus_common::{
         self, MessageBus, TypedIntoHandler, register_data_endpoint,
         switchboard::MessagingSwitchboard,
     },
-    timer::TimeEventHandler,
+    runner::TimeEventMessage,
 };
 use nautilus_core::UnixNanos;
 use nautilus_live::runner::AsyncRunner;
@@ -83,7 +83,7 @@ fn bench_channel_operations(c: &mut Criterion) {
     group.bench_function("channel_creation", |b| {
         b.iter(|| {
             let (_tx1, _rx1) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-            let (_tx2, _rx2) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+            let (_tx2, _rx2) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
             let (_tx3, _rx3) = tokio::sync::mpsc::unbounded_channel::<()>();
         });
     });
@@ -100,7 +100,7 @@ fn bench_runner_components(c: &mut Criterion) {
             // Simulate what AsyncRunner::new() does without the global state
             let (_data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
             let (_cmd_tx, _cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
-            let (_time_tx, _time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+            let (_time_tx, _time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
             let (_signal_tx, _signal_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         });
     });
