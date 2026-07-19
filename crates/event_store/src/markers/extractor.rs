@@ -325,6 +325,10 @@ fn write_quantity_raw(hasher: &mut blake3::Hasher, quantity: Quantity) {
     hasher.update(&quantity_raw_at_precision(quantity).to_be_bytes());
 }
 
+#[allow(
+    clippy::useless_conversion,
+    reason = "PriceRaw is i64 or i128 depending on feature unification; the conversion is only useless in high-precision builds"
+)]
 fn price_raw_at_precision(price: Price) -> i128 {
     let scale_down = FIXED_PRECISION.saturating_sub(price.precision);
     #[cfg(feature = "defi")]
@@ -335,6 +339,10 @@ fn price_raw_at_precision(price: Price) -> i128 {
     raw / 10_i128.pow(u32::from(scale_down))
 }
 
+#[allow(
+    clippy::useless_conversion,
+    reason = "QuantityRaw is u64 or u128 depending on feature unification; the conversion is only useless in high-precision builds"
+)]
 fn quantity_raw_at_precision(quantity: Quantity) -> u128 {
     let scale_down = FIXED_PRECISION.saturating_sub(quantity.precision);
     #[cfg(feature = "defi")]

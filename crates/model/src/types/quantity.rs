@@ -1863,7 +1863,7 @@ mod property_tests {
             #[cfg(feature = "high-precision")]
             let max_steps_u128 = QUANTITY_RAW_MAX / step_u128;
             #[cfg(not(feature = "high-precision"))]
-            let max_steps_u128 = (QUANTITY_RAW_MAX as u128) / step_u128;
+            let max_steps_u128 = u128::from(QUANTITY_RAW_MAX) / step_u128;
 
             (0u128..=max_steps_u128).prop_map(move |steps_u128| {
                 let raw_u128 = steps_u128 * step_u128;
@@ -1889,7 +1889,7 @@ mod property_tests {
         #[cfg(feature = "high-precision")]
         let rescaled_raw = raw / divisor;
         #[cfg(not(feature = "high-precision"))]
-        let rescaled_raw = (raw as u128) / divisor;
+        let rescaled_raw = u128::from(raw) / divisor;
         // rust_decimal stores the coefficient in 96 bits; this guard mirrors that bound so
         // proptests skip cases the runtime representation cannot encode.
         rescaled_raw <= DECIMAL_MAX_MANTISSA

@@ -1712,9 +1712,9 @@ mod property_tests {
 
     const DECIMAL_MAX_MANTISSA: i128 = 79_228_162_514_264_337_593_543_950_335;
 
-    #[expect(
+    #[allow(
         clippy::useless_conversion,
-        reason = "PriceRaw is i64 or i128 depending on feature"
+        reason = "PriceRaw is i64 or i128 depending on feature; the conversion is only useless in high-precision builds"
     )]
     fn decimal_compatible(raw: PriceRaw, precision: u8) -> bool {
         if precision > crate::types::fixed::MAX_FLOAT_PRECISION {
