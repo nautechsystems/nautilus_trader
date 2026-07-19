@@ -564,6 +564,47 @@ impl TryFrom<BitmexInstrumentMsg> for crate::http::models::BitmexInstrument {
     }
 }
 
+/// A nullable field in a sparse update, preserving the distinction between omission and null.
+#[derive(Clone, Debug, Default)]
+pub enum NullableUpdate<T> {
+    #[default]
+    Missing,
+    Null,
+    Value(T),
+}
+
+impl<'de, T> Deserialize<'de> for NullableUpdate<T>
+where
+    T: Deserialize<'de>,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(match Option::<T>::deserialize(deserializer)? {
+            Some(value) => Self::Value(value),
+            None => Self::Null,
+        })
+    }
+}
+
+impl<T> NullableUpdate<T> {
+    pub fn value(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Missing | Self::Null => None,
+        }
+    }
+
+    fn apply_to(self, target: &mut Option<T>) {
+        match self {
+            Self::Missing => {}
+            Self::Null => *target = None,
+            Self::Value(value) => *target = Some(value),
+        }
+    }
+}
+
 /// Represents an order update message with only changed fields.
 /// Used for `update` actions where only modified fields are sent.
 #[derive(Clone, Debug, Deserialize)]
@@ -573,17 +614,58 @@ pub struct BitmexOrderUpdateMsg {
     pub order_id: Uuid,
     #[serde(rename = "clOrdID")]
     pub cl_ord_id: Option<Ustr>,
+    #[serde(default)]
     pub account: i64,
+    #[serde(default)]
     pub symbol: Ustr,
     pub side: Option<BitmexSide>,
-    pub price: Option<f64>,
+    #[serde(default)]
+    pub price: NullableUpdate<f64>,
     pub currency: Option<Ustr>,
-    pub text: Option<Ustr>,
+    #[serde(default)]
+    pub text: NullableUpdate<Ustr>,
     pub transact_time: Option<DateTime<Utc>>,
     pub timestamp: Option<DateTime<Utc>>,
     pub leaves_qty: Option<i64>,
     pub cum_qty: Option<i64>,
     pub ord_status: Option<BitmexOrderStatus>,
+}
+
+impl BitmexOrderUpdateMsg {
+    pub fn apply_to(self, order: &mut BitmexOrderMsg) {
+        if let Some(cl_ord_id) = self.cl_ord_id {
+            order.cl_ord_id = Some(cl_ord_id);
+        }
+        if self.account != 0 {
+            order.account = self.account;
+        }
+        if !self.symbol.is_empty() {
+            order.symbol = self.symbol;
+        }
+        if let Some(side) = self.side {
+            order.side = side;
+        }
+        self.price.apply_to(&mut order.price);
+        if let Some(currency) = self.currency {
+            order.currency = currency;
+        }
+        self.text.apply_to(&mut order.text);
+        if let Some(transact_time) = self.transact_time {
+            order.transact_time = transact_time;
+        }
+        if let Some(timestamp) = self.timestamp {
+            order.timestamp = timestamp;
+        }
+        if let Some(leaves_qty) = self.leaves_qty {
+            order.leaves_qty = leaves_qty;
+        }
+        if let Some(cum_qty) = self.cum_qty {
+            order.cum_qty = cum_qty;
+        }
+        if let Some(ord_status) = self.ord_status {
+            order.ord_status = ord_status;
+        }
+    }
 }
 
 /// Represents a full order message from the WebSocket stream.
@@ -1089,5 +1171,66 @@ mod tests {
             err.to_string().contains("Missing"),
             "Error should indicate missing required fields"
         );
+    }
+
+    #[rstest]
+    fn test_order_key_only_update_merges_into_cached_row() {
+        let full: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let order_id = full["orderID"].as_str().unwrap();
+        let envelope = serde_json::json!({
+            "table": "order",
+            "action": "update",
+            "data": [{"orderID": order_id, "ordStatus": "Canceled"}],
+        });
+
+        let message: BitmexTableMessage = serde_json::from_value(envelope).unwrap();
+        let BitmexTableMessage::Order { data, .. } = message else {
+            panic!("expected order table message");
+        };
+        let OrderData::Update(update) = data.into_iter().next().unwrap() else {
+            panic!("expected sparse order update");
+        };
+
+        let mut cached: BitmexOrderMsg = serde_json::from_value(full).unwrap();
+        update.apply_to(&mut cached);
+
+        assert_eq!(cached.ord_status, BitmexOrderStatus::Canceled);
+        assert_eq!(cached.symbol.as_str(), "XBTUSD");
+        assert_eq!(cached.account, 1_234_567);
+        assert!(cached.cl_ord_id.is_some());
+        assert!(cached.price.is_some());
+        assert!(cached.text.is_some());
+    }
+
+    #[rstest]
+    fn test_order_explicit_null_clears_cached_nullable_fields() {
+        let full: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        let order_id = full["orderID"].as_str().unwrap();
+        let envelope = serde_json::json!({
+            "table": "order",
+            "action": "update",
+            "data": [{
+                "orderID": order_id,
+                "price": null,
+                "text": null,
+            }],
+        });
+
+        let message: BitmexTableMessage = serde_json::from_value(envelope).unwrap();
+        let BitmexTableMessage::Order { data, .. } = message else {
+            panic!("expected order table message");
+        };
+        let OrderData::Update(update) = data.into_iter().next().unwrap() else {
+            panic!("expected sparse order update");
+        };
+
+        let mut cached: BitmexOrderMsg = serde_json::from_value(full).unwrap();
+        update.apply_to(&mut cached);
+
+        assert!(cached.cl_ord_id.is_some());
+        assert!(cached.price.is_none());
+        assert!(cached.text.is_none());
     }
 }

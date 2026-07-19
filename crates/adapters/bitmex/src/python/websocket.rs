@@ -50,6 +50,7 @@ use nautilus_model::{
 use nautilus_network::websocket::TransportBackend;
 use pyo3::{conversion::IntoPyObjectExt, prelude::*};
 use ustr::Ustr;
+use uuid::Uuid;
 
 use crate::{
     common::{
@@ -67,8 +68,8 @@ use crate::{
         dispatch::{OrderIdentity, WsDispatchState, fill_report_to_order_filled},
         enums::{BitmexAction, BitmexWsTopic},
         messages::{
-            BitmexExecutionMsg, BitmexInstrumentMsg, BitmexQuoteMsg, BitmexTableMessage,
-            BitmexWsMessage, OrderData,
+            BitmexExecutionMsg, BitmexInstrumentMsg, BitmexOrderMsg, BitmexQuoteMsg,
+            BitmexTableMessage, BitmexWsMessage, OrderData,
         },
         parse::{
             ParsedOrderEvent, parse_book_msg_vec, parse_book10_msg_vec, parse_execution_msg,
@@ -265,6 +266,7 @@ impl PyBitmexWebSocketClient {
                 let mut quote_cache = QuoteCache::new();
                 let mut order_type_cache: AHashMap<ClientOrderId, OrderType> = AHashMap::new();
                 let mut order_symbol_cache: AHashMap<ClientOrderId, Ustr> = AHashMap::new();
+                let mut order_row_cache: AHashMap<Uuid, BitmexOrderMsg> = AHashMap::new();
 
                 while let Some(msg) = stream.next().await {
                     let ts_init = clock.get_time_ns();
@@ -277,6 +279,7 @@ impl PyBitmexWebSocketClient {
                                 &mut quote_cache,
                                 &mut order_type_cache,
                                 &mut order_symbol_cache,
+                                &mut order_row_cache,
                                 &dispatch_state,
                                 trader_id,
                                 account_id,
@@ -289,6 +292,7 @@ impl PyBitmexWebSocketClient {
                             quote_cache.clear();
                             order_type_cache.clear();
                             order_symbol_cache.clear();
+                            order_row_cache.clear();
                         }
                         BitmexWsMessage::Authenticated => {}
                     }
@@ -799,6 +803,7 @@ fn handle_table_message(
     quote_cache: &mut QuoteCache,
     order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
+    order_row_cache: &mut AHashMap<Uuid, BitmexOrderMsg>,
     dispatch_state: &WsDispatchState,
     trader_id: TraderId,
     account_id: AccountId,
@@ -894,12 +899,16 @@ fn handle_table_message(
                 send_to_python(parse_funding_msg(&msg, ts_init), call_soon, callback);
             }
         }
-        BitmexTableMessage::Order { data, .. } => {
+        BitmexTableMessage::Order { action, data } => {
+            if action == BitmexAction::Partial {
+                order_row_cache.clear();
+            }
             handle_order_messages(
                 data,
                 &instruments,
                 order_type_cache,
                 order_symbol_cache,
+                order_row_cache,
                 dispatch_state,
                 trader_id,
                 account_id,
@@ -1082,12 +1091,24 @@ fn handle_instrument_messages(
     }
 }
 
+fn cache_order_row(
+    order_row_cache: &mut AHashMap<Uuid, BitmexOrderMsg>,
+    order_msg: &BitmexOrderMsg,
+) {
+    if order_msg.ord_status.is_terminal() {
+        order_row_cache.remove(&order_msg.order_id);
+    } else {
+        order_row_cache.insert(order_msg.order_id, order_msg.clone());
+    }
+}
+
 #[expect(clippy::too_many_arguments)]
 fn handle_order_messages(
     data: Vec<OrderData>,
     instruments: &AHashMap<Ustr, InstrumentAny>,
     order_type_cache: &mut AHashMap<ClientOrderId, OrderType>,
     order_symbol_cache: &mut AHashMap<ClientOrderId, Ustr>,
+    order_row_cache: &mut AHashMap<Uuid, BitmexOrderMsg>,
     dispatch_state: &WsDispatchState,
     trader_id: TraderId,
     account_id: AccountId,
@@ -1098,6 +1119,7 @@ fn handle_order_messages(
     for order_data in data {
         match order_data {
             OrderData::Full(order_msg) => {
+                cache_order_row(order_row_cache, &order_msg);
                 let Some(instrument) = instruments.get(&order_msg.symbol) else {
                     log::warn!(
                         "Instrument cache miss for order symbol={}",
@@ -1177,70 +1199,90 @@ fn handle_order_messages(
                     }
                 }
             }
-            OrderData::Update(msg) => {
-                if let Some(cl_ord_id) = &msg.cl_ord_id {
-                    let cid = ClientOrderId::new(cl_ord_id);
-                    order_symbol_cache.insert(cid, msg.symbol);
+            OrderData::Update(mut update) => {
+                let order_id = update.order_id;
+                let Some(cached) = order_row_cache.get_mut(&order_id) else {
+                    log::warn!("Order update cache miss: order_id={order_id}");
+                    continue;
+                };
+                update.clone().apply_to(cached);
+                let merged = cached.clone();
+
+                if merged.ord_status.is_terminal() {
+                    handle_order_messages(
+                        vec![OrderData::Full(merged)],
+                        instruments,
+                        order_type_cache,
+                        order_symbol_cache,
+                        order_row_cache,
+                        dispatch_state,
+                        trader_id,
+                        account_id,
+                        ts_init,
+                        call_soon,
+                        callback,
+                    );
+                    continue;
                 }
 
-                let Some(instrument) = instruments.get(&msg.symbol) else {
+                update.cl_ord_id = merged.cl_ord_id;
+                update.account = merged.account;
+                update.symbol = merged.symbol;
+
+                let Some(instrument) = instruments.get(&update.symbol) else {
                     log::warn!(
                         "Instrument cache miss for order update symbol={}",
-                        msg.symbol,
+                        update.symbol
                     );
                     continue;
                 };
-
-                let identity = msg.cl_ord_id.as_ref().and_then(|cl| {
-                    let cid = ClientOrderId::new(cl);
-                    dispatch_state
-                        .order_identities
-                        .get(&cid)
-                        .map(|r| (cid, r.clone()))
-                });
-
-                if let Some((cid, ident)) = identity {
-                    if let Some(event) =
-                        parse_order_update_msg(&msg, instrument, account_id, ts_init)
-                    {
-                        let enriched = OrderUpdated::new(
-                            trader_id,
-                            ident.strategy_id,
-                            event.instrument_id,
-                            cid,
-                            event.quantity,
-                            event.event_id,
-                            event.ts_event,
-                            event.ts_init,
-                            false,
-                            event.venue_order_id,
-                            Some(account_id),
-                            event.price,
-                            event.trigger_price,
-                            event.protection_price,
-                            false, // is_quote_quantity
-                        );
-                        let venue_order_id = enriched
-                            .venue_order_id
-                            .unwrap_or_else(|| VenueOrderId::new(msg.order_id.to_string()));
-                        ensure_accepted_to_python(
-                            cid,
-                            account_id,
-                            venue_order_id,
-                            &ident,
-                            dispatch_state,
-                            trader_id,
-                            ts_init,
-                            call_soon,
-                            callback,
-                        );
-                        send_to_python(enriched, call_soon, callback);
-                    }
-                } else {
+                let Some(cid) = update.cl_ord_id.map(ClientOrderId::new) else {
                     log::debug!(
-                        "Skipping order update for untracked order: order_id={}",
-                        msg.order_id,
+                        "Skipping order update without client order ID: order_id={order_id}"
                     );
+                    continue;
+                };
+                let Some(ident) = dispatch_state.order_identities.get(&cid).map(|r| r.clone())
+                else {
+                    log::debug!("Skipping order update for untracked order: order_id={order_id}");
+                    continue;
+                };
+
+                if let Some(event) =
+                    parse_order_update_msg(&update, instrument, account_id, ts_init)
+                {
+                    let enriched = OrderUpdated::new(
+                        trader_id,
+                        ident.strategy_id,
+                        event.instrument_id,
+                        cid,
+                        event.quantity,
+                        event.event_id,
+                        event.ts_event,
+                        event.ts_init,
+                        false,
+                        event.venue_order_id,
+                        Some(account_id),
+                        event.price,
+                        event.trigger_price,
+                        event.protection_price,
+                        false,
+                    );
+                    let venue_order_id = enriched
+                        .venue_order_id
+                        .unwrap_or_else(|| VenueOrderId::new(order_id.to_string()));
+                    ensure_accepted_to_python(
+                        cid,
+                        account_id,
+                        venue_order_id,
+                        &ident,
+                        dispatch_state,
+                        trader_id,
+                        ts_init,
+                        call_soon,
+                        callback,
+                    );
+                    send_to_python(enriched, call_soon, callback);
                 }
             }
         }
@@ -1487,4 +1529,23 @@ fn send_to_python<T: for<'py> IntoPyObjectExt<'py>>(
             call_python_threadsafe(py, call_soon, callback, py_obj);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::enums::BitmexOrderStatus;
+
+    #[test]
+    fn terminal_order_row_is_not_retained_in_cache() {
+        let mut order: BitmexOrderMsg =
+            serde_json::from_str(include_str!("../../test_data/ws_order.json")).unwrap();
+        order.ord_status = BitmexOrderStatus::Canceled;
+        let order_id = order.order_id;
+        let mut cache = AHashMap::new();
+
+        cache_order_row(&mut cache, &order);
+
+        assert!(!cache.contains_key(&order_id));
+    }
 }

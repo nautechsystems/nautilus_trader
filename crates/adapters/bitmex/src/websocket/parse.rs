@@ -808,6 +808,8 @@ pub fn parse_order_update_msg(
     };
     let price = msg
         .price
+        .value()
+        .copied()
         .map(|p| Price::new(p, instrument.price_precision()));
 
     // BitMEX doesn't send trigger price in regular order updates?
