@@ -165,6 +165,7 @@ cdef class ExecutionEngine(Component):
 
         # Configuration
         self.debug: bool = config.debug
+        self.order_event_log_level: str = config.order_event_log_level
         self.allow_overfills = config.allow_overfills
         self.manage_own_order_books = config.manage_own_order_books
         self.snapshot_orders = config.snapshot_orders
@@ -1243,7 +1244,9 @@ cdef class ExecutionEngine(Component):
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void _handle_event(self, OrderEvent event):
-        if self.debug:
+        if self.order_event_log_level == "INFO":
+            self._log.info(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
+        elif self.debug:
             self._log.debug(f"{RECV}{EVT} {event}", LogColor.MAGENTA)
 
         self.event_count += 1

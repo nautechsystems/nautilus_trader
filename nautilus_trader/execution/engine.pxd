@@ -65,6 +65,8 @@ cdef class ExecutionEngine(Component):
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly str order_event_log_level
+    """The level for logging received order events.\n\n:returns: `str`"""
     cdef readonly bint allow_overfills
     """If order fills exceeding order quantity are allowed (logs warning instead of raising).\n\n:returns: `bool`"""
     cdef readonly bint manage_own_order_books

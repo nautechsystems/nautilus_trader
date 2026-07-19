@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import Literal
 
 import msgspec
 
@@ -84,6 +85,9 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     purge_from_database : bool, default False
         If purging operations will also delete from the backing database, in addition to the
         in-memory cache.
+    order_event_log_level : {"DEBUG", "INFO"}, default "DEBUG"
+        The level for logging received order events. ``DEBUG`` preserves the existing debug-mode
+        behavior. ``INFO`` logs order events independently of debug mode.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -103,6 +107,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     purge_account_events_interval_mins: PositiveInt | None = None
     purge_account_events_lookback_mins: NonNegativeInt | None = None
     purge_from_database: bool = False
+    order_event_log_level: Literal["DEBUG", "INFO"] = "DEBUG"
     debug: bool = False
 
 
