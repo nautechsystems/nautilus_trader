@@ -420,6 +420,60 @@ class TestBacktestEngineCashAccount:
             self.engine.add_instrument(self.usdjpy)
 
 
+class TestBacktestEnginePurgeInstrument:
+    def setup(self) -> None:
+        # Fixture Setup
+        self.venue = Venue("SIM")
+        self.engine = BacktestEngine(
+            BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
+        )
+        self.engine.add_venue(
+            venue=self.venue,
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
+        self.engine.add_instrument(AUDUSD_SIM)
+        self.engine.add_instrument(GBPUSD_SIM)
+
+    def teardown(self):
+        self.engine.reset()
+        self.engine.dispose()
+
+    def _exchange(self):
+        return self.engine._venues[self.venue]
+
+    def test_purge_instrument_removes_from_venue_state(self):
+        # Arrange
+        exchange = self._exchange()
+        instrument_id = AUDUSD_SIM.id
+        assert instrument_id in exchange.instruments
+        assert instrument_id in exchange.get_matching_engines()
+
+        # Act
+        exchange.purge_instrument(instrument_id)
+
+        # Assert
+        assert instrument_id not in exchange.instruments
+        assert instrument_id not in exchange.get_matching_engines()
+        # Other registered instrument remains untouched.
+        assert GBPUSD_SIM.id in exchange.instruments
+        assert GBPUSD_SIM.id in exchange.get_matching_engines()
+
+    def test_purge_instrument_when_not_present_is_noop(self):
+        # Arrange
+        exchange = self._exchange()
+
+        # Act (never added to the venue) — should log a warning and return quietly.
+        exchange.purge_instrument(ETHUSDT_BINANCE.id)
+
+        # Assert — pre-existing instruments untouched.
+        assert AUDUSD_SIM.id in exchange.instruments
+        assert GBPUSD_SIM.id in exchange.instruments
+
+
 class TestBacktestEngineData:
     def setup(self):
         # Fixture Setup

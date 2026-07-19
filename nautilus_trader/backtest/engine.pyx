@@ -3075,6 +3075,78 @@ cdef class SimulatedExchange:
 
         self._log.info(f"Added instrument {instrument.id} and created matching engine")
 
+    cpdef void purge_instrument(self, InstrumentId instrument_id):
+        """
+        Purge the instrument for the given instrument ID from the exchange (if found).
+
+        Drops the instrument entry from ``instruments`` and the corresponding
+        ``OrderMatchingEngine`` from ``_matching_engines``. Any tracked next-instrument
+        expiration state is recomputed from the remaining engines so the venue does not
+        continue timing off a purged instrument's expiration.
+
+        For safety, the instrument is prevented from being purged while any associated
+        order is open or any associated position is open on the exchange venue. Callers
+        should typically purge cache-side state via ``Cache.purge_instrument`` in the
+        same lifecycle event so both cache-owned and venue-owned per-instrument state
+        are released together.
+
+        Active data or execution engine subscriptions are not touched here; those
+        belong to the data and execution engines.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID to purge.
+
+        Warnings
+        --------
+        Intended for actors and strategies that have their own lifecycle logic for
+        deciding when an instrument is no longer needed (for example on weekly or
+        monthly option expiry rollover during a long-window backtest). Purging an
+        instrument that any other actor, strategy, or engine still relies on may cause
+        incorrect behavior (missing instrument lookups, matching-engine misses on
+        subsequent market data). The caller is responsible for ensuring the instrument
+        is no longer in use before purging.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+
+        if instrument_id not in self.instruments and instrument_id not in self._matching_engines:
+            self._log.warning(f"Instrument {instrument_id} not found when purging")
+            return
+
+        if self.cache is not None and self.cache.orders_open_count(
+            venue=None,
+            instrument_id=instrument_id,
+        ) > 0:
+            self._log.warning(
+                f"Instrument {instrument_id} has open orders when purging, skipping purge",
+            )
+            return
+
+        if self.cache is not None and self.cache.positions_open_count(
+            venue=None,
+            instrument_id=instrument_id,
+        ) > 0:
+            self._log.warning(
+                f"Instrument {instrument_id} has open positions when purging, skipping purge",
+            )
+            return
+
+        self.instruments.pop(instrument_id, None)
+        self._matching_engines.pop(instrument_id, None)
+
+        # Recompute next-instrument-expiration tracking from any remaining engines so
+        # the venue does not continue timing off the purged instrument's expiration.
+        self._has_next_instrument_expiration = False
+        self._next_instrument_expiration_ns = 0
+
+        cdef OrderMatchingEngine matching_engine
+        for matching_engine in self._matching_engines.values():
+            self._update_next_instrument_expiration(matching_engine)
+
+        self._log.info(f"Purged instrument {instrument_id}")
+
 # -- QUERIES --------------------------------------------------------------------------------------
 
     cpdef Price best_bid_price(self, InstrumentId instrument_id):

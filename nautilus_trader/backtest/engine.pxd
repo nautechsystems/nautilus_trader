@@ -293,6 +293,7 @@ cdef class SimulatedExchange:
     cpdef void set_latency_model(self, LatencyModel latency_model)
     cpdef void initialize_account(self)
     cpdef void add_instrument(self, Instrument instrument)
+    cpdef void purge_instrument(self, InstrumentId instrument_id)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

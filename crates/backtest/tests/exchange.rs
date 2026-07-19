@@ -59,7 +59,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
-        Venue,
+        Venue, VenueOrderId,
     },
     instruments::{
         CryptoOption, CryptoPerpetual, Instrument, InstrumentAny, OptionContract,
@@ -3054,4 +3054,150 @@ fn test_module_pre_process_and_process_call_order(crypto_perpetual_ethusdt: Cryp
 
     assert_eq!(counts.pre_process.get(), 2);
     assert_eq!(counts.process.get(), 1);
+}
+
+// --- SimulatedExchange::purge_instrument -------------------------------------------------------
+
+#[rstest]
+fn test_purge_instrument_removes_entry_and_matching_engine(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+
+    assert!(exchange.borrow().get_matching_engine(&instrument_id).is_some());
+    assert!(
+        exchange
+            .borrow()
+            .instrument_ids()
+            .any(|id| id == &instrument_id)
+    );
+
+    exchange.borrow_mut().purge_instrument(instrument_id);
+
+    assert!(exchange.borrow().get_matching_engine(&instrument_id).is_none());
+    assert!(
+        exchange
+            .borrow()
+            .instrument_ids()
+            .all(|id| id != &instrument_id)
+    );
+}
+
+#[rstest]
+fn test_purge_instrument_when_not_present_is_noop() {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+
+    // No add_instrument call — purge should log a warning and return quietly.
+    exchange.borrow_mut().purge_instrument(instrument_id);
+
+    assert!(exchange.borrow().get_matching_engine(&instrument_id).is_none());
+}
+
+#[rstest]
+fn test_purge_instrument_preserves_matching_engine_registration_order(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let first_instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    let mut second = crypto_perpetual_ethusdt.clone();
+    second.id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    second.raw_symbol = Symbol::from("BTCUSDT");
+    second.base_currency = Currency::from("BTC");
+    let second_instrument = InstrumentAny::CryptoPerpetual(second);
+    let mut third = crypto_perpetual_ethusdt;
+    third.id = InstrumentId::from("SOLUSDT-PERP.BINANCE");
+    third.raw_symbol = Symbol::from("SOLUSDT");
+    third.base_currency = Currency::from("SOL");
+    let third_instrument = InstrumentAny::CryptoPerpetual(third);
+
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(first_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(second_instrument.clone())
+        .unwrap();
+    exchange
+        .borrow_mut()
+        .add_instrument(third_instrument.clone())
+        .unwrap();
+
+    // Purge the middle instrument — remaining engines must keep their relative
+    // registration order.
+    exchange
+        .borrow_mut()
+        .purge_instrument(second_instrument.id());
+
+    let remaining = exchange
+        .borrow()
+        .get_matching_engines()
+        .keys()
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(remaining, vec![first_instrument.id(), third_instrument.id()]);
+}
+
+#[rstest]
+fn test_purge_instrument_refuses_when_orders_open(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        Some(cache.clone()),
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    exchange
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    // Register the instrument in the cache and add an accepted (open) order for it.
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("1.000"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let account_id = AccountId::test_default();
+    let submitted = TestOrderEventStubs::submitted(&order, account_id);
+    order.apply(submitted.clone()).unwrap();
+    cache.borrow_mut().update_order(&submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-1"));
+    order.apply(accepted.clone()).unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+    assert!(order.is_open());
+
+    // Purge should refuse and be a no-op while the order remains open.
+    exchange.borrow_mut().purge_instrument(instrument_id);
+
+    assert!(exchange.borrow().get_matching_engine(&instrument_id).is_some());
 }

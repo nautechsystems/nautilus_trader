@@ -432,6 +432,68 @@ impl SimulatedExchange {
         Ok(())
     }
 
+    /// Purges the instrument with the given `instrument_id` from the venue (if found).
+    ///
+    /// Drops the entry from both `instruments` and the `matching_engines` map,
+    /// releasing the per-instrument order matching engine and any book state it owned.
+    /// Callers should typically also purge the corresponding cache-side state via
+    /// [`Cache::purge_instrument`] in the same lifecycle event so that both venue-owned
+    /// and cache-owned per-instrument state are released together.
+    ///
+    /// For safety, an instrument is prevented from being purged while any associated
+    /// order is open or any associated position is open on this venue. When such state
+    /// exists the call is a no-op and a warning is logged, mirroring the behavior of
+    /// [`Cache::purge_instrument`].
+    ///
+    /// Active data or execution engine subscriptions are not touched here; those belong
+    /// to the data and execution engines.
+    ///
+    /// # Warning
+    ///
+    /// Intended for actors and strategies that have their own lifecycle logic for
+    /// deciding when an instrument is no longer needed (for example on weekly or monthly
+    /// option expiry rollover during a long-window backtest). Purging an instrument that
+    /// any other actor, strategy, or engine still relies on may cause incorrect behavior
+    /// (missing instrument lookups, matching-engine misses on subsequent market data).
+    /// The caller is responsible for ensuring the instrument is no longer in use before
+    /// purging.
+    pub fn purge_instrument(&mut self, instrument_id: InstrumentId) {
+        let found = self.instruments.contains_key(&instrument_id)
+            || self.matching_engines.contains_key(&instrument_id);
+
+        if !found {
+            log::warn!("Instrument {instrument_id} not found when purging");
+            return;
+        }
+
+        let cache = self.cache.borrow();
+        if cache.has_orders_open(None, Some(&instrument_id), None, None, None) {
+            log::warn!(
+                "Instrument {instrument_id} has open orders when purging, skipping purge"
+            );
+            return;
+        }
+
+        if cache.has_positions_open(None, Some(&instrument_id), None, None, None) {
+            log::warn!(
+                "Instrument {instrument_id} has open positions when purging, skipping purge"
+            );
+            return;
+        }
+        drop(cache);
+
+        self.instruments.remove(&instrument_id);
+        // Use `shift_remove` on the matching-engine `IndexMap` so remaining engines keep
+        // their relative registration order (mirrors the iteration-stability invariant
+        // asserted by `test_matching_engine_iteration_order_is_stable_across_rebuilds`).
+        self.matching_engines.shift_remove(&instrument_id);
+        self.settlement_prices.remove(&instrument_id);
+        self.pending_funding_rates.remove(&instrument_id);
+        self.funding_settled_through.remove(&instrument_id);
+
+        log::info!("Purged instrument {instrument_id}");
+    }
+
     /// Returns the best bid price for the given instrument, if available.
     #[must_use]
     pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
