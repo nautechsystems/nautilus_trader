@@ -503,8 +503,8 @@ class OversizedSpawnExecutionAlgorithm(ExecutionAlgorithm):
     def on_order(self, order):
         try:
             self.spawn_market(order, Quantity.from_str("0.11000"))
-        except ValueError as exc:
-            type(self).error_messages.append(str(exc))
+        except ValueError as e:
+            type(self).error_messages.append(str(e))
         else:
             type(self).error_messages.append("no error")
 

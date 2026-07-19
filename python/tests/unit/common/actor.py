@@ -197,8 +197,8 @@ class OrderFactoryProbeStrategy(Strategy):
                 Quantity.from_str("100000"),
                 time_in_force=TimeInForce.GTD,
             )
-        except ValueError as exc:
-            type(self).observed_invalid_order_error = str(exc)
+        except ValueError as e:
+            type(self).observed_invalid_order_error = str(e)
 
         type(self).observed_order = order_factory.market(
             InstrumentId.from_str("AUD/USD.SIM"),

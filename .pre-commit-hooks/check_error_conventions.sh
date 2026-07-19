@@ -77,8 +77,12 @@ echo "Checking Python exception variable naming..."
 while IFS=: read -r file line_num line_content; do
   [[ -z "$file" ]] && continue
 
-  # Extract variable name from 'as xxx:' pattern
-  if [[ "$line_content" =~ as[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*: ]]; then
+  # Extract variable name from 'as xxx' (no trailing colon in the pattern:
+  # `read` with IFS=: strips the trailing delimiter from the last field, so
+  # `except X as exc:` arrives here as `except X as exc` and a regex that
+  # requires the colon never matches. The rg pattern above already anchored
+  # the full `as xxx:` shape.)
+  if [[ "$line_content" =~ as[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
     var_name="${BASH_REMATCH[1]}"
 
     # Skip if it's 'e'

@@ -480,9 +480,12 @@ if [[ -f "Cargo.toml" ]]; then
   adapter_section_violations=""
 
   # Extract dependency names from the Adapter dependencies section
+  # The section banner is dash-line / title / dash-line, so the dash rule
+  # must not fire on the banner's own CLOSING dash (that reset the section
+  # one line after it opened and left this check extracting an empty list).
   adapter_section_deps=$(awk '
-    /^# -+$/ { in_section = 0 }
-    /^# Adapter dependencies/ { in_section = 1; next }
+    /^# Adapter dependencies/ { in_section = 1; just_opened = 1; next }
+    /^# -+$/ { if (just_opened) { just_opened = 0 } else { in_section = 0 }; next }
     in_section && /^[a-zA-Z][a-zA-Z0-9_-]*[[:space:]]*[.=]/ {
       match($0, /^[a-zA-Z][a-zA-Z0-9_-]*/)
       print substr($0, RSTART, RLENGTH)

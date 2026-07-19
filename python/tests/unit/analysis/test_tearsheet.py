@@ -552,13 +552,13 @@ def test_create_tearsheet_from_stats_exports_static_image(tmp_path):
             output_path=str(output_path),
             config=TearsheetConfig(charts=[TearsheetEquityChart()], height=400),
         )
-    except Exception as exc:
+    except Exception as e:
         # A datetime axis reaching Kaleido unconverted fails with a
         # "Type is not JSON serializable: Timestamp" TypeError; treat that as a
         # real regression, and anything else (e.g. no Chrome) as environmental.
-        if isinstance(exc, TypeError) or "JSON serializable" in str(exc):
+        if isinstance(e, TypeError) or "JSON serializable" in str(e):
             raise
-        pytest.skip(f"kaleido static export unavailable: {exc}")
+        pytest.skip(f"kaleido static export unavailable: {e}")
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0

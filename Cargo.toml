@@ -129,6 +129,7 @@ alloy-primitives = { version = "1.6.1", default-features = false, features = [
   "serde",
 ] }
 anyhow = "1.0.103"
+arc-swap = "1.9.2"
 arraydeque = "0.5.1"
 arrow = { version = "58.3.0", default-features = false, features = [
   "csv",
@@ -180,6 +181,7 @@ http = "1.4.2"
 implied-vol = { version = "2.0.0" }
 indexmap = { version = "2.14.0", features = ["serde"] }
 itchy = "0.3"
+itoa = "1.0.18"
 libfuzzer-sys = "0.4.13"
 log = { version = "0.4.33", features = [
   "std",
@@ -323,7 +325,6 @@ alloy = { version = "2.2.0", default-features = false, features = [
   "signers",
   "signer-local",
 ] }
-arc-swap = "1.9.2"
 bollard = { version = "0.21.0", default-features = false, features = [
   "http",
   "pipe",
@@ -340,7 +341,6 @@ fallible-streaming-iterator = "0.1.9"
 flate2 = "1.1.9"
 hypersync-client = { version = "1.4.0" }
 ibapi = "=3.2.0"
-itoa = "1.0.18"
 ryu = "1.0.23"
 serde_repr = "0.1.20"
 time = { version = "0.3.53", default-features = false, features = [

@@ -9,7 +9,7 @@
 #   3. No unbiased tokio::select! (must have `biased;` as first token in block)
 #   4. No raw thread spawning (std::thread::spawn, std::thread::Builder::spawn,
 #      tokio::task::spawn_blocking) without cfg gating
-#   5. No AHashMap / AHashSet in crates/live/src/manager.rs or
+#   5. No AHashMap / AHashSet in crates/live/src/execution/manager.rs or
 #      crates/execution/src/matching_engine/engine.rs
 #   6. No direct tokio::net::TcpStream::connect / tokio::net::TcpListener::bind
 #      reaches that bypass the nautilus_network::net seam (the seam swaps to
@@ -318,13 +318,21 @@ done < <(rg -n --no-heading \
 ################################################################################
 
 RULE5_FILES=(
-  "crates/live/src/manager.rs"
+  "crates/live/src/execution/manager.rs"
   "crates/execution/src/matching_engine/engine.rs"
 )
 
 for rule5_file in "${RULE5_FILES[@]}"; do
   echo "Checking AHashMap / AHashSet in $rule5_file..."
-  [[ -f "$rule5_file" ]] || continue
+
+  # A missing entry is itself a violation: silently skipping a moved file
+  # disarms the determinism guard (this happened when the reconciliation
+  # manager moved from crates/live/src/manager.rs).
+  if [[ ! -f "$rule5_file" ]]; then
+    report "rule5" "$rule5_file" "0" "(file not found)" \
+      "Update RULE5_FILES to the file's new location"
+    continue
+  fi
 
   while IFS=: read -r file line_num content; do
     [[ -z "$file" ]] && continue
