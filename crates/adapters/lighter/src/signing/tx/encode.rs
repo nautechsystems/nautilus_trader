@@ -30,7 +30,7 @@
 //! 5. Render the wire `tx_info` JSON with the same field order the upstream
 //!    Go signer marshals (Sig is base64).
 //!
-//! Step 2's aggregation order — `body || attributes` — and the ascending-type
+//! Step 2's aggregation order - `body || attributes` - and the ascending-type
 //! sort over attributes are both load-bearing for byte equality with the
 //! sequencer; both come straight from `txtypes.L2TxAttributes.AggregateTxHash`.
 
@@ -561,7 +561,7 @@ mod tests {
 
     fn assert_round_trip_sign<T: LighterTx>(tx: &T, v: &OracleVector) {
         let sk = PrivateKey::from_le_bytes_reduce(decode_scalar_bytes(&v.sk));
-        // Pick a nonzero, fixture-derived `k` — any non-zero canonical scalar
+        // Pick a nonzero, fixture-derived `k` - any non-zero canonical scalar
         // is valid. Guarding against `k == 0` and non-canonical limbs makes
         // the helper fail loudly on the test scaffold rather than producing
         // an undefined signature if the XOR happens to land on a bad value.
@@ -1131,7 +1131,7 @@ mod tests {
         /// Mutating any single body, attribute, or context field changes the
         /// signed *preimage* (`hash_elements` plus `attributes()` for
         /// attribute fields). Pins body-element ordering and attribute-slot
-        /// participation deterministically — a regression that drops or
+        /// participation deterministically - a regression that drops or
         /// swaps a field makes at least one mutation a no-op on the
         /// preimage. Asserting on the preimage rather than the digest
         /// avoids the hash-collision overreach (Poseidon compresses to

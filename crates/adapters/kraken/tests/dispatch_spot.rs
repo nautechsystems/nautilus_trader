@@ -623,7 +623,7 @@ fn test_spot_restated_emits_order_updated() {
 /// Builds a delta-style execution frame matching what Kraken sends as a
 /// follow-up to `pending_new` (and for `amended` / `restated` / `status`):
 /// only `order_id`, `exec_type`, `order_status`, and `timestamp` are
-/// populated — every other field, including `symbol`, is `None`.
+/// populated - every other field, including `symbol`, is `None`.
 fn make_spot_execution_delta(
     exec_type: KrakenExecType,
     venue_order_id: &str,

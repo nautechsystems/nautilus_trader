@@ -64,7 +64,7 @@ some venues. Use TRACE only for local debugging, and redact TRACE logs before sh
 
 ## API unification
 
-All integrations must conform to NautilusTrader’s system API, requiring normalization and standardization:
+All integrations must conform to NautilusTrader's system API, requiring normalization and standardization:
 
-- Symbols should use the venue’s native symbol format unless disambiguation is required (e.g., Binance Spot vs. Binance Futures).
+- Symbols should use the venue's native symbol format unless disambiguation is required (e.g., Binance Spot vs. Binance Futures).
 - Timestamps must use UNIX epoch nanoseconds. If milliseconds are used, field/property names should explicitly end with `_ms`.

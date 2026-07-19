@@ -393,7 +393,7 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
 /// the parameters happen to iterate in. `serde_json`'s object backend is a
 /// sorted `BTreeMap` by default, but it silently becomes an insertion-ordered
 /// `IndexMap` if *any* crate anywhere in the build graph enables
-/// `serde_json/preserve_order` — a global Cargo feature-unification effect the
+/// `serde_json/preserve_order` - a global Cargo feature-unification effect the
 /// adapter cannot control (e.g. a transitive `mongodb`/`bson` dependency).
 /// Signing the object in its raw iteration order therefore breaks intermittently
 /// with `-1022 Signature for this request is not valid` depending on unrelated
@@ -449,7 +449,7 @@ mod tests {
 
     #[rstest]
     fn test_canonical_ws_query_string_is_key_sorted_regardless_of_input_order() {
-        // Parameters in a deliberately non-alphabetical order — exactly what a
+        // Parameters in a deliberately non-alphabetical order - exactly what a
         // `serde_json/preserve_order` (IndexMap) build yields, and what broke WS
         // signing with -1022 (issue #4410). Binance verifies the WS signature
         // over the *sorted* parameters, so the query string must come out

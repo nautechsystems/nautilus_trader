@@ -28,7 +28,7 @@
 //!   (e.g. <https://etherscan.io/token/0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48#readContract>,
 //!   <https://etherscan.io/token/0x8e870d67f660d95d5be530380d0ec0bd388289e1#readContract>,
 //!   <https://etherscan.io/token/0x01d33fd36ec67c6ada32cf36b31e88ee190b1839#readContract>):
-//!   each exposes 6–18 on-chain decimals; we clamp to an 8-decimal internal default.
+//!   each exposes 6-18 on-chain decimals; we clamp to an 8-decimal internal default.
 
 use std::{
     collections::HashMap,

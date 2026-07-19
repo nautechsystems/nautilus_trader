@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Bug – behavior that contradicts the platform's documented or intended design
+about: Bug - behavior that contradicts the platform's documented or intended design
 labels:
   - bug
 ---
@@ -11,9 +11,9 @@ Use this template only for issues that fit the **Bug** definition.
 
 | Term                          | Definition |
 |-------------------------------|------------|
-| **Bug**                       | Behavior that contradicts the platform’s documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.) |
-| **Expectation&nbsp;mismatch** | Behavior that follows the platform’s documented or intended design but differs from what you expected. (i.e., the design/spec might be the problem.) |
-| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *“It would be great if the platform could…”*) |
+| **Bug**                       | Behavior that contradicts the platform's documented or intended design as per code, docs, or specs. (i.e., the implementation is incorrect.) |
+| **Expectation&nbsp;mismatch** | Behavior that follows the platform's documented or intended design but differs from what you expected. (i.e., the design/spec might be the problem.) |
+| **Enhancement request**       | A request for new functionality or behavior that is not implied by existing design. (i.e., *"It would be great if the platform could…"*) |
 
 **Note:**
 
@@ -26,10 +26,10 @@ Use this template only for issues that fit the **Bug** definition.
 
 **Before opening a bug report, please confirm:**
 
-- [ ] I’ve re-read the relevant sections of the documentation.
-- [ ] I’ve searched existing issues and discussions to avoid duplicates.
-- [ ] I’ve reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
-- [ ] I’ve tested this issue using a recent pre-release or development wheel (`2.0.0rcN`,
+- [ ] I've re-read the relevant sections of the documentation.
+- [ ] I've searched existing issues and discussions to avoid duplicates.
+- [ ] I've reviewed or skimmed the source code (or examples) to confirm the behavior is not by design.
+- [ ] I've tested this issue using a recent pre-release or development wheel (`2.0.0rcN`,
       `dev` develop, or `a` nightly) and can still reproduce it.
 
 Checking a recent pre-release or development wheel can save time because the issue may already have been fixed.

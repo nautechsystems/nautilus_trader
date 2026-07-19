@@ -29,7 +29,7 @@ impl ExpectedShortfall {
     ///
     /// Expected Shortfall is the average of the losses that occur beyond the
     /// `ValueAtRisk` threshold at a
-    /// given confidence level — the mean of the worst
+    /// given confidence level - the mean of the worst
     /// `1 - confidence` tail of the return distribution. It is a coherent risk
     /// measure and captures tail severity that `VaR` alone does not.
     ///

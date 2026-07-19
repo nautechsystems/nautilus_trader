@@ -261,7 +261,7 @@ mod tests {
     #[rstest]
     fn test_counters_are_in_sync(mut indicator_dema_10: DoubleExponentialMovingAverage) {
         for i in 1..=indicator_dema_10.period {
-            indicator_dema_10.update_raw(i as f64); // ← FIX ❷
+            indicator_dema_10.update_raw(i as f64);
             assert_eq!(
                 indicator_dema_10.count(),
                 i,

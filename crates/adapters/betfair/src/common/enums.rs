@@ -1099,7 +1099,7 @@ impl From<StreamingOrderType> for OrderType {
 /// Resolves the Nautilus `OrderStatus` for a Betfair order.
 ///
 /// `ExecutionComplete` is a terminal state covering fills, cancels, and
-/// lapses — the correct status depends on matched vs canceled quantities.
+/// lapses - the correct status depends on matched vs canceled quantities.
 #[must_use]
 pub fn resolve_order_status(
     status: BetfairOrderStatus,

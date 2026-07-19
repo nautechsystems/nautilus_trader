@@ -644,7 +644,7 @@ pub fn parse_option_instrument(
     let underlying = get_currency(definition.base_coin.as_str());
     let quote_currency = get_currency(definition.quote_coin.as_str());
     let settlement_currency = get_currency(definition.settle_coin.as_str());
-    // Bybit Options are linear contracts — they are margined and settled in stablecoins
+    // Bybit Options are linear contracts - they are margined and settled in stablecoins
     let is_inverse = false;
 
     let price_increment = parse_price(&definition.price_filter.tick_size, "priceFilter.tickSize")?;

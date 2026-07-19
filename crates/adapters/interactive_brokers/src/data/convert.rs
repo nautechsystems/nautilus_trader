@@ -458,7 +458,7 @@ mod tests {
 
     #[rstest]
     fn test_price_type_to_ib_what_to_show_for_security_crypto() {
-        // Crypto trade-price (Last) must map to AGGTRADES, not TRADES — TWS rejects
+        // Crypto trade-price (Last) must map to AGGTRADES, not TRADES - TWS rejects
         // TRADES for crypto (error 10299). Mirrors the Java whatToShowFor rule.
         assert_eq!(
             price_type_to_ib_what_to_show_for_security(PriceType::Last, true),
@@ -529,7 +529,7 @@ mod tests {
     #[rstest]
     fn test_price_type_to_ib_realtime_what_to_show_for_security_crypto() {
         // Crypto trade-price (Last) 5-second bars must request AGGTRADES on the
-        // realtime path too — TWS rejects TRADES for crypto (error 10299) on
+        // realtime path too - TWS rejects TRADES for crypto (error 10299) on
         // reqRealTimeBars, exactly as on the historical path. Mirrors the Java
         // engine passing whatToShowFor(CRYPTO)="AGGTRADES" to subscribeRealTimeBars.
         assert!(matches!(

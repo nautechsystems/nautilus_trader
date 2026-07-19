@@ -5,7 +5,7 @@ It shows how **timer events** and **market data** can work separately at the sam
 
 **What this strategy does:**
 
-- Uses **NautilusTrader’s timer** to trigger events on schedule.
+- Uses **NautilusTrader's timer** to trigger events on schedule.
 - Handles **market data** and **timer events** independently.
 
 This helps you see how timers work alongside market data processing without interfering with each other.

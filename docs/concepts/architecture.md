@@ -51,10 +51,10 @@ business requirements. Practically this means we:
 - Prefer zero-cost safety techniques built into Rust (ownership, `Result`
   surfaces, `panic = abort`) and add targeted formal tools only where they pay
   for themselves.
-- Track “assurance debt” alongside feature work so new integrations extend the
+- Track "assurance debt" alongside feature work so new integrations extend the
   safety net rather than bypass it.
 
-This approach preserves the platform’s delivery cadence while giving
+This approach preserves the platform's delivery cadence while giving
 high-stakes flows the additional scrutiny they need.
 
 Further reading: [High Assurance Rust](https://highassurance.rs/).

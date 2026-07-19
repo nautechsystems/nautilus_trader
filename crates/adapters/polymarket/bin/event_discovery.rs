@@ -17,10 +17,10 @@
 //!
 //! This example exercises three features:
 //!
-//! 1. **Tags** — `provider.list_tags()` to list available event categories.
-//! 2. **Raw event query** — `provider.http_client().inner().get_gamma_events()`
+//! 1. **Tags** - `provider.list_tags()` to list available event categories.
+//! 2. **Raw event query** - `provider.http_client().inner().get_gamma_events()`
 //!    to inspect enriched `GammaEvent` fields (liquidity, volume, category).
-//! 3. **`EventParamsFilter`** — Provider integration that fetches instruments
+//! 3. **`EventParamsFilter`** - Provider integration that fetches instruments
 //!    from events matching the query params.
 //!
 //! # Usage

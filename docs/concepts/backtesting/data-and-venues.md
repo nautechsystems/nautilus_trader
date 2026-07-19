@@ -91,7 +91,7 @@ higher granularity data (L2 or L3) from lower-level data such as quotes, trades,
 :::
 
 :::warning
-If you specify `L2_MBP` or `L3_MBO` as the venue’s `book_type`, quotes and bars will not update the
+If you specify `L2_MBP` or `L3_MBO` as the venue's `book_type`, quotes and bars will not update the
 book. Ensure you provide order book delta data, otherwise orders may appear as though they are never
 filled.
 :::

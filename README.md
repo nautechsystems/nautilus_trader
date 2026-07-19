@@ -88,8 +88,8 @@ No Rust toolchain is required at install time.
 
 This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/01/18/soundness-pledge.html):
 
-> “The intent of this project is to be free of soundness bugs.
-> The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
+> "The intent of this project is to be free of soundness bugs.
+> The developers will do their best to avoid them, and welcome help in analyzing and fixing them."
 
 > [!NOTE]
 >
@@ -258,7 +258,7 @@ We recommend using the latest supported version of Python and installing [nautil
 >
 > We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
 >
-> Conda and other Python distributions *may* work but aren’t officially supported.
+> Conda and other Python distributions *may* work but aren't officially supported.
 
 ### From PyPI
 
@@ -615,7 +615,7 @@ the project. If you have an idea for an enhancement or a bug fix, the first step
 on GitHub to discuss it with the team. This helps to ensure that your contribution will be
 well-aligned with the goals of the project and avoids duplication of effort.
 
-Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project’s roadmap to understand what’s in and out of scope.
+Before getting started, be sure to review the [open-source scope](/ROADMAP.md#open-source-scope) outlined in the project's roadmap to understand what's in and out of scope.
 
 Once you're ready to start working on your contribution, make sure to follow the guidelines
 outlined in the [CONTRIBUTING.md](https://github.com/nautechsystems/nautilus_trader/blob/develop/CONTRIBUTING.md) file. This includes signing a Contributor License Agreement (CLA)

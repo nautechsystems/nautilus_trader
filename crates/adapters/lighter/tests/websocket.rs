@@ -1178,7 +1178,7 @@ async fn test_ticker_frame_resolves_via_channel_index() {
     let mut harness = ClientHarness::build(addr).await;
 
     // Use the existing fixture but rewrite `s` to a symbol that does NOT
-    // match any cached raw_symbol — verifies the handler resolves from the
+    // match any cached raw_symbol - verifies the handler resolves from the
     // channel field, not the payload symbol field.
     let mut frame = load_json("ws_ticker_update.json");
     frame["ticker"]["s"] = json!("UNRELATED");

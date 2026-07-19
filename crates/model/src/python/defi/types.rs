@@ -328,8 +328,8 @@ impl Pool {
     /// ## Instrument ID Format
     ///
     /// The instrument ID encodes with the following components:
-    /// - `symbol` – The pool identifier (address for V2/V3, Pool ID for V4)
-    /// - `venue`  – The chain name plus DEX ID
+    /// - `symbol` - The pool identifier (address for V2/V3, Pool ID for V4)
+    /// - `venue`  - The chain name plus DEX ID
     ///
     /// String representation: `<POOL_IDENTIFIER>.<CHAIN_NAME>:<DEX_ID>`
     ///

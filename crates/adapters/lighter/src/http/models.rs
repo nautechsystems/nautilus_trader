@@ -75,7 +75,7 @@ pub struct LighterAccountsResponse {
 ///
 /// Lighter restricts maker-only keys to the 0ms speed-bump lane (PostOnly
 /// creates, modifies on ALO orders, cancel / cancel-all). Any tx kind outside
-/// that allowlist — for example `ApproveIntegrator` (tx_type 45) — is rejected
+/// that allowlist - for example `ApproveIntegrator` (tx_type 45) - is rejected
 /// with venue code `62007`. The adapter pre-flights this endpoint before
 /// submitting the integrator auto-approval so it can skip the doomed tx with
 /// a clear log line instead of swallowing the misleading 62007.

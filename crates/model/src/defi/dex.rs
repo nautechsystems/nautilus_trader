@@ -61,7 +61,7 @@ pub enum AmmType {
     CLAMM,
     /// Concentrated liquidity AMM **with hooks** (e.g. upcoming Uniswap v4).
     CLAMEnhanced,
-    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style “`StableSwap`”).
+    /// Specialized Constant-Sum AMM for low-volatility assets (Curve-style "`StableSwap`").
     StableSwap,
     /// AMM with customizable token weights (e.g., Balancer style).
     WeightedPool,

@@ -16,18 +16,18 @@
 //! Demonstrates market discovery with [`GammaQueryFilter`].
 //!
 //! Unlike slug-based filters, [`GammaQueryFilter`] uses Gamma API query
-//! parameters to discover markets by their characteristics — no prior
+//! parameters to discover markets by their characteristics - no prior
 //! knowledge of slugs is required.
 //!
 //! Key filterable fields on [`GetGammaMarketsParams`]:
 //!
-//! - `active` / `closed` / `archived` — market lifecycle state
-//! - `volume_num_min` / `volume_num_max` — traded volume range
-//! - `liquidity_num_min` / `liquidity_num_max` — order-book liquidity
-//! - `start_date_min` / `end_date_max` — date boundaries (ISO 8601)
-//! - `tag_id` / `related_tags` — categorical tags
-//! - `order` / `ascending` — sort field and direction
-//! - `limit` / `offset` — pagination
+//! - `active` / `closed` / `archived` - market lifecycle state
+//! - `volume_num_min` / `volume_num_max` - traded volume range
+//! - `liquidity_num_min` / `liquidity_num_max` - order-book liquidity
+//! - `start_date_min` / `end_date_max` - date boundaries (ISO 8601)
+//! - `tag_id` / `related_tags` - categorical tags
+//! - `order` / `ascending` - sort field and direction
+//! - `limit` / `offset` - pagination
 //!
 //! Use this filter when you want to scan for markets matching certain
 //! criteria (e.g., trending high-volume markets) without knowing specific

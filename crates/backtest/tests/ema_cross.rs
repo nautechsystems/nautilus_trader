@@ -74,10 +74,10 @@ fn test_from_config_generates_orders(crypto_perpetual_ethusdt: CryptoPerpetual) 
         .build();
     engine.add_strategy(EmaCross::from_config(config)).unwrap();
 
-    // Phase 1: Flat at 1000 (25 ticks) — both EMAs initialize and converge
-    // Phase 2: Ramp up to 1200 (40 ticks) — fast EMA crosses above slow -> BUY
-    // Phase 3: Ramp down to 800 (80 ticks) — fast EMA crosses below slow -> SELL
-    // Phase 4: Ramp up to 1000 (40 ticks) — fast crosses above again -> BUY
+    // Phase 1: Flat at 1000 (25 ticks) - both EMAs initialize and converge
+    // Phase 2: Ramp up to 1200 (40 ticks) - fast EMA crosses above slow -> BUY
+    // Phase 3: Ramp down to 800 (80 ticks) - fast EMA crosses below slow -> SELL
+    // Phase 4: Ramp up to 1000 (40 ticks) - fast crosses above again -> BUY
     let spread = 0.10;
     let mut quotes = Vec::new();
     let base_ts: u64 = 1_000_000_000;

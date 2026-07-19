@@ -4170,7 +4170,7 @@ async fn test_update_sub_api_key_serializes_permissions_pascal_case() {
 async fn test_update_master_api_key_emits_renamed_permission_keys() {
     // Regression guard: `NFT`, `FiatP2P` and `ByXPost` carry non-standard
     // casing that the struct-level `rename_all = "PascalCase"` rule would
-    // otherwise mangle into `Nft`, `FiatP2p`, `ByxPost` — which Bybit would
+    // otherwise mangle into `Nft`, `FiatP2p`, `ByxPost` - which Bybit would
     // silently ignore.
     use nautilus_bybit::http::query::{
         BybitApiKeyPermissionUpdateBuilder, BybitUpdateMasterApiParamsBuilder,

@@ -220,7 +220,7 @@ These can then be used for Polymarket client configurations:
 
 ## Configuration
 
-When setting up NautilusTrader to work with Polymarket, it’s crucial to properly configure the necessary parameters, particularly the private key.
+When setting up NautilusTrader to work with Polymarket, it's crucial to properly configure the necessary parameters, particularly the private key.
 
 **Key parameters**:
 

@@ -7,10 +7,9 @@
 //! casts, and the attribute-aggregation branch under any combination of
 //! field values.
 //!
-//! The 80-byte input is unpacked into the full body + attribute set:
-//! 4 bytes chain_id, 8 + 1 + 8 + 8 context, 2 + 8 + 8 + 4 + 1 + 1 + 1 + 1
-//! + 4 + 8 order, 8 + 4 + 4 + 1 attributes — totalling 84 bytes; we use 84
-//! and round up by reading 4 zero bytes at the tail.
+//! The 84-byte input is unpacked into the full body + attribute set:
+//! 4 bytes chain_id, 8 + 1 + 8 + 8 context, 2 + 8 + 8 + 4 + 1 + 1 + 1 + 1 +
+//! 4 + 8 order, 8 + 4 + 4 + 1 attributes - totalling 84 bytes.
 
 use nautilus_lighter::signing::tx::{
     CreateOrderTxInfo, L2TxAttributes, OrderInfo, TxContext, compute_tx_hash,

@@ -9,7 +9,7 @@ identified by a prefixed ID (e.g. TC-E01) and grouped by functionality.
 **Each adapter must pass the subset of tests matching its supported capabilities.**
 
 Tests progress from simple (single market order) to complex (brackets,
-modification chains, rejection handling). An adapter that passes groups 1–5 is
+modification chains, rejection handling). An adapter that passes groups 1-5 is
 considered baseline compliant. Data connectivity should be verified first using
 the [Data Testing Spec](spec_data_testing.md).
 
@@ -644,7 +644,7 @@ ExecTesterConfig::builder()
 
 **Considerations:**
 
-- Use a short `order_expire_time_delta_mins` (e.g., 1–2 minutes) to avoid long waits.
+- Use a short `order_expire_time_delta_mins` (e.g., 1-2 minutes) to avoid long waits.
 - Some venues may report expiry as a cancel; verify the adapter maps this to `OrderExpired`.
 
 ### TC-E19: Limit DAY - submit and accept

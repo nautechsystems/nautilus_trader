@@ -1471,7 +1471,7 @@ fn test_client_order_ids_filtering(mut cache: Cache) {
         cache.add_order(order.clone(), None, None, false).unwrap();
     }
 
-    // No filters – expect all orders
+    // No filters - expect all orders
     assert_eq!(
         cache.client_order_ids(None, None, None, None).len(),
         orders.len()

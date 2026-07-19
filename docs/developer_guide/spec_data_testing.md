@@ -10,7 +10,7 @@ identified by a prefixed ID (e.g. TC-D01) and grouped by functionality.
 
 Test groups are ordered from least derived to most derived data: instruments
 and raw book data first, then quotes, trades, bars, and derivatives data.
-An adapter that passes groups 1–4 is considered baseline data compliant.
+An adapter that passes groups 1-4 is considered baseline data compliant.
 
 Document adapter-specific data behavior (custom channels, throttling,
 snapshot semantics, etc.) in the adapter's own guide, not here.

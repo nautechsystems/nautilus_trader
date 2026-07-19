@@ -20,7 +20,7 @@
 //! 2. Finds the nearest expiry
 //! 3. Builds an `OptionSeriesId` for that expiry
 //! 4. Subscribes to an option chain with `STRIKES_ABOVE` strikes above and `STRIKES_BELOW` below ATM
-//! 5. Uses `ForwardPrice` (auto-resolved default) — the exchange-provided forward
+//! 5. Uses `ForwardPrice` (auto-resolved default) - the exchange-provided forward
 //!    price embedded in every option ticker update, eliminating spot-forward basis error
 //! 6. Logs received `OptionChainSlice` snapshots in the `on_option_chain` handler
 //!

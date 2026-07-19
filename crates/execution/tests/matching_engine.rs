@@ -8820,7 +8820,7 @@ fn test_gtd_order_partially_filled_then_expired(
         .build();
     engine_l2.process_order_book_delta(&delta).unwrap();
 
-    // Submit GTD limit buy at 1500 for 1.000 — will partially fill 0.500
+    // Submit GTD limit buy at 1500 for 1.000 - will partially fill 0.500
     let expire_ns: u64 = 1_500_000_000_000_000_000;
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let mut limit_order = OrderTestBuilder::new(OrderType::Limit)
@@ -9006,7 +9006,7 @@ fn test_price_protection_exact_boundary_fills(
     engine_l2.process_order_book_delta(&delta1).unwrap();
     engine_l2.process_order_book_delta(&delta2).unwrap();
 
-    // Market BUY for 2.000 — should fill both levels (1500 + 1501 are both <= 1501 boundary)
+    // Market BUY for 2.000 - should fill both levels (1500 + 1501 are both <= 1501 boundary)
     let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
     let mut market_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_eth_usdt.id())

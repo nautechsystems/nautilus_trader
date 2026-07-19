@@ -154,7 +154,7 @@ mod tests {
         // Asks: top-10 levels ascending, bids: top-10 levels descending; FIFO within each level.
         let mut orders: AHashMap<u64, CachedL3Order> = AHashMap::new();
 
-        // BID side — 10 levels, 21 orders total, descending price
+        // BID side - 10 levels, 21 orders total, descending price
         // Level 1: 44939.4 × 8 orders
         for (key, (size_raw, seq)) in [
             ("0.88968699", 1u64),
@@ -299,7 +299,7 @@ mod tests {
             },
         );
 
-        // ASK side — 10 levels, 14 orders total, ascending price
+        // ASK side - 10 levels, 14 orders total, ascending price
         // Level 1: 44939.5 × 4 orders
         for (size_raw, seq) in [
             ("4.52308393", 22u64),

@@ -19,7 +19,7 @@
 //! `Inverse` product types. Spot and HIP-4 outcome orders/positions are
 //! intentionally out of scope: spot holdings are token balances rather than
 //! derivative positions, and "flattening" them would mean dumping into a
-//! different quote asset — a real trade decision rather than cleanup. Working
+//! different quote asset - a real trade decision rather than cleanup. Working
 //! orders on those product types are left untouched and will continue to be
 //! eligible to fill after this binary exits.
 //!

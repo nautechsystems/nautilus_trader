@@ -23,7 +23,7 @@ use nautilus_model::{data::option_chain::OptionGreeks, types::Price};
 
 /// Tracks the raw ATM price reactively from the forward price in option greeks.
 ///
-/// Does not interact with cache — receives updates via handler callbacks.
+/// Does not interact with cache - receives updates via handler callbacks.
 /// Closest-strike resolution is delegated to `StrikeRange::resolve()`.
 #[derive(Debug)]
 pub struct AtmTracker {
@@ -62,7 +62,7 @@ impl AtmTracker {
 
     /// Updates from an option greeks event.
     ///
-    /// Extracts `underlying_price` from the greeks — the exchange-provided
+    /// Extracts `underlying_price` from the greeks - the exchange-provided
     /// forward price for this expiry. Returns `true` if the ATM price was updated.
     pub fn update_from_option_greeks(&mut self, greeks: &OptionGreeks) -> bool {
         self.try_update_from_option_greeks(greeks).unwrap_or(false)

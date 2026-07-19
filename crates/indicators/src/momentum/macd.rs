@@ -216,7 +216,7 @@ mod tests {
         macd_10.update_raw(1.00000);
         assert!(
             approx_equal(macd_10.value, -2.5e-5),
-            "MACD value {:.17e} not within tolerance of –2.5e-5",
+            "MACD value {:.17e} not within tolerance of -2.5e-5",
             macd_10.value
         );
     }

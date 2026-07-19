@@ -591,10 +591,10 @@ pub struct GetAlgoOrdersParams {
     /// State filter (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<OKXOrderStatus>,
-    /// Pagination cursor – fetch records after this value (optional).
+    /// Pagination cursor - fetch records after this value (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
-    /// Pagination cursor – fetch records before this value (optional).
+    /// Pagination cursor - fetch records before this value (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub before: Option<String>,
     /// Maximum number of records to return (optional, default 100).

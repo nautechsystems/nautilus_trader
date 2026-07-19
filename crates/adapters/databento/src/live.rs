@@ -1423,7 +1423,7 @@ mod tests {
     #[rstest]
     fn test_boundary_flag_on_recordless_message_flushes_buffered_event() {
         // A non-terminal 'C' delta buffers; the event terminates on an 'N'
-        // record carrying F_LAST which decodes to no delta — the raw flag
+        // record carrying F_LAST which decodes to no delta - the raw flag
         // must still flush the buffer (follow-up to #4445).
         let instrument_id = InstrumentId::from("TEST.GLBX");
         let mut buffering_start = None;

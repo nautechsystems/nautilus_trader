@@ -8056,9 +8056,9 @@ fn test_deltas_to_quotes_suppresses_duplicate_bbo() {
             2,
             2000,
         ),
-        // Add deeper bid — BBO unchanged
+        // Add deeper bid - BBO unchanged
         make_delta(id, BookAction::Add, OrderSide::Buy, "98.00", "5", 3, 3000),
-        // Add deeper ask — BBO unchanged
+        // Add deeper ask - BBO unchanged
         make_delta(id, BookAction::Add, OrderSide::Sell, "102.00", "5", 4, 4000),
     ];
 
@@ -8132,7 +8132,7 @@ fn test_deltas_to_quotes_emits_on_cancel_changes_bbo() {
             3,
             2000,
         ),
-        // Cancel best bid — BBO changes to 98.00
+        // Cancel best bid - BBO changes to 98.00
         make_delta(
             id,
             BookAction::Delete,

@@ -513,7 +513,7 @@ mod tests {
             prop_assert_eq!(s1, s2);
         }
 
-        /// `permute` is injective on distinct states (probabilistic — over
+        /// `permute` is injective on distinct states (probabilistic - over
         /// any pair of distinct inputs, outputs almost surely differ).
         #[rstest]
         fn prop_permute_injective_on_pairs(

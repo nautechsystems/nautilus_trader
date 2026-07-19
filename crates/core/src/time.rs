@@ -178,7 +178,7 @@ impl AtomicTime {
         }
     }
 
-    /// Returns the current time in nanoseconds, based on the clock’s mode.
+    /// Returns the current time in nanoseconds, based on the clock's mode.
     ///
     /// - In **real-time mode**, calls [`AtomicTime::time_since_epoch`], ensuring strictly increasing
     ///   timestamps across threads, using `AcqRel` semantics for the underlying atomic.
@@ -299,7 +299,7 @@ impl AtomicTime {
         Ok(UnixNanos::from(previous + delta))
     }
 
-    /// Retrieves and updates the current “real-time” clock, returning a strictly increasing
+    /// Retrieves and updates the current "real-time" clock, returning a strictly increasing
     /// timestamp based on system time.
     ///
     /// Internally:
@@ -329,7 +329,7 @@ impl AtomicTime {
             // Acquire to observe the latest stored value
             let last = self.timestamp_ns.load(Ordering::Acquire);
 
-            // Ensure we never wrap past u64::MAX – treat that as a fatal error
+            // Ensure we never wrap past u64::MAX - treat that as a fatal error
             let incremented = last
                 .checked_add(1)
                 .expect("AtomicTime overflow: reached u64::MAX");

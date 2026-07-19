@@ -765,7 +765,7 @@ pub enum InstrumentClass {
     Option = 8,
     /// An option spread instrument class. A strategy involving the purchase and/or sale of multiple option contracts on the same underlying asset with different strike prices or expiration dates to hedge risk or speculate on price movements.
     OptionSpread = 9,
-    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security - most commonly an equity - at a certain price before expiration.
     Warrant = 10,
     /// A sports betting instrument class. A financialized derivative that allows wagering on the outcome of sports events using structured contracts or prediction markets.
     SportsBetting = 11,

@@ -245,7 +245,7 @@ fn bench_mulgen_ct(c: &mut Criterion) {
     group.finish();
 }
 
-// Only the `sign_tx` portion (hash + Schnorr sign) — pairs with the
+// Only the `sign_tx` portion (hash + Schnorr sign) - pairs with the
 // `exec_pipeline/submit_limit` bench which adds the wire JSON render on top.
 fn bench_sign_tx_create_order(c: &mut Criterion) {
     let sk = fixed_sk();

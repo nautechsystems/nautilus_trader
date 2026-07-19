@@ -342,7 +342,7 @@ pub fn parse_price(value: &str, precision: u8) -> anyhow::Result<Price> {
 ///
 /// # Errors
 ///
-/// Returns an error for the same reasons as [`parse_price`] – parsing failure or invalid
+/// Returns an error for the same reasons as [`parse_price`] - parsing failure or invalid
 /// precision.
 pub fn parse_quantity(value: &str, precision: u8) -> anyhow::Result<Quantity> {
     let decimal = Decimal::from_str(value)?;

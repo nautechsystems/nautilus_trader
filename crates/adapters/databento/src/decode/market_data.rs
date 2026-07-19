@@ -179,7 +179,7 @@ pub fn decode_mbo_msg(
     // attribution for a resting order, and its book impact arrives as the
     // explicit Cancel/Modify records of the same match event (CME MDP3
     // semantics as normalized by Databento). Decoding fills as deltas
-    // corrupts the book — an iceberg hidden-part fill carries an order ID
+    // corrupts the book - an iceberg hidden-part fill carries an order ID
     // that was never Added, so `BookAction::Update` materializes a phantom
     // order which nothing ever deletes (observed as a crossed book on GLBX).
     if matches!(msg.action(), Ok(dbn::Action::Fill | dbn::Action::None)) {

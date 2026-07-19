@@ -1,6 +1,6 @@
 # Betfair
 
-Founded in 2000, Betfair operates the world’s largest online betting exchange,
+Founded in 2000, Betfair operates the world's largest online betting exchange,
 with its headquarters in London and satellite offices across the globe.
 
 NautilusTrader provides an adapter for integrating with the Betfair REST API and

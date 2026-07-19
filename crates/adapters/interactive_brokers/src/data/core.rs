@@ -1285,7 +1285,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let use_rth = self.config.use_regular_trading_hours;
         let start_ns = parse_start_ns(cmd.params.as_ref());
         // Crypto (ZEROHASH/PAXOS) trade-price bars must request AGGTRADES, not
-        // TRADES (TWS rejects TRADES for crypto, error 10299) — on BOTH the
+        // TRADES (TWS rejects TRADES for crypto, error 10299) - on BOTH the
         // realtime (reqRealTimeBars) and historical (reqHistoricalData) paths, per
         // the Java engine's whatToShowFor rule. Capture the flag before `contract`
         // is moved into the subscription task below.

@@ -354,7 +354,7 @@ fn test_futures_fills_delta_dedup_skips_duplicate_trade_id() {
     let truncated = empty_string_map();
     let venue_client = empty_string_map();
 
-    // First dispatch — accepted + filled.
+    // First dispatch - accepted + filled.
     dispatch::futures::fills_delta(
         &fills,
         &state,
@@ -365,7 +365,7 @@ fn test_futures_fills_delta_dedup_skips_duplicate_trade_id() {
         account_id(),
         UnixNanos::default(),
     );
-    // Second dispatch with the same trade id — must be deduped.
+    // Second dispatch with the same trade id - must be deduped.
     dispatch::futures::fills_delta(
         &fills,
         &state,
@@ -584,7 +584,7 @@ fn test_futures_delta_modify_ack_emits_order_updated() {
 
 #[rstest]
 fn test_futures_delta_no_op_repeat_does_not_emit_updated() {
-    // Two identical deltas — nothing changed — must not emit OrderUpdated.
+    // Two identical deltas - nothing changed - must not emit OrderUpdated.
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-noop");
@@ -783,7 +783,7 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
     );
     let instruments = instruments_with(make_futures_perpetual());
 
-    // Placement delta — filled=0
+    // Placement delta - filled=0
     let placement = make_open_orders_delta(
         false,
         Some("new_placed_order_by_user"),
@@ -804,7 +804,7 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         account_id(),
         UnixNanos::default(),
     );
-    // Partial-fill delta — filled=0.0005
+    // Partial-fill delta - filled=0.0005
     let partial = make_open_orders_delta(
         false,
         None,
@@ -825,7 +825,7 @@ fn test_futures_partial_fill_does_not_double_count_via_delta_and_fill() {
         account_id(),
         UnixNanos::default(),
     );
-    // Matching FillsDelta — last_qty=0.0005 (the same fill)
+    // Matching FillsDelta - last_qty=0.0005 (the same fill)
     let fill = KrakenFuturesFillsDelta {
         feed: KrakenFuturesFeed::Fills,
         username: None,
@@ -944,7 +944,7 @@ fn test_futures_modify_ack_refreshes_tracked_quantity() {
 #[rstest]
 fn test_cleanup_terminal_clears_all_dispatch_state() {
     // Cleanup is what the rejection paths in submit_single_order /
-    // submit_order_list call when a REST submit fails — the order will
+    // submit_order_list call when a REST submit fails - the order will
     // never appear on the wire so the dispatch entry must not leak.
     let state = WsDispatchState::new();
     let cid = ClientOrderId::new("uuid-rejected");

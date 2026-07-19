@@ -1699,7 +1699,7 @@ impl WebSocketClient {
     /// [`WebSocketClient`] instances (for example, the WebSocket clients owned
     /// by an exchange adapter's data and execution clients). All quota state
     /// lives inside the limiter, so passing the same `Arc` produces a single
-    /// shared bucket — the only way to honour a venue's per-IP / per-account
+    /// shared bucket - the only way to honour a venue's per-IP / per-account
     /// WS message cap when more than one connection is opened in-process.
     ///
     /// Behavior otherwise matches [`Self::connect`].

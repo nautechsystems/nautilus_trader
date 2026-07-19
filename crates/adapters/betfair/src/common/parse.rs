@@ -297,7 +297,7 @@ pub fn parse_market_catalogue(
 /// Parses a stream [`MarketDefinition`] into a vec of [`InstrumentAny`].
 ///
 /// Each runner definition becomes a separate [`BettingInstrument`].
-/// Stream definitions have many optional fields — missing values are
+/// Stream definitions have many optional fields - missing values are
 /// defaulted gracefully.
 ///
 /// # Errors

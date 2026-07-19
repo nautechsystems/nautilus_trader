@@ -813,7 +813,7 @@ mod tests {
         let instrument = create_test_instrument();
         let ts_init = UnixNanos::default();
 
-        // 3 bids, 2 asks — Depth10 must pad the remaining 7/8 slots with zero orders
+        // 3 bids, 2 asks - Depth10 must pad the remaining 7/8 slots with zero orders
         let book = WsBookData {
             coin: Ustr::from("BTC"),
             levels: [

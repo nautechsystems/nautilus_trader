@@ -144,7 +144,7 @@ pub fn xbtusd_inverse_perp(
     #[default(Quantity::from("1"))] size_increment: Quantity,
 ) -> CryptoPerpetual {
     CryptoPerpetual::new(
-        // BitMEX uses XBT for BTC; keep the “-PERP” suffix for clarity
+        // BitMEX uses XBT for BTC; keep the "-PERP" suffix for clarity
         InstrumentId::from("XBTUSD-PERP.BITMEX"),
         Symbol::from("XBTUSD"),
         Currency::BTC(), // base

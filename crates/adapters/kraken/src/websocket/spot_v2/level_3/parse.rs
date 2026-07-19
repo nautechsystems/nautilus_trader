@@ -317,7 +317,7 @@ pub(crate) fn parse_l3_update(
                     }
                 } else {
                     log::warn!(
-                        "Unknown order_id on Modify event: {} — skipping",
+                        "Unknown order_id on Modify event: {} - skipping",
                         event.order_id
                     );
                 }
@@ -347,7 +347,7 @@ pub(crate) fn parse_l3_update(
                     deltas.push(delta);
                 } else {
                     log::warn!(
-                        "Unknown order_id on Delete event: {} — ignoring",
+                        "Unknown order_id on Delete event: {} - ignoring",
                         event.order_id
                     );
                 }

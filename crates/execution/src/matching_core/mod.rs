@@ -979,7 +979,7 @@ mod tests {
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
         matching_core.set_ask_raw(Price::from("101.00"));
 
-        // Buy limit at 100 with ask at 101 — not matched
+        // Buy limit at 100 with ask at 101 - not matched
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1088,7 +1088,7 @@ mod tests {
         matching_core.set_bid_raw(Price::from("99.00"));
         matching_core.set_ask_raw(Price::from("101.00"));
 
-        // Buy limit at 101 — matches (ask <= price)
+        // Buy limit at 101 - matches (ask <= price)
         let buy_limit = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1101,7 +1101,7 @@ mod tests {
             &PassiveOrderAny::try_from(buy_limit).unwrap(),
         ));
 
-        // Sell stop at 99 — matches (bid <= trigger)
+        // Sell stop at 99 - matches (bid <= trigger)
         let sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_id)
             .side(OrderSide::Sell)

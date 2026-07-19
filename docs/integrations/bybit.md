@@ -31,7 +31,7 @@ and won't need to necessarily work with these lower level components directly.
 ## Bybit documentation
 
 Bybit provides extensive documentation for users which can be found in the [Bybit help center](https://www.bybit.com/en/help-center).
-It’s recommended you also refer to the Bybit documentation in conjunction with this NautilusTrader integration guide.
+It's recommended you also refer to the Bybit documentation in conjunction with this NautilusTrader integration guide.
 
 ## Products
 

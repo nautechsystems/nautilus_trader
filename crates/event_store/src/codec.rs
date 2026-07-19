@@ -97,7 +97,7 @@ pub enum CodecError {
         ///
         /// Kept as `u64` (not `usize`) so the reported value is exact on every
         /// target, including a length that overflows `usize` on a sub-64-bit
-        /// build — the case that would otherwise be reported with a lossy
+        /// build - the case that would otherwise be reported with a lossy
         /// sentinel.
         claimed: u64,
         /// Bytes remaining in the input when the length was checked.

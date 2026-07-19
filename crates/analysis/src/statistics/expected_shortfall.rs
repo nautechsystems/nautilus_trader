@@ -27,7 +27,7 @@ use crate::{Returns, statistic::PortfolioStatistic, statistics::value_at_risk::p
 ///
 /// Expected Shortfall is the average of the losses that occur beyond the
 /// [`ValueAtRisk`](crate::statistics::value_at_risk::ValueAtRisk) threshold at a
-/// given confidence level — the mean of the worst
+/// given confidence level - the mean of the worst
 /// `1 - confidence` tail of the return distribution. It is a coherent risk
 /// measure and captures tail severity that `VaR` alone does not.
 ///

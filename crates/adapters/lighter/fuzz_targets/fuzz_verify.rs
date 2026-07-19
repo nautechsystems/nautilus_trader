@@ -13,7 +13,7 @@
 //! - 40 padding bytes ignored.
 //!
 //! Inputs shorter than 200 bytes are skipped. The fuzz harness asserts the
-//! verify call returns a `bool` (no panic, no UB) — any divergence is a bug.
+//! verify call returns a `bool` (no panic, no UB) - any divergence is a bug.
 
 use nautilus_lighter::signing::{
     field::Fp5,

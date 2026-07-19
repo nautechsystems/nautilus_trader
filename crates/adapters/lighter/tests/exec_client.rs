@@ -2534,7 +2534,7 @@ async fn seed_open_order(
     // registered the identity. The dispatcher resolves the echo's
     // `client_order_id` field through `cloid_map[i64]`, so the wire
     // value must be the numeric client_order_index (as a string) the
-    // adapter signed in the sendTx — not the Nautilus cloid label.
+    // adapter signed in the sendTx - not the Nautilus cloid label.
     // Routing the test through the numeric form pins the cloid-map
     // path; a regression there would surface as a missing OrderAccepted.
     let _ = cloid; // retained for readability; assertion uses client_order_index

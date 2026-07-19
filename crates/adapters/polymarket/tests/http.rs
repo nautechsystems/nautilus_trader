@@ -1227,7 +1227,7 @@ async fn test_load_all_without_filter_loads_everything() {
 
     let addr = start_mock_server(state.clone()).await;
     let http_client = create_gamma_domain_client(&addr);
-    // No filter — should use bulk loading
+    // No filter - should use bulk loading
     let mut provider = PolymarketInstrumentProvider::new(http_client, None);
 
     provider.load_all(None).await.unwrap();
@@ -1322,7 +1322,7 @@ async fn test_set_filter_then_clear_reverts() {
     provider.load_all(None).await.unwrap();
     assert_eq!(provider.store().count(), 2);
 
-    // Clear filters and load again — should use bulk loading
+    // Clear filters and load again - should use bulk loading
     provider.clear_filters();
     provider.load_all(None).await.unwrap();
     assert_eq!(provider.store().count(), 2);
@@ -1891,7 +1891,7 @@ async fn test_load_ids_fetches_missing_instruments() {
         "0xcondition_ids",
         ["93000000000000000001", "93000000000000000002"],
     );
-    // Use generic gamma response — condition_ids query hits /markets
+    // Use generic gamma response - condition_ids query hits /markets
     *state.gamma_response.lock().await = Some(json!([market]));
 
     let addr = start_mock_server(state.clone()).await;
@@ -2231,7 +2231,7 @@ async fn test_load_single_instrument_direct_fetch() {
         "0xcondition_direct",
         ["95000000000000000001", "95000000000000000002"],
     );
-    // Use generic gamma response — condition_ids query hits /markets
+    // Use generic gamma response - condition_ids query hits /markets
     *state.gamma_response.lock().await = Some(json!([market]));
 
     let addr = start_mock_server(state.clone()).await;
@@ -2243,7 +2243,7 @@ async fn test_load_single_instrument_direct_fetch() {
     provider.load(&instrument_id, None).await.unwrap();
 
     assert!(provider.store().contains(&instrument_id));
-    // Direct fetch succeeded, so load_all was NOT called — store not initialized
+    // Direct fetch succeeded, so load_all was NOT called - store not initialized
     assert!(!provider.store().is_initialized());
 }
 

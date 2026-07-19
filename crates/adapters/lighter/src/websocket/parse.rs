@@ -65,7 +65,7 @@ use crate::{
 
 /// Lighter encodes per-trade fees as integer micro-USDC ticks (1 unit = `1e-6` USDC),
 /// matching the venue's quote-decimal precision. The fee scale (6) lets us
-/// build the commission Decimal via `Decimal::new(ticks, FEE_DECIMALS)` —
+/// build the commission Decimal via `Decimal::new(ticks, FEE_DECIMALS)` -
 /// directly populating mantissa+scale, avoiding the heavier division path
 /// the prior implementation used.
 const FEE_DECIMALS: u32 = 6;

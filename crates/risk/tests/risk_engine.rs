@@ -113,7 +113,7 @@ fn test_deny_order_on_price_precision_exceeded(
 
     let mut risk_engine = get_risk_engine(Some(Rc::new(RefCell::new(cache))), None, None, false);
 
-    // AUD/USD price precision is 5 – create a Limit order with 6-dp price (invalid)
+    // AUD/USD price precision is 5 - create a Limit order with 6-dp price (invalid)
     let bad_price = Price::from("1.000001"); // precision 6
     assert!(bad_price.precision > instrument_audusd.price_precision());
 

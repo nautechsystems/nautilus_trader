@@ -2,7 +2,7 @@
 
 This crate includes code from third-party sources.
 
-- **Real Logic Limited – Simple Binary Encoding (SBE)**
+- **Real Logic Limited - Simple Binary Encoding (SBE)**
   - Usage: The `src/spot/sbe/generated` codecs were generated using Real Logic's SBE
     tool from Binance Spot API SBE schemas.
   - Attribution: Copyright 2013-2025 Real Logic Limited. Copyright 2017

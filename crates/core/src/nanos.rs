@@ -263,13 +263,13 @@ impl UnixNanos {
         self.0.checked_sub(rhs.into()).map(Self)
     }
 
-    /// Saturating addition – if overflow occurs the value is clamped to `u64::MAX`.
+    /// Saturating addition - if overflow occurs the value is clamped to `u64::MAX`.
     #[must_use]
     pub fn saturating_add_ns<T: Into<u64>>(self, rhs: T) -> Self {
         Self(self.0.saturating_add(rhs.into()))
     }
 
-    /// Saturating subtraction – if underflow occurs the value is clamped to `0`.
+    /// Saturating subtraction - if underflow occurs the value is clamped to `0`.
     #[must_use]
     pub fn saturating_sub_ns<T: Into<u64>>(self, rhs: T) -> Self {
         Self(self.0.saturating_sub(rhs.into()))

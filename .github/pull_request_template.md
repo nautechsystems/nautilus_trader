@@ -6,7 +6,7 @@
 
 ## Summary
 
-<!-- Provide a brief description of *what* changed, *why* it was changed, and the impact on the system or users (2–3 sentences). -->
+<!-- Provide a brief description of *what* changed, *why* it was changed, and the impact on the system or users (2-3 sentences). -->
 
 ## Related Issues/PRs
 

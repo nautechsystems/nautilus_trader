@@ -88,7 +88,7 @@ fn bench_encode(c: &mut Criterion) {
 
 fn bench_scalar_mul_arbitrary_base(c: &mut Criterion) {
     // Verification's `pk.scalar_mul(e)` runs over a non-generator base, so
-    // bench an arbitrary point too — this is the path Strauss-Shamir
+    // bench an arbitrary point too - this is the path Strauss-Shamir
     // optimizes away.
     let base = Point::GENERATOR.scalar_mul(Scalar::from_limbs([7, 0, 0, 0, 0]));
     let s = fixed_k();

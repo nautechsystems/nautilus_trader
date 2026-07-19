@@ -514,7 +514,7 @@ mod tests {
     #[rstest]
     fn test_parse_execution_time_applies_dst_for_regional_timezone() {
         // Same zone, two seasons: EST (UTC-5) in winter vs EDT (UTC-4) in summer.
-        // Equal offsets would mean DST is NOT being applied — a real regression.
+        // Equal offsets would mean DST is NOT being applied - a real regression.
         let winter = parse_execution_time("20230223 00:43:36 America/New_York").unwrap();
         let summer = parse_execution_time("20230715 00:43:36 America/New_York").unwrap();
         let winter_utc = parse_execution_time("20230223 00:43:36 Universal").unwrap();
@@ -552,7 +552,7 @@ mod tests {
 
     #[rstest]
     fn test_parse_execution_time_fixed_offset_zone_without_dst() {
-        // Asia/Tokyo is JST (UTC+9) year-round — guards the no-DST path.
+        // Asia/Tokyo is JST (UTC+9) year-round - guards the no-DST path.
         let tokyo = parse_execution_time("20230223 00:43:36 Asia/Tokyo").unwrap();
         let utc = parse_execution_time("20230223 00:43:36 Universal").unwrap();
         assert_eq!(tokyo.as_i64(), utc.as_i64() - 9 * 3_600_000_000_000);

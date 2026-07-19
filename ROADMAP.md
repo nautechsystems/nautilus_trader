@@ -64,7 +64,7 @@ we set clear expectations, focus community efforts, and support a sustainable op
 ### Out of scope
 
 - UI dashboards or frontends: focus remains strictly on the core trading engine. Frontend contributions would divert attention from the engine and add unsustainable maintenance burdens.
-- Distributed or massively parallel backtesting orchestration: externally orchestrated workflows are technically compatible, but a built-in distributed runner is beyond the project’s current scope.
+- Distributed or massively parallel backtesting orchestration: externally orchestrated workflows are technically compatible, but a built-in distributed runner is beyond the project's current scope.
 - Integrated hyper-parameter optimization or built-in AI/ML tooling: users should integrate their own optimization frameworks tailored to their needs.
 - Additional external integrations (e.g. cloud services, databases, and monitoring tools): these are not in scope unless explicitly listed.
 
@@ -80,18 +80,18 @@ At present, the project has limited bandwidth to support new official integratio
 
 To set clearer expectations:
 
-**Step 1 – Open an RFC**
+**Step 1 - Open an RFC**
 
 Before opening a PR for a new integration, contributors should first open a Request for Comments (RFC) issue.
 This allows discussion of suitability, alignment with the roadmap, and maintenance considerations before any code is written.
 
-**Step 2 – Evaluation**
+**Step 2 - Evaluation**
 
 The maintainers will review the RFC in light of factors such as stability, demand, technical fit, and available bandwidth.
-Integrations must also align with NautilusTrader’s professional, performance-focused, and high-reliability philosophy.
+Integrations must also align with NautilusTrader's professional, performance-focused, and high-reliability philosophy.
 Only after agreement at this stage should a PR be considered.
 
-**Step 3 – PR submission (if approved)**
+**Step 3 - PR submission (if approved)**
 
 If the RFC is approved, a contributor may proceed with a PR.
 Integrations must adhere closely to existing Rust-based adapter implementation patterns to ensure consistency and maintainability.
@@ -121,5 +121,5 @@ be achieved with the open-source codebase.
 
 ## Charting the future
 
-This roadmap builds on NautilusTrader’s strong foundation, driving continuous refinement while
+This roadmap builds on NautilusTrader's strong foundation, driving continuous refinement while
 expanding its possibilities and capabilities for algorithmic traders and developers.

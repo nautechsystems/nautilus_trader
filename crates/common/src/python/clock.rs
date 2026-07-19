@@ -34,7 +34,7 @@ use crate::{
 /// to transparently wrap either implementation and eliminating the large
 /// amount of duplicated glue code previously required.
 ///
-/// It intentionally does **not** expose a `__new__` constructor to Python –
+/// It intentionally does **not** expose a `__new__` constructor to Python -
 /// clocks should be created from Rust and handed over to Python as needed.
 #[allow(non_camel_case_types)]
 #[pyo3::pyclass(

@@ -513,7 +513,7 @@ async fn test_observe_order_report_clears_inflight_tracking() {
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
-    // Inflight check should return empty — tracking was cleared by observation
+    // Inflight check should return empty - tracking was cleared by observation
     let result = ctx.manager.check_inflight_orders();
     assert!(result.events.is_empty());
 }
@@ -619,7 +619,7 @@ fn test_observe_position_report_records_activity() {
     );
     let report = ExecutionReport::Position(Box::new(position_report));
 
-    // Should complete without panic — position activity is recorded internally
+    // Should complete without panic - position activity is recorded internally
     ctx.manager.observe_execution_report(&report);
 }
 
@@ -9754,7 +9754,7 @@ async fn test_position_check_retries_stops_after_max() {
 
     let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
 
-    // Add position to cache but NOT the instrument — forces reconciliation to
+    // Add position to cache but NOT the instrument - forces reconciliation to
     // return None on the cache.instrument() lookup
     ctx.add_position(&position);
 
@@ -9796,7 +9796,7 @@ async fn test_position_check_retries_clears_when_discrepancy_resolves() {
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(events.is_empty()); // Failed, retry count = 1
 
-    // Now add instrument — reconciliation can succeed and generate events
+    // Now add instrument - reconciliation can succeed and generate events
     ctx.add_instrument(instrument.clone());
 
     let events = ctx.manager.check_positions_consistency(&clients).await;
@@ -9833,7 +9833,7 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
 
     // Simulate that reconciliation didn't actually fix it (position still open)
     // by not applying the events. Instead, directly max out the retry counter
-    // by calling again — the position is still discrepant
+    // by calling again - the position is still discrepant
     ctx.manager.check_positions_consistency(&clients).await;
 
     // Now close the position so it disappears from open positions
@@ -9859,7 +9859,7 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
     pos.apply(&close_filled);
     ctx.cache.borrow_mut().update_position(&pos).unwrap();
 
-    // Run consistency check with no open positions — should prune stale counter
+    // Run consistency check with no open positions - should prune stale counter
     ctx.manager.check_positions_consistency(&clients).await;
 
     // Create a new position for the same instrument
@@ -10703,7 +10703,7 @@ async fn test_position_check_flat_venue_report_does_not_protect_stale_counter() 
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
 
-    // Don't apply events — simulate recon not fixing it, exhaust retries
+    // Don't apply events - simulate recon not fixing it, exhaust retries
     ctx.manager.check_positions_consistency(&clients).await;
     let close_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_id)
@@ -10786,7 +10786,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(!events.is_empty());
 
-    // Don't apply events — exhaust retries
+    // Don't apply events - exhaust retries
     ctx.manager.check_positions_consistency(&clients).await;
     let close_order = OrderTestBuilder::new(OrderType::Market)
         .instrument_id(instrument_id)
@@ -10822,7 +10822,7 @@ async fn test_position_check_nonflat_venue_report_protects_counter() {
     );
     ctx.add_position(&position2);
 
-    // Counter retained — retries still exhausted
+    // Counter retained - retries still exhausted
     let events = ctx.manager.check_positions_consistency(&clients).await;
     assert!(
         events.is_empty(),

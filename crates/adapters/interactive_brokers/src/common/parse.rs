@@ -360,7 +360,7 @@ pub static VENUE_MEMBERS: LazyLock<HashMap<&'static str, Vec<&'static str>>> =
 /// Returns `true` if the contract is a cryptocurrency contract.
 ///
 /// Centralizes the crypto check used to gate crypto-specific request handling
-/// (e.g. the `AGGTRADES` `whatToShow` rule — see
+/// (e.g. the `AGGTRADES` `whatToShow` rule - see
 /// [`crate::data::convert::price_type_to_ib_what_to_show_for_security`]).
 #[must_use]
 pub fn is_crypto_contract(contract: &Contract) -> bool {

@@ -2200,28 +2200,28 @@ proves the same core behaviours.
 
 ##### HTTP client integration coverage
 
-- **Happy paths** – fetch a representative public resource (e.g., instruments or mark price) and verify the
+- **Happy paths** - fetch a representative public resource (e.g., instruments or mark price) and verify the
   response is converted into Nautilus domain models.
-- **Credential guard** – call a private endpoint without credentials and assert a structured error; repeat with
+- **Credential guard** - call a private endpoint without credentials and assert a structured error; repeat with
   credentials to prove success.
-- **Rate limiting / retry mapping** – surface venue-specific rate-limit responses and assert the adapter produces
+- **Rate limiting / retry mapping** - surface venue-specific rate-limit responses and assert the adapter produces
   the correct `OkxError`/`BitmexHttpError` variant so the retry policy can react.
-- **Query builders** – exercise builders for paginated/time-bounded endpoints (historical trades, candles) and
+- **Query builders** - exercise builders for paginated/time-bounded endpoints (historical trades, candles) and
   assert the emitted query string matches the venue specification (`after`, `before`, `limit`, etc.).
-- **Error translation** – verify non-2xx upstream responses map to adapter error enums with the original code/message attached.
+- **Error translation** - verify non-2xx upstream responses map to adapter error enums with the original code/message attached.
 
 ##### WebSocket client integration coverage
 
-- **Login handshake** – confirm a successful login flips the internal auth state and test failure cases where the
+- **Login handshake** - confirm a successful login flips the internal auth state and test failure cases where the
   server returns a non-zero code; the client should surface an error and avoid marking itself as authenticated.
-- **Ping/Pong** – prove both text-based and control-frame pings trigger immediate pong responses.
-- **Subscription lifecycle** – assert subscription requests/acks are emitted for public and private channels, and that
+- **Ping/Pong** - prove both text-based and control-frame pings trigger immediate pong responses.
+- **Subscription lifecycle** - assert subscription requests/acks are emitted for public and private channels, and that
   unsubscribe calls remove entries from the cached subscription sets.
-- **Reconnect behaviour** – simulate a disconnect and verify the client re-authenticates, restores public channels,
+- **Reconnect behaviour** - simulate a disconnect and verify the client re-authenticates, restores public channels,
   and skips private channels that were explicitly unsubscribed pre-disconnect.
-- **Message routing** – feed representative data/ack/error payloads through the socket and assert they arrive on the
+- **Message routing** - feed representative data/ack/error payloads through the socket and assert they arrive on the
   public stream as the correct `{Venue}WsMessage` variant.
-- **Quota tagging** – (optional but recommended) validate that order/cancel/amend operations are tagged with the
+- **Quota tagging** - (optional but recommended) validate that order/cancel/amend operations are tagged with the
   appropriate quota label so rate limiting can be enforced independently of subscription traffic.
 
 **CI robustness:**

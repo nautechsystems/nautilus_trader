@@ -31,7 +31,7 @@ We recommend using the latest supported version of Python and installing [nautil
 :::tip
 We highly recommend installing using the [uv](https://docs.astral.sh/uv) package manager with a "vanilla" CPython.
 
-Conda and other Python distributions *may* work but aren’t officially supported.
+Conda and other Python distributions *may* work but aren't officially supported.
 :::
 
 ## From PyPI
@@ -405,7 +405,7 @@ For pure Rust crates, high-precision works on all platforms (including Windows) 
 the `high-precision` feature flag.
 :::
 
-The performance tradeoff is that standard-precision is ~3–5% faster in typical backtests,
+The performance tradeoff is that standard-precision is ~3-5% faster in typical backtests,
 but has lower decimal precision and a smaller representable value range.
 
 :::note

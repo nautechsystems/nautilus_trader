@@ -51,7 +51,7 @@ use crate::{
 /// Dispatches a Kraken Futures `OpenOrdersDelta` message.
 ///
 /// Fill-driven cancel deltas (`is_cancel=true` with reason `full_fill` /
-/// `partial_fill`) are skipped — the corresponding `FillsDelta` carries the
+/// `partial_fill`) are skipped - the corresponding `FillsDelta` carries the
 /// real fill, so emitting a synthetic Canceled here would race with the
 /// genuine `OrderFilled`.
 #[expect(clippy::too_many_arguments)]

@@ -1420,7 +1420,7 @@ impl Trader {
 
     /// Stops the strategy with the given `strategy_id`.
     ///
-    /// Respects the `manage_stop` behavior — if the strategy's stop function
+    /// Respects the `manage_stop` behavior - if the strategy's stop function
     /// returns `false`, the component stop is deferred until market exit completes.
     ///
     /// # Errors

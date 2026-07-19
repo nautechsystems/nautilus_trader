@@ -386,7 +386,7 @@ typedef enum InstrumentClass {
      */
     OPTION_SPREAD = 9,
     /**
-     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+     * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security - most commonly an equity - at a certain price before expiration.
      */
     WARRANT = 10,
     /**

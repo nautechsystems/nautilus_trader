@@ -360,7 +360,7 @@ impl HistoricalInteractiveBrokersClient {
 
                 // Convert bar type to IB parameters. Crypto trade-price bars must
                 // request AGGTRADES, not TRADES (TWS rejects TRADES for crypto,
-                // error 10299) — same rule as the live data client's historical path.
+                // error 10299) - same rule as the live data client's historical path.
                 let ib_bar_size = bar_type_to_ib_bar_size(&bar_type_with_id)?;
                 let is_crypto = crate::common::parse::is_crypto_contract(&contract);
                 let ib_what_to_show =

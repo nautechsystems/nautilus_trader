@@ -169,8 +169,8 @@ BitMEX UI. Use `XBTUSDT` instead of `XBT/USDT`.
 BitMEX reports spot and derivative quantities in *contract* units. The actual asset size per
 contract is exchange-specific and published on the instrument definition:
 
-- `lotSize` – minimum number of contracts you can trade.
-- `underlyingToPositionMultiplier` – number of contracts per unit of the underlying asset.
+- `lotSize` - minimum number of contracts you can trade.
+- `underlyingToPositionMultiplier` - number of contracts per unit of the underlying asset.
 
 For example, the SOL/USDT spot instrument (`SOLUSDT`) exposes `lotSize = 1000` and
 `underlyingToPositionMultiplier = 10000`, meaning one contract represents `1 / 10000 = 0.0001`

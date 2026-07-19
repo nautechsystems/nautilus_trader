@@ -610,7 +610,7 @@ fn mbo_msg_with_action(action: c_char, flags: dbn::FlagSet) -> dbn::MboMsg {
 }
 
 #[rstest]
-#[case('F' as c_char, true)] // Fill: attribution only — book impact arrives as explicit C/M
+#[case('F' as c_char, true)] // Fill: attribution only - book impact arrives as explicit C/M
 #[case('F' as c_char, false)]
 #[case('N' as c_char, true)] // None: status record, no book impact
 #[case('N' as c_char, false)]
@@ -621,7 +621,7 @@ fn test_decode_mbo_msg_fill_and_none_produce_nothing(
     // An iceberg hidden-part fill is the lethal case: its 'F' carries an
     // order ID that was never Added, so decoding it as a delta materializes
     // a phantom order which nothing ever deletes (crossed book on GLBX).
-    // With include_trades=true it must not become a TradeTick either — the
+    // With include_trades=true it must not become a TradeTick either - the
     // trade is already conveyed by the 'T' record of the same event.
     let msg = mbo_msg_with_action(action, dbn::FlagSet::empty());
 
@@ -650,7 +650,7 @@ fn test_decode_mbo_msg_fill_and_none_with_last_flag_still_produce_nothing(#[case
 
 #[rstest]
 fn test_decode_mbo_msg_trade_event_sequence_book_records_only() {
-    // A full match event as GLBX publishes it — [A, T, F, C] — must yield
+    // A full match event as GLBX publishes it - [A, T, F, C] - must yield
     // exactly the Add and Delete deltas plus one TradeTick: the F is
     // attribution and produces nothing.
     let instrument_id = InstrumentId::from("ESM4.GLBX");

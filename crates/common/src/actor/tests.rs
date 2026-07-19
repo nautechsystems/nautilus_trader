@@ -3608,7 +3608,7 @@ fn test_on_save_and_on_load(
     let actor_key = actor_id.inner();
     let mut actor_ref = get_actor_unchecked::<SaveLoadActor>(&actor_key);
 
-    // Invoke on_save – emulate persistence snapshot
+    // Invoke on_save - emulate persistence snapshot
     let snapshot = actor_ref.on_save().unwrap();
     assert!(snapshot.contains_key("answer"));
 

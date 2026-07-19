@@ -68,7 +68,7 @@ pub static KRAKEN_FUTURES_WS_SUBSCRIPTION_QUOTA: LazyLock<Quota> = LazyLock::new
 /// Kraken Spot WebSocket request rate limit (conservative).
 ///
 /// The Spot WS message rate limit is dynamic and varies depending on system load.
-/// No fixed number is documented — the server returns `{"Error": "Exceeded msg rate"}`
+/// No fixed number is documented - the server returns `{"Error": "Exceeded msg rate"}`
 /// when exceeded. This conservative quota should avoid hitting the limit under normal use.
 ///
 /// <https://docs.kraken.com/api/docs/guides/spot-ratelimits>

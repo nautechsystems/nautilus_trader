@@ -1340,7 +1340,7 @@ impl PyDataActor {
         value: Py<PyAny>,
         ts_event: u64,
     ) -> PyResult<()> {
-        // Accept any int / float / str / bool — match v1 behaviour by coercing with `str(value)`.
+        // Accept any int / float / str / bool - match v1 behaviour by coercing with `str(value)`.
         let value_str: String = value.bind(py).str()?.extract()?;
         self.inner()
             .publish_signal(name, value_str, UnixNanos::from(ts_event));

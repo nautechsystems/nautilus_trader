@@ -107,7 +107,7 @@ pub struct KrakenL3OrderEvent {
     pub order_id: String,
     /// Limit price for this event; preserves the exact JSON string for checksum computation.
     pub limit_price: RawDecimal,
-    /// Order quantity; absent for delete events — defaults to zero.
+    /// Order quantity; absent for delete events - defaults to zero.
     #[serde(default)]
     pub order_qty: RawDecimal,
     /// Timestamp of the event.

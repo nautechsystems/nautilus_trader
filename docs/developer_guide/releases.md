@@ -307,8 +307,8 @@ Features marked for removal.
 **Be specific**:
 
 ```markdown
-❌ Improved Binance adapter
-✅ Improved Binance fill handling when instrument not cached
+Bad:  Improved Binance adapter
+Good: Improved Binance fill handling when instrument not cached
 ```
 
 ## Security classification

@@ -41,7 +41,7 @@ For the full step-by-step trace, see
 
 ### Basic example
 
-Within a strategy, you can access the `Cache` through `self.cache`. Here’s a typical example:
+Within a strategy, you can access the `Cache` through `self.cache`. Here's a typical example:
 
 :::note
 Within a `Strategy` class, `self` refers to the strategy instance.

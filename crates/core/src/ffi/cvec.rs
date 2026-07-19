@@ -16,14 +16,14 @@
 //! Utilities for transferring heap-allocated Rust `Vec<T>` values across an FFI boundary.
 //!
 //! The primary abstraction offered by this module is `CVec`, a C-compatible struct that stores
-//! a raw pointer (`ptr`) together with the vector’s logical `len` and `cap`.  By moving the
+//! a raw pointer (`ptr`) together with the vector's logical `len` and `cap`.  By moving the
 //! allocation metadata into a plain `repr(C)` type we allow the memory created by Rust to be
 //! owned, inspected, and ultimately freed by foreign code (or vice-versa) without introducing
 //! undefined behaviour.
 //!
 //! Only a very small API surface is exposed to C:
 //!
-//! - `cvec_new` – create an empty `CVec` sentinel that can be returned to foreign code.
+//! - `cvec_new` - create an empty `CVec` sentinel that can be returned to foreign code.
 //!
 //! De-allocation is intentionally **not** provided via a generic helper. Instead each FFI module
 //! must expose its own *type-specific* `vec_*_drop` function which reconstructs the original

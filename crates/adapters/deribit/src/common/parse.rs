@@ -895,7 +895,7 @@ pub fn use_cost_for_bar_volume(instrument: &InstrumentAny) -> bool {
 /// into a vector of [`Bar`] objects.
 ///
 /// When `use_cost_for_volume` is true, `Bar.volume` is populated from `chart_data.cost` (USD)
-/// instead of `chart_data.volume` (base currency) — see [`use_cost_for_bar_volume`].
+/// instead of `chart_data.volume` (base currency) - see [`use_cost_for_bar_volume`].
 ///
 /// # Errors
 ///
@@ -1492,7 +1492,7 @@ mod tests {
             "options report trade amount in base currency, must keep using volume",
         );
 
-        // Inverse future: same convention as perp — cost (USD)
+        // Inverse future: same convention as perp - cost (USD)
         let future_inst = instruments
             .iter()
             .find(|i| i.instrument_name.as_str() == "BTC-27DEC24")

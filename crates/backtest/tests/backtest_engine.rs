@@ -1957,7 +1957,7 @@ fn test_reset_preserves_data(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let result1 = engine.get_result();
     assert_eq!(result1.iterations, 2);
 
-    // Reset and run again — data should persist
+    // Reset and run again - data should persist
     engine.reset();
 
     engine.add_strategy(EmptyStrategy::new()).unwrap();
@@ -1999,10 +1999,10 @@ fn test_ema_cross_strategy_generates_orders(crypto_perpetual_ethusdt: CryptoPerp
         .unwrap();
 
     // Generate price series with clear trend changes to trigger EMA crossovers.
-    // Phase 1: Flat at 1000 (25 ticks) — both EMAs initialize and converge
-    // Phase 2: Ramp up to 1200 (40 ticks) — fast EMA crosses above slow → BUY
-    // Phase 3: Ramp down to 800 (80 ticks) — fast EMA crosses below slow → SELL
-    // Phase 4: Ramp up to 1000 (40 ticks) — fast crosses above again → BUY
+    // Phase 1: Flat at 1000 (25 ticks) - both EMAs initialize and converge
+    // Phase 2: Ramp up to 1200 (40 ticks) - fast EMA crosses above slow → BUY
+    // Phase 3: Ramp down to 800 (80 ticks) - fast EMA crosses below slow → SELL
+    // Phase 4: Ramp up to 1000 (40 ticks) - fast crosses above again → BUY
     let spread = 0.10;
     let mut quotes = Vec::new();
     let base_ts: u64 = 1_000_000_000;
@@ -2757,7 +2757,7 @@ fn test_strategy_receives_only_subscribed_quotes(crypto_perpetual_ethusdt: Crypt
         .add_strategy(EmaCross::new(instrument_id, Quantity::from("0.100"), 3, 5))
         .unwrap();
 
-    // 10 quotes ramping up then 10 down — with 3/5 periods, should trigger quickly
+    // 10 quotes ramping up then 10 down - with 3/5 periods, should trigger quickly
     let mut quotes = Vec::new();
     let base_ts: u64 = 1_000_000_000;
     let interval: u64 = 1_000_000_000;

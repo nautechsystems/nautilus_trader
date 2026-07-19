@@ -43,16 +43,16 @@ Shell scripts in this repository use **bash** (not POSIX sh) and must be portabl
 ### Comment conventions
 
 1. Generally leave **one blank line above** every comment block or docstring so it is visually separated from code.
-2. Use *sentence case* – capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
+2. Use *sentence case* - capitalize the first letter, keep the rest lowercase unless proper nouns or acronyms.
 3. Do not use double spaces after periods.
-4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link – in those cases leave the punctuation exactly as the link requires.
+4. **Single-line comments** *must not* end with a period *unless* the line ends with a URL or inline Markdown link - in those cases leave the punctuation exactly as the link requires.
 5. **Multi-line comments** should separate sentences with commas (not period-per-line). The final line *should* end with a period.
-6. Keep comments concise; favor clarity and only explain the non-obvious – *less is more*.
+6. Keep comments concise; favor clarity and only explain the non-obvious - *less is more*.
 7. Avoid emoji symbols in text.
 
 ### Doc comment mood
 
-**Rust** doc comments should be written in the **indicative mood** – e.g. *"Returns a cached client."*
+**Rust** doc comments should be written in the **indicative mood** - e.g. *"Returns a cached client."*
 
 This convention aligns with the prevailing style of the Rust ecosystem and makes generated
 documentation feel natural to end-users.
@@ -60,10 +60,10 @@ documentation feel natural to end-users.
 ### Terminology and phrasing
 
 1. **Error messages**: Avoid using ", got" in error messages. Use more descriptive alternatives like ", was", ", received", or ", found" depending on context.
-   - ❌ `"Expected string, got {type(value)}"`
-   - ✅ `"Expected string, was {type(value)}"`
+   - Bad: `"Expected string, got {type(value)}"`
+   - Good: `"Expected string, was {type(value)}"`
 
-2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" – this is the more modern and accepted spelling.
+2. **Spelling**: Use "hardcoded" (single word) rather than "hard-coded" or "hard coded" - this is the more modern and accepted spelling.
 
 3. **Error variable naming**: Use single-letter `e` for caught errors/exceptions:
    - Rust: `Err(e)` not `Err(err)` or `Err(error)`, and `|e|` not `|err|` in closures

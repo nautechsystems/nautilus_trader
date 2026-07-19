@@ -2700,7 +2700,7 @@ mod tests {
     // pushes well past i64::MAX so `decimal_trunc_to_i64` short-circuits.
     // A precision-0 quantity at 1e10 is well inside the Nautilus
     // `Quantity` raw cap (~3.4e29 with high-precision), but scaling by
-    // `10^16` pushes it to 1e26 — far past i64::MAX (~9.22e18). The
+    // `10^16` pushes it to 1e26 - far past i64::MAX (~9.22e18). The
     // wrapping `with_context` must surface the typed overflow message
     // rather than silently truncating.
     #[rstest]

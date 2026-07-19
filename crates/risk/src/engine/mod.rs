@@ -148,7 +148,7 @@ impl RiskEngine {
         // In live mode the `TradingCommandSender` queues the command for the next
         // event-loop iteration, preventing a synchronous `deny_order()` from
         // dispatching an `OrderDenied` back into a strategy that still holds a
-        // mutable borrow — which would otherwise panic on `RefCell` re-entrancy.
+        // mutable borrow - which would otherwise panic on `RefCell` re-entrancy.
         // In backtest/test mode (no sender), falls back to the direct endpoint.
         msgbus::register_trading_command_endpoint(
             MessagingSwitchboard::risk_engine_queue_execute(),

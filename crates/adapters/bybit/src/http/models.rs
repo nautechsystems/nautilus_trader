@@ -1446,11 +1446,11 @@ pub struct BybitApiKeyPermissions {
     #[serde(default)]
     pub affiliate: Vec<String>,
     // Newer permission buckets. Master-account responses populate them, sub-key
-    // responses typically omit or return empty arrays — both cases deserialize
+    // responses typically omit or return empty arrays - both cases deserialize
     // to an empty `Vec` via `serde(default)`.
     #[serde(default)]
     pub earn: Vec<String>,
-    // Bybit uses `"FiatP2P"` — PascalCase rename would emit `"FiatP2p"`.
+    // Bybit uses `"FiatP2P"` - PascalCase rename would emit `"FiatP2p"`.
     #[serde(rename = "FiatP2P", default)]
     pub fiat_p2p: Vec<String>,
     #[serde(default)]
@@ -1463,7 +1463,7 @@ pub struct BybitApiKeyPermissions {
     pub fiat_convert_broker: Vec<String>,
     #[serde(default)]
     pub bit_card: Vec<String>,
-    // Bybit uses `"ByXPost"` — PascalCase rename would emit `"ByxPost"`.
+    // Bybit uses `"ByXPost"` - PascalCase rename would emit `"ByxPost"`.
     #[serde(rename = "ByXPost", default)]
     pub byx_post: Vec<String>,
 }

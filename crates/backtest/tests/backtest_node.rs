@@ -504,7 +504,7 @@ fn test_run_auto_builds(crypto_perpetual_ethusdt: CryptoPerpetual) {
 
     let mut node = BacktestNode::new(vec![config]).unwrap();
 
-    // Don't call build() — run() should auto-build
+    // Don't call build() - run() should auto-build
     let results = node.run().unwrap();
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].iterations, 5);

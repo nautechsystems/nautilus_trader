@@ -2278,7 +2278,7 @@ pub fn parse_option_summary_greeks(
 /// # Panics
 ///
 /// Panics only in the case where `okx_channel_to_bar_spec(channel)` returns
-/// `None` after a prior `is_some` check – an unreachable scenario indicating a
+/// `None` after a prior `is_some` check - an unreachable scenario indicating a
 /// logic error.
 #[expect(clippy::too_many_arguments)]
 pub fn parse_ws_message_data(
@@ -4236,7 +4236,7 @@ mod tests {
         let account_id = AccountId::new("OKX-001");
         let ts_init = UnixNanos::default();
 
-        // acc_fill_sz (0.01) < previous_filled_qty (0.03) — stale data after reconnect
+        // acc_fill_sz (0.01) < previous_filled_qty (0.03) - stale data after reconnect
         let order_msg =
             create_stub_order_msg("", Some("0.01".to_string()), "1234567890", "trade_2");
 
@@ -5453,7 +5453,7 @@ mod tests {
     fn test_empty_trade_id_fill_deduped_across_replays() {
         use crate::websocket::dispatch::WsDispatchState;
 
-        // Two identical fill messages with no venue trade_id — the dedup in
+        // Two identical fill messages with no venue trade_id - the dedup in
         // `WsDispatchState::check_and_insert_trade` must suppress the replay.
         // Regression lock for the empty-trade_id UUID fabrication bug: if
         // `synthesize_trade_id` drifts back to a non-deterministic id, the

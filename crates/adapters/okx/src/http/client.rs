@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides an ergonomic wrapper around the **OKX v5 REST API** –
+//! Provides an ergonomic wrapper around the **OKX v5 REST API** -
 //! <https://www.okx.com/docs-v5/en/>.
 //!
 //! The core type exported by this module is [`OKXHttpClient`].  It offers an
@@ -1448,7 +1448,7 @@ impl OKXRawHttpClient {
         .await
     }
 
-    /// Retrieves a single order’s details.
+    /// Retrieves a single order's details.
     ///
     /// # Errors
     ///

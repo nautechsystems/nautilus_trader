@@ -304,7 +304,7 @@ impl Position {
     ///
     /// # Panics
     ///
-    /// Panics if the `fill.trade_id` is already present in the position’s `trade_ids`.
+    /// Panics if the `fill.trade_id` is already present in the position's `trade_ids`.
     pub fn apply(&mut self, fill: &OrderFilled) {
         self.apply_fill(fill, true);
     }

@@ -21,7 +21,7 @@
 //! and the next two upcoming periods across BTC, ETH, SOL, and XRP.
 //!
 //! Because [`MarketSlugFilter`] accepts a closure, the slug list is
-//! re-evaluated on each `load_all()` call — so a long-running process can
+//! re-evaluated on each `load_all()` call - so a long-running process can
 //! call `load_all()` periodically and always get the latest time window
 //! without rebuilding the filter.
 //!

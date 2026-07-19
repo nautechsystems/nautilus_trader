@@ -1707,7 +1707,7 @@ async fn test_submit_market_order_denied_buy_without_quote_quantity() {
         UUID4::new(),
         UnixNanos::default(),
         false, // reduce_only
-        false, // quote_quantity — BUY requires true
+        false, // quote_quantity - BUY requires true
         None,  // contingency_type
         None,  // order_list_id
         None,  // linked_order_ids
@@ -1767,7 +1767,7 @@ async fn test_submit_market_order_denied_sell_with_quote_quantity() {
         UUID4::new(),
         UnixNanos::default(),
         false, // reduce_only
-        true,  // quote_quantity — SELL requires false
+        true,  // quote_quantity - SELL requires false
         None,
         None,
         None,

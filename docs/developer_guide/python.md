@@ -53,7 +53,7 @@ class ThrottledEnqueuer(Generic[T]):
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase.
 This needs to be followed consistently so the docs build correctly.
 
-**Python** docstrings should be written in the **imperative mood** – e.g. *"Return a cached client."*
+**Python** docstrings should be written in the **imperative mood** - e.g. *"Return a cached client."*
 
 This convention aligns with the prevailing style of the Python ecosystem and makes generated
 documentation feel natural to end-users.

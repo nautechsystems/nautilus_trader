@@ -726,7 +726,7 @@ mod tests {
         assert_eq!(*count_a.borrow(), 1);
         assert_eq!(*count_b.borrow(), 1);
 
-        // Remove handler_a — must invalidate ALL cached indices
+        // Remove handler_a - must invalidate ALL cached indices
         router.remove_handler("events.order.S-001".into(), handler_a_id);
 
         // handler_b must still dispatch correctly despite index shift

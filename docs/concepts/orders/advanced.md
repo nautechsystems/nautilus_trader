@@ -36,13 +36,13 @@ Caveats for mixed-instrument lists:
 
 ## Contingency types
 
-- **OTO (One-Triggers-Other)** – a parent order that, once executed, automatically places one or more child orders.
+- **OTO (One-Triggers-Other)** - a parent order that, once executed, automatically places one or more child orders.
   - *Full-trigger model*: child order(s) are released **only after the parent is completely filled**. Common at most retail equity/option brokers (e.g. Schwab, Fidelity, TD Ameritrade) and many spot-crypto venues (Binance, Coinbase).
   - *Partial-trigger model*: child order(s) are released **pro-rata to each partial fill**. Used by professional-grade platforms such as Interactive Brokers, most futures/FX OMSs, and Kraken Pro.
 
-- **OCO (One-Cancels-Other)** – two (or more) linked live orders where executing one cancels the remainder.
+- **OCO (One-Cancels-Other)** - two (or more) linked live orders where executing one cancels the remainder.
 
-- **OUO (One-Updates-Other)** – two (or more) linked live orders where executing one reduces the open quantity of the remainder.
+- **OUO (One-Updates-Other)** - two (or more) linked live orders where executing one reduces the open quantity of the remainder.
 
 :::info
 These contingency types relate to ContingencyType FIX tag <1385> <https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html>.
@@ -52,15 +52,15 @@ These contingency types relate to ContingencyType FIX tag <1385> <https://www.on
 
 An OTO order involves two parts:
 
-1. **Parent order** – submitted to the matching engine immediately.
-2. **Child order(s)** – held *off-book* until the trigger condition is met.
+1. **Parent order** - submitted to the matching engine immediately.
+2. **Child order(s)** - held *off-book* until the trigger condition is met.
 
 #### Trigger models
 
 | Trigger model       | When are child orders released?                                                                                                                  |
 |---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Full trigger**    | When the parent order’s cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
-| **Partial trigger** | Immediately upon each partial execution of the parent; the child’s quantity matches the executed amount and is increased as further fills occur. |
+| **Full trigger**    | When the parent order's cumulative quantity equals its original quantity (i.e., it is *fully* filled).                                           |
+| **Partial trigger** | Immediately upon each partial execution of the parent; the child's quantity matches the executed amount and is increased as further fills occur. |
 
 :::info
 The default backtest venue for NautilusTrader uses a *partial-trigger model* for OTO orders.
@@ -84,12 +84,12 @@ An OTO order can use any supported asset type on the venue (e.g. stock entry wit
 
 | Venue / Adapter ID                           | Asset classes             | Trigger rule for child                      | Practical notes                                                   |
 |----------------------------------------------|---------------------------|---------------------------------------------|-------------------------------------------------------------------|
-| Binance / Binance Futures (`BINANCE`)        | Spot, perpetual futures   | **Partial or full** – fires on first fill.  | OTOCO/TP-SL children appear instantly; monitor margin usage.      |
-| Bybit Spot (`BYBIT`)                         | Spot                      | **Full** – child placed after completion.   | TP-SL preset activates only once the limit order is fully filled. |
-| Bybit Perps (`BYBIT`)                        | Perpetual futures         | **Partial and full** – configurable.        | “Partial‑position” mode sizes TP-SL as fills arrive.              |
-| Kraken Futures (`KRAKEN`)                    | Futures & perps           | **Partial and full** – automatic.           | Child quantity matches every partial execution.                   |
-| OKX (`OKX`)                                  | Spot, futures, options    | **Full** – attached stop waits for fill.    | Position‑level TP-SL can be added separately.                     |
-| Interactive Brokers (`INTERACTIVE_BROKERS`)  | Stocks, options, FX, fut  | **Configurable** – OCA can pro‑rate.        | `OcaType 2/3` reduces remaining child quantities.                 |
+| Binance / Binance Futures (`BINANCE`)        | Spot, perpetual futures   | **Partial or full** - fires on first fill.  | OTOCO/TP-SL children appear instantly; monitor margin usage.      |
+| Bybit Spot (`BYBIT`)                         | Spot                      | **Full** - child placed after completion.   | TP-SL preset activates only once the limit order is fully filled. |
+| Bybit Perps (`BYBIT`)                        | Perpetual futures         | **Partial and full** - configurable.        | "Partial‑position" mode sizes TP-SL as fills arrive.              |
+| Kraken Futures (`KRAKEN`)                    | Futures & perps           | **Partial and full** - automatic.           | Child quantity matches every partial execution.                   |
+| OKX (`OKX`)                                  | Spot, futures, options    | **Full** - attached stop waits for fill.    | Position‑level TP-SL can be added separately.                     |
+| Interactive Brokers (`INTERACTIVE_BROKERS`)  | Stocks, options, FX, fut  | **Configurable** - OCA can pro‑rate.        | `OcaType 2/3` reduces remaining child quantities.                 |
 | dYdX v4 (`DYDX`)                             | Perpetual futures (DEX)   | On‑chain condition (size exact).            | TP-SL triggers by oracle price; partial fill not applicable.      |
 | Polymarket (`POLYMARKET`)                    | Prediction market (DEX)   | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |
 | Betfair (`BETFAIR`)                          | Sports betting            | N/A.                                        | Advanced contingency handled entirely at the strategy layer.      |

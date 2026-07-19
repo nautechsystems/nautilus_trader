@@ -16,7 +16,7 @@
 //! Python bindings from [PyO3](https://pyo3.rs).
 
 // We need to allow `unexpected_cfgs` because the PyO3 macros internally check for
-// the `gil-refs` feature. We don’t define or enable `gil-refs` ourselves (due to a
+// the `gil-refs` feature. We don't define or enable `gil-refs` ourselves (due to a
 // memory leak), so the compiler raises an error about an unknown cfg feature.
 // This attribute prevents those errors without actually enabling `gil-refs`.
 #![allow(unexpected_cfgs)]
