@@ -228,59 +228,63 @@ impl BitmexWsFeedHandler {
         }
     }
 
-    fn parse_raw_message(msg: Message) -> Option<BitmexWsFrame> {
-        match msg {
-            Message::Text(text) => {
-                if text == RECONNECTED {
-                    log::info!("Received WebSocket reconnected signal");
-                    return Some(BitmexWsFrame::Reconnected);
+    fn parse_text_payload(text: &str) -> Option<BitmexWsFrame> {
+        if text == RECONNECTED {
+            log::info!("Received WebSocket reconnected signal");
+            return Some(BitmexWsFrame::Reconnected);
+        }
+
+        log::trace!("Raw websocket message: {text}");
+
+        if Self::is_heartbeat_message(text) {
+            log::trace!("Ignoring heartbeat control message: {text}");
+            return None;
+        }
+
+        match serde_json::from_str(text) {
+            Ok(msg) => match &msg {
+                BitmexWsFrame::Welcome {
+                    version,
+                    heartbeat_enabled,
+                    limit,
+                    ..
+                } => {
+                    log::debug!(
+                        "Welcome to the BitMEX Realtime API: version={}, heartbeat={}, rate_limit={:?}",
+                        version,
+                        heartbeat_enabled,
+                        limit.as_ref().and_then(|l| l.remaining),
+                    );
                 }
-
-                log::trace!("Raw websocket message: {text}");
-
-                if Self::is_heartbeat_message(&text) {
-                    log::trace!("Ignoring heartbeat control message: {text}");
-                    return None;
-                }
-
-                match serde_json::from_str(&text) {
-                    Ok(msg) => match &msg {
-                        BitmexWsFrame::Welcome {
-                            version,
-                            heartbeat_enabled,
-                            limit,
-                            ..
-                        } => {
-                            log::debug!(
-                                "Welcome to the BitMEX Realtime API: version={}, heartbeat={}, rate_limit={:?}",
-                                version,
-                                heartbeat_enabled,
-                                limit.as_ref().and_then(|l| l.remaining),
-                            );
-                        }
-                        BitmexWsFrame::Subscription { .. } => return Some(msg),
-                        BitmexWsFrame::Error { status, error, .. } => {
-                            if Self::is_already_subscribed_error(error) {
-                                log::debug!(
-                                    "Ignoring duplicate BitMEX subscription: status={status}, error={error}",
-                                );
-                            } else {
-                                log::error!(
-                                    "Received error from BitMEX: status={status}, error={error}",
-                                );
-                            }
-                        }
-                        _ => return Some(msg),
-                    },
-                    Err(e) => {
-                        log::error!("Failed to parse WebSocket message: {e}: {text}");
+                BitmexWsFrame::Subscription { .. } => return Some(msg),
+                BitmexWsFrame::Error { status, error, .. } => {
+                    if Self::is_already_subscribed_error(error) {
+                        log::debug!(
+                            "Ignoring duplicate BitMEX subscription: status={status}, error={error}",
+                        );
+                    } else {
+                        log::error!(
+                            "Received error from BitMEX: status={status}, error={error}",
+                        );
                     }
                 }
+                _ => return Some(msg),
+            },
+            Err(e) => {
+                log::error!("Failed to parse WebSocket message: {e}: {text}");
             }
-            Message::Binary(msg) => {
-                log::debug!("Raw binary frame ({} bytes)", msg.len());
-                log::trace!("Raw binary: {msg:?}");
-            }
+        }
+
+        None
+    }
+
+    fn parse_raw_message(msg: Message) -> Option<BitmexWsFrame> {
+        match msg {
+            Message::Text(text) => return Self::parse_text_payload(&text),
+            Message::Binary(msg) => match std::str::from_utf8(&msg) {
+                Ok(text) => return Self::parse_text_payload(text),
+                Err(e) => log::error!("Ignoring non-UTF-8 WebSocket binary frame: {e}"),
+            },
             Message::Close(_) => {
                 log::debug!("Received close message, waiting for reconnection");
             }
@@ -463,6 +467,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::websocket::messages::BitmexTableMessage;
 
     #[rstest]
     fn test_is_heartbeat_message_detection() {
@@ -474,6 +479,18 @@ mod tests {
         ));
         assert!(!BitmexWsFeedHandler::is_heartbeat_message(
             "{\"op\":\"subscribe\",\"args\":[\"trade:XBTUSD\"]}"
+        ));
+    }
+
+    #[rstest]
+    fn test_binary_json_table_frame_is_parsed() {
+        let payload = br#"{"table":"order","action":"partial","data":[]}"#;
+        let parsed =
+            BitmexWsFeedHandler::parse_raw_message(Message::Binary(payload.as_slice().into()));
+
+        assert!(matches!(
+            parsed,
+            Some(BitmexWsFrame::Table(BitmexTableMessage::Order { .. }))
         ));
     }
 
