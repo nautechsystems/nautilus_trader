@@ -126,9 +126,16 @@ impl TimeEventCallbackToken {
 
     fn remove_on_owner_thread(&self) {
         if self.0.owner == thread::current().id() {
-            TIME_EVENT_CALLBACKS.with(|callbacks| {
-                callbacks.borrow_mut().remove(&self.0.id);
-            });
+            // Reachable from `Drop` (`LiveTimer::drop` -> `close`), which can
+            // run during thread-local teardown when `TIME_EVENT_CALLBACKS` is
+            // already destroyed. `try_with` returns `AccessError` rather than
+            // panicking (a panic in a TLS destructor aborts the process); the
+            // map is being torn down, so the removal is moot. The removed
+            // entry is returned out of the closure and dropped after the
+            // `RefMut` is released. Never log here: the logging TLS may also
+            // be in teardown.
+            let _ = TIME_EVENT_CALLBACKS
+                .try_with(|callbacks| callbacks.borrow_mut().remove(&self.0.id));
         }
     }
 
@@ -156,9 +163,11 @@ impl Drop for TimeEventCallbackLease {
         let previous = self.0.state.fetch_sub(1, Ordering::AcqRel);
         debug_assert!(previous & CALLBACK_LEASES > 0);
         if previous == CALLBACK_CLOSED | 1 && self.0.owner == thread::current().id() {
-            TIME_EVENT_CALLBACKS.with(|callbacks| {
-                callbacks.borrow_mut().remove(&self.0.id);
-            });
+            // As in `remove_on_owner_thread`, this final lease can drop during
+            // thread-local teardown with `TIME_EVENT_CALLBACKS` already gone;
+            // `try_with` keeps the destructor from aborting the process.
+            let _ = TIME_EVENT_CALLBACKS
+                .try_with(|callbacks| callbacks.borrow_mut().remove(&self.0.id));
         }
     }
 }
@@ -791,6 +800,64 @@ mod tests {
         purge_closed_time_event_callbacks();
         assert!(!token.is_registered());
         assert_eq!(count.get(), 0);
+    }
+
+    // The two following tests reproduce the destructor-during-TLS-teardown
+    // abort: a callback holder (a lease, or a token closed from a `Drop` as
+    // `LiveTimer::drop` does) is placed in a thread-local initialized BEFORE
+    // `TIME_EVENT_CALLBACKS`. Rust does not guarantee a destruction order
+    // between independent TLS keys, but the affected implementation (native
+    // Linux TLS) destroys keys LIFO by initialization order, so the registry
+    // is torn down first and the holder's own destructor reaches the removal
+    // path with the registry TLS already gone. On the unfixed `.with` code
+    // that access panics inside a TLS destructor and aborts the whole process
+    // (the thread never joins); the `try_with` guard makes it a no-op. This
+    // mirrors the live path where `MESSAGE_BUS` outlives the callback
+    // registry and drops the last clock owner during teardown.
+
+    #[rstest]
+    fn test_final_lease_drop_survives_registry_tls_teardown() {
+        std::thread::spawn(|| {
+            thread_local! {
+                static HELD_LEASE: RefCell<Option<TimeEventCallbackLease>> =
+                    const { RefCell::new(None) };
+            }
+
+            // Initialize the holder before the registry so it is destroyed last.
+            HELD_LEASE.with(|_| {});
+
+            let token = register_time_event_callback(local_callback(Rc::new(Cell::new(0))));
+            let lease = token.acquire().unwrap();
+            token.close();
+            HELD_LEASE.with(|slot| *slot.borrow_mut() = Some(lease));
+        })
+        .join()
+        .expect("final-lease drop after registry teardown must not abort");
+    }
+
+    #[rstest]
+    fn test_owner_close_survives_registry_tls_teardown() {
+        struct CloseOnDrop(TimeEventCallbackToken);
+
+        impl Drop for CloseOnDrop {
+            fn drop(&mut self) {
+                self.0.close();
+            }
+        }
+
+        std::thread::spawn(|| {
+            thread_local! {
+                static HELD_TOKEN: RefCell<Option<CloseOnDrop>> = const { RefCell::new(None) };
+            }
+
+            // Initialize the holder before the registry so it is destroyed last.
+            HELD_TOKEN.with(|_| {});
+
+            let token = register_time_event_callback(local_callback(Rc::new(Cell::new(0))));
+            HELD_TOKEN.with(|slot| *slot.borrow_mut() = Some(CloseOnDrop(token)));
+        })
+        .join()
+        .expect("owner close after registry teardown must not abort");
     }
 
     #[rstest]
