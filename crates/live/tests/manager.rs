@@ -4835,6 +4835,34 @@ fn create_test_position_for_account(
     Position::new(instrument, order_filled)
 }
 
+fn close_test_long_position(
+    mut position: Position,
+    instrument: &InstrumentAny,
+    qty: &str,
+    trade_id: TradeId,
+) -> Position {
+    let close_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(qty))
+        .build();
+    let close_fill = TestOrderEventStubs::filled(
+        &close_order,
+        instrument,
+        Some(trade_id),
+        Some(position.id),
+        Some(Price::from("3000.00")),
+        Some(Quantity::from(qty)),
+        None,
+        None,
+        None,
+        Some(position.account_id),
+    );
+    let close_filled: OrderFilled = close_fill.into();
+    position.apply(&close_filled);
+    position
+}
+
 #[tokio::test]
 async fn test_reconcile_mass_status_iterates_all_position_reports() {
     // Tests that we iterate ALL position reports, not just the first one
@@ -9759,6 +9787,246 @@ async fn test_position_check_reconciles_venue_only_nonflat_report() {
     );
 }
 
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_rereads_position_closed_during_request() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-CLOSE-DURING-REQUEST"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let closed_position = close_test_long_position(
+        position.clone(),
+        &instrument,
+        "5.0",
+        TradeId::from("T-CLOSE-DURING-REQUEST"),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![])
+        .with_position_request_mutation(PositionRequestMutation::Update {
+            cache: ctx.cache.clone(),
+            position: closed_position,
+        });
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    for event in &events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let open_positions = ctx
+        .cache
+        .borrow()
+        .positions_open(None, Some(&test_instrument_id()), None, None, None)
+        .len();
+    assert!(events.is_empty());
+    assert_eq!(
+        open_positions, 0,
+        "a synthetic sell from the stale long would open a real short",
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_rereads_position_opened_during_request() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-OPEN-DURING-REQUEST"),
+        OrderSide::Buy,
+        "3.0",
+        "3000.00",
+    );
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("3.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3000.00)),
+    );
+    ctx.add_instrument(instrument);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_request_mutation(PositionRequestMutation::Add {
+            cache: ctx.cache.clone(),
+            position,
+        });
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(
+        events.is_empty(),
+        "the matching report must not recreate a position opened during the request",
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_uses_current_avg_px_after_request() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-AVG-PX-DURING-REQUEST");
+    let stale_position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+    let current_position =
+        create_test_position(&instrument, position_id, OrderSide::Buy, "3.0", "3100.00");
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("6.0"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(3200.00)),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&stale_position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_request_mutation(PositionRequestMutation::Update {
+            cache: ctx.cache.clone(),
+            position: current_position,
+        });
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fill = events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .expect("expected a reconciliation fill");
+
+    assert_eq!(fill.last_qty, Quantity::from("3.0"));
+    assert_eq!(fill.last_px, Price::from("3300.00"));
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_position_check_preserves_retry_for_uncovered_position_opened_during_request() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let key = (instrument_id, test_account_id());
+    let old_position = create_test_position(
+        &instrument,
+        PositionId::from("P-RETRY-OLD"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    ctx.add_position(&old_position);
+
+    let initial_client = MockPositionExecutionClient::new(vec![], vec![]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&initial_client];
+    assert!(
+        ctx.manager
+            .check_positions_consistency(&clients)
+            .await
+            .is_empty()
+    );
+    assert_eq!(ctx.manager.position_recon_retry_count(&key), 1);
+
+    let closed_position = close_test_long_position(
+        old_position,
+        &instrument,
+        "5.0",
+        TradeId::from("T-RETRY-CLOSE"),
+    );
+    ctx.cache
+        .borrow_mut()
+        .update_position(&closed_position)
+        .unwrap();
+    ctx.add_instrument(instrument.clone());
+
+    let new_position = create_test_position(
+        &instrument,
+        PositionId::from("P-RETRY-NEW"),
+        OrderSide::Buy,
+        "3.0",
+        "3100.00",
+    );
+    let venue_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        Quantity::from("4.0"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        Some(dec!(3200.00)),
+    );
+    let request_client = MockPositionExecutionClient::new(vec![], vec![venue_report])
+        .with_position_request_mutation(PositionRequestMutation::Add {
+            cache: ctx.cache.clone(),
+            position: new_position,
+        });
+    let clients: Vec<&dyn ExecutionClient> = vec![&request_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager.position_recon_retry_count(&key),
+        1,
+        "the uncovered key must be deferred and remain active for retry pruning",
+    );
+}
+
 #[tokio::test]
 async fn test_position_check_retries_stops_after_max() {
     // When instrument is not in cache, check_position_discrepancy returns None
@@ -9900,6 +10168,17 @@ async fn test_position_check_stale_retries_pruned_when_position_closed() {
     );
 }
 
+enum PositionRequestMutation {
+    Add {
+        cache: Rc<RefCell<Cache>>,
+        position: Position,
+    },
+    Update {
+        cache: Rc<RefCell<Cache>>,
+        position: Position,
+    },
+}
+
 struct MockPositionExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
@@ -9907,6 +10186,7 @@ struct MockPositionExecutionClient {
     handled_venues: Option<IndexSet<Venue>>,
     order_reports: RefCell<Vec<OrderStatusReport>>,
     position_reports: RefCell<Vec<PositionStatusReport>>,
+    position_request_mutation: RefCell<Option<PositionRequestMutation>>,
     fail_position_reports: bool,
     position_reconciliation_tolerance: Decimal,
 }
@@ -9923,6 +10203,7 @@ impl MockPositionExecutionClient {
             handled_venues: None,
             order_reports: RefCell::new(order_reports),
             position_reports: RefCell::new(position_reports),
+            position_request_mutation: RefCell::new(None),
             fail_position_reports: false,
             position_reconciliation_tolerance: dec!(0.00000001),
         }
@@ -9938,6 +10219,11 @@ impl MockPositionExecutionClient {
         self
     }
 
+    fn with_position_request_mutation(mut self, mutation: PositionRequestMutation) -> Self {
+        self.position_request_mutation = RefCell::new(Some(mutation));
+        self
+    }
+
     fn failing_position_reports() -> Self {
         Self {
             client_id: test_client_id(),
@@ -9946,6 +10232,7 @@ impl MockPositionExecutionClient {
             handled_venues: None,
             order_reports: RefCell::new(Vec::new()),
             position_reports: RefCell::new(Vec::new()),
+            position_request_mutation: RefCell::new(None),
             fail_position_reports: true,
             position_reconciliation_tolerance: dec!(0.00000001),
         }
@@ -9965,6 +10252,7 @@ impl MockPositionExecutionClient {
             handled_venues: Some(handled_venues),
             order_reports: RefCell::new(Vec::new()),
             position_reports: RefCell::new(Vec::new()),
+            position_request_mutation: RefCell::new(None),
             fail_position_reports,
             position_reconciliation_tolerance: dec!(0.00000001),
         }
@@ -10068,6 +10356,21 @@ impl ExecutionClient for MockPositionExecutionClient {
         &self,
         _cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let mutation = { self.position_request_mutation.borrow_mut().take() };
+        if let Some(mutation) = mutation {
+            dst::time::sleep(dst::time::Duration::from_secs(1)).await;
+
+            match mutation {
+                PositionRequestMutation::Add { cache, position } => cache
+                    .borrow_mut()
+                    .add_position(&position, OmsType::Hedging)
+                    .unwrap(),
+                PositionRequestMutation::Update { cache, position } => {
+                    cache.borrow_mut().update_position(&position).unwrap();
+                }
+            }
+        }
+
         if self.fail_position_reports {
             anyhow::bail!("position reports unavailable");
         }

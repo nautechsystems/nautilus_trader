@@ -151,11 +151,10 @@ pub(crate) struct OpenOrderReportCheck {
     pub start: Option<UnixNanos>,
 }
 
-/// Snapshot and command for one continuous position reconciliation check.
+/// Prepare-time client coverage and command for one continuous position reconciliation check.
 #[derive(Debug, Clone)]
 pub(crate) struct PositionReportCheck {
     pub command: GeneratePositionStatusReports,
-    pub positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>>,
     pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
 }
 
@@ -1083,25 +1082,20 @@ impl ExecutionManager {
         }
     }
 
-    fn open_positions_by_key_for_reconciliation(
-        &self,
-    ) -> IndexMap<InstrumentAccountKey, Vec<Position>> {
+    fn open_position_keys_for_reconciliation(&self) -> IndexSet<InstrumentAccountKey> {
         let cache = self.cache.borrow();
         let positions = cache.positions_open(None, None, None, None, None);
-        let mut positions_by_key: IndexMap<InstrumentAccountKey, Vec<Position>> = IndexMap::new();
+        let mut position_keys = IndexSet::new();
 
         for position in positions {
             if !self.should_reconcile_instrument(&position.instrument_id) {
                 continue;
             }
 
-            positions_by_key
-                .entry((position.instrument_id, position.account_id))
-                .or_default()
-                .push(position.clone());
+            position_keys.insert((position.instrument_id, position.account_id));
         }
 
-        positions_by_key
+        position_keys
     }
 
     /// Prepares a bulk open-order report request and snapshots cached open orders.
@@ -1636,16 +1630,16 @@ impl ExecutionManager {
         events
     }
 
-    /// Prepares a bulk position report request and snapshots cached positions.
+    /// Prepares a bulk position report request and records client coverage.
     #[must_use]
     pub(crate) fn prepare_position_report_check(
         &self,
         command_id: UUID4,
         clients: &[&dyn ExecutionClient],
     ) -> PositionReportCheck {
-        let positions_by_key = self.open_positions_by_key_for_reconciliation();
-        let client_coverage = positions_by_key
-            .keys()
+        let position_keys = self.open_position_keys_for_reconciliation();
+        let client_coverage = position_keys
+            .iter()
             .map(|key| {
                 (
                     *key,
@@ -1656,8 +1650,8 @@ impl ExecutionManager {
 
         log::debug!(
             "Found {} unique instrument/account combination{} with open positions",
-            positions_by_key.len(),
-            if positions_by_key.len() == 1 { "" } else { "s" }
+            position_keys.len(),
+            if position_keys.len() == 1 { "" } else { "s" }
         );
 
         let mut command = GeneratePositionStatusReports::new(
@@ -1673,7 +1667,6 @@ impl ExecutionManager {
 
         PositionReportCheck {
             command,
-            positions_by_key,
             client_coverage,
         }
     }
@@ -1774,7 +1767,7 @@ impl ExecutionManager {
 
         let mut events = Vec::new();
 
-        for (key, cached_positions) in &check.positions_by_key {
+        for key in check.client_coverage.keys() {
             let venue_report = venue_positions.get(key);
 
             if venue_report.is_none() {
@@ -1826,22 +1819,31 @@ impl ExecutionManager {
                 }
             }
 
-            if let Some(discrepancy_events) =
-                self.check_position_discrepancy(*key, cached_positions, venue_report)
-            {
+            if let Some(discrepancy_events) = self.check_position_discrepancy(*key, venue_report) {
                 events.extend(discrepancy_events);
             }
         }
 
+        let current_position_keys = self.open_position_keys_for_reconciliation();
+
         for (key, venue_report) in &venue_positions {
-            if check.positions_by_key.contains_key(key)
+            if check.client_coverage.contains_key(key)
                 || venue_report.signed_decimal_qty == Decimal::ZERO
             {
                 continue;
             }
 
+            if current_position_keys.contains(key) {
+                log::debug!(
+                    "Deferring position reconciliation for {}/{}: position opened after client coverage was recorded",
+                    key.0,
+                    key.1,
+                );
+                continue;
+            }
+
             if let Some(discrepancy_events) =
-                self.check_position_discrepancy(*key, &[], Some(venue_report))
+                self.check_position_discrepancy(*key, Some(venue_report))
             {
                 events.extend(discrepancy_events);
             }
@@ -1849,10 +1851,8 @@ impl ExecutionManager {
 
         // Prune retry counters for (instrument, account) pairs no longer actively
         // tracked, excluding flat venue reports which shouldn't protect stale counters
-        let active_keys: IndexSet<InstrumentAccountKey> = check
-            .positions_by_key
-            .keys()
-            .copied()
+        let active_keys: IndexSet<InstrumentAccountKey> = current_position_keys
+            .into_iter()
             .chain(
                 venue_positions
                     .iter()
@@ -1866,7 +1866,7 @@ impl ExecutionManager {
         events
     }
 
-    fn position_snapshot_avg_px(cached_positions: &[Position]) -> Option<Decimal> {
+    fn positions_avg_px(cached_positions: &[Position]) -> Option<Decimal> {
         let mut total_value = Decimal::ZERO;
         let mut total_qty = Decimal::ZERO;
 
@@ -2372,15 +2372,22 @@ impl ExecutionManager {
     fn check_position_discrepancy(
         &mut self,
         key: InstrumentAccountKey,
-        cached_positions: &[Position],
         venue_report: Option<&PositionStatusReport>,
     ) -> Option<Vec<OrderEventAny>> {
         let (instrument_id, account_id) = key;
 
-        let mut cached_signed_qty = Decimal::ZERO;
-        for position in cached_positions {
-            cached_signed_qty += position.signed_decimal_qty();
-        }
+        let cached_positions = {
+            let cache = self.cache.borrow();
+            cache
+                .positions_open(None, Some(&instrument_id), None, Some(&account_id), None)
+                .into_iter()
+                .map(|position| (*position).clone())
+                .collect::<Vec<_>>()
+        };
+        let cached_signed_qty: Decimal = cached_positions
+            .iter()
+            .map(Position::signed_decimal_qty)
+            .sum();
         let venue_signed_qty = venue_report.map_or(Decimal::ZERO, |r| r.signed_decimal_qty);
 
         let tolerance = self.position_reconciliation_tolerance(account_id);
@@ -2427,7 +2434,7 @@ impl ExecutionManager {
             return None;
         };
 
-        let cached_avg_px = Self::position_snapshot_avg_px(cached_positions);
+        let cached_avg_px = Self::positions_avg_px(&cached_positions);
         let venue_avg_px = venue_report.and_then(|r| r.avg_px_open);
 
         let crosses_zero = (cached_signed_qty > Decimal::ZERO && venue_signed_qty < Decimal::ZERO)
@@ -3840,7 +3847,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_prepare_position_report_check_builds_bulk_command_with_snapshot() {
+    fn test_prepare_position_report_check_builds_bulk_command_with_coverage() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
         let manager = ExecutionManager::new(
@@ -3886,7 +3893,6 @@ mod tests {
             included_position.instrument_id,
             included_position.account_id,
         );
-        let positions = check.positions_by_key.get(&key).unwrap();
 
         assert_eq!(check.command.command_id, command_id);
         assert_eq!(check.command.ts_init, ts_now);
@@ -3894,9 +3900,8 @@ mod tests {
         assert_eq!(check.command.start, None);
         assert_eq!(check.command.end, None);
         assert_eq!(check.command.log_receipt_level, LogLevel::Debug);
-        assert_eq!(check.positions_by_key.len(), 1);
-        assert_eq!(positions.len(), 1);
-        assert_eq!(positions[0].id, included_position.id);
+        assert_eq!(check.client_coverage.len(), 1);
+        assert!(check.client_coverage.contains_key(&key));
     }
 
     #[rstest]
