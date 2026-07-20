@@ -97,6 +97,47 @@ pub struct InteractiveBrokersInstrumentProvider {
     contracts: Arc<DashMap<InstrumentId, Contract>>,
     /// Dedicated cache for price magnifiers for fast lookups.
     price_magnifiers: Arc<DashMap<InstrumentId, i32>>,
+    /// Guards startup loading and records whether every configured input resolved.
+    startup_initialized: Arc<tokio::sync::Mutex<bool>>,
+}
+
+trait StartupInstrumentLoader {
+    async fn load_instrument_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentId>>;
+
+    async fn load_contract(
+        &self,
+        contract_spec: &serde_json::Value,
+    ) -> anyhow::Result<Vec<InstrumentId>>;
+}
+
+struct IbStartupInstrumentLoader<'a> {
+    provider: &'a InteractiveBrokersInstrumentProvider,
+    client: &'a ibapi::Client,
+}
+
+impl StartupInstrumentLoader for IbStartupInstrumentLoader<'_> {
+    async fn load_instrument_id(
+        &self,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentId>> {
+        self.provider
+            .load_with_return_async(self.client, instrument_id, None)
+            .await
+    }
+
+    async fn load_contract(
+        &self,
+        contract_spec: &serde_json::Value,
+    ) -> anyhow::Result<Vec<InstrumentId>> {
+        let contract = parse_contract_from_json(contract_spec)
+            .context("Failed to parse configured IB contract")?;
+        self.provider
+            .load_contract_spec(self.client, &contract, Some(contract_spec))
+            .await
+    }
 }
 
 impl InteractiveBrokersInstrumentProvider {
@@ -113,6 +154,7 @@ impl InteractiveBrokersInstrumentProvider {
             contract_details: Arc::new(DashMap::new()),
             contracts: Arc::new(DashMap::new()),
             price_magnifiers: Arc::new(DashMap::new()),
+            startup_initialized: Arc::new(tokio::sync::Mutex::new(false)),
         }
     }
 
@@ -178,12 +220,85 @@ impl InteractiveBrokersInstrumentProvider {
         Ok(())
     }
 
+    /// Initializes the provider and resolves every configured startup input.
+    ///
+    /// Successful initialization is idempotent. A failed attempt remains retryable.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails or any configured input cannot be loaded.
     pub async fn initialize_with_client(
         &self,
         client: &ibapi::Client,
     ) -> anyhow::Result<Vec<InstrumentId>> {
+        let loader = IbStartupInstrumentLoader {
+            provider: self,
+            client,
+        };
+        self.initialize_with_loader(&loader).await
+    }
+
+    async fn initialize_with_loader<L>(&self, loader: &L) -> anyhow::Result<Vec<InstrumentId>>
+    where
+        L: StartupInstrumentLoader + Sync,
+    {
+        let mut initialized = self.startup_initialized.lock().await;
+        if *initialized {
+            return Ok(Vec::new());
+        }
+
         self.initialize().await?;
-        self.load_all_async(client, None, None, false).await
+        let loaded_ids = self.load_configured_instruments(loader).await?;
+        *initialized = true;
+        Ok(loaded_ids)
+    }
+
+    async fn load_configured_instruments<L>(&self, loader: &L) -> anyhow::Result<Vec<InstrumentId>>
+    where
+        L: StartupInstrumentLoader + Sync,
+    {
+        let mut loaded_ids = Vec::new();
+        let mut unresolved = Vec::new();
+        let mut configured_ids: Vec<_> = self.config.load_ids.iter().copied().collect();
+        configured_ids.sort_unstable();
+
+        for instrument_id in configured_ids {
+            match loader
+                .load_instrument_id(instrument_id)
+                .await
+                .with_context(|| {
+                    format!("Failed to load configured IB instrument ID {instrument_id}")
+                })? {
+                Some(loaded_id) => loaded_ids.push(loaded_id),
+                None => unresolved.push(format!("instrument ID {instrument_id}")),
+            }
+        }
+
+        for (index, contract_spec) in self.config.load_contracts.iter().enumerate() {
+            let mut contract_ids =
+                loader.load_contract(contract_spec).await.with_context(|| {
+                    format!(
+                        "Failed to load configured IB contract at index {index}: {contract_spec}"
+                    )
+                })?;
+
+            if contract_ids.is_empty() {
+                unresolved.push(format!("contract at index {index}: {contract_spec}"));
+            } else {
+                loaded_ids.append(&mut contract_ids);
+            }
+        }
+
+        if !unresolved.is_empty() {
+            anyhow::bail!(
+                "Unable to resolve configured Interactive Brokers instruments: {}",
+                unresolved.join(", ")
+            );
+        }
+
+        loaded_ids.sort_unstable();
+        loaded_ids.dedup();
+        Ok(loaded_ids)
     }
 
     /// Adds instruments already held by the Nautilus cache into the provider cache.
@@ -657,6 +772,9 @@ impl InteractiveBrokersInstrumentProvider {
                         details.contract
                     })
                     .unwrap_or_else(|| contract.clone()),
+                Err(e) if e.is_connection_lost() => {
+                    return Err(e).context("Failed to qualify continuous future contract");
+                }
                 Err(e) => {
                     tracing::warn!(
                         "Failed to qualify continuous future contract {:?}: {}",
@@ -1474,19 +1592,18 @@ impl InteractiveBrokersInstrumentProvider {
                 }
                 Ok(_) => {}
                 Err(e) => {
-                    last_error = Some((candidate_exchange.clone(), e.to_string()));
+                    last_error = Some((candidate_exchange.clone(), e));
                 }
             }
         }
 
         if details_vec.is_empty() {
-            if let Some((candidate_exchange, error)) = last_error {
-                tracing::warn!(
-                    "Failed to fetch contract details for {} on {}: {}",
-                    instrument_id,
-                    candidate_exchange,
-                    error
-                );
+            if let Some((candidate_exchange, e)) = last_error {
+                return Err(e).with_context(|| {
+                    format!(
+                        "Failed to fetch contract details for {instrument_id} on {candidate_exchange}"
+                    )
+                });
             } else {
                 tracing::warn!(
                     "No contract details returned for {} - instrument may not exist in IB or contract specification is incomplete",
@@ -2595,7 +2712,10 @@ impl InteractiveBrokersInstrumentProvider {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        fs,
+        sync::atomic::{AtomicBool, AtomicUsize, Ordering},
+    };
 
     use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
@@ -2608,6 +2728,68 @@ mod tests {
 
     use super::*;
     use crate::common::contract_to_json_value;
+
+    struct TestStartupLoader {
+        id_calls: AtomicUsize,
+        contract_calls: AtomicUsize,
+        fail_next_id: AtomicBool,
+        resolve_ids: AtomicBool,
+        resolve_contracts: AtomicBool,
+        yield_on_load: bool,
+    }
+
+    impl TestStartupLoader {
+        fn new(resolve_ids: bool, resolve_contracts: bool) -> Self {
+            Self {
+                id_calls: AtomicUsize::new(0),
+                contract_calls: AtomicUsize::new(0),
+                fail_next_id: AtomicBool::new(false),
+                resolve_ids: AtomicBool::new(resolve_ids),
+                resolve_contracts: AtomicBool::new(resolve_contracts),
+                yield_on_load: false,
+            }
+        }
+    }
+
+    impl StartupInstrumentLoader for TestStartupLoader {
+        async fn load_instrument_id(
+            &self,
+            instrument_id: InstrumentId,
+        ) -> anyhow::Result<Option<InstrumentId>> {
+            self.id_calls.fetch_add(1, Ordering::SeqCst);
+
+            if self.yield_on_load {
+                tokio::task::yield_now().await;
+            }
+
+            if self.fail_next_id.swap(false, Ordering::SeqCst) {
+                anyhow::bail!("Socket disconnected");
+            }
+            Ok(self
+                .resolve_ids
+                .load(Ordering::SeqCst)
+                .then_some(instrument_id))
+        }
+
+        async fn load_contract(
+            &self,
+            _contract_spec: &serde_json::Value,
+        ) -> anyhow::Result<Vec<InstrumentId>> {
+            self.contract_calls.fetch_add(1, Ordering::SeqCst);
+
+            if self.yield_on_load {
+                tokio::task::yield_now().await;
+            }
+            Ok(if self.resolve_contracts.load(Ordering::SeqCst) {
+                vec![InstrumentId::new(
+                    Symbol::from("MSFT"),
+                    Venue::from("NASDAQ"),
+                )]
+            } else {
+                Vec::new()
+            })
+        }
+    }
 
     fn create_test_provider_with_cache() -> (InteractiveBrokersInstrumentProvider, TempDir) {
         let temp_dir = TempDir::new().unwrap();
@@ -2674,6 +2856,112 @@ mod tests {
             );
         }
         info
+    }
+
+    #[tokio::test]
+    async fn test_initialize_loads_all_configured_inputs_once() {
+        let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+        let contract_spec = serde_json::json!({
+            "secType": "STK",
+            "symbol": "MSFT",
+            "exchange": "NASDAQ",
+        });
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            load_ids: [instrument_id].into_iter().collect(),
+            load_contracts: vec![contract_spec],
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let loader = TestStartupLoader::new(true, true);
+
+        let loaded_ids = provider.initialize_with_loader(&loader).await.unwrap();
+        let second_result = provider.initialize_with_loader(&loader).await.unwrap();
+
+        assert_eq!(
+            loaded_ids,
+            vec![
+                instrument_id,
+                InstrumentId::new(Symbol::from("MSFT"), Venue::from("NASDAQ")),
+            ]
+        );
+        assert!(second_result.is_empty());
+        assert_eq!(loader.id_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(loader.contract_calls.load(Ordering::SeqCst), 1);
+        assert!(*provider.startup_initialized.lock().await);
+    }
+
+    #[tokio::test]
+    async fn test_initialize_fails_closed_and_retries_unresolved_input() {
+        let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+        let contract_spec = serde_json::json!({
+            "secType": "STK",
+            "symbol": "MSFT",
+            "exchange": "NASDAQ",
+        });
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            load_ids: [instrument_id].into_iter().collect(),
+            load_contracts: vec![contract_spec],
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let loader = TestStartupLoader::new(true, false);
+
+        let error = provider.initialize_with_loader(&loader).await.unwrap_err();
+
+        assert!(error.to_string().contains("contract at index 0"));
+        assert!(!*provider.startup_initialized.lock().await);
+
+        loader.resolve_contracts.store(true, Ordering::SeqCst);
+        provider.initialize_with_loader(&loader).await.unwrap();
+
+        assert_eq!(loader.id_calls.load(Ordering::SeqCst), 2);
+        assert_eq!(loader.contract_calls.load(Ordering::SeqCst), 2);
+        assert!(*provider.startup_initialized.lock().await);
+    }
+
+    #[tokio::test]
+    async fn test_initialize_preserves_load_error_and_allows_retry() {
+        let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            load_ids: [instrument_id].into_iter().collect(),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let loader = TestStartupLoader::new(true, true);
+        loader.fail_next_id.store(true, Ordering::SeqCst);
+
+        let error = provider.initialize_with_loader(&loader).await.unwrap_err();
+
+        let error_chain = format!("{error:#}");
+        assert!(error_chain.contains("Failed to load configured IB instrument ID AAPL.NASDAQ"));
+        assert!(error_chain.contains("Socket disconnected"));
+        assert!(!*provider.startup_initialized.lock().await);
+
+        provider.initialize_with_loader(&loader).await.unwrap();
+
+        assert_eq!(loader.id_calls.load(Ordering::SeqCst), 2);
+        assert!(*provider.startup_initialized.lock().await);
+    }
+
+    #[tokio::test]
+    async fn test_initialize_serializes_concurrent_calls() {
+        let instrument_id = InstrumentId::new(Symbol::from("AAPL"), Venue::from("NASDAQ"));
+        let config = InteractiveBrokersInstrumentProviderConfig {
+            load_ids: [instrument_id].into_iter().collect(),
+            ..Default::default()
+        };
+        let provider = InteractiveBrokersInstrumentProvider::new(config);
+        let mut loader = TestStartupLoader::new(true, true);
+        loader.yield_on_load = true;
+
+        let (first, second) = tokio::join!(
+            provider.initialize_with_loader(&loader),
+            provider.initialize_with_loader(&loader),
+        );
+
+        assert_eq!(first.unwrap().len() + second.unwrap().len(), 1);
+        assert_eq!(loader.id_calls.load(Ordering::SeqCst), 1);
+        assert!(*provider.startup_initialized.lock().await);
     }
 
     #[tokio::test]

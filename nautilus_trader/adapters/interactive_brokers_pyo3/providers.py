@@ -237,23 +237,42 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self.contract_id_to_instrument_id[details.contract.conId] = instrument_id
 
     async def initialize(self, reload: bool = False) -> None:
-        self._sync_from_rust()
+        async with self._init_lock:
+            if not reload and self._loaded:
+                return
 
-        if reload:
             self._loaded = False
+            self._sync_from_rust()
 
-        if not reload and self._loaded:
-            return
+            load_ids = sorted(
+                (_normalize_instrument_id(item) for item in (self._load_ids_on_start or [])),
+                key=str,
+            )
+            load_contracts = sorted(
+                (getattr(self._config, "load_contracts", None) or []),
+                key=repr,
+            )
+            startup_inputs = [*load_ids, *load_contracts]
 
-        if self._instruments:
+            if not startup_inputs:
+                self._loaded = True
+                return
+
+            unresolved = []
+
+            for item in startup_inputs:
+                loaded_ids = await self.load_with_return_async(item, self._filters)
+                if not loaded_ids:
+                    unresolved.append(item)
+
+            if unresolved:
+                unresolved_str = ", ".join(repr(item) for item in unresolved)
+                raise RuntimeError(
+                    "Unable to resolve configured Interactive Brokers instruments: "
+                    f"{unresolved_str}",
+                )
+
             self._loaded = True
-            return
-
-        load_contracts = getattr(self._config, "load_contracts", None)
-        if self._load_ids_on_start or load_contracts:
-            await self.load_all_async(self._filters)
-
-        self._loaded = True
 
     def find(self, instrument_id: InstrumentId) -> Instrument | None:
         instrument = super().find(instrument_id)

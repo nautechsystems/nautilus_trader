@@ -136,7 +136,6 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _connect(self):
         # Connect client
         await self._client.wait_until_ready(self._connection_timeout)
-        self._client.registered_nautilus_clients.add(self.id)
 
         # Set instrument provider on client for price magnifier access
         self._client._instrument_provider = self._instrument_provider
@@ -148,6 +147,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         await self.instrument_provider.initialize()
         for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
+
+        self._client.registered_nautilus_clients.add(self.id)
 
     async def _disconnect(self):
         self._client.registered_nautilus_clients.discard(self.id)

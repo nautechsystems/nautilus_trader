@@ -644,6 +644,7 @@ class InteractiveBrokersClient(
         timeout: int,
         default_value: Any | None = None,
         suppress_timeout_warning: bool = False,
+        raise_on_error: bool = False,
     ) -> Any:
         """
         Await the completion of a request within a specified timeout.
@@ -658,6 +659,9 @@ class InteractiveBrokersClient(
             The default value to return if the request times out or fails. Defaults to None.
         suppress_timeout_warning: bool, optional
             Suppress the timeout warning. Defaults to False.
+        raise_on_error : bool, optional
+            If True, re-raise timeout and connection errors after ending the request.
+            Defaults to False.
 
         Returns
         -------
@@ -672,10 +676,16 @@ class InteractiveBrokersClient(
             self._log.debug(msg) if suppress_timeout_warning else self._log.warning(msg)
             self._end_request(request.req_id, success=False, exception=e)
 
+            if raise_on_error:
+                raise
+
             return default_value
         except ConnectionError as e:
             self._log.error(f"Connection error during {request}; ending request")
             self._end_request(request.req_id, success=False, exception=e)
+
+            if raise_on_error:
+                raise
 
             return default_value
 

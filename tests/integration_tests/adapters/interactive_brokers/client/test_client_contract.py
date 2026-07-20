@@ -40,6 +40,25 @@ async def test_get_contract_details(ib_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ConnectionError("Socket disconnected"), TimeoutError()])
+async def test_get_contract_details_propagates_transport_errors(ib_client, error):
+    # Arrange
+    ib_client._request_id_seq = 1
+    contract = IBTestContractStubs.aapl_equity_contract()
+    ib_client._eclient.reqContractDetails = Mock()
+
+    # Act
+    with (
+        patch("asyncio.wait_for", side_effect=error),
+        pytest.raises(type(error)),
+    ):
+        await ib_client.get_contract_details(contract)
+
+    # Assert
+    assert ib_client._requests.get(req_id=1) is None
+
+
+@pytest.mark.asyncio
 async def test_get_option_chains(ib_client):
     # Arrange
     ib_client._request_id_seq = 1

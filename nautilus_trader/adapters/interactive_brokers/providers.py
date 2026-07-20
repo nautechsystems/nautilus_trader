@@ -98,15 +98,51 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract: dict[InstrumentId, IBContract] = {}
 
     async def initialize(self, reload: bool = False) -> None:
-        await super().initialize(reload)
+        async with self._init_lock:
+            if not reload and self._loaded:
+                return
 
-        # Trigger contract loading only if `load_ids_on_start` is False and `load_contracts_on_start` is True
-        if not self._load_ids_on_start and self._load_contracts_on_start:
             self._loaded = False
-            self._loading = True
-            await self.load_all_async()  # Load all instruments passed as config at startup
-            self._loading = False
+            load_ids = sorted(
+                (
+                    item if isinstance(item, InstrumentId) else InstrumentId.from_str(item)
+                    for item in (self._load_ids_on_start or [])
+                ),
+                key=str,
+            )
+            load_contracts = sorted(
+                (
+                    item if isinstance(item, IBContract) else IBContract(**item)
+                    for item in (self._load_contracts_on_start or [])
+                ),
+                key=repr,
+            )
+            startup_inputs = [*load_ids, *load_contracts]
+
+            if not startup_inputs:
+                self._log.warning(
+                    "No loading configured: ensure there are `load_ids` or `load_contracts`",
+                )
+                return
+
+            self._log.info("Initializing instruments...")
+
+            unresolved = []
+
+            for item in startup_inputs:
+                loaded_ids = await self.load_with_return_async(item, self._filters)
+                if not loaded_ids:
+                    unresolved.append(item)
+
+            if unresolved:
+                unresolved_str = ", ".join(repr(item) for item in unresolved)
+                raise RuntimeError(
+                    "Unable to resolve configured Interactive Brokers instruments: "
+                    f"{unresolved_str}",
+                )
+
             self._loaded = True
+            self._log.info(f"Initialized {self.count} instruments")
 
     def _is_filtered_sec_type(self, sec_type: str | None) -> bool:
         return bool(sec_type and sec_type in self._filter_sec_types)
@@ -450,6 +486,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
 
             return True
+        except (ConnectionError, TimeoutError):
+            raise
         except Exception as e:
             self._log.error(f"Failed to fetch spread instrument {spread_instrument_id}: {e}")
             return False

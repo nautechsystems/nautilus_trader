@@ -620,6 +620,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         )
         .await
         .context("Failed to connect to IB Gateway/TWS")?;
+        let client = Arc::clone(handle.as_arc());
 
         tracing::info!(
             "Connected to IB Gateway/TWS at {}:{} (client_id: {})",
@@ -628,14 +629,12 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             self.config.client_id
         );
 
-        self.ib_client = Some(handle);
-
         // Initialize provider and load instruments from cache/config if configured
         log::debug!("Initializing IB execution instrument provider");
 
         if let Err(e) = self
             .instrument_provider
-            .initialize_with_client(self.ib_client.as_ref().unwrap().as_arc().as_ref())
+            .initialize_with_client(client.as_ref())
             .await
         {
             if !self.config.instrument_provider.load_ids.is_empty()
@@ -647,7 +646,8 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             tracing::warn!("Failed to load instruments on startup: {}", e);
         }
 
-        let client = self.ib_client.as_ref().unwrap().as_arc();
+        self.ib_client = Some(handle);
+
         log::debug!("Preloading cached spread instruments for execution client");
         self.preload_cached_spread_instruments(client.as_ref())
             .await?;
@@ -690,7 +690,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         // Subscribe to account summary and generate initial account state
         // Wait for initial account summary to load before proceeding
-        let client_for_account = Arc::clone(client);
+        let client_for_account = Arc::clone(&client);
         let account_id = self.core.account_id;
         let _exec_client_core = self.core.clone(); // Clone core to generate account state
         log::debug!("Subscribing to IB account summary for {}", account_id);
@@ -720,7 +720,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         // Initialize position tracking with existing positions
         // This avoids processing duplicates from execDetails
-        let client_for_positions_init = Arc::clone(client);
+        let client_for_positions_init = Arc::clone(&client);
         let position_tracker_init = Arc::clone(&self.position_tracker);
 
         log::debug!("Initializing IB execution position tracking");
@@ -735,7 +735,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         // Subscribe to PnL updates
-        let client_for_pnl = Arc::clone(client); // Clone Arc
+        let client_for_pnl = Arc::clone(&client); // Clone Arc
 
         log::debug!("Subscribing to IB PnL updates");
 
@@ -747,7 +747,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
 
         // Subscribe to position updates for option exercise tracking if enabled
         if self.config.track_option_exercise_from_position_update {
-            let client_for_positions = Arc::clone(client);
+            let client_for_positions = Arc::clone(&client);
             let position_tracker_clone = Arc::clone(&self.position_tracker);
             let instrument_provider_clone = Arc::clone(&self.instrument_provider);
 

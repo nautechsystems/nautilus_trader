@@ -72,12 +72,14 @@ class InteractiveBrokersClientContractMixin(BaseMixin):
                 request,
                 self._request_timeout_secs,
                 suppress_timeout_warning=True,
+                raise_on_error=True,
             )
         else:
             return await self._await_request(
                 request,
                 self._request_timeout_secs,
                 suppress_timeout_warning=True,
+                raise_on_error=True,
             )
 
     async def get_matching_contracts(self, pattern: str) -> list[IBContract] | None:

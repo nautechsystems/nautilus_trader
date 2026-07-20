@@ -411,7 +411,9 @@ There are two primary methods for loading instruments:
 Interactive Brokers does not support loading the full IB instrument universe with
 `load_all=True`. Configure `load_ids` or `load_contracts` for the instruments a node
 needs at startup, or request an instrument explicitly before subscribing to its market
-data.
+data. Startup entries are treated as required. If any configured ID or contract cannot
+be resolved, client initialization fails instead of starting with an incomplete
+instrument cache.
 
 #### 1. Using `load_ids` (recommended)
 

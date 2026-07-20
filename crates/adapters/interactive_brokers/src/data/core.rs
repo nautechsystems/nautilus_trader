@@ -643,7 +643,7 @@ impl DataClient for InteractiveBrokersDataClient {
         .await
         .context("Failed to connect to IB Gateway/TWS")?;
 
-        let client = handle.as_arc();
+        let client = Arc::clone(handle.as_arc());
 
         tracing::info!(
             "Connected to IB Gateway/TWS at {}:{} (client_id: {})",
@@ -663,29 +663,12 @@ impl DataClient for InteractiveBrokersDataClient {
             tracing::info!("Set market data type to {:?}", self.config.market_data_type);
         }
 
-        let notice_client = Arc::clone(client);
-        self.ib_client = Some(handle);
-        self.is_connected.store(true, Ordering::Relaxed);
-
-        let data_farm_state = Arc::clone(&self.data_farm_state);
-        let cancellation_token = self.cancellation_token.child_token();
-        let clock = self.clock;
-
-        self.tasks.push(get_runtime().spawn(async move {
-            if let Err(e) =
-                monitor_data_farm_notices(notice_client, data_farm_state, clock, cancellation_token)
-                    .await
-            {
-                tracing::warn!("IB data farm notice monitor stopped: {e:?}");
-            }
-        }));
-
         // Initialize provider and load instruments from cache/config if configured
         tracing::debug!("Initializing IB data instrument provider");
 
         if let Err(e) = self
             .instrument_provider
-            .initialize_with_client(self.ib_client.as_ref().unwrap().as_arc().as_ref())
+            .initialize_with_client(client.as_ref())
             .await
         {
             if !self.config.instrument_provider.load_ids.is_empty()
@@ -696,6 +679,21 @@ impl DataClient for InteractiveBrokersDataClient {
 
             tracing::warn!("Failed to load instruments on startup: {}", e);
         }
+
+        self.ib_client = Some(handle);
+
+        let data_farm_state = Arc::clone(&self.data_farm_state);
+        let cancellation_token = self.cancellation_token.child_token();
+        let clock = self.clock;
+
+        self.tasks.push(get_runtime().spawn(async move {
+            if let Err(e) =
+                monitor_data_farm_notices(client, data_farm_state, clock, cancellation_token).await
+            {
+                tracing::warn!("IB data farm notice monitor stopped: {e:?}");
+            }
+        }));
+        self.is_connected.store(true, Ordering::Relaxed);
 
         let instrument_count = self.instrument_provider.count();
         if instrument_count > 0 {

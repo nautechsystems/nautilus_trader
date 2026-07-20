@@ -15,11 +15,13 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from datetime import timedelta
 from datetime import timezone
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -88,6 +90,10 @@ class _FakeRustProvider:
 class _FakeRustDataClient:
     def __init__(self, rust_provider: _FakeRustProvider) -> None:
         self._provider = rust_provider
+        self.load_one_calls: list[InstrumentId] = []
+        self.load_all_calls: list[
+            tuple[list[InstrumentId] | None, list[Mapping[str, Any]] | None, bool]
+        ] = []
         self.option_chain_calls: list[tuple[dict[str, Any], str | None, str | None]] = []
         self.futures_chain_calls: list[
             tuple[str, str | None, str | None, int | None, int | None]
@@ -98,6 +104,7 @@ class _FakeRustDataClient:
         instrument_id: InstrumentId,
         _filters: Any,
     ) -> InstrumentId:
+        self.load_one_calls.append(instrument_id)
         self._store_instrument(instrument_id, 101)
         return instrument_id
 
@@ -114,8 +121,9 @@ class _FakeRustDataClient:
         self,
         instrument_ids: list[InstrumentId] | None,
         contracts: list[Mapping[str, Any]] | None,
-        _force_instrument_update: bool,
+        force_instrument_update: bool,
     ) -> list[InstrumentId]:
+        self.load_all_calls.append((instrument_ids, contracts, force_instrument_update))
         loaded_ids: list[InstrumentId] = []
 
         for index, instrument_id in enumerate(instrument_ids or [], start=1):
@@ -256,6 +264,132 @@ async def test_pyo3_provider_behaves_like_standard_instrument_provider(monkeypat
     assert provider.contract[instrument_id].conId == 101
     assert provider.contract_details[instrument_id].priceMagnifier == 10
     assert provider.contract_id_to_instrument_id[101] == instrument_id
+
+
+@pytest.mark.asyncio
+async def test_pyo3_provider_initialize_loads_configured_ids_and_contracts(monkeypatch):
+    from nautilus_trader.adapters.interactive_brokers_pyo3 import providers as providers_module
+
+    monkeypatch.setattr(
+        providers_module,
+        "RustInteractiveBrokersInstrumentProvider",
+        _FakeRustProvider,
+    )
+
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    contract = IBContract(secType="STK", symbol="MSFT", exchange="NASDAQ")
+    provider = providers_module.InteractiveBrokersInstrumentProvider(
+        config=_StubConfig(load_ids=[instrument_id], load_contracts=[contract]),
+    )
+    loader = _FakeRustDataClient(provider._rust_provider)
+    provider._attach_loader(loader)
+
+    await provider.initialize()
+
+    assert provider._loaded is True
+    assert [str(item) for item in loader.load_one_calls] == [str(instrument_id)]
+    assert len(loader.load_all_calls) == 1
+    assert loader.load_all_calls[0][0] is None
+    contracts = loader.load_all_calls[0][1]
+    assert contracts is not None
+    [contract_payload] = contracts
+    assert contract_payload["secType"] == "STK"
+    assert contract_payload["symbol"] == "MSFT"
+    assert contract_payload["exchange"] == "NASDAQ"
+
+
+@pytest.mark.asyncio
+async def test_pyo3_provider_initialize_can_retry_after_unresolved_load(monkeypatch):
+    from nautilus_trader.adapters.interactive_brokers_pyo3 import providers as providers_module
+
+    monkeypatch.setattr(
+        providers_module,
+        "RustInteractiveBrokersInstrumentProvider",
+        _FakeRustProvider,
+    )
+
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    provider = providers_module.InteractiveBrokersInstrumentProvider(
+        config=_StubConfig(load_ids=[instrument_id]),
+    )
+    loader = _FakeRustDataClient(provider._rust_provider)
+    original_load = loader.load_with_return_async
+    attempts = 0
+
+    async def load(item, filters):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return None
+        return await original_load(item, filters)
+
+    loader.load_with_return_async = AsyncMock(side_effect=load)
+    provider._attach_loader(loader)
+
+    with pytest.raises(RuntimeError, match=r"AAPL\.NASDAQ"):
+        await provider.initialize()
+
+    await provider.initialize()
+
+    assert provider._loaded is True
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_pyo3_provider_initialize_preserves_loader_error(monkeypatch):
+    from nautilus_trader.adapters.interactive_brokers_pyo3 import providers as providers_module
+
+    monkeypatch.setattr(
+        providers_module,
+        "RustInteractiveBrokersInstrumentProvider",
+        _FakeRustProvider,
+    )
+
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    provider = providers_module.InteractiveBrokersInstrumentProvider(
+        config=_StubConfig(load_ids=[instrument_id]),
+    )
+    loader = _FakeRustDataClient(provider._rust_provider)
+    loader.load_with_return_async = AsyncMock(
+        side_effect=RuntimeError("Socket disconnected"),
+    )
+    provider._attach_loader(loader)
+
+    with pytest.raises(RuntimeError, match="Socket disconnected"):
+        await provider.initialize()
+
+    assert provider._loaded is False
+
+
+@pytest.mark.asyncio
+async def test_pyo3_provider_initialize_serializes_concurrent_calls(monkeypatch):
+    from nautilus_trader.adapters.interactive_brokers_pyo3 import providers as providers_module
+
+    monkeypatch.setattr(
+        providers_module,
+        "RustInteractiveBrokersInstrumentProvider",
+        _FakeRustProvider,
+    )
+
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    provider = providers_module.InteractiveBrokersInstrumentProvider(
+        config=_StubConfig(load_ids=[instrument_id]),
+    )
+    loader = _FakeRustDataClient(provider._rust_provider)
+    original_load = loader.load_with_return_async
+
+    async def load(item, filters):
+        await asyncio.sleep(0)
+        return await original_load(item, filters)
+
+    loader.load_with_return_async = AsyncMock(side_effect=load)
+    provider._attach_loader(loader)
+
+    await asyncio.gather(provider.initialize(), provider.initialize())
+    await provider.initialize()
+
+    assert provider._loaded is True
+    assert loader.load_with_return_async.await_count == 1
 
 
 @pytest.mark.asyncio

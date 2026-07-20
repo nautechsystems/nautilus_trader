@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from unittest.mock import AsyncMock
+from unittest.mock import Mock
+from unittest.mock import patch
 
 import pytest
 from ibapi.contract import ContractDetails
@@ -26,6 +29,7 @@ from nautilus_trader.adapters.interactive_brokers.config import (
 from nautilus_trader.adapters.interactive_brokers.providers import (
     InteractiveBrokersInstrumentProvider,
 )
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import OptionKind
@@ -42,6 +46,149 @@ def mock_ib_contract_calls(mocker, instrument_provider, contract_details: Contra
         "get_contract_details",
         side_effect=AsyncMock(return_value=[contract_details]),
     )
+
+
+def make_instrument_provider(ib_client, *, load_ids=None, load_contracts=None):
+    return InteractiveBrokersInstrumentProvider(
+        client=ib_client,
+        clock=LiveClock(),
+        config=InteractiveBrokersInstrumentProviderConfig(
+            load_ids=frozenset(load_ids or []),
+            load_contracts=frozenset(load_contracts or []),
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_initialize_loads_configured_ids_and_contracts(ib_client):
+    # Arrange
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    contract = IBContract(secType="STK", symbol="MSFT", exchange="NASDAQ")
+    provider = make_instrument_provider(
+        ib_client,
+        load_ids=[instrument_id],
+        load_contracts=[contract],
+    )
+
+    async def load(item, _filters):
+        if isinstance(item, InstrumentId):
+            return [item]
+        return [InstrumentId.from_str("MSFT.NASDAQ")]
+
+    provider.load_with_return_async = AsyncMock(side_effect=load)
+
+    # Act
+    await provider.initialize()
+
+    # Assert
+    assert provider._loaded is True
+    assert {call.args[0] for call in provider.load_with_return_async.await_args_list} == {
+        instrument_id,
+        contract,
+    }
+
+
+@pytest.mark.asyncio
+async def test_initialize_fails_closed_for_partial_load(ib_client):
+    # Arrange
+    loaded_id = InstrumentId.from_str("AAPL.NASDAQ")
+    unresolved_id = InstrumentId.from_str("MSFT.NASDAQ")
+    provider = make_instrument_provider(
+        ib_client,
+        load_ids=[loaded_id, unresolved_id],
+    )
+
+    async def load(item, _filters):
+        return [item] if item == loaded_id else None
+
+    provider.load_with_return_async = AsyncMock(side_effect=load)
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match=r"MSFT\.NASDAQ"):
+        await provider.initialize()
+
+    assert provider._loaded is False
+    assert provider.load_with_return_async.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_initialize_can_retry_after_failed_required_load(ib_client):
+    # Arrange
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    provider = make_instrument_provider(ib_client, load_ids=[instrument_id])
+    provider.load_with_return_async = AsyncMock(side_effect=[None, [instrument_id]])
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match=r"AAPL\.NASDAQ"):
+        await provider.initialize()
+
+    await provider.initialize()
+
+    assert provider._loaded is True
+    assert provider.load_with_return_async.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ConnectionError("Socket disconnected"), TimeoutError()])
+async def test_initialize_propagates_client_transport_errors(ib_client, error):
+    # Arrange
+    ib_client._request_id_seq = 1
+    ib_client._eclient.reqContractDetails = Mock()
+    contract = IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ")
+    provider = make_instrument_provider(ib_client, load_contracts=[contract])
+
+    # Act / Assert
+    with (
+        patch("asyncio.wait_for", side_effect=error),
+        pytest.raises(type(error)),
+    ):
+        await provider.initialize()
+
+    assert provider._loaded is False
+    assert ib_client._requests.get(req_id=1) is None
+
+
+@pytest.mark.asyncio
+async def test_initialize_is_idempotent_and_serializes_concurrent_calls(ib_client):
+    # Arrange
+    instrument_id = InstrumentId.from_str("AAPL.NASDAQ")
+    provider = make_instrument_provider(ib_client, load_ids=[instrument_id])
+
+    async def load(item, _filters):
+        await asyncio.sleep(0)
+        return [item]
+
+    provider.load_with_return_async = AsyncMock(side_effect=load)
+
+    # Act
+    await asyncio.gather(provider.initialize(), provider.initialize())
+    await provider.initialize()
+
+    # Assert
+    assert provider._loaded is True
+    provider.load_with_return_async.assert_awaited_once_with(instrument_id, None)
+
+
+@pytest.mark.asyncio
+async def test_data_client_registers_only_after_instrument_initialization(data_client):
+    # Arrange
+    data_client._client.wait_until_ready = AsyncMock()
+    data_client._client.set_market_data_type = AsyncMock()
+    data_client.instrument_provider.initialize = AsyncMock(
+        side_effect=RuntimeError("Required instrument did not load"),
+    )
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match="Required instrument did not load"):
+        await data_client._connect()
+
+    assert data_client.id not in data_client._client.registered_nautilus_clients
+
+    data_client.instrument_provider.initialize = AsyncMock()
+    await data_client._connect()
+
+    assert data_client.id in data_client._client.registered_nautilus_clients
+    data_client._client.registered_nautilus_clients.discard(data_client.id)
 
 
 @pytest.mark.asyncio
