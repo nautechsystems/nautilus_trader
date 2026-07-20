@@ -17,16 +17,15 @@
 //!
 //! This module implements a high-performance logging subsystem that operates in a separate thread
 //! using an MPSC channel for log message delivery. The system uses reference counting to track
-//! active `LogGuard` instances, ensuring the logging thread completes all pending writes before
-//! termination.
+//! active `LogGuard` instances, ensuring pending file logs are synced when the last guard drops.
 //!
 //! # `LogGuard` reference counting
 //!
 //! The logging system maintains a global count of active `LogGuard` instances using an atomic
 //! counter (`LOGGING_GUARDS_ACTIVE`). When a `LogGuard` is created, the counter is incremented,
 //! and when dropped, it's decremented. When the last `LogGuard` is dropped (counter reaches zero),
-//! the logging thread is properly joined to ensure all buffered log messages are written to their
-//! destinations before the process terminates.
+//! pending file logs are synchronously flushed and synced. The process-global logging thread stays
+//! alive for later guard acquisitions and is only terminated by [`logging_shutdown`].
 //!
 //! The system supports a maximum of 255 concurrent `LogGuard` instances. Attempting to create
 //! more will cause a panic.
@@ -95,7 +94,7 @@ pub fn logging_is_initialized() -> bool {
 /// Returns `true` if logging is available (either already initialized or
 /// successfully lazy-initialized), `false` otherwise.
 pub fn ensure_logging_initialized() -> bool {
-    if LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+    if crate::logging::logger::is_running() {
         return true;
     }
 
@@ -114,7 +113,7 @@ pub fn ensure_logging_initialized() -> bool {
         .ok()
     });
 
-    LOGGING_INITIALIZED.load(Ordering::SeqCst)
+    crate::logging::logger::is_running()
 }
 
 /// Sets the logging subsystem to bypass mode.

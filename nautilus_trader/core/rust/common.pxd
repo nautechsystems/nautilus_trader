@@ -115,23 +115,23 @@ cdef extern from "../includes/common.h":
 
     # A guard that manages the lifecycle of the logging subsystem.
     #
-    # `LogGuard` ensures the logging thread remains active while instances exist and properly
-    # terminates when all guards are dropped. The system uses reference counting to track active
-    # guards - when the last `LogGuard` is dropped, the logging thread is joined to ensure all
-    # pending log messages are written before the process terminates.
+    # `LogGuard` tracks active users of the process-global logging subsystem. Dropping the last guard
+    # synchronously flushes and syncs pending file logs, but leaves the logging thread running so a
+    # later initialization can acquire a valid guard. Only [`crate::logging::logging_shutdown`]
+    # permanently terminates the logging thread.
     #
     # # Reference Counting
     #
     # The logging system maintains a global atomic counter of active `LogGuard` instances. This
     # ensures that:
-    # - The logging thread remains active as long as at least one `LogGuard` exists.
-    # - All log messages are properly flushed when intermediate guards are dropped.
-    # - The logging thread is cleanly terminated and joined when the last guard is dropped.
+    # - The logging thread remains active for the process lifetime, including while no guards exist.
+    # - Pending log messages are flushed when intermediate guards are dropped.
+    # - Pending file logs are synchronously flushed and synced when the last guard is dropped.
     #
     # # Shutdown Behavior
     #
-    # When the last guard is dropped, the logging thread is signaled to close, drains pending
-    # messages, and is joined to ensure all logs are written before process termination.
+    # Call [`crate::logging::logging_shutdown`] for terminal shutdown. After shutdown, no new guards
+    # can be acquired and the logger cannot be re-initialized.
     #
     # **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
     # occasionally prevent proper thread join, resulting in truncated logs.

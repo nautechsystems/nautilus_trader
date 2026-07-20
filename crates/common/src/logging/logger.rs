@@ -17,7 +17,7 @@ use std::{
     cell::RefCell,
     fmt::{Display, Write as _},
     sync::{
-        Mutex, OnceLock,
+        Mutex, OnceLock, PoisonError,
         atomic::{AtomicBool, Ordering},
         mpsc::SendError,
     },
@@ -105,6 +105,31 @@ static LOGGER_TX: OnceLock<std::sync::mpsc::Sender<LogEvent>> = OnceLock::new();
 
 /// Global handle to the logging thread - only one thread exists per process.
 static LOGGER_HANDLE: Mutex<Option<std::thread::JoinHandle<()>>> = Mutex::new(None);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LoggerLifecycle {
+    Uninitialized,
+    Running,
+    Terminated,
+}
+
+/// Process-global logger lifecycle serialization.
+static LOGGER_LIFECYCLE: Mutex<LoggerLifecycle> = Mutex::new(LoggerLifecycle::Uninitialized);
+
+#[cfg(test)]
+struct InitPublishHook {
+    reached: std::sync::mpsc::Sender<()>,
+    resume: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(test)]
+static INIT_PUBLISH_HOOK: Mutex<Option<InitPublishHook>> = Mutex::new(None);
+
+#[cfg(test)]
+enum TestGuardAcquire {
+    LifecycleBusy,
+    Acquired(Option<LogGuard>),
+}
 
 static SHUTDOWN_ON_ERROR: OnceLock<ShutdownOnError> = OnceLock::new();
 
@@ -905,21 +930,50 @@ impl Logger {
     /// # Errors
     ///
     /// Returns an error if the logger fails to register or initialize the background thread.
+    #[expect(clippy::needless_pass_by_value)]
     pub fn init_with_config(
         trader_id: TraderId,
         instance_id: UUID4,
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> anyhow::Result<LogGuard> {
-        // Fast path: already initialized
-        if super::LOGGING_INITIALIZED.load(Ordering::SeqCst) {
-            return LogGuard::new().ok_or_else(|| {
-                anyhow::anyhow!("Logging already initialized but new guard could not be created")
-            });
+        let mut lifecycle = LOGGER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+
+        match *lifecycle {
+            LoggerLifecycle::Running => {
+                return LogGuard::new_locked().ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Logging already initialized but new guard could not be created"
+                    )
+                });
+            }
+            LoggerLifecycle::Terminated => {
+                anyhow::bail!("Logging has been shut down and cannot be re-initialized");
+            }
+            LoggerLifecycle::Uninitialized => {}
         }
 
         let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
         let filter_policy = FilterPolicy::from_config(&config);
+
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        let handle = std::thread::Builder::new()
+            .name(LOGGING.to_string())
+            .spawn({
+                let config = config.clone();
+                let file_config = file_config.clone();
+                move || {
+                    Self::handle_messages(
+                        trader_id.to_string(),
+                        instance_id.to_string(),
+                        config,
+                        file_config,
+                        rx,
+                    );
+                }
+            })?;
 
         let logger_tx = tx.clone();
         let logger = Self {
@@ -928,14 +982,40 @@ impl Logger {
             tx: logger_tx,
         };
 
-        set_boxed_logger(Box::new(logger))?;
+        if let Err(e) = set_boxed_logger(Box::new(logger)) {
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            {
+                let _ = tx.send(LogEvent::Close);
+                if handle.thread().id() != std::thread::current().id() {
+                    let _ = handle.join();
+                }
+            }
+            *lifecycle = LoggerLifecycle::Terminated;
+            return Err(e.into());
+        }
+
+        #[cfg(test)]
+        if let Some(hook) = INIT_PUBLISH_HOOK
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            let _ = hook.reached.send(());
+            let _ = hook.resume.recv();
+        }
 
         // Store the sender globally so additional guards can be created
-        if LOGGER_TX.set(tx).is_err() {
-            debug_assert!(
-                false,
-                "LOGGER_TX already set - re-initialization not supported"
-            );
+        if let Err(tx) = LOGGER_TX.set(tx) {
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            let _ = tx.send(LogEvent::Close);
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            {
+                if handle.thread().id() != std::thread::current().id() {
+                    let _ = handle.join();
+                }
+            }
+            *lifecycle = LoggerLifecycle::Terminated;
+            anyhow::bail!("Global logging sender was already published");
         }
 
         if config.bypass_logging {
@@ -952,26 +1032,13 @@ impl Logger {
 
         #[cfg(not(all(feature = "simulation", madsim)))]
         {
-            let handle = std::thread::Builder::new()
-                .name(LOGGING.to_string())
-                .spawn(move || {
-                    Self::handle_messages(
-                        trader_id.to_string(),
-                        instance_id.to_string(),
-                        config,
-                        file_config,
-                        rx,
-                    );
-                })?;
-
             // Store the handle globally
-            if let Ok(mut handle_guard) = LOGGER_HANDLE.lock() {
-                debug_assert!(
-                    handle_guard.is_none(),
-                    "LOGGER_HANDLE already set - re-initialization not supported"
-                );
-                *handle_guard = Some(handle);
-            }
+            let mut handle_guard = LOGGER_HANDLE.lock().unwrap_or_else(PoisonError::into_inner);
+            debug_assert!(
+                handle_guard.is_none(),
+                "LOGGER_HANDLE already set - re-initialization not supported"
+            );
+            *handle_guard = Some(handle);
         }
 
         #[cfg(all(feature = "simulation", madsim))]
@@ -993,8 +1060,9 @@ impl Logger {
 
         super::LOGGING_INITIALIZED.store(true, Ordering::SeqCst);
         super::LOGGING_COLORED.store(is_colored, Ordering::SeqCst);
+        *lifecycle = LoggerLifecycle::Running;
 
-        LogGuard::new()
+        LogGuard::new_locked()
             .ok_or_else(|| anyhow::anyhow!("Failed to create LogGuard from global sender"))
     }
 
@@ -1086,6 +1154,9 @@ impl Logger {
                     }
                 }
                 LogEvent::Sync(done) => {
+                    stdout_writer.flush();
+                    stderr_writer.flush();
+
                     let result = if let Some(file_writer) = file_writer_opt {
                         file_writer.flush_and_sync().map_err(anyhow::Error::from)
                     } else {
@@ -1205,18 +1276,27 @@ fn should_filter_log_inner(
 
 /// Gracefully shuts down the logging subsystem.
 ///
-/// Performs the same shutdown sequence as dropping the last `LogGuard`, but can be called
-/// explicitly for deterministic shutdown timing (e.g., testing or Windows Python applications).
+/// This is the sole terminal lifecycle operation. It prevents further logging, closes and joins
+/// the writer thread, and prevents subsequent logger initialization.
 ///
 /// # Safety
 ///
 /// Safe to call multiple times. Thread join is skipped if called from the logging thread.
 pub(crate) fn shutdown_graceful() {
+    let mut lifecycle = LOGGER_LIFECYCLE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+
+    if *lifecycle == LoggerLifecycle::Terminated {
+        return;
+    }
+
     // Prevent further logging
     LOGGING_BYPASSED.store(true, Ordering::SeqCst);
     log::set_max_level(log::LevelFilter::Off);
 
     // Signal Close if the sender exists
+    #[cfg(not(all(feature = "simulation", madsim)))]
     if let Some(tx) = LOGGER_TX.get() {
         let _ = tx.send(LogEvent::Close);
     }
@@ -1229,6 +1309,14 @@ pub(crate) fn shutdown_graceful() {
     }
 
     LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
+    *lifecycle = LoggerLifecycle::Terminated;
+}
+
+pub(crate) fn is_running() -> bool {
+    *LOGGER_LIFECYCLE
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        == LoggerLifecycle::Running
 }
 
 /// Flushes and syncs file logs to disk through the logging thread.
@@ -1239,14 +1327,31 @@ pub(crate) fn shutdown_graceful() {
 ///
 /// Returns an error if the sync request cannot be delivered or acknowledged.
 pub fn sync_to_disk() -> anyhow::Result<()> {
-    if !LOGGING_INITIALIZED.load(Ordering::SeqCst) {
+    #[cfg(all(feature = "simulation", madsim))]
+    {
         return Ok(());
     }
 
-    let Some(tx) = LOGGER_TX.get() else {
-        return Ok(());
-    };
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    {
+        let lifecycle = LOGGER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
 
+        if *lifecycle != LoggerLifecycle::Running {
+            return Ok(());
+        }
+
+        let Some(tx) = LOGGER_TX.get() else {
+            anyhow::bail!("Logging is running without a published sender");
+        };
+
+        sync_sender_to_disk(tx)
+    }
+}
+
+#[cfg(not(all(feature = "simulation", madsim)))]
+fn sync_sender_to_disk(tx: &std::sync::mpsc::Sender<LogEvent>) -> anyhow::Result<()> {
     let (done_tx, done_rx) = std::sync::mpsc::channel();
     tx.send(LogEvent::Sync(done_tx))
         .map_err(|e| anyhow::anyhow!("failed to request logging sync: {e}"))?;
@@ -1281,23 +1386,23 @@ pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, mes
 
 /// A guard that manages the lifecycle of the logging subsystem.
 ///
-/// `LogGuard` ensures the logging thread remains active while instances exist and properly
-/// terminates when all guards are dropped. The system uses reference counting to track active
-/// guards - when the last `LogGuard` is dropped, the logging thread is joined to ensure all
-/// pending log messages are written before the process terminates.
+/// `LogGuard` tracks active users of the process-global logging subsystem. Dropping the last guard
+/// synchronously flushes and syncs pending file logs, but leaves the logging thread running so a
+/// later initialization can acquire a valid guard. Only [`crate::logging::logging_shutdown`]
+/// permanently terminates the logging thread.
 ///
 /// # Reference Counting
 ///
 /// The logging system maintains a global atomic counter of active `LogGuard` instances. This
 /// ensures that:
-/// - The logging thread remains active as long as at least one `LogGuard` exists.
-/// - All log messages are properly flushed when intermediate guards are dropped.
-/// - The logging thread is cleanly terminated and joined when the last guard is dropped.
+/// - The logging thread remains active for the process lifetime, including while no guards exist.
+/// - Pending log messages are flushed when intermediate guards are dropped.
+/// - Pending file logs are synchronously flushed and synced when the last guard is dropped.
 ///
 /// # Shutdown Behavior
 ///
-/// When the last guard is dropped, the logging thread is signaled to close, drains pending
-/// messages, and is joined to ensure all logs are written before process termination.
+/// Call [`crate::logging::logging_shutdown`] for terminal shutdown. After shutdown, no new guards
+/// can be acquired and the logger cannot be re-initialized.
 ///
 /// **Python on Windows:** Non-deterministic GC order during interpreter shutdown can
 /// occasionally prevent proper thread join, resulting in truncated logs.
@@ -1325,6 +1430,33 @@ impl LogGuard {
     /// count would exceed 255.
     #[must_use]
     pub fn new() -> Option<Self> {
+        let lifecycle = LOGGER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+
+        Self::new_from_lifecycle(&lifecycle)
+    }
+
+    fn new_from_lifecycle(lifecycle: &LoggerLifecycle) -> Option<Self> {
+        if *lifecycle != LoggerLifecycle::Running {
+            return None;
+        }
+
+        Self::new_locked()
+    }
+
+    #[cfg(test)]
+    fn try_new_for_test() -> TestGuardAcquire {
+        match LOGGER_LIFECYCLE.try_lock() {
+            Ok(lifecycle) => TestGuardAcquire::Acquired(Self::new_from_lifecycle(&lifecycle)),
+            Err(std::sync::TryLockError::WouldBlock) => TestGuardAcquire::LifecycleBusy,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                TestGuardAcquire::Acquired(Self::new_from_lifecycle(&poisoned.into_inner()))
+            }
+        }
+    }
+
+    fn new_locked() -> Option<Self> {
         let tx = LOGGER_TX.get()?;
         LOGGING_GUARDS_ACTIVE
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
@@ -1343,9 +1475,12 @@ impl LogGuard {
 impl Drop for LogGuard {
     /// Handles cleanup when a `LogGuard` is dropped.
     ///
-    /// Sends `Flush` if other guards remain active, otherwise sends `Close`, joins the
-    /// logging thread, and resets the subsystem state.
+    /// Sends `Flush` if other guards remain active. The last guard synchronously flushes and syncs
+    /// file output while leaving the process-global logging thread running.
     fn drop(&mut self) {
+        let lifecycle = LOGGER_LIFECYCLE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let previous_count = LOGGING_GUARDS_ACTIVE
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
                 assert!(count != 0, "LogGuard reference count underflow");
@@ -1353,31 +1488,15 @@ impl Drop for LogGuard {
             })
             .expect("Failed to decrement LogGuard count");
 
-        // Check if this was the last LogGuard - re-check after decrement to avoid race
-        if previous_count == 1 && LOGGING_GUARDS_ACTIVE.load(Ordering::SeqCst) == 0 {
-            // This is truly the last LogGuard, so we should close the logger and join the thread
-            // to ensure all log messages are written before the process terminates.
-            // Prevent any new log events from being accepted while shutting down.
-            LOGGING_BYPASSED.store(true, Ordering::SeqCst);
+        if *lifecycle != LoggerLifecycle::Running {
+            return;
+        }
 
-            // Disable all log levels to reduce overhead on late calls
-            log::set_max_level(log::LevelFilter::Off);
-
-            // Ensure Close is delivered before joining (critical for shutdown)
-            let _ = self.tx.send(LogEvent::Close);
-
-            // Join the logging thread to ensure all pending logs are written
-            if let Ok(mut handle_guard) = LOGGER_HANDLE.lock()
-                && let Some(handle) = handle_guard.take()
-            {
-                // Avoid self-join deadlock
-                if handle.thread().id() != std::thread::current().id() {
-                    let _ = handle.join();
-                }
+        #[cfg(not(all(feature = "simulation", madsim)))]
+        if previous_count == 1 {
+            if let Err(e) = sync_sender_to_disk(&self.tx) {
+                eprintln!("Error syncing logs after dropping the last LogGuard: {e}");
             }
-
-            // Reset LOGGING_INITIALIZED since the logging thread has terminated
-            LOGGING_INITIALIZED.store(false, Ordering::SeqCst);
         } else {
             // Other LogGuards are still active, just flush our logs
             let _ = self.tx.send(LogEvent::Flush);
@@ -2213,7 +2332,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_shutdown_drains_backlog_tail() {
+        fn test_last_guard_drop_syncs_backlog_tail() {
             const N: usize = 1000;
 
             // Configure file logging at Info level
@@ -2246,7 +2365,7 @@ mod tests {
                 log::info!(component = "TailDrain"; "BacklogTest {i}");
             }
 
-            // Drop guard to trigger shutdown (bypass + close + drain)
+            // Drop the last guard to synchronously flush and sync pending messages.
             drop(log_guard);
 
             // Wait until the file exists and contains at least N lines with our marker
@@ -2275,7 +2394,7 @@ mod tests {
                 Duration::from_secs(5),
             );
 
-            assert_eq!(count, N, "Expected all pre-shutdown messages to be written");
+            assert_eq!(count, N, "Expected all pending messages to be written");
         }
 
         #[rstest]
@@ -2404,7 +2523,7 @@ mod tests {
             assert!(logging_is_initialized());
 
             drop(guard);
-            assert!(!logging_is_initialized());
+            assert!(logging_is_initialized());
         }
 
         #[rstest]
@@ -2434,7 +2553,7 @@ mod tests {
         }
 
         #[rstest]
-        fn test_reinit_after_guard_drop_fails() {
+        fn test_reinit_after_guard_drop_returns_live_guard() {
             let config = LoggerConfig::default();
             let file_config = FileWriterConfig::default();
 
@@ -2447,14 +2566,13 @@ mod tests {
             assert!(guard1.is_ok());
             drop(guard1);
 
-            // Re-init fails because log crate's set_boxed_logger only works once per process
             let guard2 = Logger::init_with_config(
                 TraderId::from("TRADER-002"),
                 UUID4::new(),
                 config,
                 file_config,
             );
-            assert!(guard2.is_err());
+            assert!(guard2.is_ok());
         }
 
         #[rstest]
@@ -2713,6 +2831,214 @@ mod tests {
             assert_eq!(parsed["message"], "Order filled");
             assert_eq!(parsed["venue"], "BINANCE");
             assert_eq!(parsed["order_id"], "O-12345");
+        }
+    }
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    mod lifecycle_tests {
+        use std::{
+            process::Command,
+            sync::{Arc, Barrier},
+        };
+
+        use super::*;
+        use crate::logging::{logging_is_initialized, logging_shutdown, logging_sync_to_disk};
+
+        const LIFECYCLE_CHILD_ENV: &str = "NAUTILUS_LOGGER_LIFECYCLE_CHILD";
+
+        fn in_lifecycle_child(marker: &str) -> bool {
+            std::env::var(LIFECYCLE_CHILD_ENV).as_deref() == Ok(marker)
+        }
+
+        fn run_lifecycle_child(test_name: &str, marker: &str) {
+            let output = Command::new(std::env::current_exe().expect("test executable must exist"))
+                .arg(test_name)
+                .arg("--nocapture")
+                .arg("--test-threads=1")
+                .env(LIFECYCLE_CHILD_ENV, marker)
+                .output()
+                .expect("lifecycle child process must start");
+
+            assert!(
+                output.status.success(),
+                "lifecycle child failed with {}\nstdout:\n{}\nstderr:\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            );
+        }
+
+        #[rstest]
+        fn test_init_publish_boundary_serializes_guard_acquisition() {
+            const MARKER: &str = "init-publish-boundary";
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child(
+                    "test_init_publish_boundary_serializes_guard_acquisition",
+                    MARKER,
+                );
+                return;
+            }
+
+            let (publish_reached_tx, publish_reached_rx) = std::sync::mpsc::channel();
+            let (publish_resume_tx, publish_resume_rx) = std::sync::mpsc::channel();
+            *INIT_PUBLISH_HOOK
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) = Some(InitPublishHook {
+                reached: publish_reached_tx,
+                resume: publish_resume_rx,
+            });
+
+            let init_thread = std::thread::spawn(|| {
+                Logger::init_with_config(
+                    TraderId::from("TRADER-BOUNDARY"),
+                    UUID4::new(),
+                    LoggerConfig {
+                        stdout_level: LevelFilter::Off,
+                        ..Default::default()
+                    },
+                    FileWriterConfig::default(),
+                )
+            });
+            publish_reached_rx
+                .recv()
+                .expect("initializer must reach the install/publish boundary");
+
+            // This seam proves initialization retains LOGGER_LIFECYCLE through publication.
+            // Public LogGuard::new() coverage belongs to the contention and sequential tests.
+            assert!(
+                matches!(
+                    LogGuard::try_new_for_test(),
+                    TestGuardAcquire::LifecycleBusy
+                ),
+                "initializer must hold the lifecycle mutex before sender publication completes"
+            );
+
+            publish_resume_tx
+                .send(())
+                .expect("initializer must resume publication");
+            let init_guard = init_thread
+                .join()
+                .expect("initializer thread must not panic")
+                .expect("initialization must succeed");
+            let TestGuardAcquire::Acquired(Some(second_guard)) = LogGuard::try_new_for_test()
+            else {
+                panic!("publication must release the lifecycle mutex and expose a valid guard");
+            };
+            drop((init_guard, second_guard));
+            logging_shutdown();
+        }
+
+        #[rstest]
+        fn test_concurrent_init_high_contention() {
+            const MARKER: &str = "concurrent-init";
+            const THREADS: usize = 64;
+
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child("test_concurrent_init_high_contention", MARKER);
+                return;
+            }
+
+            let barrier = Arc::new(Barrier::new(THREADS));
+            let mut threads = Vec::with_capacity(THREADS);
+            for index in 0..THREADS {
+                let barrier = Arc::clone(&barrier);
+                threads.push(std::thread::spawn(move || {
+                    barrier.wait();
+                    Logger::init_with_config(
+                        TraderId::from(format!("TRADER-{index:02}")),
+                        UUID4::new(),
+                        LoggerConfig {
+                            stdout_level: LevelFilter::Off,
+                            ..Default::default()
+                        },
+                        FileWriterConfig::default(),
+                    )
+                }));
+            }
+
+            let guards = threads
+                .into_iter()
+                .map(|thread| {
+                    thread
+                        .join()
+                        .expect("initializer thread must not panic")
+                        .expect("every concurrent initialization must return a guard")
+                })
+                .collect::<Vec<_>>();
+            logging_sync_to_disk().expect("logging sync must succeed after concurrent init");
+            drop(guards);
+            logging_shutdown();
+        }
+
+        #[rstest]
+        fn test_sequential_init_reuses_live_worker_and_original_file() {
+            const MARKER: &str = "sequential-init";
+            if !in_lifecycle_child(MARKER) {
+                run_lifecycle_child(
+                    "test_sequential_init_reuses_live_worker_and_original_file",
+                    MARKER,
+                );
+                return;
+            }
+
+            let temp_dir = tempdir().expect("temporary directory must be created");
+            let config = LoggerConfig {
+                stdout_level: LevelFilter::Off,
+                fileout_level: LevelFilter::Info,
+                ..Default::default()
+            };
+            let file_config = FileWriterConfig {
+                directory: Some(temp_dir.path().to_str().unwrap().to_string()),
+                ..Default::default()
+            };
+
+            let first_guard = Logger::init_with_config(
+                TraderId::from("TRADER-SEQUENTIAL"),
+                UUID4::new(),
+                config,
+                file_config,
+            )
+            .expect("first initialization must succeed");
+            log::info!(component = "LifecycleTest"; "lifecycle marker A");
+            drop(first_guard);
+
+            assert!(logging_is_initialized());
+            assert!(is_running());
+
+            let second_guard = Logger::init_with_config(
+                TraderId::from("TRADER-IGNORED"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            )
+            .expect("second initialization must return a live guard");
+            log::info!(component = "LifecycleTest"; "lifecycle marker B");
+            logging_sync_to_disk().expect("logging sync must succeed after re-acquisition");
+
+            let log_path = std::fs::read_dir(&temp_dir)
+                .expect("log directory must be readable")
+                .filter_map(Result::ok)
+                .find(|entry| entry.path().is_file())
+                .expect("original logger must create a log file")
+                .path();
+            let contents = std::fs::read_to_string(log_path).expect("log file must be readable");
+            assert!(contents.contains("lifecycle marker A"));
+            assert!(contents.contains("lifecycle marker B"));
+
+            drop(second_guard);
+            logging_shutdown();
+
+            let error = Logger::init_with_config(
+                TraderId::from("TRADER-TERMINATED"),
+                UUID4::new(),
+                LoggerConfig::default(),
+                FileWriterConfig::default(),
+            )
+            .expect_err("initialization after terminal shutdown must fail");
+            assert_eq!(
+                error.to_string(),
+                "Logging has been shut down and cannot be re-initialized"
+            );
         }
     }
 
