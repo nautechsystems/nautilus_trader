@@ -41,6 +41,7 @@ use crate::{
     common::{
         enums::{BinanceEnvironment, BinanceProductType},
         symbol::format_instrument_id,
+        urls::get_futures_user_stream_url,
     },
     futures::http::{client::BinanceFuturesHttpClient, query::BinanceOpenOrdersParamsBuilder},
 };
@@ -82,7 +83,8 @@ pub(crate) async fn build_and_connect_user_stream(
     params: &WsBuildParams,
     listen_key: &str,
 ) -> anyhow::Result<BinanceFuturesWebSocketClient> {
-    let private_url = format!("{}?listenKey={}", params.private_base_url, listen_key);
+    let private_url =
+        get_futures_user_stream_url(params.product_type, &params.private_base_url, listen_key);
 
     let mut ws_client = BinanceFuturesWebSocketClient::new(
         params.product_type,
@@ -96,9 +98,9 @@ pub(crate) async fn build_and_connect_user_stream(
     .context("failed to construct Binance Futures private WebSocket client")?;
 
     log::debug!("Connecting to Binance Futures user data stream...");
-    ws_client.connect().await.map_err(|e| {
-        log::error!("Binance Futures private WebSocket connection failed: {e:?}");
-        anyhow::anyhow!("failed to connect Binance Futures private WebSocket: {e}")
+    ws_client.connect().await.map_err(|_| {
+        log::error!("Binance Futures private WebSocket connection failed");
+        anyhow::anyhow!("failed to connect Binance Futures private WebSocket")
     })?;
     log::debug!("Connected to Binance Futures user data stream");
 

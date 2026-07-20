@@ -440,9 +440,9 @@ CVec test_clock_advance_time(struct TestClock_API *clock, uint64_t to_time_ns, u
 /**
  * Drops a `CVec` of `TimeEventHandler_API` values.
  *
- * # Panics
+ * # Safety
  *
- * Panics if `CVec` invariants are violated (corrupted metadata).
+ * `v` must uniquely own a valid `Vec<TimeEventHandler_API>` allocation transferred from Rust.
  */
 void vec_time_event_handlers_drop(CVec v);
 

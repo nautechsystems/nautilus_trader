@@ -14,10 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import msgspec
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.websocket import user as user_module
 from nautilus_trader.adapters.binance.websocket.user import BinanceUserDataWebSocketClient
 from nautilus_trader.common.component import LiveClock
 
@@ -56,6 +60,96 @@ def test_ws_api_reconnecting_returns_false_when_client_not_set(event_loop):
     client._client = None
 
     assert client._ws_api_reconnecting() is False
+
+
+@pytest.mark.parametrize(
+    ("account_type", "stream_base_url", "expected"),
+    [
+        (
+            BinanceAccountType.USDT_FUTURES,
+            "wss://fstream.binance.com/private",
+            "wss://fstream.binance.com/private/ws?listenKey=redacted",
+        ),
+        (
+            BinanceAccountType.COIN_FUTURES,
+            "wss://dstream.binancefuture.com/ws",
+            "wss://dstream.binancefuture.com/ws/redacted",
+        ),
+    ],
+)
+def test_connect_stream_uses_product_specific_listen_key_url(
+    event_loop,
+    monkeypatch,
+    account_type,
+    stream_base_url,
+    expected,
+):
+    connect = AsyncMock(return_value=MagicMock())
+    websocket_client = MagicMock(connect=connect)
+    monkeypatch.setattr(user_module, "WebSocketClient", websocket_client)
+    monkeypatch.setattr(user_module, "WebSocketConfig", lambda **kwargs: kwargs)
+
+    client = BinanceUserDataWebSocketClient(
+        clock=LiveClock(),
+        base_url="wss://example.invalid/ws",
+        handler=lambda _: None,
+        api_key="test-api-key",
+        api_secret="test-api-secret",
+        loop=event_loop,
+        is_futures=True,
+        stream_base_url=stream_base_url,
+        is_ed25519=False,
+        account_type=account_type,
+    )
+
+    event_loop.run_until_complete(client._connect_stream("redacted"))
+
+    assert connect.await_args.kwargs["config"]["url"] == expected
+
+
+def test_send_request_logs_method_without_sensitive_payload(event_loop):
+    client = _make_client(event_loop)
+    client._log = MagicMock()
+    client._client = MagicMock()
+
+    async def send_text(raw):
+        request = msgspec.json.decode(raw)
+        response = {
+            "id": request["id"],
+            "result": {"listenKey": "redacted"},
+        }
+        client._handle_message(msgspec.json.encode(response))
+
+    client._client.send_text = send_text
+
+    response = event_loop.run_until_complete(
+        client._send_request(
+            "userDataStream.start",
+            {"apiKey": "redacted", "listenKey": "redacted"},
+        ),
+    )
+    logged_messages = [call.args[0] for call in client._log.debug.call_args_list]
+
+    assert response == {"id": "0", "result": {"listenKey": "redacted"}}
+    assert logged_messages == [
+        "SENDING: id=0, method=userDataStream.start",
+        "RECEIVED: id=0, method=userDataStream.start",
+    ]
+
+
+def test_handle_message_diagnostics_omit_sensitive_payload(event_loop):
+    client = _make_client(event_loop)
+    client._log = MagicMock()
+
+    client._handle_message(b'{"listenKey":"redacted"')
+    client._handle_message(
+        msgspec.json.encode(
+            {"id": "0", "result": {"listenKey": "redacted"}},
+        ),
+    )
+
+    client._log.error.assert_called_once_with("Failed to decode WebSocket API message")
+    client._log.warning.assert_called_once_with("Unhandled WebSocket API message")
 
 
 def test_ws_api_reconnecting_returns_false_when_client_idle(event_loop):

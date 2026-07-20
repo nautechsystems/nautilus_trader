@@ -246,11 +246,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Futures + HMAC needs REST listenKey fallback
         # (Binance Futures WS API session.logon only accepts Ed25519)
         http_client_for_ws: BinanceHttpClient | None = None
-        account_type_for_ws: BinanceAccountType | None = None
+        account_type_for_ws = account_type if account_type.is_futures else None
 
         if account_type.is_futures and not is_ed25519:
             http_client_for_ws = client
-            account_type_for_ws = account_type
 
         self._ws_client = BinanceUserDataWebSocketClient(
             clock=clock,

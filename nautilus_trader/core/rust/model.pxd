@@ -1248,11 +1248,13 @@ cdef extern from "../includes/model.h":
 
     # Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
     #
-    # - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects.
-    # - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it.
-    # - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks.
-    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id,
-                                             const CVec *deltas);
+    # The data is cloned into Rust-managed memory and remains owned by the caller.
+    #
+    # # Safety
+    #
+    # `deltas` must describe initialized `OrderBookDelta` values that remain valid and immutable for
+    # the duration of this call. The caller remains responsible for deallocating its buffer.
+    OrderBookDeltas_API orderbook_deltas_new(InstrumentId_t instrument_id, const CVec *deltas);
 
     void orderbook_deltas_drop(OrderBookDeltas_API deltas);
 
@@ -1277,9 +1279,9 @@ cdef extern from "../includes/model.h":
 
     # Drops a `CVec` of `OrderBookDelta` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<OrderBookDelta>` allocation transferred from Rust.
     void orderbook_deltas_vec_drop(CVec v);
 
     # # Safety
@@ -2044,6 +2046,10 @@ cdef extern from "../includes/model.h":
     void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
                                              const char *formula_ptr);
 
+    # # Safety
+    #
+    # `inputs_ptr` must describe initialized `f64` values that remain valid and immutable for the
+    # duration of this call.
     Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
 
     OrderBook_API orderbook_new(InstrumentId_t instrument_id, BookType book_type);
@@ -2193,11 +2199,17 @@ cdef extern from "../includes/model.h":
 
     uint8_t orderbook_check_integrity(const OrderBook_API *book);
 
+    # # Safety
+    #
+    # `v` must uniquely own a valid `Vec<(Price, Quantity)>` allocation transferred from Rust.
     void vec_drop_fills(CVec v);
 
     # Returns a pretty printed `OrderBook` number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
 
+    # # Safety
+    #
+    # `orders` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
     BookLevel_API level_new(OrderSide order_side, Price_t price, CVec orders);
 
     void level_drop(BookLevel_API level);
@@ -2218,16 +2230,16 @@ cdef extern from "../includes/model.h":
 
     # Drops a `CVec` of `BookLevel_API` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<BookLevel_API>` allocation transferred from Rust.
     void vec_drop_book_levels(CVec v);
 
     # Drops a `CVec` of `BookOrder` values.
     #
-    # # Panics
+    # # Safety
     #
-    # Panics if `CVec` invariants are violated (corrupted metadata).
+    # `v` must uniquely own a valid `Vec<BookOrder>` allocation transferred from Rust.
     void vec_drop_book_orders(CVec v);
 
     # Returns a [`Currency`] from pointers and primitives.

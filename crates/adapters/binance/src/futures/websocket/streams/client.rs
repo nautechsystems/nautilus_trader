@@ -105,7 +105,7 @@ pub struct BinanceFuturesWebSocketClient {
 impl Debug for BinanceFuturesWebSocketClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(BinanceFuturesWebSocketClient))
-            .field("url", &self.url)
+            .field("url", &REDACTED)
             .field("product_type", &self.product_type)
             .field("credential", &self.credential.as_ref().map(|_| REDACTED))
             .field("heartbeat", &self.heartbeat)
@@ -215,8 +215,7 @@ impl BinanceFuturesWebSocketClient {
         self.slots.lock().expect("slots lock poisoned").push(slot);
 
         log::debug!(
-            "Connected to Binance Futures stream pool: url={}, product_type={:?}",
-            self.url,
+            "Connected to Binance Futures stream pool: product_type={:?}",
             self.product_type
         );
         Ok(())
@@ -301,9 +300,8 @@ impl BinanceFuturesWebSocketClient {
                 slots.len()
             };
             log::debug!(
-                "Pool slot {} connected: url={}, product_type={:?}",
+                "Pool slot {} connected: product_type={:?}",
                 slot_count - 1,
-                self.url,
                 self.product_type
             );
         }

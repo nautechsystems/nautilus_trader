@@ -28,7 +28,7 @@ use crate::{
         CallbackRegistry, Clock, replace_existing_timer, validate_and_prepare_time_alert,
         validate_and_prepare_timer,
     },
-    runner::{TimeEventSender, try_get_time_event_sender},
+    runner::{TimeEventSender, purge_closed_time_event_callbacks, try_get_time_event_sender},
     timer::{TimeEvent, TimeEventCallback, TimeEventHandler, create_valid_interval},
 };
 
@@ -66,6 +66,7 @@ impl LiveClock {
 
     fn clear_expired_timers(&mut self) {
         self.timers.retain(|_, timer| !timer.is_expired());
+        purge_closed_time_event_callbacks();
     }
 
     fn replace_existing_timer_if_needed(&mut self, name: &Ustr) {
@@ -298,9 +299,9 @@ mod tests {
     use super::*;
     use crate::{
         clock::Clock,
-        runner::TimeEventSender,
+        runner::{TimeEventMessage, TimeEventSender},
         testing::wait_until,
-        timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
+        timer::{TimeEvent, TimeEventCallback},
     };
 
     #[derive(Debug)]
@@ -315,15 +316,14 @@ mod tests {
     }
 
     impl TimeEventSender for CollectingSender {
-        fn send(&self, handler: TimeEventHandler) {
-            let TimeEventHandler { event, callback } = handler;
+        fn send(&self, message: TimeEventMessage) {
             let now_ns = get_atomic_clock_realtime().get_time_ns();
-            let event_clone = event.clone();
-            callback.call(event);
+            let event = message.event().clone();
+            message.dispatch();
             self.events
                 .lock()
                 .expect(MUTEX_POISONED)
-                .push((event_clone, now_ns));
+                .push((event, now_ns));
         }
     }
 

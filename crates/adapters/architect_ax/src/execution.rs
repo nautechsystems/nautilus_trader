@@ -180,6 +180,7 @@ impl AxExecutionClient {
 
     fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
         let (
+            order_for_task,
             client_order_id,
             strategy_id,
             instrument_id,
@@ -193,6 +194,7 @@ impl AxExecutionClient {
             let cache = self.core.cache();
             let order = cache.try_order(&cmd.client_order_id)?;
             (
+                order.clone(),
                 order.client_order_id(),
                 order.strategy_id(),
                 order.instrument_id(),
@@ -207,6 +209,8 @@ impl AxExecutionClient {
 
         let ws_orders = self.ws_orders.clone();
         let trader_id = self.core.trader_id;
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
 
         let http_client = if order_type == OrderType::Market {
             Some(self.http_client.clone())
@@ -215,17 +219,12 @@ impl AxExecutionClient {
         };
 
         self.spawn_task("submit_order", async move {
-            let result: anyhow::Result<()> = async {
-                // For market orders, get the take-through price from AX.
-                // The preview and submit are not atomic: the book can change
-                // between the two calls. This is safe because submit_order
-                // forces IOC time-in-force for market orders, so the order
-                // fills immediately or is canceled (it cannot rest on the book).
-                // If the book moves past the previewed take-through price the
-                // order may partially fill with the remainder canceled.
-                let (price, submit_time_in_force, submit_post_only) = if order_type
-                    == OrderType::Market
-                {
+            // AX emulates market orders with preview-priced IOC limits, so book moves
+            // between preview and submission can produce partial fills.
+            let (price, submit_time_in_force, submit_post_only) = if order_type
+                == OrderType::Market
+            {
+                let preview_result: anyhow::Result<Price> = async {
                     let symbol = instrument_id.symbol.inner();
                     let ax_side = AxOrderSide::try_from(order_side)
                         .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
@@ -259,40 +258,69 @@ impl AxExecutionClient {
 
                     let price = Price::from(limit_price_decimal.to_string().as_str());
                     log::debug!("Market order take-through price: {price} for {instrument_id}",);
-                    (price, TimeInForce::Ioc, false)
-                } else {
-                    (
-                        limit_price.context("AX limit order is missing a price")?,
-                        time_in_force,
-                        is_post_only,
-                    )
+                    Ok(price)
+                }
+                .await;
+
+                let price = match preview_result {
+                    Ok(price) => price,
+                    Err(e) => {
+                        let reason = e.to_string();
+                        log::warn!(
+                            "AX market order preview failed for {client_order_id}: {reason}"
+                        );
+                        emitter.emit_order_rejected(
+                            &order_for_task,
+                            &reason,
+                            clock.get_time_ns(),
+                            false,
+                        );
+                        return Ok(());
+                    }
                 };
 
-                ws_orders
-                    .submit_order(
-                        trader_id,
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        order_side,
-                        quantity,
-                        submit_time_in_force,
-                        price,
-                        submit_post_only,
-                    )
-                    .await
-                    .map_err(|e| anyhow::anyhow!("Submit order failed: {e}"))?;
+                (price, TimeInForce::Ioc, false)
+            } else {
+                (
+                    limit_price.context("AX limit order is missing a price")?,
+                    time_in_force,
+                    is_post_only,
+                )
+            };
 
-                Ok(())
-            }
-            .await;
+            let result = ws_orders
+                .submit_order(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    order_side,
+                    quantity,
+                    submit_time_in_force,
+                    price,
+                    submit_post_only,
+                )
+                .await;
 
-            // The submit never demonstrably reached AX: leave the order in
-            // flight for reconciliation to resolve.
             if let Err(e) = result {
-                log::warn!(
-                    "Ambiguous AX submit failure for {client_order_id}, awaiting reconciliation: {e:?}"
-                );
+                match classify_ax_ws_failure(&e) {
+                    AxCommandFailure::LocalValidation(reason) => {
+                        log::warn!(
+                            "AX submit failed local validation for {client_order_id}: {reason}"
+                        );
+                        emitter.emit_order_rejected(
+                            &order_for_task,
+                            &reason,
+                            clock.get_time_ns(),
+                            false,
+                        );
+                    }
+                    AxCommandFailure::Ambiguous(reason) => {
+                        log::warn!(
+                            "Ambiguous AX submit failure for {client_order_id}, awaiting reconciliation: {reason}"
+                        );
+                    }
+                }
             }
 
             Ok(())
@@ -532,7 +560,12 @@ impl ExecutionClient for AxExecutionClient {
         let http_client = self.http_client.clone();
         let account_id = self.core.account_id;
         let client_order_id = cmd.client_order_id;
-        let venue_order_id = cmd.venue_order_id;
+        let venue_order_id = cmd.venue_order_id.or_else(|| {
+            self.ws_orders
+                .orders_metadata()
+                .get(&client_order_id)
+                .and_then(|metadata| metadata.venue_order_id)
+        });
         let instrument_id = cmd.instrument_id;
         let emitter = self.emitter.clone();
 
@@ -878,6 +911,11 @@ impl ExecutionClient for AxExecutionClient {
                             caches.venue_to_client_id.remove(voi);
                         }
                         caches.orders_metadata.remove(client_order_id);
+                        caches
+                            .cid_to_client_order_id
+                            .retain(|_, mapped_client_order_id| {
+                                mapped_client_order_id != client_order_id
+                            });
                     }
                 }
                 // A whole-request failure has no per-order venue results and

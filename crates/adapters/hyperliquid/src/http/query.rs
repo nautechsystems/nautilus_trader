@@ -308,6 +308,16 @@ impl InfoRequest {
         }
     }
 
+    /// Creates a request to get historical orders for a user.
+    pub fn historical_orders(user: &str) -> Self {
+        Self {
+            request_type: HyperliquidInfoRequestType::HistoricalOrders,
+            params: InfoRequestParams::OpenOrders(OpenOrdersParams {
+                user: user.to_string(),
+            }),
+        }
+    }
+
     /// Creates a request to get user state (balances, positions, margin).
     pub fn clearinghouse_state(user: &str) -> Self {
         Self {

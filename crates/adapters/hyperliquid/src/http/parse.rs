@@ -1027,6 +1027,10 @@ pub fn parse_order_status_report_from_basic(
         report = report.with_reduce_only(reduce_only);
     }
 
+    if let Some(reason) = status.rejection_reason() {
+        report = report.with_cancel_reason(reason.to_string());
+    }
+
     // Only set price for non-filled orders. For filled orders, the limit price is not
     // the execution price, and setting it would cause bogus inferred fills to be created
     // during reconciliation. Real fills arrive via the userEvents WebSocket channel.

@@ -407,3 +407,26 @@ class TestBinanceFactories:
         )
 
         assert exec_client._ws_client._stream_base_url == "wss://fstream.binance.com/private"
+
+    def test_create_binance_coin_futures_exec_client_propagates_ed25519_account_type(
+        self,
+        binance_http_client,
+    ):
+        exec_client = BinanceLiveExecClientFactory.create(
+            loop=self.loop,
+            name="BINANCE",
+            config=BinanceExecClientConfig(
+                api_key="SOME_BINANCE_API_KEY",
+                api_secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                account_type=BinanceAccountType.COIN_FUTURES,
+                base_url_ws="wss://example.invalid/ws-dapi/v1",
+                base_url_ws_stream="wss://custom.example/ws/",
+            ),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        assert isinstance(exec_client, BinanceFuturesExecutionClient)
+        assert exec_client._ws_client._account_type == BinanceAccountType.COIN_FUTURES
+        assert exec_client._ws_client._stream_base_url == "wss://custom.example/ws/"

@@ -45,7 +45,7 @@ use crate::ffi::abort_on_panic;
 ///
 /// Changing the values here may lead to undefined behavior when the memory is dropped.
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 pub struct CVec {
     /// Opaque pointer to block of memory storing elements to access the
     /// elements cast it to the underlying type.
@@ -72,6 +72,89 @@ impl CVec {
             len: 0,
             cap: 0,
         }
+    }
+
+    /// Reconstructs and consumes the Rust vector represented by this value.
+    ///
+    /// # Safety
+    ///
+    /// For non-zero capacity, `ptr`, `len`, and `cap` must describe exactly one live allocation
+    /// originally created by `Vec<T>` with `len` initialized elements. The allocation must not be
+    /// accessed or reconstructed again after this call.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len > cap`, `len != 0` when `cap == 0`, or a non-empty allocation has a null
+    /// pointer.
+    #[must_use]
+    pub unsafe fn into_vec<T>(self) -> Vec<T> {
+        assert!(
+            self.len <= self.cap,
+            "CVec::into_vec: len ({}) > cap ({})",
+            self.len,
+            self.cap
+        );
+
+        if self.cap == 0 {
+            assert_eq!(
+                self.len, 0,
+                "CVec::into_vec: zero capacity with non-zero len ({})",
+                self.len
+            );
+            return Vec::new();
+        }
+
+        assert!(
+            !self.ptr.is_null(),
+            "CVec::into_vec: null ptr with non-zero cap ({})",
+            self.cap
+        );
+        debug_assert!(self.ptr.cast::<T>().is_aligned());
+        debug_assert!(
+            self.cap
+                .checked_mul(std::mem::size_of::<T>())
+                .is_some_and(|bytes| isize::try_from(bytes).is_ok())
+        );
+
+        unsafe { Vec::from_raw_parts(self.ptr.cast::<T>(), self.len, self.cap) }
+    }
+
+    /// Borrows the initialized elements represented by this value.
+    ///
+    /// # Safety
+    ///
+    /// For non-zero length, `ptr` must point to `len` initialized, properly aligned `T` values
+    /// that remain valid and are not mutated for the returned slice's lifetime.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `len > cap` or a non-empty slice has a null pointer.
+    #[must_use]
+    pub unsafe fn as_slice<T>(&self) -> &[T] {
+        assert!(
+            self.len <= self.cap,
+            "CVec::as_slice: len ({}) > cap ({})",
+            self.len,
+            self.cap
+        );
+
+        if self.len == 0 {
+            return &[];
+        }
+
+        assert!(
+            !self.ptr.is_null(),
+            "CVec::as_slice: null ptr with non-zero len ({})",
+            self.len
+        );
+        debug_assert!(self.ptr.cast::<T>().is_aligned());
+        debug_assert!(
+            self.len
+                .checked_mul(std::mem::size_of::<T>())
+                .is_some_and(|bytes| isize::try_from(bytes).is_ok())
+        );
+
+        unsafe { std::slice::from_raw_parts(self.ptr.cast::<T>(), self.len) }
     }
 }
 
@@ -125,6 +208,11 @@ pub extern "C" fn cvec_new() -> CVec {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use rstest::*;
 
     use super::CVec;
@@ -143,26 +231,11 @@ mod tests {
             data.into()
         };
 
-        let CVec { ptr, len, cap } = cvec;
-        assert_eq!(len, vec_len);
-        assert_eq!(cap, vec_cap);
+        assert_eq!(cvec.len, vec_len);
+        assert_eq!(cvec.cap, vec_cap);
 
-        let data = ptr.cast::<u64>();
-        // SAFETY: data points to a valid Vec<u64> of length 3 owned by `cvec`
-        #[allow(
-            clippy::multiple_unsafe_ops_per_block,
-            reason = "test asserts on three pointer reads in sequence"
-        )]
-        unsafe {
-            assert_eq!(*data, test_data[0]);
-            assert_eq!(*data.add(1), test_data[1]);
-            assert_eq!(*data.add(2), test_data[2]);
-        }
-
-        unsafe {
-            // reconstruct the struct and drop the memory to deallocate
-            let _ = Vec::from_raw_parts(ptr.cast::<u64>(), len, cap);
-        }
+        let data = unsafe { cvec.into_vec::<u64>() };
+        assert_eq!(data, test_data);
     }
 
     /// An empty vector gets converted to a dangling (non-null) pointer in a [`CVec`].
@@ -173,5 +246,63 @@ mod tests {
         assert!(!cvec.ptr.is_null());
         assert_eq!(cvec.len, 0);
         assert_eq!(cvec.cap, 0);
+    }
+
+    #[repr(align(64))]
+    struct Aligned;
+
+    #[rstest]
+    #[case(CVec::empty())]
+    #[case(Vec::<u64>::new().into())]
+    fn empty_into_vec_does_not_inspect_pointer(#[case] cvec: CVec) {
+        let values = unsafe { cvec.into_vec::<u64>() };
+        assert!(values.is_empty());
+    }
+
+    #[rstest]
+    fn aligned_empty_into_vec_does_not_reconstruct_pointer() {
+        let values = unsafe { CVec::empty().into_vec::<Aligned>() };
+        assert!(values.is_empty());
+    }
+
+    #[rstest]
+    fn aligned_empty_as_slice_does_not_inspect_pointer() {
+        let cvec = CVec::empty();
+        let values = unsafe { cvec.as_slice::<Aligned>() };
+        assert!(values.is_empty());
+    }
+
+    #[rstest]
+    fn non_empty_into_vec_round_trips_and_drops_once() {
+        struct DropCounter(Arc<AtomicUsize>);
+
+        impl Drop for DropCounter {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let drops = Arc::new(AtomicUsize::new(0));
+        let cvec: CVec = vec![DropCounter(Arc::clone(&drops))].into();
+        let values = unsafe { cvec.into_vec::<DropCounter>() };
+
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        drop(values);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    fn as_slice_borrows_without_consuming_caller_storage() {
+        let values = vec![1_u64, 2, 3];
+        let cvec = CVec {
+            ptr: values.as_ptr().cast_mut().cast(),
+            len: values.len(),
+            cap: values.capacity(),
+        };
+
+        let borrowed = unsafe { cvec.as_slice::<u64>() };
+
+        assert_eq!(borrowed, values);
+        assert_eq!(values, [1, 2, 3]);
     }
 }

@@ -8,7 +8,7 @@ on:
   push:
     branches: [nightly-merge-test]
   schedule:
-    - cron: "0 1 * * *" # Daily at 01:00 UTC
+    - cron: "0 14 * * *" # At 14:00 UTC daily
   workflow_dispatch: # Allow manual trigger
 
 jobs:

@@ -89,7 +89,10 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::http::models::HyperliquidExecPlaceOrderRequest;
+use crate::{
+    common::consts::HYPERLIQUID_POST_ONLY_WOULD_MATCH,
+    http::models::HyperliquidExecPlaceOrderRequest,
+};
 
 pub const DEDUP_CAPACITY: usize = 10_000;
 
@@ -235,6 +238,11 @@ pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     /// Client order IDs for which an `OrderAccepted` event has been emitted.
     pub emitted_accepted: DashSet<ClientOrderId>,
+    /// Tracked submissions whose POST response has not resolved yet.
+    pending_submissions: DashSet<ClientOrderId>,
+    /// Submission-time rejections held until the POST path can preserve its
+    /// more detailed venue error string.
+    pending_submission_rejections: DashMap<ClientOrderId, OrderStatusReport>,
     /// Client order IDs that have reached the filled terminal state.
     ///
     /// Retained past `cleanup_terminal` so that late replay of the same
@@ -286,6 +294,8 @@ impl Default for WsDispatchState {
         Self {
             order_identities: DashMap::new(),
             emitted_accepted: DashSet::default(),
+            pending_submissions: DashSet::default(),
+            pending_submission_rejections: DashMap::new(),
             filled_orders: DashSet::default(),
             emitted_trades: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
             terminal_cloids: Mutex::new(BoundedDedup::new(DEDUP_CAPACITY)),
@@ -318,6 +328,36 @@ impl WsDispatchState {
         self.order_identities
             .get(client_order_id)
             .map(|r| r.clone())
+    }
+
+    /// Marks a tracked order as awaiting its submission POST response.
+    pub fn mark_submission_pending(&self, client_order_id: ClientOrderId) {
+        self.pending_submissions.insert(client_order_id);
+    }
+
+    /// Returns whether the order still awaits its submission POST response.
+    #[must_use]
+    pub fn submission_pending(&self, client_order_id: &ClientOrderId) -> bool {
+        self.pending_submissions.contains(client_order_id)
+    }
+
+    /// Holds a submission-time rejection until the POST response resolves.
+    pub fn buffer_submission_rejection(
+        &self,
+        client_order_id: ClientOrderId,
+        report: OrderStatusReport,
+    ) {
+        self.pending_submission_rejections
+            .insert(client_order_id, report);
+    }
+
+    /// Resolves submission tracking and returns any early rejection report.
+    #[must_use]
+    pub fn resolve_submission(&self, client_order_id: &ClientOrderId) -> Option<OrderStatusReport> {
+        self.pending_submissions.remove(client_order_id);
+        self.pending_submission_rejections
+            .remove(client_order_id)
+            .map(|(_, report)| report)
     }
 
     /// Refreshes the tracked price for a modify ack when the new report
@@ -645,6 +685,8 @@ impl WsDispatchState {
     pub fn cleanup_terminal(&self, client_order_id: &ClientOrderId) {
         self.order_identities.remove(client_order_id);
         self.emitted_accepted.remove(client_order_id);
+        self.pending_submissions.remove(client_order_id);
+        self.pending_submission_rejections.remove(client_order_id);
         self.cached_venue_order_ids.remove(client_order_id);
         self.pending_modify_chains.remove(client_order_id);
         self.pending_corrective.remove(client_order_id);
@@ -1319,6 +1361,11 @@ fn handle_rejected(
     emitter: &ExecutionEventEmitter,
     ts_init: UnixNanos,
 ) -> DispatchOutcome {
+    if state.submission_pending(&client_order_id) {
+        state.buffer_submission_rejection(client_order_id, report.clone());
+        return DispatchOutcome::Skip;
+    }
+
     if !claim_terminal_order(client_order_id, state, report.order_status) {
         return DispatchOutcome::Skip;
     }
@@ -1338,7 +1385,7 @@ fn handle_rejected(
         report.ts_last,
         ts_init,
         false,
-        false,
+        report.post_only && reason.contains(HYPERLIQUID_POST_ONLY_WOULD_MATCH),
     );
     emitter.send_order_event(OrderEventAny::Rejected(rejected));
     state.cleanup_terminal(&client_order_id);

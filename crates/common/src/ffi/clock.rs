@@ -263,25 +263,25 @@ pub unsafe extern "C" fn test_clock_advance_time(
 //       We need to mirror the `ffi::timer` registry so reference counts are decremented properly.
 /// Drops a `CVec` of `TimeEventHandler_API` values.
 ///
-/// # Panics
+/// # Safety
 ///
-/// Panics if `CVec` invariants are violated (corrupted metadata).
+/// `v` must uniquely own a valid `Vec<TimeEventHandler_API>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
-    let CVec { ptr, len, cap } = v;
-
-    assert!(
-        len <= cap,
-        "vec_time_event_handlers_drop: len ({len}) > cap ({cap}) - memory corruption or wrong drop helper"
-    );
-    assert!(
-        len == 0 || !ptr.is_null(),
-        "vec_time_event_handlers_drop: null ptr with non-zero len ({len}) - memory corruption or wrong drop helper"
-    );
-
-    let data: Vec<TimeEventHandler_API> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler_API>(), len, cap) };
+pub unsafe extern "C" fn vec_time_event_handlers_drop(v: CVec) {
+    let data = unsafe { v.into_vec::<TimeEventHandler_API>() };
     drop(data); // Memory freed here
+}
+
+#[cfg(test)]
+mod cvec_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_empty_time_event_handler_drop_returns_without_panic() {
+        unsafe { vec_time_event_handlers_drop(CVec::empty()) };
+    }
 }
 
 /// # Safety

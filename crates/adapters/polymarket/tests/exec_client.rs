@@ -2537,6 +2537,31 @@ fn make_limit_order_at_price(
     time_in_force: TimeInForce,
     price: Price,
 ) -> OrderAny {
+    make_limit_order_at_price_and_quantity(
+        client_order_id,
+        instrument_id,
+        side,
+        reduce_only,
+        quote_quantity,
+        post_only,
+        time_in_force,
+        price,
+        Quantity::new(10.0, 0),
+    )
+}
+
+#[expect(clippy::too_many_arguments)]
+fn make_limit_order_at_price_and_quantity(
+    client_order_id: &str,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    reduce_only: bool,
+    quote_quantity: bool,
+    post_only: bool,
+    time_in_force: TimeInForce,
+    price: Price,
+    quantity: Quantity,
+) -> OrderAny {
     let expire_time = if time_in_force == TimeInForce::Gtd {
         Some(UnixNanos::from(2_000_000_000_000_000_000u64))
     } else {
@@ -2550,7 +2575,7 @@ fn make_limit_order_at_price(
         .instrument_id(instrument_id)
         .client_order_id(ClientOrderId::from(client_order_id))
         .side(side)
-        .quantity(Quantity::new(10.0, 0))
+        .quantity(quantity)
         .price(price)
         .time_in_force(time_in_force)
         .post_only(post_only)
@@ -2634,6 +2659,15 @@ fn add_instrument_to_cache_with_size_precision(
     instrument_id: InstrumentId,
     size_precision: u8,
 ) {
+    add_instrument_to_cache_with_precisions(cache, instrument_id, 4, size_precision);
+}
+
+fn add_instrument_to_cache_with_precisions(
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+) {
     let symbol = "71321045679252212594626385532706912750332728571942532289631379312455583992563";
     let size_increment = if size_precision == 0 {
         Quantity::from("1")
@@ -2652,9 +2686,12 @@ fn add_instrument_to_cache_with_size_precision(
         Currency::pUSD(),
         UnixNanos::default(), // activation_ns
         UnixNanos::default(), // expiration_ns
-        4,                    // price_precision
+        price_precision,
         size_precision,
-        Price::from("0.0001"),
+        Price::from(format!(
+            "0.{}1",
+            "0".repeat((price_precision as usize).saturating_sub(1))
+        )),
         size_increment,
         None, // outcome
         None, // description
@@ -2856,6 +2893,197 @@ async fn test_submit_order_denied_for_price_out_of_range(#[case] price: &str) {
         format!("Limit order price {price} outside Polymarket range [0.0001, 0.9999]")
     );
     assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
+#[case::ioc(TimeInForce::Ioc, "FAK")]
+#[case::fok(TimeInForce::Fok, "FOK")]
+#[tokio::test]
+async fn test_submit_immediate_limit_buy_denies_fractional_cent_maker_amount(
+    #[case] time_in_force: TimeInForce,
+    #[case] order_type: &str,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-IOC-FRACTIONAL-CENT",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from("0.961"),
+        Quantity::from("5.00"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+
+    let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+    assert_eq!(
+        order_event_reason(&denied),
+        format!(
+            "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
+        ),
+    );
+    assert_eq!(*state.order_post_count.lock().await, 0);
+}
+
+#[rstest]
+#[case::ioc(TimeInForce::Ioc, "FAK")]
+#[case::fok(TimeInForce::Fok, "FOK")]
+#[tokio::test]
+async fn test_submit_immediate_limit_sell_preserves_fractional_cent_taker_amount(
+    #[case] time_in_force: TimeInForce,
+    #[case] order_type: &str,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-SELL-FRACTIONAL-CENT",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from("0.961"),
+        Quantity::from("5.00"),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some("5000000"),
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some("4805000"),
+    );
+    assert_eq!(
+        body.get("orderType").and_then(Value::as_str),
+        Some(order_type)
+    );
+}
+
+#[rstest]
+#[case::tick_tenth(1, "0.5", "10", "5000000", "10000000")]
+#[case::tick_hundredth(2, "0.56", "10", "5600000", "10000000")]
+#[case::tick_thousandth(3, "0.961", "10", "9610000", "10000000")]
+#[case::tick_ten_thousandth(4, "0.9612", "25", "24030000", "25000000")]
+#[tokio::test]
+async fn test_submit_limit_order_serializes_amount_matrix(
+    #[case] price_precision: u8,
+    #[case] price: &str,
+    #[case] quantity: &str,
+    #[case] notional_amount: &str,
+    #[case] quantity_amount: &str,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(
+        TimeInForce::Gtc,
+        TimeInForce::Gtd,
+        TimeInForce::Ioc,
+        TimeInForce::Fok
+    )]
+    time_in_force: TimeInForce,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_precisions(&cache, instrument_id, price_precision, 2);
+    let order = make_limit_order_at_price_and_quantity(
+        "O-AMOUNT-MATRIX",
+        instrument_id,
+        side,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from(price),
+        Quantity::from(quantity),
+    );
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+
+    client
+        .submit_order(make_submit_cmd(&order, instrument_id))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let signed_order = body.get("order").unwrap();
+    let (expected_maker, expected_taker) = match side {
+        OrderSide::Buy => (notional_amount, quantity_amount),
+        OrderSide::Sell => (quantity_amount, notional_amount),
+        _ => unreachable!(),
+    };
+    assert_eq!(
+        signed_order.get("makerAmount").and_then(Value::as_str),
+        Some(expected_maker),
+    );
+    assert_eq!(
+        signed_order.get("takerAmount").and_then(Value::as_str),
+        Some(expected_taker),
+    );
+    assert_eq!(
+        body.get("orderType").and_then(Value::as_str),
+        Some(polymarket_order_type(time_in_force)),
+    );
+}
+
+fn polymarket_order_type(time_in_force: TimeInForce) -> &'static str {
+    match time_in_force {
+        TimeInForce::Gtc => "GTC",
+        TimeInForce::Gtd => "GTD",
+        TimeInForce::Ioc => "FAK",
+        TimeInForce::Fok => "FOK",
+        _ => unreachable!(),
+    }
 }
 
 #[rstest]
@@ -3225,6 +3453,163 @@ async fn test_submit_order_5xx_exhausts_retries_submit_outcome_unknown() {
 
     // Initial attempt + 2 retries = 3 POSTs, then give up.
     assert_eq!(*state.order_post_count.lock().await, 3);
+}
+
+#[rstest]
+#[case::tick_tenth(1, "0.5", "10", "5000000", "10000000")]
+#[case::tick_hundredth(2, "0.56", "10", "5600000", "10000000")]
+#[case::tick_thousandth(3, "0.961", "10", "9610000", "10000000")]
+#[case::tick_ten_thousandth(4, "0.9612", "25", "24030000", "25000000")]
+#[tokio::test]
+async fn test_submit_order_list_serializes_amount_matrix(
+    #[case] price_precision: u8,
+    #[case] price: &str,
+    #[case] quantity: &str,
+    #[case] notional_amount: &str,
+    #[case] quantity_amount: &str,
+    #[values(
+        TimeInForce::Gtc,
+        TimeInForce::Gtd,
+        TimeInForce::Ioc,
+        TimeInForce::Fok
+    )]
+    time_in_force: TimeInForce,
+) {
+    let state = TestServerState::default();
+    *state.batch_order_response.lock().await = Some(json!([
+        {"success": true, "orderID": "0xbatch-order-1", "errorMsg": ""},
+        {"success": true, "orderID": "0xbatch-order-2", "errorMsg": ""}
+    ]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_precisions(&cache, instrument_id, price_precision, 2);
+    let buy = make_limit_order_at_price_and_quantity(
+        "O-LIST-AMOUNT-BUY",
+        instrument_id,
+        OrderSide::Buy,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from(price),
+        Quantity::from(quantity),
+    );
+    let sell = make_limit_order_at_price_and_quantity(
+        "O-LIST-AMOUNT-SELL",
+        instrument_id,
+        OrderSide::Sell,
+        false,
+        false,
+        false,
+        time_in_force,
+        Price::from(price),
+        Quantity::from(quantity),
+    );
+
+    for order in [&buy, &sell] {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &[buy, sell]))
+        .unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { *state.batch_order_post_count.lock().await == 1 }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let body = state.last_body.lock().await.clone().unwrap();
+    let entries = body.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    for (entry, side) in entries.iter().zip([OrderSide::Buy, OrderSide::Sell]) {
+        let signed_order = entry.get("order").unwrap();
+        let (expected_maker, expected_taker) = match side {
+            OrderSide::Buy => (notional_amount, quantity_amount),
+            OrderSide::Sell => (quantity_amount, notional_amount),
+            _ => unreachable!(),
+        };
+        assert_eq!(
+            signed_order.get("makerAmount").and_then(Value::as_str),
+            Some(expected_maker),
+        );
+        assert_eq!(
+            signed_order.get("takerAmount").and_then(Value::as_str),
+            Some(expected_taker),
+        );
+        assert_eq!(
+            entry.get("orderType").and_then(Value::as_str),
+            Some(polymarket_order_type(time_in_force)),
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_denies_unrepresentable_immediate_buys_before_post() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    client.start().unwrap();
+
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    add_instrument_to_cache_with_precisions(&cache, instrument_id, 3, 2);
+    let orders = [
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-FAK-FRACTIONAL-CENT",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Ioc,
+            Price::from("0.961"),
+            Quantity::from("5.00"),
+        ),
+        make_limit_order_at_price_and_quantity(
+            "O-LIST-FOK-FRACTIONAL-CENT",
+            instrument_id,
+            OrderSide::Buy,
+            false,
+            false,
+            false,
+            TimeInForce::Fok,
+            Price::from("0.961"),
+            Quantity::from("5.00"),
+        ),
+    ];
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+    }
+
+    client
+        .submit_order_list(make_submit_order_list_cmd(instrument_id, &orders))
+        .unwrap();
+
+    for order_type in ["FAK", "FOK"] {
+        let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
+        assert_eq!(
+            order_event_reason(&denied),
+            format!(
+                "Polymarket {order_type} BUY maker amount 4.805 pUSD exceeds 2 decimal places for price 0.961 and quantity 5"
+            ),
+        );
+    }
+    assert_eq!(*state.order_post_count.lock().await, 0);
+    assert_eq!(*state.batch_order_post_count.lock().await, 0);
 }
 
 #[rstest]

@@ -1658,7 +1658,7 @@ mod property_tests {
                 let decimal_f64: f64 = decimal.try_into().unwrap_or(0.0);
                 let original_f64 = money.as_f64();
 
-                let base_epsilon = 10.0_f64.powi(-(money.currency.precision as i32));
+                let base_epsilon = 10.0_f64.powi(-i32::from(money.currency.precision));
                 let precision_epsilon = if cfg!(feature = "high-precision") {
                     base_epsilon.max(1e-10)
                 } else {

@@ -85,7 +85,7 @@ optional = true
 default-features = false
 
 [dependencies.serde]
-version = "1.0.228"
+version = "1.0.229"
 features = ["derive"]
 
 [dependencies.serde_json]

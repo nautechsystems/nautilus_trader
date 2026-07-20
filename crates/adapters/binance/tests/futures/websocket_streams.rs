@@ -295,6 +295,25 @@ fn test_client_accepts_demo_environment() {
 }
 
 #[rstest]
+fn test_client_debug_redacts_url() {
+    let client = BinanceFuturesWebSocketClient::new(
+        BinanceProductType::CoinM,
+        BinanceEnvironment::Testnet,
+        None,
+        None,
+        Some("wss://dstream.binancefuture.com/ws/redacted".to_string()),
+        None,
+        TransportBackend::default(),
+    )
+    .unwrap();
+
+    let output = format!("{client:?}");
+
+    assert!(output.contains("url: \"<redacted>\""));
+    assert!(!output.contains("dstream.binancefuture.com"));
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_client_connection() {
     let (addr, state) = start_test_server().await.unwrap();

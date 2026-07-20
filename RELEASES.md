@@ -35,7 +35,10 @@ The accepted v2 contract differences are native `CustomData` without v1 wrapper 
 `OptionGreeks` cache writes, no Python `Bar.is_revision`, and a cross-zero `Position.apply` entry
 price that resets to the flipping fill. V2 also prefers mark prices by default. Catalog order-event
 data written before `activation_price` and `OrderFilled.info` were added is not readable with the new
-schema and must be regenerated or migrated before an in-place upgrade.
+schema and must be regenerated or migrated before an in-place upgrade. `OrderFillVoided` replay
+requires the referenced fill locally before reopening and treats `VOIDED` as terminal. Regenerate
+v2 order streams that contain a reopened correction before its referenced fill, or a cancel or
+update after `VOIDED`.
 
 #### Cutover limits
 
@@ -66,9 +69,10 @@ adapter set. The following limits remain deferred:
 - Added v2 Cap'n Proto and SQL persistence for order-event activation prices and fill `info`
 - Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
 - Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
-- Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, and strategy and algorithm callbacks
+- Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding for unapplied-fill corrections, and strategy and algorithm callbacks
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
+- Added Python v2 `LiveNode.add_strategy` for constructed strategy instances (#4487), thanks @dfjmax
 - Added Python v2 `FeeModel` and `FillModel` subclass support for custom backtest models
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
@@ -89,6 +93,9 @@ adapter set. The following limits remain deferred:
 
 ### Breaking Changes
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
+- Changed Rust time-event channels to `TimeEventMessage`; callbacks are no longer `Send + Sync` (#4496), thanks @folknor
+- Changed Rust `DataQueryResult.chunk` to private; use the borrow returned by `set_chunk` (#4499), thanks @folknor
+- Changed Rust FFI functions accessing `CVec` data to `unsafe`; wrap calls in `unsafe` blocks (#4499), thanks @folknor
 - Changed v2 portfolios to record daily equity snapshots by default; set `equity_curve=False` to opt out
 - Changed v2 order-event schemas to persist activation prices and fill `info`; old catalogs must be migrated
 - Changed v2 instrument Arrow schemas to persist all constraints; old catalogs must be migrated
@@ -96,6 +103,7 @@ adapter set. The following limits remain deferred:
 - Changed v2 `OrderPendingUpdate` and `OrderPendingCancel` `account_id` to optional (`AccountId | None`), matching v1
 - Changed index option settlement to require `IndexPriceUpdate` for underlying levels (#4430, #4431), thanks @taozle
 - Removed `DataActor` order fill/cancel callbacks and subscription methods; use the message bus
+- Removed `Copy` and `Clone` from Rust `CVec`; move values instead (#4499), thanks @folknor
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
@@ -103,6 +111,8 @@ adapter set. The following limits remain deferred:
 
 ### Security
 - Fixed underflow and currency-mismatch panics from out-of-order fill events (#4483), thanks @folknor
+- Fixed cross-thread `RustLocal` callback access that could cause undefined behavior (#4496), thanks @folknor
+- Fixed `CVec` ownership and FFI reconstruction issues that could cause undefined behavior (#4499), thanks @folknor
 
 ### Fixes
 - Fixed v2 PyO3 API coverage and Python exception handling
@@ -136,6 +146,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 `subscribed_bars` to include internally aggregated subscriptions (v1 parity)
 - Fixed v2 `request_bars` to reject composite bar types (v1 parity)
 - Fixed v2 `skip_first_non_full_bar` per-command override for bar subscriptions and aggregation requests (v1 parity)
+- Fixed v2 matching engine stop and touch orders to honor last-price triggers (#4481), thanks for reporting @mgd134
 - Fixed v2 matching engine quote-bar execution to honor `bar_adaptive_high_low_ordering` (v1 parity)
 - Fixed v2 matching engine `reset` to clear cached bid/ask bars, preventing stale pairs across runs
 - Fixed v2 volume aggregation step thresholds to use exact integer arithmetic instead of floating-point conversion
@@ -195,6 +206,7 @@ adapter set. The following limits remain deferred:
 - Fixed Binance Futures external algo order materialization (#4348), thanks for reporting @linimin
 - Fixed Binance Futures algo orders missing USD-M order-count limits (#4395), thanks for reporting @cjdsellers
 - Fixed Binance Futures COIN-M quotas and shared USD-M/COIN-M REST rate-limit state (#4301)
+- Fixed Binance Futures COIN-M private user stream URL routing in Rust and Python
 - Fixed Binance Futures inflight queries rejecting untriggered algo orders (#4411), thanks @reijz
 - Fixed Binance Futures historical algo order queries (#4449), thanks @KaizynX
 - Fixed Binance Futures startup reconciliation omitting and truncating fill history
@@ -226,6 +238,7 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX to deny reduce-only, quote-quantity, and display-quantity orders instead of submitting them without the requested semantics
 - Fixed Architect AX local modify rejections, replacement ID races, and Python reconciliation identity
 - Fixed Architect AX Python reconciliation emitting duplicate order acceptance events
+- Fixed Architect AX client order ID bounds, query correlation, and rejection when market previews fail
 - Fixed OKX price-limit metadata parsing and public limit-price requests (#4413)
 - Fixed Polymarket RTDS retained-subscription recovery after reconnects (#4353), thanks @graceyangfan
 - Fixed Polymarket Gamma market and event keyset filters, validation, and repeated query encoding
@@ -234,9 +247,11 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
 - Fixed Polymarket market SELL sizing, terminal IOC remainders, and sub-cent reconciliation that created synthetic position fills
+- Fixed Polymarket limit IOC/FOK BUY orders submitting invalid fractional-cent maker amounts
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)
+- Fixed Hyperliquid resting brackets, filled-order reconciliation, and venue rejection metadata
 - Fixed Hyperliquid PyO3 order book depth subscriptions (#4381), thanks @graceyangfan
 - Fixed Hyperliquid Rust public trade responses dropping instrument identifiers
 - Fixed Hyperliquid order modification to use cached CLOIDs with an OID fallback
@@ -278,6 +293,7 @@ adapter set. The following limits remain deferred:
 - Upgraded Cap'n Proto to v1.5.0
 - Upgraded `capnp` to v0.26.2
 - Upgraded `ed25519-dalek` crate to v3.0.0
+- Upgraded `futures` crate to v0.3.33
 - Upgraded `redis` crate to v1.4.1
 - Upgraded `tokio` crate to v1.53.0
 - Upgraded `tokio-tungstenite` crate to v0.30.0

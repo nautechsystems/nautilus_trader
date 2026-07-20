@@ -71,7 +71,7 @@ use crate::{
             derive_limit_from_trigger, determine_order_list_grouping, extract_inner_error,
             normalize_price, order_to_hyperliquid_request_with_asset_and_cloid,
             parse_combined_account_balances_and_margins, parse_spot_account_balances,
-            round_to_sig_figs, time_in_force_to_hyperliquid_tif,
+            parse_trigger_order_type, round_to_sig_figs, time_in_force_to_hyperliquid_tif,
         },
     },
     data::candle_to_bar,
@@ -89,9 +89,9 @@ use crate::{
             HyperliquidExecPlaceOrderRequest, HyperliquidExecSplitOutcomeParams,
             HyperliquidExecTif, HyperliquidExecTpSl, HyperliquidExecTriggerParams,
             HyperliquidExecUserOutcomeOp, HyperliquidFills, HyperliquidFundingHistoryEntry,
-            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus, HyperliquidRecentTrade,
-            OutcomeMeta, PerpDex, PerpMeta, PerpMetaAndCtxs, RESPONSE_STATUS_OK,
-            SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
+            HyperliquidL2Book, HyperliquidMeta, HyperliquidOrderStatus,
+            HyperliquidOrderStatusEntry, HyperliquidRecentTrade, OutcomeMeta, PerpDex, PerpMeta,
+            PerpMetaAndCtxs, RESPONSE_STATUS_OK, SpotClearinghouseState, SpotMeta, SpotMetaAndCtxs,
         },
         parse::{
             HyperliquidInstrumentDef, filter_recent_public_trades, instruments_from_defs_owned,
@@ -111,6 +111,57 @@ use crate::{
     },
     websocket::messages::WsBasicOrderData,
 };
+
+fn deduplicate_historical_order_reports(reports: Vec<OrderStatusReport>) -> Vec<OrderStatusReport> {
+    let mut best_by_venue_order_id = AHashMap::new();
+
+    for candidate in reports {
+        let Some(current) = best_by_venue_order_id.remove(&candidate.venue_order_id) else {
+            best_by_venue_order_id.insert(candidate.venue_order_id, candidate);
+            continue;
+        };
+        let (mut best, other) = if historical_report_is_more_advanced(&candidate, &current) {
+            (candidate, current)
+        } else {
+            (current, candidate)
+        };
+
+        if matches!(
+            best.order_type,
+            OrderType::Limit | OrderType::StopLimit | OrderType::LimitIfTouched
+        ) {
+            best.price = best.price.or(other.price);
+        }
+        best.trigger_price = best.trigger_price.or(other.trigger_price);
+        best_by_venue_order_id.insert(best.venue_order_id, best);
+    }
+
+    best_by_venue_order_id.into_values().collect()
+}
+
+fn historical_report_is_more_advanced(
+    candidate: &OrderStatusReport,
+    current: &OrderStatusReport,
+) -> bool {
+    candidate.filled_qty > current.filled_qty
+        || (candidate.filled_qty == current.filled_qty
+            && (historical_status_priority(candidate.order_status)
+                > historical_status_priority(current.order_status)
+                || (candidate.order_status == current.order_status
+                    && candidate.ts_last > current.ts_last)))
+}
+
+const fn historical_status_priority(status: OrderStatus) -> u8 {
+    match status {
+        OrderStatus::Initialized | OrderStatus::Submitted | OrderStatus::Emulated => 0,
+        OrderStatus::Released | OrderStatus::Denied => 1,
+        OrderStatus::Accepted | OrderStatus::PendingUpdate | OrderStatus::PendingCancel => 2,
+        OrderStatus::Triggered => 3,
+        OrderStatus::PartiallyFilled => 4,
+        OrderStatus::Canceled | OrderStatus::Expired | OrderStatus::Rejected => 5,
+        OrderStatus::Filled | OrderStatus::Voided => 6,
+    }
+}
 
 // https://hyperliquid.xyz/docs/api#rate-limits
 pub static HYPERLIQUID_REST_QUOTA: LazyLock<Quota> =
@@ -418,6 +469,16 @@ impl HyperliquidRawHttpClient {
     pub async fn info_frontend_open_orders(&self, user: &str) -> Result<Value> {
         let request = InfoRequest::frontend_open_orders(user);
         self.send_info_request(&request).await
+    }
+
+    /// Get the most recent historical orders for a user.
+    pub async fn info_historical_orders(
+        &self,
+        user: &str,
+    ) -> Result<Vec<HyperliquidOrderStatusEntry>> {
+        let request = InfoRequest::historical_orders(user);
+        let response = self.send_info_request(&request).await?;
+        serde_json::from_value(response).map_err(Error::Serde)
     }
 
     /// Get clearinghouse state (balances, positions, margin) for a user.
@@ -1725,6 +1786,14 @@ impl HyperliquidHttpClient {
         self.inner.info_frontend_open_orders(user).await
     }
 
+    /// Get the most recent historical orders for a user.
+    pub async fn info_historical_orders(
+        &self,
+        user: &str,
+    ) -> Result<Vec<HyperliquidOrderStatusEntry>> {
+        self.inner.info_historical_orders(user).await
+    }
+
     /// Get clearinghouse state (balances, positions, margin) for a user.
     pub async fn info_clearinghouse_state(&self, user: &str) -> Result<Value> {
         self.inner.info_clearinghouse_state(user).await
@@ -2198,6 +2267,91 @@ impl HyperliquidHttpClient {
         }
 
         Ok(reports)
+    }
+
+    /// Request historical order status reports for a user.
+    ///
+    /// The venue bounds this endpoint to its 2,000 most recent historical
+    /// orders. Mass-status reconciliation narrows these reports to venue order
+    /// IDs represented by the retained fill window.
+    pub async fn request_historical_order_status_reports(
+        &self,
+        user: &str,
+        instrument_id: Option<InstrumentId>,
+    ) -> Result<Vec<OrderStatusReport>> {
+        let account_id = self
+            .account_id
+            .ok_or_else(|| Error::bad_request("Account ID not set"))?;
+        let entries = self.info_historical_orders(user).await?;
+        let mut reports = Vec::new();
+        let ts_init = self.clock.get_time_ns();
+
+        for entry in entries {
+            let instrument = match self.get_or_create_instrument(&entry.order.coin, None) {
+                Some(instrument) => instrument,
+                None => continue,
+            };
+
+            if instrument_id.is_some_and(|filter_id| instrument.id() != filter_id) {
+                continue;
+            }
+
+            let order_type = entry.order.order_type.as_deref().unwrap_or_default();
+            let tpsl = if order_type.starts_with("Take Profit") {
+                Some(crate::common::enums::HyperliquidTpSl::Tp)
+            } else if order_type.starts_with("Stop") {
+                Some(crate::common::enums::HyperliquidTpSl::Sl)
+            } else {
+                None
+            };
+            let is_market = entry
+                .order
+                .order_type
+                .as_deref()
+                .is_some_and(|label| label.ends_with("Market"));
+            let historical_order_type = match tpsl.as_ref() {
+                Some(tpsl) => parse_trigger_order_type(is_market, tpsl),
+                None if is_market => OrderType::Market,
+                None => OrderType::Limit,
+            };
+            let order = WsBasicOrderData {
+                coin: entry.order.coin,
+                side: entry.order.side,
+                limit_px: entry.order.limit_px,
+                sz: entry.order.sz,
+                oid: entry.order.oid,
+                timestamp: entry.order.timestamp,
+                orig_sz: entry.order.orig_sz,
+                cloid: entry.order.cloid,
+                tif: entry.order.tif,
+                reduce_only: entry.order.reduce_only,
+                trigger_px: entry
+                    .order
+                    .trigger_px
+                    .filter(|price| *price != Decimal::ZERO),
+                is_market: tpsl.is_some().then_some(is_market),
+                tpsl,
+                trigger_activated: None,
+                trailing_stop: None,
+            };
+
+            match parse_order_status_report_from_basic(
+                &order,
+                &entry.status,
+                &instrument,
+                account_id,
+                ts_init,
+            ) {
+                Ok(mut report) => {
+                    report.order_type = historical_order_type;
+                    report.ts_last = UnixNanos::from(entry.status_timestamp * 1_000_000);
+                    reports.push(report);
+                }
+                Err(e) => log::error!("Failed to parse historical order status report: {e}"),
+            }
+        }
+
+        Ok(deduplicate_historical_order_reports(reports))
     }
 
     /// Request a single order status report by venue order ID.

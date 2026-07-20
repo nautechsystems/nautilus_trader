@@ -37,7 +37,7 @@ use axum::{
 };
 use nautilus_architect_ax::{
     common::consts::AX_VENUE,
-    http::query::{GetFillsParams, GetOpenOrdersParams},
+    http::query::{GetFillsParams, GetOpenOrdersParams, GetOrderStatusParams},
 };
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
@@ -66,10 +66,12 @@ pub(crate) struct TestServerState {
     pub cancel_all_fail: Arc<AtomicBool>,
     pub preview_count: Arc<AtomicUsize>,
     pub preview_empty: Arc<AtomicBool>,
+    pub preview_fail: Arc<AtomicBool>,
     pub preview_partial: Arc<AtomicBool>,
     pub replace_order_fail: Arc<AtomicBool>,
     pub replace_order_count: Arc<AtomicUsize>,
     pub replace_order_oid: Arc<tokio::sync::Mutex<Option<String>>>,
+    pub order_status_queries: Arc<tokio::sync::Mutex<Vec<GetOrderStatusParams>>>,
     pub open_orders_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub fills_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub positions_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
@@ -92,10 +94,12 @@ impl Default for TestServerState {
             cancel_all_fail: Arc::new(AtomicBool::new(false)),
             preview_count: Arc::new(AtomicUsize::new(0)),
             preview_empty: Arc::new(AtomicBool::new(false)),
+            preview_fail: Arc::new(AtomicBool::new(false)),
             preview_partial: Arc::new(AtomicBool::new(false)),
             replace_order_fail: Arc::new(AtomicBool::new(false)),
             replace_order_count: Arc::new(AtomicUsize::new(0)),
             replace_order_oid: Arc::new(tokio::sync::Mutex::new(None)),
+            order_status_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             open_orders_payload: Arc::new(tokio::sync::Mutex::new(None)),
             fills_payload: Arc::new(tokio::sync::Mutex::new(None)),
             positions_payload: Arc::new(tokio::sync::Mutex::new(None)),
@@ -116,6 +120,7 @@ impl TestServerState {
         self.heartbeat_count.store(0, Ordering::Relaxed);
         self.messages_received.lock().await.clear();
         self.cancel_all_count.store(0, Ordering::Relaxed);
+        self.order_status_queries.lock().await.clear();
     }
 
     pub(crate) async fn set_subscription_failures(&self, topics: Vec<String>) {
@@ -362,13 +367,10 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
                     Some("p") => {
                         let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
                         let ack = json!({
-                            "t": "a",
                             "rid": rid,
-                            "oid": format!("order-{rid}"),
-                            "s": value.get("s").and_then(|v| v.as_str()).unwrap_or(""),
-                            "d": value.get("d").and_then(|v| v.as_str()).unwrap_or("BUY"),
-                            "q": value.get("q").and_then(|v| v.as_i64()).unwrap_or(0),
-                            "p": value.get("p").and_then(|v| v.as_str()).unwrap_or("0"),
+                            "res": {
+                                "oid": format!("order-{rid}"),
+                            },
                         });
 
                         if socket
@@ -481,15 +483,24 @@ async fn handle_cancel_all_orders(
 
 async fn handle_preview_aggressive_limit_order(
     State(state): State<TestServerState>,
-) -> Json<serde_json::Value> {
+) -> axum::response::Response {
     state.preview_count.fetch_add(1, Ordering::Relaxed);
+    if state.preview_fail.load(Ordering::Relaxed) {
+        return (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"error": "preview failed"})),
+        )
+            .into_response();
+    }
+
     if state.preview_empty.load(Ordering::Relaxed) {
         return Json(json!({
             "filled_quantity": 0,
             "remaining_quantity": 100,
             "limit_price": null,
             "vwap": null,
-        }));
+        }))
+        .into_response();
     }
 
     if state.preview_partial.load(Ordering::Relaxed) {
@@ -498,7 +509,8 @@ async fn handle_preview_aggressive_limit_order(
             "remaining_quantity": 60,
             "limit_price": "50001.00",
             "vwap": "50000.50",
-        }));
+        }))
+        .into_response();
     }
     Json(json!({
         "filled_quantity": 100,
@@ -506,6 +518,7 @@ async fn handle_preview_aggressive_limit_order(
         "limit_price": "50001.00",
         "vwap": "50000.50",
     }))
+    .into_response()
 }
 
 async fn handle_replace_order(
@@ -531,6 +544,14 @@ async fn handle_replace_order(
         .clone()
         .unwrap_or_else(|| format!("{old_oid}-REPL"));
     Json(json!({ "oid": new_oid })).into_response()
+}
+
+async fn handle_order_status(
+    State(state): State<TestServerState>,
+    Query(params): Query<GetOrderStatusParams>,
+) -> Json<serde_json::Value> {
+    state.order_status_queries.lock().await.push(params);
+    Json(load_test_data("http_get_order_status.json"))
 }
 
 async fn handle_open_orders(
@@ -625,6 +646,7 @@ fn create_test_router(state: TestServerState) -> Router {
             post(handle_preview_aggressive_limit_order),
         )
         .route("/replace-order", post(handle_replace_order))
+        .route("/order-status", get(handle_order_status))
         .route("/open-orders", get(handle_open_orders))
         .route("/fills", get(handle_fills))
         .with_state(state)

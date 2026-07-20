@@ -103,6 +103,10 @@ impl PolymarketOrderBuilder {
 
     /// Builds and signs a limit order for submission.
     ///
+    /// Immediate BUYs must have an exact cent-denominated maker amount. The builder rejects
+    /// quantities that cannot satisfy that constraint without changing the signed price/amount
+    /// ratio.
+    ///
     /// `expiration` is a unix-seconds timestamp (`"0"` for non-GTD orders).
     /// It is carried in the wire body but excluded from the EIP-712 signed hash.
     #[expect(clippy::too_many_arguments)]
@@ -112,10 +116,13 @@ impl PolymarketOrderBuilder {
         side: PolymarketOrderSide,
         price: Decimal,
         quantity: Decimal,
+        order_type: PolymarketOrderType,
         expiration: &str,
         neg_risk: bool,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
+        validate_immediate_buy_maker_amount(price, quantity, side, order_type)
+            .map_err(anyhow::Error::msg)?;
         let (maker_amount, taker_amount) =
             compute_maker_taker_amounts(price, quantity, side, tick_decimals);
         self.build_and_sign(
@@ -178,26 +185,28 @@ impl PolymarketOrderBuilder {
             return Err("Quote quantity not supported for limit orders".to_string());
         }
 
-        if order.price().is_none() {
-            return Err("Limit orders require a price".to_string());
-        }
+        let price = order
+            .price()
+            .ok_or_else(|| "Limit orders require a price".to_string())?;
 
-        if PolymarketOrderType::try_from(order.time_in_force()).is_err() {
-            return Err(format!(
-                "Unsupported time in force: {:?}",
-                order.time_in_force()
-            ));
-        }
+        let order_type = PolymarketOrderType::try_from(order.time_in_force())
+            .map_err(|_| format!("Unsupported time in force: {:?}", order.time_in_force()))?;
 
-        if PolymarketOrderSide::try_from(order.order_side()).is_err() {
-            return Err(format!("Invalid order side: {:?}", order.order_side()));
-        }
+        let side = PolymarketOrderSide::try_from(order.order_side())
+            .map_err(|_| format!("Invalid order side: {:?}", order.order_side()))?;
 
         if order.is_post_only()
             && !matches!(order.time_in_force(), TimeInForce::Gtc | TimeInForce::Gtd)
         {
             return Err("Post-only orders require GTC or GTD time in force".to_string());
         }
+
+        validate_immediate_buy_maker_amount(
+            price.as_decimal(),
+            order.quantity().as_decimal(),
+            side,
+            order_type,
+        )?;
 
         Ok(())
     }
@@ -313,6 +322,35 @@ impl PolymarketOrderBuilder {
 fn to_fixed_decimal(d: Decimal) -> Decimal {
     let mantissa = d.normalize().trunc_with_scale(USDC_DECIMALS).mantissa();
     Decimal::from(mantissa)
+}
+
+fn validate_immediate_buy_maker_amount(
+    price: Decimal,
+    quantity: Decimal,
+    side: PolymarketOrderSide,
+    order_type: PolymarketOrderType,
+) -> Result<(), String> {
+    if side != PolymarketOrderSide::Buy
+        || !matches!(
+            order_type,
+            PolymarketOrderType::FAK | PolymarketOrderType::FOK
+        )
+    {
+        return Ok(());
+    }
+
+    let quantity = quantity.trunc_with_scale(LOT_SIZE_SCALE);
+    let maker_amount = (quantity * price).normalize();
+    if maker_amount.scale() > LOT_SIZE_SCALE {
+        return Err(format!(
+            "Polymarket {order_type} BUY maker amount {} pUSD exceeds 2 decimal places for price {} and quantity {}",
+            maker_amount,
+            price.normalize(),
+            quantity.normalize(),
+        ));
+    }
+
+    Ok(())
 }
 
 /// Builds the maker/taker amounts for a Polymarket CLOB limit order.
@@ -660,6 +698,7 @@ mod tests {
                     PolymarketOrderSide::Buy,
                     dec!(0.50),
                     dec!(10),
+                    PolymarketOrderType::GTC,
                     "0",
                     false,
                     2,
@@ -682,6 +721,7 @@ mod tests {
                 PolymarketOrderSide::Buy,
                 dec!(0.50),
                 dec!(10),
+                PolymarketOrderType::GTC,
                 "0",
                 false,
                 2,
@@ -712,6 +752,7 @@ mod tests {
                 PolymarketOrderSide::Buy,
                 dec!(0.50),
                 dec!(10),
+                PolymarketOrderType::GTC,
                 "0",
                 false,
                 2,
@@ -733,12 +774,146 @@ mod tests {
                 PolymarketOrderSide::Buy,
                 dec!(0.50),
                 dec!(10),
+                PolymarketOrderType::GTD,
                 "1735689600",
                 false,
                 2,
             )
             .unwrap();
         assert_eq!(order.expiration, "1735689600");
+    }
+
+    #[rstest]
+    fn test_build_limit_order_amount_matrix(
+        #[values(1, 2, 3, 4)] tick_decimals: u32,
+        #[values(PolymarketOrderSide::Buy, PolymarketOrderSide::Sell)] side: PolymarketOrderSide,
+        #[values(
+            PolymarketOrderType::GTC,
+            PolymarketOrderType::GTD,
+            PolymarketOrderType::FAK,
+            PolymarketOrderType::FOK
+        )]
+        order_type: PolymarketOrderType,
+    ) {
+        let (price, quantity, notional) = match tick_decimals {
+            1 => (dec!(0.5), dec!(10), dec!(5_000_000)),
+            2 => (dec!(0.56), dec!(10), dec!(5_600_000)),
+            3 => (dec!(0.961), dec!(10), dec!(9_610_000)),
+            4 => (dec!(0.9612), dec!(25), dec!(24_030_000)),
+            _ => unreachable!(),
+        };
+        let quantity_amount = to_fixed_decimal(quantity);
+        let expiration = if order_type == PolymarketOrderType::GTD {
+            "1735689600"
+        } else {
+            "0"
+        };
+        let builder = make_test_builder();
+
+        let order = builder
+            .build_limit_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                side,
+                price,
+                quantity,
+                order_type,
+                expiration,
+                false,
+                tick_decimals,
+            )
+            .unwrap();
+
+        let expected = match side {
+            PolymarketOrderSide::Buy => (notional, quantity_amount),
+            PolymarketOrderSide::Sell => (quantity_amount, notional),
+        };
+        assert_eq!((order.maker_amount, order.taker_amount), expected);
+    }
+
+    #[rstest]
+    fn test_build_limit_order_denies_unrepresentable_immediate_buy(
+        #[values(1, 2, 3, 4)] tick_decimals: u32,
+        #[values(PolymarketOrderType::FAK, PolymarketOrderType::FOK)]
+        order_type: PolymarketOrderType,
+    ) {
+        let (price, quantity, maker_amount) = match tick_decimals {
+            1 => (dec!(0.5), dec!(1.01), dec!(0.505)),
+            2 => (dec!(0.56), dec!(1.01), dec!(0.5656)),
+            3 => (dec!(0.961), dec!(5), dec!(4.805)),
+            4 => (dec!(0.9612), dec!(5), dec!(4.806)),
+            _ => unreachable!(),
+        };
+        let builder = make_test_builder();
+
+        let error = builder
+            .build_limit_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                PolymarketOrderSide::Buy,
+                price,
+                quantity,
+                order_type,
+                "0",
+                false,
+                tick_decimals,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Polymarket {order_type} BUY maker amount {maker_amount} pUSD exceeds 2 decimal places for price {price} and quantity {quantity}"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::gtc_buy(
+        PolymarketOrderType::GTC,
+        PolymarketOrderSide::Buy,
+        dec!(4_805_000),
+        dec!(5_000_000),
+    )]
+    #[case::gtd_buy(
+        PolymarketOrderType::GTD,
+        PolymarketOrderSide::Buy,
+        dec!(4_805_000),
+        dec!(5_000_000),
+    )]
+    #[case::fak_sell(
+        PolymarketOrderType::FAK,
+        PolymarketOrderSide::Sell,
+        dec!(5_000_000),
+        dec!(4_805_000),
+    )]
+    #[case::fok_sell(
+        PolymarketOrderType::FOK,
+        PolymarketOrderSide::Sell,
+        dec!(5_000_000),
+        dec!(4_805_000),
+    )]
+    fn test_build_limit_order_preserves_unaffected_fractional_cent_amounts(
+        #[case] order_type: PolymarketOrderType,
+        #[case] side: PolymarketOrderSide,
+        #[case] expected_maker: Decimal,
+        #[case] expected_taker: Decimal,
+    ) {
+        let builder = make_test_builder();
+
+        let order = builder
+            .build_limit_order(
+                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+                side,
+                dec!(0.961),
+                dec!(5),
+                order_type,
+                "0",
+                false,
+                3,
+            )
+            .unwrap();
+
+        assert_eq!(order.maker_amount, expected_maker);
+        assert_eq!(order.taker_amount, expected_taker);
     }
 
     #[rstest]

@@ -131,6 +131,14 @@ impl Log for CapturingWarnLogger {
 }
 
 static CAPTURING_WARN_LOGGER: OnceLock<CapturingWarnLogger> = OnceLock::new();
+static STALE_LOG_CAPTURE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+async fn lock_stale_log_capture() -> tokio::sync::MutexGuard<'static, ()> {
+    STALE_LOG_CAPTURE_LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await
+}
 
 fn install_capturing_warn_logger() -> &'static CapturingWarnLogger {
     let logger = CAPTURING_WARN_LOGGER.get_or_init(CapturingWarnLogger::default);
@@ -1444,6 +1452,7 @@ async fn test_data_client_subscribe_book_deltas() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_reports_stale_book_deltas_while_quotes_flow() {
+    let _capture_guard = lock_stale_log_capture().await;
     let logger = install_capturing_warn_logger();
     let state = TestServerState::default();
     *state.withhold_l2_book.lock().await = true;
@@ -1557,6 +1566,7 @@ async fn test_data_client_reports_stale_book_deltas_while_quotes_flow() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_stale_book_recovery_escalates_to_reconnect() {
+    let _capture_guard = lock_stale_log_capture().await;
     let logger = install_capturing_warn_logger();
     let state = TestServerState::default();
     *state.withhold_l2_book.lock().await = true;
@@ -1663,6 +1673,7 @@ async fn test_data_client_stale_book_recovery_escalates_to_reconnect() {
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_stale_quote_recovery_heals_without_reconnect() {
+    let _capture_guard = lock_stale_log_capture().await;
     let logger = install_capturing_warn_logger();
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;

@@ -1353,7 +1353,7 @@ async fn test_external_order_filled_uses_real_fills() {
 
     let result = ctx
         .manager
-        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .reconcile_execution_mass_status(mass_status.clone(), ctx.exec_engine.clone())
         .await;
 
     // Should have: Accepted, Fill1, Fill2 (real fills, not inferred)
@@ -1376,12 +1376,32 @@ async fn test_external_order_filled_uses_real_fills() {
     }
 
     // Verify order state in cache
+    {
+        let cache = ctx.cache.borrow();
+        let orders = cache.orders(None, None, None, None, None);
+        assert_eq!(orders.len(), 1);
+        let order = &orders[0];
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("2.0"));
+    }
+
+    ctx.manager = ExecutionManager::new(
+        ctx.clock.clone(),
+        ctx.cache.clone(),
+        ExecutionManagerConfig::default(),
+    );
+    let replay = ctx
+        .manager
+        .reconcile_execution_mass_status(mass_status, ctx.exec_engine.clone())
+        .await;
     let cache = ctx.cache.borrow();
-    let orders = cache.orders(None, None, None, None, None);
-    assert_eq!(orders.len(), 1);
-    let order = &orders[0];
-    assert_eq!(order.status(), OrderStatus::Filled);
-    assert_eq!(order.filled_qty(), Quantity::from("2.0"));
+
+    assert!(replay.events.is_empty());
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    assert_eq!(
+        cache.orders(None, None, None, None, None)[0].filled_qty(),
+        Quantity::from("2.0"),
+    );
 }
 
 #[tokio::test]

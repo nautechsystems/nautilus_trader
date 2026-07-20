@@ -20,7 +20,7 @@ This client uses the authenticated WebSocket API endpoint with
 
 Spot uses `userDataStream.subscribe` — events arrive inline on the same connection.
 Futures + Ed25519 uses `userDataStream.start` via WS API — events are delivered on
-a separate stream connection at `{stream_base_url}/ws?listenKey={listenKey}`.
+a separate stream connection whose listen-key URL depends on the Futures product.
 Futures + HMAC uses REST API for listenKey management (Binance Futures WS API
 `session.logon` only accepts Ed25519).
 
@@ -36,6 +36,7 @@ import msgspec
 from nautilus_trader.adapters.binance.common.credentials import extract_ed25519_private_key
 from nautilus_trader.adapters.binance.common.credentials import is_ed25519_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.urls import get_futures_user_stream_url
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.common.component import LiveClock
@@ -46,7 +47,6 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.core.nautilus_pyo3 import ed25519_signature
 from nautilus_trader.core.nautilus_pyo3 import hmac_signature
-from nautilus_trader.core.nautilus_pyo3 import mask_api_key
 
 
 class BinanceUserDataWebSocketClient:
@@ -87,7 +87,7 @@ class BinanceUserDataWebSocketClient:
         HTTP client for REST listenKey management. Required for HMAC Futures
         (Binance Futures WS API `session.logon` only accepts Ed25519).
     account_type : BinanceAccountType, optional
-        The account type, required when `http_client` is provided.
+        The account type, required when `is_futures` is True.
     on_resubscribe : Callable[[], Awaitable[None]], optional
         Async callback invoked after a successful resubscribe or reconnect.
         Used to trigger execution reconciliation to close any event-loss gap
@@ -124,6 +124,7 @@ class BinanceUserDataWebSocketClient:
         self._loop = loop
         self._is_futures: bool = is_futures
         self._stream_base_url: str | None = stream_base_url
+        self._account_type: BinanceAccountType | None = account_type
         self._proxy_url: str | None = proxy_url
 
         self._api_key: str = api_key
@@ -203,7 +204,7 @@ class BinanceUserDataWebSocketClient:
         try:
             msg = msgspec.json.decode(raw)
         except msgspec.DecodeError:
-            self._log.error(f"Failed to decode message: {raw!r}")
+            self._log.error("Failed to decode WebSocket API message")
             return
 
         # Normalize to string since Binance may return numeric IDs
@@ -234,7 +235,7 @@ class BinanceUserDataWebSocketClient:
             self._handler(payload)
             return
 
-        self._log.warning(f"Unhandled WebSocket API message: {raw!r}")
+        self._log.warning("Unhandled WebSocket API message")
 
     def _handle_stream_message(self, raw: bytes) -> None:
         if b'"listenKeyExpired"' in raw:
@@ -441,7 +442,7 @@ class BinanceUserDataWebSocketClient:
         future: asyncio.Future[dict[str, Any]] = self._loop.create_future()
         self._pending_requests[msg_id] = future
 
-        self._log.debug(f"SENDING: {request}")
+        self._log.debug(f"SENDING: id={msg_id}, method={method}")
         try:
             await self._client.send_text(msgspec.json.encode(request))
             response = await asyncio.wait_for(future, timeout=timeout)
@@ -452,7 +453,7 @@ class BinanceUserDataWebSocketClient:
             self._pending_requests.pop(msg_id, None)
             raise RuntimeError(f"Failed to send request: {e}")
 
-        self._log.debug(f"RECEIVED: {response}")
+        self._log.debug(f"RECEIVED: id={msg_id}, method={method}")
 
         if "error" in response:
             error = response["error"]
@@ -535,7 +536,7 @@ class BinanceUserDataWebSocketClient:
             if listen_key is None:
                 raise RuntimeError(f"No listenKey in response: {response}")
             self._subscription_id = listen_key
-            self._log.info(f"Started user data stream: {mask_api_key(listen_key)}", LogColor.GREEN)
+            self._log.info("Started user data stream", LogColor.GREEN)
 
             await self._connect_stream_with_hook(listen_key, pre_dispatch_hook)
 
@@ -574,10 +575,7 @@ class BinanceUserDataWebSocketClient:
         response = await self._http_user.create_listen_key()
         listen_key = response.listenKey
         self._subscription_id = listen_key
-        self._log.info(
-            f"Created listenKey (REST): {mask_api_key(listen_key)}",
-            LogColor.GREEN,
-        )
+        self._log.info("Created listenKey (REST)", LogColor.GREEN)
 
         await self._connect_stream_with_hook(listen_key, pre_dispatch_hook)
 
@@ -625,11 +623,15 @@ class BinanceUserDataWebSocketClient:
     async def _connect_stream(self, listen_key: str) -> None:
         if self._stream_base_url is None:
             raise RuntimeError("stream_base_url is required for futures")
+        if self._account_type is None:
+            raise RuntimeError("account_type is required for futures")
 
-        stream_url = f"{self._stream_base_url}/ws?listenKey={listen_key}"
-        self._log.debug(
-            f"Connecting stream to {self._stream_base_url}/ws?listenKey={mask_api_key(listen_key)}...",
+        stream_url = get_futures_user_stream_url(
+            self._account_type,
+            self._stream_base_url,
+            listen_key,
         )
+        self._log.debug("Connecting to Binance Futures user data stream...")
 
         config = WebSocketConfig(
             url=stream_url,
@@ -641,16 +643,16 @@ class BinanceUserDataWebSocketClient:
         # The stream connection can drop independently of the WS API client
         # (e.g. listenKey deleted by another process, heartbeat timeout). Always
         # rotate the listenKey on reconnect so we never reuse a stale one.
-        self._stream_client = await WebSocketClient.connect(
-            loop_=self._loop,
-            config=config,
-            handler=self._handle_stream_message,
-            post_reconnection=self._handle_stream_reconnect,
-        )
-        self._log.info(
-            f"Connected stream to {self._stream_base_url}/ws?listenKey={mask_api_key(listen_key)}",
-            LogColor.BLUE,
-        )
+        try:
+            self._stream_client = await WebSocketClient.connect(
+                loop_=self._loop,
+                config=config,
+                handler=self._handle_stream_message,
+                post_reconnection=self._handle_stream_reconnect,
+            )
+        except WebSocketClientError:
+            raise RuntimeError("Failed to connect Binance Futures user data stream") from None
+        self._log.info("Connected to Binance Futures user data stream", LogColor.BLUE)
 
     def _handle_stream_reconnect(self) -> None:
         self._log.warning("Stream reconnected, creating new listenKey...")

@@ -31,9 +31,9 @@ use nautilus_core::{
     UUID4,
     python::{to_pyruntime_err, to_pyvalue_err},
 };
-use nautilus_model::enums::OmsType;
-use nautilus_model::identifiers::{
-    ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
+use nautilus_model::{
+    enums::OmsType,
+    identifiers::{ActorId, ComponentId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId},
 };
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_system::get_global_pyo3_registry;
@@ -1677,16 +1677,19 @@ mod tests {
         messages::{
             DataEvent, DataResponse,
             data::{BarsResponse, RequestBars},
-            execution::{CancelAllOrders, TradingCommand},
+            execution::{CancelAllOrders, SubmitOrder, TradingCommand},
         },
         msgbus::get_message_bus,
         runner::get_trading_cmd_sender,
     };
     use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_execution::engine::stubs::StubExecutionClient;
     use nautilus_model::{
         data::{Bar, BarType},
-        enums::OrderSide,
-        identifiers::{ClientId, InstrumentId, StrategyId, TraderId, Venue},
+        enums::{OmsType, OrderSide, OrderStatus, OrderType},
+        identifiers::{AccountId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue},
+        instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
+        orders::{Order, OrderTestBuilder},
         types::{Price, Quantity},
     };
     use nautilus_trading::{
@@ -1695,7 +1698,7 @@ mod tests {
         strategy::{StrategyConfig, StrategyCore},
     };
     use pyo3::{
-        Python,
+        PyRef, Python,
         types::{PyAnyMethods, PyDict, PyModule, PyModuleMethods},
     };
     use rstest::rstest;
@@ -2260,9 +2263,17 @@ class LiveTimerStrategy(Strategy):
         let code = CString::new(
             "
 class ClaimsConfig:
-    def __init__(self, strategy_id=None, external_order_claims=None):
+    def __init__(
+        self,
+        strategy_id=None,
+        order_id_tag=None,
+        external_order_claims=None,
+        oms_type=None,
+    ):
         self.strategy_id = strategy_id
+        self.order_id_tag = order_id_tag
         self.external_order_claims = external_order_claims
+        self.oms_type = oms_type
 
 class ClaimsStrategy(Strategy):
     def __init__(self, config):
@@ -2820,6 +2831,264 @@ class ClaimsStrategy(Strategy):
                 Some(strategy_id)
             );
         }
+    }
+
+    #[rstest]
+    fn test_add_strategy_constructed_python_instance_registers_oms_type() {
+        Python::initialize();
+
+        let module_name = "test_live_node_add_strategy_instance_oms_type";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let strategy_id = StrategyId::from("FUNDING_ARBITRAGE-003");
+
+        Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("strategy_id", strategy_id.to_string())
+                .unwrap();
+            kwargs.set_item("oms_type", OmsType::Hedging).unwrap();
+            let config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((config,))
+                .unwrap();
+
+            node.py_add_strategy(&strategy)
+                .expect("strategy should register");
+        });
+
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let client_id = ClientId::from("STUB");
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(StubExecutionClient::new(
+                client_id,
+                AccountId::from("TEST-ACCOUNT"),
+                instrument_id.venue,
+                OmsType::Netting,
+                None,
+            )))
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(node.trader_id())
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let position_id = PositionId::new("CUSTOM-POSITION-003");
+
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), Some(position_id), Some(client_id), true)
+            .unwrap();
+
+        let submit_order = SubmitOrder::new(
+            order.trader_id(),
+            Some(client_id),
+            strategy_id,
+            instrument_id,
+            order.client_order_id(),
+            order.init_event().clone(),
+            order.exec_algorithm_id(),
+            Some(position_id),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+
+        node.kernel()
+            .exec_engine
+            .borrow()
+            .execute(TradingCommand::SubmitOrder(submit_order));
+
+        let exec_engine = node.kernel().exec_engine.borrow();
+        let cache = exec_engine.cache().borrow();
+        let cached_order = cache
+            .order(&order.client_order_id())
+            .expect("Order should be cached");
+
+        assert_eq!(cached_order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_add_strategy_constructed_python_instance_claim_conflict_does_not_register() {
+        Python::initialize();
+
+        let module_name = "test_live_node_add_strategy_instance_claim_conflict";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let instrument_id = InstrumentId::from("AUDUSD.SIM");
+        let first_strategy_id = StrategyId::from("CLAIMS-PRIMARY-001");
+        let conflicting_strategy_id = StrategyId::from("CLAIMS-CONFLICT-002");
+
+        let (error, conflicting_strategy_registered) = Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let first_kwargs = PyDict::new(py);
+            first_kwargs
+                .set_item("strategy_id", first_strategy_id.to_string())
+                .unwrap();
+            first_kwargs
+                .set_item("external_order_claims", vec![instrument_id.to_string()])
+                .unwrap();
+            let first_config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&first_kwargs))
+                .unwrap();
+            let first_strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((first_config,))
+                .unwrap();
+            node.py_add_strategy(&first_strategy)
+                .expect("first strategy should register");
+
+            let conflicting_kwargs = PyDict::new(py);
+            conflicting_kwargs
+                .set_item("strategy_id", conflicting_strategy_id.to_string())
+                .unwrap();
+            conflicting_kwargs
+                .set_item("external_order_claims", vec![instrument_id.to_string()])
+                .unwrap();
+            let conflicting_config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&conflicting_kwargs))
+                .unwrap();
+            let conflicting_strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((conflicting_config,))
+                .unwrap();
+            let error = node
+                .py_add_strategy(&conflicting_strategy)
+                .expect_err("conflicting claim should fail");
+            let is_registered = conflicting_strategy
+                .extract::<PyRef<PyStrategy>>()
+                .unwrap()
+                .is_registered();
+
+            (error, is_registered)
+        });
+
+        let strategy_ids = node.kernel().trader.borrow().strategy_ids();
+        let manager_claim = node.exec_manager().get_external_order_claim(&instrument_id);
+        let engine_claim = node
+            .kernel()
+            .exec_engine
+            .borrow()
+            .get_external_order_claim(&instrument_id);
+
+        assert!(
+            error
+                .to_string()
+                .contains("already exists for CLAIMS-PRIMARY-001")
+        );
+        assert!(!conflicting_strategy_registered);
+        assert_eq!(strategy_ids, vec![first_strategy_id]);
+        assert_eq!(manager_claim, Some(first_strategy_id));
+        assert_eq!(engine_claim, Some(first_strategy_id));
+    }
+
+    #[rstest]
+    fn test_add_strategy_constructed_python_instance_duplicate_tag_does_not_register() {
+        Python::initialize();
+
+        let module_name = "test_live_node_add_strategy_instance_duplicate_tag";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .with_delay_post_stop_secs(0)
+            .with_timeout_connection(1)
+            .build()
+            .unwrap();
+        let first_strategy_id = StrategyId::from("TAGGED-FIRST-777");
+
+        let (error, duplicate_strategy_registered) = Python::attach(|py| {
+            let module = py.import(module_name).expect("test module should import");
+            let first_kwargs = PyDict::new(py);
+            first_kwargs
+                .set_item("strategy_id", "TAGGED-FIRST")
+                .unwrap();
+            first_kwargs.set_item("order_id_tag", "777").unwrap();
+            let first_config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&first_kwargs))
+                .unwrap();
+            let first_strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((first_config,))
+                .unwrap();
+            node.py_add_strategy(&first_strategy)
+                .expect("first strategy should register");
+
+            let duplicate_kwargs = PyDict::new(py);
+            duplicate_kwargs
+                .set_item("strategy_id", "TAGGED-SECOND")
+                .unwrap();
+            duplicate_kwargs.set_item("order_id_tag", "777").unwrap();
+            let duplicate_config = module
+                .getattr("ClaimsConfig")
+                .unwrap()
+                .call((), Some(&duplicate_kwargs))
+                .unwrap();
+            let duplicate_strategy = module
+                .getattr("ClaimsStrategy")
+                .unwrap()
+                .call1((duplicate_config,))
+                .unwrap();
+            let error = node
+                .py_add_strategy(&duplicate_strategy)
+                .expect_err("duplicate order ID tag should fail");
+            let is_registered = duplicate_strategy
+                .extract::<PyRef<PyStrategy>>()
+                .unwrap()
+                .is_registered();
+
+            (error, is_registered)
+        });
+
+        let strategy_ids = node.kernel().trader.borrow().strategy_ids();
+
+        assert!(error.to_string().contains("order_id_tag conflict"));
+        assert!(!duplicate_strategy_registered);
+        assert_eq!(strategy_ids, vec![first_strategy_id]);
     }
 
     #[tokio::test(flavor = "current_thread")]

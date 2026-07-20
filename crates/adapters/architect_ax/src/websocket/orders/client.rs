@@ -25,7 +25,7 @@ use std::{
 };
 
 use arc_swap::ArcSwap;
-use dashmap::DashMap;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::{cache::InstrumentLookupError, live::get_runtime};
 use nautilus_core::{
     AtomicMap,
@@ -509,6 +509,7 @@ impl AxOrdersWebSocketClient {
         let signal = Arc::clone(&self.signal);
         let auth_tracker = self.auth_tracker.clone();
         let orders_metadata = Arc::clone(&self.caches.orders_metadata);
+        let venue_to_client_order_id = Arc::clone(&self.caches.venue_to_client_id);
         let cid_to_client_order_id = Arc::clone(&self.caches.cid_to_client_order_id);
 
         let stream_handle = get_runtime().spawn(async move {
@@ -518,6 +519,7 @@ impl AxOrdersWebSocketClient {
                 raw_rx,
                 auth_tracker.clone(),
                 orders_metadata,
+                venue_to_client_order_id,
                 cid_to_client_order_id,
             );
 
@@ -579,6 +581,9 @@ impl AxOrdersWebSocketClient {
 
         let request_id = self.next_request_id();
         let ax_tif = AxTimeInForce::try_from(time_in_force)?;
+        let cid = client_order_id_to_cid(&client_order_id);
+
+        reserve_cid_mapping(&self.caches, cid, client_order_id)?;
 
         // Store order metadata for event correlation (after validation to avoid stale entries)
         let metadata = OrderMetadata {
@@ -596,12 +601,6 @@ impl AxOrdersWebSocketClient {
             .orders_metadata
             .insert(client_order_id, metadata);
 
-        // Store cid -> client_order_id mapping for correlation
-        let cid = client_order_id_to_cid(&client_order_id);
-        self.caches
-            .cid_to_client_order_id
-            .insert(cid, client_order_id);
-
         let order = AxWsPlaceOrder {
             rid: request_id,
             t: AxOrderRequestType::PlaceOrder,
@@ -618,6 +617,7 @@ impl AxOrdersWebSocketClient {
         let order_info = WsOrderInfo {
             client_order_id,
             symbol,
+            cid,
         };
 
         let result = self
@@ -742,11 +742,54 @@ impl AxOrdersWebSocketClient {
     }
 }
 
+fn reserve_cid_mapping(
+    caches: &OrdersCaches,
+    cid: u64,
+    client_order_id: ClientOrderId,
+) -> AxOrdersWsResult<()> {
+    match caches.cid_to_client_order_id.entry(cid) {
+        Entry::Vacant(entry) => {
+            entry.insert(client_order_id);
+            Ok(())
+        }
+        Entry::Occupied(entry) => Err(AxOrdersWsClientError::ClientError(format!(
+            "AX cid {cid} is already mapped to {}",
+            entry.get(),
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use rstest::rstest;
+
     use super::*;
+
+    #[rstest]
+    fn test_reserve_cid_mapping_rejects_collision() {
+        let caches = OrdersCaches::default();
+        let cid = 123;
+        let first_client_order_id = ClientOrderId::from("CID-123-A");
+        let second_client_order_id = ClientOrderId::from("CID-123-B");
+
+        reserve_cid_mapping(&caches, cid, first_client_order_id).unwrap();
+        let result = reserve_cid_mapping(&caches, cid, second_client_order_id);
+
+        assert!(matches!(
+            result,
+            Err(AxOrdersWsClientError::ClientError(msg))
+                if msg == "AX cid 123 is already mapped to CID-123-A"
+        ));
+        assert_eq!(
+            caches
+                .cid_to_client_order_id
+                .get(&cid)
+                .map(|client_order_id| *client_order_id),
+            Some(first_client_order_id),
+        );
+    }
 
     #[tokio::test]
     async fn test_cancel_order_rejects_without_venue_order_id() {

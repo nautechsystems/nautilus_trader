@@ -358,6 +358,7 @@ impl OrderSubmitter {
                 side,
                 request.price.as_decimal(),
                 request.quantity.as_decimal(),
+                order_type,
                 &expiration,
                 request.neg_risk,
                 request.tick_decimals,

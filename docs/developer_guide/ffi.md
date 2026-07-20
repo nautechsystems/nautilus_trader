@@ -8,6 +8,11 @@ the FFI boundary **by value**.
 The rules below are *strict*; violating them results in undefined behaviour (usually a
 double-free or a memory leak).
 
+`CVec` represents unique ownership when it comes from `Vec<T>`. It is intentionally neither
+`Copy` nor `Clone` in Rust. Moving it into a consuming constructor or typed drop helper transfers
+that ownership, and the same value must not be reused. C can still copy the `repr(C)` fields, so
+foreign callers must enforce the same exactly-once rule themselves.
+
 ## Fail-fast panics at the FFI boundary
 
 Rust panics must never unwind across `extern "C"` functions. Unwinding into C or Python is
@@ -32,6 +37,24 @@ use a helper that does so) to maintain this guarantee.
 If step **3** is forgotten the allocation is leaked for the remainder of the process; if it
 is performed **twice** the program will double-free and likely crash.
 :::
+
+Empty `CVec` values have `len == 0` and `cap == 0`. Their pointer is an opaque sentinel and must
+never be dereferenced or passed to `Vec::from_raw_parts`. Rust consumers must use
+`CVec::into_vec`, which returns `Vec::new()` before inspecting the pointer. Borrowing consumers
+must use `CVec::as_slice`, which returns `&[]` before inspecting the pointer when `len == 0`.
+
+Both methods are unsafe because public FFI metadata cannot prove allocation provenance,
+alignment, initialization, or exclusive ownership. Rust functions that accept a `CVec` and call
+either primitive must also be `unsafe extern "C" fn` and include a `# Safety` contract. Rust
+callers must use an explicit `unsafe` block even though this does not change the generated C ABI.
+
+## Borrowed foreign buffers
+
+Some constructors borrow buffers allocated outside Rust, including Python buffers created with
+`PyMem_Malloc`. These allocations must never be reconstructed as `Vec<T>` because Rust's global
+allocator did not create them. Borrow them with `CVec::as_slice` and clone with `to_vec()` when
+the Rust object needs owned storage. The caller retains ownership and remains responsible for
+freeing the original buffer with its matching allocator.
 
 ## Typed CVec wrappers and Send
 

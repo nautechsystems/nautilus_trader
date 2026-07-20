@@ -39,7 +39,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, QueryAccount,
-            SubmitOrder,
+            QueryOrder, SubmitOrder,
         },
     },
     testing::wait_until_async,
@@ -1964,11 +1964,122 @@ async fn test_submit_market_order_uses_preview_price() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_market_order_stays_in_flight_on_empty_liquidity() {
+async fn test_query_order_uses_venue_id_from_place_response() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    client.connect().await.expect("Failed to connect");
+    drain_rx(&mut rx);
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-QUERY-CACHED-OID");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("50000.00"))
+        .quantity(Quantity::from("100"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+    client
+        .submit_order(make_submit_order_cmd(&order))
+        .expect("submit_order should not error");
+
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .any(|message| message.get("t").and_then(|value| value.as_str()) == Some("p"))
+        },
+        std::time::Duration::from_secs(5),
+    )
+    .await;
+
+    let request_id = state
+        .get_messages()
+        .await
+        .into_iter()
+        .find(|message| message.get("t").and_then(|value| value.as_str()) == Some("p"))
+        .and_then(|message| message.get("rid").and_then(|value| value.as_i64()))
+        .expect("place request should contain rid");
+    let expected_venue_order_id = format!("order-{request_id}");
+
+    let mut venue_query = None;
+
+    for attempt in 0..10 {
+        client
+            .query_order(QueryOrder::new(
+                TraderId::from("TESTER-001"),
+                Some(*AX_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                client_order_id,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("query_order should not error");
+
+        wait_until_async(
+            || async { state.order_status_queries.lock().await.len() > attempt },
+            std::time::Duration::from_secs(5),
+        )
+        .await;
+
+        venue_query = state
+            .order_status_queries
+            .lock()
+            .await
+            .get(attempt)
+            .filter(|query| query.order_id.is_some())
+            .cloned();
+
+        if venue_query.is_some() {
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    let venue_query = venue_query.expect("query should use venue order ID after place response");
+    assert_eq!(
+        venue_query.order_id.as_deref(),
+        Some(expected_venue_order_id.as_str())
+    );
+    assert_eq!(venue_query.client_order_id, None);
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[case::empty_liquidity(true, false, "No liquidity available")]
+#[case::preview_request_failure(false, true, "Failed to preview aggressive limit order")]
+#[tokio::test]
+async fn test_submit_market_order_rejects_before_placement(
+    #[case] preview_empty: bool,
+    #[case] preview_fail: bool,
+    #[case] expected_reason: &str,
+) {
     let (addr, state) = start_test_server().await.unwrap();
     state
         .preview_empty
-        .store(true, std::sync::atomic::Ordering::Relaxed);
+        .store(preview_empty, std::sync::atomic::Ordering::Relaxed);
+    state
+        .preview_fail
+        .store(preview_fail, std::sync::atomic::Ordering::Relaxed);
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
 
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -2010,19 +2121,18 @@ async fn test_submit_market_order_stays_in_flight_on_empty_liquidity() {
         "expected OrderSubmitted, was {submitted:?}",
     );
 
-    // A failed preview is not a venue order rejection: no OrderRejected,
-    // the order is left in flight.
-    let result = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv()).await;
-    assert!(
-        !matches!(
-            result,
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::Rejected(_))))
-        ),
-        "expected no OrderRejected for failed preview, was {result:?}",
-    );
+    let rejected = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+        .await
+        .expect("timeout waiting for rejected")
+        .expect("channel closed");
+    let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = rejected else {
+        panic!("expected OrderRejected, was {rejected:?}");
+    };
 
-    // The order was never placed on the WS orders channel
     let messages = state.get_messages().await;
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert!(rejected.reason.as_str().contains(expected_reason));
     assert!(
         !messages
             .iter()

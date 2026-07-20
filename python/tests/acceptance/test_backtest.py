@@ -384,7 +384,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
                     "atr_period": 20,
                     "trailing_atr_multiple": 0.01,
                     "trailing_offset_type": "PRICE",
-                    "trigger_type": "LAST_PRICE",
+                    "trigger_type": "BID_ASK",
                 },
             ),
         )

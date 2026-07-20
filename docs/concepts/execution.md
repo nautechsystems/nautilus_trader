@@ -84,10 +84,13 @@ identifies the original trade and carries the cumulative voided quantity and fee
 
 The execution engine rebuilds the affected order and positions and refreshes portfolio position and
 PnL caches before publishing the correction to strategies and execution algorithms. Migrated venue
-adapters request an authoritative account refresh after a void. A correction preserves any order
-remainder that was already working, but the corrected quantity becomes executable only when the
-venue provides positive evidence through `is_reopened=true`. A prior cancel or expiry remains
-terminal.
+adapters request an authoritative account refresh after a void.
+
+Adapters must publish the referenced fill before a reopened correction or a partial correction that
+leaves the order executable. Without a local fill, a non-reopened correction makes the whole order
+terminal, even when `voided_qty` is less than the order quantity. A later working status report does
+not reopen `VOIDED`. See the complete
+[`OrderFillVoided` contract](events/order_fill_voided.md#contract).
 
 ## Order denied reasons
 

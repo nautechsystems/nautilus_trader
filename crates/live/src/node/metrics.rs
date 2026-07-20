@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_common::{
     messages::{DataEvent, ExecutionEvent, data::DataCommand, execution::TradingCommand},
-    timer::TimeEventHandler,
+    runner::TimeEventMessage,
 };
 
 /// Primitive metrics for one `LiveNode::run` dispatch channel after startup.
@@ -315,7 +315,7 @@ pub(crate) struct RunnerChannelQueueDepths {
 
 impl RunnerChannelQueueDepths {
     pub(crate) fn from_receivers(
-        time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+        time_events: &tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         exec_events: &tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         exec_commands: &tokio::sync::mpsc::UnboundedReceiver<TradingCommand>,
         data_events: &tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
@@ -556,7 +556,7 @@ mod tests {
 
     #[rstest]
     fn test_runner_metrics_queue_depths_use_receiver_lengths() {
-        let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (time_tx, time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (exec_evt_tx, exec_evt_rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
         let (exec_cmd_tx, exec_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<TradingCommand>();
         let (data_evt_tx, data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -655,8 +655,8 @@ mod tests {
         ]
     }
 
-    fn stub_time_event_handler() -> TimeEventHandler {
-        TimeEventHandler::new(
+    fn stub_time_event_handler() -> TimeEventMessage {
+        TimeEventMessage::new(
             TimeEvent::new(
                 Ustr::from("test-timer"),
                 UUID4::new(),

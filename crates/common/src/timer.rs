@@ -204,8 +204,8 @@ impl Debug for PythonTimeEventCallback {
 /// - The callback captures `Rc<RefCell<...>>` for shared mutable state.
 /// - Thread safety constraints prevent using `Arc`.
 ///
-/// `RustLocal` works with `TestClock`. With `LiveClock`, use it only for existing
-/// single-threaded callback paths; live timer callback registry dispatch is still pending.
+/// `RustLocal` works with `TestClock` and with `LiveClock` when its event channel
+/// is drained on the callback's originating thread.
 ///
 /// # Automatic Conversion
 ///
@@ -321,26 +321,6 @@ impl TimeEventCallback {
         )))
     }
 }
-
-// SAFETY: TimeEventCallback is Send + Sync with the following invariants:
-//
-// - Python variant: Arc clone/drop does not require the GIL, and the callable is
-//   only invoked after acquiring the GIL.
-//
-// - Rust variant: Arc<dyn Fn + Send + Sync> is inherently Send + Sync.
-//
-// - RustLocal variant: Rc<dyn Fn> is not Send/Sync. This unsafe impl preserves
-//   existing API compatibility and relies on callers to keep RustLocal callbacks
-//   on the originating event-loop thread. LiveTimer logs a warning because its
-//   callback registry dispatch follow-up is still pending.
-//
-//   INVARIANT: RustLocal callbacks must only be cloned, dropped, or called from
-//   the thread that created them. Violating this invariant causes undefined behavior.
-//   Use the Rust variant with Arc if cross-thread execution is needed.
-#[allow(unsafe_code)]
-unsafe impl Send for TimeEventCallback {}
-#[allow(unsafe_code)]
-unsafe impl Sync for TimeEventCallback {}
 
 #[cfg(feature = "python")]
 fn call_legacy_python_time_event_callback(

@@ -34,7 +34,9 @@ impl OrderFillVoided {
     /// Records that a cumulative fill quantity no longer has economic effect.
     ///
     /// The correction identity, voided quantity, and commission are cumulative for the referenced
-    /// trade. `is_reopened` records positive evidence that the corrected order is executable again.
+    /// trade. `is_reopened` records positive evidence that the corrected order is executable again
+    /// and therefore requires the referenced fill to have been applied locally. Without a local fill,
+    /// a non-reopened correction is an authoritative terminal order void.
     #[expect(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, venue_order_id, account_id, correction_id, trade_id, voided_qty, order_side, order_type, last_px, currency, liquidity_side, event_id, ts_event, ts_init, reconciliation, is_reopened=false, commission_voided=None, position_id=None, reason=None, info=None))]

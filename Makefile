@@ -911,6 +911,7 @@ MIRI_CORE_FILTER ?= -E 'test(/^(string::stack_str|nanos|uuid|hex|correctness|dat
 # arc-swap runs Miri with permissive provenance, so use the same provenance
 # policy for this slice while keeping strict provenance for in-tree pointer code.
 MIRI_CORE_ARC_SWAP_FILTER ?= -E 'test(/^collections::/)'
+MIRI_CORE_FFI_FILTER ?= ffi::cvec::tests
 # `test_price_to_order_id_{comprehensive_collision_check,realistic_orderbook_prices}`
 # iterate over the full price space to verify hash uniqueness. They run for
 # multiple hours under the Miri interpreter and exercise no unsafe, so we skip
@@ -943,6 +944,15 @@ cargo-miri-core:  #-- Run nautilus-core library tests under Miri to detect UB
 	MIRIFLAGS="$(MIRI_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_FILTER)
 	$(info $(M) Running nautilus-core collections tests under Miri with permissive provenance (filter: $(MIRI_CORE_ARC_SWAP_FILTER))...)
 	MIRIFLAGS="$(MIRI_CORE_ARC_SWAP_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri nextest run -p nautilus-core --no-default-features --lib $(MIRI_CORE_ARC_SWAP_FILTER)
+	$(info $(M) Running nautilus-core CVec FFI tests under Miri (filter: $(MIRI_CORE_FFI_FILTER))...)
+	MIRIFLAGS="$(MIRI_FLAGS)" cargo +$(MIRI_TOOLCHAIN) miri test -p nautilus-core --lib --features ffi $(MIRI_CORE_FFI_FILTER)
+
+.PHONY: cargo-miri-core-ffi
+cargo-miri-core-ffi: export RUST_BACKTRACE=1
+cargo-miri-core-ffi: export MIRIFLAGS=$(MIRI_FLAGS)
+cargo-miri-core-ffi: check-miri-installed
+cargo-miri-core-ffi:  #-- Run CVec FFI tests under Miri
+	cargo +$(MIRI_TOOLCHAIN) miri test -p nautilus-core --lib --features ffi $(MIRI_CORE_FFI_FILTER)
 
 .PHONY: cargo-miri-model
 cargo-miri-model: export RUST_BACKTRACE=1

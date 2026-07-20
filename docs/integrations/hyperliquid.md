@@ -905,6 +905,14 @@ def round_to_sig_figs(price: Decimal, sig_figs: int = 5) -> Decimal:
 | `FOK`         | -          | -    | *Not supported*.     |
 | `GTD`         | -          | -    | *Not supported*.     |
 
+:::note
+When an IOC order cannot match any resting liquidity, Hyperliquid reports
+`iocCancelRejected` with `Order could not immediately match against any resting orders`.
+The adapter preserves this venue rejection as `OrderRejected`. It does not synthesize an
+`OrderAccepted` followed by `OrderCanceled`. A partially filled IOC still keeps its fills and
+cancels only the unfilled remainder.
+:::
+
 ### Execution instructions
 
 | Instruction   | Perpetuals | Spot | Notes                            |

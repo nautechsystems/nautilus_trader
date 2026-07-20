@@ -161,6 +161,38 @@ pub fn get_ws_private_base_url(
     }
 }
 
+/// Returns a Futures user stream URL bound to the supplied listen key.
+#[must_use]
+pub(crate) fn get_futures_user_stream_url(
+    product_type: BinanceProductType,
+    base_url: &str,
+    listen_key: &str,
+) -> String {
+    assert!(
+        matches!(
+            product_type,
+            BinanceProductType::UsdM | BinanceProductType::CoinM
+        ),
+        "Futures user stream requires UsdM or CoinM product type, was {product_type:?}"
+    );
+
+    let mut normalized = base_url.trim_end_matches('/').to_string();
+    let path = normalized
+        .split_once("://")
+        .map_or(normalized.as_str(), |(_, rest)| rest)
+        .split_once('/')
+        .map(|(_, path)| path);
+    if matches!(path, None | Some("" | "private")) {
+        normalized.push_str("/ws");
+    }
+
+    match product_type {
+        BinanceProductType::UsdM => format!("{normalized}?listenKey={listen_key}"),
+        BinanceProductType::CoinM => format!("{normalized}/{listen_key}"),
+        _ => unreachable!(),
+    }
+}
+
 fn is_usdm_ws_host(base_url: &str) -> bool {
     // Strip scheme (e.g. `wss://`) and trailing path/port, then match the hostname.
     // Accepts fstream.binance.com, fstream-mm.binance.com, fstream-auth.binance.com,
@@ -366,6 +398,66 @@ mod tests {
     fn test_ws_private_url_options_demo() {
         let url = get_ws_private_base_url(BinanceProductType::Options, BinanceEnvironment::Demo);
         assert_eq!(url, "wss://fstream.binancefuture.com/private/ws");
+    }
+
+    #[rstest]
+    #[case(
+        BinanceProductType::UsdM,
+        "wss://fstream.binance.com/private/ws",
+        "wss://fstream.binance.com/private/ws?listenKey=redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://dstream.binance.com/ws",
+        "wss://dstream.binance.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://dstream.binancefuture.com/ws",
+        "wss://dstream.binancefuture.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://demo-dstream.binance.com/ws",
+        "wss://demo-dstream.binance.com/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://custom.example/ws/",
+        "wss://custom.example/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "wss://custom.example",
+        "wss://custom.example/ws/redacted"
+    )]
+    #[case(
+        BinanceProductType::UsdM,
+        "ws://127.0.0.1:1234/ws-inject",
+        "ws://127.0.0.1:1234/ws-inject?listenKey=redacted"
+    )]
+    #[case(
+        BinanceProductType::CoinM,
+        "ws://127.0.0.1:1234/ws-inject",
+        "ws://127.0.0.1:1234/ws-inject/redacted"
+    )]
+    fn test_futures_user_stream_url(
+        #[case] product_type: BinanceProductType,
+        #[case] base_url: &str,
+        #[case] expected: &str,
+    ) {
+        let url = get_futures_user_stream_url(product_type, base_url, "redacted");
+        assert_eq!(url, expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Futures user stream requires UsdM or CoinM product type")]
+    fn test_futures_user_stream_url_rejects_non_futures_product() {
+        let _ = get_futures_user_stream_url(
+            BinanceProductType::Spot,
+            "wss://stream.binance.com/ws",
+            "redacted",
+        );
     }
 
     #[rstest]

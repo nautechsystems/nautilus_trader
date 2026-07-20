@@ -440,6 +440,12 @@ precision requirements**:
   - A limit order submitted with `FAK` or `FOK` must also satisfy the stricter market-order amount
     validation. The venue rejects values that are valid for a resting order but not for that
     market-order type.
+  - For a limit BUY, `quantity` is the nominal share quantity at the limit price. With `FAK` or
+    `FOK`, Polymarket spends the resulting pUSD maker budget, so price improvement can return more
+    shares; the adapter updates the order quantity to the actual fill.
+  - The adapter denies the order before signing when `quantity * price` is not an exact cent amount.
+    It does not round and recompute the nominal share quantity because that would change the signed
+    price/amount ratio.
 
 - **Resting limit order types (`GTC` and `GTD`):** More flexible precision based on
   market tick size.
@@ -455,8 +461,9 @@ precision requirements**:
 
 :::note
 
-- The adapter validates tick size before signing. The CLOB remains authoritative for the
-  order-type-specific amount precision of limit orders submitted as `FAK` or `FOK`.
+- The adapter validates tick size before signing. It also denies limit `FAK` or `FOK` BUYs whose
+  maker amount has more than two decimal places. This applies to single and batch submissions.
+- Resting `GTC` and `GTD` limit orders and all SELL orders keep their tick-derived amount precision.
 - The adapter rejects limit prices outside the current market's `tick_size` to `1 - tick_size`
   range before signing.
 - Market-order precision limits include two decimals for the sell size plus tick-derived bounds

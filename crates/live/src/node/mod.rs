@@ -95,7 +95,7 @@ use nautilus_common::{
         execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, TradingCommand},
     },
     msgbus::{self, BusMessage},
-    timer::TimeEventHandler,
+    runner::TimeEventMessage,
 };
 use nautilus_core::{
     UUID4,
@@ -1252,19 +1252,21 @@ impl LiveNode {
                 // when the biased select polls receivers each iteration.
                 Some(handler) = time_evt_rx.recv() => {
                     let dispatch_start = dst::time::Instant::now();
-                    AsyncRunner::handle_time_event(handler);
+                    let dispatched = AsyncRunner::handle_time_event(handler);
 
-                    if is_shutting_down {
+                    if dispatched && is_shutting_down {
                         log::debug!("Residual time event");
                         residual_events += 1;
                     }
 
-                    record_runner_dispatch(
-                        &metrics,
-                        RunnerMetricChannel::TimeEvents,
-                        dispatch_start,
-                        metrics_start,
-                    );
+                    if dispatched {
+                        record_runner_dispatch(
+                            &metrics,
+                            RunnerMetricChannel::TimeEvents,
+                            dispatch_start,
+                            metrics_start,
+                        );
+                    }
                 }
                 Some(evt) = exec_evt_rx.recv() => {
                     let dispatch_start = dst::time::Instant::now();
@@ -1588,7 +1590,7 @@ impl LiveNode {
     }
 
     fn drain_channels(
-        time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+        time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
         data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
         data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
         exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1597,7 +1599,7 @@ impl LiveNode {
         let mut drained = 0;
 
         while let Ok(handler) = time_evt_rx.try_recv() {
-            AsyncRunner::handle_time_event(handler);
+            let _ = AsyncRunner::handle_time_event(handler);
             drained += 1;
         }
 
@@ -2298,7 +2300,7 @@ fn flush_pending_data(
 /// select did not poll before the connect future resolved.
 fn flush_all_pending(
     pending: &mut PendingEvents,
-    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -2306,7 +2308,7 @@ fn flush_all_pending(
 ) {
     // Flush channel receivers into pending
     while let Ok(handler) = time_evt_rx.try_recv() {
-        AsyncRunner::handle_time_event(handler);
+        let _ = AsyncRunner::handle_time_event(handler);
     }
 
     while let Ok(evt) = data_evt_rx.try_recv() {
@@ -2360,7 +2362,7 @@ fn flush_all_pending(
 async fn drive_with_event_buffering<F: std::future::Future>(
     future: F,
     pending: &mut PendingEvents,
-    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventHandler>,
+    time_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<TimeEventMessage>,
     data_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     data_cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
     exec_evt_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -2376,7 +2378,7 @@ async fn drive_with_event_buffering<F: std::future::Future>(
                 break result;
             }
             Some(handler) = time_evt_rx.recv() => {
-                AsyncRunner::handle_time_event(handler);
+                let _ = AsyncRunner::handle_time_event(handler);
             }
             Some(evt) = exec_evt_rx.recv() => {
                 // Account events are safe to process immediately. Report and
@@ -4116,14 +4118,17 @@ mod tests {
         assert!(cmd_rx.try_recv().is_err());
     }
 
-    fn stub_time_event_handler() -> TimeEventHandler {
+    fn stub_time_event_handler() -> TimeEventMessage {
         use std::rc::Rc;
 
-        use nautilus_common::timer::{TimeEvent, TimeEventCallback, TimeEventHandler};
+        use nautilus_common::{
+            runner::TimeEventMessage,
+            timer::{TimeEvent, TimeEventCallback},
+        };
         use nautilus_core::{UUID4, UnixNanos};
         use ustr::Ustr;
 
-        TimeEventHandler::new(
+        TimeEventMessage::new(
             TimeEvent::new(
                 Ustr::from("test-timer"),
                 UUID4::new(),
@@ -4178,7 +4183,7 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_drains_buffered_channels() {
-        let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -4249,7 +4254,7 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_routes_order_event_to_order_evts() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -4279,7 +4284,7 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_routes_account_event_immediately() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -4398,7 +4403,7 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_buffers_submitted_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =
@@ -4426,7 +4431,7 @@ mod tests {
 
     #[rstest]
     fn test_flush_all_pending_buffers_canceled_batch_as_individual_events() {
-        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventHandler>();
+        let (_time_tx, mut time_rx) = tokio::sync::mpsc::unbounded_channel::<TimeEventMessage>();
         let (_data_evt_tx, mut data_evt_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (_data_cmd_tx, mut data_cmd_rx) = tokio::sync::mpsc::unbounded_channel::<DataCommand>();
         let (exec_evt_tx, mut exec_evt_rx) =

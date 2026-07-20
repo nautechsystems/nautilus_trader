@@ -128,13 +128,12 @@ pub fn quantity_to_contracts(quantity: Quantity) -> anyhow::Result<u64> {
     Ok(contracts)
 }
 
-/// Converts a [`ClientOrderId`] to a 64-bit unsigned integer for AX `cid` field.
+/// Converts a [`ClientOrderId`] to a deterministic AX `cid` in the non-negative `int64` range.
 ///
-/// Uses a deterministic hash of the client order ID string to produce
-/// a u64 value that can be used for order correlation.
+/// Inbound WebSocket `cid` values remain `u64` because venue messages can exceed `int64`.
 #[must_use]
 pub fn client_order_id_to_cid(client_order_id: &ClientOrderId) -> u64 {
-    CID_HASHER.hash_one(client_order_id.inner())
+    CID_HASHER.hash_one(client_order_id.inner()) & i64::MAX as u64
 }
 
 /// Creates a [`ClientOrderId`] from a cid value.
@@ -179,6 +178,15 @@ mod tests {
         let cid2 = client_order_id_to_cid(&coid2);
 
         assert_ne!(cid1, cid2);
+    }
+
+    #[rstest]
+    fn test_client_order_id_to_cid_fits_signed_64_bit_range() {
+        let coid = ClientOrderId::new("O-20260720-055815-001-001-1");
+
+        let cid = client_order_id_to_cid(&coid);
+
+        assert!(i64::try_from(cid).is_ok());
     }
 
     #[rstest]

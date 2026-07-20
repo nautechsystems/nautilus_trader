@@ -14,13 +14,42 @@ reconciliation, and strategy audit history describe the venue action directly.
 
 Handler: `on_order_fill_voided`.
 
-## Quantity and status behavior
+## Contract
 
-`voided_qty` and `commission_voided` are cumulative for the referenced `trade_id`. Quantity and fee
-corrections cannot decrease. A later revision may increase either value or change `is_reopened` at
-the same quantity. Duplicate, stale, and over-void corrections are rejected.
+`voided_qty` and `commission_voided` are cumulative for the referenced `trade_id`. Quantity
+corrections cannot decrease. For a locally applied fill, fee corrections also cannot decrease, and
+a later revision may increase either value or change `is_reopened` at the same quantity. Duplicate,
+stale, and over-void corrections are rejected.
 
-By default, a correction does not make the corrected quantity executable:
+Whether the referenced `OrderFilled` is already in the local order history determines how Nautilus
+interprets the correction:
+
+| Fill is local | `is_reopened` | Outcome                                                               |
+|---------------|---------------|-----------------------------------------------------------------------|
+| Yes           | `false`       | Apply; corrected quantity does not become working.                    |
+| Yes           | `true`        | Apply; corrected quantity becomes working, subject to terminal rules. |
+| No            | `false`       | Apply; whole order becomes terminal with zero leaves.                 |
+| No            | `true`        | Reject.                                                               |
+
+An unapplied non-reopened correction is an order-level terminal assertion. This remains true when
+`voided_qty` is less than the order quantity: the value records the ineffective fill quantity, not
+working leaves. The event must match the order identity, cannot exceed the order quantity, and cannot
+void a non-zero commission. Nautilus does not reverse position or account exposure without a local
+fill.
+
+### Adapter requirements
+
+- Publish and persist the referenced `OrderFilled` before a reopened correction or any partial
+  correction that should leave the order executable. Replay enforces the same ordering as live processing.
+- Emit a correction without its referenced fill only when the whole order is authoritatively terminal.
+- Do not rely on a later working `OrderStatusReport` to repair event ordering. Continuous
+  reconciliation ignores fill decreases in working reports without explicit void evidence,
+  `VOIDED` does not reopen, and snapshot reconciliation derives corrections only from retained
+  fills.
+
+### Status behavior with a local fill
+
+The corrected quantity does not become executable by default:
 
 - A filled order becomes terminal `VOIDED`, even when some effective filled quantity survives.
 - A partially filled order preserves the remainder that was already working. Its status derives
@@ -30,8 +59,8 @@ By default, a correction does not make the corrected quantity executable:
   order derives `ACCEPTED` when no effective fill remains or `PARTIALLY_FILLED` when some quantity
   survives.
 
-If Nautilus never applied the referenced fill, the event records the authoritative order-level
-correction but does not reverse position or account exposure.
+`VOIDED` is terminal regardless of the correction path. Later fills, cancels, updates, corrections,
+and working status reports do not reopen it.
 
 :::note
 The schemas append this event and status without changing existing records. Older v2 readers do not
@@ -43,21 +72,21 @@ recognize the new values, so upgrade consumers before they read corrected stream
 Beyond the [common order event fields](index.md#common-order-event-fields), `OrderFillVoided`
 carries:
 
-| Field               | Python type            | Required/default | Description                                             |
-|---------------------|------------------------|------------------|---------------------------------------------------------|
-| `correction_id`     | `str`                  | Required         | Identity for this correction revision.                  |
-| `trade_id`          | `TradeId`              | Required         | Original venue trade ID.                                |
-| `voided_qty`        | `Quantity`             | Required         | Cumulative ineffective quantity for the trade.          |
-| `commission_voided` | `Money` or `None`      | `None`           | Cumulative fee correction for the trade.                 |
-| `order_side`        | `OrderSide`            | Required         | Side of the original fill.                              |
-| `order_type`        | `OrderType`            | Required         | Type of the original order.                             |
-| `last_px`           | `Price`                | Required         | Price of the original fill.                             |
-| `currency`          | `Currency`             | Required         | Currency of the original fill price.                    |
-| `liquidity_side`    | `LiquiditySide`        | Required         | Liquidity side of the original fill.                    |
-| `position_id`       | `PositionId` or `None` | `None`           | Position ID associated with the original fill.          |
-| `reason`            | `str` or `None`        | `None`           | Venue or reconciliation reason for the correction.      |
-| `info`              | `dict[str, str]` or `None` | `None`        | Additional venue correction metadata.                   |
-| `is_reopened`       | `bool`                 | `False`          | Whether the venue proves the order is executable again. |
+| Field               | Python type                | Required/default | Description                                             |
+|---------------------|----------------------------|------------------|---------------------------------------------------------|
+| `correction_id`     | `str`                      | Required         | Identity for this correction revision.                  |
+| `trade_id`          | `TradeId`                  | Required         | Original venue trade ID.                                |
+| `voided_qty`        | `Quantity`                 | Required         | Cumulative ineffective quantity for the trade.          |
+| `commission_voided` | `Money` or `None`          | `None`           | Cumulative fee correction for the trade.                |
+| `order_side`        | `OrderSide`                | Required         | Side of the original fill.                              |
+| `order_type`        | `OrderType`                | Required         | Type of the original order.                             |
+| `last_px`           | `Price`                    | Required         | Price of the original fill.                             |
+| `currency`          | `Currency`                 | Required         | Currency of the original fill price.                    |
+| `liquidity_side`    | `LiquiditySide`            | Required         | Liquidity side of the original fill.                    |
+| `position_id`       | `PositionId` or `None`     | `None`           | Position ID associated with the original fill.          |
+| `reason`            | `str` or `None`            | `None`           | Venue or reconciliation reason for the correction.      |
+| `info`              | `dict[str, str]` or `None` | `None`           | Additional venue correction metadata.                   |
+| `is_reopened`       | `bool`                     | `False`          | Whether the venue proves the order is executable again. |
 
 ## Example
 

@@ -211,6 +211,51 @@ def get_ws_private_base_url(
     return get_ws_base_url(account_type, environment, is_us)
 
 
+def get_futures_user_stream_url(
+    account_type: BinanceAccountType,
+    base_url: str,
+    listen_key: str,
+) -> str:
+    """
+    Return a Futures user stream URL bound to the supplied listen key.
+
+    Parameters
+    ----------
+    account_type : BinanceAccountType
+        The Futures account type.
+    base_url : str
+        The private WebSocket base URL.
+    listen_key : str
+        The listen key for the user data stream.
+
+    Returns
+    -------
+    str
+
+    Raises
+    ------
+    ValueError
+        If `account_type` is not a Futures account type.
+
+    """
+    if account_type not in {
+        BinanceAccountType.USDT_FUTURES,
+        BinanceAccountType.COIN_FUTURES,
+    }:
+        raise ValueError(f"Futures user stream requires a Futures account type, was {account_type}")
+
+    normalized = base_url.rstrip("/")
+    without_scheme = normalized.partition("://")[2] or normalized
+    _, separator, path = without_scheme.partition("/")
+    if not separator or path in {"", "private"}:
+        normalized += "/ws"
+
+    if account_type == BinanceAccountType.COIN_FUTURES:
+        return f"{normalized}/{listen_key}"
+
+    return f"{normalized}?listenKey={listen_key}"
+
+
 def get_usdm_ws_route_base_url(base_url: str, route: str) -> str:
     """
     Return a routed USD-M Futures WebSocket base URL derived from an override.

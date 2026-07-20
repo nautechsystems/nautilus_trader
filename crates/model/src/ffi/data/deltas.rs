@@ -23,23 +23,18 @@ use crate::{
 
 /// Creates a new [`OrderBookDeltas_API`] instance from a `CVec` of `OrderBookDelta`.
 ///
-/// - The `deltas` must be a valid pointer to a `CVec` containing `OrderBookDelta` objects.
-/// - This function clones the data pointed to by `deltas` into Rust-managed memory, then forgets the original `Vec` to prevent Rust from auto-deallocating it.
-/// - The caller is responsible for managing the memory of `deltas` (including its deallocation) to avoid memory leaks.
+/// The data is cloned into Rust-managed memory and remains owned by the caller.
+///
+/// # Safety
+///
+/// `deltas` must describe initialized `OrderBookDelta` values that remain valid and immutable for
+/// the duration of this call. The caller remains responsible for deallocating its buffer.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_new(
+pub unsafe extern "C" fn orderbook_deltas_new(
     instrument_id: InstrumentId,
     deltas: &CVec,
 ) -> OrderBookDeltas_API {
-    let CVec { ptr, len, cap } = *deltas;
-    let deltas: Vec<OrderBookDelta> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<OrderBookDelta>(), len, cap) };
-    let cloned_deltas = deltas.clone();
-    #[allow(
-        clippy::mem_forget,
-        reason = "C ABI retains ownership of the original vector; clone is returned to Rust"
-    )]
-    std::mem::forget(deltas);
+    let cloned_deltas = unsafe { deltas.as_slice::<OrderBookDelta>() }.to_vec();
     OrderBookDeltas_API::new(OrderBookDeltas::new(instrument_id, cloned_deltas))
 }
 
@@ -96,23 +91,41 @@ pub extern "C" fn orderbook_deltas_ts_init(deltas: &OrderBookDeltas_API) -> Unix
 
 /// Drops a `CVec` of `OrderBookDelta` values.
 ///
-/// # Panics
+/// # Safety
 ///
-/// Panics if `CVec` invariants are violated (corrupted metadata).
+/// `v` must uniquely own a valid `Vec<OrderBookDelta>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
-    let CVec { ptr, len, cap } = v;
-
-    assert!(
-        len <= cap,
-        "orderbook_deltas_vec_drop: len ({len}) > cap ({cap})"
-    );
-    assert!(
-        len == 0 || !ptr.is_null(),
-        "orderbook_deltas_vec_drop: null ptr with non-zero len ({len})"
-    );
-
-    let deltas: Vec<OrderBookDelta> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<OrderBookDelta>(), len, cap) };
+pub unsafe extern "C" fn orderbook_deltas_vec_drop(v: CVec) {
+    let deltas = unsafe { v.into_vec::<OrderBookDelta>() };
     drop(deltas); // Memory freed here
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::data::stubs::stub_delta;
+
+    #[rstest]
+    fn test_empty_delta_drop_returns_without_panic() {
+        unsafe { orderbook_deltas_vec_drop(CVec::empty()) };
+    }
+
+    #[rstest]
+    fn test_orderbook_deltas_new_clones_borrowed_buffer() {
+        let delta = stub_delta();
+        let mut caller_owned = vec![delta];
+        let cvec = CVec {
+            ptr: caller_owned.as_mut_ptr().cast(),
+            len: caller_owned.len(),
+            cap: caller_owned.capacity(),
+        };
+
+        let deltas = unsafe { orderbook_deltas_new(delta.instrument_id, &cvec) };
+
+        assert_eq!(deltas.deltas, caller_owned);
+        caller_owned[0].sequence += 1;
+        assert_ne!(deltas.deltas, caller_owned);
+    }
 }

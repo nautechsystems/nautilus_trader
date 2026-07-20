@@ -373,6 +373,10 @@ pub fn parse_ws_order_status_report(
         report = report.with_reduce_only(reduce_only);
     }
 
+    if let Some(reason) = order.status.rejection_reason() {
+        report = report.with_cancel_reason(reason.to_string());
+    }
+
     report = report.with_price(price);
 
     if is_conditional && let Some(trigger_px) = order.order.trigger_px {
@@ -633,6 +637,58 @@ mod tests {
         assert!(report.post_only);
         assert!(report.reduce_only);
         assert!(report.trigger_price.is_none());
+    }
+
+    #[rstest]
+    #[case(
+        HyperliquidOrderStatusEnum::BadAloPxRejected,
+        "Post only order would have immediately matched"
+    )]
+    #[case(
+        HyperliquidOrderStatusEnum::ReduceOnlyRejected,
+        "Reduce only order would increase position."
+    )]
+    #[case(
+        HyperliquidOrderStatusEnum::IocCancelRejected,
+        "Order could not immediately match against any resting orders"
+    )]
+    fn test_parse_ws_rejection_preserves_venue_reason(
+        #[case] status: HyperliquidOrderStatusEnum,
+        #[case] expected_reason: &str,
+    ) {
+        let instrument = create_test_instrument();
+        let order_data = WsOrderData {
+            order: WsBasicOrderData {
+                coin: Ustr::from("BTC"),
+                side: HyperliquidSide::Buy,
+                limit_px: dec!(50000.0),
+                sz: dec!(1.0),
+                oid: 12345,
+                timestamp: 1704470400000,
+                orig_sz: dec!(1.0),
+                cloid: Some("test-rejection".to_string()),
+                tif: Some(HyperliquidTimeInForce::Alo),
+                reduce_only: Some(false),
+                trigger_px: None,
+                is_market: None,
+                tpsl: None,
+                trigger_activated: None,
+                trailing_stop: None,
+            },
+            status,
+            status_timestamp: 1704470400000,
+        };
+
+        let report = parse_ws_order_status_report(
+            &order_data,
+            &instrument,
+            AccountId::new("HYPERLIQUID-001"),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(report.cancel_reason.as_deref(), Some(expected_reason));
     }
 
     #[rstest]

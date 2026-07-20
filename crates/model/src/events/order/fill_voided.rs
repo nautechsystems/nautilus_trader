@@ -31,7 +31,9 @@ use crate::{
 /// Records that a cumulative fill quantity no longer has economic effect.
 ///
 /// The correction identity, voided quantity, and commission are cumulative for the referenced
-/// trade. `is_reopened` records positive evidence that the corrected order is executable again.
+/// trade. `is_reopened` records positive evidence that the corrected order is executable again
+/// and therefore requires the referenced fill to have been applied locally. Without a local fill,
+/// a non-reopened correction is an authoritative terminal order void.
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type")]

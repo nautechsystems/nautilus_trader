@@ -1775,6 +1775,66 @@ fn test_fill_void_position_validation_failure_leaves_order_unchanged(
 }
 
 #[rstest]
+fn test_terminal_fill_void_rejects_late_fill_without_opening_position(
+    mut execution_engine: ExecutionEngine,
+) {
+    let (instrument, order) = prepare_accepted_order(&mut execution_engine);
+    let venue_order_id = VenueOrderId::from("V-001");
+    let account_id = AccountId::test_default();
+    let trade_id = TradeId::new("T-VOID-TERMINAL");
+    let voided = OrderEventAny::FillVoided(
+        OrderFillVoidedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument.id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(venue_order_id)
+            .account_id(account_id)
+            .trade_id(trade_id)
+            .voided_qty(order.quantity())
+            .order_side(order.order_side())
+            .order_type(order.order_type())
+            .last_px(Price::from("1.00000"))
+            .currency(instrument.quote_currency())
+            .liquidity_side(LiquiditySide::NoLiquiditySide)
+            .build(),
+    );
+    let late_fill = OrderEventAny::Filled(build_order_filled(
+        order.trader_id(),
+        order.strategy_id(),
+        instrument.id(),
+        order.client_order_id(),
+        venue_order_id,
+        account_id,
+        trade_id,
+        order.order_side(),
+        order.order_type(),
+        order.quantity(),
+        Price::from("1.00000"),
+        instrument.quote_currency(),
+        LiquiditySide::Maker,
+        None,
+        None,
+    ));
+
+    execution_engine.process(&voided);
+    execution_engine.process(&late_fill);
+
+    let cache = execution_engine.cache().borrow();
+    let cached_order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached_order.status(), OrderStatus::Voided);
+    assert_eq!(cached_order.filled_qty(), Quantity::from(0));
+    assert_eq!(cached_order.voided_qty(), order.quantity());
+    assert!(cache.positions(None, None, None, None, None).is_empty());
+    assert!(
+        cached_order
+            .events()
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_)))
+    );
+}
+
+#[rstest]
 fn test_process_fill_resolved_by_venue_order_id_rewrites_client_order_id_and_preserves_topic_order(
     mut execution_engine: ExecutionEngine,
 ) {

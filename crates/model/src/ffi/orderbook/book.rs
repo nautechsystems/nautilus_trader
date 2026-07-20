@@ -415,15 +415,12 @@ pub extern "C" fn orderbook_check_integrity(book: &OrderBook_API) -> u8 {
     u8::from(book_check_integrity(book).is_ok())
 }
 
+/// # Safety
+///
+/// `v` must uniquely own a valid `Vec<(Price, Quantity)>` allocation transferred from Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn vec_drop_fills(v: CVec) {
-    if v.ptr.is_null() {
-        return;
-    }
-
-    let CVec { ptr, len, cap } = v;
-    let data: Vec<(Price, Quantity)> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<(Price, Quantity)>(), len, cap) };
+pub unsafe extern "C" fn vec_drop_fills(v: CVec) {
+    let data = unsafe { v.into_vec::<(Price, Quantity)>() };
     drop(data); // Memory freed here
 }
 
@@ -434,4 +431,16 @@ pub extern "C" fn orderbook_pprint_to_cstr(
     num_levels: usize,
 ) -> *const c_char {
     str_to_cstr(&book.pprint(num_levels, None))
+}
+
+#[cfg(test)]
+mod cvec_tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_empty_fills_drop_returns_without_panic() {
+        unsafe { vec_drop_fills(CVec::empty()) };
+    }
 }
