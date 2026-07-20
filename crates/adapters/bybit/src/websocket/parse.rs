@@ -50,8 +50,9 @@ use super::{
 use crate::common::{
     enums::{BybitOrderStatus, BybitPositionSide, BybitTimeInForce},
     parse::{
-        get_currency, make_hedge_venue_position_id, parse_book_level, parse_bybit_order_type,
-        parse_millis_timestamp, parse_price_with_precision, parse_quantity_with_precision,
+        bybit_rejection_due_post_only, get_currency, make_hedge_venue_position_id,
+        parse_book_level, parse_bybit_order_type, parse_millis_timestamp,
+        parse_price_with_precision, parse_quantity_with_precision,
     },
 };
 
@@ -780,6 +781,15 @@ pub fn parse_ws_order_status_report(
         }
         BybitOrderStatus::PartiallyFilled => OrderStatus::PartiallyFilled,
         BybitOrderStatus::Filled => OrderStatus::Filled,
+        // A post-only order that would take liquidity is reported as Cancelled with
+        // rejectReason=EC_PostOnlyWillTakeLiquidity (not Rejected). Surface it as Rejected
+        // for consistency with the tracked-order event path.
+        BybitOrderStatus::Canceled
+            if filled_qty.is_zero()
+                && bybit_rejection_due_post_only(order.reject_reason.as_str()) =>
+        {
+            OrderStatus::Rejected
+        }
         BybitOrderStatus::Canceled | BybitOrderStatus::PartiallyFilledCanceled => {
             OrderStatus::Canceled
         }
@@ -1391,6 +1401,28 @@ mod tests {
             "O-20251001-164609-APEX-000-49"
         );
         assert_eq!(report.cancel_reason, Some("UNKNOWN".to_string()));
+    }
+
+    #[rstest]
+    fn parse_ws_order_post_only_cancel_maps_to_rejected() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_order.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let order = msg.data.first_mut().unwrap();
+        order.reject_reason = Ustr::from("EC_PostOnlyWillTakeLiquidity");
+        order.cum_exec_qty = "0".to_string();
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report =
+            parse_ws_order_status_report(&msg.data[0], &instrument, account_id, TS).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(
+            report.cancel_reason,
+            Some("EC_PostOnlyWillTakeLiquidity".to_string())
+        );
     }
 
     #[rstest]

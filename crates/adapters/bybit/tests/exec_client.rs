@@ -246,7 +246,7 @@ async fn handle_get_orders_realtime(
             .and_then(|list| list.first_mut())
             .expect("orders realtime fixture has first order");
         order["orderId"] = json!("test-order-id-12345");
-        order["orderStatus"] = json!("Rejected");
+        order["orderStatus"] = json!("Cancelled");
         order["cumExecQty"] = json!("0");
         order["rejectReason"] = json!("EC_PostOnlyWillTakeLiquidity");
 

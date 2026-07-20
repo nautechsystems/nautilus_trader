@@ -548,29 +548,53 @@ fn dispatch_order_update(
             BybitOrderStatus::Canceled
             | BybitOrderStatus::PartiallyFilledCanceled
             | BybitOrderStatus::Deactivated => {
-                ensure_accepted_emitted(
-                    client_order_id,
-                    account_id,
-                    venue_order_id,
-                    &identity,
-                    emitter,
-                    state,
-                    ts_init,
-                );
-                let canceled = OrderCanceled::new(
-                    emitter.trader_id(),
-                    identity.strategy_id,
-                    identity.instrument_id,
-                    client_order_id,
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    false,
-                    Some(venue_order_id),
-                    Some(account_id),
-                );
-                cleanup_terminal(client_order_id, state);
-                emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                let filled_qty = parse_quantity_with_precision(
+                    &order.cum_exec_qty,
+                    instrument.size_precision(),
+                    "order.cumExecQty",
+                )
+                .unwrap_or_default();
+
+                // Bybit reports a post-only order that would take liquidity as
+                // Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity,
+                // not Rejected. Surface it as OrderRejected carrying due_post_only.
+                if filled_qty.is_zero()
+                    && bybit_rejection_due_post_only(order.reject_reason.as_str())
+                {
+                    cleanup_terminal(client_order_id, state);
+                    emitter.emit_order_rejected_event(
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        order.reject_reason.as_str(),
+                        ts_init,
+                        true,
+                    );
+                } else {
+                    ensure_accepted_emitted(
+                        client_order_id,
+                        account_id,
+                        venue_order_id,
+                        &identity,
+                        emitter,
+                        state,
+                        ts_init,
+                    );
+                    let canceled = OrderCanceled::new(
+                        emitter.trader_id(),
+                        identity.strategy_id,
+                        identity.instrument_id,
+                        client_order_id,
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(venue_order_id),
+                        Some(account_id),
+                    );
+                    cleanup_terminal(client_order_id, state);
+                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
+                }
             }
         }
     } else {
@@ -1239,6 +1263,48 @@ mod tests {
             matches!(event2, ExecutionEvent::Order(OrderEventAny::Canceled(_))),
             "Expected Canceled, found {event2:?}"
         );
+    }
+
+    #[rstest]
+    fn test_dispatch_tracked_post_only_cancel_emits_rejected() {
+        const BYBIT_POST_ONLY_REJECT_REASON: &str = "EC_PostOnlyWillTakeLiquidity";
+
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::default();
+
+        // Bybit reports a post-only order that would take liquidity as
+        // orderStatus=Cancelled with rejectReason=EC_PostOnlyWillTakeLiquidity.
+        let json = load_test_json("ws_account_order.json");
+        let mut msg: crate::websocket::messages::BybitWsAccountOrderMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let order = msg.data.first_mut().expect("fixture has an order");
+        order.reject_reason = Ustr::from(BYBIT_POST_ONLY_REJECT_REASON);
+        order.cum_exec_qty = "0".to_string();
+        let cid = ClientOrderId::new(order.order_link_id.as_str());
+        state.order_identities.insert(cid, default_identity());
+
+        let ws_msg = BybitWsMessage::AccountOrder(msg);
+        dispatch_ws_message(
+            &ws_msg,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            clock,
+        );
+
+        let event = rx.try_recv().unwrap();
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+            panic!("Expected Rejected, found {event:?}");
+        };
+        assert!(rejected.due_post_only);
+        assert_eq!(rejected.reason.as_str(), BYBIT_POST_ONLY_REJECT_REASON);
+        assert_eq!(rejected.client_order_id, cid);
+        assert!(rx.try_recv().is_err(), "expected only a single event");
     }
 
     #[rstest]

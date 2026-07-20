@@ -97,11 +97,12 @@ use crate::common::{
     },
     models::{BybitCursorListResponse, BybitErrorCheck, BybitResponseCheck},
     parse::{
-        bar_spec_to_bybit_interval, make_bybit_symbol, map_time_in_force, parse_account_state,
-        parse_fill_report, parse_funding_rate, parse_inverse_instrument, parse_kline_bar,
-        parse_linear_instrument, parse_option_instrument, parse_order_status_report,
-        parse_orderbook, parse_position_status_report, parse_spot_instrument, parse_trade_tick,
-        spot_leverage, spot_market_unit, trigger_direction,
+        bar_spec_to_bybit_interval, bybit_rejection_due_post_only, make_bybit_symbol,
+        map_time_in_force, parse_account_state, parse_fill_report, parse_funding_rate,
+        parse_inverse_instrument, parse_kline_bar, parse_linear_instrument,
+        parse_option_instrument, parse_order_status_report, parse_orderbook,
+        parse_position_status_report, parse_spot_instrument, parse_trade_tick, spot_leverage,
+        spot_market_unit, trigger_direction,
     },
     symbol::BybitSymbol,
     urls::bybit_http_base_url,
@@ -2567,10 +2568,13 @@ impl BybitHttpClient {
             .map_err(|source| BybitSubmitOrderError::PostSubmitLookup { source })?;
 
         // Only bail on rejection if there are no fills
-        // If the order has fills (cum_exec_qty > 0), let the parser remap Rejected -> Canceled
-        if order.order_status == crate::common::enums::BybitOrderStatus::Rejected
-            && (order.cum_exec_qty.as_str() == "0" || order.cum_exec_qty.is_empty())
-        {
+        // If the order has fills (cum_exec_qty > 0), let the parser remap Rejected -> Canceled.
+        // A post-only order that would take liquidity is reported as Cancelled with
+        // rejectReason=EC_PostOnlyWillTakeLiquidity (not Rejected), so treat that as a rejection too.
+        let is_rejection = order.order_status == crate::common::enums::BybitOrderStatus::Rejected
+            || (order.order_status == crate::common::enums::BybitOrderStatus::Canceled
+                && bybit_rejection_due_post_only(order.reject_reason.as_str()));
+        if is_rejection && (order.cum_exec_qty.as_str() == "0" || order.cum_exec_qty.is_empty()) {
             return Err(BybitSubmitOrderError::Rejected {
                 reason: order.reject_reason.to_string(),
             }
