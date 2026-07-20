@@ -563,6 +563,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                                 }
 
                                 let transient_hit = transient.iter().any(|cid| cid == &condition_id);
+
                                 if attempt < NEW_MARKET_EMPTY_RECHECK_MAX_ATTEMPTS {
                                     attempt += 1;
                                     let reason = if transient_hit {

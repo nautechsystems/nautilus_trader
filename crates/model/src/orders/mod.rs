@@ -1174,6 +1174,7 @@ impl OrderCore {
                     .and_then(|event| event.commission_voided)
                     .filter(|voided| !voided.is_zero())
                     .map_or(commission, |voided| commission - voided);
+
                 if !surviving.is_zero() {
                     commissions
                         .entry(surviving.currency)

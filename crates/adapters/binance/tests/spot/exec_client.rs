@@ -759,6 +759,7 @@ async fn handle_account_trades(
     let from_id = query
         .get("fromId")
         .and_then(|value| value.parse::<i64>().ok());
+
     if let Some(captured_queries) = &state.captured_queries {
         captured_queries
             .lock()

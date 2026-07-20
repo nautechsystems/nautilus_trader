@@ -355,6 +355,7 @@ nautilus_strategy!(HurstVpinDirectional, {
             .cache()
             .order(&event.client_order_id)
             .is_some_and(|o| o.is_closed());
+
         if closed {
             self.clear_latch_for(event.client_order_id);
         }

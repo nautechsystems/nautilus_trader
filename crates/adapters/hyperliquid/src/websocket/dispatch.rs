@@ -510,6 +510,7 @@ impl WsDispatchState {
         chain
             .intents
             .retain(|intent| intent.generation != generation);
+
         if let Some(old) = removed_front_old
             && let Some(new_front) = chain.intents.front_mut()
         {

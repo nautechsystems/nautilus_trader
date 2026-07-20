@@ -636,6 +636,7 @@ impl DydxExecutionClient {
                                         let is_expiry = report
                                             .expire_time
                                             .is_some_and(|exp| report.ts_last >= exp);
+
                                         if is_expiry {
                                             let expired = OrderExpired::new(
                                                 trader_id,

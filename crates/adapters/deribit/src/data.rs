@@ -1101,6 +1101,7 @@ impl DataClient for DeribitDataClient {
                 .load()
                 .get(&instrument_id)
                 .is_some_and(|inst| matches!(inst, InstrumentAny::CryptoPerpetual(_)));
+
             if !is_perpetual {
                 log::warn!(
                     "Funding rates subscription rejected for {instrument_id}: only available for perpetual instruments"

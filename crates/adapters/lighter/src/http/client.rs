@@ -1051,6 +1051,7 @@ impl LighterHttpClient {
             for bar in page {
                 let bar_start_ms = i64::try_from(bar.ts_event.as_u64() / 1_000_000)
                     .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+
                 if bar_start_ms < cursor_ms
                     || bar_start_ms >= end_ms
                     || bar_start_ms.saturating_add(interval_ms) > now_ms
@@ -1196,6 +1197,7 @@ impl LighterHttpClient {
                     .map_err(LighterHttpError::from)?;
                 let timestamp_ms = i64::try_from(update.ts_event.as_u64() / 1_000_000)
                     .map_err(|e| LighterHttpError::Parse(e.to_string()))?;
+
                 if timestamp_ms < cursor_ms || timestamp_ms > end_ms {
                     continue;
                 }

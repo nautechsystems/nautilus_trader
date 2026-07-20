@@ -251,6 +251,7 @@ impl OrderManager {
             .borrow()
             .order(&expired.client_order_id)
             .map(|o| o.clone());
+
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 return self.handle_contingencies(&order);
@@ -272,6 +273,7 @@ impl OrderManager {
             .borrow()
             .order(&updated.client_order_id)
             .map(|o| o.clone());
+
         if let Some(order) = cloned_order {
             if order.contingency_type() != Some(ContingencyType::NoContingency) {
                 return self.handle_contingencies_update(&order);

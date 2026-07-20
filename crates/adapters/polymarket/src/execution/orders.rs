@@ -664,6 +664,7 @@ impl PolymarketExecutionClient {
             .cache()
             .order(&cmd.client_order_id)
             .map(|o| o.clone());
+
         if let Some(order) = order {
             let venue_order_id = order.venue_order_id();
             let ts_now = self.clock.get_time_ns();

@@ -379,6 +379,7 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
                 in_string = !in_string;
                 current.push(c);
             }
+
             '-' if !in_string && chars.peek() == Some(&'-') => {
                 for next in chars.by_ref() {
                     if next == '\n' {
@@ -387,6 +388,7 @@ fn split_sql_statements(sql: &str) -> Vec<String> {
                     }
                 }
             }
+
             ';' if !in_string => {
                 let trimmed = current.trim();
                 if !trimmed.is_empty() {

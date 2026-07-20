@@ -704,6 +704,7 @@ impl OrderMatchingEngine {
                     .borrow()
                     .order(&client_order_id)
                     .is_some_and(|o| o.order_side() == deleted_side);
+
                 if matches_side {
                     self.reduce_queue_ahead(client_order_id, order_price_raw, ahead_raw, 0);
                 }
@@ -1223,6 +1224,7 @@ impl OrderMatchingEngine {
                 .borrow()
                 .order(&client_order_id)
                 .map(|o| o.clone());
+
             if let Some(order) = order
                 && (order.is_inflight() || order.is_open())
             {
@@ -3696,6 +3698,7 @@ impl OrderMatchingEngine {
             .borrow()
             .order(&client_order_id)
             .map(|o| o.clone());
+
         if let Some(mut updated_order) = updated_order {
             self.accept_order(&mut updated_order);
         }

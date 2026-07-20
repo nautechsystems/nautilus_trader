@@ -2087,6 +2087,7 @@ impl DataClient for BinanceFuturesDataClient {
                 }
             })
             .is_ok_and(|prev| prev == 1);
+
         if should_unsubscribe {
             self.spawn_liquidation_stream_reconcile("all-market forceOrder unsubscribe");
         }
