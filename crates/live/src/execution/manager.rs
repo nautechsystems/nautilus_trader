@@ -166,6 +166,24 @@ struct RetainedFillState {
     netting_lifecycle_starts: IndexMap<(AccountId, InstrumentId, StrategyId), UnixNanos>,
 }
 
+#[derive(Default)]
+struct ReconciliationFillQueue {
+    pending_fill_keys: IndexSet<FillKey>,
+    event_fill_keys: IndexMap<UUID4, FillKey>,
+}
+
+impl ReconciliationFillQueue {
+    fn push(&mut self, events: &mut Vec<OrderEventAny>, event: OrderEventAny, fill_key: FillKey) {
+        let OrderEventAny::Filled(fill) = &event else {
+            unreachable!("reported fills always create filled events");
+        };
+
+        self.pending_fill_keys.insert(fill_key);
+        self.event_fill_keys.insert(fill.event_id, fill_key);
+        events.push(event);
+    }
+}
+
 /// Configuration for execution manager.
 #[expect(
     clippy::struct_excessive_bools,
@@ -310,7 +328,7 @@ pub struct ExecutionManager {
     config: ExecutionManagerConfig,
     inflight_checks: IndexMap<ClientOrderId, InflightCheck>,
     external_order_claims: IndexMap<InstrumentId, StrategyId>,
-    processed_fills: IndexMap<FillKey, ClientOrderId>,
+    processed_fills: RecencyMap<FillKey>,
     recon_check_retries: IndexMap<ClientOrderId, u32>,
     order_query_recency: RecencyMap<ClientOrderId>,
     order_local_activity: RecencyMap<ClientOrderId>,
@@ -349,7 +367,7 @@ impl ExecutionManager {
             config,
             inflight_checks: IndexMap::new(),
             external_order_claims: IndexMap::new(),
-            processed_fills: IndexMap::new(),
+            processed_fills: RecencyMap::default(),
             recon_check_retries: IndexMap::new(),
             order_query_recency: RecencyMap::default(),
             order_local_activity: RecencyMap::default(),
@@ -464,6 +482,7 @@ impl ExecutionManager {
         let mut orders_skipped_no_instrument = 0usize;
         let mut orders_skipped_duplicate = 0usize;
         let mut fills_applied = 0usize;
+        let mut fill_queue = ReconciliationFillQueue::default();
 
         let fill_reports = &adjusted_fill_reports;
         let mut seen_fill_keys: IndexSet<FillKey> = IndexSet::new();
@@ -546,6 +565,7 @@ impl ExecutionManager {
                         report,
                         &order_fills,
                         instrument.as_ref(),
+                        &mut fill_queue,
                     );
 
                     if !order_events.is_empty() {
@@ -589,6 +609,7 @@ impl ExecutionManager {
                         report,
                         &order_fills,
                         instrument.as_ref(),
+                        &mut fill_queue,
                     );
 
                     if !order_events.is_empty() {
@@ -619,6 +640,7 @@ impl ExecutionManager {
                             &instrument,
                             &order_fills,
                             false, // Not synthetic (venue order)
+                            Some(&mut fill_queue),
                         );
 
                         if !external_events.is_empty() {
@@ -664,6 +686,7 @@ impl ExecutionManager {
                     report,
                     &order_fills,
                     instrument.as_ref(),
+                    &mut fill_queue,
                 );
 
                 if !order_events.is_empty() {
@@ -696,6 +719,7 @@ impl ExecutionManager {
                     &instrument,
                     &order_fills,
                     is_synthetic,
+                    Some(&mut fill_queue),
                 );
 
                 if !external_events.is_empty() {
@@ -781,9 +805,14 @@ impl ExecutionManager {
                     sorted_fills.sort_by_key(|f| f.ts_event);
 
                     for fill in sorted_fills {
-                        if let Some(event) = self.create_order_fill(&order, fill, &instrument) {
+                        if let Some((event, fill_key)) = self.create_order_fill(
+                            &order,
+                            fill,
+                            &instrument,
+                            &fill_queue.pending_fill_keys,
+                        ) {
                             fills_applied += 1;
-                            events.push(event);
+                            fill_queue.push(&mut events, event, fill_key);
                         }
                     }
                 }
@@ -818,6 +847,22 @@ impl ExecutionManager {
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
             } else {
                 exec_engine.borrow_mut().process(event);
+            }
+
+            if let OrderEventAny::Filled(fill) = event
+                && let Some(fill_key) = fill_queue.event_fill_keys.get(&fill.event_id).copied()
+            {
+                let order = self
+                    .get_order(fill.client_order_id)
+                    .or_else(|| self.get_order_by_venue_order_id(fill.venue_order_id));
+
+                if order.is_some_and(|order| {
+                    order.account_id() == Some(fill_key.0)
+                        && order.instrument_id() == fill_key.1
+                        && order.trade_ids().contains(&&fill_key.2)
+                }) {
+                    self.processed_fills.mark(fill_key);
+                }
             }
         }
 
@@ -2027,7 +2072,7 @@ impl ExecutionManager {
     ///
     /// Updates performed per report variant:
     /// - `Order`: clears inflight tracking and records local activity
-    /// - `Fill`: marks fill as processed, records order and position activity
+    /// - `Fill`: records order and position activity without marking the fill as processed
     /// - `OrderWithFills`: clears inflight tracking, records local activity, records position activity per fill
     /// - `Position`: records position activity
     /// - `MassStatus`: no-op (handled separately via startup reconciliation)
@@ -2138,6 +2183,19 @@ impl ExecutionManager {
         };
 
         self.recent_fills_cache.prune_older_than(ttl);
+    }
+
+    /// Prunes committed mass-reconciliation fills outside the startup report window.
+    ///
+    /// An unbounded startup lookback requires indefinite retention because no finite
+    /// horizon can safely exclude a replayed fill report.
+    pub fn prune_processed_fills(&mut self) {
+        let Some(lookback_mins) = self.config.lookback_mins else {
+            return;
+        };
+
+        let ttl = Duration::from_mins(lookback_mins).max(Duration::from_mins(1));
+        self.processed_fills.prune_older_than(ttl);
     }
 
     /// Purges closed orders from the cache that are older than the configured buffer.
@@ -2515,6 +2573,7 @@ impl ExecutionManager {
                                 &instrument,
                                 &[],
                                 true,
+                                None,
                             );
                             events
                         })
@@ -2549,7 +2608,7 @@ impl ExecutionManager {
     /// fills: close existing position then open new position in opposite direction.
     #[expect(clippy::too_many_arguments)]
     fn reconcile_cross_zero_position(
-        &mut self,
+        &self,
         instrument: &InstrumentAny,
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -2617,7 +2676,7 @@ impl ExecutionManager {
             );
 
             let (close_events, _) =
-                self.handle_external_order(&close_report, account_id, instrument, &[], true);
+                self.handle_external_order(&close_report, account_id, instrument, &[], true, None);
             all_events.extend(close_events);
         } else {
             log::warn!("Cannot close position for {instrument_id}: no cached average price");
@@ -2674,7 +2733,7 @@ impl ExecutionManager {
             );
 
             let (open_events, _) =
-                self.handle_external_order(&open_report, account_id, instrument, &[], true);
+                self.handle_external_order(&open_report, account_id, instrument, &[], true, None);
             all_events.extend(open_events);
         } else {
             log::warn!("Cannot open new position for {instrument_id}: no venue average price");
@@ -2689,7 +2748,7 @@ impl ExecutionManager {
     /// This handles the case where the venue reports an open position but there are
     /// no order or fill reports to create it from (e.g., orders are already closed).
     fn create_position_from_report(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
         instrument: &InstrumentAny,
@@ -2755,12 +2814,12 @@ impl ExecutionManager {
         );
 
         let (events, _) =
-            self.handle_external_order(&order_report, account_id, instrument, &[], true);
+            self.handle_external_order(&order_report, account_id, instrument, &[], true, None);
         Some(events)
     }
 
     fn reconcile_position_report(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
         instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
@@ -2779,7 +2838,7 @@ impl ExecutionManager {
     }
 
     fn reconcile_position_report_hedging(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
         instruments_with_unattributed_fills: &IndexSet<InstrumentId>,
@@ -2868,7 +2927,7 @@ impl ExecutionManager {
     }
 
     fn reconcile_hedge_position_discrepancy(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
         position: &Position,
@@ -2914,7 +2973,7 @@ impl ExecutionManager {
     }
 
     fn reconcile_missing_hedge_position(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
     ) -> Option<Vec<OrderEventAny>> {
@@ -2947,7 +3006,7 @@ impl ExecutionManager {
     }
 
     fn reconcile_position_report_netting(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
     ) -> Option<Vec<OrderEventAny>> {
@@ -3053,7 +3112,7 @@ impl ExecutionManager {
     }
 
     fn create_position_reconciliation_order(
-        &mut self,
+        &self,
         report: &PositionStatusReport,
         account_id: AccountId,
         instrument: &InstrumentAny,
@@ -3124,7 +3183,7 @@ impl ExecutionManager {
         );
 
         let (events, _) =
-            self.handle_external_order(&order_report, account_id, instrument, &[], true);
+            self.handle_external_order(&order_report, account_id, instrument, &[], true, None);
         Some(events)
     }
 
@@ -3140,11 +3199,12 @@ impl ExecutionManager {
 
     /// Reconciles an order with its associated fills atomically.
     fn reconcile_order_with_fills(
-        &mut self,
+        &self,
         order: &OrderAny,
         report: &OrderStatusReport,
         fills: &[&FillReport],
         instrument: Option<&InstrumentAny>,
+        fill_queue: &mut ReconciliationFillQueue,
     ) -> Vec<OrderEventAny> {
         let mut events = Vec::new();
         let mut working = order.clone();
@@ -3189,7 +3249,9 @@ impl ExecutionManager {
 
         if let Some(inst) = instrument {
             for fill in sorted_fills {
-                let Some(event) = self.create_order_fill(&working, fill, inst) else {
+                let Some((event, fill_key)) =
+                    self.create_order_fill(&working, fill, inst, &fill_queue.pending_fill_keys)
+                else {
                     continue;
                 };
 
@@ -3200,7 +3262,7 @@ impl ExecutionManager {
                     );
                     return events;
                 }
-                events.push(event);
+                fill_queue.push(&mut events, event, fill_key);
             }
         }
 
@@ -3221,12 +3283,13 @@ impl ExecutionManager {
     }
 
     fn handle_external_order(
-        &mut self,
+        &self,
         report: &OrderStatusReport,
         account_id: AccountId,
         instrument: &InstrumentAny,
         fills: &[&FillReport],
         is_synthetic: bool,
+        mut fill_queue: Option<&mut ReconciliationFillQueue>,
     ) -> (Vec<OrderEventAny>, Option<ExternalOrderMetadata>) {
         let (strategy_id, tags) =
             if let Some(claimed_strategy) = self.external_order_claims.get(&report.instrument_id) {
@@ -3405,11 +3468,18 @@ impl ExecutionManager {
                     let mut real_fill_total = Decimal::ZERO;
 
                     for fill in &sorted_fills {
-                        if let Some(fill_event) =
-                            self.create_order_fill(&cached_order, fill, instrument)
-                        {
+                        let fill_queue = fill_queue
+                            .as_deref_mut()
+                            .expect("real report fills require reconciliation queue state");
+
+                        if let Some((fill_event, fill_key)) = self.create_order_fill(
+                            &cached_order,
+                            fill,
+                            instrument,
+                            &fill_queue.pending_fill_keys,
+                        ) {
                             real_fill_total += fill.last_qty.as_decimal();
-                            order_events.push(fill_event);
+                            fill_queue.push(&mut order_events, fill_event, fill_key);
                         }
                     }
 
@@ -3624,20 +3694,18 @@ impl ExecutionManager {
     }
 
     fn create_order_fill(
-        &mut self,
+        &self,
         order: &OrderAny,
         fill: &FillReport,
         instrument: &InstrumentAny,
-    ) -> Option<OrderEventAny> {
+        pending_fill_keys: &IndexSet<FillKey>,
+    ) -> Option<(OrderEventAny, FillKey)> {
         let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
-        if self.processed_fills.contains_key(&fill_key) {
+        if self.processed_fills.contains_key(&fill_key) || pending_fill_keys.contains(&fill_key) {
             return None;
         }
 
-        self.processed_fills
-            .insert(fill_key, order.client_order_id());
-
-        Some(OrderEventAny::Filled(OrderFilled::new(
+        let event = OrderEventAny::Filled(OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -3658,7 +3726,9 @@ impl ExecutionManager {
             fill.venue_position_id,
             Some(fill.commission),
             None,
-        )))
+        ));
+
+        Some((event, fill_key))
     }
 }
 
@@ -3903,7 +3973,7 @@ mod tests {
     fn test_mass_status_projects_companion_fill_before_void_correction() {
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
-        let mut manager =
+        let manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default());
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         let client_order_id = ClientOrderId::from("O-MASS-VOID-001");
@@ -3968,11 +4038,13 @@ mod tests {
             None,
         );
 
+        let mut fill_queue = ReconciliationFillQueue::default();
         let events = manager.reconcile_order_with_fills(
             &order,
             &report,
             &[&companion_fill],
             Some(&instrument),
+            &mut fill_queue,
         );
         let mut projected = order;
         for event in &events {

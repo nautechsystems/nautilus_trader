@@ -1240,6 +1240,7 @@ impl LiveNode {
 
                     if now >= prune_fills_next {
                         self.exec_manager.prune_recent_fills_cache(60.0);
+                        self.exec_manager.prune_processed_fills();
                         prune_fills_next = now + prune_fills_interval;
                     }
 

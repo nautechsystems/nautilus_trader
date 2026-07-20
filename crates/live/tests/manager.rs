@@ -315,6 +315,47 @@ fn create_order_status_report_for_side(
     .with_price(Price::from("3000.00"))
 }
 
+fn create_fill_report(
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    instrument_id: InstrumentId,
+    trade_id: TradeId,
+    quantity: &str,
+) -> FillReport {
+    FillReport::new(
+        test_account_id(),
+        instrument_id,
+        venue_order_id,
+        trade_id,
+        OrderSide::Buy,
+        Quantity::from(quantity),
+        Price::from("3000.00"),
+        Money::from("0.50 USDT"),
+        LiquiditySide::Maker,
+        Some(client_order_id),
+        None,
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+    )
+}
+
+fn create_mass_status(
+    order_reports: Vec<OrderStatusReport>,
+    fill_reports: Vec<FillReport>,
+) -> ExecutionMassStatus {
+    let mut mass_status = ExecutionMassStatus::new(
+        test_client_id(),
+        test_account_id(),
+        test_venue(),
+        UnixNanos::default(),
+        Some(UUID4::new()),
+    );
+    mass_status.add_order_reports(order_reports);
+    mass_status.add_fill_reports(fill_reports);
+    mass_status
+}
+
 #[rstest]
 fn test_fill_deduplication_new_fill_not_processed() {
     let ctx = TestContext::new();
@@ -565,8 +606,8 @@ async fn test_observe_pending_order_report_keeps_inflight_tracking() {
 
 #[rstest]
 fn test_observe_fill_report_does_not_mark_fill_processed() {
-    // Fill dedup marking is deferred to node.rs after dispatch to avoid
-    // permanently losing fills when the execution engine cannot apply them
+    // Incoming fill reports record activity only. Normal-live fill dedup marking
+    // follows the separate order-event observation path.
     let mut ctx = TestContext::new();
     let instrument_id = test_instrument_id();
     let trade_id = TradeId::from("T-001");
@@ -593,8 +634,7 @@ fn test_observe_fill_report_does_not_mark_fill_processed() {
 
     ctx.manager.observe_execution_report(&report);
 
-    // observe_execution_report should NOT mark fills as processed;
-    // that happens post-dispatch in the event loop
+    // observe_execution_report should not mark fills as processed.
     assert!(
         !ctx.manager
             .is_fill_recently_processed(test_account_id(), instrument_id, trade_id)
@@ -1774,6 +1814,536 @@ async fn test_reconcile_mass_status_deduplicates_fills() {
 
     // Only one fill should be processed
     assert_eq!(result.events.len(), 1);
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_rejected_reconciliation_fill_is_retried() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-REJECT-RETRY");
+    let venue_order_id = VenueOrderId::from("V-REJECT-RETRY");
+    let retry_client_order_id = ClientOrderId::from("O-REJECT-RETRY-2");
+    let retry_venue_order_id = VenueOrderId::from("V-REJECT-RETRY-2");
+    let trade_id = TradeId::from("T-REJECT-RETRY");
+
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let mut order = create_accepted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "2.0",
+        "3000.00",
+        venue_order_id,
+    );
+    let existing_fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(trade_id),
+        None,
+        Some(Price::from("3000.00")),
+        Some(Quantity::from("1.0")),
+        Some(LiquiditySide::Maker),
+        None,
+        None,
+        Some(test_account_id()),
+    );
+    order.apply(existing_fill).unwrap();
+    ctx.add_order(order);
+
+    let rejected_report = create_order_status_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("2.0"),
+        Quantity::from("2.0"),
+    );
+    let rejected_fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        trade_id,
+        "1.0",
+    );
+    let rejected = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(vec![rejected_report], vec![rejected_fill]),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    assert!(
+        rejected
+            .events
+            .iter()
+            .all(|event| !matches!(event, OrderEventAny::Filled(_)))
+    );
+
+    ctx.add_order(create_accepted_order(
+        retry_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        retry_venue_order_id,
+    ));
+    let retry_fill = create_fill_report(
+        retry_client_order_id,
+        retry_venue_order_id,
+        instrument_id,
+        trade_id,
+        "1.0",
+    );
+    let retry = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(vec![], vec![retry_fill]),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert_eq!(
+        retry
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    assert!(
+        ctx.get_order(&retry_client_order_id)
+            .unwrap()
+            .trade_ids()
+            .contains(&&trade_id)
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_reconciliation_fill_dispatch_rejection_does_not_commit() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-DISPATCH-RETRY");
+    let venue_order_id = VenueOrderId::from("V-DISPATCH-RETRY");
+    let trade_id = TradeId::from("T-DISPATCH-RETRY");
+
+    ctx.add_instrument(test_instrument());
+    ctx.add_order(create_limit_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+    ));
+
+    let fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        trade_id,
+        "1.0",
+    );
+    // An orphan report queues without the order-report working.apply projection.
+    let rejected = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(vec![], vec![fill.clone()]),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert_eq!(
+        rejected
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    assert!(
+        !ctx.get_order(&client_order_id)
+            .unwrap()
+            .trade_ids()
+            .contains(&&trade_id)
+    );
+
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+    let order = ctx.cache.borrow_mut().update_order(&submitted).unwrap();
+    let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let retry = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(vec![], vec![fill]),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert_eq!(
+        retry
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    assert!(
+        ctx.get_order(&client_order_id)
+            .unwrap()
+            .trade_ids()
+            .contains(&&trade_id)
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_applied_reconciliation_fill_is_committed() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-COMMITTED");
+    let first_client_order_id = ClientOrderId::from("O-COMMITTED-1");
+    let first_venue_order_id = VenueOrderId::from("V-COMMITTED-1");
+    let second_client_order_id = ClientOrderId::from("O-COMMITTED-2");
+    let second_venue_order_id = VenueOrderId::from("V-COMMITTED-2");
+
+    ctx.add_instrument(test_instrument());
+    ctx.add_order(create_accepted_order(
+        first_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        first_venue_order_id,
+    ));
+    ctx.add_order(create_accepted_order(
+        second_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        second_venue_order_id,
+    ));
+
+    let first = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    first_client_order_id,
+                    first_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    assert_eq!(first.events.len(), 1);
+
+    let duplicate = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    second_client_order_id,
+                    second_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert!(duplicate.events.is_empty());
+    assert!(
+        ctx.get_order(&second_client_order_id)
+            .unwrap()
+            .trade_ids()
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_same_cycle_cross_order_fill_is_queued_once() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-CROSS-ORDER");
+    let first_client_order_id = ClientOrderId::from("O-CROSS-ORDER-1");
+    let first_venue_order_id = VenueOrderId::from("V-CROSS-ORDER-1");
+    let second_client_order_id = ClientOrderId::from("O-CROSS-ORDER-2");
+    let second_venue_order_id = VenueOrderId::from("V-CROSS-ORDER-2");
+
+    ctx.add_instrument(test_instrument());
+    ctx.add_order(create_accepted_order(
+        first_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        first_venue_order_id,
+    ));
+    ctx.add_order(create_accepted_order(
+        second_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        second_venue_order_id,
+    ));
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![
+                    create_fill_report(
+                        first_client_order_id,
+                        first_venue_order_id,
+                        instrument_id,
+                        trade_id,
+                        "1.0",
+                    ),
+                    create_fill_report(
+                        second_client_order_id,
+                        second_venue_order_id,
+                        instrument_id,
+                        trade_id,
+                        "1.0",
+                    ),
+                ],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert_eq!(
+        result
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    let applied_orders = [first_client_order_id, second_client_order_id]
+        .iter()
+        .filter(|client_order_id| {
+            ctx.get_order(client_order_id)
+                .unwrap()
+                .trade_ids()
+                .contains(&&trade_id)
+        })
+        .count();
+    assert_eq!(applied_orders, 1);
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_inferred_fill_is_not_committed_as_reported_fill() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let external_venue_order_id = VenueOrderId::from("V-INFERRED-SOURCE");
+    ctx.add_instrument(test_instrument());
+
+    let order_report = create_order_status_report(
+        None,
+        external_venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("2.0"),
+        Quantity::from("2.0"),
+    )
+    .with_avg_px(3000.0)
+    .unwrap();
+    let real_trade_id = TradeId::from("T-INFERRED-SOURCE");
+    let source = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![order_report],
+                vec![create_fill_report(
+                    ClientOrderId::from(external_venue_order_id.as_str()),
+                    external_venue_order_id,
+                    instrument_id,
+                    real_trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    let inferred_trade_id = source
+        .events
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.trade_id != real_trade_id => Some(fill.trade_id),
+            _ => None,
+        })
+        .expect("expected inferred fill");
+
+    let client_order_id = ClientOrderId::from("O-INFERRED-REUSE");
+    let venue_order_id = VenueOrderId::from("V-INFERRED-REUSE");
+    ctx.add_order(create_accepted_order(
+        client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        venue_order_id,
+    ));
+    let reused = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    client_order_id,
+                    venue_order_id,
+                    instrument_id,
+                    inferred_trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+
+    assert_eq!(reused.events.len(), 1);
+    assert!(matches!(reused.events[0], OrderEventAny::Filled(_)));
+}
+
+#[rstest]
+#[case(Some(0), 60, true)]
+#[case(Some(2), 120, true)]
+#[case(None, 86_400, false)]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_processed_fill_retention(
+    #[case] lookback_mins: Option<u64>,
+    #[case] horizon_secs: u64,
+    #[case] prunes_past_horizon: bool,
+) {
+    let config = ExecutionManagerConfig {
+        lookback_mins,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument_id = test_instrument_id();
+    let trade_id = TradeId::from("T-RETENTION");
+    let first_client_order_id = ClientOrderId::from("O-RETENTION-1");
+    let first_venue_order_id = VenueOrderId::from("V-RETENTION-1");
+    let second_client_order_id = ClientOrderId::from("O-RETENTION-2");
+    let second_venue_order_id = VenueOrderId::from("V-RETENTION-2");
+
+    ctx.add_instrument(test_instrument());
+    ctx.add_order(create_accepted_order(
+        first_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        first_venue_order_id,
+    ));
+    ctx.add_order(create_accepted_order(
+        second_client_order_id.as_str(),
+        instrument_id,
+        OrderSide::Buy,
+        "1.0",
+        "3000.00",
+        second_venue_order_id,
+    ));
+
+    let first = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    first_client_order_id,
+                    first_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    assert_eq!(first.events.len(), 1);
+
+    ctx.advance_both(dst::time::Duration::from_secs(horizon_secs))
+        .await;
+    ctx.manager.prune_processed_fills();
+    let at_horizon = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    second_client_order_id,
+                    second_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    assert!(at_horizon.events.is_empty());
+
+    ctx.advance_both(dst::time::Duration::from_nanos(1)).await;
+    ctx.manager.prune_processed_fills();
+    let past_horizon = ctx
+        .manager
+        .reconcile_execution_mass_status(
+            create_mass_status(
+                vec![],
+                vec![create_fill_report(
+                    second_client_order_id,
+                    second_venue_order_id,
+                    instrument_id,
+                    trade_id,
+                    "1.0",
+                )],
+            ),
+            ctx.exec_engine.clone(),
+        )
+        .await;
+    assert_eq!(past_horizon.events.len(), usize::from(prunes_past_horizon));
 }
 
 #[rstest]
