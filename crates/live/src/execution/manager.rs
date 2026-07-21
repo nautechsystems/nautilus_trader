@@ -87,6 +87,52 @@ static TAG_RECONCILIATION: LazyLock<Ustr> = LazyLock::new(|| Ustr::from("RECONCI
 pub type InstrumentAccountKey = (InstrumentId, AccountId);
 type FillKey = (AccountId, InstrumentId, TradeId);
 
+#[expect(clippy::too_many_arguments)]
+fn build_cross_zero_leg_report(
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    order_side: OrderSide,
+    quantity: Decimal,
+    avg_px: Decimal,
+    tag: &str,
+    ts_now: UnixNanos,
+    venue_ts_last: UnixNanos,
+) -> Option<OrderStatusReport> {
+    let order_qty = Quantity::from_decimal_dp(quantity, instrument.size_precision()).ok()?;
+    let fill_price = Price::from_decimal_dp(avg_px, instrument.price_precision()).ok();
+    let venue_order_id = create_position_reconciliation_venue_order_id(
+        account_id,
+        instrument_id,
+        order_side,
+        OrderType::Market,
+        order_qty,
+        fill_price,
+        None,
+        Some(tag),
+        venue_ts_last,
+    );
+
+    OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        None,
+        venue_order_id,
+        order_side,
+        OrderType::Market,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        order_qty,
+        order_qty,
+        ts_now,
+        ts_now,
+        ts_now,
+        None,
+    )
+    .with_avg_px(avg_px.to_f64().unwrap_or(0.0))
+    .ok()
+}
+
 /// Execution clients responsible for reporting one cached entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReportClientCoverage {
@@ -2657,66 +2703,12 @@ impl ExecutionManager {
             "Position crosses zero for {instrument_id}: cached={cached_signed_qty}, venue={venue_signed_qty}. Splitting into two fills",
         );
 
-        let mut all_events = Vec::new();
-
-        // Close existing position first
         let close_qty = cached_signed_qty.abs();
         let close_side = if cached_signed_qty < Decimal::ZERO {
             OrderSide::Buy // Close short by buying
         } else {
             OrderSide::Sell // Close long by selling
         };
-
-        if let Some(close_px) = cached_avg_px {
-            let close_order_qty =
-                Quantity::from_decimal_dp(close_qty, instrument.size_precision()).ok()?;
-            let close_fill_price =
-                Price::from_decimal_dp(close_px, instrument.price_precision()).ok();
-            let close_venue_order_id = create_position_reconciliation_venue_order_id(
-                account_id,
-                instrument_id,
-                close_side,
-                OrderType::Market,
-                close_order_qty,
-                close_fill_price,
-                None,
-                Some("CLOSE"),
-                venue_ts_last,
-            );
-
-            let close_report = OrderStatusReport::new(
-                account_id,
-                instrument_id,
-                None,
-                close_venue_order_id,
-                close_side,
-                OrderType::Market,
-                TimeInForce::Gtc,
-                OrderStatus::Filled,
-                close_order_qty,
-                close_order_qty,
-                ts_now,
-                ts_now,
-                ts_now,
-                None,
-            )
-            .with_avg_px(close_px.to_f64().unwrap_or(0.0))
-            .ok()?;
-
-            log::info!(
-                color = LogColor::Blue as u8;
-                "Generating close fill for cross-zero {instrument_id}: side={close_side:?}, qty={close_qty}, px={close_px}",
-            );
-
-            let (close_events, _) =
-                self.handle_external_order(&close_report, account_id, instrument, &[], true, None);
-            all_events.extend(close_events);
-        } else {
-            log::warn!("Cannot close position for {instrument_id}: no cached average price");
-            return None;
-        }
-
-        // Then open new position in opposite direction
         let open_qty = venue_signed_qty.abs();
         let open_side = if venue_signed_qty > Decimal::ZERO {
             OrderSide::Buy // Open long
@@ -2724,42 +2716,51 @@ impl ExecutionManager {
             OrderSide::Sell // Open short
         };
 
-        if let Some(open_px) = venue_avg_px {
-            let open_order_qty =
-                Quantity::from_decimal_dp(open_qty, instrument.size_precision()).ok()?;
-            let open_fill_price =
-                Price::from_decimal_dp(open_px, instrument.price_precision()).ok();
-            let open_venue_order_id = create_position_reconciliation_venue_order_id(
-                account_id,
-                instrument_id,
-                open_side,
-                OrderType::Market,
-                open_order_qty,
-                open_fill_price,
-                None,
-                Some("OPEN"),
-                venue_ts_last,
-            );
+        let Some(close_px) = cached_avg_px else {
+            log::warn!("Cannot close position for {instrument_id}: no cached average price");
+            return None;
+        };
 
-            let open_report = OrderStatusReport::new(
-                account_id,
-                instrument_id,
-                None,
-                open_venue_order_id,
-                open_side,
-                OrderType::Market,
-                TimeInForce::Gtc,
-                OrderStatus::Filled,
-                open_order_qty,
-                open_order_qty,
-                ts_now,
-                ts_now,
-                ts_now,
-                None,
-            )
-            .with_avg_px(open_px.to_f64().unwrap_or(0.0))
-            .ok()?;
+        let open_report = match venue_avg_px {
+            Some(open_px) => Some((
+                build_cross_zero_leg_report(
+                    instrument,
+                    account_id,
+                    instrument_id,
+                    open_side,
+                    open_qty,
+                    open_px,
+                    "OPEN",
+                    ts_now,
+                    venue_ts_last,
+                )?,
+                open_px,
+            )),
+            None => None,
+        };
 
+        let close_report = build_cross_zero_leg_report(
+            instrument,
+            account_id,
+            instrument_id,
+            close_side,
+            close_qty,
+            close_px,
+            "CLOSE",
+            ts_now,
+            venue_ts_last,
+        )?;
+
+        log::info!(
+            color = LogColor::Blue as u8;
+            "Generating close fill for cross-zero {instrument_id}: side={close_side:?}, qty={close_qty}, px={close_px}",
+        );
+
+        let (close_events, _) =
+            self.handle_external_order(&close_report, account_id, instrument, &[], true, None);
+        let mut all_events = close_events;
+
+        if let Some((open_report, open_px)) = open_report {
             log::info!(
                 color = LogColor::Blue as u8;
                 "Generating open fill for cross-zero {instrument_id}: side={open_side:?}, qty={open_qty}, px={open_px}",
@@ -2770,7 +2771,6 @@ impl ExecutionManager {
             all_events.extend(open_events);
         } else {
             log::warn!("Cannot open new position for {instrument_id}: no venue average price");
-            return Some(all_events);
         }
 
         Some(all_events)

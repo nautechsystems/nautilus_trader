@@ -49,7 +49,10 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_execution::{
-    engine::ExecutionEngine, reconciliation::process_mass_status_for_reconciliation,
+    engine::ExecutionEngine,
+    reconciliation::{
+        create_position_reconciliation_venue_order_id, process_mass_status_for_reconciliation,
+    },
 };
 use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
 use nautilus_model::{
@@ -6742,6 +6745,198 @@ async fn test_closed_reconciliation_orders_skipped_on_restart() {
         "Should skip closed RECONCILIATION order, but got {} events",
         result.events.len()
     );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_cross_zero_unbuildable_open_leg_has_no_side_effects() {
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position_id = PositionId::from("P-CROSS-ZERO-ATOMIC");
+    let position = create_test_position(&instrument, position_id, OrderSide::Buy, "5.0", "3000.00");
+    let strategy_id = StrategyId::from("CROSS-ZERO-ATOMIC");
+    let venue_ts_last = UnixNanos::from(1_000_000);
+    ctx.add_instrument(instrument.clone());
+    ctx.add_position(&position);
+    ctx.manager
+        .claim_external_orders(instrument_id, strategy_id)
+        .unwrap();
+
+    let topic = switchboard::get_event_order_topic(strategy_id);
+    let (handler, event_messages): (_, TypedMessageSavingHandler<OrderEventAny>) =
+        get_typed_message_saving_handler(None);
+    msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+
+    let mut report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        venue_ts_last,
+        venue_ts_last,
+        None,
+        None,
+        Some(dec!(3100.00)),
+    );
+    report.signed_decimal_qty = -dec!(10000000000000000000);
+    let client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client];
+
+    let order_count_before = ctx
+        .cache
+        .borrow()
+        .orders_total_count(None, None, None, None, None);
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    msgbus::unsubscribe_order_events(topic.into(), &handler);
+
+    let close_venue_order_id = create_position_reconciliation_venue_order_id(
+        test_account_id(),
+        instrument_id,
+        OrderSide::Sell,
+        OrderType::Market,
+        Quantity::from("5.0"),
+        Price::from_decimal_dp(dec!(3000.00), instrument.price_precision()).ok(),
+        None,
+        Some("CLOSE"),
+        venue_ts_last,
+    );
+    let close_client_order_id = ClientOrderId::from(close_venue_order_id.as_str());
+    let cache = ctx.cache.borrow();
+    let cached_qty = cache
+        .position(&position_id)
+        .expect("cached position should remain present")
+        .signed_decimal_qty();
+
+    assert!(events.is_empty());
+    assert_eq!(
+        cache.orders_total_count(None, None, None, None, None),
+        order_count_before,
+        "an unbuildable open leg must not cache the close order",
+    );
+    assert!(
+        cache.client_order_id(&close_venue_order_id).is_none(),
+        "an unbuildable open leg must not add the venue-to-client order index",
+    );
+    assert!(
+        cache.venue_order_id(&close_client_order_id).is_none(),
+        "an unbuildable open leg must not add the client-to-venue order index",
+    );
+    assert_eq!(cached_qty, dec!(5.0));
+    assert!(
+        event_messages.get_messages().is_empty(),
+        "an unbuildable open leg must not publish any order event",
+    );
+}
+
+#[rstest]
+#[cfg_attr(
+    not(all(feature = "simulation", madsim)),
+    tokio::test(start_paused = true)
+)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+async fn test_cross_zero_unbuildable_open_leg_retries_without_poisoning_order_id() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let key = (instrument_id, test_account_id());
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-CROSS-ZERO-RETRY"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let venue_ts_last = UnixNanos::from(1_000_000);
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mut unbuildable_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        venue_ts_last,
+        venue_ts_last,
+        None,
+        None,
+        Some(dec!(3100.00)),
+    );
+    unbuildable_report.signed_decimal_qty = -dec!(10000000000000000000);
+    let unbuildable_client = MockPositionExecutionClient::new(vec![], vec![unbuildable_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&unbuildable_client];
+
+    let first_events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(first_events.is_empty());
+    assert_eq!(ctx.manager.position_recon_retry_count(&key), 1);
+
+    let valid_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        Quantity::from("3.0"),
+        venue_ts_last,
+        venue_ts_last,
+        None,
+        None,
+        Some(dec!(3100.00)),
+    );
+    let valid_client = MockPositionExecutionClient::new(vec![], vec![valid_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&valid_client];
+
+    let second_events = ctx.manager.check_positions_consistency(&clients).await;
+    let fills: Vec<_> = second_events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(ctx.manager.position_recon_retry_count(&key), 0);
+    assert_eq!(
+        fills.len(),
+        2,
+        "the retry must rebuild both cross-zero legs"
+    );
+    assert_eq!(fills[0].order_side, OrderSide::Sell);
+    assert_eq!(fills[0].last_qty, Quantity::from("5.0"));
+    assert_eq!(fills[1].order_side, OrderSide::Sell);
+    assert_eq!(fills[1].last_qty, Quantity::from("3.0"));
+
+    for event in &second_events {
+        ctx.exec_engine.borrow_mut().process(event);
+    }
+
+    let cached_signed_qty = ctx
+        .cache
+        .borrow()
+        .positions_open(
+            None,
+            Some(&instrument_id),
+            None,
+            Some(&test_account_id()),
+            None,
+        )
+        .iter()
+        .map(|position| position.signed_decimal_qty())
+        .sum::<Decimal>();
+    assert_eq!(cached_signed_qty, dec!(-3.0));
 }
 
 #[tokio::test]
