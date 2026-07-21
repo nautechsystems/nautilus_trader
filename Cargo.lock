@@ -6911,6 +6911,7 @@ dependencies = [
  "async-trait",
  "bon",
  "bytes",
+ "futures",
  "indexmap 2.14.0",
  "log",
  "nautilus-common",

@@ -879,8 +879,10 @@ impl NautilusKernel {
     #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     pub async fn disconnect_clients(&mut self) -> anyhow::Result<()> {
         log::info!("Disconnecting clients...");
-        let data_result = self.data_engine.borrow_mut().disconnect().await;
-        let exec_result = self.exec_engine.borrow_mut().disconnect().await;
+        let mut data_engine = self.data_engine.borrow_mut();
+        let mut exec_engine = self.exec_engine.borrow_mut();
+        let (data_result, exec_result) =
+            futures::join!(data_engine.disconnect(), exec_engine.disconnect());
 
         match (data_result, exec_result) {
             (Ok(()), Ok(())) => Ok(()),

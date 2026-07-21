@@ -50,7 +50,7 @@ use super::{
     LiveNode,
     config::{
         LiveDataEngineConfig, LiveExecEngineConfig, LiveNodeConfig, LiveRiskEngineConfig,
-        RoutingConfig,
+        RoutingConfig, validate_live_environment,
     },
 };
 use crate::{
@@ -135,12 +135,7 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if `environment` is invalid (BACKTEST).
     pub fn new(trader_id: TraderId, environment: Environment) -> anyhow::Result<Self> {
-        match environment {
-            Environment::Sandbox | Environment::Live => {}
-            Environment::Backtest => {
-                anyhow::bail!("LiveNode cannot be used with Backtest environment");
-            }
-        }
+        validate_live_environment(environment)?;
 
         let config = LiveNodeConfig {
             environment,
@@ -171,12 +166,7 @@ impl LiveNodeBuilder {
     ///
     /// Returns an error if the config's environment is invalid (BACKTEST).
     pub fn from_config(config: LiveNodeConfig) -> anyhow::Result<Self> {
-        match config.environment {
-            Environment::Sandbox | Environment::Live => {}
-            Environment::Backtest => {
-                anyhow::bail!("LiveNode cannot be used with Backtest environment");
-            }
-        }
+        validate_live_environment(config.environment)?;
 
         Ok(Self {
             name: "LiveNode".to_string(),

@@ -59,6 +59,15 @@ const DEFAULT_ORDER_RATE_LIMIT: &str = "100/00:00:01";
 const RUST_RUNTIME_UNSUPPORTED: &str = "not supported by the Rust live runtime yet";
 const RATE_LIMIT_FORMAT: &str = "expected 'limit/HH:MM:SS'";
 
+pub(crate) fn validate_live_environment(environment: Environment) -> anyhow::Result<()> {
+    match environment {
+        Environment::Sandbox | Environment::Live => Ok(()),
+        Environment::Backtest => {
+            anyhow::bail!("LiveNode cannot be used with Backtest environment")
+        }
+    }
+}
+
 /// Configuration for live data engines.
 #[cfg_attr(
     feature = "python",

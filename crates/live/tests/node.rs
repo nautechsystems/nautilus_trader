@@ -267,6 +267,23 @@ mod serial_tests {
         disconnect_attempted: Arc<AtomicBool>,
     }
 
+    #[derive(Clone, Debug, Default)]
+    struct LifecycleClientState {
+        connected: Arc<AtomicBool>,
+        connect_attempted: Arc<AtomicBool>,
+        disconnect_attempted: Arc<AtomicBool>,
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum LifecycleClientBehavior {
+        Connects,
+        ConnectPending,
+        ReadinessPending,
+        ConnectDelayedReadinessPending,
+        DisconnectPending,
+        DisconnectKeepsConnected,
+    }
+
     #[derive(Clone, Copy, Debug)]
     enum StartupMassStatusBehavior {
         Unavailable,
@@ -281,6 +298,16 @@ mod serial_tests {
 
     struct FailingDisconnectDataClient {
         state: FailingDisconnectDataClientState,
+    }
+
+    struct LifecycleDataClient {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    struct LifecycleExecutionClient {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
     }
 
     impl StartupMassStatusExecutionClient {
@@ -305,6 +332,12 @@ mod serial_tests {
     #[derive(Debug)]
     struct FailingDisconnectDataClientConfig;
 
+    #[derive(Debug)]
+    struct LifecycleDataClientConfig;
+
+    #[derive(Debug)]
+    struct LifecycleExecutionClientConfig;
+
     impl ClientConfig for StartupMassStatusExecutionClientConfig {
         fn as_any(&self) -> &dyn std::any::Any {
             self
@@ -312,6 +345,18 @@ mod serial_tests {
     }
 
     impl ClientConfig for FailingDisconnectDataClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for LifecycleDataClientConfig {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+    }
+
+    impl ClientConfig for LifecycleExecutionClientConfig {
         fn as_any(&self) -> &dyn std::any::Any {
             self
         }
@@ -328,6 +373,18 @@ mod serial_tests {
         state: FailingDisconnectDataClientState,
     }
 
+    #[derive(Debug)]
+    struct LifecycleDataClientFactory {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
+    #[derive(Debug)]
+    struct LifecycleExecutionClientFactory {
+        state: LifecycleClientState,
+        behavior: LifecycleClientBehavior,
+    }
+
     impl StartupMassStatusExecutionClientFactory {
         fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
             Self { state, behavior }
@@ -337,6 +394,18 @@ mod serial_tests {
     impl FailingDisconnectDataClientFactory {
         fn new(state: FailingDisconnectDataClientState) -> Self {
             Self { state }
+        }
+    }
+
+    impl LifecycleDataClientFactory {
+        fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
+            Self { state, behavior }
+        }
+    }
+
+    impl LifecycleExecutionClientFactory {
+        fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
+            Self { state, behavior }
         }
     }
 
@@ -384,6 +453,51 @@ mod serial_tests {
         }
     }
 
+    impl DataClientFactory for LifecycleDataClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+            _clock: Rc<RefCell<dyn Clock>>,
+        ) -> anyhow::Result<Box<dyn DataClient>> {
+            Ok(Box::new(LifecycleDataClient {
+                state: self.state.clone(),
+                behavior: self.behavior,
+            }))
+        }
+
+        fn name(&self) -> &'static str {
+            "lifecycle-data"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(LifecycleDataClientConfig)
+        }
+    }
+
+    impl ExecutionClientFactory for LifecycleExecutionClientFactory {
+        fn create(
+            &self,
+            _name: &str,
+            _config: &dyn ClientConfig,
+            _cache: CacheView,
+        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
+            Ok(Box::new(LifecycleExecutionClient {
+                state: self.state.clone(),
+                behavior: self.behavior,
+            }))
+        }
+
+        fn name(&self) -> &'static str {
+            "lifecycle-exec"
+        }
+
+        fn config_type(&self) -> &'static str {
+            stringify!(LifecycleExecutionClientConfig)
+        }
+    }
+
     #[async_trait(?Send)]
     impl DataClient for FailingDisconnectDataClient {
         fn client_id(&self) -> ClientId {
@@ -423,6 +537,81 @@ mod serial_tests {
                 .disconnect_attempted
                 .store(true, Ordering::Relaxed);
             anyhow::bail!("simulated data client disconnect failure")
+        }
+    }
+
+    #[async_trait(?Send)]
+    impl DataClient for LifecycleDataClient {
+        fn client_id(&self) -> ClientId {
+            ClientId::from("LIFECYCLE-DATA")
+        }
+
+        fn venue(&self) -> Option<Venue> {
+            None
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn reset(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn dispose(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn is_disconnected(&self) -> bool {
+            !self.state.connected.load(Ordering::Relaxed)
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connect_attempted.store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                LifecycleClientBehavior::ConnectPending => {
+                    std::future::pending::<anyhow::Result<()>>().await
+                }
+                LifecycleClientBehavior::ReadinessPending => Ok(()),
+                LifecycleClientBehavior::ConnectDelayedReadinessPending => {
+                    dst::time::sleep(Duration::from_millis(25)).await;
+                    Ok(())
+                }
+                LifecycleClientBehavior::Connects
+                | LifecycleClientBehavior::DisconnectPending
+                | LifecycleClientBehavior::DisconnectKeepsConnected => {
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
+            }
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+
+            if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
+                return std::future::pending::<anyhow::Result<()>>().await;
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::DisconnectKeepsConnected
+            ) {
+                return Ok(());
+            }
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
         }
     }
 
@@ -522,6 +711,149 @@ mod serial_tests {
                 }
             }
         }
+    }
+
+    #[async_trait(?Send)]
+    impl ExecutionClient for LifecycleExecutionClient {
+        fn is_connected(&self) -> bool {
+            self.state.connected.load(Ordering::Relaxed)
+        }
+
+        fn client_id(&self) -> ClientId {
+            ClientId::from("LIFECYCLE-EXEC")
+        }
+
+        fn account_id(&self) -> AccountId {
+            AccountId::from("LIFECYCLE-EXEC-001")
+        }
+
+        fn venue(&self) -> Venue {
+            crypto_perpetual_ethusdt().id().venue
+        }
+
+        fn oms_type(&self) -> OmsType {
+            OmsType::Hedging
+        }
+
+        fn get_account(&self) -> Option<AccountAny> {
+            None
+        }
+
+        fn generate_account_state(
+            &self,
+            _balances: Vec<AccountBalance>,
+            _margins: Vec<MarginBalance>,
+            _reported: bool,
+            _ts_event: UnixNanos,
+        ) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn start(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn stop(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn connect(&mut self) -> anyhow::Result<()> {
+            self.state.connect_attempted.store(true, Ordering::Relaxed);
+
+            match self.behavior {
+                LifecycleClientBehavior::ConnectPending => {
+                    std::future::pending::<anyhow::Result<()>>().await
+                }
+                LifecycleClientBehavior::ReadinessPending => Ok(()),
+                LifecycleClientBehavior::ConnectDelayedReadinessPending => {
+                    dst::time::sleep(Duration::from_millis(25)).await;
+                    Ok(())
+                }
+                LifecycleClientBehavior::Connects
+                | LifecycleClientBehavior::DisconnectPending
+                | LifecycleClientBehavior::DisconnectKeepsConnected => {
+                    self.state.connected.store(true, Ordering::Relaxed);
+                    Ok(())
+                }
+            }
+        }
+
+        async fn disconnect(&mut self) -> anyhow::Result<()> {
+            self.state
+                .disconnect_attempted
+                .store(true, Ordering::Relaxed);
+
+            if matches!(self.behavior, LifecycleClientBehavior::DisconnectPending) {
+                return std::future::pending::<anyhow::Result<()>>().await;
+            }
+
+            if matches!(
+                self.behavior,
+                LifecycleClientBehavior::DisconnectKeepsConnected
+            ) {
+                return Ok(());
+            }
+            self.state.connected.store(false, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    fn live_node_with_lifecycle_clients(
+        name: &str,
+        data_behavior: LifecycleClientBehavior,
+        exec_behavior: LifecycleClientBehavior,
+    ) -> (LiveNode, LifecycleClientState, LifecycleClientState) {
+        live_node_with_lifecycle_clients_timeout(
+            name,
+            data_behavior,
+            exec_behavior,
+            Duration::from_millis(50),
+        )
+    }
+
+    fn live_node_with_lifecycle_clients_timeout(
+        name: &str,
+        data_behavior: LifecycleClientBehavior,
+        exec_behavior: LifecycleClientBehavior,
+        timeout_connection: Duration,
+    ) -> (LiveNode, LifecycleClientState, LifecycleClientState) {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let data_state = LifecycleClientState::default();
+        let exec_state = LifecycleClientState::default();
+        let node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name(name)
+            .add_data_client(
+                Some("lifecycle-data".to_string()),
+                Box::new(LifecycleDataClientFactory::new(
+                    data_state.clone(),
+                    data_behavior,
+                )),
+                Box::new(LifecycleDataClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("lifecycle-exec".to_string()),
+                Box::new(LifecycleExecutionClientFactory::new(
+                    exec_state.clone(),
+                    exec_behavior,
+                )),
+                Box::new(LifecycleExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+
+        (node, data_state, exec_state)
     }
 
     struct BlockingReportExecutionClient {
@@ -747,7 +1079,7 @@ mod serial_tests {
     }
 
     #[rstest]
-    fn test_live_node_build_overrides_environment_to_live() {
+    fn test_live_node_build_preserves_sandbox_environment() {
         let config = LiveNodeConfig {
             environment: Environment::Sandbox,
             trader_id: TraderId::from("TESTER-001"),
@@ -756,9 +1088,24 @@ mod serial_tests {
 
         let node = LiveNode::build("TestNode".to_string(), Some(config)).unwrap();
 
-        // Environment is overridden to Live when using build()
-        assert_eq!(node.environment(), Environment::Live);
+        assert_eq!(node.environment(), Environment::Sandbox);
         assert_eq!(node.trader_id(), TraderId::from("TESTER-001"));
+    }
+
+    #[rstest]
+    fn test_live_node_build_rejects_backtest_environment() {
+        let config = LiveNodeConfig {
+            environment: Environment::Backtest,
+            ..Default::default()
+        };
+
+        let err = LiveNode::build("TestNode".to_string(), Some(config))
+            .expect_err("build should reject Backtest");
+
+        assert!(
+            err.to_string().contains("Backtest"),
+            "unexpected error: {err:#}"
+        );
     }
 
     #[rstest]
@@ -900,6 +1247,364 @@ mod serial_tests {
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Not running"));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_hung_data_connect_times_out_fail_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartHungDataConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_hung_data_connect_times_out_fail_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunHungDataConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_hung_exec_connect_times_out_fail_closed() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartHungExecConnectNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::ConnectPending,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on an exec-connect timeout");
+
+        assert!(
+            err.to_string().contains("exec-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(exec_state.connect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_hung_exec_connect_times_out_fail_closed() {
+        let (mut node, _data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunHungExecConnectNode",
+            LifecycleClientBehavior::Connects,
+            LifecycleClientBehavior::ConnectPending,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on an exec-connect timeout");
+
+        assert!(
+            err.to_string().contains("exec-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_readiness_timeout_fails_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "StartReadinessTimeoutNode",
+            LifecycleClientBehavior::ReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_readiness_timeout_fails_closed() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "RunReadinessTimeoutNode",
+            LifecycleClientBehavior::ReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_zero_timeout_connection_starts_without_clients() {
+        // A zero `timeout_connection` with no clients must still start: the empty
+        // connect completes on the first poll. Regression for the pre-stage bail
+        // that rejected a zero budget before ever attempting the connect.
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_connection: Duration::ZERO,
+            timeout_disconnection: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node =
+            LiveNode::build("ZeroTimeoutNoClientsNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+
+        node.start().await.unwrap();
+        assert_eq!(handle.state(), NodeState::Running);
+
+        node.stop().await.unwrap();
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_zero_timeout_connection_still_bounds_hung_data_connect() {
+        // Zero `timeout_connection` must still fail closed on a hung connect: the
+        // bound is not disabled by a zero budget.
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients_timeout(
+            "ZeroTimeoutHungConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+            Duration::ZERO,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let err = result.expect_err("start should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(flavor = "current_thread", start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_run_zero_timeout_connection_still_bounds_hung_data_connect() {
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients_timeout(
+            "RunZeroTimeoutHungConnectNode",
+            LifecycleClientBehavior::ConnectPending,
+            LifecycleClientBehavior::Connects,
+            Duration::ZERO,
+        );
+        let handle = node.handle();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.run())
+            .await
+            .expect("run should finish within the lifecycle timeout");
+        let err = result.expect_err("run should fail on a data-connect timeout");
+
+        assert!(
+            err.to_string().contains("data-connect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+        // The connect was polled (attempt marked) before the zero-budget timeout,
+        // distinguishing the fix from the old pre-stage bail that never polled.
+        assert!(data_state.connect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_start_readiness_timeout_uses_shared_connection_budget() {
+        let (mut node, _data_state, _exec_state) = live_node_with_lifecycle_clients(
+            "SharedConnectionBudgetNode",
+            LifecycleClientBehavior::ConnectDelayedReadinessPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        let started_at = dst::time::Instant::now();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.start())
+            .await
+            .expect("start should finish within the lifecycle timeout");
+        let elapsed = dst::time::Instant::now() - started_at;
+        let err = result.expect_err("start should fail on a readiness timeout");
+
+        assert!(
+            err.to_string().contains("readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert!(
+            elapsed <= Duration::from_millis(60),
+            "readiness timeout exceeded the shared 50ms connection budget: {elapsed:?}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!handle.is_running());
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_stop_fails_when_disconnect_readiness_poll_times_out() {
+        let (mut node, data_state, _exec_state) = live_node_with_lifecycle_clients(
+            "DisconnectReadinessPollNode",
+            LifecycleClientBehavior::DisconnectKeepsConnected,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        node.start().await.unwrap();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.stop())
+            .await
+            .expect("stop should finish within the lifecycle timeout");
+        let err = result.expect_err("stop should fail on a disconnect readiness timeout");
+
+        assert!(
+            err.to_string().contains("disconnect readiness"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_hung_data_disconnect_still_attempts_execution_disconnect() {
+        let (mut node, data_state, exec_state) = live_node_with_lifecycle_clients(
+            "HungDataDisconnectNode",
+            LifecycleClientBehavior::DisconnectPending,
+            LifecycleClientBehavior::Connects,
+        );
+        let handle = node.handle();
+        node.start().await.unwrap();
+
+        let result = dst::time::timeout(Duration::from_millis(200), node.stop())
+            .await
+            .expect("stop should finish within the lifecycle timeout");
+        let err = result.expect_err("stop should fail on a disconnect timeout");
+
+        assert!(
+            err.to_string().contains("disconnect"),
+            "unexpected error: {err:#}"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(data_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(exec_state.disconnect_attempted.load(Ordering::Relaxed));
+        assert!(!exec_state.connected.load(Ordering::Relaxed));
     }
 
     #[rstest]

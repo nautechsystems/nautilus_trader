@@ -61,6 +61,7 @@ nautilus-persistence = { workspace = true, optional = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 bon = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }

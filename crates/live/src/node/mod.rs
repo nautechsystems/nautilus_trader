@@ -137,7 +137,7 @@ pub mod plugin;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
-use config::{LiveNodeConfig, PluginConfig};
+use config::{LiveNodeConfig, PluginConfig, validate_live_environment};
 pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetricsSnapshot};
 use metrics::{RunnerChannelQueueDepths, RunnerMetricChannel, RunnerMetrics};
 use state::EngineConnectionStatus;
@@ -218,15 +218,8 @@ impl LiveNode {
     ///
     /// Returns an error if kernel construction fails.
     pub fn build(name: String, config: Option<LiveNodeConfig>) -> anyhow::Result<Self> {
-        let mut config = config.unwrap_or_default();
-        config.environment = Environment::Live;
-
-        match config.environment() {
-            Environment::Sandbox | Environment::Live => {}
-            Environment::Backtest => {
-                anyhow::bail!("LiveNode cannot be used with Backtest environment");
-            }
-        }
+        let config = config.unwrap_or_default();
+        validate_live_environment(config.environment())?;
 
         config.validate_runtime_support()?;
 
@@ -394,26 +387,39 @@ impl LiveNode {
             return Ok(());
         }
 
+        let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
+
         // Connect data clients first and flush instrument events into cache
-        self.kernel.connect_data_clients().await;
+        if let Err(e) = self.connect_data_phase(connection_deadline).await {
+            return self
+                .abort_startup_with_error("Data client connection timed out", e)
+                .await;
+        }
 
         if let Some(runner) = self.runner.as_mut() {
             runner.flush_pending_data();
         }
 
-        self.kernel.connect_exec_clients().await;
+        if let Err(e) = self.connect_exec_clients(connection_deadline).await {
+            return self
+                .abort_startup_with_error("Execution client connection timed out", e)
+                .await;
+        }
 
         if let Some(reason) = self.startup_abort_reason() {
             self.abort_startup(reason).await?;
             return Ok(());
         }
 
-        match self.await_engines_connected().await {
+        match self.await_engines_connected(connection_deadline).await {
             EngineConnectionStatus::Connected => {}
             EngineConnectionStatus::TimedOut => {
-                log::error!("Cannot start trader: engine client(s) not connected");
-                self.handle.set_state(NodeState::Running);
-                return Ok(());
+                return self
+                    .abort_startup_with_error(
+                        "Engine readiness timed out",
+                        anyhow::anyhow!("readiness timeout while waiting for engine connections"),
+                    )
+                    .await;
             }
             EngineConnectionStatus::StopRequested => {
                 self.abort_startup("Stop signal received during startup")
@@ -583,14 +589,15 @@ impl LiveNode {
     /// Awaits engine clients to connect with timeout.
     ///
     /// Returns the final connection wait status.
-    async fn await_engines_connected(&self) -> EngineConnectionStatus {
+    async fn await_engines_connected(
+        &self,
+        deadline: dst::time::Instant,
+    ) -> EngineConnectionStatus {
         log::info!(
             "Awaiting engine connections ({:?} timeout)...",
             self.config.timeout_connection
         );
 
-        let start = dst::time::Instant::now();
-        let timeout = self.config.timeout_connection;
         let interval = Duration::from_millis(100);
 
         loop {
@@ -609,11 +616,12 @@ impl LiveNode {
                 return EngineConnectionStatus::Connected;
             }
 
-            if start.elapsed() >= timeout {
+            let now = dst::time::Instant::now();
+            if now >= deadline {
                 break;
             }
 
-            dst::time::sleep(interval).await;
+            dst::time::sleep(interval.min(deadline - now)).await;
         }
 
         self.log_connection_status();
@@ -622,28 +630,28 @@ impl LiveNode {
 
     /// Awaits engine clients to disconnect with timeout.
     ///
-    /// Logs an error with client status on timeout but does not fail.
-    async fn await_engines_disconnected(&self) {
+    /// Returns an error with client status on timeout.
+    async fn await_engines_disconnected(&self, deadline: dst::time::Instant) -> anyhow::Result<()> {
         log::info!(
             "Awaiting engine disconnections ({:?} timeout)...",
             self.config.timeout_disconnection
         );
 
-        let start = dst::time::Instant::now();
         let timeout = self.config.timeout_disconnection;
         let interval = Duration::from_millis(100);
 
         loop {
             if self.kernel.check_engines_disconnected() {
                 log::info!("All engine clients disconnected");
-                return;
+                return Ok(());
             }
 
-            if start.elapsed() >= timeout {
+            let now = dst::time::Instant::now();
+            if now >= deadline {
                 break;
             }
 
-            dst::time::sleep(interval).await;
+            dst::time::sleep(interval.min(deadline - now)).await;
         }
 
         log::error!(
@@ -654,6 +662,7 @@ impl LiveNode {
             self.kernel.data_engine().check_disconnected(),
             self.kernel.exec_engine().borrow().check_disconnected(),
         );
+        anyhow::bail!("disconnect readiness timeout while waiting for engine disconnections")
     }
 
     fn log_connection_status(&self) {
@@ -910,13 +919,12 @@ impl LiveNode {
 
         let stop_handle = self.handle.clone();
         let mut pending = PendingEvents::default();
+        let connection_deadline = dst::time::Instant::now() + self.config.timeout_connection;
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
-        // TODO: Add ctrl_c, stop_handle, and shutdown monitoring here to
-        // allow aborting a hanging connect future.
-        drive_with_event_buffering(
-            self.kernel.connect_data_clients(),
+        let data_connect_result = drive_with_event_buffering(
+            self.connect_data_phase(connection_deadline),
             &mut pending,
             &mut time_evt_rx,
             &mut data_evt_rx,
@@ -925,6 +933,29 @@ impl LiveNode {
             &mut exec_cmd_rx,
         )
         .await;
+
+        if let Err(e) = data_connect_result {
+            flush_all_pending(
+                &mut pending,
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            let result = self
+                .abort_startup_with_error("Data client connection timed out", e)
+                .await;
+            Self::drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
+            return result;
+        }
 
         // Flush any data events still queued in the channel receivers that the
         // select loop did not capture before the connect future resolved, then
@@ -936,8 +967,8 @@ impl LiveNode {
         );
 
         // Startup phase 2: Connect execution clients (instruments now in cache)
-        let engine_connection_status = drive_with_event_buffering(
-            self.connect_exec_phase(),
+        let engine_connection_result = drive_with_event_buffering(
+            self.connect_exec_phase(connection_deadline),
             &mut pending,
             &mut time_evt_rx,
             &mut data_evt_rx,
@@ -945,7 +976,7 @@ impl LiveNode {
             &mut exec_evt_rx,
             &mut exec_cmd_rx,
         )
-        .await?;
+        .await;
 
         // Flush channel receivers and drain all remaining pending events
         flush_all_pending(
@@ -960,6 +991,42 @@ impl LiveNode {
             pending.is_empty(),
             "all startup events must be processed before reconciliation",
         );
+
+        let engine_connection_status = match engine_connection_result {
+            Ok(status) => status,
+            Err(e) => {
+                let result = self
+                    .abort_startup_with_error("Execution client connection timed out", e)
+                    .await;
+                Self::drain_channels(
+                    &mut time_evt_rx,
+                    &mut data_evt_rx,
+                    &mut data_cmd_rx,
+                    &mut exec_evt_rx,
+                    &mut exec_cmd_rx,
+                );
+                log::info!("Event loop stopped");
+                return result;
+            }
+        };
+
+        if engine_connection_status == EngineConnectionStatus::TimedOut {
+            let result = self
+                .abort_startup_with_error(
+                    "Engine readiness timed out",
+                    anyhow::anyhow!("readiness timeout while waiting for engine connections"),
+                )
+                .await;
+            Self::drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
+            return result;
+        }
 
         if let Some(reason) = engine_connection_status
             .abort_reason()
@@ -977,55 +1044,53 @@ impl LiveNode {
             return Ok(());
         }
 
-        if engine_connection_status == EngineConnectionStatus::Connected {
-            // Run reconciliation now that instruments are in cache and start trader
-            if let Err(e) = self.perform_startup_reconciliation().await {
-                let result = self.abort_startup("Startup reconciliation failed").await;
-                Self::drain_channels(
-                    &mut time_evt_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
-                    &mut exec_evt_rx,
-                    &mut exec_cmd_rx,
+        debug_assert_eq!(engine_connection_status, EngineConnectionStatus::Connected);
+
+        // Run reconciliation now that instruments are in cache and start trader
+        if let Err(e) = self.perform_startup_reconciliation().await {
+            let result = self.abort_startup("Startup reconciliation failed").await;
+            Self::drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
+
+            if let Err(finalize_err) = result {
+                anyhow::bail!(
+                    "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
                 );
-                log::info!("Event loop stopped");
-
-                if let Err(finalize_err) = result {
-                    anyhow::bail!(
-                        "startup reconciliation failed: {e}; failed to finalize startup abort: {finalize_err}"
-                    );
-                }
-
-                return Err(e);
             }
 
-            if let Err(e) = self.kernel.start_trader() {
-                let result = self.abort_after_trader_start_failure(e).await;
-                Self::drain_channels(
-                    &mut time_evt_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
-                    &mut exec_evt_rx,
-                    &mut exec_cmd_rx,
-                );
-                log::info!("Event loop stopped");
-                return result;
-            }
-            #[cfg(feature = "plugin")]
-            if let Err(e) = self.plugins.start_controllers() {
-                let result = self.abort_after_trader_start_failure(e).await;
-                Self::drain_channels(
-                    &mut time_evt_rx,
-                    &mut data_evt_rx,
-                    &mut data_cmd_rx,
-                    &mut exec_evt_rx,
-                    &mut exec_cmd_rx,
-                );
-                log::info!("Event loop stopped");
-                return result;
-            }
-        } else {
-            log::error!("Not starting trader: engine client(s) not connected");
+            return Err(e);
+        }
+
+        if let Err(e) = self.kernel.start_trader() {
+            let result = self.abort_after_trader_start_failure(e).await;
+            Self::drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
+            return result;
+        }
+        #[cfg(feature = "plugin")]
+        if let Err(e) = self.plugins.start_controllers() {
+            let result = self.abort_after_trader_start_failure(e).await;
+            Self::drain_channels(
+                &mut time_evt_rx,
+                &mut data_evt_rx,
+                &mut data_cmd_rx,
+                &mut exec_evt_rx,
+                &mut exec_cmd_rx,
+            );
+            log::info!("Event loop stopped");
+            return result;
         }
 
         self.handle.set_state(NodeState::Running);
@@ -1601,13 +1666,35 @@ impl LiveNode {
         }
     }
 
+    async fn connect_data_phase(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
+        // A zero remaining budget still admits an immediately-ready connect (an
+        // empty/ready client set completes on the first poll); a pending connect
+        // fails closed on that same poll. This keeps a zero `timeout_connection`
+        // - a supported "do not wait, but allow ready work" configuration -
+        // working, while still bounding a hung connect.
+        let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+        dst::time::timeout(remaining, self.kernel.connect_data_clients())
+            .await
+            .map_err(|_| anyhow::anyhow!("data-connect timeout"))
+    }
+
+    async fn connect_exec_clients(&mut self, deadline: dst::time::Instant) -> anyhow::Result<()> {
+        let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+        dst::time::timeout(remaining, self.kernel.connect_exec_clients())
+            .await
+            .map_err(|_| anyhow::anyhow!("exec-connect timeout"))
+    }
+
     /// Connects execution clients and checks all engines are connected.
     ///
     /// Returns the final connection wait status.
     /// Must be called after data clients are connected and instrument events drained.
-    async fn connect_exec_phase(&mut self) -> anyhow::Result<EngineConnectionStatus> {
-        self.kernel.connect_exec_clients().await;
-        Ok(self.await_engines_connected().await)
+    async fn connect_exec_phase(
+        &mut self,
+        deadline: dst::time::Instant,
+    ) -> anyhow::Result<EngineConnectionStatus> {
+        self.connect_exec_clients(deadline).await?;
+        Ok(self.await_engines_connected(deadline).await)
     }
 
     fn startup_abort_reason(&self) -> Option<&'static str> {
@@ -1624,6 +1711,19 @@ impl LiveNode {
         log::info!("{reason}, aborting startup");
         self.handle.set_state(NodeState::ShuttingDown);
         self.finalize_stop().await
+    }
+
+    async fn abort_startup_with_error(
+        &mut self,
+        reason: &str,
+        startup_err: anyhow::Error,
+    ) -> anyhow::Result<()> {
+        match self.abort_startup(reason).await {
+            Ok(()) => Err(startup_err),
+            Err(finalize_err) => {
+                anyhow::bail!("{startup_err}; failed to finalize startup abort: {finalize_err}")
+            }
+        }
     }
 
     async fn abort_after_trader_start_failure(
@@ -1668,17 +1768,33 @@ impl LiveNode {
     async fn finalize_stop(&mut self) -> anyhow::Result<()> {
         self.close_external_ingress();
 
-        let disconnect_result = self.kernel.disconnect_clients().await;
+        let timeout = self.config.timeout_disconnection;
+        let deadline = dst::time::Instant::now() + timeout;
+        let disconnect_result =
+            match dst::time::timeout(timeout, self.kernel.disconnect_clients()).await {
+                Ok(result) => result,
+                Err(_) => Err(anyhow::anyhow!(
+                    "disconnect timeout while disconnecting clients"
+                )),
+            };
+
         if let Err(ref e) = disconnect_result {
             log::error!("Error disconnecting clients: {e}");
         }
 
-        self.await_engines_disconnected().await;
+        let readiness_result = self.await_engines_disconnected(deadline).await;
         self.kernel.finalize_stop().await;
 
         self.handle.set_state(NodeState::Stopped);
 
-        disconnect_result
+        match (disconnect_result, readiness_result) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(disconnect_err), Ok(())) => Err(disconnect_err),
+            (Ok(()), Err(readiness_err)) => Err(readiness_err),
+            (Err(disconnect_err), Err(readiness_err)) => anyhow::bail!(
+                "{disconnect_err}; failed while awaiting engine disconnection: {readiness_err}"
+            ),
+        }
     }
 
     fn drain_channels(
@@ -3895,7 +4011,8 @@ mod tests {
 
         handle.stop();
 
-        let status = node.await_engines_connected().await;
+        let deadline = dst::time::Instant::now() + Duration::from_secs(1);
+        let status = node.await_engines_connected(deadline).await;
 
         assert_eq!(status, EngineConnectionStatus::StopRequested);
         assert!(handle.should_stop());
@@ -3908,7 +4025,8 @@ mod tests {
 
         node.kernel().shutdown_flag().set(true);
 
-        let status = node.await_engines_connected().await;
+        let deadline = dst::time::Instant::now() + Duration::from_secs(1);
+        let status = node.await_engines_connected(deadline).await;
 
         assert_eq!(status, EngineConnectionStatus::ShutdownRequested);
     }
