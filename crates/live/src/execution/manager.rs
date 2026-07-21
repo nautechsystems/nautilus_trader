@@ -1059,6 +1059,7 @@ impl ExecutionManager {
                 .filtered_client_order_ids
                 .contains(&client_order_id)
             {
+                self.clear_recon_tracking(&client_order_id, true);
                 continue;
             }
 
@@ -1995,6 +1996,14 @@ impl ExecutionManager {
 
     /// Registers an order as inflight for tracking.
     pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
+        if self
+            .config
+            .filtered_client_order_ids
+            .contains(&client_order_id)
+        {
+            return;
+        }
+
         self.inflight_checks.insert(
             client_order_id,
             InflightCheck {
@@ -2143,30 +2152,15 @@ impl ExecutionManager {
     /// engine, so that the manager's state is current when periodic checks run.
     ///
     /// Updates performed per report variant:
-    /// - `Order`: clears inflight tracking and records local activity
+    /// - `Order`: updates reconciliation tracking based on order status
     /// - `Fill`: records order and position activity without marking the fill as processed
-    /// - `OrderWithFills`: clears inflight tracking, records local activity, records position activity per fill
+    /// - `OrderWithFills`: updates order tracking and records position activity per fill
     /// - `Position`: records position activity
     /// - `MassStatus`: no-op (handled separately via startup reconciliation)
     pub fn observe_execution_report(&mut self, report: &ExecutionReport) {
         match report {
             ExecutionReport::Order(order_report) => {
-                if let Some(client_order_id) = &order_report.client_order_id {
-                    // Only clear inflight tracking for non-pending states.
-                    // Pending reports (PendingUpdate, PendingCancel) are interim
-                    // acknowledgements; the order is still inflight until the
-                    // venue confirms the final state.
-                    if !matches!(
-                        order_report.order_status,
-                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
-                    ) {
-                        self.clear_recon_tracking(
-                            client_order_id,
-                            order_report.order_status.is_closed(),
-                        );
-                    }
-                    self.record_local_activity(*client_order_id);
-                }
+                self.observe_order_status_report(order_report);
             }
             ExecutionReport::Fill(fill_report) => {
                 let client_order_id = fill_report.client_order_id.or_else(|| {
@@ -2182,18 +2176,7 @@ impl ExecutionManager {
                 self.record_position_activity(fill_report.instrument_id, fill_report.account_id);
             }
             ExecutionReport::OrderWithFills(order_report, fills) => {
-                if let Some(client_order_id) = &order_report.client_order_id
-                    && !matches!(
-                        order_report.order_status,
-                        OrderStatus::PendingUpdate | OrderStatus::PendingCancel
-                    )
-                {
-                    self.clear_recon_tracking(
-                        client_order_id,
-                        order_report.order_status.is_closed(),
-                    );
-                    self.record_local_activity(*client_order_id);
-                }
+                self.observe_order_status_report(order_report);
 
                 for fill_report in fills {
                     self.record_position_activity(
@@ -2211,6 +2194,24 @@ impl ExecutionManager {
             ExecutionReport::MassStatus(_) => {
                 // Handled separately via reconcile_execution_mass_status
             }
+        }
+    }
+
+    fn observe_order_status_report(&mut self, report: &OrderStatusReport) {
+        let Some(client_order_id) = report.client_order_id else {
+            return;
+        };
+
+        if matches!(
+            report.order_status,
+            OrderStatus::PendingUpdate | OrderStatus::PendingCancel
+        ) {
+            self.record_local_activity(client_order_id);
+        } else if report.order_status.is_closed() {
+            self.clear_recon_tracking(&client_order_id, true);
+        } else {
+            self.clear_recon_tracking(&client_order_id, false);
+            self.record_local_activity(client_order_id);
         }
     }
 
@@ -2268,6 +2269,12 @@ impl ExecutionManager {
 
         let ttl = Duration::from_mins(lookback_mins).max(Duration::from_mins(1));
         self.processed_fills.prune_older_than(ttl);
+    }
+
+    /// Prunes order activity outside the continuous reconciliation settling window.
+    pub fn prune_order_local_activity(&mut self) {
+        self.order_local_activity
+            .prune_older_than(Duration::from_nanos(self.config.open_check_threshold_ns));
     }
 
     /// Purges closed orders from the cache that are older than the configured buffer.
@@ -3890,6 +3897,175 @@ mod tests {
         manager.clear_recon_tracking(&client_order_id, true);
 
         assert!(manager.targeted_order_queries.is_empty());
+    }
+
+    #[rstest]
+    fn test_register_inflight_skips_filtered_order() {
+        let client_order_id = ClientOrderId::from("O-FILTERED-REGISTER");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache,
+            ExecutionManagerConfig {
+                filtered_client_order_ids: IndexSet::from([client_order_id]),
+                ..Default::default()
+            },
+        );
+
+        manager.register_inflight(client_order_id);
+
+        assert!(!manager.inflight_checks.contains_key(&client_order_id));
+        assert!(!manager.recon_check_retries.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_inflight_check_retires_order_filtered_after_registration() {
+        let client_order_id = ClientOrderId::from("O-FILTERED-LATE");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache,
+            ExecutionManagerConfig {
+                inflight_threshold_ms: 100,
+                ..Default::default()
+            },
+        );
+        manager.register_inflight(client_order_id);
+        manager
+            .config
+            .filtered_client_order_ids
+            .insert(client_order_id);
+        dst::time::sleep(Duration::from_millis(101)).await;
+
+        let first = manager.check_inflight_orders();
+
+        assert!(first.events.is_empty());
+        assert!(first.queries.is_empty());
+        assert!(!manager.inflight_checks.contains_key(&client_order_id));
+        assert!(!manager.recon_check_retries.contains_key(&client_order_id));
+
+        dst::time::sleep(Duration::from_millis(101)).await;
+        let second = manager.check_inflight_orders();
+        assert!(second.events.is_empty());
+        assert!(second.queries.is_empty());
+        assert!(!manager.inflight_checks.contains_key(&client_order_id));
+    }
+
+    #[rstest]
+    #[case(false, OrderStatus::PendingUpdate, true, true, true)]
+    #[case(false, OrderStatus::Accepted, false, true, true)]
+    #[case(false, OrderStatus::Canceled, false, false, false)]
+    #[case(true, OrderStatus::PendingCancel, true, true, true)]
+    #[case(true, OrderStatus::Accepted, false, true, true)]
+    #[case(true, OrderStatus::Filled, false, false, false)]
+    fn test_observe_order_status_report_tracking_matrix(
+        #[case] with_fills: bool,
+        #[case] status: OrderStatus,
+        #[case] expect_inflight: bool,
+        #[case] expect_activity: bool,
+        #[case] expect_last_query: bool,
+    ) {
+        let client_order_id = ClientOrderId::from("O-STATUS-MATRIX");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default());
+        manager.register_inflight(client_order_id);
+        manager.order_query_recency.mark(client_order_id);
+        manager
+            .missing_order_coverage_warnings
+            .insert(client_order_id);
+        manager.unresolved_order_coverage.insert(client_order_id);
+        manager.targeted_order_queries.insert(client_order_id);
+        let order_report = OrderStatusReport::new(
+            AccountId::from("TEST-001"),
+            crypto_perpetual_ethusdt().id(),
+            Some(client_order_id),
+            VenueOrderId::from("V-STATUS-MATRIX"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            status,
+            Quantity::from("10.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        );
+        let report = if with_fills {
+            ExecutionReport::OrderWithFills(Box::new(order_report), Vec::new())
+        } else {
+            ExecutionReport::Order(Box::new(order_report))
+        };
+
+        manager.observe_execution_report(&report);
+
+        assert_eq!(
+            manager.inflight_checks.contains_key(&client_order_id),
+            expect_inflight,
+        );
+        assert_eq!(
+            manager.recon_check_retries.contains_key(&client_order_id),
+            expect_inflight,
+        );
+        assert_eq!(
+            manager.order_local_activity.contains_key(&client_order_id),
+            expect_activity,
+        );
+        assert_eq!(
+            manager.order_query_recency.contains_key(&client_order_id),
+            expect_last_query,
+        );
+        assert_eq!(
+            manager
+                .missing_order_coverage_warnings
+                .contains(&client_order_id),
+            expect_inflight,
+        );
+        assert_eq!(
+            manager.unresolved_order_coverage.contains(&client_order_id),
+            expect_inflight,
+        );
+        assert_eq!(
+            manager.targeted_order_queries.contains(&client_order_id),
+            expect_inflight,
+        );
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_prune_order_local_activity_uses_open_check_threshold() {
+        let old_id = ClientOrderId::from("O-ACTIVITY-OLD");
+        let fresh_id = ClientOrderId::from("O-ACTIVITY-FRESH");
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache,
+            ExecutionManagerConfig {
+                open_check_threshold_ns: 100_000_000,
+                ..Default::default()
+            },
+        );
+        manager.record_local_activity(old_id);
+        dst::time::sleep(Duration::from_millis(101)).await;
+        manager.record_local_activity(fresh_id);
+
+        manager.prune_order_local_activity();
+
+        assert!(!manager.order_local_activity.contains_key(&old_id));
+        assert!(manager.order_local_activity.contains_key(&fresh_id));
     }
 
     #[rstest]

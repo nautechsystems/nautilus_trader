@@ -1241,6 +1241,7 @@ impl LiveNode {
                     if now >= prune_fills_next {
                         self.exec_manager.prune_recent_fills_cache(60.0);
                         self.exec_manager.prune_processed_fills();
+                        self.exec_manager.prune_order_local_activity();
                         prune_fills_next = now + prune_fills_interval;
                     }
 
@@ -1312,28 +1313,7 @@ impl LiveNode {
                         residual_events += 1;
                     }
 
-                    match &cmd {
-                        TradingCommand::SubmitOrder(submit) => {
-                            self.exec_manager.register_inflight(submit.client_order_id);
-                        }
-                        TradingCommand::SubmitOrderList(submit) => {
-                            for order_init in &submit.order_inits {
-                                self.exec_manager.register_inflight(order_init.client_order_id);
-                            }
-                        }
-                        TradingCommand::ModifyOrder(modify) => {
-                            self.exec_manager.register_inflight(modify.client_order_id);
-                        }
-                        TradingCommand::ModifyOrders(modify) => {
-                            for child in &modify.modifies {
-                                self.exec_manager.register_inflight(child.client_order_id);
-                            }
-                        }
-                        TradingCommand::CancelOrder(cancel) => {
-                            self.exec_manager.register_inflight(cancel.client_order_id);
-                        }
-                        _ => {}
-                    }
+                    self.observe_exec_command_before_dispatch(&cmd);
                     AsyncRunner::handle_exec_command(cmd);
                     record_runner_dispatch(
                         &metrics,
@@ -1683,6 +1663,37 @@ impl LiveNode {
         }
 
         Some(close_ids)
+    }
+
+    fn observe_exec_command_before_dispatch(&mut self, cmd: &TradingCommand) {
+        match cmd {
+            TradingCommand::SubmitOrder(submit) => {
+                self.exec_manager.register_inflight(submit.client_order_id);
+            }
+            TradingCommand::SubmitOrderList(submit) => {
+                for order_init in &submit.order_inits {
+                    self.exec_manager
+                        .register_inflight(order_init.client_order_id);
+                }
+            }
+            TradingCommand::ModifyOrder(modify) => {
+                self.exec_manager.register_inflight(modify.client_order_id);
+            }
+            TradingCommand::ModifyOrders(modify) => {
+                for child in &modify.modifies {
+                    self.exec_manager.register_inflight(child.client_order_id);
+                }
+            }
+            TradingCommand::CancelOrder(cancel) => {
+                self.exec_manager.register_inflight(cancel.client_order_id);
+            }
+            TradingCommand::CancelOrders(cancel) => {
+                for child in &cancel.cancels {
+                    self.exec_manager.register_inflight(child.client_order_id);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// Gets the node's environment.
@@ -2690,6 +2701,123 @@ mod tests {
 
         assert_eq!(close_ids, Some(Vec::new()));
         assert!(node.exec_manager.check_open_order_queries().is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_batch_cancel_command_registers_each_child_for_inflight_timeout() {
+        use nautilus_common::messages::execution::{BatchCancelOrders, CancelOrder};
+        use nautilus_model::{events::OrderPendingCancel, identifiers::ClientOrderId};
+
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("BatchCancelNode".to_string(), Some(config)).unwrap();
+        let trader_id = TraderId::from("TESTER-001");
+        let strategy_id = StrategyId::from("S-BATCH-CANCEL");
+        let account_id = AccountId::from("TEST-001");
+        let instrument = crypto_perpetual_ethusdt();
+        let instrument_id = instrument.id();
+        let child_ids = [
+            ClientOrderId::from("O-BATCH-CANCEL-1"),
+            ClientOrderId::from("O-BATCH-CANCEL-2"),
+        ];
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(instrument))
+            .unwrap();
+
+        for client_order_id in child_ids {
+            let order = OrderTestBuilder::new(OrderType::Limit)
+                .trader_id(trader_id)
+                .strategy_id(strategy_id)
+                .client_order_id(client_order_id)
+                .instrument_id(instrument_id)
+                .quantity(Quantity::from("10.0"))
+                .price(Price::from("100.0"))
+                .build();
+            let venue_order_id = VenueOrderId::from(format!("V-{client_order_id}").as_str());
+            // Model the production batch-cancel path: each child is accepted, then
+            // moved to PendingCancel, so an inflight timeout must emit a Canceled
+            // event (not a Submitted-order rejection).
+            let submitted = TestOrderEventStubs::submitted(&order, account_id);
+            let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+            let pending_cancel = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(account_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+            ));
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache.add_order(order, None, None, false).unwrap();
+            cache.update_order(&submitted).unwrap();
+            cache.update_order(&accepted).unwrap();
+            cache.update_order(&pending_cancel).unwrap();
+        }
+        let cancels = child_ids
+            .into_iter()
+            .map(|client_order_id| {
+                CancelOrder::new(
+                    trader_id,
+                    None,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect();
+        let command = TradingCommand::CancelOrders(BatchCancelOrders::new(
+            trader_id,
+            None,
+            strategy_id,
+            instrument_id,
+            cancels,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+
+        node.observe_exec_command_before_dispatch(&command);
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+        let timed_out_ids = result
+            .events
+            .iter()
+            .map(OrderEventAny::client_order_id)
+            .collect::<IndexSet<_>>();
+
+        assert_eq!(timed_out_ids, IndexSet::from(child_ids));
+        assert_eq!(result.events.len(), child_ids.len());
+        assert!(
+            result
+                .events
+                .iter()
+                .all(|event| matches!(event, OrderEventAny::Canceled(_))),
+            "batch-cancel children must time out as Canceled events",
+        );
     }
 
     #[rstest]
