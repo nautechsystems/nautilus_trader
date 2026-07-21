@@ -2063,7 +2063,7 @@ impl ExecutionManager {
     /// Observes a local order event and updates tracking state.
     ///
     /// This is the `LiveNode` dispatch path for order events: acknowledgement
-    /// events clear reconciliation tracking, fills record fill/position
+    /// events clear reconciliation tracking, fills record position
     /// activity, and every event stamps local activity. The stamp must come
     /// AFTER any [`Self::clear_recon_tracking`] call - that call drops the
     /// local-activity mark, which is the sole grace gate protecting a
@@ -2073,7 +2073,6 @@ impl ExecutionManager {
         match event {
             OrderEventAny::Filled(fill) => {
                 self.record_position_activity(fill.instrument_id, fill.account_id);
-                self.mark_fill_processed(fill.account_id, fill.instrument_id, fill.trade_id);
             }
             OrderEventAny::Accepted(_)
             | OrderEventAny::Rejected(_)
@@ -2189,6 +2188,14 @@ impl ExecutionManager {
     ) {
         self.recent_fills_cache
             .mark((account_id, instrument_id, trade_id));
+    }
+
+    /// Marks a fill as recently processed when it is present on its canonical order.
+    pub fn commit_recent_fill_if_applied(&mut self, fill: &OrderFilled) {
+        let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+        if self.is_fill_applied(fill, fill_key) {
+            self.mark_fill_processed(fill_key.0, fill_key.1, fill_key.2);
+        }
     }
 
     /// Prunes expired fills from the recent fills cache.

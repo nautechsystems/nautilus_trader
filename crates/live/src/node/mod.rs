@@ -1287,7 +1287,7 @@ impl LiveNode {
                         continue;
                     };
 
-                    AsyncRunner::handle_exec_event(evt);
+                    self.dispatch_exec_event_and_commit_fill(evt);
 
                     // Post-dispatch: clear tracking when order closes
                     for coid in &close_ids {
@@ -1500,13 +1500,32 @@ impl LiveNode {
             if let OrderEventAny::Filled(fill) = event {
                 self.exec_manager
                     .record_position_activity(fill.instrument_id, fill.account_id);
-                self.exec_manager.mark_fill_processed(
-                    fill.account_id,
-                    fill.instrument_id,
-                    fill.trade_id,
-                );
             }
             self.kernel.exec_engine.borrow_mut().process(event);
+            if let OrderEventAny::Filled(fill) = event {
+                self.exec_manager.commit_recent_fill_if_applied(fill);
+            }
+        }
+    }
+
+    /// Dispatches a normal-ingress execution event, then commits a direct
+    /// `OrderFilled` to the recent-fills dedup cache only once it is present on
+    /// its canonical order.
+    ///
+    /// The fill candidate is captured from `&evt` BEFORE the value is moved into
+    /// [`AsyncRunner::handle_exec_event`]; the gated commit runs AFTER dispatch,
+    /// so a fill the execution engine rejects (unknown order, invalid
+    /// transition) is never marked and its later `Fill` report stays eligible.
+    fn dispatch_exec_event_and_commit_fill(&mut self, evt: ExecutionEvent) {
+        let recent_fill_candidate = match &evt {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => Some(fill.clone()),
+            _ => None,
+        };
+
+        AsyncRunner::handle_exec_event(evt);
+
+        if let Some(fill) = &recent_fill_candidate {
+            self.exec_manager.commit_recent_fill_if_applied(fill);
         }
     }
 
@@ -2563,20 +2582,22 @@ mod tests {
         },
     };
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_execution::engine::{
-        ExecutionEngine, SnapshotAnchorer, stubs::StubExecutionClient,
+    use nautilus_execution::{
+        engine::{ExecutionEngine, SnapshotAnchorer, stubs::StubExecutionClient},
+        reconciliation::create_inferred_fill_for_qty,
     };
     use nautilus_model::{
         data::QuoteTick,
-        enums::{OmsType, OrderStatus, OrderType},
-        events::{OrderAcceptedBatch, order::spec::OrderAcceptedSpec},
+        enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+        events::{OrderAcceptedBatch, OrderFilled, order::spec::OrderAcceptedSpec},
         identifiers::{
             AccountId, ClientId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{Price, Quantity},
+        reports::FillReport,
+        types::{Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents, event_store::EventStoreConfig};
     use nautilus_trading::{
@@ -2641,6 +2662,178 @@ mod tests {
 
         let close_ids = node.observe_exec_event_before_dispatch(&event);
         assert_eq!(close_ids, None);
+    }
+
+    #[rstest]
+    fn test_rejected_direct_fill_stays_eligible_for_later_report() {
+        let (mut node, mut fill_event, _) = recent_fill_test_fixture("RejectedDirectFillNode");
+        let OrderEventAny::Filled(fill) = &mut fill_event else {
+            unreachable!();
+        };
+        fill.client_order_id = ClientOrderId::from("O-UNKNOWN");
+        fill.venue_order_id = VenueOrderId::from("V-UNKNOWN");
+        let fill = fill.clone();
+        let report_event = fill_report_event(&fill);
+        let event = ExecutionEvent::Order(OrderEventAny::Filled(fill.clone()));
+
+        assert!(node.observe_exec_event_before_dispatch(&event).is_some());
+        let marked_before_dispatch = is_recent_fill(&node, &fill);
+
+        node.dispatch_exec_event_and_commit_fill(event);
+
+        let marked_after_dispatch = is_recent_fill(&node, &fill);
+        let later_report_is_eligible = node
+            .observe_exec_event_before_dispatch(&report_event)
+            .is_some();
+        assert_eq!(
+            (
+                marked_before_dispatch,
+                marked_after_dispatch,
+                later_report_is_eligible,
+            ),
+            (false, false, true),
+        );
+    }
+
+    #[rstest]
+    fn test_applied_direct_fill_commits_and_skips_later_report() {
+        let (mut node, fill_event, _) = recent_fill_test_fixture("AppliedDirectFillNode");
+        let OrderEventAny::Filled(fill) = &fill_event else {
+            unreachable!();
+        };
+        let fill = fill.clone();
+        let report_event = fill_report_event(&fill);
+        let event = ExecutionEvent::Order(fill_event);
+
+        assert!(node.observe_exec_event_before_dispatch(&event).is_some());
+        assert!(!is_recent_fill(&node, &fill));
+
+        node.dispatch_exec_event_and_commit_fill(event);
+
+        assert!(is_recent_fill(&node, &fill));
+        assert_eq!(node.observe_exec_event_before_dispatch(&report_event), None);
+    }
+
+    #[rstest]
+    fn test_canonical_duplicate_fill_counts_as_applied() {
+        let (mut node, fill_event, _) = recent_fill_test_fixture("DuplicateDirectFillNode");
+        let OrderEventAny::Filled(fill) = &fill_event else {
+            unreachable!();
+        };
+        let mut fill = fill.clone();
+        node.kernel
+            .cache
+            .borrow_mut()
+            .update_order(&fill_event)
+            .unwrap();
+        fill.client_order_id = ClientOrderId::from("O-DUPLICATE-UNKNOWN");
+
+        node.exec_manager.commit_recent_fill_if_applied(&fill);
+
+        assert!(is_recent_fill(&node, &fill));
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_continuous_reconciliation_commits_only_applied_fill(#[case] applied: bool) {
+        let (mut node, mut fill_event, _) = recent_fill_test_fixture(if applied {
+            "AppliedContinuousFillNode"
+        } else {
+            "RejectedContinuousFillNode"
+        });
+
+        if !applied {
+            let OrderEventAny::Filled(fill) = &mut fill_event else {
+                unreachable!();
+            };
+            fill.client_order_id = ClientOrderId::from("O-CONTINUOUS-UNKNOWN");
+            fill.venue_order_id = VenueOrderId::from("V-CONTINUOUS-UNKNOWN");
+        }
+        let OrderEventAny::Filled(fill) = &fill_event else {
+            unreachable!();
+        };
+        let fill = fill.clone();
+
+        node.process_reconciliation_events(&[fill_event]);
+
+        assert_eq!(is_recent_fill(&node, &fill), applied);
+    }
+
+    #[rstest]
+    fn test_recent_fill_commit_requires_account_and_instrument_match() {
+        let (mut node, fill_event, _) = recent_fill_test_fixture("MismatchedDirectFillNode");
+        node.kernel
+            .cache
+            .borrow_mut()
+            .update_order(&fill_event)
+            .unwrap();
+        let OrderEventAny::Filled(fill) = fill_event else {
+            unreachable!();
+        };
+        let mut account_mismatch = fill.clone();
+        account_mismatch.account_id = AccountId::from("OTHER-001");
+        let mut instrument_mismatch = fill;
+        instrument_mismatch.instrument_id = InstrumentId::from("OTHER.VENUE");
+
+        node.exec_manager
+            .commit_recent_fill_if_applied(&account_mismatch);
+        node.exec_manager
+            .commit_recent_fill_if_applied(&instrument_mismatch);
+
+        assert!(!is_recent_fill(&node, &account_mismatch));
+        assert!(!is_recent_fill(&node, &instrument_mismatch));
+    }
+
+    #[rstest]
+    fn test_applied_inferred_fill_remains_recently_processed() {
+        let (mut node, _, instrument) = recent_fill_test_fixture("InferredFillNode");
+        let client_order_id = ClientOrderId::from("O-RECENT-FILL");
+        let venue_order_id = VenueOrderId::from("V-RECENT-FILL");
+        let account_id = AccountId::from("TEST-001");
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        let report = OrderStatusReport::new(
+            account_id,
+            instrument.id(),
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::PartiallyFilled,
+            Quantity::from("10.0"),
+            Quantity::from("1.0"),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            UnixNanos::from(1_000),
+            None,
+        )
+        .with_avg_px(100.0)
+        .unwrap();
+        let inferred = create_inferred_fill_for_qty(
+            &order,
+            &report,
+            &account_id,
+            &instrument,
+            Quantity::from("1.0"),
+            UnixNanos::from(1_000),
+            None,
+        )
+        .unwrap();
+        let OrderEventAny::Filled(fill) = &inferred else {
+            unreachable!();
+        };
+        let fill = fill.clone();
+
+        node.process_reconciliation_events(&[inferred]);
+
+        assert!(fill.reconciliation);
+        assert!(is_recent_fill(&node, &fill));
     }
 
     #[rstest]
@@ -3155,6 +3348,83 @@ mod tests {
             .borrow_mut()
             .update_order(&accepted)
             .unwrap();
+    }
+
+    fn recent_fill_test_fixture(name: &str) -> (LiveNode, OrderEventAny, InstrumentAny) {
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecEngineConfig {
+                reconciliation: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let node = LiveNode::build(name.to_string(), Some(config)).unwrap();
+        let account_id = AccountId::from("TEST-001");
+        let client_id = ClientId::from("TEST-RECENT-FILL");
+        let client_order_id = ClientOrderId::from("O-RECENT-FILL");
+        let venue_order_id = VenueOrderId::from("V-RECENT-FILL");
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        node.kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        insert_accepted_limit_order_in_node(
+            &node,
+            account_id,
+            client_id,
+            instrument.id(),
+            client_order_id,
+            venue_order_id,
+        );
+        let order = node
+            .kernel
+            .cache
+            .borrow()
+            .order_owned(&client_order_id)
+            .unwrap();
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from("T-RECENT-FILL")),
+            None,
+            Some(Price::from("100.0")),
+            Some(Quantity::from("1.0")),
+            Some(LiquiditySide::Taker),
+            None,
+            None,
+            Some(account_id),
+        );
+
+        (node, fill, instrument)
+    }
+
+    fn fill_report_event(fill: &OrderFilled) -> ExecutionEvent {
+        ExecutionEvent::Report(ExecutionReport::Fill(Box::new(FillReport::new(
+            fill.account_id,
+            fill.instrument_id,
+            fill.venue_order_id,
+            fill.trade_id,
+            fill.order_side,
+            fill.last_qty,
+            fill.last_px,
+            fill.commission
+                .unwrap_or_else(|| Money::zero(fill.currency)),
+            fill.liquidity_side,
+            Some(fill.client_order_id),
+            fill.position_id,
+            fill.ts_event,
+            fill.ts_init,
+            None,
+        ))))
+    }
+
+    fn is_recent_fill(node: &LiveNode, fill: &OrderFilled) -> bool {
+        node.exec_manager.is_fill_recently_processed(
+            fill.account_id,
+            fill.instrument_id,
+            fill.trade_id,
+        )
     }
 
     #[rstest]
