@@ -3148,8 +3148,7 @@ impl ParquetDataCatalog {
     where
         F: std::future::Future<Output = anyhow::Result<R>>,
     {
-        let rt = get_runtime();
-        rt.block_on(future)
+        super::block_on(get_runtime().handle(), future)
     }
 
     /// Lists directory stems (directory names without path) in a subdirectory.

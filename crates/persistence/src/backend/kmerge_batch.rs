@@ -57,7 +57,7 @@ impl<T> Iterator for EagerStream<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.runtime.block_on(self.rx.recv())
+        super::block_on(&self.runtime, self.rx.recv())
     }
 }
 

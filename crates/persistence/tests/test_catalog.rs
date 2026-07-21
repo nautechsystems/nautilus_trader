@@ -15,6 +15,7 @@
 
 use std::{collections::HashMap, fs, io::Write, str::FromStr, sync::Arc};
 
+use nautilus_common::live::get_runtime;
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{
@@ -473,6 +474,23 @@ fn test_rust_write_2_bars_to_catalog() {
         .unwrap();
 
     assert_eq!(intervals, vec![(1, 2)]);
+    assert_eq!(loaded, bars);
+}
+
+#[rstest]
+fn test_rust_query_bars_inside_nautilus_runtime() {
+    let (_temp_dir, mut catalog) = create_temp_catalog();
+
+    let bars = vec![create_bar(1), create_bar(2)];
+    catalog.write_to_parquet(&bars, None, None, None).unwrap();
+
+    let loaded = get_runtime().block_on(async {
+        tokio::task::yield_now().await;
+        catalog
+            .bars(Some(vec!["AUD/USD.SIM".to_string()]), None, None)
+            .unwrap()
+    });
+
     assert_eq!(loaded, bars);
 }
 

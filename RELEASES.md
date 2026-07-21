@@ -147,6 +147,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 `Bar` and `BarSpecification` deserialization to validate OHLC ordering and step periodicity
 - Fixed v2 `Bar.from_pyobject` and bar type parsing at the Python boundary to raise `ValueError` instead of panicking
 - Fixed v2 catalog writes re-labeling mixed instruments or bar types; writes now group or reject them
+- Fixed v2 synchronous Parquet catalog queries panicking in the multi-threaded Rust live runtime
 - Fixed v2 bar-type conversion corrupting `-INTERNAL` symbols and composite bar types
 - Fixed v2 SQL bar decoding to reject invalid rows and composite bar inserts without panicking
 - Fixed v2 external bar unsubscribe detaching the venue stream while other actors remained subscribed

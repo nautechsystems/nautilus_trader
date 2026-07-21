@@ -179,19 +179,19 @@ impl DataBackendSession {
                 }]],
                 ..Default::default()
             };
-            self.runtime.block_on(self.session_ctx.register_parquet(
-                table_name,
-                file_path,
-                parquet_options,
-            ))?;
+            super::block_on(
+                &self.runtime,
+                self.session_ctx
+                    .register_parquet(table_name, file_path, parquet_options),
+            )?;
 
             self.registered_tables.insert(table_name.to_string());
 
             // Only add batch stream for newly registered tables to avoid duplicates
             let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
             let sql_query = sql_query.unwrap_or(&default_query);
-            let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
-            let batch_stream = self.runtime.block_on(query.execute_stream())?;
+            let query = super::block_on(&self.runtime, self.session_ctx.sql(sql_query))?;
+            let batch_stream = super::block_on(&self.runtime, query.execute_stream())?;
             self.add_batch_stream::<T>(batch_stream, custom_type_name.map(String::from));
         }
 
@@ -220,21 +220,21 @@ impl DataBackendSession {
                 }]],
                 ..Default::default()
             };
-            self.runtime.block_on(self.session_ctx.register_parquet(
-                table_name,
-                file_path,
-                parquet_options,
-            ))?;
+            super::block_on(
+                &self.runtime,
+                self.session_ctx
+                    .register_parquet(table_name, file_path, parquet_options),
+            )?;
 
             self.registered_tables.insert(table_name.to_string());
         }
 
         let default_query = format!("SELECT * FROM {table_name} ORDER BY ts_init");
         let sql_query = sql_query.unwrap_or(&default_query);
-        let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
-        let mut batch_stream = self.runtime.block_on(query.execute_stream())?;
+        let query = super::block_on(&self.runtime, self.session_ctx.sql(sql_query))?;
+        let mut batch_stream = super::block_on(&self.runtime, query.execute_stream())?;
 
-        self.runtime.block_on(async {
+        super::block_on(&self.runtime, async {
             let mut batches = Vec::new();
             while let Some(batch) = batch_stream.next().await {
                 batches.push(batch?);
