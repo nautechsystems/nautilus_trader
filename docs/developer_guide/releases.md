@@ -7,7 +7,7 @@ This guide covers the release process and the standards for writing release note
 NautilusTrader uses a three-branch model:
 
 - **`develop`**: active development; publishes dev wheels to Cloudflare R2 on every push.
-- **`nightly`**: pre-release testing; publishes alpha wheels and CLI binaries.
+- **`nightly`**: pre-release testing; publishes v1 and v2 pre-release wheels and CLI binaries.
 - **`master`**: stable releases; triggers the full release pipeline.
 
 Pushing to `master` automatically tags the version from `pyproject.toml`, creates a draft GitHub
