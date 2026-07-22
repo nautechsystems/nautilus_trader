@@ -17,9 +17,10 @@
 //!
 //! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193).
 pub mod clock;
+pub mod quota;
+
 mod gcra;
 mod nanos;
-pub mod quota;
 
 use std::{
     fmt::Debug,

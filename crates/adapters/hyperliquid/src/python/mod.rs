@@ -20,14 +20,15 @@
     reason = "errors documented on underlying Rust methods"
 )]
 
-#[cfg(feature = "arrow")]
-pub mod arrow;
 pub mod config;
 pub mod enums;
 pub mod factories;
 pub mod http;
 pub mod urls;
 pub mod websocket;
+
+#[cfg(feature = "arrow")]
+pub mod arrow;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};

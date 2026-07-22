@@ -19,6 +19,9 @@
 //! compact cursor snapshots, joinable back to catalog rows. No market-data payload is
 //! persisted.
 
+#[cfg(feature = "persistence")]
+mod join;
+
 mod backend;
 mod capture;
 mod cursor;
@@ -28,9 +31,6 @@ mod reader;
 mod redb;
 mod verifier;
 mod writer;
-
-#[cfg(feature = "persistence")]
-mod join;
 
 #[cfg(test)]
 mod test_support;

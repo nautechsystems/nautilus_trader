@@ -15,20 +15,21 @@
 
 //! Live execution client implementation for the Polymarket adapter.
 
+pub mod order_builder;
+pub mod parse;
+
+pub(crate) mod identity;
+pub(crate) mod order_fill_tracker;
+pub(crate) mod pending;
+pub(crate) mod reconciliation;
+pub(crate) mod submitter;
+pub(crate) mod types;
+
 mod cancellations;
 mod lifecycle;
 mod orders;
 mod reports;
 mod responses;
-
-pub(crate) mod identity;
-pub mod order_builder;
-pub(crate) mod order_fill_tracker;
-pub mod parse;
-pub(crate) mod pending;
-pub(crate) mod reconciliation;
-pub(crate) mod submitter;
-pub(crate) mod types;
 
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 

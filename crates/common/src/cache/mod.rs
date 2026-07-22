@@ -19,12 +19,12 @@
 
 pub mod config;
 pub mod database;
-mod error;
 pub mod fifo;
 pub mod quote;
 pub mod refs;
 
 mod bounded;
+mod error;
 mod index;
 
 #[cfg(test)]

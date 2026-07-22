@@ -22,10 +22,11 @@
 
 pub mod algorithm;
 pub mod controller;
-#[cfg(feature = "examples")]
-mod examples;
 pub mod sessions;
 pub mod strategy;
+
+#[cfg(feature = "examples")]
+mod examples;
 
 use pyo3::{prelude::*, pymodule};
 

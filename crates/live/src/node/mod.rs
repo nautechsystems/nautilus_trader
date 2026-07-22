@@ -129,11 +129,12 @@ use crate::{
 
 pub mod builder;
 pub mod config;
-mod metrics;
-mod state;
 
 #[cfg(feature = "plugin")]
 pub mod plugin;
+
+mod metrics;
+mod state;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;

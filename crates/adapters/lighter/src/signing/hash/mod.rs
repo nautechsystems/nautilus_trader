@@ -23,6 +23,7 @@
 //! `test_data/`.
 
 pub mod params;
+
 mod poseidon2;
 
 pub use params::{RATE, ROUNDS_F, ROUNDS_F_HALF, ROUNDS_P, WIDTH};

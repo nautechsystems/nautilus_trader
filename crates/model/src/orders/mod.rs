@@ -16,8 +16,6 @@
 //! Order types for the trading domain model.
 
 pub mod any;
-#[cfg(any(test, feature = "stubs"))]
-pub mod builder;
 pub mod limit;
 pub mod limit_if_touched;
 pub mod list;
@@ -29,6 +27,8 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
+#[cfg(any(test, feature = "stubs"))]
+pub mod builder;
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
