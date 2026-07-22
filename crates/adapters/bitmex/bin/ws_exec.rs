@@ -59,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,
         None,
         5, // 5 second heartbeat
+        None,
         TransportBackend::default(),
         None,
     )
