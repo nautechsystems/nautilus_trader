@@ -907,7 +907,7 @@ pub fn parse_ws_fill_report(
         .parse()
         .with_context(|| format!("Failed to parse execFee='{}'", execution.exec_fee))?;
 
-    let commission_currency = instrument.quote_currency();
+    let commission_currency = get_currency(&execution.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "Failed to create commission from execFee='{}'",
@@ -1450,6 +1450,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95900.1));
         assert_eq!(report.commission.as_f64(), 26.3725275);
+        assert_eq!(report.commission.currency.code.as_str(), "USDT");
         assert_eq!(report.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
             report.client_order_id.as_ref().unwrap().to_string(),
@@ -1484,6 +1485,7 @@ mod tests {
         assert_eq!(report.last_qty, instrument.make_qty(0.5, None));
         assert_eq!(report.last_px, instrument.make_price(95850.0));
         assert_eq!(report.commission.as_f64(), 0.0);
+        assert_eq!(report.commission.currency.code.as_str(), "USDT");
     }
 
     #[rstest]

@@ -55,7 +55,7 @@ use crate::{
     common::{
         enums::BybitOrderStatus,
         parse::{
-            bybit_rejection_due_post_only, make_bybit_symbol, parse_millis_timestamp,
+            bybit_rejection_due_post_only, get_currency, make_bybit_symbol, parse_millis_timestamp,
             parse_price_with_precision, parse_quantity_with_precision,
         },
     },
@@ -754,7 +754,7 @@ fn parse_order_filled(
         .exec_fee
         .parse()
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
-    let commission_currency = instrument.quote_currency();
+    let commission_currency = get_currency(&exec.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "failed to create commission from execFee='{}'",
