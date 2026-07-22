@@ -481,7 +481,7 @@ impl BybitHttpClient {
     /// Returns an error if:
     /// - Credentials are missing.
     /// - The request fails.
-    /// - Called between 04:00-05:30 UTC (interest calculation window).
+    /// - Called during the hourly interest-calculation window (mm:04:00-mm:05:30 UTC each hour).
     /// - Insufficient spot balance for repayment.
     #[pyo3(name = "repay_spot_borrow")]
     #[pyo3(signature = (coin, amount=None))]
@@ -496,6 +496,43 @@ impl BybitHttpClient {
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             client
                 .repay_spot_borrow(&coin, amount)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            Python::attach(|py| Ok(py.None()))
+        })
+    }
+
+    /// Repays spot borrows for a specific coin, converting other assets if required.
+    ///
+    /// Unlike `Self.repay_spot_borrow`, this uses the venue's manual repay endpoint,
+    /// which may draw on other holdings when the debt coin's spot balance is insufficient.
+    ///
+    /// # Parameters
+    ///
+    /// - `coin`: The coin to repay (e.g., "BTC", "ETH")
+    /// - `amount`: Optional amount to repay. If None, repays all outstanding borrows.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - Called during the hourly interest-calculation window (mm:04:00-mm:05:30 UTC each hour).
+    /// - Insufficient balance for repayment.
+    #[pyo3(name = "repay_spot_borrow_with_conversion")]
+    #[pyo3(signature = (coin, amount=None))]
+    fn py_repay_spot_borrow_with_conversion<'py>(
+        &self,
+        py: Python<'py>,
+        coin: String,
+        amount: Option<Quantity>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            client
+                .repay_spot_borrow_with_conversion(&coin, amount)
                 .await
                 .map_err(to_pyvalue_err)?;
 

@@ -1411,6 +1411,20 @@ pub struct BybitNoConvertRepayResult {
 /// - <https://bybit-exchange.github.io/docs/v5/account/no-convert-repay>
 pub type BybitNoConvertRepayResponse = BybitResponse<BybitNoConvertRepayResult>;
 
+/// Result from a manual repay (with conversion) operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BybitRepayResult {
+    pub result_status: String,
+}
+
+/// Response alias for manual repay requests.
+///
+/// # References
+///
+/// - <https://bybit-exchange.github.io/docs/v5/account/repay>
+pub type BybitRepayResponse = BybitResponse<BybitRepayResult>;
+
 /// API key permissions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -2146,6 +2160,25 @@ mod tests {
         assert_eq!(response.ret_code, 0);
         assert_eq!(response.ret_msg, "OK");
         assert_eq!(response.result.result_status, "SU");
+    }
+
+    #[rstest]
+    fn deserialize_repay_response() {
+        let json = r#"{
+            "retCode": 0,
+            "retMsg": "success",
+            "result": {
+                "resultStatus": "P"
+            },
+            "retExtInfo": {},
+            "time": 1756295680801
+        }"#;
+
+        let response: BybitRepayResponse = serde_json::from_str(json).unwrap();
+
+        assert_eq!(response.ret_code, 0);
+        assert_eq!(response.ret_msg, "success");
+        assert_eq!(response.result.result_status, "P");
     }
 
     #[rstest]

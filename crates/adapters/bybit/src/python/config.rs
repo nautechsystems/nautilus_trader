@@ -131,6 +131,7 @@ impl BybitExecClientConfig {
         recv_window_ms = None,
         account_id = None,
         use_spot_position_reports = None,
+        auto_repay_spot_borrows = None,
         margin_mode = None,
         transport_backend = None,
     ))]
@@ -152,6 +153,7 @@ impl BybitExecClientConfig {
         recv_window_ms: Option<u64>,
         account_id: Option<AccountId>,
         use_spot_position_reports: Option<bool>,
+        auto_repay_spot_borrows: Option<bool>,
         margin_mode: Option<BybitMarginMode>,
         transport_backend: Option<TransportBackend>,
     ) -> Self {
@@ -176,6 +178,8 @@ impl BybitExecClientConfig {
             account_id,
             use_spot_position_reports: use_spot_position_reports
                 .unwrap_or(defaults.use_spot_position_reports),
+            auto_repay_spot_borrows: auto_repay_spot_borrows
+                .unwrap_or(defaults.auto_repay_spot_borrows),
             futures_leverages: None,
             position_mode: None,
             margin_mode,

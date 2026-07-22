@@ -224,6 +224,9 @@ pub struct BybitExecClientConfig {
     /// Whether to generate position reports from wallet balances for SPOT positions.
     #[builder(default)]
     pub use_spot_position_reports: bool,
+    /// Whether to automatically repay SPOT margin borrows after BUY orders fully fill.
+    #[builder(default)]
+    pub auto_repay_spot_borrows: bool,
     /// Leverage configuration for futures (symbol -> leverage).
     pub futures_leverages: Option<HashMap<String, u32>>,
     /// Position mode configuration for symbols (symbol -> mode).
@@ -250,6 +253,7 @@ nautilus_core::impl_pyo3_config_getters!(BybitExecClientConfig {
     recv_window_ms: u64,
     account_id: Option<AccountId>,
     use_spot_position_reports: bool,
+    auto_repay_spot_borrows: bool,
     margin_mode: Option<BybitMarginMode>,
     transport_backend: TransportBackend,
 });

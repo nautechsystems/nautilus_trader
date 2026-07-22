@@ -20,10 +20,14 @@
 //! proper order events; untracked orders fall back to execution reports for
 //! downstream reconciliation.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use ahash::AHashMap;
 use anyhow::Context;
+use arc_swap::ArcSwapOption;
 use dashmap::{DashMap, DashSet};
 use nautilus_core::{UUID4, UnixNanos, time::AtomicTime};
 use nautilus_live::ExecutionEventEmitter;
@@ -53,13 +57,14 @@ use super::{
 };
 use crate::{
     common::{
-        enums::BybitOrderStatus,
+        enums::{BybitOrderSide, BybitOrderStatus, BybitProductType},
         parse::{
             bybit_rejection_due_post_only, make_bybit_symbol, parse_millis_timestamp,
             parse_price_with_precision, parse_quantity_with_precision,
         },
     },
     http::error::is_bybit_ambiguous_order_error_code,
+    repay::RepayRequest,
 };
 
 const DEDUP_CAPACITY: usize = 10_000;
@@ -116,6 +121,7 @@ pub struct WsDispatchState {
     pub emitted_accepted: DashSet<ClientOrderId>,
     pub triggered_orders: DashSet<ClientOrderId>,
     pub filled_orders: DashSet<ClientOrderId>,
+    repay_tx: ArcSwapOption<tokio::sync::mpsc::UnboundedSender<RepayRequest>>,
     clearing: AtomicBool,
 }
 
@@ -128,6 +134,7 @@ impl Default for WsDispatchState {
             emitted_accepted: DashSet::default(),
             triggered_orders: DashSet::default(),
             filled_orders: DashSet::default(),
+            repay_tx: ArcSwapOption::empty(),
             clearing: AtomicBool::new(false),
         }
     }
@@ -159,6 +166,22 @@ impl WsDispatchState {
     fn insert_triggered(&self, cid: ClientOrderId) {
         self.evict_if_full(&self.triggered_orders);
         self.triggered_orders.insert(cid);
+    }
+
+    pub(crate) fn set_repay_sender(&self, tx: tokio::sync::mpsc::UnboundedSender<RepayRequest>) {
+        self.repay_tx.store(Some(Arc::new(tx)));
+    }
+
+    pub(crate) fn clear_repay_sender(&self) {
+        self.repay_tx.store(None);
+    }
+
+    fn enqueue_repay(&self, req: RepayRequest) {
+        if let Some(tx) = self.repay_tx.load_full()
+            && let Err(e) = tx.send(req)
+        {
+            log::warn!("Failed to enqueue spot borrow repayment: {e}");
+        }
     }
 }
 
@@ -661,6 +684,9 @@ fn dispatch_execution_fill(
                 emitter.send_order_event(OrderEventAny::Filled(filled));
 
                 if exec.leaves_qty == "0" {
+                    if exec.category == BybitProductType::Spot && exec.side == BybitOrderSide::Buy {
+                        enqueue_spot_repay(exec, instrument, state);
+                    }
                     cleanup_terminal(client_order_id, state);
                 }
             }
@@ -1126,6 +1152,37 @@ fn extract_venue_order_id_from_data(data: &serde_json::Value) -> Option<VenueOrd
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(VenueOrderId::new)
+}
+
+/// Enqueues an auto-repay for a fully-filled SPOT BUY.
+fn enqueue_spot_repay(
+    exec: &BybitWsAccountExecution,
+    instrument: &InstrumentAny,
+    state: &WsDispatchState,
+) {
+    let Some(base_currency) = instrument.base_currency() else {
+        return;
+    };
+
+    let quantity = match parse_quantity_with_precision(
+        &exec.order_qty,
+        instrument.size_precision(),
+        "execution.orderQty",
+    ) {
+        Ok(quantity) => quantity,
+        Err(e) => {
+            log::warn!(
+                "Failed to parse orderQty='{}' for spot repay: {e}",
+                exec.order_qty
+            );
+            return;
+        }
+    };
+
+    state.enqueue_repay(RepayRequest {
+        coin: base_currency.code,
+        quantity,
+    });
 }
 
 #[cfg(test)]
