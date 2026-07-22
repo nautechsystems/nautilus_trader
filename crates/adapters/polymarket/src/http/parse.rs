@@ -186,7 +186,6 @@ pub fn create_instrument_from_def(
     let raw_symbol = Symbol::new(def.token_id);
     let currency = get_currency(PUSD);
 
-    let price_increment = Price::from(def.tick_size.to_string());
     let size_increment = Quantity::from("0.000001");
 
     let activation_ns = def
@@ -204,6 +203,8 @@ pub fn create_instrument_from_def(
     // these bounds land inside the venue's `[tick, 1 - tick]` range; execution-side validation in
     // `PolymarketOrderBuilder::validate_limit_price` remains the source of truth.
     let (min_price, max_price) = tick_relative_price_bounds(def.tick_size)?;
+    let price_increment = Price::from_decimal(def.tick_size)
+        .map_err(|e| anyhow::anyhow!("Invalid tick_size '{}': {e}", def.tick_size))?;
     // Polymarket exposes `orderMinSize` (limit-order minimum shares) and a separate
     // $1 market-order minimum amount; the instrument model can only carry one
     // `min_quantity`, so leave it unset and let the venue reject out-of-bounds orders.
@@ -276,8 +277,9 @@ pub fn rebuild_instrument_with_tick_size(
         .parse()
         .map_err(|e| anyhow::anyhow!("Failed to parse tick size '{new_tick_size}': {e}"))?;
     let price_precision = tick_size.scale() as u8;
-    let price_increment = Price::from(tick_size.to_string());
     let (min_price, max_price) = tick_relative_price_bounds(tick_size)?;
+    let price_increment = Price::from_decimal(tick_size)
+        .map_err(|e| anyhow::anyhow!("Invalid tick_size '{tick_size}': {e}"))?;
 
     let rebuilt = BinaryOption::new_checked(
         bo.id,
@@ -766,5 +768,31 @@ mod tests {
         };
         assert_eq!(new_bo.outcome, orig_bo.outcome);
         assert_eq!(new_bo.currency, orig_bo.currency);
+    }
+    #[rstest]
+    fn test_create_instrument_rejects_excess_tick_precision() {
+        let mut market = load_gamma_market("gamma_market.json");
+        market.order_price_min_tick_size = Some(1e-19_f64);
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::default();
+
+        let result = create_instrument_from_def(&defs[0], ts_init);
+        assert!(result.is_err(), "expected Err for precision > FIXED_PRECISION");
+    }
+
+    #[rstest]
+    fn test_rebuild_instrument_rejects_excess_tick_precision() {
+        let market = load_gamma_market("gamma_market.json");
+        let defs = parse_gamma_market(&market).unwrap();
+        let ts_init = UnixNanos::default();
+        let instrument = create_instrument_from_def(&defs[0], ts_init).unwrap();
+
+        let result = rebuild_instrument_with_tick_size(
+            &instrument,
+            "0.0000000000000000001",
+            ts_init,
+            ts_init,
+        );
+        assert!(result.is_err(), "expected Err for precision > FIXED_PRECISION");
     }
 }
