@@ -42,7 +42,7 @@ use nautilus_model::{
     identifiers::AccountId,
     instruments::{Instrument, InstrumentAny},
 };
-use nautilus_network::http::HttpClient;
+use nautilus_network::{http::HttpClient, retry::RetryConfig};
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
@@ -71,6 +71,17 @@ struct TestServerState {}
 struct QueryCaptureState {
     orders_params: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
     fills_params: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
+}
+
+fn fast_test_retry_config(max_retries: u32) -> RetryConfig {
+    RetryConfig {
+        max_retries,
+        initial_delay_ms: 1,
+        max_delay_ms: 1,
+        backoff_factor: 1.0,
+        jitter_ms: 0,
+        ..Default::default()
+    }
 }
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -571,8 +582,14 @@ async fn test_http_error_handling_500() {
     wait_for_server(addr, "/v4/orders").await;
 
     let base_url = format!("http://{addr}");
-    let client =
-        DydxRawHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
+    let client = DydxRawHttpClient::new(
+        Some(base_url),
+        5,
+        None,
+        DydxNetwork::Mainnet,
+        Some(fast_test_retry_config(0)),
+    )
+    .unwrap();
 
     let result = client.get_orders("dydx1test", 0, None, None).await;
     assert!(result.is_err());
