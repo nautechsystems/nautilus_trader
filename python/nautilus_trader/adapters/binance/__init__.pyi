@@ -128,6 +128,8 @@ class BinanceExecClientConfig:
     @property
     def use_ws_trading(self) -> bool: ...
     @property
+    def ws_trading_setup_timeout_ms(self) -> int: ...
+    @property
     def instrument_provider(self) -> BinanceInstrumentProviderConfig: ...
     @property
     def instrument_refresh_interval_secs(self) -> int: ...
@@ -165,6 +167,7 @@ class BinanceExecClientConfig:
         base_url_ws: str | None = None,
         base_url_ws_trading: str | None = None,
         use_ws_trading: bool = True,
+        ws_trading_setup_timeout_ms: int | None = None,
         instrument_provider: BinanceInstrumentProviderConfig | None = None,
         instrument_refresh_interval_secs: int | None = None,
         use_gtd: bool = True,
