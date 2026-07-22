@@ -76,9 +76,11 @@ async fn test_data_client_connect_disconnect() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -89,7 +91,8 @@ async fn test_data_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(client.is_disconnected());
 
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -99,9 +102,11 @@ async fn test_data_client_emits_instruments_on_connect() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -121,7 +126,8 @@ async fn test_data_client_emits_instruments_on_connect() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -134,6 +140,8 @@ async fn test_data_client_subscribe_sends_market_subscription() {
     let sub_received = Arc::new(tokio::sync::Mutex::new(String::new()));
     let sub_received2 = Arc::clone(&sub_received);
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (mut reader, write_half) = accept_and_auth(&listener).await;
 
@@ -145,7 +153,7 @@ async fn test_data_client_subscribe_sends_market_subscription() {
 
         *sub_received2.lock().await = line.trim().to_string();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -185,7 +193,8 @@ async fn test_data_client_subscribe_sends_market_subscription() {
     assert_eq!(json["op"], "marketSubscription");
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -280,6 +289,8 @@ async fn test_mcm_handler_emits_book_deltas() {
 
     let mcm_fixture = load_fixture("stream/mcm_UPDATE.json");
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -293,7 +304,7 @@ async fn test_mcm_handler_emits_book_deltas() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -312,7 +323,8 @@ async fn test_mcm_handler_emits_book_deltas() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -323,6 +335,8 @@ async fn test_mcm_handler_emits_trades() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let mcm_fixture = load_fixture("stream/mcm_UPDATE_tv.json");
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
@@ -336,7 +350,7 @@ async fn test_mcm_handler_emits_trades() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -360,7 +374,8 @@ async fn test_mcm_handler_emits_trades() {
     assert!(found_trade, "Expected Trade event from MCM with trd field");
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -371,6 +386,8 @@ async fn test_data_client_handles_heartbeat_gracefully() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let heartbeat_fixture = load_fixture("stream/mcm_HEARTBEAT.json");
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
@@ -384,7 +401,7 @@ async fn test_data_client_handles_heartbeat_gracefully() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -400,7 +417,8 @@ async fn test_data_client_handles_heartbeat_gracefully() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -417,6 +435,8 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
 
     let md_fixture = load_fixture("stream/mcm_UPDATE_md.json");
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -429,7 +449,7 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -482,7 +502,8 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -493,6 +514,8 @@ async fn test_data_client_handles_sub_image_snapshot() {
     let (mut client, mut rx) = create_test_data_client(addr, stream_port);
 
     let sub_image_fixture = load_fixture("stream/mcm_SUB_IMAGE.json");
+
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
@@ -506,7 +529,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -548,7 +571,8 @@ async fn test_data_client_handles_sub_image_snapshot() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 /// `RESUB_DELTA` MCMs arrive when the venue replays buffered changes after a
@@ -563,6 +587,8 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
 
     let resub_fixture = load_fixture("stream/mcm_RESUB_DELTA.json");
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -575,7 +601,7 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -621,7 +647,8 @@ async fn test_data_client_handles_resub_delta_emits_deltas() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 /// Live race-style MCMs reach the parser and emit one Deltas event per runner
@@ -642,6 +669,8 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
 
     let fixture = load_fixture(fixture_path);
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -654,7 +683,7 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -683,7 +712,8 @@ async fn test_data_client_handles_live_race_message_emits_deltas(
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 /// A BSP-settled MCM (`marketDefinition.status = CLOSED`, `bspReconciled =
@@ -698,6 +728,8 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
 
     let settled_fixture = load_fixture("stream/mcm_BSP_settled.json");
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -710,7 +742,7 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -739,7 +771,8 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 /// A BSP SUB_IMAGE frame carries both a market definition and runner-change
@@ -762,6 +795,8 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
         .expect("expected at least one BSP frame")
         .to_string();
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, mut write_half) = accept_and_auth(&listener).await;
 
@@ -774,7 +809,7 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
         .await
         .unwrap();
 
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -826,7 +861,8 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 /// `disconnect()` on a never-connected client is a no-op rather than an
@@ -860,6 +896,8 @@ async fn test_data_client_connect_is_idempotent() {
     // client would open a second connection on the second connect() call.
     let stream_accepts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let stream_accepts_server = Arc::clone(&stream_accepts);
+
+    let (server_done_tx, mut server_done_rx) = tokio::sync::oneshot::channel();
 
     let server = tokio::spawn(async move {
         loop {
@@ -897,7 +935,7 @@ async fn test_data_client_connect_is_idempotent() {
                         }
                     });
                 }
-                () = tokio::time::sleep(Duration::from_secs(5)) => break,
+                _ = &mut server_done_rx => break,
             }
         }
     });
@@ -967,7 +1005,8 @@ async fn test_data_client_connect_is_idempotent() {
     );
 
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
 
 #[rstest]
@@ -977,9 +1016,11 @@ async fn test_data_client_reset_clears_state() {
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
 
+    let (server_done_tx, server_done_rx) = tokio::sync::oneshot::channel();
+
     let server = tokio::spawn(async move {
         let (_reader, write_half) = accept_and_auth(&listener).await;
-        tokio::time::sleep(Duration::from_secs(3)).await;
+        let _ = server_done_rx.await;
         drop(write_half);
     });
 
@@ -989,5 +1030,6 @@ async fn test_data_client_reset_clears_state() {
     client.reset().unwrap();
     assert!(client.is_disconnected());
 
-    let _ = server.await;
+    let _ = server_done_tx.send(());
+    server.await.unwrap();
 }
