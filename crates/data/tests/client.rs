@@ -37,6 +37,7 @@ use nautilus_common::{
             RequestCustomData,
             RequestFundingRates,
             RequestInstrument,
+            RequestInstrumentCloses,
             RequestInstruments,
             RequestQuotes,
             RequestTrades,
@@ -1757,6 +1758,43 @@ fn test_request_funding_rates(
     assert_eq!(
         rec[0],
         DataCommand::Request(RequestCommand::FundingRates(req))
+    );
+}
+
+#[rstest]
+fn test_request_instrument_closes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let recorder = Rc::new(RefCell::new(Vec::<DataCommand>::new()));
+    let client = Box::new(MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    ));
+    let adapter = DataClientAdapter::new(client_id, Some(venue), false, false, client);
+
+    let req = RequestInstrumentCloses::new(
+        audusd_sim().id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    adapter.request_instrument_closes(req.clone()).unwrap();
+
+    let rec = recorder.borrow();
+    assert_eq!(rec.len(), 1);
+    assert_eq!(
+        rec[0],
+        DataCommand::Request(RequestCommand::InstrumentCloses(req))
     );
 }
 

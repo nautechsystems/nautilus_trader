@@ -21,11 +21,11 @@ use nautilus_model::identifiers::{ClientId, Venue};
 use super::log_not_implemented;
 use crate::messages::data::{
     RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-    RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-    SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-    SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-    SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+    RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstrumentCloses,
+    RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+    SubscribeBookDepth10, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
+    SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+    SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
     UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCustomData, UnsubscribeFundingRates,
     UnsubscribeIndexPrices, UnsubscribeInstrument, UnsubscribeInstrumentClose,
     UnsubscribeInstrumentStatus, UnsubscribeInstruments, UnsubscribeMarkPrices,
@@ -610,6 +610,16 @@ pub trait DataClient {
     ///
     /// Returns an error if the trades request fails.
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        log_not_implemented(&request);
+        Ok(())
+    }
+
+    /// Requests historical close data for a specified instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the instrument closes request fails.
+    fn request_instrument_closes(&self, request: RequestInstrumentCloses) -> anyhow::Result<()> {
         log_not_implemented(&request);
         Ok(())
     }

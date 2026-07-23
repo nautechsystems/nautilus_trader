@@ -241,6 +241,7 @@ pub(super) fn request_params(req: &RequestCommand) -> Option<&Params> {
         RequestCommand::Quotes(cmd) => cmd.params.as_ref(),
         RequestCommand::Trades(cmd) => cmd.params.as_ref(),
         RequestCommand::FundingRates(cmd) => cmd.params.as_ref(),
+        RequestCommand::InstrumentCloses(cmd) => cmd.params.as_ref(),
         RequestCommand::ForwardPrices(cmd) => cmd.params.as_ref(),
         RequestCommand::Bars(cmd) => cmd.params.as_ref(),
         RequestCommand::Join(cmd) => cmd.params.as_ref(),
@@ -258,6 +259,7 @@ pub(super) fn response_params(resp: &DataResponse) -> Option<&Params> {
         DataResponse::Quotes(resp) => resp.params.as_ref(),
         DataResponse::Trades(resp) => resp.params.as_ref(),
         DataResponse::FundingRates(resp) => resp.params.as_ref(),
+        DataResponse::InstrumentCloses(resp) => resp.params.as_ref(),
         DataResponse::ForwardPrices(resp) => resp.params.as_ref(),
         DataResponse::Bars(resp) => resp.params.as_ref(),
     }

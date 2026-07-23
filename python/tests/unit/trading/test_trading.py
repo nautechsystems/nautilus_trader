@@ -175,6 +175,12 @@ class HistoricalRequestProbeStrategy(Strategy):
                 limit=1,
                 params={"kind": "funding-rates"},
             ),
+            "instrument_closes": self.request_instrument_closes(
+                instrument_id,
+                start=request_time,
+                limit=1,
+                params={"kind": "instrument-closes"},
+            ),
             "bars": self.request_bars(
                 bar_type,
                 end=request_time,
@@ -697,6 +703,7 @@ DATA_SURFACE_SIGNATURES = [
     ("request_quotes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_trades", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_funding_rates", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
+    ("request_instrument_closes", INSTRUMENT_HISTORY_REQUEST_PARAMETERS),
     ("request_bars", BAR_REQUEST_PARAMETERS),
 ]
 REMOVED_ORDER_EVENT_SUBSCRIPTION_METHODS = [
@@ -763,6 +770,7 @@ HISTORICAL_CALLBACK_SIGNATURES = [
     ("on_historical_quotes", ("quotes",)),
     ("on_historical_trades", ("trades",)),
     ("on_historical_funding_rates", ("funding_rates",)),
+    ("on_historical_instrument_closes", ("closes",)),
     ("on_historical_bars", ("bars",)),
     ("on_historical_mark_prices", ("mark_prices",)),
     ("on_historical_index_prices", ("index_prices",)),
@@ -882,6 +890,7 @@ def test_strategy_historical_requests_accept_datetimes_when_registered(request_t
             "quotes",
             "trades",
             "funding_rates",
+            "instrument_closes",
             "bars",
         }
 
@@ -1050,6 +1059,7 @@ DATA_CALLBACKS = [
     ("on_historical_quotes", "historical_quotes"),
     ("on_historical_trades", "historical_trades"),
     ("on_historical_funding_rates", "historical_funding_rates"),
+    ("on_historical_instrument_closes", "historical_instrument_closes"),
     ("on_historical_bars", "historical_bars"),
     ("on_historical_mark_prices", "historical_mark_prices"),
     ("on_historical_index_prices", "historical_index_prices"),
@@ -1162,6 +1172,7 @@ def strategy_sample_objects():
         "historical_quotes": [quote],
         "historical_trades": [trade],
         "historical_funding_rates": [funding_rate],
+        "historical_instrument_closes": [instrument_close],
         "historical_bars": [bar],
         "historical_mark_prices": [mark_price],
         "historical_index_prices": [index_price],

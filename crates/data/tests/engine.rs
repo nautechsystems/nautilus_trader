@@ -40,13 +40,14 @@ use nautilus_common::{
     clock::{Clock, TestClock},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-        DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentResponse,
-        InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestBars, RequestBookDeltas,
-        RequestBookDepth, RequestBookSnapshot, RequestCommand, RequestCustomData,
-        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestJoin, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-        SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse,
+        InstrumentClosesResponse, InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT,
+        QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
+        RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
+        RequestInstrument, RequestInstrumentCloses, RequestInstruments, RequestJoin, RequestQuotes,
+        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
         SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionChain,
         SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
         UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
@@ -8879,6 +8880,43 @@ fn test_execute_request_funding_rates(
 }
 
 #[rstest]
+fn test_execute_request_instrument_closes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let req = RequestInstrumentCloses::new(
+        audusd_sim.id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    let cmd = DataCommand::Request(RequestCommand::InstrumentCloses(req));
+    data_engine.execute(cmd.clone());
+
+    assert_eq!(recorder.borrow()[0], cmd);
+}
+
+#[rstest]
 fn test_execute_request_bars(
     clock: Rc<RefCell<TestClock>>,
     cache: Rc<RefCell<Cache>>,
@@ -15906,6 +15944,42 @@ fn test_trim_to_bounds_trims_funding_rates(audusd_sim: CurrencyPair) {
     assert_eq!(ts_inits, vec![2_000]);
 }
 
+#[rstest]
+fn test_trim_to_bounds_trims_instrument_closes(audusd_sim: CurrencyPair) {
+    let instrument_id = audusd_sim.id;
+    let make_close = |ts: u64| {
+        InstrumentClose::new(
+            instrument_id,
+            Price::from("1.00000"),
+            InstrumentCloseType::EndOfSession,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    };
+    let mut resp = DataResponse::InstrumentCloses(InstrumentClosesResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        vec![make_close(1_000), make_close(2_000), make_close(3_000)],
+        Some(UnixNanos::from(1_500)),
+        Some(UnixNanos::from(2_500)),
+        UnixNanos::default(),
+        None,
+    ));
+
+    resp.trim_to_bounds();
+
+    let DataResponse::InstrumentCloses(closes) = resp else {
+        panic!("expected InstrumentCloses variant");
+    };
+    let ts_inits: Vec<u64> = closes
+        .data
+        .iter()
+        .map(|close| close.ts_init.as_u64())
+        .collect();
+    assert_eq!(ts_inits, vec![2_000]);
+}
+
 fn pipeline_quote(instrument_id: InstrumentId, ts: u64) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
@@ -18653,6 +18727,20 @@ fn recorded_request_funding_rates(
 }
 
 #[cfg(feature = "streaming")]
+fn recorded_request_instrument_closes(
+    recorder: &Rc<RefCell<Vec<DataCommand>>>,
+) -> Vec<RequestInstrumentCloses> {
+    recorder
+        .borrow()
+        .iter()
+        .filter_map(|cmd| match cmd {
+            DataCommand::Request(RequestCommand::InstrumentCloses(req)) => Some(req.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[cfg(feature = "streaming")]
 fn recorded_request_data(recorder: &Rc<RefCell<Vec<DataCommand>>>) -> Vec<RequestCustomData> {
     recorder
         .borrow()
@@ -18716,6 +18804,35 @@ fn register_funding_catalog_with_rates(
         None => (None, None),
     };
     catalog.write_to_parquet(rates, start, end, None).unwrap();
+    data_engine.register_catalog(catalog, None);
+    catalog_dir
+}
+
+#[cfg(feature = "streaming")]
+fn split_instrument_close(instrument_id: InstrumentId, ts: u64) -> InstrumentClose {
+    InstrumentClose::new(
+        instrument_id,
+        Price::from("1.00000"),
+        InstrumentCloseType::EndOfSession,
+        UnixNanos::from(ts),
+        UnixNanos::from(ts),
+    )
+}
+
+#[cfg(feature = "streaming")]
+fn register_instrument_closes_catalog(
+    data_engine: &mut DataEngine,
+    label: &str,
+    closes: &[InstrumentClose],
+    interval: Option<(u64, u64)>,
+) -> CatalogTempDir {
+    let catalog_dir = CatalogTempDir::new(label);
+    let catalog = ParquetDataCatalog::new(catalog_dir.path(), None, None, None, None);
+    let (start, end) = match interval {
+        Some((s, e)) => (Some(UnixNanos::from(s)), Some(UnixNanos::from(e))),
+        None => (None, None),
+    };
+    catalog.write_to_parquet(closes, start, end, None).unwrap();
     data_engine.register_catalog(catalog, None);
     catalog_dir
 }
@@ -19812,6 +19929,229 @@ fn test_request_funding_rates_dispatches_straight_to_client_with_no_catalog_regi
     data_engine.execute_request(req).unwrap();
 
     let recorded = recorded_request_funding_rates(&recorder);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].request_id, parent_id);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_closes_catalog_only_serves_from_disk(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_instrument_closes_catalog(
+        &mut data_engine,
+        "instrument-closes-catalog-only",
+        &[
+            split_instrument_close(instrument_id, 1_000),
+            split_instrument_close(instrument_id, 2_000),
+        ],
+        Some((1_000, 2_000)),
+    );
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<InstrumentClosesResponse>(Some(Ustr::from(
+        "instrument-closes-catalog-only",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::InstrumentCloses(RequestInstrumentCloses::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(2_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|close| close.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert_eq!(ts_inits, vec![1_000, 2_000]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_closes_catalog_plus_client_split(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let _catalog_dir = register_instrument_closes_catalog(
+        &mut data_engine,
+        "instrument-closes-split",
+        &[split_instrument_close(instrument_id, 1_500)],
+        Some((1_000, 1_500)),
+    );
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<InstrumentClosesResponse>(Some(Ustr::from(
+        "instrument-closes-split-parent",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::InstrumentCloses(RequestInstrumentCloses::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument_closes(&recorder);
+    assert_eq!(
+        recorded.len(),
+        1,
+        "expected one client leg for the missing interval"
+    );
+
+    data_engine.response(DataResponse::InstrumentCloses(
+        InstrumentClosesResponse::new(
+            recorded[0].request_id,
+            client_id,
+            instrument_id,
+            vec![split_instrument_close(instrument_id, 2_500)],
+            recorded[0].start.map(datetime_to_unix_nanos_for_test),
+            recorded[0].end.map(datetime_to_unix_nanos_for_test),
+            UnixNanos::default(),
+            None,
+        ),
+    ));
+
+    let received = saver.get_messages();
+    let ts_inits: Vec<u64> = received[0]
+        .data
+        .iter()
+        .map(|close| close.ts_init.as_u64())
+        .collect();
+
+    assert_eq!(received.len(), 1);
+    assert_eq!(ts_inits, vec![1_500, 2_500]);
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_closes_no_client_no_catalog_emits_empty(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    advance_clock_to(&clock, 10_000_000_000);
+    let mut data_engine = DataEngine::new(clock, cache, None);
+
+    let _catalog_dir = register_empty_catalog(&mut data_engine, "instrument-closes-empty");
+
+    let parent_id = UUID4::new();
+    let (handler, saver) = get_any_saving_handler::<InstrumentClosesResponse>(Some(Ustr::from(
+        "instrument-closes-empty",
+    )));
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let req = RequestCommand::InstrumentCloses(RequestInstrumentCloses::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let received = saver.get_messages();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id, parent_id);
+    assert!(received[0].data.is_empty());
+    assert_eq!(data_engine.request_pipeline_count(), 0);
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+fn test_request_instrument_closes_dispatches_straight_to_client_with_no_catalog_registered(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+    let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let mut data_engine = DataEngine::new(clock.clone(), cache.clone(), None);
+
+    let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
+    let mock_client = MockDataClient::new_with_recorder(
+        clock,
+        cache,
+        client_id,
+        Some(venue),
+        Some(recorder.clone()),
+    );
+    let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(mock_client));
+    data_engine.register_client(adapter, None);
+
+    let parent_id = UUID4::new();
+    let req = RequestCommand::InstrumentCloses(RequestInstrumentCloses::new(
+        instrument_id,
+        Some(UnixNanos::from(1_000).to_datetime_utc()),
+        Some(UnixNanos::from(3_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::default(),
+        None,
+    ));
+    data_engine.execute_request(req).unwrap();
+
+    let recorded = recorded_request_instrument_closes(&recorder);
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].request_id, parent_id);
     assert_eq!(data_engine.request_pipeline_count(), 0);

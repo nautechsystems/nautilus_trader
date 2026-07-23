@@ -31,16 +31,16 @@ use nautilus_common::{
     log_info,
     messages::data::{
         RequestBars, RequestBookDepth, RequestBookSnapshot, RequestCustomData,
-        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstruments,
-        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
-        SubscribeCommand, SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices,
-        SubscribeInstrument, SubscribeInstrumentClose, SubscribeInstrumentStatus,
-        SubscribeInstruments, SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes,
-        SubscribeTrades, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
-        UnsubscribeCommand, UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
-        UnsubscribeTrades,
+        RequestForwardPrices, RequestFundingRates, RequestInstrument, RequestInstrumentCloses,
+        RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
+        SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+        SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
+        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
+        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
     },
     msgbus::{self, switchboard::get_custom_topic},
 };
@@ -780,6 +780,15 @@ impl DataClientAdapter {
     /// Returns an error if the client fails to process the trades request.
     pub fn request_funding_rates(&self, req: RequestFundingRates) -> anyhow::Result<()> {
         self.client.request_funding_rates(req)
+    }
+
+    /// Sends an instrument closes request for a given instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client fails to process the instrument closes request.
+    pub fn request_instrument_closes(&self, req: RequestInstrumentCloses) -> anyhow::Result<()> {
+        self.client.request_instrument_closes(req)
     }
 
     /// Sends a forward prices request for derivatives instruments.

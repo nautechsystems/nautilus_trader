@@ -618,6 +618,9 @@ class Strategy:
     def on_historical_funding_rates(
         self, funding_rates: typing.Sequence[model.FundingRateUpdate]
     ) -> None: ...
+    def on_historical_instrument_closes(
+        self, closes: typing.Sequence[model.InstrumentClose]
+    ) -> None: ...
     def on_historical_bars(self, bars: typing.Sequence[model.Bar]) -> None: ...
     def on_historical_mark_prices(
         self, mark_prices: typing.Sequence[model.MarkPriceUpdate]
@@ -897,6 +900,15 @@ class Strategy:
         params: dict | None = None,
     ) -> str: ...
     def request_funding_rates(
+        self,
+        instrument_id: model.InstrumentId,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        limit: int | None = None,
+        client_id: model.ClientId | None = None,
+        params: dict | None = None,
+    ) -> str: ...
+    def request_instrument_closes(
         self,
         instrument_id: model.InstrumentId,
         start: datetime.datetime | None = None,

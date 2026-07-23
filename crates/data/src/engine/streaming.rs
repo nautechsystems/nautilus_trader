@@ -17,10 +17,11 @@ use ahash::AHashMap;
 use chrono::{DateTime, Utc};
 use nautilus_common::messages::data::{
     BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataResponse,
-    FundingRatesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse, RequestBars,
-    RequestBookDeltas, RequestBookDepth, RequestCommand, RequestCustomData, RequestFundingRates,
-    RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-    SubscribeCommand, SubscribeCustomData, SubscribeQuotes, SubscribeTrades, TradesResponse,
+    FundingRatesResponse, InstrumentClosesResponse, InstrumentResponse, InstrumentsResponse,
+    QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestCommand,
+    RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstrumentCloses,
+    RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeCommand,
+    SubscribeCustomData, SubscribeQuotes, SubscribeTrades, TradesResponse,
 };
 use nautilus_core::{
     Params, UUID4, UnixNanos,
@@ -28,8 +29,8 @@ use nautilus_core::{
 };
 use nautilus_model::{
     data::{
-        Bar, CustomData, Data, FundingRateUpdate, OrderBookDelta, OrderBookDepth10, QuoteTick,
-        TradeTick,
+        Bar, CustomData, Data, FundingRateUpdate, InstrumentClose, OrderBookDelta,
+        OrderBookDepth10, QuoteTick, TradeTick,
     },
     identifiers::{ClientId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -438,6 +439,21 @@ impl DataEngine {
                     ts_init,
                 ))
             }
+            RequestCommand::InstrumentCloses(cmd) => {
+                let data: Vec<InstrumentClose> = catalog.instrument_closes(
+                    Some(vec![cmd.instrument_id.to_string()]),
+                    Some(start_ns),
+                    Some(end_ns),
+                )?;
+                Ok(build_instrument_closes_catalog_response(
+                    cmd,
+                    data,
+                    start_ns,
+                    end_ns,
+                    used_client_id,
+                    ts_init,
+                ))
+            }
             RequestCommand::Bars(cmd) => {
                 let data: Vec<Bar> = catalog.bars(
                     Some(vec![cmd.bar_type.to_string()]),
@@ -670,6 +686,7 @@ pub(super) fn is_date_range_variant(req: &RequestCommand) -> bool {
             | RequestCommand::Quotes(_)
             | RequestCommand::Trades(_)
             | RequestCommand::FundingRates(_)
+            | RequestCommand::InstrumentCloses(_)
             | RequestCommand::Bars(_)
             | RequestCommand::BookDeltas(_)
             | RequestCommand::BookDepth(_)
@@ -693,6 +710,10 @@ fn request_identifier(req: &RequestCommand) -> Option<RequestCatalogKey> {
         )),
         RequestCommand::FundingRates(cmd) => Some(RequestCatalogKey::new(
             "funding_rate_update",
+            Some(cmd.instrument_id.to_string()),
+        )),
+        RequestCommand::InstrumentCloses(cmd) => Some(RequestCatalogKey::new(
+            "instrument_closes",
             Some(cmd.instrument_id.to_string()),
         )),
         RequestCommand::Bars(cmd) => Some(RequestCatalogKey::new(
@@ -746,6 +767,7 @@ fn request_start(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Quotes(cmd) => cmd.start,
         RequestCommand::Trades(cmd) => cmd.start,
         RequestCommand::FundingRates(cmd) => cmd.start,
+        RequestCommand::InstrumentCloses(cmd) => cmd.start,
         RequestCommand::Bars(cmd) => cmd.start,
         RequestCommand::BookDeltas(cmd) => cmd.start,
         RequestCommand::BookDepth(cmd) => cmd.start,
@@ -761,6 +783,7 @@ fn request_end(req: &RequestCommand) -> Option<DateTime<Utc>> {
         RequestCommand::Quotes(cmd) => cmd.end,
         RequestCommand::Trades(cmd) => cmd.end,
         RequestCommand::FundingRates(cmd) => cmd.end,
+        RequestCommand::InstrumentCloses(cmd) => cmd.end,
         RequestCommand::Bars(cmd) => cmd.end,
         RequestCommand::BookDeltas(cmd) => cmd.end,
         RequestCommand::BookDepth(cmd) => cmd.end,
@@ -841,6 +864,18 @@ fn with_dates_for_pipeline(
             ts_init,
             params: cmd.params.clone(),
         }),
+        RequestCommand::InstrumentCloses(cmd) => {
+            RequestCommand::InstrumentCloses(RequestInstrumentCloses {
+                instrument_id: cmd.instrument_id,
+                start,
+                end,
+                limit: cmd.limit,
+                client_id: cmd.client_id,
+                request_id: new_id,
+                ts_init,
+                params: cmd.params.clone(),
+            })
+        }
         RequestCommand::BookDeltas(cmd) => RequestCommand::BookDeltas(RequestBookDeltas {
             instrument_id: cmd.instrument_id,
             start,
@@ -938,6 +973,18 @@ fn build_empty_response(
             ts_init,
             cmd.params.clone(),
         )),
+        RequestCommand::InstrumentCloses(cmd) => {
+            DataResponse::InstrumentCloses(InstrumentClosesResponse::new(
+                cmd.request_id,
+                resolve_response_client_id(cmd.client_id, used_client_id),
+                cmd.instrument_id,
+                Vec::new(),
+                Some(start),
+                Some(end),
+                ts_init,
+                cmd.params.clone(),
+            ))
+        }
         RequestCommand::Bars(cmd) => DataResponse::Bars(BarsResponse::new(
             cmd.request_id,
             resolve_response_client_id(cmd.client_id, used_client_id),
@@ -1028,6 +1075,27 @@ fn build_funding_rates_catalog_response(
 ) -> DataResponse {
     let params = catalog_response_params(cmd.params.as_ref());
     DataResponse::FundingRates(FundingRatesResponse::new(
+        cmd.request_id,
+        resolve_response_client_id(cmd.client_id, used_client_id),
+        cmd.instrument_id,
+        data,
+        Some(start),
+        Some(end),
+        ts_init,
+        Some(params),
+    ))
+}
+
+fn build_instrument_closes_catalog_response(
+    cmd: &RequestInstrumentCloses,
+    data: Vec<InstrumentClose>,
+    start: UnixNanos,
+    end: UnixNanos,
+    used_client_id: Option<ClientId>,
+    ts_init: UnixNanos,
+) -> DataResponse {
+    let params = catalog_response_params(cmd.params.as_ref());
+    DataResponse::InstrumentCloses(InstrumentClosesResponse::new(
         cmd.request_id,
         resolve_response_client_id(cmd.client_id, used_client_id),
         cmd.instrument_id,

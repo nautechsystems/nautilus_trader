@@ -65,20 +65,21 @@ use crate::{
     messages::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-            DataCommand, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-            QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
-            RequestCommand, RequestCustomData, RequestFundingRates, RequestInstrument,
-            RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth10, SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData,
-            SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
-            SubscribeMarkPrices, SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes,
-            SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
-            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
-            UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionChain,
-            UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+            DataCommand, FundingRatesResponse, InstrumentClosesResponse, InstrumentResponse,
+            InstrumentsResponse, QuotesResponse, RequestBars, RequestBookDeltas, RequestBookDepth,
+            RequestBookSnapshot, RequestCommand, RequestCustomData, RequestFundingRates,
+            RequestInstrument, RequestInstrumentCloses, RequestInstruments, RequestQuotes,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+            SubscribeBookSnapshots, SubscribeCommand, SubscribeCustomData, SubscribeFundingRates,
+            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
+            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
+            SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10,
+            UnsubscribeBookSnapshots, UnsubscribeCommand, UnsubscribeCustomData,
+            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
+            UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+            UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
         },
         system::ShutdownSystem,
     },
@@ -703,6 +704,19 @@ pub trait DataActor: Component {
         Ok(())
     }
 
+    /// Actions to be performed when receiving historical instrument closes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if handling the historical instrument closes fails.
+    #[allow(unused_variables)]
+    fn on_historical_instrument_closes(
+        &mut self,
+        closes: &[InstrumentClose],
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// Returns the user-facing clock API.
     fn clock(&self) -> ClockApi<'_>
     where
@@ -1278,6 +1292,20 @@ pub trait DataActor: Component {
         log::trace!("{RECV} {resp:?}");
 
         if let Err(e) = self.on_historical_funding_rates(&resp.data) {
+            log_error(&e);
+        }
+    }
+
+    /// Handles an instrument closes response.
+    fn handle_instrument_closes_response(&mut self, resp: &InstrumentClosesResponse) {
+        log_received_bulk(
+            "InstrumentClosesResponse",
+            &resp.correlation_id,
+            resp.data.len(),
+        );
+        log::trace!("{RECV} {resp:?}");
+
+        if let Err(e) = self.on_historical_instrument_closes(&resp.data) {
             log_error(&e);
         }
     }
@@ -2610,6 +2638,42 @@ pub trait DataActor: Component {
         });
 
         DataActorCore::request_funding_rates(
+            self.core_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+            handler,
+        )
+    }
+
+    /// Request historical [`InstrumentClose`] data for the given `instrument_id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    fn request_instrument_closes(
+        &mut self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+    ) -> anyhow::Result<UUID4>
+    where
+        Self: DataActorNative,
+        Self: 'static + Debug + Sized,
+    {
+        let actor_id = self.core().actor_id().inner();
+        let handler =
+            ShareableMessageHandler::from_typed(move |resp: &InstrumentClosesResponse| {
+                get_actor_unchecked::<Self>(&actor_id).handle_instrument_closes_response(resp);
+            });
+
+        DataActorCore::request_instrument_closes(
             self.core_mut(),
             instrument_id,
             start,
@@ -4944,6 +5008,48 @@ impl DataActorCore {
 
         let request_id = UUID4::new();
         let command = RequestCommand::FundingRates(RequestFundingRates {
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            request_id,
+            ts_init: now.into(),
+            params,
+        });
+
+        get_message_bus()
+            .borrow_mut()
+            .register_response_handler(command.request_id(), handler)?;
+
+        self.send_data_cmd(DataCommand::Request(command));
+
+        Ok(request_id)
+    }
+
+    /// Helper method for requesting instrument closes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if input parameters are invalid.
+    #[expect(clippy::too_many_arguments)]
+    pub fn request_instrument_closes(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<NonZeroUsize>,
+        client_id: Option<ClientId>,
+        params: Option<Params>,
+        handler: ShareableMessageHandler,
+    ) -> anyhow::Result<UUID4> {
+        self.check_registered();
+
+        let now = self.clock_ref().utc_now();
+        check_timestamps(now, start, end)?;
+
+        let request_id = UUID4::new();
+        let command = RequestCommand::InstrumentCloses(RequestInstrumentCloses {
             instrument_id,
             start,
             end,

@@ -37,15 +37,16 @@ use nautilus_common::{
     messages::data::{
         DataCommand, RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
         RequestCommand, RequestCustomData, RequestForwardPrices, RequestFundingRates,
-        RequestInstrument, RequestInstruments, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand, SubscribeCustomData,
-        SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-        SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand, UnsubscribeCustomData,
-        UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-        UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
-        UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
+        RequestInstrument, RequestInstrumentCloses, RequestInstruments, RequestQuotes,
+        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeCommand,
+        SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+        SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+        SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeCommand,
+        UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+        UnsubscribeInstrument, UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus,
+        UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes,
+        UnsubscribeTrades,
     },
 };
 use nautilus_model::identifiers::{ClientId, Venue};
@@ -591,6 +592,16 @@ impl DataClient for MockDataClient {
         if let Some(rec) = &self.recorder {
             rec.borrow_mut()
                 .push(DataCommand::Request(RequestCommand::FundingRates(request)));
+        }
+        Ok(())
+    }
+
+    fn request_instrument_closes(&self, request: RequestInstrumentCloses) -> anyhow::Result<()> {
+        if let Some(rec) = &self.recorder {
+            rec.borrow_mut()
+                .push(DataCommand::Request(RequestCommand::InstrumentCloses(
+                    request,
+                )));
         }
         Ok(())
     }

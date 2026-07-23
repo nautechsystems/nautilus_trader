@@ -82,8 +82,9 @@ use crate::{
     logging::{logger::LogGuard, logging_is_initialized},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-        DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse, InstrumentsResponse,
-        PARAMS_IS_PARENT, QuotesResponse, SubscribeCommand, TradesResponse, UnsubscribeCommand,
+        DataCommand, DataResponse, FundingRatesResponse, InstrumentClosesResponse,
+        InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse,
+        SubscribeCommand, TradesResponse, UnsubscribeCommand,
     },
     msgbus::{
         self, MessageBus, get_message_bus,
@@ -167,6 +168,7 @@ struct TestDataActor {
     pub received_funding_rates: Vec<FundingRateUpdate>,
     pub received_status: Vec<InstrumentStatus>,
     pub received_closes: Vec<InstrumentClose>,
+    pub received_historical_closes: Vec<InstrumentClose>,
     pub received_greeks: Vec<OptionGreeks>,
     pub received_chain_slices: Vec<OptionChainSlice>,
     pub received_signals: Vec<Signal>,
@@ -307,6 +309,14 @@ impl DataActor for TestDataActor {
         Ok(())
     }
 
+    fn on_historical_instrument_closes(
+        &mut self,
+        closes: &[InstrumentClose],
+    ) -> anyhow::Result<()> {
+        self.received_historical_closes.extend(closes);
+        Ok(())
+    }
+
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_bars.extend(bars);
@@ -406,6 +416,7 @@ impl TestDataActor {
             received_funding_rates: Vec::new(),
             received_status: Vec::new(),
             received_closes: Vec::new(),
+            received_historical_closes: Vec::new(),
             received_greeks: Vec::new(),
             received_chain_slices: Vec::new(),
             received_signals: Vec::new(),
@@ -2468,6 +2479,48 @@ fn test_request_funding_rates(
 
     assert_eq!(actor.received_funding_rates.len(), 1);
     assert_eq!(actor.received_funding_rates[0], funding_rate);
+}
+
+#[rstest]
+fn test_request_instrument_closes(
+    clock: Rc<RefCell<TestClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    stub_instrument_close: InstrumentClose,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    actor.start().unwrap();
+
+    let request_id = actor
+        .request_instrument_closes(
+            stub_instrument_close.instrument_id,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+
+    let response = InstrumentClosesResponse::new(
+        request_id,
+        ClientId::new("TestClient"),
+        stub_instrument_close.instrument_id,
+        vec![stub_instrument_close],
+        None,
+        None,
+        UnixNanos::default(),
+        None,
+    );
+
+    msgbus::send_response(&request_id, &DataResponse::InstrumentCloses(response));
+
+    assert_eq!(
+        actor.received_historical_closes,
+        vec![stub_instrument_close]
+    );
+    assert!(actor.received_closes.is_empty());
 }
 
 #[rstest]

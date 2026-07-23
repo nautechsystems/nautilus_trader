@@ -74,13 +74,14 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
-        DataResponse, ForwardPricesResponse, FundingRatesResponse, QuotesResponse, RequestBars,
-        RequestCommand, RequestForwardPrices, RequestJoin, RequestQuotes, RequestTrades,
-        SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10, SubscribeBookSnapshots,
-        SubscribeCommand, SubscribeOptionChain, SubscribeQuotes, SubscribeTrades, TradesResponse,
-        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth10, UnsubscribeBookSnapshots,
-        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
-        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
+        DataResponse, ForwardPricesResponse, FundingRatesResponse, InstrumentClosesResponse,
+        QuotesResponse, RequestBars, RequestCommand, RequestForwardPrices, RequestJoin,
+        RequestQuotes, RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth10,
+        SubscribeBookSnapshots, SubscribeCommand, SubscribeOptionChain, SubscribeQuotes,
+        SubscribeTrades, TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas,
+        UnsubscribeBookDepth10, UnsubscribeBookSnapshots, UnsubscribeCommand,
+        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
+        UnsubscribeQuotes, UnsubscribeTrades, is_parent_subscription,
     },
     msgbus::{
         self, BusPayloadType, ShareableMessageHandler, TypedHandler, TypedIntoHandler,
@@ -1300,6 +1301,7 @@ impl DataEngine {
             RequestCommand::Quotes(req) => client.request_quotes(req),
             RequestCommand::Trades(req) => client.request_trades(req),
             RequestCommand::FundingRates(req) => client.request_funding_rates(req),
+            RequestCommand::InstrumentCloses(req) => client.request_instrument_closes(req),
             RequestCommand::ForwardPrices(req) => client.request_forward_prices(req),
             RequestCommand::Bars(req) => client.request_bars(req),
             RequestCommand::Join(_) => {
@@ -1909,6 +1911,9 @@ impl DataEngine {
                 if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
                     self.handle_funding_rates(&r.data);
                 }
+            }
+            DataResponse::InstrumentCloses(r) => {
+                log_if_empty_response(&r.data, &r.instrument_id, &correlation_id);
             }
             DataResponse::Bars(r) => {
                 if !log_if_empty_response(&r.data, &r.bar_type, &correlation_id) {
@@ -5550,6 +5555,25 @@ fn rebuild_pipeline_response(
             }
             Some(DataResponse::FundingRates(acc))
         }
+        DataResponse::InstrumentCloses(mut acc) => {
+            for leg in iter {
+                let DataResponse::InstrumentCloses(other) = leg else {
+                    log::error!("Mixed-variant legs in pipeline {parent_id}");
+                    return None;
+                };
+                acc.data.extend(other.data);
+            }
+            acc.data.sort_by_key(|close| close.ts_init);
+            acc.correlation_id = parent_id;
+            if parent_start.is_some() {
+                acc.start = parent_start;
+            }
+
+            if parent_end.is_some() {
+                acc.end = parent_end;
+            }
+            Some(DataResponse::InstrumentCloses(acc))
+        }
         DataResponse::Bars(mut acc) => {
             for leg in iter {
                 let DataResponse::Bars(other) = leg else {
@@ -5676,6 +5700,7 @@ fn parent_request_window(
         RequestCommand::Quotes(cmd) => (cmd.start, cmd.end),
         RequestCommand::Trades(cmd) => (cmd.start, cmd.end),
         RequestCommand::FundingRates(cmd) => (cmd.start, cmd.end),
+        RequestCommand::InstrumentCloses(cmd) => (cmd.start, cmd.end),
         RequestCommand::Bars(cmd) => (cmd.start, cmd.end),
         RequestCommand::Join(cmd) => (cmd.start, cmd.end),
         RequestCommand::BookSnapshot(_) | RequestCommand::ForwardPrices(_) => return (None, None),
@@ -5727,6 +5752,18 @@ fn empty_response_like(
             ts_init,
             r.params.clone(),
         )),
+        DataResponse::InstrumentCloses(r) => {
+            DataResponse::InstrumentCloses(InstrumentClosesResponse::new(
+                correlation_id,
+                r.client_id,
+                r.instrument_id,
+                Vec::new(),
+                r.start,
+                r.end,
+                ts_init,
+                r.params.clone(),
+            ))
+        }
         DataResponse::Bars(r) => DataResponse::Bars(BarsResponse::new(
             correlation_id,
             r.client_id,
@@ -5778,6 +5815,7 @@ fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataRes
         DataResponse::Quotes(r) => r.correlation_id = new_id,
         DataResponse::Trades(r) => r.correlation_id = new_id,
         DataResponse::FundingRates(r) => r.correlation_id = new_id,
+        DataResponse::InstrumentCloses(r) => r.correlation_id = new_id,
         DataResponse::ForwardPrices(r) => r.correlation_id = new_id,
         DataResponse::Bars(r) => r.correlation_id = new_id,
     }

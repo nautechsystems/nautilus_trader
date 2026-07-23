@@ -40,7 +40,8 @@ use nautilus_common::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
             DataCommand, DataResponse, ForwardPricesResponse, FundingRatesResponse,
-            InstrumentResponse, InstrumentsResponse, QuotesResponse, TradesResponse,
+            InstrumentClosesResponse, InstrumentResponse, InstrumentsResponse, QuotesResponse,
+            TradesResponse,
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecutionReport,
@@ -185,6 +186,8 @@ pub const PAYLOAD_TYPE_QUOTES_RESPONSE: &str = "QuotesResponse";
 pub const PAYLOAD_TYPE_TRADES_RESPONSE: &str = "TradesResponse";
 /// The canonical `payload_type` tag for [`FundingRatesResponse`].
 pub const PAYLOAD_TYPE_FUNDING_RATES_RESPONSE: &str = "FundingRatesResponse";
+/// The canonical `payload_type` tag for [`InstrumentClosesResponse`].
+pub const PAYLOAD_TYPE_INSTRUMENT_CLOSES_RESPONSE: &str = "InstrumentClosesResponse";
 /// The canonical `payload_type` tag for [`ForwardPricesResponse`].
 pub const PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE: &str = "ForwardPricesResponse";
 /// The canonical `payload_type` tag for [`BarsResponse`].
@@ -263,6 +266,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_QUOTES_RESPONSE,
     PAYLOAD_TYPE_TRADES_RESPONSE,
     PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
+    PAYLOAD_TYPE_INSTRUMENT_CLOSES_RESPONSE,
     PAYLOAD_TYPE_FORWARD_PRICES_RESPONSE,
     PAYLOAD_TYPE_BARS_RESPONSE,
 ];
@@ -1329,6 +1333,7 @@ pub fn encode_data_response(response: &DataResponse) -> Result<EncodedPayload, E
         DataResponse::Quotes(resp) => encode_quotes_response(resp),
         DataResponse::Trades(resp) => encode_trades_response(resp),
         DataResponse::FundingRates(resp) => encode_funding_rates_response(resp),
+        DataResponse::InstrumentCloses(resp) => encode_instrument_closes_response(resp),
         DataResponse::ForwardPrices(resp) => encode_forward_prices_response(resp),
         DataResponse::Bars(resp) => encode_bars_response(resp),
     }
@@ -1468,6 +1473,17 @@ fn encode_funding_rates_response(
     let payload = encode_serde(response)?;
     Ok(EncodedPayload::with_payload_type(
         payload_type(PAYLOAD_TYPE_FUNDING_RATES_RESPONSE),
+        payload,
+        Vec::new(),
+    ))
+}
+
+fn encode_instrument_closes_response(
+    response: &InstrumentClosesResponse,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = encode_serde(response)?;
+    Ok(EncodedPayload::with_payload_type(
+        payload_type(PAYLOAD_TYPE_INSTRUMENT_CLOSES_RESPONSE),
         payload,
         Vec::new(),
     ))
@@ -3451,6 +3467,19 @@ mod tests {
         )
     }
 
+    fn make_instrument_closes_response() -> InstrumentClosesResponse {
+        InstrumentClosesResponse::new(
+            correlation_id(),
+            client_id(),
+            instrument_id(),
+            Vec::new(),
+            None,
+            None,
+            UnixNanos::from(209),
+            None,
+        )
+    }
+
     fn make_forward_prices_response() -> ForwardPricesResponse {
         ForwardPricesResponse::new(
             correlation_id(),
@@ -3670,6 +3699,10 @@ mod tests {
     #[case::funding_rates(
         DataResponse::FundingRates(make_funding_rates_response()),
         PAYLOAD_TYPE_FUNDING_RATES_RESPONSE
+    )]
+    #[case::instrument_closes(
+        DataResponse::InstrumentCloses(make_instrument_closes_response()),
+        PAYLOAD_TYPE_INSTRUMENT_CLOSES_RESPONSE
     )]
     #[case::forward_prices(
         DataResponse::ForwardPrices(make_forward_prices_response()),
@@ -3892,6 +3925,7 @@ mod tests {
     #[case::quotes(data_response_quotes())]
     #[case::trades(data_response_trades())]
     #[case::funding_rates(data_response_funding_rates())]
+    #[case::instrument_closes(data_response_instrument_closes())]
     #[case::forward_prices(data_response_forward_prices())]
     #[case::bars(data_response_bars())]
     fn data_response_extractor_surfaces_correlation_id_for_every_variant(
@@ -3962,6 +3996,12 @@ mod tests {
         let resp = make_funding_rates_response();
         let expected = resp.correlation_id;
         (DataResponse::FundingRates(resp), expected)
+    }
+
+    fn data_response_instrument_closes() -> (DataResponse, UUID4) {
+        let resp = make_instrument_closes_response();
+        let expected = resp.correlation_id;
+        (DataResponse::InstrumentCloses(resp), expected)
     }
 
     fn data_response_forward_prices() -> (DataResponse, UUID4) {

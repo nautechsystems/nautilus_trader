@@ -608,6 +608,22 @@ impl PyDataActorInner {
         Ok(())
     }
 
+    fn dispatch_on_historical_instrument_closes(
+        &mut self,
+        closes: Vec<InstrumentClose>,
+    ) -> PyResult<()> {
+        if let Some(ref py_self) = self.py_self {
+            Python::attach(|py| {
+                let py_closes = closes
+                    .into_iter()
+                    .map(|close| close.into_py_any(py))
+                    .collect::<PyResult<Vec<_>>>()?;
+                py_self.call_method1(py, "on_historical_instrument_closes", (py_closes,))
+            })?;
+        }
+        Ok(())
+    }
+
     fn dispatch_on_historical_bars(&mut self, bars: Vec<Bar>) -> PyResult<()> {
         if let Some(ref py_self) = self.py_self {
             Python::attach(|py| {
@@ -1153,6 +1169,14 @@ impl DataActor for PyDataActorInner {
     ) -> anyhow::Result<()> {
         self.dispatch_on_historical_funding_rates(funding_rates.to_vec())
             .map_err(|e| anyhow::anyhow!("Python on_historical_funding_rates failed: {e}"))
+    }
+
+    fn on_historical_instrument_closes(
+        &mut self,
+        closes: &[InstrumentClose],
+    ) -> anyhow::Result<()> {
+        self.dispatch_on_historical_instrument_closes(closes.to_vec())
+            .map_err(|e| anyhow::anyhow!("Python on_historical_instrument_closes failed: {e}"))
     }
 
     fn on_historical_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
@@ -2303,6 +2327,34 @@ impl PyDataActor {
         Ok(request_id.to_string())
     }
 
+    #[pyo3(name = "request_instrument_closes")]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[expect(clippy::too_many_arguments)]
+    fn py_request_instrument_closes(
+        &mut self,
+        py: Python<'_>,
+        instrument_id: InstrumentId,
+        start: Option<DateTime<Utc>>,
+        end: Option<DateTime<Utc>>,
+        limit: Option<usize>,
+        client_id: Option<ClientId>,
+        params: Option<Py<PyDict>>,
+    ) -> PyResult<String> {
+        let params = dict_to_params(py, params)?;
+        let limit = limit.and_then(NonZeroUsize::new);
+        let request_id = DataActor::request_instrument_closes(
+            self.inner_mut(),
+            instrument_id,
+            start,
+            end,
+            limit,
+            client_id,
+            params,
+        )
+        .map_err(to_pyvalue_err)?;
+        Ok(request_id.to_string())
+    }
+
     #[pyo3(name = "request_bars")]
     #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None))]
     #[expect(clippy::too_many_arguments)]
@@ -2360,6 +2412,12 @@ impl PyDataActor {
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_historical_funding_rates")]
     fn py_on_historical_funding_rates(&mut self, funding_rates: Vec<FundingRateUpdate>) {
+        // Default implementation - can be overridden in Python subclasses
+    }
+
+    #[allow(unused_variables, clippy::needless_pass_by_value)]
+    #[pyo3(name = "on_historical_instrument_closes")]
+    fn py_on_historical_instrument_closes(&mut self, closes: Vec<InstrumentClose>) {
         // Default implementation - can be overridden in Python subclasses
     }
 
@@ -3763,6 +3821,7 @@ class TrackingActor:
         "on_historical_quotes",
         "on_historical_trades",
         "on_historical_funding_rates",
+        "on_historical_instrument_closes",
         "on_historical_bars",
         "on_historical_mark_prices",
         "on_historical_index_prices",
@@ -4512,6 +4571,7 @@ class IndicatorEventActor:
     #[case("on_historical_quotes")]
     #[case("on_historical_trades")]
     #[case("on_historical_funding_rates")]
+    #[case("on_historical_instrument_closes")]
     #[case("on_historical_bars")]
     #[case("on_historical_mark_prices")]
     #[case("on_historical_index_prices")]
@@ -4551,6 +4611,12 @@ class IndicatorEventActor:
                         rust_actor
                             .inner_mut()
                             .on_historical_funding_rates(&funding_rates)
+                    }
+                    "on_historical_instrument_closes" => {
+                        let closes = vec![sample_instrument_close()];
+                        rust_actor
+                            .inner_mut()
+                            .on_historical_instrument_closes(&closes)
                     }
                     "on_historical_bars" => {
                         let bars = vec![sample_bar()];
