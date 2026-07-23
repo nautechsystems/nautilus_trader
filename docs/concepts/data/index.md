@@ -650,7 +650,7 @@ This correction adds a small amount of overhead during data decoding.
 **Process flow**:
 
 1. Raw data (e.g., CSV) is input into the pipeline.
-2. DataLoader processes the raw data and converts it into a `pd.DataFrame`.
+2. A data-loading function processes the raw data and converts it into a `pd.DataFrame`.
 3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects.
 4. The Nautilus `list[Data]` is the output of the data loading process.
 
@@ -659,7 +659,7 @@ The following diagram illustrates how raw data is transformed into Nautilus data
 ```mermaid
 flowchart LR
     raw["Raw data (CSV)"]
-    loader[DataLoader]
+    loader[load_* function]
     wrangler[DataWrangler]
     output["Nautilus list[Data]"]
 
@@ -670,21 +670,21 @@ flowchart LR
 
 Concretely, this would involve:
 
-- `BinanceOrderBookDeltaDataLoader.load(...)` which reads CSV files provided by Binance from disk, and returns a `pd.DataFrame`.
+- `load_binance_order_book_deltas(...)` which reads Binance CSV files from disk and returns a `pd.DataFrame`.
 - `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
 
 The following example shows how to accomplish the above in Python:
 
 ```python
 from nautilus_trader import TEST_DATA_DIR
-from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 # Load raw data
 data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
-df = BinanceOrderBookDeltaDataLoader.load(data_path)
+df = load_binance_order_book_deltas(data_path)
 
 # Set up a wrangler
 instrument = TestInstrumentProvider.btcusdt_binance()

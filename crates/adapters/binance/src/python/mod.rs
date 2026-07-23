@@ -21,6 +21,9 @@ pub mod enums;
 pub mod factories;
 pub mod types;
 
+mod data;
+mod instruments;
+
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::data::ensure_rust_extractor_registered;
@@ -31,7 +34,10 @@ use pyo3::prelude::*;
 use crate::{
     common::{
         bar::BinanceBar,
-        consts::{BINANCE, BINANCE_NAUTILUS_FUTURES_BROKER_ID, BINANCE_NAUTILUS_SPOT_BROKER_ID},
+        consts::{
+            BINANCE, BINANCE_CLIENT_ID, BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            BINANCE_NAUTILUS_SPOT_BROKER_ID, BINANCE_VENUE,
+        },
         encoder::decode_broker_id,
         enums::{BinanceEnvironment, BinanceMarginType, BinancePositionSide, BinanceProductType},
     },
@@ -107,6 +113,7 @@ fn extract_binance_exec_config(
 ///
 /// Strings without the broker prefix are returned unchanged.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.binance")]
 #[pyo3(name = "decode_binance_spot_client_order_id")]
 fn py_decode_binance_spot_client_order_id(encoded: &str) -> String {
     decode_broker_id(encoded, BINANCE_NAUTILUS_SPOT_BROKER_ID)
@@ -120,6 +127,7 @@ fn py_decode_binance_spot_client_order_id(encoded: &str) -> String {
 ///
 /// Strings without the broker prefix are returned unchanged.
 #[pyfunction]
+#[pyo3_stub_gen::derive::gen_stub_pyfunction(module = "nautilus_trader.adapters.binance")]
 #[pyo3(name = "decode_binance_futures_client_order_id")]
 fn py_decode_binance_futures_client_order_id(encoded: &str) -> String {
     decode_broker_id(encoded, BINANCE_NAUTILUS_FUTURES_BROKER_ID)
@@ -134,6 +142,9 @@ fn py_decode_binance_futures_client_order_id(encoded: &str) -> String {
 /// Returns an error if module initialization fails.
 #[pymodule]
 pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(BINANCE), BINANCE)?;
+    m.add(stringify!(BINANCE_CLIENT_ID), *BINANCE_CLIENT_ID)?;
+    m.add(stringify!(BINANCE_VENUE), *BINANCE_VENUE)?;
     m.add_class::<BinanceProductType>()?;
     m.add_class::<BinanceEnvironment>()?;
     m.add_class::<BinanceMarginType>()?;
@@ -164,6 +175,14 @@ pub fn binance(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(py_decode_binance_spot_client_order_id, m)?)?;
     m.add_function(wrap_pyfunction!(
         py_decode_binance_futures_client_order_id,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        instruments::py_load_binance_instruments,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        data::py_load_binance_order_book_deltas,
         m
     )?)?;
 

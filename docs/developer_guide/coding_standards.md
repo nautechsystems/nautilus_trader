@@ -77,6 +77,27 @@ documentation feel natural to end-users.
 
 3. **Error messages and logs**: Use full words for clarity (e.g., "price precision" not "price prec"). The user should never see abbreviated terminology.
 
+#### Data loading APIs
+
+Use free functions for stateless data ingestion. Use a class only when instances retain reusable
+configuration, caches, workers, iteration state, or an open resource across calls. Do not use a
+zero-state class solely to group static or class methods.
+
+Follow the semantic distinction in the
+[Polars I/O API](https://docs.pola.rs/api/python/stable/reference/io.html), adapted to the
+established Nautilus `load_*` vocabulary:
+
+- `load_<source>_<data>` eagerly reads, normalizes, and materializes a complete result.
+- `scan_<source>_<data>` creates a lazy query or deferred execution plan.
+- `stream_<source>_<data>` incrementally yields records or batches.
+- `write_<format>` eagerly writes an in-memory result.
+- `sink_<format>` writes through a lazy or streaming execution path.
+
+For ingestion, order names from general to specific: verb, source, logical data, then an optional
+representation. Include the representation only when real sibling formats exist. For example,
+`load_binance_order_book_deltas` is preferable to a stateless
+`BinanceOrderBookDeltaDataLoader.load` class or a generic `load_binance_data` function.
+
 ### Formatting
 
 1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, keeps important code more central in view, and survives function/method name changes.

@@ -13,14 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
+import asyncio
 
-from nautilus_trader._fixup import fixup_module_names
-from nautilus_trader._libnautilus.binance import *  # noqa: F403 (undefined-local-with-import-star)
-from nautilus_trader.adapters.binance.instruments import (
-    load_binance_instruments as load_binance_instruments,
-)
+from nautilus_trader._libnautilus.binance import BinanceDataClientConfig
+from nautilus_trader._libnautilus.binance import _load_binance_instruments
 
 
-fixup_module_names(globals(), __name__)
-del fixup_module_names
+async def load_binance_instruments(config: BinanceDataClientConfig) -> list[object]:
+    """
+    Load the configured Binance instrument catalogue.
+
+    This is the Python v2 replacement for constructing a cached low-level HTTP client and a
+    product-specific v1 instrument provider. The embedded ``instrument_provider`` config controls
+    selection, filters, parser warnings, and commission queries.
+
+    """
+    return await asyncio.to_thread(_load_binance_instruments, config)

@@ -5640,6 +5640,7 @@ dependencies = [
  "bon",
  "chrono",
  "criterion",
+ "csv",
  "dashmap",
  "derive_builder",
  "dotenvy",

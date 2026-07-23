@@ -2,12 +2,22 @@
 
 import decimal
 import enum
+import os
+import pathlib
 import typing
+
+import pandas as pd
 
 from nautilus_trader import model
 from nautilus_trader import network
+from nautilus_trader.adapters.binance.instruments import (
+    load_binance_instruments as load_binance_instruments,
+)
 
 __all__ = [
+    "BINANCE",
+    "BINANCE_CLIENT_ID",
+    "BINANCE_VENUE",
     "BinanceBar",
     "BinanceDataClientConfig",
     "BinanceDataClientFactory",
@@ -26,8 +36,16 @@ __all__ = [
     "BinanceProductType",
     "BinanceSpotMarketDataMode",
     "BinanceSpotTicker",
+    "decode_binance_futures_client_order_id",
+    "decode_binance_spot_client_order_id",
     "get_binance_arrow_schema_map",
+    "load_binance_instruments",
+    "load_binance_order_book_deltas",
 ]
+
+BINANCE: str
+BINANCE_CLIENT_ID: model.ClientId
+BINANCE_VENUE: model.Venue
 
 @typing.final
 class BinanceBar:
@@ -407,3 +425,8 @@ class BinanceSpotMarketDataMode(enum.Enum):
     Json = ...
 
 def get_binance_arrow_schema_map(cls: type) -> typing.Any: ...
+def decode_binance_futures_client_order_id(encoded: str) -> str: ...
+def decode_binance_spot_client_order_id(encoded: str) -> str: ...
+def load_binance_order_book_deltas(
+    file_path: str | os.PathLike | pathlib.Path, nrows: int | None = None
+) -> pd.DataFrame: ...
