@@ -16036,3 +16036,83 @@ fn test_dispose_leaves_unrelated_clock_timers_intact() {
         "engine.dispose should cancel engine-owned purge timers, names={names:?}",
     );
 }
+
+/// Runs a NETTING open -> flip (buy 100k, then sell 150k on the reused position ID)
+/// and returns the reused position's replay-log length and snapshot frame count.
+fn run_netting_flip(execution_engine: &mut ExecutionEngine) -> (usize, usize) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    setup_netting_snapshot_engine(execution_engine, &instrument);
+
+    process_filled_order(
+        execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-REPLAY-FLIP-1",
+        "V-REPLAY-FLIP-1",
+        "T-REPLAY-FLIP-1",
+        OrderSide::Buy,
+        100_000,
+        position_id,
+    );
+    process_filled_order(
+        execution_engine,
+        trader_id,
+        strategy_id,
+        &instrument,
+        "O-REPLAY-FLIP-2",
+        "V-REPLAY-FLIP-2",
+        "T-REPLAY-FLIP-2",
+        OrderSide::Sell,
+        150_000,
+        position_id,
+    );
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache
+        .position(&position_id)
+        .expect("flipped position should exist under the reused ID");
+    assert!(
+        cache.is_position_open(&position_id),
+        "flipped position should be open"
+    );
+    assert_eq!(position.side, PositionSide::Short);
+    assert_eq!(position.quantity, Quantity::from(50_000));
+
+    (
+        position.replay_events.len(),
+        cache.position_snapshot_count(&position_id),
+    )
+}
+
+#[rstest]
+fn test_netting_flip_carries_replay_events_by_default(mut execution_engine: ExecutionEngine) {
+    let (replay_len, snapshot_count) = run_netting_flip(&mut execution_engine);
+
+    // Prior cycle log (entry fill + closing split fill) carried, plus the current cycle fill
+    assert_eq!(replay_len, 3);
+    // The closed cycle was snapshotted for realized PnL reconstruction
+    assert_eq!(snapshot_count, 1);
+}
+
+#[rstest]
+fn test_netting_flip_bounds_replay_events_when_carry_disabled() {
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let config = ExecutionEngineConfig {
+        carry_replay_events_on_reopen: false,
+        ..Default::default()
+    };
+    let mut execution_engine = ExecutionEngine::new(clock, cache, Some(config));
+
+    let (replay_len, snapshot_count) = run_netting_flip(&mut execution_engine);
+
+    // Position state is bounded to the current cycle (identical fills and position
+    // outcome as the default path, asserted inside the helper)
+    assert_eq!(replay_len, 1);
+    // Realized-PnL snapshots are unaffected by the carry setting
+    assert_eq!(snapshot_count, 1);
+}

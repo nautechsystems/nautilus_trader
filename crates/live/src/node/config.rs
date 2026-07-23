@@ -508,6 +508,9 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             snapshot_orders: config.snapshot_orders,
             snapshot_positions: config.snapshot_positions,
             snapshot_positions_interval_secs: config.snapshot_positions_interval_secs,
+            // Live trading must always carry replay state across reopen cycles so
+            // venue fill-void corrections referencing prior cycles keep working.
+            carry_replay_events_on_reopen: true,
             allow_overfills: config.allow_overfills,
             filter_unclaimed_external_orders: config.filter_unclaimed_external_orders,
             external_clients: config.external_clients,

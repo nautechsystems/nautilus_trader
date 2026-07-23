@@ -33,6 +33,7 @@ impl ExecutionEngineConfig {
         snapshot_orders = None,
         snapshot_positions = None,
         snapshot_positions_interval_secs = None,
+        carry_replay_events_on_reopen = None,
         allow_overfills = None,
         external_clients = None,
         purge_closed_orders_interval_mins = None,
@@ -50,6 +51,7 @@ impl ExecutionEngineConfig {
         snapshot_orders: Option<bool>,
         snapshot_positions: Option<bool>,
         snapshot_positions_interval_secs: Option<f64>,
+        carry_replay_events_on_reopen: Option<bool>,
         allow_overfills: Option<bool>,
         external_clients: Option<Vec<ClientId>>,
         purge_closed_orders_interval_mins: Option<u32>,
@@ -67,6 +69,7 @@ impl ExecutionEngineConfig {
             .maybe_snapshot_orders(snapshot_orders)
             .maybe_snapshot_positions(snapshot_positions)
             .maybe_snapshot_positions_interval_secs(snapshot_positions_interval_secs)
+            .maybe_carry_replay_events_on_reopen(carry_replay_events_on_reopen)
             .maybe_allow_overfills(allow_overfills)
             .maybe_external_clients(external_clients)
             .maybe_purge_closed_orders_interval_mins(purge_closed_orders_interval_mins)
@@ -109,6 +112,12 @@ impl ExecutionEngineConfig {
     #[pyo3(name = "snapshot_positions_interval_secs")]
     const fn py_snapshot_positions_interval_secs(&self) -> Option<f64> {
         self.snapshot_positions_interval_secs
+    }
+
+    #[getter]
+    #[pyo3(name = "carry_replay_events_on_reopen")]
+    const fn py_carry_replay_events_on_reopen(&self) -> bool {
+        self.carry_replay_events_on_reopen
     }
 
     #[getter]

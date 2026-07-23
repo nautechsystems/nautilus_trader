@@ -56,6 +56,17 @@ pub struct ExecutionEngineConfig {
     /// If `None` then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
+    /// If replay events and fill voids are carried across position close/reopen cycles
+    /// (NETTING OMS reuses position IDs).
+    ///
+    /// Carrying the full replay log preserves venue fill-void corrections that reference
+    /// fills from prior cycles, at the cost of per-position state growing with every fill
+    /// applied to the position ID. Disable for high order-count backtests against
+    /// simulated venues (where `OrderFillVoided` events cannot occur) to bound position
+    /// state to the current close/reopen cycle.
+    #[serde(default = "default_true")]
+    #[builder(default = true)]
+    pub carry_replay_events_on_reopen: bool,
     /// If order fills exceeding order quantity are allowed (logs warning instead of raising).
     /// Useful when position reconciliation races with exchange fill events.
     #[serde(default)]
@@ -180,6 +191,21 @@ mod tests {
     #[rstest]
     fn test_default_config_is_valid() {
         assert!(ExecutionEngineConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_carry_replay_events_on_reopen_defaults_true() {
+        assert!(ExecutionEngineConfig::default().carry_replay_events_on_reopen);
+
+        let config: ExecutionEngineConfig =
+            serde_json::from_str("{}").expect("empty config should deserialize");
+        assert!(config.carry_replay_events_on_reopen);
+
+        let config = ExecutionEngineConfig::builder()
+            .carry_replay_events_on_reopen(false)
+            .build()
+            .unwrap();
+        assert!(!config.carry_replay_events_on_reopen);
     }
 
     #[rstest]
