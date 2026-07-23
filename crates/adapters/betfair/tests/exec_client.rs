@@ -3696,7 +3696,7 @@ async fn test_replace_flow_suppresses_ocm_cancel_for_old_bet_id() {
 
     drop(ocm_tx);
     client.disconnect().await.unwrap();
-    let _ = server.await;
+    server.await.unwrap();
 }
 
 /// A FOK limit order must serialise with `timeInForce=FILL_OR_KILL` and no
