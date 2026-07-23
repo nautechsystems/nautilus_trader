@@ -30,8 +30,9 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only
   changes.
 - **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux x86 builds on the
-  self-hosted `build-v2` pool and builds every supported platform for the nightly merge. This
-  workflow owns cross-platform nightly validation outside the v1 wheel publication jobs.
+  self-hosted `build-v2` pool and runs the full Python test suite against wheels for every supported
+  platform during the nightly merge. This workflow owns cross-platform nightly validation outside
+  the v1 wheel publication jobs.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to

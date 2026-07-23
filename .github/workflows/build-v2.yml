@@ -234,21 +234,7 @@ jobs:
 
       - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: |
-          uv sync --group test --no-install-package nautilus-trader
-          # Install the built wheel with the visualization extra so plotly/kaleido tests run
-          wheel=$(echo ../dist/*.whl)
-          uv pip install "${wheel}[visualization]"
-          # Pin pandas test deps here until v2 runtime deps are settled
-          uv pip install --only-binary :all: \
-            "numpy==2.4.6" \
-            "pandas==3.0.3" \
-            "python-dateutil==2.9.0.post0" \
-            "six==1.17.0"
-          cd /tmp && uv run --project "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" --no-sync pytest \
-            --import-mode=importlib \
-            --rootdir="$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}" \
-            "$GITHUB_WORKSPACE/${{ env.PACKAGE_DIR }}/tests/" -v
+        run: bash ../scripts/ci/test-v2-wheel.bash
 
       - name: Check generated v2 file drift
         # Keep this 3.13 condition in sync with the matrix so drift is checked once per run.
@@ -318,9 +304,9 @@ jobs:
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --release --out ../dist
 
-      - name: Smoke test wheel
+      - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: bash ../scripts/ci/smoke-test-v2-wheel.sh
+        run: bash ../scripts/ci/test-v2-wheel.bash
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -381,9 +367,9 @@ jobs:
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --release --out ../dist
 
-      - name: Smoke test wheel
+      - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: bash ../scripts/ci/smoke-test-v2-wheel.sh
+        run: bash ../scripts/ci/test-v2-wheel.bash
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel
@@ -440,9 +426,9 @@ jobs:
           uv run --no-project --no-build --with "maturin==${MATURIN_VERSION}" -- \
             maturin build --release --out ../dist
 
-      - name: Smoke test wheel
+      - name: Run v2 Python tests
         working-directory: ${{ env.PACKAGE_DIR }}
-        run: bash ../scripts/ci/smoke-test-v2-wheel.sh
+        run: bash ../scripts/ci/test-v2-wheel.bash
 
       - name: Upload wheel artifact
         uses: ./.github/actions/upload-artifact-wheel

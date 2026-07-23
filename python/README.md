@@ -120,7 +120,7 @@ uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ n
 | `macOS (ARM64)`    | 3.12-3.14 | -       | ✓       |
 | `Windows (x86_64)` | 3.12-3.14 | -       | ✓       |
 
-The nightly merge builds and smoke-tests v2 wheels on every listed platform. Outside wheel
+The nightly merge builds and tests v2 wheels on every listed platform. Outside wheel
 publication, cross-platform nightly validation is v2-only; v1 continues to run its main test suite
 on `develop`.
 
