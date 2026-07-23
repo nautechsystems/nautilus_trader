@@ -21,12 +21,20 @@ import pytest
 
 from nautilus_trader.model import HIGH_PRECISION
 from nautilus_trader.model import Currency
+from nautilus_trader.model import CurrencyType
 from nautilus_trader.model import Money
 
 
 USD = Currency.from_str("USD")
 AUD = Currency.from_str("AUD")
 USDT = Currency.from_str("USDT")
+TST9 = Currency(
+    code="TST9",
+    precision=9,
+    iso4217=0,
+    name="Test 9dp",
+    currency_type=CurrencyType.CRYPTO,
+)
 
 
 def test_nan_raises():
@@ -109,6 +117,8 @@ def test_str():
 
 def test_repr():
     assert repr(Money(1.00, USD)) == "Money(1.00, USD)"
+    money = Money.from_decimal(Decimal("9007199253.999999999"), TST9)
+    assert repr(money) == "Money(9007199253.999999999, TST9)"
 
 
 def test_from_raw():
@@ -344,13 +354,17 @@ def test_abs(value, expected):
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        (Money(50.25, USD), 50),
-        (Money(-50.25, USD), -50),
-        (Money(0.00, USD), 0),
+        ("0", 0),
+        ("0.000000001", 0),
+        ("-0.000000001", 0),
+        ("1.999999999", 1),
+        ("-1.999999999", -1),
+        ("50.25", 50),
+        ("9007199253.999999999", 9_007_199_253),
     ],
 )
 def test_int(value, expected):
-    assert int(value) == expected
+    assert int(Money.from_decimal(Decimal(value), TST9)) == expected
 
 
 @pytest.mark.parametrize(
