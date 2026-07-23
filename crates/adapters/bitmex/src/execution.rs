@@ -152,6 +152,7 @@ impl BitmexExecutionClient {
             config.api_secret.clone(),
             Some(account_id),
             config.heartbeat_interval_secs,
+            None,
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),

@@ -183,7 +183,7 @@ impl BitmexWsFeedHandler {
                         continue;
                     }
 
-                    let event = match Self::parse_raw_message(msg) {
+                    let event = match self.parse_raw_message(msg) {
                         Some(event) => event,
                         None => continue,
                     };
@@ -228,9 +228,9 @@ impl BitmexWsFeedHandler {
         }
     }
 
-    fn parse_raw_message(msg: Message) -> Option<BitmexWsFrame> {
+    fn parse_raw_message(&self, msg: Message) -> Option<BitmexWsFrame> {
         match msg {
-            Message::Text(text) => Self::parse_text_message(&text),
+            Message::Text(text) => self.parse_text_message(&text),
             Message::Binary(msg) => {
                 let Ok(text) = str::from_utf8(&msg) else {
                     log::warn!(
@@ -239,7 +239,7 @@ impl BitmexWsFeedHandler {
                     );
                     return None;
                 };
-                Self::parse_text_message(text)
+                self.parse_text_message(text)
             }
             Message::Close(_) => {
                 log::debug!("Received close message, waiting for reconnection");
@@ -261,7 +261,7 @@ impl BitmexWsFeedHandler {
         }
     }
 
-    fn parse_text_message(text: &str) -> Option<BitmexWsFrame> {
+    fn parse_text_message(&self, text: &str) -> Option<BitmexWsFrame> {
         if text == RECONNECTED {
             log::info!("Received WebSocket reconnected signal");
             return Some(BitmexWsFrame::Reconnected);
@@ -290,7 +290,19 @@ impl BitmexWsFeedHandler {
                     );
                 }
                 BitmexWsFrame::Subscription { .. } => return Some(msg),
-                BitmexWsFrame::Error { status, error, .. } => {
+                BitmexWsFrame::Error {
+                    status,
+                    error,
+                    request,
+                    ..
+                } => {
+                    if request
+                        .op
+                        .eq_ignore_ascii_case(BitmexWsAuthAction::AuthKeyExpires.as_ref())
+                    {
+                        self.auth_tracker.fail(error.clone());
+                    }
+
                     if Self::is_already_subscribed_error(error) {
                         log::debug!(
                             "Ignoring duplicate BitMEX subscription: status={status}, error={error}",
@@ -481,6 +493,21 @@ mod tests {
         },
     };
 
+    fn test_handler() -> BitmexWsFeedHandler {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        BitmexWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new(':'),
+        )
+    }
+
     #[rstest]
     #[case(false)]
     #[case(true)]
@@ -492,8 +519,9 @@ mod tests {
             Message::Text(json.into())
         };
 
+        let handler = test_handler();
         let Some(BitmexWsFrame::Table(BitmexTableMessage::Order { action, data })) =
-            BitmexWsFeedHandler::parse_raw_message(message)
+            handler.parse_raw_message(message)
         else {
             panic!("expected order table frame");
         };
@@ -509,7 +537,7 @@ mod tests {
     fn test_non_utf8_binary_frame_is_ignored() {
         let message = Message::Binary(vec![0xFF, 0xFE, 0xFD].into());
 
-        assert!(BitmexWsFeedHandler::parse_raw_message(message).is_none());
+        assert!(test_handler().parse_raw_message(message).is_none());
     }
 
     #[rstest]

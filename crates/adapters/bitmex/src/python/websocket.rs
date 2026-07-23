@@ -104,13 +104,15 @@ impl Debug for PyBitmexWebSocketClient {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyBitmexWebSocketClient {
     #[new]
-    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=5, environment=BitmexEnvironment::Mainnet, proxy_url=None))]
+    #[pyo3(signature = (url=None, api_key=None, api_secret=None, account_id=None, heartbeat=5, auth_timeout_secs=None, environment=BitmexEnvironment::Mainnet, proxy_url=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
         heartbeat: u64,
+        auth_timeout_secs: Option<u64>,
         environment: BitmexEnvironment,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
@@ -120,6 +122,7 @@ impl PyBitmexWebSocketClient {
             api_secret,
             account_id,
             heartbeat,
+            auth_timeout_secs,
             environment,
             TransportBackend::default(),
             proxy_url,
