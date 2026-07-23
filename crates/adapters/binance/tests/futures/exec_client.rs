@@ -72,8 +72,8 @@ use nautilus_live::ExecutionClientCore;
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSideSpecified, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{AccountState, OrderAccepted, OrderEventAny, OrderUpdated},
     identifiers::{
@@ -182,6 +182,7 @@ enum ReportFixtureMode {
     Empty,
     FillsOnly,
     Gtd,
+    HedgePositions,
     InvalidFill,
     PaginatedFills,
     Populated,
@@ -424,6 +425,9 @@ async fn handle_position_risk_query(
             positions[0]["symbol"] = json!("BTCUSDT_260925");
             json_response(&positions)
         }
+        ReportFixtureMode::HedgePositions => {
+            json_response(&load_fixture("position_risk_hedge.json"))
+        }
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::Populated
@@ -457,6 +461,7 @@ async fn handle_open_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::Populated
+        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             json_response(&json!([load_fixture("order_response.json")]))
@@ -489,6 +494,7 @@ async fn handle_open_algo_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::Populated
+        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("open_algo_orders.json")),
     }
@@ -542,6 +548,7 @@ async fn handle_all_algo_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::Populated
+        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             let mut orders = load_fixture("open_algo_orders.json");
@@ -597,6 +604,7 @@ async fn handle_user_trades_query(
         }
         ReportFixtureMode::FillsOnly
         | ReportFixtureMode::Populated
+        | ReportFixtureMode::HedgePositions
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
             let mut trade = load_fixture("user_trade.json");
@@ -3833,6 +3841,69 @@ async fn test_report_generation_without_instrument_matches_raw_symbol_responses(
 
     assert_eq!(position_reports.len(), 1);
     assert_eq!(position_reports[0].instrument_id, test_instrument_id());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_position_report_generation_preserves_hedge_legs() {
+    let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::HedgePositions,
+    )
+    .await;
+    let base_url_http = format!("http://{addr}");
+    let base_url_ws = format!("ws://{addr}/ws");
+    let (mut client, _rx, cache) = create_test_execution_client(base_url_http, base_url_ws);
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = test_instrument_id();
+    add_test_account_to_cache(&cache, account_id);
+    add_test_instrument_to_cache(&cache);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].account_id, account_id);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].quantity, Quantity::from("0.005"));
+    assert_eq!(
+        reports[0].signed_decimal_qty,
+        rust_decimal_macros::dec!(0.005)
+    );
+    assert_eq!(reports[0].venue_position_id, None);
+    assert_eq!(
+        reports[0].avg_px_open,
+        Some(rust_decimal_macros::dec!(50000.0)),
+    );
+    assert_eq!(reports[0].ts_last, reports[0].ts_init);
+
+    assert_eq!(reports[1].account_id, account_id);
+    assert_eq!(reports[1].instrument_id, instrument_id);
+    assert_eq!(reports[1].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[1].quantity, Quantity::from("0.002"));
+    assert_eq!(
+        reports[1].signed_decimal_qty,
+        rust_decimal_macros::dec!(-0.002)
+    );
+    assert_eq!(reports[1].venue_position_id, None);
+    assert_eq!(
+        reports[1].avg_px_open,
+        Some(rust_decimal_macros::dec!(52000.0)),
+    );
+    assert_eq!(reports[1].ts_last, reports[1].ts_init);
 }
 
 #[rstest]
