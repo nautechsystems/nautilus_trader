@@ -42,8 +42,9 @@ use nautilus_model::{
     identifiers::ClientOrderId,
     instruments::Instrument,
     orders::{Order, OrderAny},
-    types::{Quantity, quantity::QuantityRaw},
+    types::Quantity,
 };
+use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
 use ustr::Ustr;
 
 use super::{
@@ -193,11 +194,24 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         }
 
         let total_qty = order.quantity();
-        let total_raw = total_qty.raw;
-        let precision = total_qty.precision;
-
-        let qty_per_interval_raw = total_raw / (num_intervals as QuantityRaw);
-        let qty_per_interval = Quantity::from_raw(qty_per_interval_raw, precision);
+        let interval_count = Decimal::from(num_intervals);
+        let quotient = total_qty.as_decimal() / interval_count;
+        let floored = quotient.round_dp_with_strategy(
+            u32::from(instrument.size_precision()),
+            RoundingStrategy::ToZero,
+        );
+        let Some(floored_f64) = floored.to_f64() else {
+            log::error!("Cannot execute order: qty_per_interval={floored} is not representable");
+            return Ok(());
+        };
+        let qty_per_interval = match instrument.try_make_qty(floored_f64, None) {
+            Ok(quantity) => quantity,
+            Err(e) => {
+                log::error!("Cannot execute order: invalid qty_per_interval={floored}: {e}");
+                return Ok(());
+            }
+        };
+        let remainder = total_qty.as_decimal() - floored * interval_count;
 
         if qty_per_interval == total_qty || qty_per_interval < instrument.size_increment() {
             log::warn!(
@@ -219,14 +233,68 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             return Ok(());
         }
 
+        let interval = match Duration::try_from_secs_f64(interval_secs) {
+            Ok(interval) => interval,
+            Err(e) => {
+                log::error!(
+                    "Cannot execute order: interval_secs={interval_secs} is not a valid duration: {e}"
+                );
+                return Ok(());
+            }
+        };
+
+        if interval == Duration::ZERO {
+            log::error!(
+                "Cannot execute order: interval_secs={interval_secs} rounds to a zero duration"
+            );
+            return Ok(());
+        }
+        let Ok(interval_ns) = u64::try_from(interval.as_nanos()) else {
+            log::error!(
+                "Cannot execute order: interval_secs={interval_secs} exceeds the clock nanosecond range"
+            );
+            return Ok(());
+        };
+        let timestamp_ns = ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
+            .clock_mut()
+            .timestamp_ns()
+            .as_u64();
+
+        if timestamp_ns.checked_add(interval_ns).is_none() {
+            log::error!(
+                "Cannot execute order: interval_secs={interval_secs} exceeds the clock timestamp headroom"
+            );
+            return Ok(());
+        }
+
         let mut scheduled_sizes: Vec<Quantity> = vec![qty_per_interval; num_intervals as usize];
 
-        // Remainder goes in the last slice
-        let scheduled_total = qty_per_interval_raw * (num_intervals as QuantityRaw);
-        let remainder_raw = total_raw - scheduled_total;
-        if remainder_raw > 0 {
-            let remainder = Quantity::from_raw(remainder_raw, total_qty.precision);
-            scheduled_sizes.push(remainder);
+        if remainder > Decimal::ZERO {
+            let Some(remainder_f64) = remainder.to_f64() else {
+                log::error!("Cannot execute order: qty_remainder={remainder} is not representable");
+                return Ok(());
+            };
+            let remainder_qty = match instrument.try_make_qty(remainder_f64, None) {
+                Ok(quantity) => quantity,
+                Err(e) => {
+                    log::error!("Cannot execute order: invalid qty_remainder={remainder}: {e}");
+                    return Ok(());
+                }
+            };
+            scheduled_sizes.push(remainder_qty);
+        }
+
+        let scheduled_total = scheduled_sizes
+            .iter()
+            .fold(Decimal::ZERO, |total, quantity| {
+                total + quantity.as_decimal()
+            });
+
+        if scheduled_total != total_qty.as_decimal() {
+            log::error!(
+                "Cannot execute order: scheduled quantity {scheduled_total} does not equal order quantity {total_qty}"
+            );
+            return Ok(());
         }
 
         log::info!("Order execution size schedule: {scheduled_sizes:?}");
@@ -274,15 +342,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
 
         ExecutionAlgorithmNative::exec_algorithm_core_mut(self)
             .clock_mut()
-            .set_timer(
-                primary_id.as_str(),
-                Duration::from_secs_f64(interval_secs),
-                None,
-                None,
-                None,
-                None,
-                None,
-            )?;
+            .set_timer(primary_id.as_str(), interval, None, None, None, None, None)?;
 
         log::info!(
             "Started TWAP execution for {primary_id}: horizon_secs={horizon_secs}, interval_secs={interval_secs}"
@@ -377,7 +437,7 @@ mod tests {
         messages::execution::{SubmitOrder, TradingCommand},
         msgbus::{self, MessagingSwitchboard},
     };
-    use nautilus_core::{Params, UUID4};
+    use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
         events::{OrderEventAny, order::spec::OrderCanceledSpec},
@@ -691,9 +751,9 @@ mod tests {
         register_algorithm(&mut algo);
 
         add_instrument_to_cache(&algo);
+        let instrument = nautilus_model::instruments::stubs::crypto_perpetual_ethusdt();
 
         // 1.0 qty over 60s with 20s intervals = 3 intervals
-        // Raw is scaled to FIXED_PRECISION: 9 (standard) or 16 (high-precision)
         let mut params = IndexMap::new();
         params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
         params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
@@ -706,22 +766,59 @@ mod tests {
         // First slice spawned, 3 remaining (2 regular + 1 remainder)
         let remaining = algo.scheduled_sizes.get(&primary_id).unwrap();
         assert_eq!(remaining.len(), 3);
+        assert_eq!(
+            remaining,
+            &[
+                Quantity::from("0.333"),
+                Quantity::from("0.333"),
+                Quantity::from("0.001"),
+            ]
+        );
 
-        // Expected raw values depend on FIXED_PRECISION
-        // Standard (9):  1_000_000_000 / 3 = 333_333_333, remainder = 1
-        // High (16): 10_000_000_000_000_000 / 3 = 3_333_333_333_333_333, remainder = 1
-        #[cfg(feature = "high-precision")]
-        {
-            assert_eq!(remaining[0].raw, 3_333_333_333_333_333);
-            assert_eq!(remaining[1].raw, 3_333_333_333_333_333);
-            assert_eq!(remaining[2].raw, 1);
+        for quantity in remaining {
+            assert_eq!(quantity.precision, instrument.size_precision());
+            assert_eq!(quantity.raw % instrument.size_increment().raw, 0);
         }
-        #[cfg(not(feature = "high-precision"))]
-        {
-            assert_eq!(remaining[0].raw, 333_333_333);
-            assert_eq!(remaining[1].raw, 333_333_333);
-            assert_eq!(remaining[2].raw, 1);
-        }
+
+        let first = algo
+            .cache()
+            .order(&ClientOrderId::from("O-001-E1"))
+            .unwrap()
+            .quantity();
+        let total = remaining
+            .iter()
+            .fold(first.as_decimal(), |sum, qty| sum + qty.as_decimal());
+        assert_eq!(total, Quantity::from("1.0").as_decimal());
+    }
+
+    #[rstest]
+    fn test_twap_children_use_instrument_size_precision() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        let instrument = nautilus_model::instruments::stubs::crypto_perpetual_ethusdt();
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("60"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("20"));
+
+        let order = create_market_order_with_params_and_qty(params, Quantity::from("1.000000000"));
+        let primary_id = order.client_order_id();
+
+        algo.on_order(order).unwrap();
+
+        let spawned = algo
+            .cache()
+            .order(&ClientOrderId::from("O-001-E1"))
+            .unwrap()
+            .quantity();
+        assert_eq!(spawned.precision, instrument.size_precision());
+        assert!(
+            algo.scheduled_sizes[&primary_id]
+                .iter()
+                .all(|quantity| quantity.precision == instrument.size_precision())
+        );
     }
 
     #[rstest]
@@ -1100,6 +1197,110 @@ mod tests {
         let result = algo.on_order(order);
         assert!(result.is_ok());
         assert!(algo.scheduled_sizes.is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_huge_finite_interval_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2e20"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1e20"));
+
+        let result = algo.on_order(create_market_order_with_params(params));
+
+        assert!(result.is_ok());
+        assert!(received.borrow().is_none());
+        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_subnanosecond_interval_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2e-10"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1e-10"));
+
+        let result = algo.on_order(create_market_order_with_params(params));
+
+        assert!(result.is_ok());
+        assert!(received.borrow().is_none());
+        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_rejects_interval_exceeding_timestamp_headroom_before_submission() {
+        let mut algo = create_twap_algorithm();
+        register_algorithm(&mut algo);
+
+        add_instrument_to_cache(&algo);
+        DataActorNative::clock_mut(&mut algo)
+            .as_any_mut()
+            .downcast_mut::<TestClock>()
+            .unwrap()
+            .set_time(UnixNanos::new(u64::MAX - 500_000_000));
+
+        let received = Rc::new(RefCell::new(None::<SubmitOrder>));
+        let handler = msgbus::TypedIntoHandler::from({
+            let captured = received.clone();
+            move |cmd: TradingCommand| {
+                if let TradingCommand::SubmitOrder(cmd) = cmd {
+                    *captured.borrow_mut() = Some(cmd);
+                }
+            }
+        });
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::risk_engine_execute(),
+            handler,
+        );
+
+        let mut params = IndexMap::new();
+        params.insert(Ustr::from("horizon_secs"), Ustr::from("2"));
+        params.insert(Ustr::from("interval_secs"), Ustr::from("1"));
+
+        let result = algo.on_order(create_market_order_with_params(params));
+
+        assert!(result.is_ok());
+        assert!(received.borrow().is_none());
+        assert!(algo.scheduled_sizes.is_empty());
+        assert!(algo.clock().timer_names().is_empty());
     }
 
     #[rstest]
