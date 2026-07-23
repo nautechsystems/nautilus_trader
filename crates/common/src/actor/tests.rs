@@ -168,7 +168,6 @@ struct TestDataActor {
     pub received_funding_rates: Vec<FundingRateUpdate>,
     pub received_status: Vec<InstrumentStatus>,
     pub received_closes: Vec<InstrumentClose>,
-    pub received_historical_closes: Vec<InstrumentClose>,
     pub received_greeks: Vec<OptionGreeks>,
     pub received_chain_slices: Vec<OptionChainSlice>,
     pub received_signals: Vec<Signal>,
@@ -313,7 +312,7 @@ impl DataActor for TestDataActor {
         &mut self,
         closes: &[InstrumentClose],
     ) -> anyhow::Result<()> {
-        self.received_historical_closes.extend(closes);
+        self.received_closes.extend(closes);
         Ok(())
     }
 
@@ -416,7 +415,6 @@ impl TestDataActor {
             received_funding_rates: Vec::new(),
             received_status: Vec::new(),
             received_closes: Vec::new(),
-            received_historical_closes: Vec::new(),
             received_greeks: Vec::new(),
             received_chain_slices: Vec::new(),
             received_signals: Vec::new(),
@@ -2516,11 +2514,7 @@ fn test_request_instrument_closes(
 
     msgbus::send_response(&request_id, &DataResponse::InstrumentCloses(response));
 
-    assert_eq!(
-        actor.received_historical_closes,
-        vec![stub_instrument_close]
-    );
-    assert!(actor.received_closes.is_empty());
+    assert_eq!(actor.received_closes, vec![stub_instrument_close]);
 }
 
 #[rstest]
