@@ -130,8 +130,6 @@ class PolymarketExecClientConfig:
     @property
     def heartbeat_enabled(self) -> bool: ...
     @property
-    def ack_timeout_secs(self) -> int: ...
-    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -151,7 +149,6 @@ class PolymarketExecClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_enabled: bool | None = None,
-        ack_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
         proxy_url: str | None = None,
     ) -> None: ...

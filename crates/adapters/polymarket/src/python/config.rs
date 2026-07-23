@@ -227,7 +227,7 @@ impl PolymarketExecClientConfig {
     /// derive list.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, ack_timeout_secs=None, transport_backend=None, proxy_url=None))]
+    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None))]
     fn py_new(
         trader_id: Option<String>,
         account_id: Option<String>,
@@ -245,7 +245,6 @@ impl PolymarketExecClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         heartbeat_enabled: Option<bool>,
-        ack_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
@@ -269,7 +268,6 @@ impl PolymarketExecClientConfig {
                 .unwrap_or(default.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
             heartbeat_enabled: heartbeat_enabled.unwrap_or(default.heartbeat_enabled),
-            ack_timeout_secs: ack_timeout_secs.unwrap_or(default.ack_timeout_secs),
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
         };
         config

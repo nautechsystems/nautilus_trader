@@ -990,7 +990,6 @@ Class/struct: `PolymarketExecClientConfig`.
 | `retry_delay_initial_ms`                         | `1000`                  | Initial retry delay. |
 | `retry_delay_max_ms`                             | `10000`                 | Maximum retry delay. |
 | `heartbeat_enabled`                              | `false`                 | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
-| `ack_timeout_secs`                               | `5`                     | Reserved for order/trade acknowledgment handling; not currently applied. |
 | `transport_backend`                              | `Sockudo`               | WebSocket transport implementation. |
 
 :::warning

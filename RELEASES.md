@@ -133,6 +133,7 @@ adapter set. The following limits remain deferred:
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
 - Changed Architect AX request models and low-level APIs to current schemas; unverified stop-limit orders are rejected
 - Changed BitMEX quanto multipliers from raw to settlement-currency units (#4507), thanks for reporting @4px4d9cdby-star
+- Removed Polymarket v2 `ack_timeout_secs` config field; the buffer-and-drain submit path has no acknowledgment wait to bound
 
 ### Security
 - Fixed underflow and currency-mismatch panics from out-of-order fill events (#4483), thanks @folknor
