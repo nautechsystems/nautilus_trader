@@ -56,24 +56,17 @@ jobs:
             crates.io:443
             static.crates.io:443
 
-      - name: Free disk space (Ubuntu)
-        # https://github.com/jlumbroso/free-disk-space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Free disk space (Ubuntu)
+        run: >-
+          bash scripts/ci/free-disk-space.sh
+          --large-packages --docker-images --tool-cache --swap-storage
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
@@ -190,24 +183,17 @@ jobs:
             crates.io:443
             static.crates.io:443
 
-      - name: Free disk space (Ubuntu)
-        # https://github.com/jlumbroso/free-disk-space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Free disk space (Ubuntu)
+        run: >-
+          bash scripts/ci/free-disk-space.sh
+          --large-packages --docker-images --tool-cache --swap-storage
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
@@ -434,24 +420,17 @@ jobs:
             crates.io:443
             static.crates.io:443
 
-      - name: Free disk space (Ubuntu)
-        # https://github.com/jlumbroso/free-disk-space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          android: false
-          dotnet: false
-          haskell: false
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-
       - name: Checkout repository
         # https://github.com/actions/checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           persist-credentials: false
           fetch-depth: 1
+
+      - name: Free disk space (Ubuntu)
+        run: >-
+          bash scripts/ci/free-disk-space.sh
+          --large-packages --docker-images --tool-cache --swap-storage
 
       - name: Verify Docker toolchain pins
         run: bash scripts/ci/check-docker-toolchain-pins.bash
