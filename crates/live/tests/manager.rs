@@ -11786,6 +11786,536 @@ async fn test_position_check_aggregates_hedge_positions_before_comparing_report(
     );
 }
 
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test]
+async fn test_position_check_matching_hedge_reports_is_order_invariant(
+    #[case] reverse_reports: bool,
+) {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+
+    ctx.add_instrument(instrument.clone());
+    let pos_long = create_test_position(
+        &instrument,
+        PositionId::from("P-MATCH-LONG"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let pos_short = create_test_position(
+        &instrument,
+        PositionId::from("P-MATCH-SHORT"),
+        OrderSide::Sell,
+        "2.0",
+        "3100.00",
+    );
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
+
+    let report_long = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "5.0",
+        "P-MATCH-LONG",
+        dec!(3000.00),
+    );
+    let report_short = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        "2.0",
+        "P-MATCH-SHORT",
+        dec!(3100.00),
+    );
+    let mut reports = vec![report_long, report_short];
+    if reverse_reports {
+        reports.reverse();
+    }
+    let mock_client = MockPositionExecutionClient::new(vec![], reports);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        0,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_equal_net_with_mismatched_hedge_legs_is_discrepant() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let pos_long = create_test_position(
+        &instrument,
+        PositionId::from("P-NET-MISMATCH-LONG"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let pos_short = create_test_position(
+        &instrument,
+        PositionId::from("P-NET-MISMATCH-SHORT"),
+        OrderSide::Sell,
+        "2.0",
+        "3100.00",
+    );
+    let report_long = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "4.0",
+        "P-NET-MISMATCH-LONG",
+        dec!(3000.00),
+    );
+    let report_short = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        "1.0",
+        "P-NET-MISMATCH-SHORT",
+        dec!(3100.00),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report_long, report_short]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_venue_only_offset_hedge_legs_are_discrepant() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let report_long = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "2.0",
+        "P-OFFSET-LONG",
+        dec!(3000.00),
+    );
+    let report_short = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        "2.0",
+        "P-OFFSET-SHORT",
+        dec!(3100.00),
+    );
+    ctx.add_instrument(instrument);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report_long, report_short]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_flat_and_nonflat_reports_use_nonflat_report() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-NONFLAT"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let nonflat_report = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "5.0",
+        "P-NONFLAT",
+        dec!(3000.00),
+    );
+    let flat_report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Flat,
+        Quantity::from("0"),
+        UnixNanos::from(2_000_000),
+        UnixNanos::from(2_000_000),
+        None,
+        None,
+        None,
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![nonflat_report, flat_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        0,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_multi_leg_discrepancy_defers_reconciliation() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let pos_long = create_test_position(
+        &instrument,
+        PositionId::from("P-DEFER-LONG"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let pos_short = create_test_position(
+        &instrument,
+        PositionId::from("P-DEFER-SHORT"),
+        OrderSide::Sell,
+        "2.0",
+        "3100.00",
+    );
+    let report_long = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "5.0",
+        "P-DEFER-LONG",
+        dec!(3000.00),
+    );
+    let report_short = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        "1.0",
+        "P-DEFER-SHORT",
+        dec!(3100.00),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report_long, report_short]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_single_leg_gets_fresh_budget_after_multi_leg_exhaustion() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 1,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let pos_long = create_test_position(
+        &instrument,
+        PositionId::from("P-SHAPE-LONG"),
+        OrderSide::Buy,
+        "5.0",
+        "3000.00",
+    );
+    let pos_short = create_test_position(
+        &instrument,
+        PositionId::from("P-SHAPE-SHORT"),
+        OrderSide::Sell,
+        "2.0",
+        "3100.00",
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&pos_long);
+    ctx.add_position(&pos_short);
+
+    let report_long = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "4.0",
+        "P-SHAPE-LONG",
+        dec!(3000.00),
+    );
+    let report_short = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Short,
+        "2.0",
+        "P-SHAPE-SHORT",
+        dec!(3100.00),
+    );
+    let multi_leg_client =
+        MockPositionExecutionClient::new(vec![], vec![report_long, report_short]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&multi_leg_client];
+
+    let first_events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(first_events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        1,
+    );
+
+    let single_report = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "4.0",
+        "P-SHAPE-NET",
+        dec!(3200.00),
+    );
+    let single_leg_client = MockPositionExecutionClient::new(vec![], vec![single_report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&single_leg_client];
+
+    let second_events = ctx.manager.check_positions_consistency(&clients).await;
+    let fills = second_events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].account_id, test_account_id());
+    assert_eq!(fills[0].order_side, OrderSide::Buy);
+    assert_eq!(fills[0].last_qty, Quantity::from("1.0"));
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, test_account_id())),
+        0,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_multi_leg_reports_remain_isolated_by_account() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let account_a = AccountId::from("BINANCE-HEDGE-A");
+    let account_b = AccountId::from("BINANCE-HEDGE-B");
+    ctx.add_instrument(instrument.clone());
+    ctx.add_margin_account(account_a);
+    ctx.add_margin_account(account_b);
+
+    for (position_id, side, qty, price, account_id) in [
+        ("P-A-LONG", OrderSide::Buy, "5.0", "3000.00", account_a),
+        ("P-A-SHORT", OrderSide::Sell, "2.0", "3100.00", account_a),
+        ("P-B-LONG", OrderSide::Buy, "7.0", "3200.00", account_b),
+        ("P-B-SHORT", OrderSide::Sell, "3.0", "3300.00", account_b),
+    ] {
+        let position = create_test_position_for_account(
+            &instrument,
+            PositionId::from(position_id),
+            side,
+            qty,
+            price,
+            account_id,
+        );
+        ctx.add_position(&position);
+    }
+
+    let client_a = MockPositionExecutionClient::configured(
+        ClientId::from("BINANCE-HEDGE-A"),
+        account_a,
+        test_venue(),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![
+        create_test_position_report(
+            account_a,
+            instrument_id,
+            PositionSideSpecified::Long,
+            "5.0",
+            "P-A-LONG",
+            dec!(3000.00),
+        ),
+        create_test_position_report(
+            account_a,
+            instrument_id,
+            PositionSideSpecified::Short,
+            "2.0",
+            "P-A-SHORT",
+            dec!(3100.00),
+        ),
+    ]);
+    let client_b = MockPositionExecutionClient::configured(
+        ClientId::from("BINANCE-HEDGE-B"),
+        account_b,
+        test_venue(),
+        IndexSet::from([instrument_id.venue]),
+        false,
+    )
+    .with_position_reports(vec![
+        create_test_position_report(
+            account_b,
+            instrument_id,
+            PositionSideSpecified::Long,
+            "7.0",
+            "P-B-LONG",
+            dec!(3200.00),
+        ),
+        create_test_position_report(
+            account_b,
+            instrument_id,
+            PositionSideSpecified::Short,
+            "2.0",
+            "P-B-SHORT",
+            dec!(3300.00),
+        ),
+    ]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&client_a, &client_b];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+
+    assert!(events.is_empty());
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_a)),
+        0,
+    );
+    assert_eq!(
+        ctx.manager
+            .position_recon_retry_count(&(instrument_id, account_b)),
+        1,
+    );
+}
+
+#[tokio::test]
+async fn test_position_check_single_report_reconciliation_is_unchanged() {
+    let config = ExecutionManagerConfig {
+        position_check_retries: 3,
+        position_check_threshold_ns: 0,
+        ..Default::default()
+    };
+    let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-SINGLE"),
+        OrderSide::Buy,
+        "3.0",
+        "3000.00",
+    );
+    let report = create_test_position_report(
+        test_account_id(),
+        instrument_id,
+        PositionSideSpecified::Long,
+        "5.0",
+        "P-SINGLE",
+        dec!(3100.00),
+    );
+    ctx.add_instrument(instrument);
+    ctx.add_position(&position);
+
+    let mock_client = MockPositionExecutionClient::new(vec![], vec![report]);
+    let clients: Vec<&dyn ExecutionClient> = vec![&mock_client];
+
+    let events = ctx.manager.check_positions_consistency(&clients).await;
+    let fills = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].account_id, test_account_id());
+    assert_eq!(fills[0].order_side, OrderSide::Buy);
+    assert_eq!(fills[0].last_qty, Quantity::from("2.0"));
+    assert_eq!(fills[0].last_px, Price::from("3250.00"));
+}
+
+fn create_test_position_report(
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    position_side: PositionSideSpecified,
+    quantity: &str,
+    venue_position_id: &str,
+    avg_px_open: Decimal,
+) -> PositionStatusReport {
+    PositionStatusReport::new(
+        account_id,
+        instrument_id,
+        position_side,
+        Quantity::from(quantity),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        Some(PositionId::from(venue_position_id)),
+        Some(avg_px_open),
+    )
+}
+
 #[tokio::test]
 async fn test_position_check_dedup_skips_second_hedge_position_same_instrument() {
     // Two hedge positions should only consume one retry per cycle, not two
