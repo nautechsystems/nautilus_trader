@@ -279,23 +279,6 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error when plug-ins are configured without host-side support.
-    #[cfg(feature = "plugin")]
-    pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
-        if self.config.plugins.is_empty() {
-            return Ok(());
-        }
-
-        anyhow::bail!(
-            "LiveNodeConfig.plugins requires host-side plug-in support; nautilus-plugin is the guest SDK only"
-        )
-    }
-
-    /// Loads and registers plug-ins declared on the node config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when plug-ins are configured without host-side support.
-    #[cfg(not(feature = "plugin"))]
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
             return Ok(());
@@ -311,31 +294,16 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
-    #[cfg(feature = "plugin")]
     #[expect(
         clippy::needless_pass_by_value,
         reason = "signature mirrors the host-enabled API"
     )]
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        #[cfg(feature = "plugin")]
         config.validate_runtime_support(self.config.plugins.len())?;
-
-        anyhow::bail!(
-            "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
-        )
-    }
-
-    /// Rejects plug-in registration when host support is not linked.
-    ///
-    /// # Errors
-    ///
-    /// Always returns an error explaining that host-side support is required.
-    #[cfg(not(feature = "plugin"))]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "signature mirrors the plugin-enabled API"
-    )]
-    pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        #[cfg(not(feature = "plugin"))]
         let _ = config;
+
         anyhow::bail!(
             "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )

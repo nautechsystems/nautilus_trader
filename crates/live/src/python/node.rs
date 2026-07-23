@@ -951,11 +951,11 @@ impl LiveNode {
         Ok(())
     }
 
-    /// Rejects plug-in registration when host support is not linked.
+    /// Loads and registers one plug-in instance.
     ///
     /// # Errors
     ///
-    /// Always returns an error explaining that host-side support is required.
+    /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
     #[pyo3(name = "add_plugin", signature = (path, type_name, config=None, sha256=None))]
     fn py_add_plugin(
         &mut self,

@@ -156,6 +156,7 @@ pub struct AsyncRunnerChannels {
     pub data_cmd_rx: tokio::sync::mpsc::UnboundedReceiver<DataCommand>,
 }
 
+#[cfg(feature = "node")]
 pub(crate) enum PendingRunnerEvent {
     Time(TimeEventMessage),
     ExecEvent(ExecutionEvent),
@@ -278,73 +279,6 @@ impl AsyncRunner {
     #[must_use]
     pub fn take_channels(self) -> AsyncRunnerChannels {
         self.channels
-    }
-
-    pub(crate) fn poll_pending(&mut self, mut process: impl FnMut(PendingRunnerEvent)) -> usize {
-        self.bind_senders();
-
-        let pending = (
-            self.channels.time_evt_rx.len(),
-            self.channels.exec_evt_rx.len(),
-            self.channels.exec_cmd_rx.len(),
-            self.channels.data_evt_rx.len(),
-            self.channels.data_cmd_rx.len(),
-        );
-        let mut processed = 0;
-        processed += poll_channel(
-            &mut self.channels.time_evt_rx,
-            pending.0,
-            PendingRunnerEvent::Time,
-            &mut process,
-        );
-        processed += poll_channel(
-            &mut self.channels.exec_evt_rx,
-            pending.1,
-            PendingRunnerEvent::ExecEvent,
-            &mut process,
-        );
-        processed += poll_channel(
-            &mut self.channels.exec_cmd_rx,
-            pending.2,
-            PendingRunnerEvent::ExecCommand,
-            &mut process,
-        );
-        processed += poll_channel(
-            &mut self.channels.data_evt_rx,
-            pending.3,
-            PendingRunnerEvent::DataEvent,
-            &mut process,
-        );
-        processed += poll_channel(
-            &mut self.channels.data_cmd_rx,
-            pending.4,
-            PendingRunnerEvent::DataCommand,
-            &mut process,
-        );
-        processed
-    }
-
-    pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
-        tokio::select! {
-            biased;
-
-            Some(message) = self.channels.time_evt_rx.recv() => {
-                Some(PendingRunnerEvent::Time(message))
-            }
-            Some(event) = self.channels.exec_evt_rx.recv() => {
-                Some(PendingRunnerEvent::ExecEvent(event))
-            }
-            Some(command) = self.channels.exec_cmd_rx.recv() => {
-                Some(PendingRunnerEvent::ExecCommand(command))
-            }
-            Some(event) = self.channels.data_evt_rx.recv() => {
-                Some(PendingRunnerEvent::DataEvent(event))
-            }
-            Some(command) = self.channels.data_cmd_rx.recv() => {
-                Some(PendingRunnerEvent::DataCommand(command))
-            }
-            else => None,
-        }
     }
 
     /// Flushes all pending data events and commands from the channels.
@@ -524,6 +458,77 @@ impl AsyncRunner {
     }
 }
 
+#[cfg(feature = "node")]
+impl AsyncRunner {
+    pub(crate) fn poll_pending(&mut self, mut process: impl FnMut(PendingRunnerEvent)) -> usize {
+        self.bind_senders();
+
+        let pending = (
+            self.channels.time_evt_rx.len(),
+            self.channels.exec_evt_rx.len(),
+            self.channels.exec_cmd_rx.len(),
+            self.channels.data_evt_rx.len(),
+            self.channels.data_cmd_rx.len(),
+        );
+        let mut processed = 0;
+        processed += poll_channel(
+            &mut self.channels.time_evt_rx,
+            pending.0,
+            PendingRunnerEvent::Time,
+            &mut process,
+        );
+        processed += poll_channel(
+            &mut self.channels.exec_evt_rx,
+            pending.1,
+            PendingRunnerEvent::ExecEvent,
+            &mut process,
+        );
+        processed += poll_channel(
+            &mut self.channels.exec_cmd_rx,
+            pending.2,
+            PendingRunnerEvent::ExecCommand,
+            &mut process,
+        );
+        processed += poll_channel(
+            &mut self.channels.data_evt_rx,
+            pending.3,
+            PendingRunnerEvent::DataEvent,
+            &mut process,
+        );
+        processed += poll_channel(
+            &mut self.channels.data_cmd_rx,
+            pending.4,
+            PendingRunnerEvent::DataCommand,
+            &mut process,
+        );
+        processed
+    }
+
+    pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
+        tokio::select! {
+            biased;
+
+            Some(message) = self.channels.time_evt_rx.recv() => {
+                Some(PendingRunnerEvent::Time(message))
+            }
+            Some(event) = self.channels.exec_evt_rx.recv() => {
+                Some(PendingRunnerEvent::ExecEvent(event))
+            }
+            Some(command) = self.channels.exec_cmd_rx.recv() => {
+                Some(PendingRunnerEvent::ExecCommand(command))
+            }
+            Some(event) = self.channels.data_evt_rx.recv() => {
+                Some(PendingRunnerEvent::DataEvent(event))
+            }
+            Some(command) = self.channels.data_cmd_rx.recv() => {
+                Some(PendingRunnerEvent::DataCommand(command))
+            }
+            else => None,
+        }
+    }
+}
+
+#[cfg(feature = "node")]
 fn poll_channel<T>(
     receiver: &mut tokio::sync::mpsc::UnboundedReceiver<T>,
     pending: usize,
@@ -634,6 +639,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "node")]
     #[rstest]
     fn test_poll_pending_processes_entry_snapshot_across_channels() {
         let (time_evt_tx, time_evt_rx) = tokio::sync::mpsc::unbounded_channel();
