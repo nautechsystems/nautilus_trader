@@ -3160,6 +3160,15 @@ fn on_order_event(
     }
 }
 
+/// Result of peeking at the cached account inside [`update_position`]:
+/// only a margin account with `calculate_account_state` set needs the owned
+/// take-out/recompute path; everything else resolves under the borrow.
+enum AccountPeek {
+    MarginRecompute,
+    LastEvent(Option<AccountState>),
+    Missing,
+}
+
 fn update_position(
     cache: &Rc<RefCell<Cache>>,
     clock: &Rc<RefCell<dyn Clock>>,
@@ -3229,49 +3238,87 @@ fn update_position(
             .insert(event.instrument_id());
     }
 
-    let account = { cache.borrow().account_owned(&account_id) };
-    let account_state_to_publish = match account {
-        Some(AccountAny::Margin(margin_account)) => {
-            if margin_account.calculate_account_state {
-                let instrument = { cache.borrow().instrument(&instrument_id).cloned() };
-                if let Some(instrument) = instrument {
-                    let result = {
-                        let cache_ref = cache.borrow();
-                        let refs = cache_ref.positions_open(
-                            None,
-                            Some(&instrument_id),
-                            None,
-                            Some(&account_id),
-                            None,
-                        );
-                        let positions: Vec<&Position> = refs.iter().map(|r| &**r).collect();
-                        inner.borrow_mut().accounts.update_positions(
-                            &margin_account,
-                            &instrument,
-                            positions,
-                            clock.borrow().timestamp_ns(),
-                        )
-                    };
-
-                    if let Some((margin_account, account_state)) = result {
-                        cache
-                            .borrow_mut()
-                            .update_account(&AccountAny::Margin(margin_account))
-                            .unwrap();
-                        Some(account_state)
-                    } else {
-                        margin_account.last_event()
+    // Peek at the account under a scoped borrow rather than taking an owned
+    // clone: the account's event log grows by one entry per fill, so a clone
+    // here made every fill O(total prior fills). Only the margin recompute
+    // path needs ownership; every other path leaves the cache untouched,
+    // matching the previous behavior.
+    let peek = {
+        let cache_ref = cache.borrow();
+        match cache_ref.account(&account_id) {
+            Some(account) => match &*account {
+                AccountAny::Margin(margin_account) if margin_account.calculate_account_state => {
+                    AccountPeek::MarginRecompute
+                }
+                account => AccountPeek::LastEvent(account.last_event()),
+            },
+            None => AccountPeek::Missing,
+        }
+    };
+    let account_state_to_publish = match peek {
+        AccountPeek::MarginRecompute => {
+            let instrument = { cache.borrow().instrument(&instrument_id).cloned() };
+            if let Some(instrument) = instrument {
+                // Move the account out of the cache for the in-place recompute
+                // (no clone), then move it back. `update_positions_in_place`
+                // leaves the account untouched when it returns `None`, so the
+                // fallback put-back restores the exact prior state (and skips
+                // the database write, as before). Bind the taken account first
+                // so the mutable cache borrow drops before the match body.
+                let taken_account = cache.borrow_mut().take_account(&account_id);
+                match taken_account {
+                    Some(AccountAny::Margin(mut margin_account)) => {
+                        let recomputed = {
+                            let cache_ref = cache.borrow();
+                            let refs = cache_ref.positions_open(
+                                None,
+                                Some(&instrument_id),
+                                None,
+                                Some(&account_id),
+                                None,
+                            );
+                            let positions: Vec<&Position> = refs.iter().map(|r| &**r).collect();
+                            inner.borrow_mut().accounts.update_positions_in_place(
+                                &mut margin_account,
+                                &instrument,
+                                positions,
+                                clock.borrow().timestamp_ns(),
+                            )
+                        };
+                        match recomputed {
+                            Some(account_state) => {
+                                cache
+                                    .borrow_mut()
+                                    .update_account_owned(AccountAny::Margin(margin_account))
+                                    .unwrap();
+                                Some(account_state)
+                            }
+                            None => {
+                                let last_event = margin_account.last_event();
+                                cache
+                                    .borrow_mut()
+                                    .cache_account_owned(AccountAny::Margin(margin_account));
+                                last_event
+                            }
+                        }
                     }
-                } else {
-                    log::error!("Cannot update position: no instrument found for {instrument_id}");
-                    margin_account.last_event()
+                    Some(account) => {
+                        let last_event = account.last_event();
+                        cache.borrow_mut().cache_account_owned(account);
+                        last_event
+                    }
+                    None => None,
                 }
             } else {
-                margin_account.last_event()
+                log::error!("Cannot update position: no instrument found for {instrument_id}");
+                let cache_ref = cache.borrow();
+                cache_ref
+                    .account(&account_id)
+                    .and_then(|account| account.last_event())
             }
         }
-        Some(account) => account.last_event(),
-        None => {
+        AccountPeek::LastEvent(last_event) => last_event,
+        AccountPeek::Missing => {
             log::error!(
                 "Cannot update position: no account registered for {}",
                 event.account_id()

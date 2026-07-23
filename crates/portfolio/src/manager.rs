@@ -68,7 +68,14 @@ impl AccountsManager {
         instrument: &InstrumentAny,
         fill: &OrderFilled,
     ) -> (AccountAny, AccountState) {
-        let original_account = account.clone();
+        // Snapshot only the state the balance update can mutate (balances and
+        // commissions) for the rollback path: cloning the whole account would
+        // deep-copy its event log, which grows by one entry per fill.
+        let (original_balances, original_commissions) = match &account {
+            AccountAny::Margin(a) => (a.balances.clone(), a.commissions.clone()),
+            AccountAny::Cash(a) => (a.balances.clone(), a.commissions.clone()),
+            AccountAny::Betting(a) => (a.balances.clone(), a.commissions.clone()),
+        };
         let position_id = if let Some(position_id) = fill.position_id {
             position_id
         } else {
@@ -117,8 +124,22 @@ impl AccountsManager {
         };
 
         if !updated {
-            let state = self.generate_account_state(&original_account, fill.ts_event);
-            return (original_account, state);
+            match &mut account {
+                AccountAny::Margin(a) => {
+                    a.balances = original_balances;
+                    a.commissions = original_commissions;
+                }
+                AccountAny::Cash(a) => {
+                    a.balances = original_balances;
+                    a.commissions = original_commissions;
+                }
+                AccountAny::Betting(a) => {
+                    a.balances = original_balances;
+                    a.commissions = original_commissions;
+                }
+            }
+            let state = self.generate_account_state(&account, fill.ts_event);
+            return (account, state);
         }
 
         let state = self.generate_account_state(&account, fill.ts_event);
