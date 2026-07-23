@@ -8,22 +8,20 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
-    "BITMEX_HTTP_URL",
-    "BITMEX_WS_URL",
+    "BITMEX",
+    "BITMEX_CLIENT_ID",
+    "BITMEX_VENUE",
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
     "BitmexEnvironment",
     "BitmexExecClientConfig",
     "BitmexExecFactoryConfig",
     "BitmexExecutionClientFactory",
-    "BitmexHttpClient",
-    "BitmexWebSocketClient",
-    "CancelBroadcaster",
-    "SubmitBroadcaster",
-    "get_bitmex_http_base_url",
-    "get_bitmex_ws_url",
 ]
 
+BITMEX: str
+BITMEX_CLIENT_ID: model.ClientId
+BITMEX_VENUE: model.Venue
 BITMEX_HTTP_URL: str
 BITMEX_WS_URL: str
 

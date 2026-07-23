@@ -25,7 +25,10 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::{consts::DERIVE, enums::DeriveEnvironment},
+    common::{
+        consts::{DERIVE, DERIVE_CLIENT_ID, DERIVE_VENUE},
+        enums::DeriveEnvironment,
+    },
     config::{DeriveDataClientConfig, DeriveExecClientConfig},
     factories::{DeriveDataClientFactory, DeriveExecFactoryConfig, DeriveExecutionClientFactory},
 };
@@ -90,6 +93,8 @@ fn extract_derive_exec_config(
 #[pymodule]
 pub fn derive(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(DERIVE), DERIVE)?;
+    m.add(stringify!(DERIVE_CLIENT_ID), *DERIVE_CLIENT_ID)?;
+    m.add(stringify!(DERIVE_VENUE), *DERIVE_VENUE)?;
     m.add_class::<DeriveEnvironment>()?;
     m.add_class::<DeriveDataClientConfig>()?;
     m.add_class::<DeriveExecClientConfig>()?;

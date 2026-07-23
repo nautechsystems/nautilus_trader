@@ -17,7 +17,7 @@
 
 use std::{sync::LazyLock, time::Duration};
 
-use nautilus_model::identifiers::Venue;
+use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
 /// Venue name string for Lighter.
@@ -25,6 +25,10 @@ pub const LIGHTER: &str = "LIGHTER";
 
 /// Lighter venue identifier.
 pub static LIGHTER_VENUE: LazyLock<Venue> = LazyLock::new(|| Venue::new(Ustr::from(LIGHTER)));
+
+/// Static client ID instance.
+pub static LIGHTER_CLIENT_ID: LazyLock<ClientId> =
+    LazyLock::new(|| ClientId::new(Ustr::from(LIGHTER)));
 
 /// L2 chain id for Lighter mainnet.
 ///

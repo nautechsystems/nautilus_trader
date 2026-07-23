@@ -7,25 +7,19 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
-    "DydxClientOrderIdEncoder",
+    "DYDX",
+    "DYDX_CLIENT_ID",
+    "DYDX_VENUE",
     "DydxDataClientConfig",
     "DydxDataClientFactory",
     "DydxExecClientConfig",
     "DydxExecutionClientFactory",
-    "DydxGrpcClient",
-    "DydxHttpClient",
     "DydxNetwork",
-    "DydxOraclePrice",
-    "DydxOrderSide",
-    "DydxOrderSubmitter",
-    "DydxOrderType",
-    "DydxWallet",
-    "DydxWebSocketClient",
-    "get_dydx_grpc_url",
-    "get_dydx_grpc_urls",
-    "get_dydx_http_url",
-    "get_dydx_ws_url",
 ]
+
+DYDX: str
+DYDX_CLIENT_ID: model.ClientId
+DYDX_VENUE: model.Venue
 
 @typing.final
 class DydxDataClientConfig:

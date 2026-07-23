@@ -1185,6 +1185,91 @@ def test_remove_stale_top_level_adapter_stubs_deletes_generated_aliases(tmp_path
     assert non_stale_dir.exists()
 
 
+def test_sync_adapter_all_exports_copies_runtime_all_into_stub(tmp_path):
+    # Arrange: runtime facade declares a curated __all__; stub has the raw generated one.
+    root = tmp_path / "nautilus_trader"
+    adapter_dir = root / "adapters" / "bybit"
+    adapter_dir.mkdir(parents=True)
+    (adapter_dir / "__init__.py").write_text(
+        """
+from nautilus_trader._libnautilus.bybit import *  # noqa: F403
+
+__all__ = [
+    "BYBIT",
+    "BybitDataClientConfig",
+]
+""".lstrip(),
+    )
+    (adapter_dir / "__init__.pyi").write_text(
+        """
+__all__ = [
+    "BYBIT",
+    "BybitDataClientConfig",
+    "BybitHttpClient",
+    "BybitWebSocketClient",
+]
+
+
+class BybitDataClientConfig: ...
+class BybitHttpClient: ...
+class BybitWebSocketClient: ...
+BYBIT: str
+""".lstrip(),
+    )
+
+    # Act
+    generate_stubs.sync_adapter_all_exports(root)
+
+    # Assert
+    stub = (adapter_dir / "__init__.pyi").read_text()
+    exported = ast.literal_eval(
+        next(
+            node.value
+            for node in ast.parse(stub).body
+            if isinstance(node, ast.Assign)
+            and any(
+                isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+            )
+        ),
+    )
+    assert exported == ["BYBIT", "BybitDataClientConfig"]
+    # Definitions for non-exported members remain for explicit typed imports.
+    assert "class BybitHttpClient: ..." in stub
+
+
+def test_sync_adapter_all_exports_rejects_runtime_name_absent_from_stub(tmp_path):
+    # Arrange: runtime exports a name the stub does not define or import.
+    root = tmp_path / "nautilus_trader"
+    adapter_dir = root / "adapters" / "binance"
+    adapter_dir.mkdir(parents=True)
+    (adapter_dir / "__init__.py").write_text(
+        """
+__all__ = ["BINANCE", "MissingSymbol"]
+""".lstrip(),
+    )
+    (adapter_dir / "__init__.pyi").write_text(
+        """
+__all__ = ["BINANCE"]
+
+BINANCE: str
+""".lstrip(),
+    )
+
+    # Act / Assert
+    with pytest.raises(ValueError, match=r"runtime __all__ names missing from stub"):
+        generate_stubs.sync_adapter_all_exports(root)
+
+
+def test_read_runtime_all_rejects_non_static_or_duplicated_list(tmp_path):
+    # Arrange
+    runtime_path = tmp_path / "__init__.py"
+    runtime_path.write_text("__all__ = ['A', 'A', 'B']\n")
+
+    # Act / Assert
+    with pytest.raises(ValueError, match=r"__all__ must not contain duplicates"):
+        generate_stubs._read_runtime_all(runtime_path)
+
+
 def test_generated_stubs_do_not_expose_top_level_adapter_packages():
     # Arrange
     adapters_dir = STUB_ROOT / "adapters"

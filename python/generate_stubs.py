@@ -208,8 +208,10 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# Names added to a generated stub's ``__all__`` beyond what pyo3-stub-gen emits.
+# Adapter stub ``__all__`` is owned by ``sync_adapter_all_exports`` (copied from
+# the runtime facade), so only non-adapter modules appear here.
 EXTRA_ALL_EXPORTS: dict[str, tuple[str, ...]] = {
-    "nautilus_trader/adapters/binance/__init__.pyi": ("load_binance_instruments",),
     "nautilus_trader/trading/__init__.pyi": ("Controller",),
 }
 
@@ -345,6 +347,7 @@ def generate_stubs() -> bool:
         post_process_stubs(root)
         relocate_classes_from_libnautilus(root)
         inject_module_constants(root, workspace_root)
+        sync_adapter_all_exports(root)
         format_stub_files(root)
         remove_stale_top_level_adapter_stubs(root)
 
@@ -3004,6 +3007,103 @@ def _insert_constants_after_all(content: str, const_block: str) -> str:
 
     insert_pos = match.end()
     return content[:insert_pos] + "\n\n" + const_block + "\n" + content[insert_pos:]
+
+
+def sync_adapter_all_exports(root: Path) -> None:
+    """
+    Replace each adapter stub's ``__all__`` with the runtime adapter ``__all__``.
+
+    pyo3-stub-gen derives ``__all__`` from every registered module member, which
+    exposes raw clients, wire models, and endpoint helpers that the runtime
+    facade keeps private. Each adapter ``__init__.py`` defines a curated
+    ``__all__``; this copies it into the matching stub so runtime and stub
+    exports stay in exact agreement after every regeneration.
+
+    """
+    adapters_dir = root / "adapters"
+    if not adapters_dir.is_dir():
+        return
+
+    for runtime_path in sorted(adapters_dir.glob("*/__init__.py")):
+        stub_path = runtime_path.with_suffix(".pyi")
+        if not stub_path.exists():
+            continue
+
+        exports = _read_runtime_all(runtime_path)
+        stub_content = stub_path.read_text(encoding="utf-8")
+        _validate_stub_exports(stub_content, exports, stub_path)
+        stub_path.write_text(_replace_stub_all(stub_content, exports), encoding="utf-8")
+
+
+def _read_runtime_all(runtime_path: Path) -> list[str]:
+    """
+    Return the static ``__all__`` list declared in a runtime module.
+    """
+    tree = ast.parse(runtime_path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets
+        ):
+            value = ast.literal_eval(node.value)
+            if not isinstance(value, list) or not all(isinstance(name, str) for name in value):
+                raise ValueError(f"{runtime_path}: __all__ must be a static list of strings")
+            if len(value) != len(set(value)):
+                raise ValueError(f"{runtime_path}: __all__ must not contain duplicates")
+            return value
+
+    raise ValueError(f"{runtime_path}: adapter facade must define __all__")
+
+
+def _replace_stub_all(content: str, exports: list[str]) -> str:
+    """
+    Replace a stub's ``__all__`` block with the given export names.
+    """
+    match = re.search(r"__all__\s*=\s*\[.*?]", content, re.DOTALL)
+    if match is None:
+        raise ValueError("adapter stub missing __all__ block")
+
+    items = ",\n".join(f'    "{name}"' for name in exports)
+    new_all = f"__all__ = [\n{items},\n]"
+    return content[: match.start()] + new_all + content[match.end() :]
+
+
+def _validate_stub_exports(stub_content: str, exports: list[str], stub_path: Path) -> None:
+    """
+    Fail generation when a runtime export is absent from the stub.
+
+    A name in ``__all__`` that the stub neither defines nor re-exports would
+    break ``from <adapter> import <name>`` for type checkers, so surface it as a
+    generation error rather than silently shipping a broken stub.
+
+    """
+    available = _stub_top_level_names(stub_content)
+    missing = sorted(set(exports) - available)
+    if missing:
+        raise ValueError(
+            f"{stub_path}: runtime __all__ names missing from stub: {missing}",
+        )
+
+
+def _stub_top_level_names(stub_content: str) -> set[str]:
+    """
+    Collect every top-level name a stub defines, imports, or re-exports.
+    """
+    tree = ast.parse(stub_content)
+    names: set[str] = set()
+
+    for node in tree.body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.ImportFrom):
+            names.update(a.asname or a.name for a in node.names)
+        elif isinstance(node, ast.Import):
+            names.update(a.asname or a.name.split(".")[0] for a in node.names)
+
+    return names
 
 
 def format_stub_files(root: Path) -> None:

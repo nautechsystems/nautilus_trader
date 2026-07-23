@@ -8,6 +8,9 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "POLYMARKET",
+    "POLYMARKET_CLIENT_ID",
+    "POLYMARKET_VENUE",
     "PolymarketDataClientConfig",
     "PolymarketDataClientFactory",
     "PolymarketDataLoader",
@@ -19,6 +22,10 @@ __all__ = [
     "PolymarketUpDownEventSlugConfig",
     "SignatureType",
 ]
+
+POLYMARKET: str
+POLYMARKET_CLIENT_ID: model.ClientId
+POLYMARKET_VENUE: model.Venue
 
 @typing.final
 class PolymarketDataClientConfig:

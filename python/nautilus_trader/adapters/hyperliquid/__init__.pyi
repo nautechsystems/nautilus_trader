@@ -9,32 +9,25 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
-    "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
+    "HYPERLIQUID",
+    "HYPERLIQUID_CLIENT_ID",
+    "HYPERLIQUID_VENUE",
     "HyperliquidAllDexsAssetCtxs",
     "HyperliquidAllMids",
-    "HyperliquidConditionalOrderType",
     "HyperliquidDataClientConfig",
     "HyperliquidDataClientFactory",
     "HyperliquidEnvironment",
     "HyperliquidExecClientConfig",
     "HyperliquidExecFactoryConfig",
     "HyperliquidExecutionClientFactory",
-    "HyperliquidHttpClient",
     "HyperliquidOpenInterest",
     "HyperliquidProductType",
     "HyperliquidPublicTrade",
-    "HyperliquidTpSl",
-    "HyperliquidTrailingOffsetType",
-    "HyperliquidWebSocketClient",
-    "builder_fee_approve",
-    "builder_fee_revoke",
-    "get_hyperliquid_http_base_url",
-    "get_hyperliquid_ws_url",
-    "hyperliquid_cloid_from_client_order_id",
-    "hyperliquid_product_type_from_symbol",
-    "hyperliquid_resolve_execution_account_address",
 ]
 
+HYPERLIQUID: str
+HYPERLIQUID_CLIENT_ID: model.ClientId
+HYPERLIQUID_VENUE: model.Venue
 HYPERLIQUID_POST_ONLY_WOULD_MATCH: str
 
 @typing.final

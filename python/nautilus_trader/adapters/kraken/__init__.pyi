@@ -8,18 +8,20 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "KRAKEN",
+    "KRAKEN_CLIENT_ID",
+    "KRAKEN_VENUE",
     "KrakenDataClientConfig",
     "KrakenDataClientFactory",
     "KrakenEnvironment",
     "KrakenExecClientConfig",
     "KrakenExecutionClientFactory",
-    "KrakenFuturesHttpClient",
-    "KrakenFuturesWebSocketClient",
     "KrakenProductType",
-    "KrakenSpotHttpClient",
-    "KrakenSpotWebSocketClient",
-    "kraken_product_type_from_symbol",
 ]
+
+KRAKEN: str
+KRAKEN_CLIENT_ID: model.ClientId
+KRAKEN_VENUE: model.Venue
 
 @typing.final
 class KrakenDataClientConfig:

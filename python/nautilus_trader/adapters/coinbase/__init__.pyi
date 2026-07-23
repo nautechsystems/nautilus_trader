@@ -9,6 +9,8 @@ from nautilus_trader import network
 
 __all__ = [
     "COINBASE",
+    "COINBASE_CLIENT_ID",
+    "COINBASE_VENUE",
     "CoinbaseDataClientConfig",
     "CoinbaseDataClientFactory",
     "CoinbaseEnvironment",
@@ -18,6 +20,8 @@ __all__ = [
 ]
 
 COINBASE: str
+COINBASE_CLIENT_ID: model.ClientId
+COINBASE_VENUE: model.Venue
 
 @typing.final
 class CoinbaseDataClientConfig:

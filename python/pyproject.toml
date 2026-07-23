@@ -214,9 +214,9 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "D",
   "RUF002",
 ] # Generated stubs use explicit default values from #[pyo3(signature)] and inherit Rust docstrings
-"nautilus_trader/adapters/hyperliquid/__init__.py" = [
-  "PLE0604",
-] # Dynamic __all__ extension from star import
+"nautilus_trader/adapters/*/__init__.py" = [
+  "F405",
+] # Adapter facades re-export star-imported names in __all__
 "examples/**/*.py" = [
   "DTZ",
   "S101",

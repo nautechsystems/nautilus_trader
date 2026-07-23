@@ -9,34 +9,18 @@ from nautilus_trader import network
 
 __all__ = [
     "OKX",
-    "OKXBalanceDetail",
-    "OKXContractType",
+    "OKX_CLIENT_ID",
+    "OKX_VENUE",
     "OKXDataClientConfig",
     "OKXDataClientFactory",
-    "OKXEndpointType",
     "OKXEnvironment",
     "OKXExecClientConfig",
     "OKXExecutionClientFactory",
-    "OKXGreeksType",
-    "OKXHttpClient",
-    "OKXInstrumentType",
-    "OKXMarginMode",
-    "OKXOrderStatus",
-    "OKXPositionMode",
-    "OKXRegion",
-    "OKXTradeMode",
-    "OKXVipLevel",
-    "OKXWebSocketClient",
-    "OKXWebSocketError",
-    "derive_okx_ws_url",
-    "get_okx_http_base_url",
-    "get_okx_ws_url_business",
-    "get_okx_ws_url_private",
-    "get_okx_ws_url_public",
-    "okx_requires_authentication",
 ]
 
 OKX: str
+OKX_CLIENT_ID: model.ClientId
+OKX_VENUE: model.Venue
 
 @typing.final
 class OKXBalanceDetail:

@@ -8,19 +8,23 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "DERIBIT",
+    "DERIBIT_CLIENT_ID",
+    "DERIBIT_VENUE",
     "DeribitCurrency",
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
     "DeribitEnvironment",
     "DeribitExecClientConfig",
     "DeribitExecutionClientFactory",
-    "DeribitHttpClient",
     "DeribitProductType",
     "DeribitUpdateInterval",
-    "DeribitWebSocketClient",
-    "get_deribit_http_base_url",
-    "get_deribit_ws_url",
+    "DeribitVolatilityIndex",
 ]
+
+DERIBIT: str
+DERIBIT_CLIENT_ID: model.ClientId
+DERIBIT_VENUE: model.Venue
 
 @typing.final
 class DeribitDataClientConfig:
@@ -186,6 +190,28 @@ class DeribitHttpClient:
     def request_forward_prices(
         self, currency: str, instrument_id: model.InstrumentId | None = None
     ) -> typing.Any: ...
+
+@typing.final
+class DeribitVolatilityIndex:
+    @property
+    def index_name(self) -> str: ...
+    @property
+    def volatility(self) -> float: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls, index_name: str, volatility: float, ts_event: int, ts_init: int
+    ) -> DeribitVolatilityIndex: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
 
 @typing.final
 class DeribitWebSocketClient:

@@ -25,7 +25,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::consts::COINBASE,
+    common::consts::{COINBASE, COINBASE_CLIENT_ID, COINBASE_VENUE},
     config::{CoinbaseDataClientConfig, CoinbaseExecClientConfig},
     factories::{CoinbaseDataClientFactory, CoinbaseExecutionClientFactory},
 };
@@ -90,6 +90,8 @@ fn extract_coinbase_exec_config(
 #[pymodule]
 pub fn coinbase(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(COINBASE), COINBASE)?;
+    m.add(stringify!(COINBASE_CLIENT_ID), *COINBASE_CLIENT_ID)?;
+    m.add(stringify!(COINBASE_VENUE), *COINBASE_VENUE)?;
     m.add_class::<crate::common::enums::CoinbaseEnvironment>()?;
     m.add_class::<crate::common::enums::CoinbaseMarginType>()?;
     m.add_class::<CoinbaseDataClientConfig>()?;

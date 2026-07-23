@@ -30,7 +30,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 use crate::{
-    common::consts::BITMEX,
+    common::consts::{BITMEX, BITMEX_CLIENT_ID, BITMEX_VENUE},
     config::{BitmexDataClientConfig, BitmexExecClientConfig},
     factories::{BitmexDataClientFactory, BitmexExecFactoryConfig, BitmexExecutionClientFactory},
 };
@@ -94,6 +94,9 @@ fn extract_bitmex_exec_config(
 /// Returns an error if the module registration fails or if adding functions/classes fails.
 #[pymodule]
 pub fn bitmex(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(BITMEX), BITMEX)?;
+    m.add(stringify!(BITMEX_CLIENT_ID), *BITMEX_CLIENT_ID)?;
+    m.add(stringify!(BITMEX_VENUE), *BITMEX_VENUE)?;
     m.add("BITMEX_HTTP_URL", crate::common::consts::BITMEX_HTTP_URL)?;
     m.add("BITMEX_WS_URL", crate::common::consts::BITMEX_WS_URL)?;
     m.add_class::<crate::common::enums::BitmexEnvironment>()?;

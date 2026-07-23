@@ -9,6 +9,8 @@ from nautilus_trader import network
 
 __all__ = [
     "DERIVE",
+    "DERIVE_CLIENT_ID",
+    "DERIVE_VENUE",
     "DeriveDataClientConfig",
     "DeriveDataClientFactory",
     "DeriveEnvironment",
@@ -18,6 +20,8 @@ __all__ = [
 ]
 
 DERIVE: str
+DERIVE_CLIENT_ID: model.ClientId
+DERIVE_VENUE: model.Venue
 
 @typing.final
 class DeriveDataClientConfig:
