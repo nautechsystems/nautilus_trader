@@ -205,6 +205,7 @@ impl BinanceExecClientConfig {
         base_url_ws = None,
         base_url_ws_trading = None,
         use_ws_trading = true,
+        ws_trading_setup_timeout_ms = None,
         instrument_provider = None,
         instrument_refresh_interval_secs = None,
         use_gtd = true,
@@ -233,6 +234,7 @@ impl BinanceExecClientConfig {
         base_url_ws: Option<String>,
         base_url_ws_trading: Option<String>,
         use_ws_trading: bool,
+        ws_trading_setup_timeout_ms: Option<u64>,
         instrument_provider: Option<BinanceInstrumentProviderConfig>,
         instrument_refresh_interval_secs: Option<u64>,
         use_gtd: bool,
@@ -261,6 +263,8 @@ impl BinanceExecClientConfig {
             base_url_ws: base_url_ws.or(defaults.base_url_ws),
             base_url_ws_trading: base_url_ws_trading.or(defaults.base_url_ws_trading),
             use_ws_trading,
+            ws_trading_setup_timeout_ms: ws_trading_setup_timeout_ms
+                .unwrap_or(defaults.ws_trading_setup_timeout_ms),
             instrument_provider: instrument_provider.unwrap_or(defaults.instrument_provider),
             instrument_refresh_interval_secs: instrument_refresh_interval_secs
                 .unwrap_or(defaults.instrument_refresh_interval_secs),
@@ -379,8 +383,8 @@ mod tests {
         let trader_id = TraderId::from("TRADER-001");
         let account_id = AccountId::from("BINANCE-001");
         let config = BinanceExecClientConfig::py_new(
-            trader_id, account_id, None, None, None, None, None, true, None, None, true, true,
-            None, None, None, None, false, None, None, None, None, false, false, None, None,
+            trader_id, account_id, None, None, None, None, None, true, None, None, None, true,
+            true, None, None, None, None, false, None, None, None, None, false, false, None, None,
         )
         .unwrap();
         let defaults = BinanceExecClientConfig::default();
@@ -393,6 +397,7 @@ mod tests {
         assert_eq!(config.base_url_ws, defaults.base_url_ws);
         assert_eq!(config.base_url_ws_trading, defaults.base_url_ws_trading);
         assert!(config.use_ws_trading);
+        assert_eq!(config.ws_trading_setup_timeout_ms, 10_000);
         assert_eq!(config.instrument_provider, defaults.instrument_provider);
         assert_eq!(
             config.instrument_refresh_interval_secs,
@@ -434,6 +439,7 @@ mod tests {
             Some("wss://stream.example".to_string()),
             Some("wss://trade.example".to_string()),
             false,
+            Some(250),
             None,
             Some(45),
             false,
@@ -466,6 +472,7 @@ mod tests {
             Some("wss://trade.example")
         );
         assert!(!config.use_ws_trading);
+        assert_eq!(config.ws_trading_setup_timeout_ms, 250);
         assert_eq!(config.instrument_refresh_interval_secs, 45);
         assert!(!config.use_gtd);
         assert!(!config.use_position_ids);
@@ -497,6 +504,7 @@ mod tests {
             None,
             None,
             true,
+            None,
             None,
             None,
             true,

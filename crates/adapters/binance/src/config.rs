@@ -317,6 +317,9 @@ pub struct BinanceExecClientConfig {
     /// Whether to use the WebSocket trading API for order operations (Spot and USD-M Futures).
     #[builder(default = true)]
     pub use_ws_trading: bool,
+    /// Timeout in milliseconds for each Binance Spot WS trading setup response.
+    #[builder(default = 10_000)]
+    pub ws_trading_setup_timeout_ms: u64,
     /// Instrument loading and fee configuration.
     #[builder(default)]
     pub instrument_provider: BinanceInstrumentProviderConfig,
@@ -396,6 +399,7 @@ nautilus_core::impl_pyo3_config_getters!(BinanceExecClientConfig {
     base_url_ws: Option<String>,
     base_url_ws_trading: Option<String>,
     use_ws_trading: bool,
+    ws_trading_setup_timeout_ms: u64,
     instrument_provider: BinanceInstrumentProviderConfig,
     instrument_refresh_interval_secs: u64,
     use_gtd: bool,
@@ -423,9 +427,15 @@ impl BinanceExecClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid receive-window, provider, or Binance US settings.
+    /// Returns an error for invalid receive-window, WS trading setup timeout, provider, or
+    /// Binance US settings.
     pub fn validate(&self) -> anyhow::Result<()> {
         validate_recv_window(self.recv_window_ms)?;
+        anyhow::ensure!(
+            self.ws_trading_setup_timeout_ms > 0,
+            "ws_trading_setup_timeout_ms must be greater than 0, was {}",
+            self.ws_trading_setup_timeout_ms
+        );
         self.instrument_provider.validate(self.product_type)?;
 
         if self.us {
@@ -515,6 +525,7 @@ product_types = ["SPOT", "USD_M"]
         assert_eq!(config.environment, expected.environment);
         assert_eq!(config.product_type, expected.product_type);
         assert_eq!(config.use_ws_trading, expected.use_ws_trading);
+        assert_eq!(config.ws_trading_setup_timeout_ms, 10_000);
         assert_eq!(config.instrument_provider, expected.instrument_provider);
         assert_eq!(
             config.instrument_refresh_interval_secs,
@@ -555,6 +566,14 @@ oms_type = "Hedging"
     }
 
     #[rstest]
+    fn test_exec_config_toml_ws_trading_setup_timeout_override() {
+        let config: BinanceExecClientConfig =
+            toml::from_str("ws_trading_setup_timeout_ms = 250").unwrap();
+
+        assert_eq!(config.ws_trading_setup_timeout_ms, 250);
+    }
+
+    #[rstest]
     #[case(0)]
     #[case(60_001)]
     fn test_data_config_rejects_recv_window_out_of_bounds(#[case] recv_window_ms: u64) {
@@ -570,6 +589,21 @@ oms_type = "Hedging"
             format!(
                 "recv_window_ms must be in the inclusive range 1..=60000, was {recv_window_ms}"
             )
+        );
+    }
+
+    #[rstest]
+    fn test_exec_config_rejects_zero_ws_trading_setup_timeout() {
+        let config = BinanceExecClientConfig {
+            ws_trading_setup_timeout_ms: 0,
+            ..Default::default()
+        };
+
+        let message = config.validate().unwrap_err().to_string();
+
+        assert_eq!(
+            message,
+            "ws_trading_setup_timeout_ms must be greater than 0, was 0"
         );
     }
 
