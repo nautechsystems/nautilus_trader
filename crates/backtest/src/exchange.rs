@@ -693,6 +693,14 @@ impl SimulatedExchange {
 
     /// Sends a trading command to the exchange for processing.
     pub fn send(&mut self, command: TradingCommand) {
+        if matches!(
+            &command,
+            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_)
+        ) {
+            log::warn!("Simulated exchange does not support queries: {command}");
+            return;
+        }
+
         if !self.use_message_queue {
             self.process_trading_command(command);
         } else if self.latency_model.is_none() {
@@ -1754,5 +1762,111 @@ impl SimulatedExchange {
 
             self.cache.borrow_mut().update_account(&account).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::messages::execution::{QueryAccount, QueryOrder};
+    use nautilus_execution::models::latency::StaticLatencyModel;
+    use nautilus_model::{
+        enums::{AccountType, BookType},
+        identifiers::{ClientOrderId, StrategyId, TraderId},
+        stubs::TestDefault,
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    /// The three `send` dispatch modes a query must be intercepted ahead of.
+    #[derive(Clone, Copy)]
+    enum Dispatch {
+        /// `use_message_queue = true` with a latency model: `inflight_queue`.
+        Latency,
+        /// `use_message_queue = true`, no latency: `message_queue`.
+        Queued,
+        /// `use_message_queue = false`: synchronous `process_trading_command`.
+        Immediate,
+    }
+
+    fn setup_exchange(dispatch: Dispatch) -> SimulatedExchange {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(TestClock::new()));
+        let mut config = SimulatedVenueConfig::builder()
+            .venue(Venue::new("SIM"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L2_MBP)
+            .starting_balances(vec![Money::new(1_000.0, Currency::USD())])
+            .build()
+            .unwrap();
+
+        match dispatch {
+            Dispatch::Latency => {
+                config.latency_model = Some(Box::new(StaticLatencyModel::new(
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                )));
+            }
+            Dispatch::Queued => {} // Defaults: use_message_queue = true, no latency
+            Dispatch::Immediate => config.use_message_queue = false,
+        }
+
+        SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    fn query_order() -> TradingCommand {
+        TradingCommand::QueryOrder(QueryOrder::new(
+            TraderId::test_default(),
+            None,
+            StrategyId::test_default(),
+            InstrumentId::from("AUD/USD.SIM"),
+            ClientOrderId::from("O-001"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    }
+
+    fn query_account() -> TradingCommand {
+        TradingCommand::QueryAccount(QueryAccount::new(
+            TraderId::test_default(),
+            None,
+            AccountId::test_default(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+    }
+
+    #[rstest]
+    #[case(Dispatch::Latency)]
+    #[case(Dispatch::Queued)]
+    #[case(Dispatch::Immediate)]
+    fn test_send_query_order_is_no_op(#[case] dispatch: Dispatch) {
+        let mut exchange = setup_exchange(dispatch);
+
+        exchange.send(query_order());
+
+        assert!(!exchange.has_pending_commands(UnixNanos::from(u64::MAX)));
+        assert_eq!(exchange.max_inflight_command_ts(), None);
+    }
+
+    #[rstest]
+    #[case(Dispatch::Latency)]
+    #[case(Dispatch::Queued)]
+    #[case(Dispatch::Immediate)]
+    fn test_send_query_account_is_no_op(#[case] dispatch: Dispatch) {
+        let mut exchange = setup_exchange(dispatch);
+
+        exchange.send(query_account());
+
+        assert!(!exchange.has_pending_commands(UnixNanos::from(u64::MAX)));
+        assert_eq!(exchange.max_inflight_command_ts(), None);
     }
 }
