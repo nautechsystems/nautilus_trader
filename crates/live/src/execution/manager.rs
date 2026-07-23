@@ -181,6 +181,12 @@ pub(crate) struct TargetedOrderQuery {
     command: GenerateOrderStatusReport,
 }
 
+impl TargetedOrderQuery {
+    pub(crate) const fn client_order_id(&self) -> ClientOrderId {
+        self.client_order_id
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct TargetedOrderReportResult {
     client_order_id: ClientOrderId,
@@ -2041,6 +2047,12 @@ impl ExecutionManager {
             self.order_query_recency.remove(client_order_id);
         }
         self.order_local_activity.remove(client_order_id);
+    }
+
+    pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
+        for client_order_id in client_order_ids {
+            self.targeted_order_queries.shift_remove(client_order_id);
+        }
     }
 
     /// Returns any external order claim for the given instrument ID.

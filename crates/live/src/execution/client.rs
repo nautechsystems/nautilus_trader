@@ -145,7 +145,7 @@ impl LiveExecutionClient {
         result
     }
 
-    fn flush_pending_instruments(&self) {
+    pub(crate) fn flush_pending_instruments(&self) {
         let mut pending = self.pending_instruments.borrow_mut();
         if pending.is_empty() {
             return;
