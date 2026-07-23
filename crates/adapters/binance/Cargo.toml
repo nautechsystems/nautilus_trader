@@ -23,7 +23,10 @@ crate-type = ["rlib"]
 [features]
 default = ["high-precision"]
 examples = ["nautilus-live/node", "nautilus-network/transport-sockudo"]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",

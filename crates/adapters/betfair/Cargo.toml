@@ -31,7 +31,10 @@ extension-module = [
   "pyo3/extension-module",
   "python",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
 python = [
   "dep:nautilus-system",
   "nautilus-core/python",
