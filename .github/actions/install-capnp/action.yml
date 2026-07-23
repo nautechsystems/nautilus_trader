@@ -14,7 +14,7 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew update || { sleep 5; brew update; }
+        brew untap aws/tap 2>/dev/null || true
         brew install capnp ripgrep || { sleep 5; brew install capnp ripgrep; }
         brew cleanup
 
