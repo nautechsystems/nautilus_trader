@@ -82,6 +82,17 @@ struct TestServerState {
     last_trades_params: Arc<tokio::sync::Mutex<Option<HashMap<String, String>>>>,
 }
 
+fn fast_test_retry_config(max_retries: u32) -> RetryConfig {
+    RetryConfig {
+        max_retries,
+        initial_delay_ms: 1,
+        max_delay_ms: 1,
+        backoff_factor: 1.0,
+        jitter_ms: 0,
+        ..Default::default()
+    }
+}
+
 static DATA_CLIENT_CREATION_LOCK: Mutex<()> = Mutex::new(());
 
 async fn wait_for_server(addr: SocketAddr, path: &str) {
@@ -671,7 +682,7 @@ async fn test_network_error() {
         1,
         None,
         DydxNetwork::Mainnet,
-        None,
+        Some(fast_test_retry_config(0)),
     )
     .unwrap();
 
@@ -703,7 +714,14 @@ async fn test_server_error_500() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
+    let client = DydxHttpClient::new(
+        Some(base_url),
+        5,
+        None,
+        DydxNetwork::Mainnet,
+        Some(fast_test_retry_config(0)),
+    )
+    .unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
@@ -733,7 +751,14 @@ async fn test_server_error_429_rate_limit() {
     wait_for_server(addr, "/v4/perpetualMarkets").await;
 
     let base_url = format!("http://{addr}");
-    let client = DydxHttpClient::new(Some(base_url), 5, None, DydxNetwork::Mainnet, None).unwrap();
+    let client = DydxHttpClient::new(
+        Some(base_url),
+        5,
+        None,
+        DydxNetwork::Mainnet,
+        Some(fast_test_retry_config(0)),
+    )
+    .unwrap();
 
     let result = client.request_instruments(None, None, None).await;
     assert!(result.is_err());
