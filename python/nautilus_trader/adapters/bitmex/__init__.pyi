@@ -344,6 +344,7 @@ class BitmexWebSocketClient:
         api_secret: str | None = None,
         account_id: model.AccountId | None = None,
         heartbeat: int = 5,
+        auth_timeout_secs: int | None = None,
         environment: BitmexEnvironment = ...,
         proxy_url: str | None = None,
     ) -> None: ...
