@@ -617,6 +617,21 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_response_ignores_async_execution_fields() {
+        // After the CLOB async execution rollout, matched POST /order responses
+        // carry `tradeIDs` (and may surface `transactionsHashes`); OrderResponse
+        // models neither, so serde must ignore them rather than reject the body.
+        let resp: OrderResponse = load("http_order_response_async_exec.json");
+
+        assert!(resp.success);
+        assert_eq!(
+            resp.order_id.as_deref(),
+            Some("0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12")
+        );
+        assert!(resp.error_msg.is_none());
+    }
+
+    #[rstest]
     fn test_cancel_response_ok() {
         let resp: CancelResponse = load("http_cancel_response_ok.json");
 
