@@ -31,7 +31,7 @@ use nautilus_network::{
     http::{HttpClient, HttpClientError, Method, USER_AGENT},
     websocket::proxy::ProxyUrl,
 };
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
     common::{credential::Credential, enums::PolymarketOrderType, urls::clob_http_url},
@@ -61,6 +61,7 @@ const PATH_POST_ORDER: &str = "/order";
 const PATH_POST_ORDERS: &str = "/orders";
 const PATH_CANCEL_ALL: &str = "/cancel-all";
 const PATH_CANCEL_MARKET_ORDERS: &str = "/cancel-market-orders";
+const PATH_HEARTBEATS: &str = "/heartbeats";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,6 +77,26 @@ struct PostOrderBody<'a> {
 struct CancelOrderBody<'a> {
     #[serde(rename = "orderID")]
     order_id: &'a str,
+}
+
+#[derive(Serialize)]
+struct HeartbeatRequest<'a> {
+    heartbeat_id: &'a str,
+}
+
+#[derive(Deserialize)]
+struct HeartbeatWireResponse {
+    heartbeat_id: Option<String>,
+    status: Option<String>,
+}
+
+/// Outcome from an authenticated CLOB order-safety heartbeat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HeartbeatResponse {
+    /// The heartbeat was acknowledged, with an optional next ID for chaining.
+    Acknowledged(Option<String>),
+    /// The supplied ID was stale and the venue returned the current ID.
+    Resynchronize(String),
 }
 
 /// Provides an authenticated HTTP client for the Polymarket CLOB REST API.
@@ -291,6 +312,53 @@ impl PolymarketClobHttpClient {
                 &response.body,
             ))
         }
+    }
+
+    /// Sends an authenticated order-safety heartbeat.
+    pub async fn post_heartbeat(&self, heartbeat_id: &str) -> Result<HeartbeatResponse> {
+        let body = HeartbeatRequest { heartbeat_id };
+        let body_bytes = serde_json::to_vec(&body).map_err(Error::Serde)?;
+        let body_str =
+            from_utf8(&body_bytes).map_err(|e| Error::decode(format!("UTF-8 error: {e}")))?;
+        let headers = Some(self.auth_headers("POST", PATH_HEARTBEATS, body_str));
+        let response = self
+            .client
+            .request(
+                Method::POST,
+                self.url(PATH_HEARTBEATS),
+                None,
+                headers,
+                Some(body_bytes),
+                None,
+                None,
+            )
+            .await
+            .map_err(Error::from_http_client)?;
+
+        let wire = serde_json::from_slice::<HeartbeatWireResponse>(&response.body);
+        if response.status.is_success() {
+            let wire = wire.map_err(Error::Serde)?;
+            if let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty()) {
+                return Ok(HeartbeatResponse::Acknowledged(Some(heartbeat_id)));
+            }
+
+            if wire.status.as_deref() == Some("ok") {
+                return Ok(HeartbeatResponse::Acknowledged(None));
+            }
+            return Err(Error::exchange("Heartbeat acknowledgment was invalid"));
+        }
+
+        if response.status.as_u16() == 400
+            && let Ok(wire) = wire
+            && let Some(heartbeat_id) = wire.heartbeat_id.filter(|id| !id.is_empty())
+        {
+            return Ok(HeartbeatResponse::Resynchronize(heartbeat_id));
+        }
+
+        Err(Error::from_status_code(
+            response.status.as_u16(),
+            &response.body,
+        ))
     }
 
     /// Fetches all open orders matching the given parameters (auto-paginated).

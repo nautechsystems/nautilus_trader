@@ -152,6 +152,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             api_key: Some(SMOKE_API_KEY.to_string()),
             api_secret: Some(SMOKE_API_SECRET.to_string()),
             passphrase: Some(SMOKE_PASSPHRASE.to_string()),
+            heartbeat_enabled: true,
             ..PolymarketExecClientConfig::default()
         },
     )
@@ -185,6 +186,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     );
     assert_eq!(polymarket_config.trader_id, trader_id);
     assert_eq!(polymarket_config.account_id, account_id);
+    assert!(polymarket_config.heartbeat_enabled);
     assert_eq!(
         client.client_id(),
         ClientId::from("POLYMARKET-EXEC-EXTRACTED")

@@ -106,6 +106,7 @@ adapter set. The following limits remain deferred:
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
 - Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
+- Added Polymarket v2 opt-in authenticated order-safety heartbeats
 - Added Polymarket v2 fill `info` metadata carrying the raw venue trade fields
 - Added Polymarket v2 fills at `MATCHED` with corrections for failed settlement
 - Added Polymarket v2 WS `hash` and `transaction_hash` field decoding (#4377), thanks for reporting @SebastianPartarrieu

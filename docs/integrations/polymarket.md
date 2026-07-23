@@ -932,7 +932,6 @@ The following limitations are currently known:
 - Reduce-only orders are not supported.
 - Batch submit (`POST /orders`) accepts at most 15 orders per request; the adapter splits larger
   `SubmitOrderList` commands into sequential 15-order chunks.
-- The adapter does not implement Polymarket's authenticated heartbeat auto-cancel endpoint.
 - Position reports omit balances below 0.01 shares. Do not treat an omitted report as proof that a
   dust position is flat; a sub-minimum residual cannot be exited through the CLOB's five-share
   minimum order size. Position reconciliation therefore tolerates differences through 0.009999
@@ -990,8 +989,18 @@ Class/struct: `PolymarketExecClientConfig`.
 | `max_retries`                                    | `3`                     | Retries for single‑order submit and cancel requests. |
 | `retry_delay_initial_ms`                         | `1000`                  | Initial retry delay. |
 | `retry_delay_max_ms`                             | `10000`                 | Maximum retry delay. |
+| `heartbeat_enabled`                              | `false`                 | Send an authenticated order‑safety heartbeat immediately after execution readiness and every five seconds thereafter. |
 | `ack_timeout_secs`                               | `5`                     | Reserved for order/trade acknowledgment handling; not currently applied. |
 | `transport_backend`                              | `Sockudo`               | WebSocket transport implementation. |
+
+:::warning
+Enabling `heartbeat_enabled` opts the account into Polymarket's order-safety heartbeat contract.
+The adapter sends the first empty heartbeat ID, chains each returned ID, and uses a replacement ID
+from an HTTP 400 response to resynchronize. Polymarket cancels open orders when it does not receive a
+heartbeat within 10 seconds, with an additional 5-second buffer. Authentication or venue rejection,
+or two consecutive retryable request failures, makes the execution client report as disconnected
+until it is explicitly disconnected and reconnected.
+:::
 
 ### Proxy routing
 
