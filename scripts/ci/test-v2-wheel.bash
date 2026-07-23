@@ -6,7 +6,7 @@ neutral_dir="${RUNNER_TEMP:-/tmp}"
 
 uv sync --group test --no-install-package nautilus-trader
 
-set -- "${pkg_dir}"/../dist/*.whl
+set -- ../dist/*.whl
 if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   echo "Expected exactly one wheel in ${pkg_dir}/../dist"
   exit 1
