@@ -4748,6 +4748,12 @@ impl Cache {
     /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
     /// serializing it, and storing it in the position snapshots.
     ///
+    /// The snapshot copy excludes replay-only state (`replay_events` and `fill_voids`):
+    /// these vectors exist to service fill-void corrections on the live cached position
+    /// and are never read back from snapshot blobs, while growing with every fill
+    /// applied to the position ID (which would make each blob O(total fills) in both
+    /// serialization time and retained memory).
+    ///
     /// # Errors
     ///
     /// Returns an error if serializing or storing the position snapshot fails.
@@ -4757,6 +4763,8 @@ impl Cache {
         let mut copied_position = position.clone();
         let new_id = format!("{}-{}", position_id.as_str(), UUID4::new());
         copied_position.id = PositionId::new(new_id);
+        copied_position.replay_events.clear();
+        copied_position.fill_voids.clear();
 
         // Serialize the position (TODO: temporarily just to JSON to remove a dependency)
         let position_serialized = serde_json::to_vec(&copied_position)?;
