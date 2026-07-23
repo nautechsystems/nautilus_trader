@@ -604,7 +604,7 @@ impl From<i32> for Quantity {
             value >= 0,
             "Cannot create Quantity from negative i32: {value}. Use u32 or check value is non-negative."
         );
-        Self::new(f64::from(value), 0)
+        Self::from_mantissa_exponent(u64::from(value.cast_unsigned()), 0, 0)
     }
 }
 
@@ -619,19 +619,19 @@ impl From<i64> for Quantity {
             value >= 0,
             "Cannot create Quantity from negative i64: {value}. Use u64 or check value is non-negative."
         );
-        Self::new(value as f64, 0)
+        Self::from_mantissa_exponent(value.cast_unsigned(), 0, 0)
     }
 }
 
 impl From<u32> for Quantity {
     fn from(value: u32) -> Self {
-        Self::new(f64::from(value), 0)
+        Self::from_mantissa_exponent(u64::from(value), 0, 0)
     }
 }
 
 impl From<u64> for Quantity {
     fn from(value: u64) -> Self {
-        Self::new(value as f64, 0)
+        Self::from_mantissa_exponent(value, 0, 0)
     }
 }
 
@@ -1111,38 +1111,101 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_i32() {
-        let value = 100_000i32;
-        let qty = Quantity::from(value);
-        assert_eq!(qty, qty);
-        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
-        assert_eq!(qty.precision, 0);
+    fn test_from_i32_exact() {
+        let values = [0, 1, i32::MAX];
+        let quantities = values.map(Quantity::from);
+        let expected =
+            values.map(|value| (QuantityRaw::try_from(value).unwrap() * FIXED_SCALAR_RAW, 0));
+
+        assert_eq!(
+            quantities.map(|quantity| (quantity.raw, quantity.precision)),
+            expected
+        );
     }
 
     #[rstest]
-    fn test_from_u32() {
-        let value: u32 = 5000;
-        let qty = Quantity::from(value);
-        assert_eq!(qty.raw, Quantity::from(format!("{value}")).raw);
-        assert_eq!(qty.precision, 0);
+    fn test_from_i64_exact() {
+        let max = i64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+        let values = [0, 1, max];
+        let quantities = values.map(Quantity::from);
+        let expected =
+            values.map(|value| (QuantityRaw::try_from(value).unwrap() * FIXED_SCALAR_RAW, 0));
+
+        assert_eq!(
+            quantities.map(|quantity| (quantity.raw, quantity.precision)),
+            expected
+        );
     }
 
     #[rstest]
-    fn test_from_i64() {
-        let value = 100_000i64;
-        let qty = Quantity::from(value);
-        assert_eq!(qty, qty);
-        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
-        assert_eq!(qty.precision, 0);
+    fn test_from_u32_exact() {
+        let values = [0, 1, u32::MAX];
+        let quantities = values.map(Quantity::from);
+        let expected = values.map(|value| (QuantityRaw::from(value) * FIXED_SCALAR_RAW, 0));
+
+        assert_eq!(
+            quantities.map(|quantity| (quantity.raw, quantity.precision)),
+            expected
+        );
     }
 
     #[rstest]
-    fn test_from_u64() {
-        let value = 100_000u64;
-        let qty = Quantity::from(value);
-        assert_eq!(qty, qty);
-        assert_eq!(qty.raw, Quantity::from(&format!("{value}")).raw);
-        assert_eq!(qty.precision, 0);
+    fn test_from_u64_exact() {
+        let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+        let values = [0, 1, max];
+        let quantities = values.map(Quantity::from);
+        let expected = values.map(|value| (QuantityRaw::from(value) * FIXED_SCALAR_RAW, 0));
+
+        assert_eq!(
+            quantities.map(|quantity| (quantity.raw, quantity.precision)),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Cannot create Quantity from negative i32: -1. Use u32 or check value is non-negative."
+    )]
+    fn test_from_i32_negative_panics() {
+        let _ = Quantity::from(-1_i32);
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = "Cannot create Quantity from negative i64: -1. Use u64 or check value is non-negative."
+    )]
+    fn test_from_i64_negative_panics() {
+        let _ = Quantity::from(-1_i64);
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        feature = "high-precision",
+        should_panic(expected = "exceeded QUANTITY_RAW_MAX")
+    )]
+    #[cfg_attr(
+        not(feature = "high-precision"),
+        should_panic(expected = "Raw value exceeds QuantityRaw range")
+    )]
+    fn test_from_i64_overflow_panics() {
+        let max = i64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+
+        let _ = Quantity::from(max + 1);
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        feature = "high-precision",
+        should_panic(expected = "exceeded QUANTITY_RAW_MAX")
+    )]
+    #[cfg_attr(
+        not(feature = "high-precision"),
+        should_panic(expected = "Raw value exceeds QuantityRaw range")
+    )]
+    fn test_from_u64_overflow_panics() {
+        let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+
+        let _ = Quantity::from(max + 1);
     }
 
     #[rstest] // Test does not panic rather than exact value
