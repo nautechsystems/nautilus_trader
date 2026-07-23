@@ -213,6 +213,16 @@ fn create_test_data_client(
     PolymarketDataClient,
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
+    create_test_data_client_with_new_markets(addr, false)
+}
+
+fn create_test_data_client_with_new_markets(
+    addr: SocketAddr,
+    subscribe_new_markets: bool,
+) -> (
+    PolymarketDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     // Use replace_ rather than set_ so this test can run on a thread that
     // already had a sender installed by another test in the same harness.
@@ -225,7 +235,7 @@ fn create_test_data_client(
     let data_api = PolymarketDataApiHttpClient::new(Some(base_url.clone()), 5).expect("data_api");
     let ws = PolymarketMarketConnectionPool::new(
         Some(format!("ws://{addr}/ws/market")),
-        false,
+        subscribe_new_markets,
         TransportBackend::default(),
         WS_DEFAULT_SUBSCRIPTIONS,
     );
@@ -235,6 +245,7 @@ fn create_test_data_client(
         base_url_ws: Some(format!("ws://{addr}/ws")),
         base_url_gamma: Some(base_url.clone()),
         base_url_data_api: Some(base_url),
+        subscribe_new_markets,
         ..PolymarketDataClientConfig::default()
     };
     let client = PolymarketDataClient::new(
@@ -272,19 +283,79 @@ async fn drain_data_events(
     events
 }
 
+async fn collect_data_events_until_response(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    request_id: UUID4,
+    timeout: Duration,
+) -> Vec<DataEvent> {
+    let mut events = Vec::new();
+    tokio::time::timeout(timeout, async {
+        loop {
+            let event = rx.recv().await.expect("data event channel closed");
+            let is_correlated_response = matches!(
+                &event,
+                DataEvent::Response(response) if response.correlation_id() == &request_id
+            );
+            events.push(event);
+
+            if is_correlated_response {
+                break;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting for data response {request_id}"));
+
+    while let Ok(event) = rx.try_recv() {
+        events.push(event);
+    }
+
+    events
+}
+
 async fn wait_for_market_payload_count(
     state: &TestServerState,
     expected: usize,
+    empty_assets: bool,
     timeout: Duration,
 ) {
     wait_until_async(
         || {
             let state = state.clone();
-            async move { state.market_payloads.lock().await.len() >= expected }
+            async move {
+                state
+                    .market_payloads
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|payload| {
+                        payload
+                            .get("assets_ids")
+                            .and_then(Value::as_array)
+                            .is_some_and(|ids| ids.is_empty() == empty_assets)
+                    })
+                    .count()
+                    >= expected
+            }
         },
         timeout,
     )
     .await;
+}
+
+async fn market_payload_count(state: &TestServerState, empty_assets: bool) -> usize {
+    state
+        .market_payloads
+        .lock()
+        .await
+        .iter()
+        .filter(|payload| {
+            payload
+                .get("assets_ids")
+                .and_then(Value::as_array)
+                .is_some_and(|ids| ids.is_empty() == empty_assets)
+        })
+        .count()
 }
 
 #[rstest]
@@ -295,12 +366,13 @@ async fn test_request_instrument_fetches_fresh_definition() {
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
+    let request_id = UUID4::new();
     let request = RequestInstrument::new(
         yes_instrument_id(),
         None,
         None,
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
@@ -308,7 +380,8 @@ async fn test_request_instrument_fetches_fresh_definition() {
         .request_instrument(request)
         .expect("request_instrument");
 
-    let events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
 
     let publish_count = events
         .iter()
@@ -383,18 +456,20 @@ async fn test_subscribe_instrument_does_not_replay_cached_definition() {
     let (mut client, mut rx) = create_test_data_client(addr);
     let instrument_id = yes_instrument_id();
 
+    let request_id = UUID4::new();
     client
         .request_instrument(RequestInstrument::new(
             instrument_id,
             None,
             None,
             Some(*POLYMARKET_CLIENT_ID),
-            UUID4::new(),
+            request_id,
             UnixNanos::default(),
             None,
         ))
         .expect("prime cache");
-    let prime_events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let prime_events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
     assert_eq!(
         prime_events
             .iter()
@@ -524,6 +599,8 @@ async fn test_request_instrument_not_found_emits_no_publish() {
         .request_instrument(request)
         .expect("request_instrument");
 
+    // A missing instrument produces no terminal response, so this is the one deliberate bounded
+    // absence window in these tests.
     let events = drain_data_events(&mut rx, Duration::from_millis(500)).await;
     assert!(
         events.is_empty(),
@@ -539,19 +616,22 @@ async fn test_request_instruments_emits_response() {
     let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
+    let instrument_request_id = UUID4::new();
     let instrument_request = RequestInstrument::new(
         yes_instrument_id(),
         None,
         None,
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        instrument_request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
     client
         .request_instrument(instrument_request)
         .expect("request_instrument");
-    let _ = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _ =
+        collect_data_events_until_response(&mut rx, instrument_request_id, Duration::from_secs(5))
+            .await;
 
     *state.gamma_response.lock().await = Some(serde_json::json!([]));
 
@@ -569,7 +649,8 @@ async fn test_request_instruments_emits_response() {
         .request_instruments(request)
         .expect("request_instruments");
 
-    let events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
 
     let response_count = events
         .iter()
@@ -620,23 +701,26 @@ async fn test_request_book_snapshot_returns_book_response() {
 
     let instrument_id = yes_instrument_id();
 
+    let request_id = UUID4::new();
     let request = RequestInstrument::new(
         instrument_id,
         None,
         None,
         None,
-        UUID4::new(),
+        request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
     client.request_instrument(request).expect("prime cache");
-    let _prime_events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _prime_events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
 
+    let snapshot_request_id = UUID4::new();
     let snapshot_request = RequestBookSnapshot::new(
         instrument_id,
         Some(NonZeroUsize::new(10).unwrap()),
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        snapshot_request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
@@ -644,7 +728,9 @@ async fn test_request_book_snapshot_returns_book_response() {
         .request_book_snapshot(snapshot_request)
         .expect("request_book_snapshot");
 
-    let events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let events =
+        collect_data_events_until_response(&mut rx, snapshot_request_id, Duration::from_secs(5))
+            .await;
     let book_response_count = events
         .iter()
         .filter(|e| matches!(e, DataEvent::Response(DataResponse::Book(_))))
@@ -706,25 +792,28 @@ async fn test_request_trades_returns_trades_response() {
 
     let instrument_id = yes_instrument_id();
 
+    let request_id = UUID4::new();
     let request = RequestInstrument::new(
         instrument_id,
         None,
         None,
         None,
-        UUID4::new(),
+        request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
     client.request_instrument(request).expect("prime cache");
-    let _prime_events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _prime_events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
 
+    let trades_request_id = UUID4::new();
     let trades_request = RequestTrades::new(
         instrument_id,
         None,
         None,
         Some(NonZeroUsize::new(50).unwrap()),
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        trades_request_id,
         nautilus_core::UnixNanos::default(),
         None,
     );
@@ -732,7 +821,9 @@ async fn test_request_trades_returns_trades_response() {
         .request_trades(trades_request)
         .expect("request_trades");
 
-    let events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let events =
+        collect_data_events_until_response(&mut rx, trades_request_id, Duration::from_secs(5))
+            .await;
     let trades_response = events
         .iter()
         .find_map(|e| match e {
@@ -794,19 +885,22 @@ async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
     let (client, mut rx) = create_test_data_client(addr);
     let instrument_id = yes_instrument_id();
 
+    let request_id = UUID4::new();
     client
         .request_instrument(RequestInstrument::new(
             instrument_id,
             None,
             None,
             None,
-            UUID4::new(),
+            request_id,
             UnixNanos::default(),
             None,
         ))
         .expect("prime cache");
-    let _prime_events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _prime_events =
+        collect_data_events_until_response(&mut rx, request_id, Duration::from_secs(5)).await;
 
+    let trades_request_id = UUID4::new();
     client
         .request_trades(RequestTrades::new(
             instrument_id,
@@ -814,13 +908,15 @@ async fn test_request_trades_returns_empty_response_at_offset_ceiling() {
             None,
             None,
             Some(*POLYMARKET_CLIENT_ID),
-            UUID4::new(),
+            trades_request_id,
             UnixNanos::default(),
             None,
         ))
         .expect("request_trades");
 
-    let events = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let events =
+        collect_data_events_until_response(&mut rx, trades_request_id, Duration::from_secs(5))
+            .await;
     let trades_response = events.iter().find_map(|event| match event {
         DataEvent::Response(DataResponse::Trades(response)) => Some(response),
         _ => None,
@@ -836,20 +932,22 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     let state = TestServerState::default();
     *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
     let addr = start_mock_server(state.clone()).await;
-    let (mut client, mut rx) = create_test_data_client(addr);
+    let (mut client, mut rx) = create_test_data_client_with_new_markets(addr, true);
     let instrument_id = yes_instrument_id();
 
+    let prime_1_request_id = UUID4::new();
     let prime_1 = RequestInstrument::new(
         instrument_id,
         None,
         None,
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        prime_1_request_id,
         UnixNanos::default(),
         None,
     );
     client.request_instrument(prime_1).expect("prime cache #1");
-    let _ = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _ = collect_data_events_until_response(&mut rx, prime_1_request_id, Duration::from_secs(5))
+        .await;
 
     client.connect().await.expect("connect #1");
 
@@ -864,29 +962,31 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     );
     client.subscribe_quotes(sub_1).expect("subscribe quotes #1");
 
-    wait_for_market_payload_count(&state, 1, Duration::from_secs(5)).await;
+    wait_for_market_payload_count(&state, 1, false, Duration::from_secs(5)).await;
 
     client.reset().expect("reset");
     client.connect().await.expect("connect #2");
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let replay_count = state.market_payloads.lock().await.len();
+    wait_for_market_payload_count(&state, 2, true, Duration::from_secs(5)).await;
+    let replay_count = market_payload_count(&state, false).await;
     assert_eq!(
         replay_count, 1,
         "reset + reconnect must not replay stale market subscriptions, saw {replay_count} payload(s)",
     );
 
+    let prime_2_request_id = UUID4::new();
     let prime_2 = RequestInstrument::new(
         instrument_id,
         None,
         None,
         Some(*POLYMARKET_CLIENT_ID),
-        UUID4::new(),
+        prime_2_request_id,
         UnixNanos::default(),
         None,
     );
     client.request_instrument(prime_2).expect("prime cache #2");
-    let _ = drain_data_events(&mut rx, Duration::from_secs(5)).await;
+    let _ = collect_data_events_until_response(&mut rx, prime_2_request_id, Duration::from_secs(5))
+        .await;
 
     let sub_2 = SubscribeQuotes::new(
         instrument_id,
@@ -899,7 +999,7 @@ async fn test_reset_reconnect_does_not_replay_stale_market_subscriptions() {
     );
     client.subscribe_quotes(sub_2).expect("subscribe quotes #2");
 
-    wait_for_market_payload_count(&state, 2, Duration::from_secs(5)).await;
+    wait_for_market_payload_count(&state, 2, false, Duration::from_secs(5)).await;
 
     client.disconnect().await.expect("disconnect");
 }
