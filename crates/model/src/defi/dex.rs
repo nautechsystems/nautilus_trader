@@ -263,8 +263,10 @@ impl From<Pool> for CurrencyPair {
         let size_precision = p.token0.decimals.min(FIXED_PRECISION);
         let price_precision = p.token1.decimals.min(FIXED_PRECISION);
 
-        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
-        let size_increment = Quantity::new(10f64.powi(-i32::from(size_precision)), size_precision);
+        let price_increment =
+            Price::from_mantissa_exponent(1, -price_precision.cast_signed(), price_precision);
+        let size_increment =
+            Quantity::from_mantissa_exponent(1, -size_precision.cast_signed(), size_precision);
 
         Self::new(
             id,
@@ -305,7 +307,11 @@ impl From<Pool> for InstrumentAny {
 mod tests {
     use rstest::rstest;
 
-    use super::DexType;
+    use super::{CurrencyPair, DexType};
+    use crate::{
+        defi::{SharedPool, stubs::rain_pool},
+        types::fixed::FIXED_PRECISION,
+    };
 
     #[rstest]
     fn test_dex_type_from_dex_name_valid() {
@@ -389,5 +395,40 @@ mod tests {
             "AerodromeSlipstream"
         );
         assert_eq!(DexType::FluidDEX.to_string(), "FluidDEX");
+    }
+
+    #[rstest]
+    #[case(0, 6, 0, 6)]
+    #[case(6, FIXED_PRECISION, 6, FIXED_PRECISION)]
+    #[case(FIXED_PRECISION, 0, FIXED_PRECISION, 0)]
+    #[case(
+        FIXED_PRECISION + 1,
+        FIXED_PRECISION + 2,
+        FIXED_PRECISION,
+        FIXED_PRECISION
+    )]
+    fn test_pool_to_currency_pair_constructs_exact_increments(
+        #[case] size_precision: u8,
+        #[case] price_precision: u8,
+        #[case] expected_size_precision: u8,
+        #[case] expected_price_precision: u8,
+        rain_pool: SharedPool,
+    ) {
+        let mut pool = (*rain_pool).clone();
+        pool.token0.symbol = "BTC".to_string();
+        pool.token1.symbol = "USDC".to_string();
+        pool.token0.decimals = size_precision;
+        pool.token1.decimals = price_precision;
+
+        let pair = CurrencyPair::from(pool);
+        let price_scale_exponent = u32::from(FIXED_PRECISION - expected_price_precision);
+        let size_scale_exponent = u32::from(FIXED_PRECISION - expected_size_precision);
+
+        assert_eq!(pair.price_precision, expected_price_precision);
+        assert_eq!(pair.size_precision, expected_size_precision);
+        assert_eq!(pair.price_increment.raw, 10_i128.pow(price_scale_exponent));
+        assert_eq!(pair.price_increment.precision, expected_price_precision);
+        assert_eq!(pair.size_increment.raw, 10_u128.pow(size_scale_exponent));
+        assert_eq!(pair.size_increment.precision, expected_size_precision);
     }
 }

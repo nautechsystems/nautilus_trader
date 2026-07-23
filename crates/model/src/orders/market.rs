@@ -565,7 +565,9 @@ mod tests {
         enums::{OrderSide, OrderType, TimeInForce},
         events::{OrderEventAny, OrderUpdated, order::spec::OrderInitializedSpec},
         instruments::{CurrencyPair, stubs::*},
-        orders::{MarketOrder, Order, builder::OrderTestBuilder, stubs::TestOrderStubs},
+        orders::{
+            MarketOrder, Order, OrderError, builder::OrderTestBuilder, stubs::TestOrderStubs,
+        },
         types::{Price, Quantity},
     };
 
@@ -632,6 +634,43 @@ mod tests {
 
         // Verify updates were applied correctly
         assert_eq!(accepted_order.quantity(), updated_quantity);
+    }
+
+    #[rstest]
+    #[case(Some(Price::new(95.0, 2)), None)]
+    #[case(None, Some(Price::new(95.0, 2)))]
+    fn test_market_order_rejects_invalid_update_atomically(
+        audusd_sim: CurrencyPair,
+        #[case] price: Option<Price>,
+        #[case] trigger_price: Option<Price>,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .quantity(Quantity::from(10))
+            .side(OrderSide::Buy)
+            .build();
+        let mut accepted_order = TestOrderStubs::make_accepted_order(&order);
+        let state = (
+            accepted_order.status(),
+            accepted_order.previous_status(),
+            accepted_order.ts_last(),
+            accepted_order.events().len(),
+        );
+        let event = OrderUpdated {
+            client_order_id: accepted_order.client_order_id(),
+            strategy_id: accepted_order.strategy_id(),
+            price,
+            trigger_price,
+            ..Default::default()
+        };
+
+        let result = accepted_order.apply(OrderEventAny::Updated(event));
+
+        assert!(matches!(result, Err(OrderError::InvalidOrderEvent)));
+        assert_eq!(accepted_order.status(), state.0);
+        assert_eq!(accepted_order.previous_status(), state.1);
+        assert_eq!(accepted_order.ts_last(), state.2);
+        assert_eq!(accepted_order.events().len(), state.3);
     }
 
     #[rstest]

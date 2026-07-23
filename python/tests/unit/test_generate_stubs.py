@@ -1242,6 +1242,76 @@ class Foo:
     assert all_pos < const_pos < class_pos
 
 
+def test_binance_stub_exposes_python_migration_surface():
+    stub = (STUB_ROOT / "adapters" / "binance" / "__init__.pyi").read_text()
+    stub_module = ast.parse(stub)
+    exported = next(
+        ast.literal_eval(node.value)
+        for node in stub_module.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+    )
+
+    expected = {
+        "BINANCE",
+        "BINANCE_CLIENT_ID",
+        "BINANCE_VENUE",
+        "decode_binance_futures_client_order_id",
+        "decode_binance_spot_client_order_id",
+        "load_binance_instruments",
+        "load_binance_order_book_deltas",
+    }
+    functions = {node.name: node for node in stub_module.body if isinstance(node, ast.FunctionDef)}
+    reexports = {
+        (node.module, alias.name, alias.asname)
+        for node in stub_module.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    imports = {
+        (alias.name, alias.asname)
+        for node in stub_module.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+
+    assert expected <= set(exported)
+    assert "BinanceOrderBookDeltaDataLoader" not in exported
+    assert "BINANCE: str" in stub
+    assert "BINANCE_CLIENT_ID: model.ClientId" in stub
+    assert "BINANCE_VENUE: model.Venue" in stub
+    assert (
+        "nautilus_trader.adapters.binance.instruments",
+        "load_binance_instruments",
+        "load_binance_instruments",
+    ) in reexports
+    load = functions["load_binance_order_book_deltas"]
+    assert load.decorator_list == []
+    assert [argument.arg for argument in load.args.args] == ["file_path", "nrows"]
+    assert ast.unparse(load.args.args[0].annotation) == "str | os.PathLike | pathlib.Path"
+    assert ast.unparse(load.args.args[1].annotation) == "int | None"
+    assert [ast.unparse(default) for default in load.args.defaults] == ["None"]
+    assert ("pandas", "pd") in imports
+    assert ast.unparse(load.returns) == "pd.DataFrame"
+    assert len(load.body) == 1
+    assert isinstance(load.body[0], ast.Expr)
+    assert isinstance(load.body[0].value, ast.Constant)
+    assert load.body[0].value.value is Ellipsis
+
+    for name in (
+        "decode_binance_futures_client_order_id",
+        "decode_binance_spot_client_order_id",
+    ):
+        function = functions[name]
+        assert [argument.arg for argument in function.args.args] == ["encoded"]
+        assert ast.unparse(function.args.args[0].annotation) == "str"
+        assert ast.unparse(function.returns) == "str"
+        assert len(function.body) == 1
+        assert isinstance(function.body[0], ast.Expr)
+        assert isinstance(function.body[0].value, ast.Constant)
+        assert function.body[0].value.value is Ellipsis
+
+
 def test_fix_enum_defaults_in_signatures():
     # Arrange
     content = """
@@ -1423,7 +1493,7 @@ ADAPTER_CONFIG_CONSTRUCTOR_ONLY_FIELDS = {
     ),
 }
 ADAPTER_CONFIG_CONSTRUCTOR_INVENTORY_SHA256 = (
-    "a399d3712c9dc168aac89b9b6e9f8694d68b1ba4e94592f3f39e2f1a2500ee81"
+    "a20d42b3e53923def794123afad7174a78620fb3c44802fa777b39aab45c209e"
 )
 
 

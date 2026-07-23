@@ -233,6 +233,13 @@ pub fn raw_scales_match(a: u8, b: u8) -> bool {
     a.max(FIXED_PRECISION) == b.max(FIXED_PRECISION)
 }
 
+/// Returns the effective integer scale for a raw fixed-point value.
+#[inline]
+#[must_use]
+pub(crate) fn raw_scale(precision: u8) -> u128 {
+    10_u128.pow(u32::from(precision.max(FIXED_PRECISION)))
+}
+
 /// Returns `lhs * rhs / FIXED_SCALAR`, truncated toward zero.
 ///
 /// Returns `None` only when the scaled result exceeds [`QuantityRaw::MAX`].

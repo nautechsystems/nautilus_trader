@@ -21,8 +21,6 @@ use std::{ffi::CStr, ptr};
 pub mod bar;
 pub mod bet;
 pub mod close;
-#[cfg(feature = "python")]
-pub mod custom;
 pub mod delta;
 pub mod deltas;
 pub mod depth;
@@ -35,6 +33,9 @@ pub mod prices;
 pub mod quote;
 pub mod status;
 pub mod trade;
+
+#[cfg(feature = "python")]
+pub mod custom;
 
 #[cfg(feature = "ffi")]
 use nautilus_core::ffi::cvec::CVec;

@@ -15,8 +15,9 @@
 
 pub mod convert;
 pub mod load;
-mod record;
 pub mod stream;
+
+mod record;
 
 use std::{
     ffi::OsStr,

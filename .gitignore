@@ -51,10 +51,10 @@ perf.data
 **/*.rs.bk
 
 # Fuzz testing artifacts (cargo-fuzz)
-**/fuzz/corpus/
-**/fuzz/artifacts/
-**/fuzz/coverage/
-**/fuzz/target/
+**/fuzz/**/corpus/
+**/fuzz/**/artifacts/
+**/fuzz/**/coverage/
+**/fuzz/**/target/
 crates/adapters/*/artifacts/
 crates/adapters/*/corpus/
 crates/adapters/*/coverage/
@@ -86,7 +86,7 @@ env/
 .tmp-pre-commit/
 *.bak
 *.sh
-!**/fuzz/grind.sh
+!**/fuzz/**/grind.sh
 !.docker/entrypoint.sh
 !.pre-commit-hooks/*.sh
 !scripts/cargo-tool-version.sh
@@ -97,6 +97,7 @@ env/
 !scripts/ci/check-github-action-shas.sh
 !scripts/ci/check-security-audit-result.sh
 !scripts/ci/docker-pull-retry.sh
+!scripts/ci/free-disk-space.sh
 !scripts/ci/install-cargo-nextest.sh
 !scripts/ci/install-nautilus-cli.sh
 !scripts/ci/install-prek.sh

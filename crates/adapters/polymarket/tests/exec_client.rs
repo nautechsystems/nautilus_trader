@@ -17,7 +17,7 @@
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -176,6 +176,12 @@ struct TestServerState {
     fee_rate_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     fee_rate_fetch_count: Arc<tokio::sync::Mutex<usize>>,
     fee_rate_overrides: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
+    heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
+    heartbeat_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    heartbeat_response_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
+    heartbeat_post_count: Arc<AtomicUsize>,
+    heartbeat_resynchronize_remaining: Arc<AtomicUsize>,
+    heartbeat_request_gate: Arc<RequestGate>,
     cancel_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     cancel_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     cancel_delete_count: Arc<tokio::sync::Mutex<usize>>,
@@ -213,6 +219,14 @@ impl Default for TestServerState {
             fee_rate_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             fee_rate_fetch_count: Arc::new(tokio::sync::Mutex::new(0)),
             fee_rate_overrides: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            heartbeat_response: Arc::new(tokio::sync::Mutex::new(json!({
+                "heartbeat_id": "heartbeat-next",
+            }))),
+            heartbeat_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            heartbeat_response_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            heartbeat_post_count: Arc::new(AtomicUsize::new(0)),
+            heartbeat_resynchronize_remaining: Arc::new(AtomicUsize::new(0)),
+            heartbeat_request_gate: Arc::new(RequestGate::default()),
             cancel_response: Arc::new(tokio::sync::Mutex::new(None)),
             cancel_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             cancel_delete_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -287,36 +301,24 @@ fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
-    let trader_id = TraderId::from("TESTER-001");
-    let account_id = AccountId::from("POLYMARKET-001");
-    let client_id = *POLYMARKET_CLIENT_ID;
-
-    let cache = Rc::new(RefCell::new(Cache::default()));
-
-    let core = ExecutionClientCore::new(
-        trader_id,
-        client_id,
-        *POLYMARKET_VENUE,
-        OmsType::Netting,
-        account_id,
-        AccountType::Cash,
-        None,
-        cache.clone(),
-    );
-
-    let config = create_test_exec_config(addr);
-
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    set_exec_event_sender(tx);
-
-    let client = PolymarketExecutionClient::new(core, config).unwrap();
-
-    (client, rx, cache)
+    create_test_execution_client_from_config(create_test_exec_config(addr))
 }
 
-fn create_test_execution_client_with_retries(
+fn create_test_execution_client_with_heartbeat(
     addr: SocketAddr,
-    max_retries: u32,
+    heartbeat_enabled: bool,
+) -> (
+    PolymarketExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let mut config = create_test_exec_config(addr);
+    config.heartbeat_enabled = heartbeat_enabled;
+    create_test_execution_client_from_config(config)
+}
+
+fn create_test_execution_client_from_config(
+    config: PolymarketExecClientConfig,
 ) -> (
     PolymarketExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -339,14 +341,24 @@ fn create_test_execution_client_with_retries(
         cache.clone(),
     );
 
-    let config = create_test_exec_config_with_retries(addr, max_retries);
-
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
 
     let client = PolymarketExecutionClient::new(core, config).unwrap();
 
     (client, rx, cache)
+}
+
+fn create_test_execution_client_with_retries(
+    addr: SocketAddr,
+    max_retries: u32,
+) -> (
+    PolymarketExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    let config = create_test_exec_config_with_retries(addr, max_retries);
+    create_test_execution_client_from_config(config)
 }
 
 fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) {
@@ -621,6 +633,51 @@ async fn handle_get_fee_rate(
     (status, Json(body)).into_response()
 }
 
+async fn handle_heartbeat(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    *state.last_path.lock().await = "/heartbeats".to_string();
+    *state.last_headers.lock().await = headers
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.as_str().to_string(),
+                value.to_str().unwrap_or("").to_string(),
+            )
+        })
+        .collect();
+
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        *state.last_body.lock().await = Some(value);
+    }
+    state.heartbeat_post_count.fetch_add(1, Ordering::AcqRel);
+    state.heartbeat_request_gate.wait().await;
+
+    if state
+        .heartbeat_resynchronize_remaining
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"heartbeat_id": "heartbeat-resynchronized"})),
+        )
+            .into_response();
+    }
+
+    let status = if let Some(status) = state.heartbeat_response_statuses.lock().await.pop_front() {
+        status
+    } else {
+        *state.heartbeat_response_status.lock().await
+    };
+    let response = state.heartbeat_response.lock().await.clone();
+    (status, Json(response)).into_response()
+}
+
 async fn handle_health() -> impl IntoResponse {
     StatusCode::OK
 }
@@ -647,6 +704,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/markets", get(handle_gamma_markets))
         .route("/book", get(handle_get_book))
         .route("/fee-rate", get(handle_get_fee_rate))
+        .route("/heartbeats", post(handle_heartbeat))
         .route("/health", get(handle_health))
         .route("/positions", get(handle_get_positions))
         .route("/ws", get(handle_user_upgrade))
@@ -782,6 +840,263 @@ async fn test_exec_client_not_connected_initially() {
     let (client, _rx, _cache) = create_test_execution_client(addr);
 
     assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_disabled_preserves_connection_behavior() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 0);
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_starts_after_readiness_and_prevents_duplicate_tasks() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    client.start().unwrap();
+
+    let mut connect = Box::pin(client.connect());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), connect.as_mut())
+            .await
+            .is_err()
+    );
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 0);
+
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    connect.await.unwrap();
+    await_heartbeat_posts(&state, 1, Duration::from_secs(1)).await;
+    assert!(client.is_connected());
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({"heartbeat_id": ""})),
+    );
+
+    client.connect().await.unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
+
+    await_heartbeat_posts(&state, 2, Duration::from_secs(5)).await;
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({"heartbeat_id": "heartbeat-next"})),
+    );
+
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 3, Duration::from_secs(1)).await;
+    assert!(client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 3);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_resynchronizes_immediately_with_replacement_id() {
+    let state = TestServerState::default();
+    state
+        .heartbeat_resynchronize_remaining
+        .store(1, Ordering::Release);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 2, Duration::from_secs(1)).await;
+
+    assert!(client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({"heartbeat_id": "heartbeat-resynchronized"})),
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repeated_heartbeat_resynchronization_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    state
+        .heartbeat_resynchronize_remaining
+        .store(2, Ordering::Release);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 2, Duration::from_secs(1)).await;
+    await_execution_unhealthy(&client, Duration::from_secs(1)).await;
+
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_disconnect_cancels_and_awaits_in_flight_heartbeat() {
+    let state = TestServerState::default();
+    state.heartbeat_request_gate.enable();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.heartbeat_request_gate.started() == 1 }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let result = tokio::time::timeout(Duration::from_secs(1), client.disconnect()).await;
+    state.heartbeat_request_gate.release();
+
+    assert!(result.is_ok());
+    assert!(result.unwrap().is_ok());
+    assert!(!client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_authentication_failure_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    *state.heartbeat_response_status.lock().await = StatusCode::UNAUTHORIZED;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_execution_unhealthy(&client, Duration::from_secs(1)).await;
+
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_venue_rejection_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    *state.heartbeat_response.lock().await = json!({"status": "rejected"});
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_execution_unhealthy(&client, Duration::from_secs(1)).await;
+
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 1);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repeated_heartbeat_request_failure_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    *state.heartbeat_response_status.lock().await = StatusCode::INTERNAL_SERVER_ERROR;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 2, Duration::from_secs(6)).await;
+    await_execution_unhealthy(&client, Duration::from_secs(1)).await;
+
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_heartbeat_success_resets_consecutive_request_failures() {
+    let state = TestServerState::default();
+    state.heartbeat_response_statuses.lock().await.extend([
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::OK,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ]);
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_heartbeat_posts(&state, 3, Duration::from_secs(11)).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert!(client.is_connected());
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 3);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_repeated_heartbeat_request_timeout_marks_execution_unhealthy() {
+    let state = TestServerState::default();
+    state.heartbeat_request_gate.enable();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_heartbeat(addr, true);
+    add_test_account_to_cache(&cache, AccountId::from("POLYMARKET-001"));
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    await_execution_unhealthy(&client, Duration::from_secs(10)).await;
+
+    let started = state.heartbeat_request_gate.started();
+    for _ in 0..started {
+        state.heartbeat_request_gate.release();
+    }
+    assert_eq!(started, 2);
+    assert_eq!(state.heartbeat_post_count.load(Ordering::Acquire), 2);
+
+    client.disconnect().await.unwrap();
+}
+
+async fn await_heartbeat_posts(state: &TestServerState, expected: usize, timeout: Duration) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { state.heartbeat_post_count.load(Ordering::Acquire) >= expected }
+        },
+        timeout,
+    )
+    .await;
+}
+
+async fn await_execution_unhealthy(client: &PolymarketExecutionClient, timeout: Duration) {
+    wait_until_async(|| async { !client.is_connected() }, timeout).await;
 }
 
 #[rstest]

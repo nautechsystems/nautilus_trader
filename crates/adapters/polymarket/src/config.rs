@@ -530,9 +530,9 @@ pub struct PolymarketExecClientConfig {
     pub retry_delay_initial_ms: u64,
     #[builder(default = 10000)]
     pub retry_delay_max_ms: u64,
-    /// Timeout waiting for WS order acknowledgment (seconds).
-    #[builder(default = 5)]
-    pub ack_timeout_secs: u64,
+    /// Enables authenticated order-safety heartbeats.
+    #[builder(default)]
+    pub heartbeat_enabled: bool,
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -551,7 +551,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketExecClientConfig {
     max_retries: u32,
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
-    ack_timeout_secs: u64,
+    heartbeat_enabled: bool,
     transport_backend: TransportBackend,
 });
 
@@ -574,7 +574,7 @@ impl Debug for PolymarketExecClientConfig {
             .field("max_retries", &self.max_retries)
             .field("retry_delay_initial_ms", &self.retry_delay_initial_ms)
             .field("retry_delay_max_ms", &self.retry_delay_max_ms)
-            .field("ack_timeout_secs", &self.ack_timeout_secs)
+            .field("heartbeat_enabled", &self.heartbeat_enabled)
             .finish()
     }
 }
@@ -766,7 +766,7 @@ log_warnings = false
         assert_eq!(config.signature_type, expected.signature_type);
         assert_eq!(config.http_timeout_secs, expected.http_timeout_secs);
         assert_eq!(config.max_retries, expected.max_retries);
-        assert_eq!(config.ack_timeout_secs, expected.ack_timeout_secs);
+        assert!(!config.heartbeat_enabled);
         assert_eq!(config.transport_backend, expected.transport_backend);
     }
 

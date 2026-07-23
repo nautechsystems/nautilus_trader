@@ -6,7 +6,7 @@ signer against a live venue.
 
 The ordinary targets are binary targets of `nautilus-lighter` behind its `fuzz` feature. The
 workspace pins `libfuzzer-sys`, and `nautilus-live` owns the shared libFuzzer integration. The
-Pornin differential targets remain in the `publish = false` package in this directory so the
+Pornin differential targets remain in the `publish = false` package under `pornin/` so the
 published Lighter package does not depend on the git-pinned reference implementation.
 
 ## Setup
@@ -79,21 +79,21 @@ Run or grind the retained standalone targets:
 
 ```bash
 cargo +nightly fuzz run fuzz_pornin_diff_decode \
-  --fuzz-dir crates/adapters/lighter/fuzz
-crates/adapters/lighter/fuzz/grind.sh
-crates/adapters/lighter/fuzz/grind.sh 600 scalar
+  --fuzz-dir crates/adapters/lighter/fuzz/pornin
+crates/adapters/lighter/fuzz/pornin/grind.sh
+crates/adapters/lighter/fuzz/pornin/grind.sh 600 scalar
 ```
 
-Their corpora and crash artifacts remain under `crates/adapters/lighter/fuzz/`.
+Their corpora and crash artifacts remain under `crates/adapters/lighter/fuzz/pornin/`.
 
 ## Adding a target
 
 For an ordinary target:
 
-1. Add a `.rs` file under `crates/adapters/lighter/fuzz_targets/`.
+1. Add a `.rs` file under `crates/adapters/lighter/fuzz/fuzz_targets/`.
 2. Register it as a `[[bin]]` in `crates/adapters/lighter/Cargo.toml` with
    `required-features = ["fuzz"]`, `test = false`, `doc = false`, and `bench = false`.
 3. Import `nautilus_live::fuzz::fuzz_target` and assert the deterministic invariants promised by
    the API.
 
-Add a target to the retained package only when it requires the git-pinned Pornin reference.
+Add a target under `fuzz/pornin/` only when it requires the git-pinned Pornin reference.

@@ -30,17 +30,18 @@
 
 pub mod bar;
 pub mod book;
-mod commands;
 pub mod config;
-mod handlers;
-mod requests;
-mod time_range;
 
 #[cfg(feature = "defi")]
 pub mod pool;
 
 #[cfg(feature = "streaming")]
 mod streaming;
+
+mod commands;
+mod handlers;
+mod requests;
+mod time_range;
 
 use std::{
     any::{Any, type_name},

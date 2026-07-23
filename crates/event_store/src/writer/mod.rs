@@ -25,11 +25,12 @@
 //! the logger's simulation pattern: submits commit synchronously on the calling thread so
 //! tests assert against an authoritative in-process log without thread scheduling.
 
+pub mod halt;
+
 // `batcher` carries thread-loop helpers gated out under cfg(madsim) since the
 // synchronous path bypasses the channel and the run loop, but `build_append_entry`
 // is reused in both paths so the module stays compiled either way.
 mod batcher;
-pub mod halt;
 
 use std::time::Duration;
 

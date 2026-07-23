@@ -99,8 +99,8 @@ Use `--extra-index-url` instead of `--index-url` if you want uv to fall back to 
 
 ### Development wheels
 
-Development wheels are published from both the `nightly` and `develop` branches,
-allowing users to test features and fixes ahead of stable releases.
+The main package index publishes v1 development wheels from both the `nightly` and `develop`
+branches, allowing users to test features and fixes ahead of stable releases.
 
 This process also helps preserve compute resources and provides easy access to the exact binaries tested in CI pipelines,
 while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standards:
@@ -108,15 +108,16 @@ while adhering to [PEP-440](https://peps.python.org/pep-0440/) versioning standa
 - `develop` wheels use the version format `dev{date}+{build_number}` (e.g., `1.208.0.dev20241212+7001`).
 - `nightly` wheels use the version format `a{date}` (alpha) (e.g., `1.208.0a20241212`).
 
-| Platform           | Nightly | Develop |
-| :----------------- | :------ | :------ |
-| `Linux (x86_64)`   | ✓       | ✓       |
-| `Linux (ARM64)`    | ✓       | -       |
-| `macOS (ARM64)`    | ✓       | -       |
-| `Windows (x86_64)` | ✓       | -       |
+| Platform           | v1 Nightly | v1 Develop |
+| :----------------- | :--------- | :--------- |
+| `Linux (x86_64)`   | ✓          | ✓          |
+| `Linux (ARM64)`    | ✓          | -          |
+| `macOS (ARM64)`    | ✓          | -          |
+| `Windows (x86_64)` | ✓          | -          |
 
-**Note**: Development wheels from the `develop` branch publish for Linux x86_64 only.
-Windows, macOS, and Linux ARM64 builds run on the nightly schedule to keep CI feedback fast.
+**Note**: The nightly merge publishes v1 and v2 wheels for all listed platforms, while `develop`
+publishes Linux x86_64 wheels only. Outside those publication builds, cross-platform nightly
+validation is v2-only; the scheduled nightly test workflow does not repeat the v1 platform matrix.
 
 :::warning
 We do not recommend using development wheels in production environments, such as live trading controlling real capital.
@@ -146,6 +147,13 @@ Branch development wheels for the v2 Rust + PyO3 package publish to a separate v
 ```bash
 uv pip install --pre --index-url=https://packages.nautechsystems.io/v2/simple/ nautilus-trader
 ```
+
+| Platform           | v2 Develop | v2 Nightly |
+| :----------------- | :--------- | :--------- |
+| `Linux (x86_64)`   | ✓          | ✓          |
+| `Linux (ARM64)`    | -          | ✓          |
+| `macOS (ARM64)`    | -          | ✓          |
+| `Windows (x86_64)` | -          | ✓          |
 
 The installed import name is still `nautilus_trader`. Run this command outside a NautilusTrader
 source checkout so the repository's `exclude-newer` uv policy does not filter out newly published

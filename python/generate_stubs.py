@@ -196,6 +196,9 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
         "from nautilus_trader.analysis.themes import list_themes as list_themes",
         "from nautilus_trader.analysis.themes import register_theme as register_theme",
     ),
+    "nautilus_trader/adapters/binance/__init__.pyi": (
+        "from nautilus_trader.adapters.binance.instruments import load_binance_instruments as load_binance_instruments",
+    ),
     "nautilus_trader/core/__init__.pyi": (
         "from nautilus_trader.core.datetime import dt_to_unix_nanos as dt_to_unix_nanos",
         "from nautilus_trader.core.datetime import unix_nanos_to_dt as unix_nanos_to_dt",
@@ -206,6 +209,7 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
 }
 
 EXTRA_ALL_EXPORTS: dict[str, tuple[str, ...]] = {
+    "nautilus_trader/adapters/binance/__init__.pyi": ("load_binance_instruments",),
     "nautilus_trader/trading/__init__.pyi": ("Controller",),
 }
 
@@ -2847,6 +2851,8 @@ RUST_TO_PYTHON_TYPE: dict[str, str] = {
     "f32": "float",
     "f64": "float",
     "bool": "bool",
+    "LazyLock<ClientId>": "model.ClientId",
+    "LazyLock<Venue>": "model.Venue",
 }
 
 M_ADD_CONST_RE = re.compile(

@@ -749,7 +749,7 @@ pub struct LiveNodeConfig {
     /// The timeout for all clients to connect and initialize.
     #[builder(default = Duration::from_mins(1))]
     pub timeout_connection: Duration,
-    /// The timeout for execution state to reconcile.
+    /// The timeout for startup reconciliation and each continuous report-collection task.
     #[builder(default = Duration::from_secs(30))]
     pub timeout_reconciliation: Duration,
     /// The timeout for portfolio to initialize margins and unrealized pnls.

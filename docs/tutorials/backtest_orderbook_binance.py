@@ -73,7 +73,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.backtest.node import BacktestDataConfig
 from nautilus_trader.backtest.node import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
@@ -108,14 +108,14 @@ raw_files
 # %%
 # Initial L2 snapshot of the book at session open.
 path_snap = data_path / "BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv"
-df_snap = BinanceOrderBookDeltaDataLoader.load(path_snap)
+df_snap = load_binance_order_book_deltas(path_snap)
 df_snap.head()
 
 # %%
 # Per-level deltas for the day; capped to 1M rows for a reasonable run time.
 path_update = data_path / "BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv"
 nrows = 1_000_000
-df_update = BinanceOrderBookDeltaDataLoader.load(path_update, nrows=nrows)
+df_update = load_binance_order_book_deltas(path_update, nrows=nrows)
 df_update.head()
 
 # %% [markdown]

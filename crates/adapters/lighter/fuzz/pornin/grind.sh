@@ -7,7 +7,7 @@
 # Usage:
 #   ./grind.sh                 # 300s per target, cycle forever
 #   ./grind.sh 600             # 10 min per target
-#   ./grind.sh 600 fuzz_verify # only one target, 10 min slices
+#   ./grind.sh 600 decode      # only the decode target, 10 min slices
 #
 # Corpus accumulates under `corpus/<target>/` and persists across runs;
 # longer total wall time keeps growing coverage. Stop with Ctrl-C between

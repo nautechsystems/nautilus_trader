@@ -23,8 +23,8 @@ use std::{
     fmt::Debug,
     rc::Rc,
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -40,7 +40,10 @@ use nautilus_common::{
     factories::{ClientConfig, DataClientFactory, ExecutionClientFactory},
     live::dst,
     messages::{
-        execution::{GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder},
+        execution::{
+            GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            QueryOrder,
+        },
         system::ShutdownSystem,
     },
     msgbus::{self, MessagingSwitchboard, switchboard},
@@ -55,13 +58,13 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderType},
+    enums::{OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TraderId,
         Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-    orders::{OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Price, Quantity},
 };
@@ -856,30 +859,46 @@ mod serial_tests {
         (node, data_state, exec_state)
     }
 
+    #[derive(Clone, Debug, Default)]
+    struct BlockingReportClientState {
+        query_order_received: Arc<AtomicBool>,
+        query_order_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        bulk_order_report_requested: Arc<AtomicBool>,
+        bulk_order_report_count: Arc<AtomicUsize>,
+        targeted_order_report_ids: Arc<Mutex<Vec<ClientOrderId>>>,
+        position_report_requested: Arc<AtomicBool>,
+        position_report_count: Arc<AtomicUsize>,
+        instrument_received: Arc<AtomicBool>,
+    }
+
     struct BlockingReportExecutionClient {
         connected: Cell<bool>,
-        query_order_received: Arc<AtomicBool>,
-        blocking_order_report_requested: Arc<AtomicBool>,
-        position_report_requested: Arc<AtomicBool>,
-        instrument_received: Arc<AtomicBool>,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        state: BlockingReportClientState,
+        order_reports: Vec<OrderStatusReport>,
+        order_reports_complete: bool,
+        block_every_second_order_report: bool,
+        position_reports_complete: bool,
+        block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
     impl BlockingReportExecutionClient {
-        fn new(
-            query_order_received: Arc<AtomicBool>,
-            blocking_order_report_requested: Arc<AtomicBool>,
-            position_report_requested: Arc<AtomicBool>,
-            instrument_received: Arc<AtomicBool>,
-            report_release: Option<Arc<tokio::sync::Notify>>,
-        ) -> Self {
+        fn new(factory: &BlockingReportExecutionClientFactory) -> Self {
             Self {
                 connected: Cell::new(false),
-                query_order_received,
-                blocking_order_report_requested,
-                position_report_requested,
-                instrument_received,
-                report_release,
+                client_id: factory.client_id,
+                account_id: factory.account_id,
+                venue: factory.venue,
+                state: factory.state.clone(),
+                order_reports: factory.order_reports.clone(),
+                order_reports_complete: factory.order_reports_complete,
+                block_every_second_order_report: factory.block_every_second_order_report,
+                position_reports_complete: factory.position_reports_complete,
+                block_every_second_targeted_report: factory.block_every_second_targeted_report,
+                report_release: factory.report_release.clone(),
             }
         }
     }
@@ -895,10 +914,15 @@ mod serial_tests {
 
     #[derive(Debug)]
     struct BlockingReportExecutionClientFactory {
-        query_order_received: Arc<AtomicBool>,
-        blocking_order_report_requested: Arc<AtomicBool>,
-        position_report_requested: Arc<AtomicBool>,
-        instrument_received: Arc<AtomicBool>,
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        state: BlockingReportClientState,
+        order_reports: Vec<OrderStatusReport>,
+        order_reports_complete: bool,
+        block_every_second_order_report: bool,
+        position_reports_complete: bool,
+        block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
@@ -911,12 +935,68 @@ mod serial_tests {
             report_release: Option<Arc<tokio::sync::Notify>>,
         ) -> Self {
             Self {
-                query_order_received,
-                blocking_order_report_requested,
-                position_report_requested,
-                instrument_received,
+                client_id: ClientId::from("BLOCKING-REPORT"),
+                account_id: AccountId::from("BLOCKING-REPORT-001"),
+                venue: crypto_perpetual_ethusdt().id().venue,
+                state: BlockingReportClientState {
+                    query_order_received,
+                    bulk_order_report_requested: blocking_order_report_requested,
+                    position_report_requested,
+                    instrument_received,
+                    ..Default::default()
+                },
+                order_reports: Vec::new(),
+                order_reports_complete: false,
+                block_every_second_order_report: false,
+                position_reports_complete: false,
+                block_every_second_targeted_report: false,
                 report_release,
             }
+        }
+
+        fn configurable(
+            client_id: ClientId,
+            account_id: AccountId,
+            state: BlockingReportClientState,
+        ) -> Self {
+            Self {
+                client_id,
+                account_id,
+                venue: crypto_perpetual_ethusdt().id().venue,
+                state,
+                order_reports: Vec::new(),
+                order_reports_complete: false,
+                block_every_second_order_report: false,
+                position_reports_complete: false,
+                block_every_second_targeted_report: false,
+                report_release: None,
+            }
+        }
+
+        fn with_order_reports(mut self, reports: Vec<OrderStatusReport>) -> Self {
+            self.order_reports = reports;
+            self.order_reports_complete = true;
+            self
+        }
+
+        fn with_venue(mut self, venue: Venue) -> Self {
+            self.venue = venue;
+            self
+        }
+
+        fn with_position_reports_complete(mut self) -> Self {
+            self.position_reports_complete = true;
+            self
+        }
+
+        fn with_block_every_second_order_report(mut self) -> Self {
+            self.block_every_second_order_report = true;
+            self
+        }
+
+        fn with_block_every_second_targeted_report(mut self) -> Self {
+            self.block_every_second_targeted_report = true;
+            self
         }
     }
 
@@ -927,13 +1007,7 @@ mod serial_tests {
             _config: &dyn ClientConfig,
             _cache: CacheView,
         ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-            Ok(Box::new(BlockingReportExecutionClient::new(
-                self.query_order_received.clone(),
-                self.blocking_order_report_requested.clone(),
-                self.position_report_requested.clone(),
-                self.instrument_received.clone(),
-                self.report_release.clone(),
-            )))
+            Ok(Box::new(BlockingReportExecutionClient::new(self)))
         }
 
         fn name(&self) -> &'static str {
@@ -982,15 +1056,15 @@ mod serial_tests {
         }
 
         fn client_id(&self) -> ClientId {
-            ClientId::from("BLOCKING-REPORT")
+            self.client_id
         }
 
         fn account_id(&self) -> AccountId {
-            AccountId::from("BLOCKING-REPORT-001")
+            self.account_id
         }
 
         fn venue(&self) -> Venue {
-            crypto_perpetual_ethusdt().id().venue
+            self.venue
         }
 
         fn oms_type(&self) -> OmsType {
@@ -1019,13 +1093,22 @@ mod serial_tests {
             Ok(())
         }
 
-        fn query_order(&self, _cmd: QueryOrder) -> anyhow::Result<()> {
-            self.query_order_received.store(true, Ordering::Relaxed);
+        fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
+            self.state
+                .query_order_received
+                .store(true, Ordering::Relaxed);
+            self.state
+                .query_order_ids
+                .lock()
+                .unwrap()
+                .push(cmd.client_order_id);
             Ok(())
         }
 
         fn on_instrument(&mut self, _instrument: InstrumentAny) {
-            self.instrument_received.store(true, Ordering::Relaxed);
+            self.state
+                .instrument_received
+                .store(true, Ordering::Relaxed);
         }
 
         async fn connect(&mut self) -> anyhow::Result<()> {
@@ -1042,8 +1125,22 @@ mod serial_tests {
             &self,
             _cmd: &GenerateOrderStatusReports,
         ) -> anyhow::Result<Vec<OrderStatusReport>> {
-            self.blocking_order_report_requested
+            self.state
+                .bulk_order_report_requested
                 .store(true, Ordering::Relaxed);
+            let request_count = self
+                .state
+                .bulk_order_report_count
+                .fetch_add(1, Ordering::Relaxed)
+                + 1;
+
+            if self.block_every_second_order_report && request_count.is_multiple_of(2) {
+                return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
+            }
+
+            if self.order_reports_complete {
+                return Ok(self.order_reports.clone());
+            }
 
             if let Some(release) = &self.report_release {
                 release.notified().await;
@@ -1053,12 +1150,40 @@ mod serial_tests {
             }
         }
 
+        async fn generate_order_status_report(
+            &self,
+            cmd: &GenerateOrderStatusReport,
+        ) -> anyhow::Result<Option<OrderStatusReport>> {
+            let client_order_id = cmd
+                .client_order_id
+                .expect("targeted report command must carry a client order ID");
+            let request_count = {
+                let mut ids = self.state.targeted_order_report_ids.lock().unwrap();
+                ids.push(client_order_id);
+                ids.len()
+            };
+
+            if self.block_every_second_targeted_report && request_count.is_multiple_of(2) {
+                return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
+            }
+
+            Ok(None)
+        }
+
         async fn generate_position_status_reports(
             &self,
             _cmd: &GeneratePositionStatusReports,
         ) -> anyhow::Result<Vec<PositionStatusReport>> {
-            self.position_report_requested
+            self.state
+                .position_report_requested
                 .store(true, Ordering::Relaxed);
+            self.state
+                .position_report_count
+                .fetch_add(1, Ordering::Relaxed);
+
+            if self.position_reports_complete {
+                return Ok(Vec::new());
+            }
 
             if let Some(release) = &self.report_release {
                 release.notified().await;
@@ -1067,6 +1192,77 @@ mod serial_tests {
                 std::future::pending::<anyhow::Result<Vec<PositionStatusReport>>>().await
             }
         }
+    }
+
+    fn add_accepted_test_order(
+        node: &LiveNode,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        client_id: ClientId,
+    ) {
+        let instrument_id = crypto_perpetual_ethusdt().id();
+        let account_id = AccountId::from("BLOCKING-REPORT-001");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(client_order_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("10.0"))
+            .price(Price::from("100.0"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, Some(client_id), false)
+            .unwrap();
+        let order = node
+            .kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&submitted)
+            .unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .update_order(&accepted)
+            .unwrap();
+    }
+
+    fn canceled_order_report(
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> OrderStatusReport {
+        test_order_report(
+            AccountId::from("BLOCKING-REPORT-001"),
+            client_order_id,
+            venue_order_id,
+            OrderStatus::Canceled,
+        )
+    }
+
+    fn test_order_report(
+        account_id: AccountId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        order_status: OrderStatus,
+    ) -> OrderStatusReport {
+        OrderStatusReport::new(
+            account_id,
+            crypto_perpetual_ethusdt().id(),
+            Some(client_order_id),
+            venue_order_id,
+            OrderSide::Buy,
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::from("10.0"),
+            Quantity::from("0.0"),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            UnixNanos::from(1_000_000),
+            None,
+        )
+        .with_price(Price::from("100.0"))
     }
 
     #[rstest]
@@ -2656,6 +2852,433 @@ mod serial_tests {
         assert!(!query_order_received.load(Ordering::Relaxed));
         assert!(!blocking_order_report_requested.load(Ordering::Relaxed));
         assert!(position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_open_report_task_times_out_and_position_check_starts() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("OpenReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let position_report_requested = state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { position_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "hung open report task should release its slot"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_position_report_task_times_out_and_open_check_starts() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.2),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("PositionReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let bulk_order_report_requested = state.bulk_order_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { bulk_order_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "hung position report task should release its slot"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_hung_targeted_report_task_cleans_markers_and_checks_resume() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 200,
+                inflight_check_threshold_ms: 0,
+                inflight_check_retries: 100,
+                open_check_interval_secs: Some(0.1),
+                open_check_lookback_mins: None,
+                open_check_threshold_ms: 0,
+                open_check_missing_retries: 1,
+                open_check_open_only: false,
+                max_single_order_queries_per_cycle: 2,
+                single_order_query_delay_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_position_reports_complete()
+        .with_block_every_second_targeted_report();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("TargetedReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        let client_id = ClientId::from("BLOCKING-REPORT");
+        let order_a = ClientOrderId::from("O-TARGETED-A");
+        let order_b = ClientOrderId::from("O-TARGETED-B");
+        let order_c = ClientOrderId::from("O-TARGETED-C");
+        add_accepted_test_order(
+            &node,
+            order_a,
+            VenueOrderId::from("V-TARGETED-A"),
+            client_id,
+        );
+        add_accepted_test_order(
+            &node,
+            order_b,
+            VenueOrderId::from("V-TARGETED-B"),
+            client_id,
+        );
+        add_accepted_test_order(
+            &node,
+            order_c,
+            VenueOrderId::from("V-TARGETED-C"),
+            client_id,
+        );
+        node.exec_manager_mut().register_inflight(order_a);
+        assert_eq!(
+            node.kernel()
+                .cache
+                .borrow()
+                .orders_open(None, None, None, None, None)
+                .len(),
+            3,
+        );
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let targeted_order_report_ids = state.targeted_order_report_ids.clone();
+        let query_order_received = state.query_order_received.clone();
+        let query_order_ids = state.query_order_ids.clone();
+        let position_report_requested = state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { targeted_order_report_ids.lock().unwrap().len() >= 2 },
+                Duration::from_secs(1),
+            )
+            .await;
+            query_order_received.store(false, Ordering::Relaxed);
+            query_order_ids.lock().unwrap().clear();
+            wait_until_async(
+                || async {
+                    query_order_received.load(Ordering::Relaxed)
+                        && position_report_requested.load(Ordering::Relaxed)
+                        && targeted_order_report_ids.lock().unwrap().len() >= 5
+                },
+                Duration::from_secs(2),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(3), node.run()).await;
+        let observed_targeted_ids = state.targeted_order_report_ids.lock().unwrap().clone();
+
+        assert!(
+            result.is_ok(),
+            "hung targeted report tasks should release their slot: bulk={}, targeted={observed_targeted_ids:?}, position={}, inflight={}, open={}, retries=[{}, {}, {}]",
+            state.bulk_order_report_count.load(Ordering::Relaxed),
+            state.position_report_count.load(Ordering::Relaxed),
+            state.query_order_received.load(Ordering::Relaxed),
+            node.kernel()
+                .cache
+                .borrow()
+                .orders_open(None, None, None, None, None)
+                .len(),
+            node.exec_manager().recon_check_retry_count(&order_a),
+            node.exec_manager().recon_check_retry_count(&order_b),
+            node.exec_manager().recon_check_retry_count(&order_c),
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.query_order_received.load(Ordering::Relaxed));
+        assert!(
+            state.query_order_ids.lock().unwrap().contains(&order_a),
+            "check_inflight_orders should query the planned order after its marker times out"
+        );
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        let targeted_ids = observed_targeted_ids;
+        assert_eq!(
+            &targeted_ids[..5],
+            &[order_a, order_b, order_c, order_b, order_b],
+            "all planned markers should clear while query recency remains"
+        );
+        assert!(node.exec_manager().recon_check_retry_count(&order_a) > 0);
+        assert!(node.exec_manager().recon_check_retry_count(&order_b) > 0);
+        assert!(node.exec_manager().recon_check_retry_count(&order_c) > 0);
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_timed_out_open_report_task_discards_earlier_client_reports() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let client_order_id = ClientOrderId::from("O-PARTIAL-DISCARD");
+        let venue_order_id = VenueOrderId::from("V-PARTIAL-DISCARD");
+        let partial_state = BlockingReportClientState::default();
+        let responsive_factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("RESPONSIVE-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            partial_state.clone(),
+        )
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)])
+        .with_position_reports_complete()
+        .with_block_every_second_order_report();
+        let blocking_factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            partial_state.clone(),
+        )
+        .with_venue(Venue::from("ROUTING"))
+        .with_order_reports(vec![canceled_order_report(client_order_id, venue_order_id)])
+        .with_position_reports_complete()
+        .with_block_every_second_order_report();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("PartialReportDiscardNode")
+            .add_exec_client(
+                Some("responsive-report".to_string()),
+                Box::new(responsive_factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(blocking_factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        add_accepted_test_order(
+            &node,
+            client_order_id,
+            venue_order_id,
+            ClientId::from("RESPONSIVE-REPORT"),
+        );
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let position_report_requested = partial_state.position_report_requested.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { position_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(result.is_ok(), "timed-out batch should release its slot");
+        assert!(result.unwrap().is_ok());
+        assert!(
+            partial_state
+                .bulk_order_report_requested
+                .load(Ordering::Relaxed)
+        );
+        assert_eq!(
+            partial_state
+                .bulk_order_report_count
+                .load(Ordering::Relaxed),
+            2,
+            "one client should report before the later client hangs"
+        );
+        assert_eq!(
+            node.kernel()
+                .cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted,
+            "reports collected before the expiry should not be reconciled"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_timed_out_report_task_flushes_deferred_instrument_update() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(50),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-REPORT"),
+            AccountId::from("BLOCKING-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("ReportTimeoutInstrumentFlushNode")
+            .add_exec_client(
+                Some("blocking-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+        let stop_handle = handle.clone();
+        let bulk_order_report_requested = state.bulk_order_report_requested.clone();
+        let instrument_received = state.instrument_received.clone();
+
+        tokio::spawn(async move {
+            wait_until_async(
+                || async { bulk_order_report_requested.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let topic = switchboard::get_instrument_topic(instrument.id());
+            msgbus::publish_instrument(topic, &instrument);
+            wait_until_async(
+                || async { instrument_received.load(Ordering::Relaxed) },
+                Duration::from_secs(1),
+            )
+            .await;
+            stop_handle.stop();
+        });
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "timeout cancellation should flush deferred instruments"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert!(state.instrument_received.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 }

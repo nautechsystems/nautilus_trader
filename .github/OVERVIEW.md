@@ -22,13 +22,17 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
 
 ## Workflows (`.github/workflows`)
 
-- **build.yml**: main CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
+- **build.yml**: main v1 CI pipeline - plan, pre-commit, cargo-deny, Rust tests, Python tests,
   wheel builds, artifact uploads, release asset uploads, Trusted Publishing to PyPI and crates.io,
   release preflights, release attestations, registry verification, release checksum publication,
   final release asset verification, and final GitHub release publication and attestation
-  verification. Uses Depot 8-core runners for Linux and Windows builds. Includes a plan step that
-  skips builds on docs-only changes and skips Rust tests on Python-only changes.
-- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux builds on the self-hosted `build-v2` pool.
+  verification. The nightly merge builds and publishes wheels for every supported platform.
+  Includes a plan step that skips builds on docs-only changes and skips Rust tests on Python-only
+  changes.
+- **build-v2.yml**: CI pipeline for the v2 Rust-native system. Runs Linux x86 builds on the
+  self-hosted `build-v2` pool and runs the full Python test suite against wheels for every supported
+  platform during the nightly merge. This workflow owns cross-platform nightly validation outside
+  the v1 wheel publication jobs.
 - **build-docs.yml**: dispatches documentation build on `master` and `nightly` pushes.
 - **cli-binaries.yml**: builds and publishes CLI binaries for multiple platforms.
 - **codeql-analysis.yml**: CodeQL security scans for Python and Rust on PRs to `master`, pushes to
@@ -38,10 +42,9 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   using Buildx and native ARM runners.
 - **nightly-docs-features-check.yml**: nightly docs.rs build checks and crate feature compatibility verification.
 - **nightly-merge.yml**: auto-merges `develop` into `nightly` when CI succeeds.
-- **nightly-tests.yml**: extended test suites too slow for PR builds - turmoil network tests,
-  macOS, Windows, and Linux ARM build-and-test jobs, plus final Cargo publish-plan and dry-run
-  checks that run daily at 12:00 UTC to give early visibility on develop before `nightly-merge`
-  at 14:00 UTC.
+- **nightly-tests.yml**: extended turmoil network tests plus Cargo publish-plan and dry-run checks
+  that run daily at 12:00 UTC to give early visibility on `develop` before `nightly-merge` at
+  14:00 UTC. It does not repeat the v1 platform build-and-test matrices.
 - **performance.yml**: Rust/Python benchmarks on `nightly`, reporting to CodSpeed.
 - **security-audit.yml**: nightly supply chain security checks (cargo-audit, cargo-deny,
   cargo-vet, pip-audit, osv-scanner, and Zizmor).
@@ -125,9 +128,10 @@ CI/CD, testing, publishing, and automation within the NautilusTrader repository.
   to push events to prevent PR cache pollution.
 - **Concurrency**: PR CI runs are cancelled when a new push arrives to the same PR. Push events to
   mainline branches are never cancelled.
-- **Runners**: Linux and Windows builds use Depot 8-core runners (32 GB RAM, 150 GB SSD). macOS
-  builds use GitHub free runners. Lightweight jobs (plan, cargo-deny, cargo-vet, publish) use
-  GitHub free runners. Custom runner labels are declared in `.github/actionlint.yaml`.
+- **Runners**: Cross-platform wheel jobs use Depot 8-core runners for Linux and Windows, except
+  Linux x86 jobs assigned to the self-hosted build pools. macOS and lightweight jobs use GitHub
+  runners. The scheduled `nightly-tests.yml` workflow uses no Depot runners. Custom runner labels
+  are declared in `.github/actionlint.yaml`.
 
 ### Runtime hardening
 

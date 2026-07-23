@@ -21,8 +21,6 @@ pub mod close;
 pub mod custom;
 pub mod delta;
 pub mod depth;
-#[cfg(feature = "display")]
-pub mod display;
 pub mod funding;
 pub mod index_price;
 pub mod instrument;
@@ -36,6 +34,9 @@ pub mod quote;
 pub mod report;
 pub mod snapshot;
 pub mod trade;
+
+#[cfg(feature = "display")]
+pub mod display;
 
 use std::{
     collections::HashMap,

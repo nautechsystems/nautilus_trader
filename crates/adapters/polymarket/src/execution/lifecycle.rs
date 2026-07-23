@@ -14,7 +14,10 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    sync::atomic::Ordering,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -32,18 +35,73 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orders::Order,
 };
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::PolymarketExecutionClient;
 use crate::{
     execution::{identity::OrderIdentity, reports::fetch_and_emit_account_state},
+    http::{clob::HeartbeatResponse, error::Error as HttpError},
     websocket::{
         dispatch::{WsDispatchContext, WsDispatchState, dispatch_user_message},
         messages::PolymarketWsMessage,
     },
 };
 
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(4);
+const HEARTBEAT_TRANSPORT_FAILURE_LIMIT: u32 = 2;
+
 impl PolymarketExecutionClient {
+    fn start_heartbeat_task(&mut self) {
+        if !self.config.heartbeat_enabled {
+            return;
+        }
+
+        if self
+            .heartbeat_task
+            .as_ref()
+            .is_some_and(|task| !task.handle.is_finished())
+        {
+            return;
+        }
+
+        if let Some(completed) = self.heartbeat_task.take() {
+            completed.handle.abort();
+        }
+
+        self.heartbeat_healthy.store(true, Ordering::Release);
+        let cancellation = CancellationToken::new();
+
+        let handle = get_runtime().spawn(run_heartbeats(
+            self.http_client.clone(),
+            cancellation.clone(),
+            Arc::clone(&self.heartbeat_healthy),
+        ));
+        self.heartbeat_task = Some(super::HeartbeatTask {
+            cancellation,
+            handle,
+        });
+    }
+
+    fn abort_heartbeat_task(&mut self) {
+        if let Some(task) = self.heartbeat_task.take() {
+            task.cancellation.cancel();
+            task.handle.abort();
+        }
+    }
+
+    async fn stop_heartbeat_task(&mut self) {
+        if let Some(task) = self.heartbeat_task.take() {
+            task.cancellation.cancel();
+            if let Err(e) = task.handle.await
+                && !e.is_cancelled()
+            {
+                log::warn!("Heartbeat task failed to join during disconnect: {e}");
+            }
+        }
+    }
+
     fn ensure_order_event_subscription(&mut self) {
         if self.order_event_handler.is_some() {
             return;
@@ -442,6 +500,7 @@ impl PolymarketExecutionClient {
             handle.abort();
         }
 
+        self.abort_heartbeat_task();
         self.ws_client.abort();
 
         self.core.set_disconnected();
@@ -494,6 +553,7 @@ impl PolymarketExecutionClient {
         }
 
         self.core.set_connected();
+        self.start_heartbeat_task();
 
         log::info!("Connected: client_id={}", self.core.client_id);
         Ok(())
@@ -508,6 +568,7 @@ impl PolymarketExecutionClient {
 
         self.stopping.store(true, Ordering::Release);
         self.await_pending_tasks().await;
+        self.stop_heartbeat_task().await;
         self.clear_order_event_subscription();
         self.clear_position_event_subscription();
 
@@ -525,6 +586,80 @@ impl PolymarketExecutionClient {
 
     pub(super) fn on_instrument_update(&self, instrument: &InstrumentAny) {
         self.upsert_execution_lookup(instrument);
+    }
+}
+
+async fn run_heartbeats(
+    http_client: crate::http::clob::PolymarketClobHttpClient,
+    cancellation: CancellationToken,
+    healthy: Arc<AtomicBool>,
+) {
+    let mut interval = tokio::time::interval(HEARTBEAT_INTERVAL);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut heartbeat_id = String::new();
+    let mut transport_failures = 0;
+
+    loop {
+        tokio::select! {
+            () = cancellation.cancelled() => break,
+            _ = interval.tick() => {}
+        }
+
+        let mut resynchronized = false;
+
+        loop {
+            let response = tokio::select! {
+                () = cancellation.cancelled() => return,
+                response = tokio::time::timeout(
+                    HEARTBEAT_REQUEST_TIMEOUT,
+                    http_client.post_heartbeat(&heartbeat_id),
+                ) => response.unwrap_or(Err(HttpError::Timeout)),
+            };
+
+            match response {
+                Ok(HeartbeatResponse::Acknowledged(next_id)) => {
+                    if let Some(next_id) = next_id {
+                        heartbeat_id = next_id;
+                    }
+                    transport_failures = 0;
+                    break;
+                }
+                Ok(HeartbeatResponse::Resynchronize(next_id)) if !resynchronized => {
+                    heartbeat_id = next_id;
+                    resynchronized = true;
+                }
+                Ok(HeartbeatResponse::Resynchronize(_)) => {
+                    log::error!("Polymarket heartbeat rejected after ID resynchronization");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+                Err(e) if e.is_retryable() => {
+                    transport_failures += 1;
+                    if transport_failures >= HEARTBEAT_TRANSPORT_FAILURE_LIMIT {
+                        log::error!(
+                            "Polymarket heartbeat failed after {transport_failures} consecutive transport attempts"
+                        );
+                        healthy.store(false, Ordering::Release);
+                        return;
+                    }
+
+                    log::warn!(
+                        "Polymarket heartbeat transport attempt {transport_failures} failed"
+                    );
+                    break;
+                }
+                Err(HttpError::Auth(_)) => {
+                    log::error!("Polymarket heartbeat authentication failed");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+                Err(_) => {
+                    log::error!("Polymarket heartbeat was rejected by the venue");
+                    healthy.store(false, Ordering::Release);
+                    return;
+                }
+            }
+        }
     }
 }
 

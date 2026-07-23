@@ -22,20 +22,81 @@ Supported products:
 
 ## Overview
 
-The Binance adapter includes multiple components that can be used together or separately:
+The Rust-backed Python v2 adapter exposes these public components:
 
-- `BinanceHttpClient`: Low-level HTTP API connectivity.
-- `BinanceWebSocketClient`: Low-level WebSocket API connectivity.
-- `BinanceInstrumentProvider`: Instrument parsing and loading.
-- `BinanceSpotDataClient` / `BinanceFuturesDataClient`: Market data feed manager.
-- `BinanceSpotExecutionClient` / `BinanceFuturesExecutionClient`: Account management and trade execution gateway.
-- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder).
-- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder).
+- `BinanceDataClientConfig` and `BinanceExecClientConfig`: Live client configuration.
+- `BinanceInstrumentProviderConfig`: Instrument selection, filtering, warning, and fee policy.
+- `BinanceDataClientFactory` and `BinanceExecutionClientFactory`: Trading node client factories.
+- `load_binance_instruments`: Standalone configured instrument discovery.
+- `load_binance_order_book_deltas`: Rust-backed Binance depth CSV loading for order book wrangling.
+- `BINANCE`, `BINANCE_CLIENT_ID`, `BINANCE_VENUE`, and the client-order-ID decoders: Public
+  identifiers and migration utilities.
 
 :::note
 Most users configure a live trading node (as below) and do not interact with
 these lower-level components directly.
 :::
+
+Low-level HTTP and WebSocket clients, their caches, and product-specific instrument provider
+objects remain private Rust implementation details. Use the live configs and factories, or the
+standalone instrument loader, instead of depending on those internals.
+
+### Python v2 migration surface
+
+The following table maps the migration-critical Python v1 surface to v2. It records accepted
+renames and removals instead of exposing private Rust structure for one-for-one parity.
+
+| Python v1 surface                                                                                  | Python v2 path or decision                                                                                                      |
+|----------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `BINANCE`, `BINANCE_CLIENT_ID`, `BINANCE_VENUE`                                                    | Preserved at the adapter package top level.                                                                                     |
+| `BinanceDataClientConfig`, `BinanceExecClientConfig`, `BinanceInstrumentProviderConfig`            | Preserved. Both client configs expose their immutable `instrument_provider` configuration.                                      |
+| `BinanceLiveDataClientFactory`, `BinanceLiveExecClientFactory`                                     | Renamed to `BinanceDataClientFactory` and `BinanceExecutionClientFactory`.                                                      |
+| `BinanceSpotInstrumentProvider`, `BinanceFuturesInstrumentProvider`, `get_cached_binance_http_client` | Replaced by `await load_binance_instruments(config)`. Low‑level clients and provider caches are not public.                    |
+| `BinanceOrderBookDeltaDataLoader`                                                                  | Replaced by the stateless `load_binance_order_book_deltas(...)` function.                                                       |
+| `decode_binance_spot_client_order_id`, `decode_binance_futures_client_order_id`                    | Preserved at runtime and in generated type stubs.                                                                               |
+| `BinanceAccountType`                                                                               | Replaced by `BinanceProductType`: `SPOT`, `USD_M`, and `COIN_M` cover the supported products.                                   |
+| `BinanceKeyType`                                                                                   | Removed. Configure the supported credential form directly; v2 validates the selected product and transport.                    |
+| `BinanceTicker`                                                                                    | Replaced by explicit `BinanceSpotTicker` and `BinanceFuturesTicker` types.                                                      |
+| Futures liquidation, mark‑price, open‑interest, history, and ticker types                          | Preserved as Rust‑backed top‑level types.                                                                                       |
+| V1 URL builders, credential selectors, symbol converters, endpoint enums, retry controls, and raw response models | Removed from the public Python surface. Live configs and domain‑level types own these behaviors.                  |
+
+For standalone discovery, pass the same data-client and provider configuration used by a live
+client:
+
+```python
+import asyncio
+
+from nautilus_trader.adapters.binance import BinanceDataClientConfig
+from nautilus_trader.adapters.binance import BinanceInstrumentProviderConfig
+from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.adapters.binance import load_binance_instruments
+
+config = BinanceDataClientConfig(
+    product_type=BinanceProductType.USD_M,
+    instrument_provider=BinanceInstrumentProviderConfig(
+        load_all=False,
+        load_ids=["BTCUSDT-PERP.BINANCE"],
+    ),
+)
+instruments = asyncio.run(load_binance_instruments(config))
+```
+
+This function supports Spot, USD-M, and COIN-M. It uses the configured environment, URLs, proxy,
+receive window, Binance US mode, filters, warning policy, and commission policy. Margin is not a
+supported Binance product and is rejected.
+
+For Binance depth CSV data, call the stateless loader directly:
+
+```python
+from nautilus_trader.adapters.binance import load_binance_order_book_deltas
+
+df = load_binance_order_book_deltas(path, nrows=1_000_000)
+```
+
+Accepted rows preserve the v1 DataFrame values and column order. File-open failures now raise
+`RuntimeError` instead of `FileNotFoundError`, and invalid numeric fields are rejected with
+`RuntimeError` instead of being left to pandas dtype inference. Invalid sides continue to raise
+`RuntimeError` with the v1 message.
 
 ### Product support
 
@@ -477,14 +538,15 @@ from nautilus_trader.adapters.binance import (
     decode_binance_spot_client_order_id,
 )
 
-# Encoded ID from Binance REST response or web UI
-encoded = "x-TD67BGP9-T0A4b1H2vj50H"
+# Encoded ID from a Binance REST response or the web UI
+encoded = "x-TD67BGP9-T0000000000000"
 original = decode_binance_spot_client_order_id(encoded)
-# -> "O-20260305-120000-001-001-100"
+# Returns "O-20200101-000000-000-000-0"
 
 # Futures equivalent
-encoded_futures = "x-aHRE4BCj-U2xK9mPqR7sT1vW3y"
+encoded_futures = "x-aHRE4BCj-T0000000000000"
 original_futures = decode_binance_futures_client_order_id(encoded_futures)
+# Returns "O-20200101-000000-000-000-0"
 ```
 
 Strings without the broker prefix pass through unchanged, so these are safe
@@ -988,9 +1050,16 @@ tables predate the v2 tables above; use the v2 field names and defaults above fo
 | `log_rejected_due_post_only_as_warning` | `True`    | Log post‑only rejections as warnings when `True`; otherwise as errors. |
 | `transport_backend`                     | `Sockudo` | *Rust only.* WebSocket transport backend. |
 
-The most common use case is to configure a live `TradingNode` with Binance
-data and execution clients. Add a `BINANCE` section to your client
-configuration:
+#### Legacy Python TradingNode setup
+
+The following example remains for legacy v1 users. Its `account_type`, dictionary configuration,
+`TradingNode`, and `BinanceLive*Factory` names do not exist in the Rust-backed Python v2 API. For
+v2 node construction, follow the
+[Python v2 data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/binance/data_tester.py)
+or
+[Python v2 execution tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/python/examples/binance/exec_tester.py).
+
+Add a `BINANCE` section to the legacy client configuration:
 
 ```python
 from nautilus_trader.adapters.binance import BINANCE
@@ -1161,17 +1230,18 @@ removed in a future version. Rename them to `BINANCE_API_KEY` /
 When the trading node starts, you receive confirmation of whether your
 credentials are valid and have trading permissions.
 
-### Account type
+### Product type
 
-Set `account_type` using the `BinanceAccountType` enum:
+Rust-backed v2 configs select one supported product with the `product_type` field and
+`BinanceProductType` enum:
 
 - `SPOT`
-- `USDT_FUTURES` (USDT or BUSD stablecoins as collateral)
-- `COIN_FUTURES` (other cryptocurrency as collateral)
+- `USD_M` (USDT, USDC, or BNFCR collateral)
+- `COIN_M` (cryptocurrency collateral)
 
 :::note
-`MARGIN` and `ISOLATED_MARGIN` account types exist in the enum but margin
-trading is not implemented. See [Product support](#product-support).
+Margin trading is not implemented. Other enum variants are rejected by the live clients and the
+standalone instrument loader. See [Product support](#product-support).
 :::
 
 ### Base URL overrides
@@ -1222,9 +1292,11 @@ account credentials.
 
 ```python
 config = BinanceExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_API_KEY",
     api_secret="YOUR_API_SECRET",
-    account_type=BinanceAccountType.SPOT,
+    product_type=BinanceProductType.SPOT,
     # environment=BinanceEnvironment.LIVE (default)
 )
 ```
@@ -1257,9 +1329,11 @@ virtual balances.
 
 ```python
 config = BinanceExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_DEMO_API_KEY",
     api_secret="YOUR_DEMO_API_SECRET",
-    account_type=BinanceAccountType.SPOT,
+    product_type=BinanceProductType.SPOT,
     environment=BinanceEnvironment.DEMO,
 )
 ```
@@ -1287,9 +1361,11 @@ continue to work, but new Futures testing should use `BinanceEnvironment.DEMO`.
 
 ```python
 config = BinanceExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("BINANCE-001"),
     api_key="YOUR_TESTNET_API_KEY",
     api_secret="YOUR_TESTNET_API_SECRET",
-    account_type=BinanceAccountType.SPOT,
+    product_type=BinanceProductType.SPOT,
     environment=BinanceEnvironment.TESTNET,
 )
 ```
@@ -1382,10 +1458,30 @@ instrument_provider=BinanceInstrumentProviderConfig(
 Binance Futures Hedge mode allows holding both long and short positions on the
 same instrument simultaneously.
 
-The steps below apply to the Python adapter. For the Rust adapter, including
-its Python bindings, configure hedge mode on Binance and set `oms_type` to
-`OmsType::Hedging` in Rust or `OmsType.HEDGING` in Python. Keep
-`use_position_ids` enabled to track both venue position sides.
+For Rust-backed Python v2, configure hedge mode on Binance, set
+`oms_type=OmsType.HEDGING` on `BinanceExecClientConfig`, and keep `use_position_ids=True` to track
+both venue position sides:
+
+```python
+from nautilus_trader.adapters.binance import BinanceExecClientConfig
+from nautilus_trader.adapters.binance import BinanceProductType
+from nautilus_trader.model import AccountId
+from nautilus_trader.model import OmsType
+from nautilus_trader.model import TraderId
+
+config = BinanceExecClientConfig(
+    trader_id=TraderId.from_str("TRADER-001"),
+    account_id=AccountId.from_str("BINANCE-001"),
+    product_type=BinanceProductType.USD_M,
+    oms_type=OmsType.HEDGING,
+    use_position_ids=True,
+)
+```
+
+#### Legacy v1 setup
+
+The remaining `TradingNodeConfig` example is for the legacy v1 Python adapter. V2 does not expose
+`use_reduce_only`.
 
 To use hedge mode:
 

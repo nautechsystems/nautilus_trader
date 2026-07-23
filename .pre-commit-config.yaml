@@ -100,7 +100,7 @@ repos:
         description: Checks GitHub Actions workflow syntax and structural correctness
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.27.0
+    rev: v1.28.0
     hooks:
       - id: zizmor
         name: zizmor (security)
@@ -300,7 +300,7 @@ repos:
 
       - id: test-formatting-rs
         name: test Rust formatting hook
-        description: Verifies blank-line rules and match guard exceptions
+        description: Verifies blank-line and module-ordering rules
         entry: bash .pre-commit-hooks/test_check_formatting_rs.sh
         language: system
         files: ^(\.pre-commit-config\.yaml|\.pre-commit-hooks/(check|test_check)_formatting_rs\.sh)$

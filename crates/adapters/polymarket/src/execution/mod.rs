@@ -15,20 +15,21 @@
 
 //! Live execution client implementation for the Polymarket adapter.
 
+pub mod order_builder;
+pub mod parse;
+
+pub(crate) mod identity;
+pub(crate) mod order_fill_tracker;
+pub(crate) mod pending;
+pub(crate) mod reconciliation;
+pub(crate) mod submitter;
+pub(crate) mod types;
+
 mod cancellations;
 mod lifecycle;
 mod orders;
 mod reports;
 mod responses;
-
-pub(crate) mod identity;
-pub mod order_builder;
-pub(crate) mod order_fill_tracker;
-pub mod parse;
-pub(crate) mod pending;
-pub(crate) mod reconciliation;
-pub(crate) mod submitter;
-pub(crate) mod types;
 
 use std::sync::{Arc, Mutex, atomic::AtomicBool};
 
@@ -63,6 +64,7 @@ use nautilus_model::{
 use nautilus_network::retry::RetryConfig;
 use rust_decimal::Decimal;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 pub(crate) use self::reports::get_pusd_currency;
@@ -96,6 +98,8 @@ pub struct PolymarketExecutionClient {
     pending_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
     stopping: Arc<AtomicBool>,
     ws_stream_handle: Option<JoinHandle<()>>,
+    heartbeat_task: Option<HeartbeatTask>,
+    heartbeat_healthy: Arc<AtomicBool>,
     order_event_handler: Option<TypedHandler<OrderEventAny>>,
     position_event_handler: Option<TypedHandler<PositionEvent>>,
     shared_token_instruments: Arc<AtomicMap<Ustr, InstrumentAny>>,
@@ -202,6 +206,8 @@ impl PolymarketExecutionClient {
             pending_tasks: Arc::new(Mutex::new(Vec::new())),
             stopping: Arc::new(AtomicBool::new(false)),
             ws_stream_handle: None,
+            heartbeat_task: None,
+            heartbeat_healthy: Arc::new(AtomicBool::new(true)),
             order_event_handler: None,
             position_event_handler: None,
             shared_token_instruments: Arc::new(AtomicMap::new()),
@@ -213,6 +219,12 @@ impl PolymarketExecutionClient {
             ws_dispatch_state: Arc::new(Mutex::new(WsDispatchState::default())),
         })
     }
+}
+
+#[derive(Debug)]
+struct HeartbeatTask {
+    cancellation: CancellationToken,
+    handle: JoinHandle<()>,
 }
 
 fn resolve_maker_address(
@@ -244,6 +256,10 @@ fn resolve_maker_address(
 impl ExecutionClient for PolymarketExecutionClient {
     fn is_connected(&self) -> bool {
         self.core.is_connected()
+            && (!self.config.heartbeat_enabled
+                || self
+                    .heartbeat_healthy
+                    .load(std::sync::atomic::Ordering::Acquire))
     }
 
     fn client_id(&self) -> ClientId {

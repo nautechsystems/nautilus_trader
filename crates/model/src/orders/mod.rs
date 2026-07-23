@@ -16,8 +16,6 @@
 //! Order types for the trading domain model.
 
 pub mod any;
-#[cfg(any(test, feature = "stubs"))]
-pub mod builder;
 pub mod limit;
 pub mod limit_if_touched;
 pub mod list;
@@ -29,6 +27,8 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
+#[cfg(any(test, feature = "stubs"))]
+pub mod builder;
 #[cfg(any(test, feature = "stubs"))]
 pub mod stubs;
 
@@ -351,6 +351,7 @@ pub trait Order: 'static + Send {
     ///
     /// Returns an error if the event is invalid for the current order status.
     fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError>;
+
     fn update(&mut self, event: &OrderUpdated);
 
     fn events(&self) -> Vec<&OrderEventAny>;
@@ -819,6 +820,55 @@ impl OrderCore {
             self.validate_fill_void(event)?;
         }
 
+        // Check for duplicate fill before state transition to maintain consistency
+        if let OrderEventAny::Filled(fill) = &event
+            && self.events.iter().any(
+                |event| matches!(event, OrderEventAny::Filled(existing) if existing.trade_id == fill.trade_id),
+            )
+        {
+            return Err(OrderError::DuplicateFill(fill.trade_id));
+        }
+
+        if matches!(event, OrderEventAny::Triggered(_))
+            && !TRIGGERABLE_ORDER_TYPES.contains(&self.order_type)
+        {
+            return Err(OrderError::InvalidOrderEvent);
+        }
+
+        if matches!(event, OrderEventAny::Initialized(_)) {
+            return Err(OrderError::AlreadyInitialized);
+        }
+
+        let new_status = self.status.transition(&event)?;
+        let rejection_status = if matches!(
+            event,
+            OrderEventAny::ModifyRejected(_) | OrderEventAny::CancelRejected(_)
+        ) {
+            self.previous_status.ok_or(OrderError::NoPreviousState)?
+        } else {
+            self.status
+        };
+
+        // Reject an update carrying fields the order type cannot hold before any
+        // mutation. Runs after the identity and transition checks so an identity
+        // mismatch or invalid transition is reported ahead of a field violation.
+        if let OrderEventAny::Updated(update) = &event {
+            let invalid_fields = match self.order_type {
+                OrderType::Market => update.price.is_some() || update.trigger_price.is_some(),
+                OrderType::StopMarket
+                | OrderType::MarketIfTouched
+                | OrderType::TrailingStopMarket => update.price.is_some(),
+                OrderType::Limit | OrderType::MarketToLimit => update.trigger_price.is_some(),
+                OrderType::StopLimit | OrderType::LimitIfTouched | OrderType::TrailingStopLimit => {
+                    false
+                }
+            };
+
+            if invalid_fields {
+                return Err(OrderError::InvalidOrderEvent);
+            }
+        }
+
         let source_status = self.status;
 
         // Save current status as previous_status for ALL transitions except:
@@ -837,25 +887,10 @@ impl OrderCore {
             self.previous_status = Some(self.status);
         }
 
-        // Check for duplicate fill before state transition to maintain consistency
-        if let OrderEventAny::Filled(fill) = &event
-            && self.events.iter().any(
-                |event| matches!(event, OrderEventAny::Filled(existing) if existing.trade_id == fill.trade_id),
-            )
-        {
-            return Err(OrderError::DuplicateFill(fill.trade_id));
-        }
-
-        if matches!(event, OrderEventAny::Triggered(_))
-            && !TRIGGERABLE_ORDER_TYPES.contains(&self.order_type)
-        {
-            return Err(OrderError::InvalidOrderEvent);
-        }
-
-        let new_status = self.status.transition(&event)?;
         self.status = new_status;
 
         match &event {
+            // Rejected by the pre-commit check above; kept for exhaustiveness
             OrderEventAny::Initialized(_) => return Err(OrderError::AlreadyInitialized),
             OrderEventAny::Denied(event) => self.denied(event),
             OrderEventAny::Emulated(event) => self.emulated(event),
@@ -865,8 +900,8 @@ impl OrderCore {
             OrderEventAny::Accepted(event) => self.accepted(event),
             OrderEventAny::PendingUpdate(event) => self.pending_update(event),
             OrderEventAny::PendingCancel(event) => self.pending_cancel(event),
-            OrderEventAny::ModifyRejected(event) => self.modify_rejected(event)?,
-            OrderEventAny::CancelRejected(event) => self.cancel_rejected(event)?,
+            OrderEventAny::ModifyRejected(event) => self.modify_rejected(event, rejection_status),
+            OrderEventAny::CancelRejected(event) => self.cancel_rejected(event, rejection_status),
             OrderEventAny::Updated(event) => self.updated(event),
             OrderEventAny::Triggered(event) => self.triggered(event),
             OrderEventAny::Canceled(event) => self.canceled(event),
@@ -916,14 +951,12 @@ impl OrderCore {
         // Do nothing else
     }
 
-    fn modify_rejected(&mut self, _event: &OrderModifyRejected) -> Result<(), OrderError> {
-        self.status = self.previous_status.ok_or(OrderError::NoPreviousState)?;
-        Ok(())
+    fn modify_rejected(&mut self, _event: &OrderModifyRejected, previous_status: OrderStatus) {
+        self.status = previous_status;
     }
 
-    fn cancel_rejected(&mut self, _event: &OrderCancelRejected) -> Result<(), OrderError> {
-        self.status = self.previous_status.ok_or(OrderError::NoPreviousState)?;
-        Ok(())
+    fn cancel_rejected(&mut self, _event: &OrderCancelRejected, previous_status: OrderStatus) {
+        self.status = previous_status;
     }
 
     fn triggered(&self, _event: &OrderTriggered) {}
@@ -1394,10 +1427,10 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderStatus, PositionSide, TriggerType},
         events::order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderExpiredSpec,
-            OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec, OrderPendingCancelSpec,
-            OrderPendingUpdateSpec, OrderRejectedSpec, OrderSubmittedSpec, OrderTriggeredSpec,
-            OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
+            OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec,
+            OrderModifyRejectedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
+            OrderRejectedSpec, OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
         },
         identifiers::InstrumentId,
         instruments::{CurrencyPair, Instrument, InstrumentAny, stubs::audusd_sim},
@@ -2574,6 +2607,165 @@ mod tests {
 
         assert_eq!(order.status(), OrderStatus::Accepted);
         assert_eq!(order.quantity(), Quantity::from(50_000));
+    }
+
+    #[rstest]
+    fn test_rejected_event_preserves_status_restoration() {
+        let init = OrderInitializedSpec::builder().build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let invalid = OrderSubmittedSpec::builder().build();
+        let pending_update = OrderPendingUpdateSpec::builder().build();
+        let modify_rejected = OrderModifyRejectedSpec::builder().build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        let previous_status = order.previous_status();
+
+        let result = order.apply(OrderEventAny::Submitted(invalid));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.previous_status(), previous_status);
+
+        order
+            .apply(OrderEventAny::PendingUpdate(pending_update))
+            .unwrap();
+        order
+            .apply(OrderEventAny::ModifyRejected(modify_rejected))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    fn test_rejected_event_preserves_cancel_rejected_restoration() {
+        let init = OrderInitializedSpec::builder().build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let invalid = OrderSubmittedSpec::builder().build();
+        let pending_cancel = OrderPendingCancelSpec::builder().build();
+        let cancel_rejected = OrderCancelRejectedSpec::builder().build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        let previous_status = order.previous_status();
+
+        let result = order.apply(OrderEventAny::Submitted(invalid));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.previous_status(), previous_status);
+
+        order
+            .apply(OrderEventAny::PendingCancel(pending_cancel))
+            .unwrap();
+        order
+            .apply(OrderEventAny::CancelRejected(cancel_rejected))
+            .unwrap();
+        assert_eq!(order.status(), OrderStatus::Accepted);
+    }
+
+    #[rstest]
+    #[case(true, false, "client_order_id")]
+    #[case(false, true, "strategy_id")]
+    fn test_update_identity_mismatch_precedes_field_validation(
+        #[case] wrong_client: bool,
+        #[case] wrong_strategy: bool,
+        #[case] expected_field: &str,
+    ) {
+        let init = OrderInitializedSpec::builder().build();
+        let submitted = OrderSubmittedSpec::builder().build();
+        let accepted = OrderAcceptedSpec::builder().build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Submitted(submitted)).unwrap();
+        order.apply(OrderEventAny::Accepted(accepted)).unwrap();
+        let state = (
+            order.status(),
+            order.previous_status(),
+            order.ts_last(),
+            order.events().len(),
+        );
+        let client_order_id = if wrong_client {
+            ClientOrderId::from("O-INVALID")
+        } else {
+            order.client_order_id()
+        };
+        let strategy_id = if wrong_strategy {
+            StrategyId::from("OTHER-001")
+        } else {
+            order.strategy_id()
+        };
+        // Carry both a mismatched identity and a price a MarketOrder cannot hold:
+        // the identity mismatch must be reported ahead of the field violation.
+        let updated = OrderUpdatedSpec::builder()
+            .client_order_id(client_order_id)
+            .strategy_id(strategy_id)
+            .price(Price::new(95.0, 2))
+            .build();
+
+        let result = order.apply(OrderEventAny::Updated(updated));
+
+        // The specific identity predicate must surface, not the field violation.
+        let Err(OrderError::Invariant(CorrectnessError::PredicateViolation { message })) = result
+        else {
+            panic!("expected an identity predicate violation, was {result:?}");
+        };
+        assert!(
+            message.contains(expected_field),
+            "message did not name {expected_field}: {message}"
+        );
+        assert_eq!(order.status(), state.0);
+        assert_eq!(order.previous_status(), state.1);
+        assert_eq!(order.ts_last(), state.2);
+        assert_eq!(order.events().len(), state.3);
+    }
+
+    #[rstest]
+    fn test_update_invalid_transition_precedes_field_validation() {
+        let init = OrderInitializedSpec::builder().build();
+        let denied = OrderDeniedSpec::builder().build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        order.apply(OrderEventAny::Denied(denied)).unwrap();
+        let state = (
+            order.status(),
+            order.previous_status(),
+            order.ts_last(),
+            order.events().len(),
+        );
+        // No (Denied, Updated) transition exists, and the price is invalid for a
+        // MarketOrder: the transition check must win over the field violation.
+        let updated = OrderUpdatedSpec::builder()
+            .price(Price::new(95.0, 2))
+            .build();
+
+        let result = order.apply(OrderEventAny::Updated(updated));
+
+        assert!(matches!(result, Err(OrderError::InvalidStateTransition)));
+        assert_eq!(order.status(), state.0);
+        assert_eq!(order.previous_status(), state.1);
+        assert_eq!(order.ts_last(), state.2);
+        assert_eq!(order.events().len(), state.3);
+    }
+
+    #[rstest]
+    fn test_direct_update_panics_on_invalid_field_before_mutation() {
+        let init = OrderInitializedSpec::builder()
+            .quantity(Quantity::from(100_000))
+            .build();
+        let mut order: MarketOrder = init.try_into().unwrap();
+        let original_quantity = order.quantity();
+        // A distinct quantity so any mutation would be observable, alongside a
+        // price the type cannot hold. The low-level mutation path retains a
+        // defensive guard: a direct update() panics on the invalid field before
+        // it reaches the quantity assignment.
+        let updated = OrderUpdatedSpec::builder()
+            .quantity(Quantity::from(50_000))
+            .price(Price::new(95.0, 2))
+            .build();
+
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| order.update(&updated)));
+
+        assert!(result.is_err());
+        assert_eq!(order.quantity(), original_quantity);
     }
 
     #[rstest]

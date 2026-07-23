@@ -777,11 +777,11 @@ mod tests {
 
         match &err {
             OrderReplayError::ApplyFailed { source } => {
-                assert!(matches!(source, OrderError::InvalidStateTransition));
+                assert!(matches!(source, OrderError::AlreadyInitialized));
             }
             _ => panic!("expected ApplyFailed, was {err:?}"),
         }
-        assert_eq!(err.to_string(), "Invalid order state transition");
+        assert_eq!(err.to_string(), "Order was already initialized");
     }
 
     #[rstest]

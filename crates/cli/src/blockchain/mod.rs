@@ -24,8 +24,9 @@ use crate::{
 };
 
 pub(crate) mod analyze;
-mod help;
 pub(crate) mod sync;
+
+mod help;
 
 pub(crate) use help::augment_blockchain_help;
 

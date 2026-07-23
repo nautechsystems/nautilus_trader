@@ -177,7 +177,7 @@ test = false
 
 [[bin]]
 name = "fuzz_verify"
-path = "fuzz_targets/fuzz_verify.rs"
+path = "fuzz/fuzz_targets/fuzz_verify.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -185,7 +185,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_point_decode"
-path = "fuzz_targets/fuzz_point_decode.rs"
+path = "fuzz/fuzz_targets/fuzz_point_decode.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -193,7 +193,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_signature_codec"
-path = "fuzz_targets/fuzz_signature_codec.rs"
+path = "fuzz/fuzz_targets/fuzz_signature_codec.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -201,7 +201,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_hash_no_pad"
-path = "fuzz_targets/fuzz_hash_no_pad.rs"
+path = "fuzz/fuzz_targets/fuzz_hash_no_pad.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -209,7 +209,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_auth_message"
-path = "fuzz_targets/fuzz_auth_message.rs"
+path = "fuzz/fuzz_targets/fuzz_auth_message.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -217,7 +217,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_compute_tx_hash"
-path = "fuzz_targets/fuzz_compute_tx_hash.rs"
+path = "fuzz/fuzz_targets/fuzz_compute_tx_hash.rs"
 required-features = ["fuzz"]
 test = false
 doc = false
@@ -225,7 +225,7 @@ bench = false
 
 [[bin]]
 name = "fuzz_scalar_mul_ct_diff"
-path = "fuzz_targets/fuzz_scalar_mul_ct_diff.rs"
+path = "fuzz/fuzz_targets/fuzz_scalar_mul_ct_diff.rs"
 required-features = ["fuzz"]
 test = false
 doc = false

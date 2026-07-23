@@ -129,11 +129,12 @@ use crate::{
 
 pub mod builder;
 pub mod config;
-mod metrics;
-mod state;
 
 #[cfg(feature = "plugin")]
 pub mod plugin;
+
+mod metrics;
+mod state;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
@@ -278,23 +279,6 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error when plug-ins are configured without host-side support.
-    #[cfg(feature = "plugin")]
-    pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
-        if self.config.plugins.is_empty() {
-            return Ok(());
-        }
-
-        anyhow::bail!(
-            "LiveNodeConfig.plugins requires host-side plug-in support; nautilus-plugin is the guest SDK only"
-        )
-    }
-
-    /// Loads and registers plug-ins declared on the node config.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when plug-ins are configured without host-side support.
-    #[cfg(not(feature = "plugin"))]
     pub(crate) fn load_configured_plugins(&self) -> anyhow::Result<()> {
         if self.config.plugins.is_empty() {
             return Ok(());
@@ -310,31 +294,16 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error because dynamic plug-in hosting lives in the host-side integration.
-    #[cfg(feature = "plugin")]
     #[expect(
         clippy::needless_pass_by_value,
         reason = "signature mirrors the host-enabled API"
     )]
     pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        #[cfg(feature = "plugin")]
         config.validate_runtime_support(self.config.plugins.len())?;
-
-        anyhow::bail!(
-            "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
-        )
-    }
-
-    /// Rejects plug-in registration when host support is not linked.
-    ///
-    /// # Errors
-    ///
-    /// Always returns an error explaining that host-side support is required.
-    #[cfg(not(feature = "plugin"))]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "signature mirrors the plugin-enabled API"
-    )]
-    pub fn add_plugin(&mut self, config: PluginConfig) -> anyhow::Result<()> {
+        #[cfg(not(feature = "plugin"))]
         let _ = config;
+
         anyhow::bail!(
             "LiveNode::add_plugin requires host-side plug-in support; nautilus-plugin is the guest SDK only"
         )
@@ -1273,57 +1242,97 @@ impl LiveNode {
                 result = async {
                     match open_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<OpenOrderReportResult>().await,
+                        None => std::future::pending::<ReportTaskOutcome<OpenOrderReportResult>>().await,
                     }
                 }, if open_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    open_order_report_task = None;
-                    let reconciliation = self.exec_manager.reconcile_open_order_reports(
-                        &result.check,
-                        result.reports,
-                        &result.queried_clients,
-                        &result.failed_clients,
-                    );
-                    self.process_reconciliation_events(&reconciliation.events);
-                    if !reconciliation.targeted_queries.is_empty() {
-                        targeted_order_report_task = Some(
-                            self.start_targeted_order_report_check(
-                                reconciliation.targeted_queries,
-                            ),
-                        );
+                    drop(open_order_report_task.take());
+
+                    match result {
+                        ReportTaskOutcome::Completed(result) => {
+                            let reconciliation = self.exec_manager.reconcile_open_order_reports(
+                                &result.check,
+                                result.reports,
+                                &result.queried_clients,
+                                &result.failed_clients,
+                            );
+                            self.process_reconciliation_events(&reconciliation.events);
+                            if !reconciliation.targeted_queries.is_empty() {
+                                targeted_order_report_task = Some(
+                                    self.start_targeted_order_report_check(
+                                        reconciliation.targeted_queries,
+                                    ),
+                                );
+                            }
+                        }
+                        ReportTaskOutcome::TimedOut => {
+                            self.cleanup_cancelled_report_tasks(&[]);
+                            log::warn!(
+                                "Open-order report collection expired after {:?}",
+                                self.config.timeout_reconciliation,
+                            );
+                        }
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
                 result = async {
                     match targeted_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<Vec<TargetedOrderReportResult>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<Vec<TargetedOrderReportResult>>>().await,
                     }
                 }, if targeted_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    targeted_order_report_task = None;
-                    let events = self.exec_manager.reconcile_targeted_order_reports(result);
-                    self.process_reconciliation_events(&events);
+                    let planned_client_order_ids = targeted_order_report_task
+                        .as_ref()
+                        .map(|task| task.planned_client_order_ids.clone())
+                        .unwrap_or_default();
+                    drop(targeted_order_report_task.take());
+
+                    match result {
+                        ReportTaskOutcome::Completed(result) => {
+                            let events = self.exec_manager.reconcile_targeted_order_reports(result);
+                            self.process_reconciliation_events(&events);
+                        }
+                        ReportTaskOutcome::TimedOut => {
+                            self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+                            log::warn!(
+                                "Targeted order report collection expired after {:?}",
+                                self.config.timeout_reconciliation,
+                            );
+                        }
+                    }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
                 result = async {
                     match position_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<PositionReportResult>().await,
+                        None => std::future::pending::<ReportTaskOutcome<PositionReportResult>>().await,
                     }
                 }, if position_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    position_report_task = None;
-                    let events = self.exec_manager.reconcile_position_reports(
-                        &result.check,
-                        result.reports,
-                        &result.queried_clients,
-                        &result.failed_clients,
-                    );
-                    self.process_reconciliation_events(&events);
+                    drop(position_report_task.take());
+
+                    match result {
+                        ReportTaskOutcome::Completed(result) => {
+                            let events = self.exec_manager.reconcile_position_reports(
+                                &result.check,
+                                result.reports,
+                                &result.queried_clients,
+                                &result.failed_clients,
+                            );
+                            self.process_reconciliation_events(&events);
+                        }
+                        ReportTaskOutcome::TimedOut => {
+                            self.cleanup_cancelled_report_tasks(&[]);
+                            log::warn!(
+                                "Position report collection expired after {:?}",
+                                self.config.timeout_reconciliation,
+                            );
+                        }
+                    }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
 
@@ -1514,9 +1523,11 @@ impl LiveNode {
             log::debug!("Processed {residual_events} residual events during shutdown");
         }
 
-        drop(open_order_report_task.take());
-        drop(targeted_order_report_task.take());
-        drop(position_report_task.take());
+        self.cancel_report_tasks(
+            &mut open_order_report_task,
+            &mut targeted_order_report_task,
+            &mut position_report_task,
+        );
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
@@ -2269,15 +2280,21 @@ impl LiveNode {
             .prepare_open_order_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(OpenOrderReportTask {
             future: Box::pin(async move {
-                let result = request_open_order_reports(clients, command).await;
-                OpenOrderReportResult {
-                    check,
-                    reports: result.reports,
-                    queried_clients: result.queried_clients,
-                    failed_clients: result.failed_clients,
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_open_order_reports(clients, command))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(OpenOrderReportResult {
+                        check,
+                        reports: result.reports,
+                        queried_clients: result.queried_clients,
+                        failed_clients: result.failed_clients,
+                    }),
+                    Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
@@ -2291,6 +2308,11 @@ impl LiveNode {
         let query_delay = Duration::from_millis(u64::from(
             self.config.exec_engine.single_order_query_delay_ms,
         ));
+        let planned_client_order_ids = queries
+            .iter()
+            .map(TargetedOrderQuery::client_order_id)
+            .collect();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         TargetedOrderReportTask {
             future: Box::pin(async move {
@@ -2298,8 +2320,18 @@ impl LiveNode {
                     .iter()
                     .map(|client| client as &dyn ExecutionClient)
                     .collect::<Vec<_>>();
-                request_targeted_order_reports(&client_refs, queries, query_delay).await
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(
+                    remaining,
+                    request_targeted_order_reports(&client_refs, queries, query_delay),
+                )
+                .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(result),
+                    Err(_) => ReportTaskOutcome::TimedOut,
+                }
             }),
+            planned_client_order_ids,
         }
     }
 
@@ -2319,18 +2351,53 @@ impl LiveNode {
             .prepare_position_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
+        let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(PositionReportTask {
             future: Box::pin(async move {
-                let result = request_position_reports(clients, command).await;
-                PositionReportResult {
-                    check,
-                    reports: result.reports,
-                    queried_clients: result.queried_clients,
-                    failed_clients: result.failed_clients,
+                let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
+                match dst::time::timeout(remaining, request_position_reports(clients, command))
+                    .await
+                {
+                    Ok(result) => ReportTaskOutcome::Completed(PositionReportResult {
+                        check,
+                        reports: result.reports,
+                        queried_clients: result.queried_clients,
+                        failed_clients: result.failed_clients,
+                    }),
+                    Err(_) => ReportTaskOutcome::TimedOut,
                 }
             }),
         })
+    }
+
+    fn flush_pending_exec_client_instruments(&self) {
+        for client in &self.exec_clients {
+            client.flush_pending_instruments();
+        }
+    }
+
+    fn cleanup_cancelled_report_tasks(&mut self, planned_client_order_ids: &[ClientOrderId]) {
+        self.flush_pending_exec_client_instruments();
+        self.exec_manager
+            .remove_targeted_order_queries(planned_client_order_ids);
+    }
+
+    fn cancel_report_tasks(
+        &mut self,
+        open_order_report_task: &mut Option<OpenOrderReportTask>,
+        targeted_order_report_task: &mut Option<TargetedOrderReportTask>,
+        position_report_task: &mut Option<PositionReportTask>,
+    ) {
+        let planned_client_order_ids = targeted_order_report_task
+            .as_ref()
+            .map(|task| task.planned_client_order_ids.clone())
+            .unwrap_or_default();
+
+        drop(open_order_report_task.take());
+        drop(targeted_order_report_task.take());
+        drop(position_report_task.take());
+        self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
     }
 }
 
@@ -2474,7 +2541,13 @@ struct ReconciliationCheckState<'a> {
     position_report_task: &'a mut Option<PositionReportTask>,
 }
 
-type OpenOrderReportFuture = Pin<Box<dyn Future<Output = OpenOrderReportResult>>>;
+enum ReportTaskOutcome<T> {
+    Completed(T),
+    TimedOut,
+}
+
+type OpenOrderReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<OpenOrderReportResult>>>>;
 
 struct OpenOrderReportTask {
     future: OpenOrderReportFuture,
@@ -2487,10 +2560,12 @@ struct OpenOrderReportResult {
     failed_clients: IndexSet<ClientId>,
 }
 
-type TargetedOrderReportFuture = Pin<Box<dyn Future<Output = Vec<TargetedOrderReportResult>>>>;
+type TargetedOrderReportFuture =
+    Pin<Box<dyn Future<Output = ReportTaskOutcome<Vec<TargetedOrderReportResult>>>>>;
 
 struct TargetedOrderReportTask {
     future: TargetedOrderReportFuture,
+    planned_client_order_ids: Vec<ClientOrderId>,
 }
 
 struct OpenOrderReportQueryResult {
@@ -2499,7 +2574,7 @@ struct OpenOrderReportQueryResult {
     failed_clients: IndexSet<ClientId>,
 }
 
-type PositionReportFuture = Pin<Box<dyn Future<Output = PositionReportResult>>>;
+type PositionReportFuture = Pin<Box<dyn Future<Output = ReportTaskOutcome<PositionReportResult>>>>;
 
 struct PositionReportTask {
     future: PositionReportFuture,

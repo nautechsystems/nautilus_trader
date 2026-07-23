@@ -67,9 +67,8 @@ adapter set. The following limits remain deferred:
 - Added Up/Down Capture ratio portfolio statistics (#4354), thanks @mahimn01
 - Added Ulcer Index, Omega Ratio, VaR, and Expected Shortfall portfolio statistics (#4352), thanks @Martingale42
 - Added Tail Ratio portfolio statistic (#4341), thanks @Martingale42
-- Added Polymarket v2 market WebSocket subscription sharding that enforces `ws_max_subscriptions` across a connection pool
-- Added Polymarket v2 singular instrument definition subscriptions through shared live publishers
-  and explicit generic subscription capability contracts
+- Added Polymarket v2 market WebSocket sharding that enforces `ws_max_subscriptions` per connection pool
+- Added Polymarket v2 instrument definition subscriptions through live publishers with generic capability contracts
 - Added Polymarket v2 GTD expiry and idempotent already-canceled execution test contracts
 - Added HTTP and WebSocket proxy support to every Polymarket v2 live client transport
 - Added v2 `info` fill metadata to `OrderFilled`
@@ -79,7 +78,7 @@ adapter set. The following limits remain deferred:
 - Added v2 `MessageBusConfig.autotrim_maxlen` for Redis stream count retention (#4433), thanks for reporting @gtalknitin
 - Added v2 `OrderBookDepth10` subscriptions and callbacks for Rust and Python actors and strategies (#4439)
 - Added Python v2 historical book-delta and depth batch callbacks for actors and strategies
-- Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding for unapplied-fill corrections, and strategy and algorithm callbacks
+- Added v2 `OrderFillVoided`, `OrderStatus.VOIDED`, terminal voiding, and strategy and algorithm callbacks
 - Added Python v2 controller subclassing and importable controller configs for backtest/live
 - Added Python v2 subclassable execution algorithms for routed orders
 - Added Python v2 `ExecutionAlgorithm` portfolio, lifecycle, signals, and constructed live registration
@@ -90,8 +89,7 @@ adapter set. The following limits remain deferred:
 - Added Python v2 `nautilus_trader.config` convenience imports for core configuration types
 - Added Python v2 `Strategy.shutdown_system()` and `LiveNode.dispose()` bindings
 - Added Python v2 `ExecTesterConfig` controls for UUID order IDs, quote quantity, and stop-time cancels
-- Added safe Python v2 adapter config readback for all accepted constructor fields, while keeping
-  credentials private and limiting proxy and nested database inspection to presence checks
+- Added safe Python v2 adapter config readback for accepted fields while keeping credentials and nested configs private
 - Added Python v2 Portfolio snapshot access with base-currency equity and stale/unpriced metadata
 - Added Binance Futures and OKX trailing-stop activation prices to v2 execution reports
 - Added Binance GTD expiry support for USD-M and local expiry mapping for Spot and COIN-M
@@ -99,6 +97,7 @@ adapter set. The following limits remain deferred:
 - Added Binance USD-M (monthly and quarterly) and COIN-M (quarterly) delivery futures support
 - Added Binance v2 instrument filters, fees, scheduled refresh, proxy, and receive-window configuration
 - Added Binance US Spot JSON data and HMAC execution to the Rust-backed v2 adapter
+- Added Binance Python v2 constants, instrument loading, order book CSV loading, and client-order-ID decoders
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
@@ -106,6 +105,7 @@ adapter set. The following limits remain deferred:
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
 - Added Interactive Brokers PyO3 type stub annotations (#4350), thanks @dfjmax
 - Added PancakeSwap V3 protocol-fee replay accounting; run `make init-db` for schema changes
+- Added Polymarket v2 opt-in authenticated order-safety heartbeats
 - Added Polymarket v2 fill `info` metadata carrying the raw venue trade fields
 - Added Polymarket v2 fills at `MATCHED` with corrections for failed settlement
 - Added Polymarket v2 WS `hash` and `transaction_hash` field decoding (#4377), thanks for reporting @SebastianPartarrieu
@@ -131,8 +131,9 @@ adapter set. The following limits remain deferred:
 - Renamed Python v2 `RedisMessageBusDatabase` to `RedisMessageBusBacking` (documenting a previous break)
 - Changed Blockchain fee-protocol update and snapshot storage to use `INTEGER` protocol-fee shares; run `make init-db`
 - Renamed Interactive Brokers PyO3 enum variants to uppercase names (e.g. `MarketDataType.DELAYED`) (#4350)
-- Changed Architect AX request models and low-level submission APIs to match current venue schemas; venue-native stop-limit orders are rejected after sandbox testing could not confirm conditional execution semantics
+- Changed Architect AX request models and low-level APIs to current schemas; unverified stop-limit orders are rejected
 - Changed BitMEX quanto multipliers from raw to settlement-currency units (#4507), thanks for reporting @4px4d9cdby-star
+- Removed Polymarket v2 `ack_timeout_secs` config field; the buffer-and-drain submit path has no acknowledgment wait to bound
 
 ### Security
 - Fixed underflow and currency-mismatch panics from out-of-order fill events (#4483), thanks @folknor
@@ -189,14 +190,14 @@ adapter set. The following limits remain deferred:
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor
 - Fixed v2 cross-zero reconciliation stranding synthetic orders after a failed leg (#4521), thanks @folknor
-- Fixed v2 continuous position reconciliation emitting synthetic fills from stale in-flight reports (#4517), thanks @folknor
+- Fixed v2 continuous position reconciliation emitting fills from stale in-flight reports (#4517), thanks @folknor
 - Fixed v2 missing-order resolution and failed-report handling in live reconciliation (#4479), thanks @folknor
 - Fixed v2 batch-cancel inflight coverage, tracking leaks, and stale cancel-replace grace (#4523), thanks @folknor
 - Fixed v2 live fill deduplication suppressing reports after rejected fills (#4522), thanks @folknor
-- Fixed Python v2 order, event, balance, position, instrument, indicator, and config inspection
-  properties and documented their migration contracts
 - Fixed v2 startup reconciliation fill-key deduplication and retention (#4518), thanks @folknor
 - Fixed v2 startup reconciliation reapplying retained fills to position and PnL state
+- Fixed Python v2 order, event, balance, position, instrument, indicator, and config inspection
+- Fixed Python v2 `Price`, `Quantity`, and `Money` integer conversion and Money debug output losing precision
 - Fixed Python v2 cached `OrderList` fields and concrete cache return types (#4453), thanks @JiajunWan
 - Fixed Python v2 indicators matching Rust semantics (#4421), thanks for reporting @a1zb2yc3z
 - Fixed Python v2 config stub/readback drift for `DataActorConfig`, `StrategyConfig`, and `ExecutionAlgorithmConfig`
@@ -204,11 +205,11 @@ adapter set. The following limits remain deferred:
 - Fixed Python v2 migration gaps for `core.datetime`, `Clock.set_time`, and Strategy data APIs
 - Fixed Python v2 subclassable PyO3 stubs marked as final (#4384), thanks @bebop23
 - Fixed Python v2 `Strategy` close-position and close-all-position commands to accept and forward `params`
-- Fixed execution algorithms dropping submit parameters for spawned orders (#4524), thanks @dxwil
 - Fixed Python v2 `DataActor.shutdown_system()` unregistered calls to raise `RuntimeError`
 - Fixed Python v2 `LiveNode.stop()` to complete shutdown instead of only signaling the handle
 - Fixed Python v2 boundary error handling to raise exceptions instead of panicking on invalid inputs
 - Fixed Python v2 DeFi comparisons to return `NotImplemented` for unsupported ordering instead of panicking
+- Fixed execution algorithms dropping submit parameters for spawned orders (#4524), thanks @dxwil
 - Fixed Rust and Python v2 `LiveNode.dispose()` before start to release the trader idempotently
 - Fixed Rust and Python v2 `LiveNode` startup failures to propagate errors and clean up components
 - Fixed Rust and Python v2 zero-duration waits to recognize already-ready engines
@@ -278,8 +279,8 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX REST models and query params for current ticker, order, and transaction schemas (#4402)
 - Fixed Architect AX instrument, risk, fill, order routing, and pagination for current REST schemas
 - Fixed Architect AX Python instrument-list and order-book snapshot data requests
-- Fixed Architect AX quote delivery with depth subscriptions and reconciliation of regular fills with optional classification
-- Fixed Architect AX to deny reduce-only, quote-quantity, and display-quantity orders instead of submitting them without the requested semantics
+- Fixed Architect AX depth quote delivery and regular fill reconciliation with optional classification
+- Fixed Architect AX submitting unsupported reduce-only, quote-quantity, and display-quantity orders
 - Fixed Architect AX local modify rejections, replacement ID races, and Python reconciliation identity
 - Fixed Architect AX Python reconciliation emitting duplicate order acceptance events
 - Fixed Architect AX client order ID bounds, query correlation, and rejection when market previews fail
@@ -290,9 +291,10 @@ adapter set. The following limits remain deferred:
 - Fixed Polymarket v2 order cancellation during shutdown so accepted venue orders are not left open
 - Fixed Polymarket v2 book delta atomicity and local limit-price range validation
 - Fixed Polymarket v2 execution races, ambiguous submissions, trade finality, fill IDs, and proxy funder validation
-- Fixed Polymarket market SELL sizing, terminal IOC remainders, and sub-cent reconciliation that created synthetic position fills
+- Fixed Polymarket SELL sizing, terminal IOC remainders, and sub-cent reconciliation synthetic fills
 - Fixed Polymarket limit IOC/FOK BUY orders submitting invalid fractional-cent maker amounts
 - Fixed Polymarket v2 instrument price bounds to match the current tick-relative venue range instead of static limits
+- Fixed Polymarket v2 instrument parsing and tick-size changes panicking on unsupported price precision (#4534), thanks for reporting @mystic-io
 - Fixed Tardis replay trades directory to `trades/` for catalog compatibility (#4373), thanks @AdvancedUno
 - Fixed Tardis replay bars directory to `bars/` for catalog compatibility (#4378), thanks @AdvancedUno
 - Fixed Hyperliquid `l2Book` resubscribe options and shared stream teardown (#4298)

@@ -31,7 +31,7 @@ use axum::{
     Router,
     body::Bytes,
     extract::State,
-    http::{HeaderMap, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Json, Response},
     routing::{delete, get, post},
 };
@@ -46,7 +46,7 @@ use nautilus_polymarket::{
         TagFilter,
     },
     http::{
-        clob::PolymarketClobHttpClient,
+        clob::{HeartbeatResponse, PolymarketClobHttpClient},
         data_api::PolymarketDataApiHttpClient,
         gamma::{PolymarketGammaHttpClient, PolymarketGammaRawHttpClient},
         models::PolymarketOrder,
@@ -76,6 +76,10 @@ struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
     last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_headers: Arc<tokio::sync::Mutex<AHashMap<String, String>>>,
+    last_method: Arc<tokio::sync::Mutex<Option<Method>>>,
+    last_path: Arc<tokio::sync::Mutex<Option<String>>>,
+    heartbeat_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    heartbeat_response: Arc<tokio::sync::Mutex<Value>>,
     rate_limit_after: Arc<AtomicUsize>,
     /// Delay before `handle_get_orders` responds. Used by the timeout test.
     get_orders_delay_secs: Arc<AtomicUsize>,
@@ -105,6 +109,12 @@ impl Default for TestServerState {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
             last_body: Arc::new(tokio::sync::Mutex::new(None)),
             last_headers: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            last_method: Arc::new(tokio::sync::Mutex::new(None)),
+            last_path: Arc::new(tokio::sync::Mutex::new(None)),
+            heartbeat_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            heartbeat_response: Arc::new(tokio::sync::Mutex::new(json!({
+                "heartbeat_id": "heartbeat-next",
+            }))),
             rate_limit_after: Arc::new(AtomicUsize::new(usize::MAX)),
             get_orders_delay_secs: Arc::new(AtomicUsize::new(0)),
             orders_pages: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -325,6 +335,23 @@ async fn handle_cancel_market(
         *state.last_body.lock().await = Some(v);
     }
     Json(load_json("http_batch_cancel_response.json")).into_response()
+}
+
+async fn handle_heartbeat(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    *state.last_headers.lock().await = extract_headers(&headers);
+    *state.last_method.lock().await = Some(Method::POST);
+    *state.last_path.lock().await = Some("/heartbeats".to_string());
+    if let Ok(value) = serde_json::from_slice::<Value>(&body) {
+        *state.last_body.lock().await = Some(value);
+    }
+
+    let status = *state.heartbeat_response_status.lock().await;
+    let response = state.heartbeat_response.lock().await.clone();
+    (status, Json(response)).into_response()
 }
 
 async fn handle_gamma_markets(
@@ -562,6 +589,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/orders", delete(handle_delete_orders))
         .route("/cancel-all", delete(handle_cancel_all))
         .route("/cancel-market-orders", delete(handle_cancel_market))
+        .route("/heartbeats", post(handle_heartbeat))
         .route("/markets", get(handle_gamma_markets))
         .route("/markets/keyset", get(handle_gamma_markets_keyset))
         .route("/events", get(handle_gamma_events))
@@ -753,6 +781,87 @@ async fn test_authenticated_requests_include_poly_headers() {
     assert_eq!(headers["poly_address"], TEST_ADDRESS);
     assert_eq!(headers["poly_api_key"], "test_api_key");
     assert_eq!(headers["poly_passphrase"], "test_pass");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_heartbeat_sends_chained_body_and_l2_headers() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = create_clob_client(&addr);
+
+    let response = client.post_heartbeat("heartbeat-current").await.unwrap();
+
+    let headers = state.last_headers.lock().await;
+    let timestamp = &headers["poly_timestamp"];
+    let body = serde_json::to_string(&json!({
+        "heartbeat_id": "heartbeat-current",
+    }))
+    .unwrap();
+    let expected_signature = test_credential().sign(timestamp, "POST", "/heartbeats", &body);
+
+    assert_eq!(
+        response,
+        HeartbeatResponse::Acknowledged(Some("heartbeat-next".to_string()))
+    );
+    assert_eq!(*state.last_method.lock().await, Some(Method::POST));
+    assert_eq!(state.last_path.lock().await.as_deref(), Some("/heartbeats"));
+    assert_eq!(
+        state.last_body.lock().await.as_ref(),
+        Some(&json!({
+            "heartbeat_id": "heartbeat-current",
+        }))
+    );
+    assert_eq!(headers["poly_address"], TEST_ADDRESS);
+    assert_eq!(headers["poly_api_key"], "test_api_key");
+    assert_eq!(headers["poly_passphrase"], "test_pass");
+    assert_eq!(headers["poly_signature"], expected_signature);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_heartbeat_accepts_status_ok_response() {
+    let state = TestServerState::default();
+    *state.heartbeat_response.lock().await = json!({"status": "ok"});
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+
+    let response = client.post_heartbeat("").await.unwrap();
+
+    assert_eq!(response, HeartbeatResponse::Acknowledged(None));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_heartbeat_returns_replacement_id_from_bad_request() {
+    let state = TestServerState::default();
+    *state.heartbeat_response_status.lock().await = StatusCode::BAD_REQUEST;
+    *state.heartbeat_response.lock().await = json!({"heartbeat_id": "heartbeat-current"});
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+
+    let response = client.post_heartbeat("heartbeat-expired").await.unwrap();
+
+    assert_eq!(
+        response,
+        HeartbeatResponse::Resynchronize("heartbeat-current".to_string())
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_heartbeat_rejects_unknown_success_response() {
+    let state = TestServerState::default();
+    *state.heartbeat_response.lock().await = json!({"status": "rejected"});
+    let addr = start_mock_server(state).await;
+    let client = create_clob_client(&addr);
+
+    let error = client.post_heartbeat("").await.unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "exchange error: Heartbeat acknowledgment was invalid"
+    );
 }
 
 #[rstest]

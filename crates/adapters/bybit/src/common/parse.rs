@@ -152,10 +152,11 @@ use ustr::Ustr;
 use crate::{
     common::{
         enums::{
-            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarketUnit,
-            BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType, BybitPositionIdx,
-            BybitPositionMode, BybitPositionSide, BybitProductType, BybitStopOrderType,
-            BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection, BybitTriggerType,
+            BybitBboSideType, BybitContractType, BybitKlineInterval, BybitMarginTrading,
+            BybitMarketUnit, BybitOptionType, BybitOrderSide, BybitOrderStatus, BybitOrderType,
+            BybitPositionIdx, BybitPositionMode, BybitPositionSide, BybitProductType,
+            BybitStopOrderType, BybitTimeInForce, BybitTpSlMode, BybitTriggerDirection,
+            BybitTriggerType,
         },
         symbol::BybitSymbol,
     },
@@ -315,9 +316,27 @@ pub fn parse_spot_instrument(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
     )?);
+    let min_notional = Some(Money::from_decimal(
+        parse_decimal(
+            &definition.lot_size_filter.min_order_amt,
+            "lotSizeFilter.minOrderAmt",
+        )?,
+        quote_currency,
+    )?);
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
+
+    let margin_trading_supported = matches!(
+        definition.margin_trading,
+        BybitMarginTrading::Both | BybitMarginTrading::UtaOnly
+    );
+
+    let mut info = Params::new();
+    info.insert(
+        "margin_trading".to_string(),
+        serde_json::Value::Bool(margin_trading_supported),
+    );
 
     let instrument = CurrencyPair::new(
         instrument_id,
@@ -333,7 +352,7 @@ pub fn parse_spot_instrument(
         max_quantity,
         min_quantity,
         None,
-        None,
+        min_notional,
         None,
         None,
         Some(default_margin()),
@@ -341,7 +360,7 @@ pub fn parse_spot_instrument(
         Some(maker_fee),
         Some(taker_fee),
         None,
-        None,
+        Some(info),
         ts_event,
         ts_init,
     );
@@ -1928,6 +1947,41 @@ mod tests {
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
                 assert_eq!(pair.base_currency.code.as_str(), "BTC");
                 assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(
+                    pair.min_notional,
+                    Some(Money::from_decimal(Decimal::new(10, 0), Currency::USDT()).unwrap()),
+                );
+                assert_eq!(
+                    pair.info.as_ref().unwrap().get_bool("margin_trading"),
+                    Some(true)
+                );
+            }
+            _ => panic!("expected CurrencyPair"),
+        }
+    }
+
+    #[rstest]
+    #[case(BybitMarginTrading::Both, true)]
+    #[case(BybitMarginTrading::UtaOnly, true)]
+    #[case(BybitMarginTrading::None, false)]
+    #[case(BybitMarginTrading::Other, false)]
+    fn parse_spot_instrument_maps_margin_trading(
+        #[case] margin_trading: BybitMarginTrading,
+        #[case] expected: bool,
+    ) {
+        let json = load_test_json("http_get_instruments_spot.json");
+        let response: BybitInstrumentSpotResponse = serde_json::from_str(&json).unwrap();
+        let mut instrument = response.result.list[0].clone();
+        instrument.margin_trading = margin_trading;
+        let fee_rate = sample_fee_rate("BTCUSDT", "0.0006", "0.0001", Some("BTC"));
+
+        let parsed = parse_spot_instrument(&instrument, &fee_rate, TS, TS).unwrap();
+        match parsed {
+            InstrumentAny::CurrencyPair(pair) => {
+                assert_eq!(
+                    pair.info.as_ref().unwrap().get_bool("margin_trading"),
+                    Some(expected)
+                );
             }
             _ => panic!("expected CurrencyPair"),
         }

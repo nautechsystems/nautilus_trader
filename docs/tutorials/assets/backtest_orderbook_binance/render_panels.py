@@ -25,7 +25,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from nautilus_trader.adapters.binance.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.adapters.binance import load_binance_order_book_deltas
 from nautilus_trader.analysis.tearsheet import _write_figure
 from nautilus_trader.analysis.themes import get_theme
 from nautilus_trader.backtest.config import BacktestEngineConfig
@@ -127,8 +127,8 @@ def run_backtest(nrows: int = 3_000_000):
     snap_path = DATA_DIR / "BTCUSDT_T_DEPTH_2022-11-01_depth_snap.csv"
     update_path = DATA_DIR / "BTCUSDT_T_DEPTH_2022-11-01_depth_update.csv"
 
-    df_snap = BinanceOrderBookDeltaDataLoader.load(snap_path)
-    df_update = BinanceOrderBookDeltaDataLoader.load(update_path, nrows=nrows)
+    df_snap = load_binance_order_book_deltas(snap_path)
+    df_update = load_binance_order_book_deltas(update_path, nrows=nrows)
 
     BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
     wrangler = OrderBookDeltaDataWrangler(BTCUSDT_BINANCE)

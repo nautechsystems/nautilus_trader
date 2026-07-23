@@ -227,7 +227,7 @@ impl PolymarketExecClientConfig {
     /// derive list.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, ack_timeout_secs=None, transport_backend=None, proxy_url=None))]
+    #[pyo3(signature = (trader_id=None, account_id=None, private_key=None, api_key=None, api_secret=None, passphrase=None, funder=None, signature_type=None, base_url_http=None, base_url_ws=None, base_url_data_api=None, http_timeout_secs=None, max_retries=None, retry_delay_initial_ms=None, retry_delay_max_ms=None, heartbeat_enabled=None, transport_backend=None, proxy_url=None))]
     fn py_new(
         trader_id: Option<String>,
         account_id: Option<String>,
@@ -244,7 +244,7 @@ impl PolymarketExecClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
-        ack_timeout_secs: Option<u64>,
+        heartbeat_enabled: Option<bool>,
         transport_backend: Option<TransportBackend>,
         proxy_url: Option<String>,
     ) -> PyResult<Self> {
@@ -267,7 +267,7 @@ impl PolymarketExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(default.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(default.retry_delay_max_ms),
-            ack_timeout_secs: ack_timeout_secs.unwrap_or(default.ack_timeout_secs),
+            heartbeat_enabled: heartbeat_enabled.unwrap_or(default.heartbeat_enabled),
             transport_backend: transport_backend.unwrap_or(default.transport_backend),
         };
         config
@@ -558,6 +558,7 @@ mod tests {
             let proxy_url = format!("https://exec-user:{SECRET}@127.0.0.1:18084");
             let kwargs = PyDict::new(py);
             kwargs.set_item("proxy_url", &proxy_url).unwrap();
+            kwargs.set_item("heartbeat_enabled", true).unwrap();
             let cls = py.get_type::<PolymarketExecClientConfig>();
             let obj = cls
                 .call((), Some(&kwargs))
@@ -568,12 +569,19 @@ mod tests {
                 .extract::<bool>()
                 .expect("bool getter");
             let repr = obj.repr().expect("execution config repr").to_string();
+            let heartbeat_enabled = obj
+                .getattr("heartbeat_enabled")
+                .expect("heartbeat_enabled getter")
+                .extract::<bool>()
+                .expect("bool getter");
             let config = obj
                 .extract::<PolymarketExecClientConfig>()
                 .expect("extract execution config");
 
             assert_eq!(config.proxy_url.as_deref(), Some(proxy_url.as_str()));
+            assert!(config.heartbeat_enabled);
             assert!(has_proxy_url);
+            assert!(heartbeat_enabled);
             assert!(!obj.hasattr("proxy_url").unwrap());
             assert!(!repr.contains(SECRET));
         });

@@ -468,7 +468,13 @@ def test_min(v1, v2, expected):
 
 @pytest.mark.parametrize(
     ("value", "expected"),
-    [("1", 1), ("1.1", 1)],
+    [
+        ("0", 0),
+        ("0.000000001", 0),
+        ("1.999999999", 1),
+        ("50.25", 50),
+        ("9007199253.999999999", 9_007_199_253),
+    ],
 )
 def test_int(value, expected):
     assert int(Quantity.from_str(value)) == expected
