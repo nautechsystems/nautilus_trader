@@ -182,6 +182,7 @@ pub(crate) struct TargetedOrderQuery {
 }
 
 impl TargetedOrderQuery {
+    #[cfg(feature = "node")]
     pub(crate) const fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -2049,6 +2050,7 @@ impl ExecutionManager {
         self.order_local_activity.remove(client_order_id);
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
         for client_order_id in client_order_ids {
             self.targeted_order_queries.shift_remove(client_order_id);
