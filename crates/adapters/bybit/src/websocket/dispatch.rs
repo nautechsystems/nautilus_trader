@@ -55,7 +55,7 @@ use crate::{
     common::{
         enums::BybitOrderStatus,
         parse::{
-            bybit_rejection_due_post_only, make_bybit_symbol, parse_millis_timestamp,
+            bybit_rejection_due_post_only, get_currency, make_bybit_symbol, parse_millis_timestamp,
             parse_price_with_precision, parse_quantity_with_precision,
         },
     },
@@ -754,7 +754,7 @@ fn parse_order_filled(
         .exec_fee
         .parse()
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
-    let commission_currency = instrument.quote_currency();
+    let commission_currency = get_currency(&exec.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
             "failed to create commission from execFee='{}'",
@@ -1384,6 +1384,32 @@ mod tests {
             }
             other => panic!("Expected Filled event, found {other:?}"),
         }
+    }
+
+    #[rstest]
+    fn parse_order_filled_uses_payload_fee_currency() {
+        let instrument = linear_instrument();
+        let (emitter, _rx) = create_emitter();
+
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let mut exec = msg.data[0].clone();
+        exec.fee_currency = Ustr::from("BTC");
+
+        let filled = parse_order_filled(
+            &exec,
+            &instrument,
+            &default_identity(),
+            &emitter,
+            test_account_id(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let commission = filled.commission.expect("commission present");
+        assert_eq!(commission.currency.code.as_str(), "BTC");
     }
 
     #[rstest]

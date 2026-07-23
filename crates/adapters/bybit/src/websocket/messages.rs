@@ -828,6 +828,7 @@ pub struct BybitWsAccountExecution {
     pub exec_value: String,
     pub is_maker: bool,
     pub fee_rate: String,
+    pub fee_currency: Ustr,
     pub trade_iv: String,
     pub mark_iv: String,
     pub block_trade_id: Ustr,
