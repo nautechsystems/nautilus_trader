@@ -13,10 +13,10 @@ and oracle fixtures Lighter requires for L2 transaction signing.
     constants and test vectors copied from upstream are pinned to a specific
     upstream revision and reproduced under `test_data/` for equivalence
     verification. The reference crate itself is consumed only by the
-    publish=false fuzz crate under `fuzz/` (zero transitive deps; commit-pinned
-    via the `rev` field in `fuzz/Cargo.toml`) and is not part of the
+    publish=false fuzz crate under `fuzz/pornin/` (zero transitive deps; commit-pinned
+    via the `rev` field in `fuzz/pornin/Cargo.toml`) and is not part of the
     crates.io-publishable package graph. The
-    `fuzz/fuzz_targets/fuzz_pornin_diff_*.rs` targets assert byte-equality of
+    `fuzz/pornin/fuzz_targets/fuzz_pornin_diff_*.rs` targets assert byte-equality of
     every public algebra operation against the reference.
   - Attribution: Copyright (c) 2022 Thomas Pornin.
   - License: MIT License.

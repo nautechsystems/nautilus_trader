@@ -84,7 +84,7 @@ bytes directly, so they get useful coverage without JSON seeds.
 
 ## Adding a target
 
-1. Add a `.rs` file under `crates/adapters/derive/fuzz_targets/`.
+1. Add a `.rs` file under `crates/adapters/derive/fuzz/fuzz_targets/`.
 2. Register it as a `[[bin]]` in `crates/adapters/derive/Cargo.toml` with
    `required-features = ["fuzz"]`, `test = false`, `doc = false`, and `bench = false`.
 3. Import `nautilus_live::fuzz::fuzz_target`.

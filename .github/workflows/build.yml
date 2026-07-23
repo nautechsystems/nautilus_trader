@@ -139,7 +139,7 @@ jobs:
       - name: Run cargo-deny (advisories, licenses, sources, bans)
         run: |
           cargo deny --all-features check advisories licenses sources bans
-          cargo deny --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+          cargo deny --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --config .cargo/deny-fuzz.toml --locked --all-features check \
             advisories licenses sources bans
 
@@ -171,7 +171,7 @@ jobs:
       - name: Run cargo-vet
         run: |
           cargo vet --locked
-          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/Cargo.toml \
+          cargo vet --locked --manifest-path crates/adapters/lighter/fuzz/pornin/Cargo.toml \
             --store-path .supply-chain
 
   build-linux-x86:
@@ -842,7 +842,7 @@ jobs:
         if: steps.gate.outputs.override_active != 'true'
         run: |
           cargo audit --deny unsound
-          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/Cargo.lock
+          cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock
 
       - name: Run osv-scanner
         id: osv-scan
@@ -855,7 +855,7 @@ jobs:
             --format json
             --output=/github/workspace/osv-results.json
             --lockfile=Cargo.lock
-            --lockfile=crates/adapters/lighter/fuzz/Cargo.lock
+            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
             --lockfile=uv.lock
             --lockfile=python/uv.lock
 
