@@ -1387,6 +1387,32 @@ mod tests {
     }
 
     #[rstest]
+    fn parse_order_filled_uses_payload_fee_currency() {
+        let instrument = linear_instrument();
+        let (emitter, _rx) = create_emitter();
+
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let mut exec = msg.data[0].clone();
+        exec.fee_currency = Ustr::from("BTC");
+
+        let filled = parse_order_filled(
+            &exec,
+            &instrument,
+            &default_identity(),
+            &emitter,
+            test_account_id(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let commission = filled.commission.expect("commission present");
+        assert_eq!(commission.currency.code.as_str(), "BTC");
+    }
+
+    #[rstest]
     fn test_dispatch_tracked_execution_preserves_venue_position_id() {
         let instrument = linear_instrument();
         let instruments = build_instruments(std::slice::from_ref(&instrument));

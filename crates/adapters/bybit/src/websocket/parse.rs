@@ -984,6 +984,7 @@ pub fn parse_ws_fill_report_fast(
         LiquiditySide::Taker
     };
 
+    // execution.fast carries no fee data (no rate or currency)
     let commission_currency = instrument.quote_currency();
     let commission = Money::from_decimal(Decimal::ZERO, commission_currency)
         .with_context(|| format!("Failed to create zero commission for {commission_currency}"))?;
@@ -1500,6 +1501,22 @@ mod tests {
         let report = parse_ws_fill_report(execution, account_id, &instrument, TS).unwrap();
 
         assert_eq!(report.venue_position_id, None);
+    }
+
+    #[rstest]
+    fn parse_ws_fill_report_uses_payload_fee_currency() {
+        let instrument = linear_instrument();
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+
+        let mut execution = msg.data[0].clone();
+        execution.fee_currency = Ustr::from("BTC");
+        let account_id = AccountId::new("BYBIT-001");
+
+        let report = parse_ws_fill_report(&execution, account_id, &instrument, TS).unwrap();
+
+        assert_eq!(report.commission.currency.code.as_str(), "BTC");
     }
 
     fn fast_execution(is_maker: bool, order_link_id: &str) -> BybitWsAccountExecutionFast {
