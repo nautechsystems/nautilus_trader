@@ -315,6 +315,13 @@ pub fn parse_spot_instrument(
         &definition.lot_size_filter.min_order_qty,
         "lotSizeFilter.minOrderQty",
     )?);
+    let min_notional = Some(Money::from_decimal(
+        parse_decimal(
+            &definition.lot_size_filter.min_order_amt,
+            "lotSizeFilter.minOrderAmt",
+        )?,
+        quote_currency,
+    )?);
 
     let maker_fee = parse_decimal(&fee_rate.maker_fee_rate, "makerFeeRate")?;
     let taker_fee = parse_decimal(&fee_rate.taker_fee_rate, "takerFeeRate")?;
@@ -333,7 +340,7 @@ pub fn parse_spot_instrument(
         max_quantity,
         min_quantity,
         None,
-        None,
+        min_notional,
         None,
         None,
         Some(default_margin()),
@@ -1928,6 +1935,10 @@ mod tests {
                 assert_eq!(pair.size_increment, Quantity::from_str("0.0001").unwrap());
                 assert_eq!(pair.base_currency.code.as_str(), "BTC");
                 assert_eq!(pair.quote_currency.code.as_str(), "USDT");
+                assert_eq!(
+                    pair.min_notional,
+                    Some(Money::from_decimal(Decimal::new(10, 0), Currency::USDT()).unwrap()),
+                );
             }
             _ => panic!("expected CurrencyPair"),
         }
