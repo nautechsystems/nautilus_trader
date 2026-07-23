@@ -1699,7 +1699,7 @@ async fn test_mixed_success_and_error_responses() {
             5,
             None,
             DydxNetwork::Mainnet,
-            Some(fast_test_retry_config(0)),
+            Some(fast_test_retry_config(1)),
         )
         .unwrap(),
     );
