@@ -379,7 +379,7 @@ def write_config_stub(root: Path) -> None:
     """
     runtime_path = root / "config" / "__init__.py"
     stub_path = runtime_path.with_suffix(".pyi")
-    tree = ast.parse(runtime_path.read_text())
+    tree = ast.parse(runtime_path.read_text(encoding="utf-8"))
     imports: dict[str, tuple[str, str]] = {}
     exports: list[str] | None = None
 
@@ -422,7 +422,7 @@ def write_config_stub(root: Path) -> None:
     lines.extend(["", "__all__ = ["])
     lines.extend(f'    "{name}",' for name in exports)
     lines.extend(["]", ""])
-    stub_path.write_text("\n".join(lines))
+    stub_path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def inject_reexports(content: str, stub_path: Path) -> str:
@@ -464,7 +464,7 @@ def post_process_stubs(root: Path) -> None:
     renamed_enum_variants = collect_renamed_enum_variants(workspace_root)
 
     for stub_file in root.rglob("*.pyi"):
-        content = stub_file.read_text()
+        content = stub_file.read_text(encoding="utf-8")
         original = content
 
         # Ensure proper header with D401 ignore
@@ -516,7 +516,7 @@ def post_process_stubs(root: Path) -> None:
         content = normalize_stub_content(content)
 
         if content != original:
-            stub_file.write_text(content)
+            stub_file.write_text(content, encoding="utf-8")
 
 
 def remove_stale_top_level_adapter_stubs(root: Path) -> None:
@@ -737,17 +737,17 @@ def collect_rust_class_fixups(workspace_root: Path) -> dict[str, ClassMethodFixu
     fixups: dict[str, ClassMethodFixup] = {}
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
-        source = rust_file.read_text()
+        source = rust_file.read_text(encoding="utf-8")
         _collect_pyclass_name_fixups(source, fixups)
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/python/**/*.rs")):
-        source = rust_file.read_text()
+        source = rust_file.read_text(encoding="utf-8")
         _collect_identifier_macro_fixups(source, fixups)
         _collect_pymethod_fixups(source, fixups)
         _collect_pyfunction_signature_defaults(source, fixups)
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
-        source = rust_file.read_text()
+        source = rust_file.read_text(encoding="utf-8")
         _collect_custom_data_macro_fixups(source, fixups)
 
     return fixups
@@ -766,7 +766,7 @@ def collect_renamed_enums(workspace_root: Path) -> set[str]:
     renamed: set[str] = set()
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
-        source = rust_file.read_text()
+        source = rust_file.read_text(encoding="utf-8")
         lines = source.splitlines()
         pending_attrs: list[str] = []
         i = 0
@@ -809,7 +809,7 @@ def collect_renamed_enum_variants(workspace_root: Path) -> dict[str, list[str]]:
     variants: dict[str, list[str]] = {}
 
     for rust_file in sorted(workspace_root.glob("crates/**/src/**/*.rs")):
-        source = rust_file.read_text()
+        source = rust_file.read_text(encoding="utf-8")
         lines = source.splitlines()
         pending_attrs: list[str] = []
         i = 0
@@ -1957,7 +1957,7 @@ def relocate_classes_from_libnautilus(root: Path) -> None:
     if lib_stub is None:
         return
 
-    source = lib_stub.read_text()
+    source = lib_stub.read_text(encoding="utf-8")
     remaining = source
 
     for module_suffix, fixup in MODULE_FIXUPS.items():
@@ -1980,13 +1980,13 @@ def relocate_classes_from_libnautilus(root: Path) -> None:
 
         # Read existing content if file exists
         if target_file.exists():
-            existing = target_file.read_text()
+            existing = target_file.read_text(encoding="utf-8")
         else:
             existing = ""
 
         # Merge the new class blocks into existing content
         merged = merge_stub_content(existing, blocks, fixup)
-        target_file.write_text(merged)
+        target_file.write_text(merged, encoding="utf-8")
 
     # Clean up the remaining _libnautilus content
     remaining = clean_orphaned_decorators(remaining)
@@ -1997,7 +1997,7 @@ def relocate_classes_from_libnautilus(root: Path) -> None:
         all_extracted_classes.update(fixup.classes)
     remaining = remove_from_all_list(remaining, all_extracted_classes)
 
-    lib_stub.write_text(remaining.strip() + "\n")
+    lib_stub.write_text(remaining.strip() + "\n", encoding="utf-8")
 
 
 def find_libnautilus_stub(root: Path) -> Path | None:
@@ -2887,7 +2887,7 @@ def collect_module_constants(workspace_root: Path) -> dict[str, list[ModuleConst
     for mod_rs in sorted(workspace_root.glob("crates/**/src/python/mod.rs")):
         crate_dir = mod_rs.parent.parent.parent
         module_path = _derive_module_path(crate_dir, workspace_root)
-        source = mod_rs.read_text()
+        source = mod_rs.read_text(encoding="utf-8")
 
         for match in M_ADD_CONST_RE.finditer(source):
             name = match.group(1) or match.group(2)
@@ -2933,7 +2933,7 @@ def _infer_constant_python_type(
         candidates.append(rust_name)
 
     for rs_file in crate_dir.glob("src/**/*.rs"):
-        source_lines = rs_file.read_text().splitlines()
+        source_lines = rs_file.read_text(encoding="utf-8").splitlines()
         for name in candidates:
             for line in source_lines:
                 match = re.match(
@@ -2961,7 +2961,7 @@ def inject_module_constants(root: Path, workspace_root: Path) -> None:
         if not stub_file.exists():
             continue
 
-        content = stub_file.read_text()
+        content = stub_file.read_text(encoding="utf-8")
         original = content
 
         new_names = [c.name for c in const_list if f"\n{c.name}:" not in content]
@@ -2974,7 +2974,7 @@ def inject_module_constants(root: Path, workspace_root: Path) -> None:
         content = _insert_constants_after_all(content, const_block)
 
         if content != original:
-            stub_file.write_text(content)
+            stub_file.write_text(content, encoding="utf-8")
 
 
 def _add_names_to_all(content: str, names: list[str]) -> str:

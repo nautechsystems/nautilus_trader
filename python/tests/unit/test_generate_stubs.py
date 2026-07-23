@@ -1900,7 +1900,7 @@ def test_pylist_construction_propagates_pyresult_collections():
     list_pattern = re.compile(r"PyList::new\(py,\s*(\w+)(\?)?\)")
 
     for rust_path in sorted((WORKSPACE_ROOT / "crates").rglob("*.rs")):
-        lines = rust_path.read_text().splitlines()
+        lines = rust_path.read_text(encoding="utf-8").splitlines()
         for index, line in enumerate(lines):
             match = list_pattern.search(line)
             if match is None or match.group(2) is not None:
@@ -2501,7 +2501,7 @@ def test_authoring_config_py_new_and_getters_match_rust_fields():
 
     for class_name, (struct_path, binding_path) in AUTHORING_CONFIG_BINDINGS.items():
         rust_fields = _rust_struct_field_names(struct_path, class_name)
-        binding_content = binding_path.read_text()
+        binding_content = binding_path.read_text(encoding="utf-8")
         binding_block = _rust_block_after_marker(binding_content, f"impl {class_name}")
         constructor_params = _pyo3_signature_param_names(binding_block)
         getter_names = set(PYO3_GETTER_RE.findall(binding_block))
@@ -2550,7 +2550,7 @@ def _config_constructor_fixups_for_stub(
 
 
 def _rust_struct_field_names(path: Path, class_name: str) -> set[str]:
-    block = _rust_block_after_marker(path.read_text(), f"pub struct {class_name}")
+    block = _rust_block_after_marker(path.read_text(encoding="utf-8"), f"pub struct {class_name}")
     return set(RUST_STRUCT_FIELD_RE.findall(block))
 
 
