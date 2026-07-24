@@ -65,9 +65,8 @@ pub(crate) fn build_fill_reports_from_trades(
     instruments: &AtomicMap<Ustr, InstrumentAny>,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
-) -> (Vec<FillReport>, usize) {
+) -> anyhow::Result<Vec<FillReport>> {
     let mut reports = Vec::new();
-    let mut filtered = 0usize;
 
     for trade in trades {
         if trade.status != PolymarketTradeStatus::Confirmed {
@@ -86,8 +85,12 @@ pub(crate) fn build_fill_reports_from_trades(
                 let (instrument_id, price_prec, size_prec) = match instrument {
                     Some(i) => (i.id(), i.price_precision(), i.size_precision()),
                     None => {
-                        filtered += 1;
-                        continue;
+                        anyhow::bail!(
+                            "Polymarket reconciliation cannot map confirmed maker fill {} \
+                             asset {} to an NT instrument",
+                            trade.id,
+                            mo.asset_id
+                        );
                     }
                 };
 
@@ -127,8 +130,12 @@ pub(crate) fn build_fill_reports_from_trades(
                     instrument_taker_fee(&i),
                 ),
                 None => {
-                    filtered += 1;
-                    continue;
+                    anyhow::bail!(
+                        "Polymarket reconciliation cannot map confirmed taker fill {} \
+                         asset {} to an NT instrument",
+                        trade.id,
+                        trade.asset_id
+                    );
                 }
             };
 
@@ -153,7 +160,7 @@ pub(crate) fn build_fill_reports_from_trades(
         }
     }
 
-    (reports, filtered)
+    Ok(reports)
 }
 
 /// Converts open orders into order status reports.
@@ -163,9 +170,8 @@ pub(crate) fn build_order_reports_from_orders(
     account_id: AccountId,
     instrument_filter: Option<InstrumentId>,
     ts_init: UnixNanos,
-) -> (Vec<OrderStatusReport>, usize) {
+) -> anyhow::Result<Vec<OrderStatusReport>> {
     let mut reports = Vec::new();
-    let mut filtered = 0usize;
 
     for order in orders {
         let token_id = Ustr::from(order.asset_id.as_str());
@@ -173,8 +179,11 @@ pub(crate) fn build_order_reports_from_orders(
         let (instrument_id, price_prec, size_prec) = match instrument {
             Some(i) => (i.id(), i.price_precision(), i.size_precision()),
             None => {
-                filtered += 1;
-                continue;
+                anyhow::bail!(
+                    "Polymarket reconciliation cannot map venue open order asset {} \
+                     to an NT instrument",
+                    order.asset_id
+                );
             }
         };
 
@@ -196,7 +205,7 @@ pub(crate) fn build_order_reports_from_orders(
         reports.push(report);
     }
 
-    (reports, filtered)
+    Ok(reports)
 }
 
 /// Applies venue_order_id and time-range filters to fill reports.
@@ -294,9 +303,8 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch orders for mass status")?;
 
-    let (mut order_reports, orders_filtered) =
-        build_order_reports_from_orders(&orders, instruments, ctx.account_id, None, ts_init);
-    ensure_no_unmapped_open_orders(orders_filtered)?;
+    let mut order_reports =
+        build_order_reports_from_orders(&orders, instruments, ctx.account_id, None, ts_init)?;
 
     // Fetch and parse fill reports
     let trades = http_client
@@ -304,8 +312,8 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let (mut fill_reports, fills_filtered) =
-        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init);
+    let mut fill_reports =
+        build_fill_reports_from_trades(&trades, ctx, instruments, None, ts_init)?;
 
     // Snap dust drift on REST fills the same way the WS path does.
     // Commission stays as venue-reported.
@@ -345,11 +353,9 @@ pub(crate) async fn generate_mass_status(
         );
     } else {
         log::debug!(
-            "Generated mass status: {} orders ({} filtered), {} fills ({} filtered), {} positions",
+            "Generated mass status: {} orders, {} fills, {} positions",
             order_reports.len(),
-            orders_filtered,
             fill_reports.len(),
-            fills_filtered,
             position_reports.len(),
         );
     }
@@ -363,16 +369,6 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_fill_reports(fill_reports);
 
     Ok(Some(mass_status))
-}
-
-fn ensure_no_unmapped_open_orders(orders_filtered: usize) -> anyhow::Result<()> {
-    if orders_filtered > 0 {
-        anyhow::bail!(
-            "Polymarket reconciliation cannot prove a complete open-order universe: \
-             {orders_filtered} venue open order(s) reference instruments absent from the NT instrument map"
-        );
-    }
-    Ok(())
 }
 
 fn cap_order_reports_to_confirmed_fills(
@@ -447,24 +443,51 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case::complete(0, true)]
-    #[case::one_unmapped(1, false)]
-    #[case::multiple_unmapped(3, false)]
-    fn rejects_incomplete_open_order_universe(
-        #[case] orders_filtered: usize,
-        #[case] accepted: bool,
-    ) {
-        let result = ensure_no_unmapped_open_orders(orders_filtered);
+    fn rejects_unmapped_open_order() {
+        let content = std::fs::read_to_string("test_data/http_open_order.json")
+            .expect("open-order fixture should load");
+        let order: PolymarketOpenOrder =
+            serde_json::from_str(&content).expect("open-order fixture should decode");
+        let instruments = AtomicMap::new();
 
-        assert_eq!(result.is_ok(), accepted);
-        if !accepted {
-            assert!(
-                result
-                    .expect_err("unmapped open orders must fail reconciliation")
-                    .to_string()
-                    .contains("complete open-order universe")
-            );
-        }
+        let error = build_order_reports_from_orders(
+            &[order],
+            &instruments,
+            AccountId::from("POLYMARKET-001"),
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect_err("an unmapped venue open order must fail reconciliation");
+
+        assert!(error.to_string().contains("venue open order asset"));
+    }
+
+    #[rstest]
+    fn rejects_unmapped_confirmed_fill() {
+        let content = std::fs::read_to_string("test_data/http_trade_report.json")
+            .expect("trade fixture should load");
+        let mut trade: PolymarketTradeReport =
+            serde_json::from_str(&content).expect("trade fixture should decode");
+        trade.status = PolymarketTradeStatus::Confirmed;
+        let instruments = AtomicMap::new();
+        let ctx = FillContext {
+            account_id: AccountId::from("POLY-001"),
+            user_address: "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+            api_key: "00000000-0000-0000-0000-000000000001",
+            pusd: Currency::pUSD(),
+            clock: nautilus_core::time::get_atomic_clock_realtime(),
+        };
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            None,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect_err("an unmapped confirmed fill must fail reconciliation");
+
+        assert!(error.to_string().contains("confirmed taker fill"));
     }
 
     #[rstest]

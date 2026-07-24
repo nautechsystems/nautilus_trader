@@ -1123,7 +1123,7 @@ async fn test_exec_client_get_account_after_cache_add() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_order_status_reports_empty_without_instruments() {
+async fn test_generate_order_status_reports_fails_without_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
@@ -1141,10 +1141,17 @@ async fn test_generate_order_status_reports_empty_without_instruments() {
         causation_id: None,
     };
 
-    let reports = client.generate_order_status_reports(&cmd).await.unwrap();
+    let error = client
+        .generate_order_status_reports(&cmd)
+        .await
+        .unwrap_err();
 
-    // Without loaded instruments, orders cannot be resolved to instrument IDs
-    assert!(reports.is_empty());
+    assert!(
+        error
+            .to_string()
+            .contains("cannot map venue open order asset"),
+        "{error}"
+    );
 }
 
 #[rstest]
@@ -1212,7 +1219,7 @@ async fn test_generate_order_status_reports_recovers_confirmed_rest_fill() {
 
 #[rstest]
 #[tokio::test]
-async fn test_generate_fill_reports_empty_without_instruments() {
+async fn test_generate_fill_reports_fails_without_instruments() {
     let state = TestServerState::default();
     let addr = start_mock_server(state).await;
     let (client, _rx, _cache) = create_test_execution_client(addr);
@@ -1230,9 +1237,14 @@ async fn test_generate_fill_reports_empty_without_instruments() {
         causation_id: None,
     };
 
-    let reports = client.generate_fill_reports(cmd).await.unwrap();
+    let error = client.generate_fill_reports(cmd).await.unwrap_err();
 
-    assert!(reports.is_empty());
+    assert!(
+        error
+            .to_string()
+            .contains("cannot map confirmed taker fill"),
+        "{error}"
+    );
 }
 
 #[rstest]
