@@ -184,6 +184,28 @@ impl GetFundingRatesParams {
     }
 }
 
+/// Parameters for the GET /funding-slots endpoint.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GetFundingSlotsParams {
+    /// Instrument symbol.
+    pub symbol: Ustr,
+    /// Trading day (`YYYY-MM-DD`) in the symbol's funding-schedule timezone. AX defaults to the
+    /// current date when omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<String>,
+}
+
+impl GetFundingSlotsParams {
+    /// Creates a new [`GetFundingSlotsParams`] with the given symbol and no date filter.
+    #[must_use]
+    pub fn new(symbol: Ustr) -> Self {
+        Self { symbol, date: None }
+    }
+}
+
 /// Parameters for the GET /fills endpoint.
 ///
 /// # References
@@ -580,6 +602,22 @@ mod tests {
         assert!(qs.contains("cursor=opaque%2B%2F%3D"));
         assert!(qs.contains("limit=100"));
         assert!(qs.contains("sort_ts=desc"));
+    }
+
+    #[rstest]
+    fn test_get_funding_slots_params_serialization() {
+        let params = GetFundingSlotsParams::new(Ustr::from("GBPUSD-PERP"));
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert_eq!(qs, "symbol=GBPUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_get_funding_slots_params_serialization_with_date() {
+        let mut params = GetFundingSlotsParams::new(Ustr::from("GBPUSD-PERP"));
+        params.date = Some("2026-07-06".to_string());
+        let qs = serde_urlencoded::to_string(&params).unwrap();
+        assert!(qs.contains("symbol=GBPUSD-PERP"));
+        assert!(qs.contains("date=2026-07-06"));
     }
 
     #[rstest]

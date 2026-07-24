@@ -328,6 +328,36 @@ pub enum AxTradeSide {
     Sell,
 }
 
+/// How a perpetual symbol's funding accrues over a trading day.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AxFundingVariant {
+    /// A single settlement at the trading-day close.
+    DailyClose,
+    /// A fixed number of intraday slots, each charging its share of the day's TWAP premium.
+    IntradayTwap,
+}
+
+/// Status of one funding slot within a `GET /funding-slots` trading day.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AxFundingSlotStatus {
+    /// Slot funding has settled.
+    Realized,
+    /// Slot funding is forecast from current mark and underlying TWAPs.
+    Projected,
+    /// Slot did not settle (for example a holiday or suspension); see the slot `reason`.
+    Skipped,
+    /// Slot is scheduled but not yet realized or projected.
+    Pending,
+}
+
 /// Order status as returned by the AX Exchange API.
 ///
 /// # References

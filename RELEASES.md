@@ -100,6 +100,7 @@ adapter set. The following limits remain deferred:
 - Added Binance Python v2 constants, instrument loading, order book CSV loading, and client-order-ID decoders
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
+- Added Architect AX funding-slot schedule requests via `GET /funding-slots`
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)

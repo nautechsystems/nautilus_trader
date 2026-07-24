@@ -26,7 +26,7 @@ use std::{
 };
 
 use anyhow::Context;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use nautilus_core::{
     AtomicMap, AtomicTime, UUID4, consts::NAUTILUS_USER_AGENT, nanos::UnixNanos,
     time::get_atomic_clock_realtime,
@@ -57,7 +57,7 @@ use super::{
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse, AxBookResponse,
         AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
-        AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse,
+        AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxFundingSlotsResponse,
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
         AxOpenOrdersResponse, AxOrderStatusQueryResponse, AxOrdersResponse, AxPlaceOrderResponse,
         AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse,
@@ -71,8 +71,8 @@ use super::{
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
-        GetInstrumentParams, GetOpenOrdersParams, GetOrderStatusParams, GetOrdersParams,
-        GetTickerParams, GetTickersParams, GetTradesParams, GetTransactionsParams,
+        GetFundingSlotsParams, GetInstrumentParams, GetOpenOrdersParams, GetOrderStatusParams,
+        GetOrdersParams, GetTickerParams, GetTickersParams, GetTradesParams, GetTransactionsParams,
     },
 };
 use crate::common::{
@@ -887,6 +887,28 @@ impl AxRawHttpClient {
         self.send_request::<AxFundingRatesResponse, _>(
             Method::GET,
             "/funding-rates",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches the funding-slot schedule for a symbol on a trading day.
+    ///
+    /// # Endpoint
+    /// `GET /funding-slots`
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or the response cannot be parsed.
+    pub async fn get_funding_slots(
+        &self,
+        params: &GetFundingSlotsParams,
+    ) -> Result<AxFundingSlotsResponse, AxHttpError> {
+        self.send_request::<AxFundingSlotsResponse, _>(
+            Method::GET,
+            "/funding-slots",
             Some(params),
             None,
             true,
@@ -1717,6 +1739,30 @@ impl AxHttpClient {
             .map_err(|e| AxHttpError::from(e.to_string()))?;
 
         Ok(updates)
+    }
+
+    /// Requests the funding-slot schedule for a symbol on a trading day.
+    ///
+    /// AX returns a single response covering the whole trading day, so there
+    /// is no pagination. The schedule has no Nautilus domain equivalent, so
+    /// the venue response is returned verbatim.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or the response cannot be parsed.
+    pub async fn request_funding_slots(
+        &self,
+        instrument_id: InstrumentId,
+        date: Option<NaiveDate>,
+    ) -> Result<AxFundingSlotsResponse, AxHttpError> {
+        let symbol = instrument_id.symbol.inner();
+        let mut params = GetFundingSlotsParams::new(symbol);
+
+        if let Some(date) = date {
+            params.date = Some(date.format("%Y-%m-%d").to_string());
+        }
+
+        self.inner.get_funding_slots(&params).await
     }
 
     /// Requests account state from Ax and parses to a Nautilus [`AccountState`].
