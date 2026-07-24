@@ -187,6 +187,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
 - Fixed v2 order-book average prices losing precision during weighted accumulation
 - Fixed v2 order-book raw exposure and crossed level sizes losing precision through floating-point conversion
+- Fixed v2 option-chain strike selection and rebalance thresholds losing precision
 - Fixed v2 `Quantity` multiplication falsely overflowing before fixed-point scaling
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor

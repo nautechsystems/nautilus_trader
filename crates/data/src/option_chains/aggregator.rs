@@ -15,7 +15,10 @@
 
 //! Per-series option chain aggregator for event accumulation and snapshots.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, HashMap, HashSet},
+};
 
 use nautilus_core::UnixNanos;
 use nautilus_model::{
@@ -27,6 +30,7 @@ use nautilus_model::{
     identifiers::{InstrumentId, OptionSeriesId},
     types::Price,
 };
+use rust_decimal::prelude::ToPrimitive;
 
 use super::{
     AtmTracker,
@@ -385,11 +389,7 @@ impl OptionChainAggregator {
     fn find_closest_strike(all_strikes: &[Price], atm: Price) -> Option<Price> {
         all_strikes
             .iter()
-            .min_by(|a, b| {
-                let da = (a.as_f64() - atm.as_f64()).abs();
-                let db = (b.as_f64() - atm.as_f64()).abs();
-                da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
-            })
+            .min_by_key(|strike| strike.raw.abs_diff(atm.raw))
             .copied()
     }
 
@@ -570,26 +570,18 @@ impl OptionChainAggregator {
             if let Some(last_strike) = self.last_atm_strike
                 && self.hysteresis > 0.0
             {
-                let last_f = last_strike.as_f64();
-                let atm_f = atm_price.as_f64();
-                let direction = atm_f - last_f;
-
                 // Find the next strike in the direction of price movement
-                let next_strike = if direction > 0.0 {
-                    all_strikes.iter().find(|s| s.as_f64() > last_f)
-                } else {
-                    all_strikes.iter().rev().find(|s| s.as_f64() < last_f)
+                let next_strike = match atm_price.cmp(&last_strike) {
+                    Ordering::Greater => all_strikes.iter().find(|s| **s > last_strike),
+                    Ordering::Less => all_strikes.iter().rev().find(|s| **s < last_strike),
+                    Ordering::Equal => None,
                 };
 
                 if let Some(next) = next_strike {
-                    let gap = (next.as_f64() - last_f).abs();
-                    let threshold = last_f + direction.signum() * self.hysteresis * gap;
-                    // Check if price has not crossed the threshold
-                    if direction > 0.0 && atm_f < threshold {
-                        return None;
-                    }
-
-                    if direction < 0.0 && atm_f > threshold {
+                    let progress = (atm_price.as_decimal() - last_strike.as_decimal()).abs();
+                    let gap = (next.as_decimal() - last_strike.as_decimal()).abs();
+                    let progress_ratio = (progress / gap).to_f64().unwrap_or(f64::MAX);
+                    if progress_ratio < self.hysteresis {
                         return None;
                     }
                 }
@@ -763,6 +755,18 @@ mod tests {
         );
 
         (agg, call_id, put_id)
+    }
+
+    #[rstest]
+    fn test_find_closest_strike_prefers_exact_high_value_match() {
+        let collapsed = Price::from("9007199253.999000000");
+        let atm = Price::from("9007199253.999000001");
+        let strikes = [collapsed, atm];
+        assert_eq!(collapsed.as_f64(), atm.as_f64());
+
+        let result = OptionChainAggregator::find_closest_strike(&strikes, atm);
+
+        assert_eq!(result, Some(atm));
     }
 
     #[rstest]
@@ -1122,6 +1126,42 @@ mod tests {
 
         // Move ATM well past threshold: 52000 > 51500
         set_atm_via_greeks(&mut agg, 52000.0);
+        assert!(agg.check_rebalance(now()).is_some());
+    }
+
+    #[rstest]
+    fn test_hysteresis_exact_strike_gap_boundary() {
+        let lower = Price::from("9007199253.999000000");
+        let upper = Price::from("9007199253.999002800");
+        let blocked = Price::from("9007199253.999001673");
+        let allowed = Price::from("9007199253.999001680");
+        let mut instruments = HashMap::new();
+        instruments.insert(
+            InstrumentId::from("BTC-LOW-C.DERIBIT"),
+            (lower, OptionKind::Call),
+        );
+        instruments.insert(
+            InstrumentId::from("BTC-HIGH-C.DERIBIT"),
+            (upper, OptionKind::Call),
+        );
+        let mut tracker = AtmTracker::new();
+        tracker.set_initial_price(lower);
+        let mut agg = OptionChainAggregator::new(
+            make_series_id(),
+            StrikeRange::AtmRelative {
+                strikes_above: 0,
+                strikes_below: 0,
+            },
+            tracker,
+            instruments,
+        );
+        agg.set_hysteresis(0.6);
+        agg.set_cooldown_ns(0);
+
+        agg.atm_tracker_mut().set_initial_price(blocked);
+        assert!(agg.check_rebalance(now()).is_none());
+
+        agg.atm_tracker_mut().set_initial_price(allowed);
         assert!(agg.check_rebalance(now()).is_some());
     }
 

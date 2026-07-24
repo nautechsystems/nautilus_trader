@@ -22,6 +22,7 @@ use std::{
 };
 
 use nautilus_core::{UnixNanos, serialization::Serializable};
+use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use super::HasTsInit;
@@ -72,10 +73,6 @@ impl StrikeRange {
     ///
     /// If `atm_price` is `None` for ATM-based variants, returns an empty vec
     /// (subscriptions are deferred until ATM is known).
-    ///
-    /// # Panics
-    ///
-    /// Panics if a strike price comparison returns `None` (i.e. a NaN price value).
     #[must_use]
     pub fn resolve(&self, atm_price: Option<Price>, all_strikes: &[Price]) -> Vec<Price> {
         match self {
@@ -99,9 +96,7 @@ impl StrikeRange {
                     return vec![]; // Defer until ATM is known
                 };
                 // Find index of closest strike to ATM
-                let atm_idx = match all_strikes
-                    .binary_search_by(|s| s.as_f64().partial_cmp(&atm.as_f64()).unwrap())
-                {
+                let atm_idx = match all_strikes.binary_search(&atm) {
                     Ok(idx) => idx,
                     Err(idx) => {
                         if idx == 0 {
@@ -110,8 +105,8 @@ impl StrikeRange {
                             all_strikes.len() - 1
                         } else {
                             // Pick the closer of the two neighbors
-                            let diff_below = (all_strikes[idx - 1].as_f64() - atm.as_f64()).abs();
-                            let diff_above = (all_strikes[idx].as_f64() - atm.as_f64()).abs();
+                            let diff_below = all_strikes[idx - 1].raw.abs_diff(atm.raw);
+                            let diff_above = all_strikes[idx].raw.abs_diff(atm.raw);
                             if diff_below <= diff_above {
                                 idx - 1
                             } else {
@@ -131,15 +126,16 @@ impl StrikeRange {
                 let Some(atm) = atm_price else {
                     return vec![]; // Defer until ATM is known
                 };
-                let atm_f = atm.as_f64();
-                if atm_f == 0.0 {
+                let atm_decimal = atm.as_decimal();
+                if atm_decimal.is_zero() {
                     return all_strikes.to_vec();
                 }
                 all_strikes
                     .iter()
                     .filter(|s| {
-                        let pct_diff = ((s.as_f64() - atm_f) / atm_f).abs();
-                        pct_diff <= *pct
+                        let distance = (s.as_decimal() - atm_decimal).abs();
+                        let pct_diff = distance / atm_decimal.abs();
+                        pct_diff.to_f64().is_some_and(|pct_diff| pct_diff <= *pct)
                     })
                     .copied()
                     .collect()
@@ -659,6 +655,22 @@ mod tests {
     }
 
     #[rstest]
+    fn test_strike_range_resolve_atm_relative_exact_high_value() {
+        let range = StrikeRange::AtmRelative {
+            strikes_above: 0,
+            strikes_below: 0,
+        };
+        let atm = Price::from("9007199253.999000000");
+        let collapsed = Price::from("9007199253.999000001");
+        let strikes = [atm, collapsed];
+        assert_eq!(collapsed.as_f64(), atm.as_f64());
+
+        let result = range.resolve(Some(atm), &strikes);
+
+        assert_eq!(result, vec![atm]);
+    }
+
+    #[rstest]
     fn test_strike_range_resolve_atm_relative_saturates_extreme_window() {
         // An extreme window must clamp to the available strikes without overflowing
         let range = StrikeRange::AtmRelative {
@@ -704,6 +716,19 @@ mod tests {
         assert!(result.contains(&Price::from("50000")));
         assert!(result.contains(&Price::from("52000")));
         assert!(result.contains(&Price::from("55000")));
+    }
+
+    #[rstest]
+    fn test_strike_range_resolve_atm_percent_zero_exact_high_value() {
+        let range = StrikeRange::AtmPercent { pct: 0.0 };
+        let atm = Price::from("9007199253.999000000");
+        let collapsed = Price::from("9007199253.999000001");
+        let strikes = [atm, collapsed];
+        assert_eq!(atm.as_f64(), collapsed.as_f64());
+
+        let result = range.resolve(Some(atm), &strikes);
+
+        assert_eq!(result, vec![atm]);
     }
 
     #[rstest]
