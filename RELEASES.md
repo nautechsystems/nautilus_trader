@@ -60,6 +60,7 @@ adapter set. The following limits remain deferred:
 
 ### Enhancements
 - Added opt-in `mimalloc` allocator feature, enabled by default for Python wheels (#4358), thanks @ivannp
+- Added `make_qty_from_decimal` / `make_price_from_decimal` on the `Instrument` trait
 - Added `LiveNode` metrics for Rust live runner metrics
 - Added `LiveNodeBuilder.with_controller` for runtime controller configuration (#4427), thanks @bebop23
 - Added returns skewness and kurtosis portfolio statistics (#4334), thanks @Martingale42

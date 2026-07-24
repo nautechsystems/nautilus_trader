@@ -44,7 +44,7 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::Quantity,
 };
-use rust_decimal::{Decimal, RoundingStrategy, prelude::ToPrimitive};
+use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use super::{
@@ -200,11 +200,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
             u32::from(instrument.size_precision()),
             RoundingStrategy::ToZero,
         );
-        let Some(floored_f64) = floored.to_f64() else {
-            log::error!("Cannot execute order: qty_per_interval={floored} is not representable");
-            return Ok(());
-        };
-        let qty_per_interval = match instrument.try_make_qty(floored_f64, None) {
+        let qty_per_interval = match instrument.try_make_qty_from_decimal(floored, None) {
             Ok(quantity) => quantity,
             Err(e) => {
                 log::error!("Cannot execute order: invalid qty_per_interval={floored}: {e}");
@@ -270,11 +266,7 @@ nautilus_execution_algorithm!(TwapAlgorithm, {
         let mut scheduled_sizes: Vec<Quantity> = vec![qty_per_interval; num_intervals as usize];
 
         if remainder > Decimal::ZERO {
-            let Some(remainder_f64) = remainder.to_f64() else {
-                log::error!("Cannot execute order: qty_remainder={remainder} is not representable");
-                return Ok(());
-            };
-            let remainder_qty = match instrument.try_make_qty(remainder_f64, None) {
+            let remainder_qty = match instrument.try_make_qty_from_decimal(remainder, None) {
                 Ok(quantity) => quantity,
                 Err(e) => {
                     log::error!("Cannot execute order: invalid qty_remainder={remainder}: {e}");
