@@ -227,6 +227,7 @@ pub(crate) fn build_position_reports(
     ts: UnixNanos,
 ) -> anyhow::Result<Vec<PositionStatusReport>> {
     let mut reports = Vec::new();
+
     for position in positions {
         if position.size > Decimal::ZERO && position.size < DUST_POSITION_THRESHOLD {
             log::debug!(
@@ -236,6 +237,7 @@ pub(crate) fn build_position_reports(
                 position.size
             );
         }
+
         if position.size < DUST_POSITION_THRESHOLD {
             continue;
         }
