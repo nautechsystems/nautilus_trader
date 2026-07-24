@@ -25,10 +25,6 @@ use nautilus_core::python::{
 use pyo3::{basic::CompareOp, conversion::IntoPyObjectExt, prelude::*, types::PyFloat};
 use rust_decimal::{Decimal, RoundingStrategy};
 
-#[cfg(not(feature = "high-precision"))]
-use crate::types::fixed::fixed_i64_to_f64;
-#[cfg(feature = "high-precision")]
-use crate::types::fixed::fixed_i128_to_f64;
 use crate::types::{
     fixed::raw_scale,
     price::{Price, PriceRaw},
@@ -454,20 +450,10 @@ impl Price {
     fn py_checked_sub(&self, other: Self) -> Option<Self> {
         self.checked_sub(other)
     }
-}
 
-#[pymethods]
-impl Price {
-    #[cfg(feature = "high-precision")]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
-        fixed_i128_to_f64(self.raw)
-    }
-
-    #[cfg(not(feature = "high-precision"))]
-    #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        fixed_i64_to_f64(self.raw)
+        self.as_f64()
     }
 }
 

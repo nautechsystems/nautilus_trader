@@ -700,7 +700,8 @@ impl KrakenSpotHttpClient {
 }
 
 // Separate block to avoid pyo3_stub_gen trait bound issues with batch-order tuples.
-// Stub is maintained manually in nautilus_pyo3.pyi.
+// These methods are registered in DEFERRED_RUNTIME_METHODS until the generator
+// supports complex tuple parameter types.
 #[pymethods]
 impl KrakenSpotHttpClient {
     /// Submits multiple orders to the Kraken Spot exchange.

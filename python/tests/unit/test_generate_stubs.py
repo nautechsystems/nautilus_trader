@@ -1566,17 +1566,15 @@ NON_CONTRACT_DTO_CLASSES = frozenset(
     },
 )
 
-# Runtime methods absent from generated stubs pending a source or generator fix.
-# The bidirectional guard surfaces each as a real contract gap; they are deferred
-# until Unit 7 checkbox 3 resolves macro, complex-signature, and classmethod stub
-# generation. Do not add entries here without a concrete deferral reason.
+# Runtime methods absent from generated stubs due to pyo3_stub_gen trait bound
+# limits on complex tuple parameter types. The bidirectional guard surfaces each
+# as a real contract gap; they remain deferred until the generator supports those
+# types. Do not add entries here without a concrete deferral reason.
 DEFERRED_RUNTIME_METHODS = frozenset(
     {
         ("nautilus_trader.adapters.kraken", "KrakenFuturesHttpClient", "edit_orders_batch"),
         ("nautilus_trader.adapters.kraken", "KrakenFuturesHttpClient", "submit_orders_batch"),
         ("nautilus_trader.adapters.kraken", "KrakenSpotHttpClient", "submit_orders_batch"),
-        ("nautilus_trader.model", "CustomData", "from_json_bytes"),
-        ("nautilus_trader.model", "Price", "as_double"),
     },
 )
 
@@ -1889,7 +1887,7 @@ def _collect_reverse_member_drift(
     module_name, class_name = class_key
     non_contract_dto = class_key in NON_CONTRACT_DTO_CLASSES
 
-    for name in dir(runtime_class):
+    for name in runtime_class.__dict__:
         if name.startswith("_"):
             continue
         runtime_kind = _runtime_member_kind(runtime_class, name)

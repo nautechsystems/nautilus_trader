@@ -127,6 +127,7 @@ class ClassMethodFixup:
     classmethods: set[str] = field(default_factory=set)
     renames: dict[str, str] = field(default_factory=dict)
     injected_staticmethods: dict[str, str] = field(default_factory=dict)
+    injected_classmethods: dict[str, str] = field(default_factory=dict)
     signature_defaults: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
@@ -203,9 +204,6 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
         "from nautilus_trader.core.datetime import dt_to_unix_nanos as dt_to_unix_nanos",
         "from nautilus_trader.core.datetime import unix_nanos_to_dt as unix_nanos_to_dt",
     ),
-    "nautilus_trader/trading/__init__.pyi": (
-        "from nautilus_trader.trading.controller import Controller as Controller",
-    ),
 }
 
 # Names added to a generated stub's ``__all__`` beyond what pyo3-stub-gen emits.
@@ -213,6 +211,37 @@ EXTRA_REEXPORTS: dict[str, tuple[str, ...]] = {
 # the runtime facade), so only non-adapter modules appear here.
 EXTRA_ALL_EXPORTS: dict[str, tuple[str, ...]] = {
     "nautilus_trader/trading/__init__.pyi": ("Controller",),
+}
+
+# Full class-body stubs for pure-Python classes that pyo3-stub-gen cannot
+# generate. The bidirectional guard validates these against the runtime class's
+# own (non-inherited) public members. Add a class here only when the class is
+# pure Python and its method signatures are stable.
+PURE_PYTHON_CLASS_STUBS: dict[str, str] = {
+    "nautilus_trader/trading/__init__.pyi": """\
+class Controller(common.DataActor):
+    def __init__(self, config: typing.Any | None = None) -> None: ...
+    def create_actor_from_config(
+        self, actor_config: common.ImportableActorConfig, start: bool = True
+    ) -> model.ActorId: ...
+    def create_strategy_from_config(
+        self, strategy_config: ImportableStrategyConfig, start: bool = True
+    ) -> model.StrategyId: ...
+    def start_actor(self, actor_id: model.ActorId) -> None: ...
+    def start_actor_from_id(self, actor_id: model.ActorId) -> None: ...
+    def stop_actor(self, actor_id: model.ActorId) -> None: ...
+    def stop_actor_from_id(self, actor_id: model.ActorId) -> None: ...
+    def remove_actor(self, actor_id: model.ActorId) -> None: ...
+    def remove_actor_from_id(self, actor_id: model.ActorId) -> None: ...
+    def start_strategy(self, strategy_id: model.StrategyId) -> None: ...
+    def start_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
+    def stop_strategy(self, strategy_id: model.StrategyId) -> None: ...
+    def stop_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
+    def market_exit_strategy(self, strategy_id: model.StrategyId) -> None: ...
+    def market_exit_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
+    def remove_strategy(self, strategy_id: model.StrategyId) -> None: ...
+    def remove_strategy_from_id(self, strategy_id: model.StrategyId) -> None: ...
+""",
 }
 
 MODEL_EXPORTS = frozenset(MODULE_FIXUPS["model"].all_exports)
@@ -459,6 +488,59 @@ def inject_reexports(content: str, stub_path: Path) -> str:
     return content
 
 
+def inject_pure_python_class_stubs(content: str, stub_path: Path) -> str:
+    """
+    Inject full class-body stubs for pure-Python classes into a module stub.
+
+    Removes any stale import re-exports for classes that now have a full stub body, then
+    inserts the body after the last existing class definition.
+
+    """
+    posix = stub_path.as_posix()
+    entry = next(
+        (v for k, v in PURE_PYTHON_CLASS_STUBS.items() if posix.endswith(k)),
+        None,
+    )
+
+    if entry is None:
+        return content
+
+    tree = ast.parse(entry)
+    class_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)}
+
+    lines = content.split("\n")
+
+    stale_lines = {
+        f"from nautilus_trader.trading.controller import {name} as {name}" for name in class_names
+    }
+    lines = [line for line in lines if line.strip() not in stale_lines]
+
+    body = entry.strip()
+    if body in "\n".join(lines):
+        return "\n".join(lines)
+
+    insert_at = len(lines)
+    for i, line in enumerate(lines):
+        if line.startswith("def ") or (
+            line.startswith("class ")
+            and not any(line.startswith(f"class {name}") for name in class_names)
+        ):
+            insert_at = i
+            while insert_at > 0 and lines[insert_at - 1].startswith("@"):
+                insert_at -= 1
+            break
+
+    while insert_at > 0 and not lines[insert_at - 1].strip():
+        insert_at -= 1
+
+    if insert_at > 0 and lines[insert_at - 1].strip():
+        lines.insert(insert_at, "")
+        insert_at += 1
+    lines.insert(insert_at, body)
+
+    return "\n".join(lines)
+
+
 def post_process_stubs(root: Path) -> None:
     """Post-process all stub files: fix headers, rename methods, fix return types."""
     workspace_root = Path(__file__).parent.parent
@@ -515,6 +597,9 @@ def post_process_stubs(root: Path) -> None:
         # Inject re-exports for hand-written Python symbols (e.g. ReportProvider)
         content = inject_reexports(content, stub_file)
 
+        # Inject full class-body stubs for pure-Python classes (e.g. Controller)
+        content = inject_pure_python_class_stubs(content, stub_file)
+
         # Normalize formatting
         content = normalize_stub_content(content)
 
@@ -554,6 +639,14 @@ IDENTIFIER_MACRO_METHOD_FIXUPS = ClassMethodFixup(
 )
 
 INJECTABLE_STATICMETHODS = frozenset({"from_json", "from_msgpack"})
+INJECTABLE_CLASSMETHODS = frozenset({"from_json_bytes"})
+
+# Methods in INJECTABLE_CLASSMETHODS that require a companion method already
+# present in the stub class body, preventing injection on a different crate's
+# same-named class (e.g. common::CustomData vs model::CustomData).
+INJECTED_CLASSMETHOD_COMPANIONS: dict[str, str] = {
+    "from_json_bytes": "to_json_bytes",
+}
 
 # Methods to suppress from public stubs (implementation details, not user-facing API)
 SUPPRESSED_METHODS = frozenset({"__richcmp__", "_safe_constructor"})
@@ -1449,6 +1542,7 @@ def register_rust_method_fixup(
 
     if is_classmethod:
         fixup.classmethods.update(method_names)
+        _register_injected_classmethod(class_name, python_name, params, fixup)
         return
 
     if not is_staticmethod:
@@ -1462,6 +1556,23 @@ def register_rust_method_fixup(
     rendered = render_missing_staticmethod_stub(class_name, python_name, params)
     if rendered is not None:
         fixup.injected_staticmethods[python_name] = rendered
+
+
+def _register_injected_classmethod(
+    class_name: str,
+    python_name: str,
+    params: str,
+    fixup: ClassMethodFixup,
+) -> None:
+    """
+    Register a synthetic classmethod stub when the generator drops the method.
+    """
+    if python_name not in INJECTABLE_CLASSMETHODS:
+        return
+
+    rendered = render_missing_classmethod_stub(class_name, python_name, params)
+    if rendered is not None:
+        fixup.injected_classmethods[python_name] = rendered
 
 
 def register_rust_setter_fixup(
@@ -1539,6 +1650,42 @@ def render_missing_staticmethod_stub(
         return None
 
     return f"    @staticmethod\n    def {method_name}(data: typing.Any) -> {class_name}: ..."
+
+
+def render_missing_classmethod_stub(
+    class_name: str,
+    method_name: str,
+    params: str,
+) -> str | None:
+    """
+    Render a conservative stub for missing classmethod deserializers.
+
+    Handles methods whose ``&[u8]`` parameter prevents pyo3-stub-gen from
+    generating a stub within a ``#[pyo3_stub_gen::derive]`` block.
+
+    """
+    if method_name not in INJECTABLE_CLASSMETHODS:
+        return None
+
+    param_name = _extract_data_param_name(params)
+    return f"    @classmethod\n    def {method_name}(cls, {param_name}: typing.Any) -> {class_name}: ..."
+
+
+def _extract_data_param_name(params: str) -> str:
+    """
+    Extract the non-receiver parameter name from a Rust classmethod signature.
+
+    Falls back to ``data`` when no named parameter is found.
+
+    """
+    for raw_param in _split_signature_params(params):
+        param = raw_param.strip()
+        if not param or param.startswith(("_cls", "cls")):
+            continue
+        name = param.split(":")[0].strip().removeprefix("mut ").strip()
+        if name and not name.startswith("_"):
+            return name
+    return "data"
 
 
 def apply_rust_class_fixups(
@@ -1668,6 +1815,14 @@ def apply_class_block_fixups(
         fixup.injected_staticmethods[name]
         for name in sorted(fixup.injected_staticmethods)
         if name not in seen_methods
+    ] + [
+        fixup.injected_classmethods[name]
+        for name in sorted(fixup.injected_classmethods)
+        if name not in seen_methods
+        and (
+            name not in INJECTED_CLASSMETHOD_COMPANIONS
+            or INJECTED_CLASSMETHOD_COMPANIONS[name] in seen_methods
+        )
     ]
 
     if missing:
