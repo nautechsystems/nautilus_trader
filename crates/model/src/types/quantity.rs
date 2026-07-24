@@ -428,6 +428,10 @@ impl Quantity {
 
     /// Returns a raw fixed-point quantity as a `Decimal`.
     #[must_use]
+    #[allow(
+        clippy::unnecessary_fallible_conversions,
+        reason = "try_from is infallible when QuantityRaw is u64, fallible when u128"
+    )]
     pub(crate) fn raw_as_decimal(raw: QuantityRaw) -> Decimal {
         let whole =
             i128::try_from(raw / FIXED_SCALAR_RAW).expect("Whole raw quantity must fit in Decimal");
