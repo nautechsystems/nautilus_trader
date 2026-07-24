@@ -93,7 +93,7 @@ async fn test_md_client_not_active_before_connect() {
 }
 
 #[rstest]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_md_connection_failure_to_invalid_url() {
     let mut client = AxMdWebSocketClient::new(
         "ws://127.0.0.1:9999/invalid".to_string(),
@@ -1058,7 +1058,7 @@ async fn test_orders_client_not_active_before_connect() {
 }
 
 #[rstest]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_orders_connection_failure_to_invalid_url() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
