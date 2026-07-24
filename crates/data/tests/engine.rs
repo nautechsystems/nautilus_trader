@@ -100,9 +100,10 @@ use nautilus_model::{
     },
     identifiers::{ClientId, InstrumentId, OptionSeriesId, Symbol, TradeId, TraderId, Venue},
     instruments::{
-        CurrencyPair, FuturesContract, FuturesSpread, Instrument, InstrumentAny, OptionContract,
-        SyntheticInstrument,
+        CurrencyPair, FixedTickScheme, FuturesContract, FuturesSpread, Instrument, InstrumentAny,
+        OptionContract, SyntheticInstrument, TickScheme,
         stubs::{audusd_sim, futures_spread_es, gbpusd_sim},
+        tick_scheme::register_tick_scheme,
     },
     orderbook::OrderBook,
     stubs::TestDefault,
@@ -14547,6 +14548,55 @@ fn test_response_increments_response_count(
 
     data_engine.reset();
     assert_eq!(data_engine.response_count(), 0);
+}
+
+#[rstest]
+fn test_instrument_response_applies_registered_tick_scheme_property(
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    const TICK_SCHEME_NAME: &str = "RESPONSE_OVERRIDE_TEST_SPREAD_BRANCH";
+
+    register_tick_scheme(
+        TICK_SCHEME_NAME,
+        TickScheme::Fixed(FixedTickScheme::new(0.05).unwrap()),
+    )
+    .unwrap();
+    let instrument_id = audusd_sim.id;
+    let price_precision = audusd_sim.price_precision;
+    let params = serde_json::from_value(json!({
+        "instrument_properties": {
+            "tick_scheme_name": TICK_SCHEME_NAME,
+        },
+    }))
+    .unwrap();
+    let response = InstrumentResponse::new(
+        UUID4::new(),
+        ClientId::test_default(),
+        instrument_id,
+        InstrumentAny::CurrencyPair(audusd_sim),
+        None,
+        None,
+        UnixNanos::default(),
+        Some(params),
+    );
+
+    data_engine
+        .borrow_mut()
+        .response(DataResponse::Instrument(Box::new(response)));
+
+    let data_engine = data_engine.borrow();
+    let cache = data_engine.get_cache();
+    let instrument = cache.instrument(&instrument_id).unwrap();
+    assert_eq!(instrument.tick_scheme(), Some(Ustr::from(TICK_SCHEME_NAME)));
+    assert_eq!(
+        instrument.next_bid_price(100.07, 0),
+        Some(Price::new(100.05, price_precision))
+    );
+    assert_eq!(
+        instrument.next_ask_price(100.07, 0),
+        Some(Price::new(100.10, price_precision))
+    );
 }
 
 #[rstest]

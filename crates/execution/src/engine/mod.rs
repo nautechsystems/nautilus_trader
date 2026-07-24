@@ -87,6 +87,7 @@ use rust_decimal::Decimal;
 
 use crate::{
     client::ExecutionClientAdapter,
+    order_manager::manager::is_synthetic_leg_fill,
     reconciliation::{
         check_position_reconciliation, generate_external_order_status_events,
         generate_reconciliation_order_events, generate_reconciliation_order_pre_fill_events,
@@ -2713,16 +2714,7 @@ impl ExecutionEngine {
     }
 
     fn is_leg_fill(&self, fill: &OrderFilled) -> bool {
-        if !fill.client_order_id.as_str().contains("-LEG-")
-            && !fill.venue_order_id.as_str().contains("-LEG-")
-        {
-            return false;
-        }
-
-        self.cache
-            .borrow()
-            .instrument(&fill.instrument_id)
-            .is_some_and(|instrument| !instrument.is_spread())
+        is_synthetic_leg_fill(&self.cache.borrow(), fill)
     }
 
     fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {

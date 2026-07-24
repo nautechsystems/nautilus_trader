@@ -298,6 +298,10 @@ impl OrderManager {
         {
             order
         } else {
+            if self.is_synthetic_leg_fill(filled) {
+                return Vec::new();
+            }
+
             log::error!(
                 "Cannot handle `OrderFilled`: order for client_order_id: {} not found, {}",
                 filled.client_order_id,
@@ -427,6 +431,10 @@ impl OrderManager {
         }
 
         actions
+    }
+
+    fn is_synthetic_leg_fill(&self, filled: &OrderFilled) -> bool {
+        is_synthetic_leg_fill(&self.cache.borrow(), filled)
     }
 
     pub fn handle_contingencies(&mut self, order: &OrderAny) -> Vec<OrderManagerAction> {
@@ -587,6 +595,18 @@ fn initialized_action(order: &OrderAny) -> OrderManagerAction {
     OrderManagerAction::PublishInitialized(event)
 }
 
+pub(crate) fn is_synthetic_leg_fill(cache: &Cache, fill: &OrderFilled) -> bool {
+    if !fill.client_order_id.as_str().contains("-LEG-")
+        && !fill.venue_order_id.as_str().contains("-LEG-")
+    {
+        return false;
+    }
+
+    cache
+        .instrument(&fill.instrument_id)
+        .is_some_and(|instrument| !instrument.is_spread())
+}
+
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
@@ -685,6 +705,45 @@ mod tests {
             UnixNanos::default(),
             None, // correlation_id
         )
+    }
+
+    #[rstest]
+    fn test_handle_order_filled_ignores_missing_synthetic_leg_fill() {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), true);
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .client_order_id(ClientOrderId::from("O-SPREAD"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
+        let mut filled = match TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(AccountId::from("SIM-001")),
+        ) {
+            OrderEventAny::Filled(event) => event,
+            event => panic!("expected OrderFilled, was {event:?}"),
+        };
+        filled.client_order_id = ClientOrderId::from("O-SPREAD-LEG-AUDUSD");
+        filled.venue_order_id = VenueOrderId::from("SIM-1-LEG-0");
+
+        let actions = manager.handle_order_filled(&filled);
+
+        assert!(actions.is_empty());
     }
 
     #[rstest]

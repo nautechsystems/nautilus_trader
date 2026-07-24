@@ -77,7 +77,7 @@ pub use crate::instruments::{
     synthetic::{SyntheticInstrument, SyntheticInstrumentError},
     tick_scheme::{
         FixedTickScheme, TickScheme, TickSchemeError, TickSchemeRule, TieredTickScheme,
-        tick_scheme_rule_from_name,
+        get_tick_scheme, list_tick_schemes, register_tick_scheme, tick_scheme_rule_from_name,
     },
     tokenized_asset::TokenizedAsset,
 };

@@ -23,12 +23,14 @@ from nautilus_trader.backtest.engine import OrderMatchingEngine
 from nautilus_trader.backtest.models import BestPriceFillModel
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import MakerTakerFeeModel
+from nautilus_trader.backtest.models import PerContractFeeModel
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.matching_core import MatchingCore
 from nautilus_trader.execution.messages import ModifyOrder
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -38,6 +40,7 @@ from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
@@ -45,6 +48,7 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
@@ -57,10 +61,17 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.identifiers import new_generic_spread_id
 from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import OptionContract
+from nautilus_trader.model.instruments import OptionSpread
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
@@ -225,6 +236,121 @@ class TestOrderMatchingEngine:
         assert self.matching_engine.get_book().ts_last == 50
         assert self.matching_engine.best_bid_price() == self.instrument.make_price(2.0)
         assert self.matching_engine.best_ask_price() == self.instrument.make_price(2.0)
+
+    def test_spread_order_and_leg_fills_have_per_contract_commission(self) -> None:
+        # Arrange
+        call = TestInstrumentProvider.aapl_option()
+        put = OptionContract(
+            instrument_id=InstrumentId(Symbol("AAPL211217P00145000"), Venue("OPRA")),
+            raw_symbol=Symbol("AAPL211217P00145000"),
+            asset_class=AssetClass.EQUITY,
+            exchange="GMNI",
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="AAPL",
+            option_kind=OptionKind.PUT,
+            strike_price=Price.from_str("145.00"),
+            activation_ns=call.activation_ns,
+            expiration_ns=call.expiration_ns,
+            ts_event=0,
+            ts_init=0,
+        )
+        spread_id = new_generic_spread_id(
+            [
+                (call.id, 1),
+                (put.id, -2),
+            ],
+        )
+        spread = OptionSpread(
+            instrument_id=spread_id,
+            raw_symbol=spread_id.symbol,
+            asset_class=AssetClass.EQUITY,
+            exchange="GMNI",
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(100),
+            lot_size=Quantity.from_int(1),
+            underlying="AAPL",
+            strategy_type="SPREAD",
+            activation_ns=0,
+            expiration_ns=0,
+            ts_event=0,
+            ts_init=0,
+        )
+        self.cache.add_instrument(call)
+        self.cache.add_instrument(put)
+        self.cache.add_instrument(spread)
+        self.cache.add_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=call,
+                bid_price=2.00,
+                ask_price=2.00,
+            ),
+        )
+        self.cache.add_quote_tick(
+            TestDataStubs.quote_tick(
+                instrument=put,
+                bid_price=0.75,
+                ask_price=0.75,
+            ),
+        )
+
+        matching_engine = OrderMatchingEngine(
+            instrument=spread,
+            raw_id=0,
+            fill_model=FillModel(),
+            fee_model=PerContractFeeModel(Money(Decimal("1.25"), USD)),
+            book_type=BookType.L1_MBP,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.MARGIN,
+            reject_stop_orders=True,
+            trade_execution=True,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+        order = TestExecStubs.make_accepted_order(
+            instrument=spread,
+            account_id=self.account_id,
+            order_side=OrderSide.BUY,
+            price=Price.from_str("0.50"),
+            quantity=Quantity.from_int(2),
+        )
+        self.cache.add_order(order)
+
+        messages: list[Any] = []
+
+        def _handle(event):
+            messages.append(event)
+            with contextlib.suppress(Exception):
+                order.apply(event)
+
+        self.msgbus.register("ExecEngine.process", _handle)
+
+        # Act
+        matching_engine.apply_fills(
+            order=order,
+            fills=[(Price.from_str("0.50"), Quantity.from_int(2))],
+            liquidity_side=LiquiditySide.TAKER,
+        )
+
+        # Assert
+        fill_events = [event for event in messages if isinstance(event, OrderFilled)]
+        parent_fill = next(
+            event for event in fill_events if "-LEG-" not in event.client_order_id.value
+        )
+        leg_fills = [event for event in fill_events if "-LEG-" in event.client_order_id.value]
+        leg_commissions = {event.instrument_id: event.commission for event in leg_fills}
+
+        assert parent_fill.commission == Money(Decimal("7.50"), USD)
+        assert leg_commissions == {
+            call.id: Money(Decimal("2.50"), USD),
+            put.id: Money(Decimal("5.00"), USD),
+        }
 
     def test_process_order_book_depth_10(self) -> None:
         # Arrange - Create L2_MBP matching engine for depth10 data

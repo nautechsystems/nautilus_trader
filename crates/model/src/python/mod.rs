@@ -203,6 +203,10 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::identifiers::Venue>()?;
     m.add_class::<crate::identifiers::VenueOrderId>()?;
     m.add_class::<crate::identifiers::OptionSeriesId>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::identifiers::new_generic_spread_id,
+        m
+    )?)?;
     // Orders
     m.add_class::<crate::orders::LimitOrder>()?;
     m.add_class::<crate::orders::LimitIfTouchedOrder>()?;
@@ -245,6 +249,20 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::instruments::PerpetualContract>()?;
     m.add_class::<crate::instruments::SyntheticInstrument>()?;
     m.add_class::<crate::instruments::TokenizedAsset>()?;
+    m.add_class::<instruments::tick_scheme::PyFixedTickScheme>()?;
+    m.add_class::<instruments::tick_scheme::PyTieredTickScheme>()?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_register_tick_scheme,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_get_tick_scheme,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        instruments::tick_scheme::py_list_tick_schemes,
+        m
+    )?)?;
     // Order book
     m.add_class::<crate::orderbook::book::OrderBook>()?;
     m.add_class::<crate::orderbook::level::BookLevel>()?;

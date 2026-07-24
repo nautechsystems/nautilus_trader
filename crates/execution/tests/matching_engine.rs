@@ -56,8 +56,8 @@ use nautilus_model::{
         TraderId, VenueOrderId, stubs::account_id,
     },
     instruments::{
-        CryptoOption, CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny,
-        OptionContract,
+        CryptoOption, CryptoPerpetual, Equity, FuturesSpread, IndexInstrument, Instrument,
+        InstrumentAny, OptionContract,
         stubs::{binary_option, crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
     orders::{
@@ -314,6 +314,43 @@ fn crypto_perpetual_with_size_precision(
     }
 }
 
+fn futures_contract_with_id(instrument_id: &str, symbol: &str) -> InstrumentAny {
+    let mut contract = futures_contract_es(None, None);
+    contract.id = InstrumentId::from(instrument_id);
+    contract.raw_symbol = Symbol::from(symbol);
+    InstrumentAny::FuturesContract(contract)
+}
+
+fn futures_spread_with_generic_id(instrument_id: &str, symbol: &str) -> InstrumentAny {
+    InstrumentAny::FuturesSpread(FuturesSpread::new(
+        InstrumentId::from(instrument_id),
+        Symbol::from(symbol),
+        AssetClass::Index,
+        Some(Ustr::from("XCME")),
+        Ustr::from("ES_NQ"),
+        Ustr::from("SPREAD"),
+        UnixNanos::from(1),
+        UnixNanos::from(2_000_000_000_000_000_000u64),
+        Currency::USD(),
+        2,
+        Price::from("0.25"),
+        Quantity::from(1),
+        Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    ))
+}
+
 fn order_event_handler_with_cache(
     cache: Rc<RefCell<Cache>>,
 ) -> TypedIntoMessageSavingHandler<OrderEventAny> {
@@ -350,6 +387,262 @@ fn clear_order_event_handler_messages(
     event_handler: &TypedIntoMessageSavingHandler<OrderEventAny>,
 ) {
     event_handler.clear();
+}
+
+#[rstest]
+fn test_spread_market_fill_emits_combo_and_leg_fills(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let leg_a = futures_contract_with_id("ESM4.XCME", "ESM4");
+    let leg_b = futures_contract_with_id("NQM4.XCME", "NQM4");
+    let spread = futures_spread_with_generic_id("((1))ESM4___(1)NQM4.XCME", "((1))ESM4___(1)NQM4");
+
+    cache.borrow_mut().add_instrument(leg_a.clone()).unwrap();
+    cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
+    cache.borrow_mut().add_instrument(spread.clone()).unwrap();
+
+    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(ts);
+    cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            leg_a.id(),
+            Price::from("5200.25"),
+            Price::from("5200.50"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            leg_b.id(),
+            Price::from("18130.50"),
+            Price::from("18130.75"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ))
+        .unwrap();
+
+    let mut engine =
+        get_order_matching_engine(spread.clone(), Some(clock), Some(cache), None, None);
+    engine.process_quote_tick(&QuoteTick::new(
+        spread.id(),
+        Price::from("12930.25"),
+        Price::from("12930.50"),
+        Quantity::from(10),
+        Quantity::from(10),
+        ts,
+        ts,
+    ));
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(spread.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(5))
+        .client_order_id(ClientOrderId::from("O-SPREAD"))
+        .submit(true)
+        .build();
+
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.process_order(&mut order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 3);
+    assert_eq!(fills[0].instrument_id, spread.id());
+    assert_eq!(fills[0].last_qty, Quantity::from(5));
+    assert_eq!(fills[0].last_px, Price::from("12930.50"));
+
+    assert_eq!(fills[1].instrument_id, leg_a.id());
+    assert_eq!(
+        fills[1].client_order_id,
+        ClientOrderId::from("O-SPREAD-LEG-ESM4")
+    );
+    assert_eq!(
+        fills[1].venue_order_id,
+        VenueOrderId::from("XCME-1-1-LEG-0")
+    );
+    assert_eq!(
+        fills[1].trade_id,
+        TradeId::from(format!("{}-0", fills[0].trade_id).as_str())
+    );
+    assert_eq!(fills[1].order_side, OrderSide::Sell);
+    assert_eq!(fills[1].last_qty, Quantity::from(5));
+    assert_eq!(fills[1].last_px, Price::from("5200.38"));
+
+    assert_eq!(fills[2].instrument_id, leg_b.id());
+    assert_eq!(
+        fills[2].client_order_id,
+        ClientOrderId::from("O-SPREAD-LEG-NQM4")
+    );
+    assert_eq!(
+        fills[2].venue_order_id,
+        VenueOrderId::from("XCME-1-1-LEG-1")
+    );
+    assert_eq!(
+        fills[2].trade_id,
+        TradeId::from(format!("{}-1", fills[0].trade_id).as_str())
+    );
+    assert_eq!(fills[2].order_side, OrderSide::Buy);
+    assert_eq!(fills[2].last_qty, Quantity::from(5));
+    assert_eq!(fills[2].last_px, Price::from("18130.88"));
+}
+
+#[rstest]
+fn test_spread_market_fill_sweeping_l2_levels_emits_leg_fills_per_fill(account_id: AccountId) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let order_event_handler = order_event_handler_with_cache(cache.clone());
+
+    let leg_a = futures_contract_with_id("ESM4.XCME", "ESM4");
+    let leg_b = futures_contract_with_id("NQM4.XCME", "NQM4");
+    let spread = futures_spread_with_generic_id("((1))ESM4___(1)NQM4.XCME", "((1))ESM4___(1)NQM4");
+
+    cache.borrow_mut().add_instrument(leg_a.clone()).unwrap();
+    cache.borrow_mut().add_instrument(leg_b.clone()).unwrap();
+    cache.borrow_mut().add_instrument(spread.clone()).unwrap();
+
+    let ts = UnixNanos::from(1_715_248_800_000_000_000u64);
+    let clock = Rc::new(RefCell::new(TestClock::new()));
+    clock.borrow_mut().set_time(ts);
+    cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            leg_a.id(),
+            Price::from("5200.25"),
+            Price::from("5200.50"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ))
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_quote(QuoteTick::new(
+            leg_b.id(),
+            Price::from("18130.50"),
+            Price::from("18130.75"),
+            Quantity::from(10),
+            Quantity::from(10),
+            ts,
+            ts,
+        ))
+        .unwrap();
+
+    let mut engine =
+        get_order_matching_engine_l2(spread.clone(), Some(clock), Some(cache), None, None);
+
+    let ask_level_1 = OrderBookDeltaTestBuilder::new(spread.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("12930.50"),
+            Quantity::from(3),
+            1,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask_level_1).unwrap();
+
+    let ask_level_2 = OrderBookDeltaTestBuilder::new(spread.id())
+        .book_action(BookAction::Add)
+        .book_order(BookOrder::new(
+            OrderSide::Sell,
+            Price::from("12931.00"),
+            Quantity::from(7),
+            2,
+        ))
+        .build();
+    engine.process_order_book_delta(&ask_level_2).unwrap();
+
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(spread.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(5))
+        .client_order_id(ClientOrderId::from("O-SPREAD"))
+        .submit(true)
+        .build();
+
+    clear_order_event_handler_messages(&order_event_handler);
+    engine.process_order(&mut order, account_id);
+
+    let fills: Vec<OrderFilled> = get_order_event_handler_messages(&order_event_handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    // Each swept level emits a combo fill followed by its own leg fills
+    assert_eq!(fills.len(), 6);
+
+    assert_eq!(fills[0].instrument_id, spread.id());
+    assert_eq!(fills[0].last_qty, Quantity::from(3));
+    assert_eq!(fills[0].last_px, Price::from("12930.50"));
+
+    assert_eq!(fills[1].instrument_id, leg_a.id());
+    assert_eq!(fills[1].order_side, OrderSide::Sell);
+    assert_eq!(fills[1].last_qty, Quantity::from(3));
+    assert_eq!(fills[1].last_px, Price::from("5200.38"));
+    assert_eq!(
+        fills[1].trade_id,
+        TradeId::from(format!("{}-0", fills[0].trade_id).as_str())
+    );
+
+    assert_eq!(fills[2].instrument_id, leg_b.id());
+    assert_eq!(fills[2].order_side, OrderSide::Buy);
+    assert_eq!(fills[2].last_qty, Quantity::from(3));
+    assert_eq!(fills[2].last_px, Price::from("18130.88"));
+    assert_eq!(
+        fills[2].trade_id,
+        TradeId::from(format!("{}-1", fills[0].trade_id).as_str())
+    );
+
+    assert_eq!(fills[3].instrument_id, spread.id());
+    assert_eq!(fills[3].last_qty, Quantity::from(2));
+    assert_eq!(fills[3].last_px, Price::from("12931.00"));
+
+    assert_eq!(fills[4].instrument_id, leg_a.id());
+    assert_eq!(fills[4].order_side, OrderSide::Sell);
+    assert_eq!(fills[4].last_qty, Quantity::from(2));
+    assert_eq!(fills[4].last_px, Price::from("5200.38"));
+    assert_eq!(
+        fills[4].trade_id,
+        TradeId::from(format!("{}-0", fills[3].trade_id).as_str())
+    );
+
+    assert_eq!(fills[5].instrument_id, leg_b.id());
+    assert_eq!(fills[5].order_side, OrderSide::Buy);
+    assert_eq!(fills[5].last_qty, Quantity::from(2));
+    assert_eq!(fills[5].last_px, Price::from("18131.38"));
+    assert_eq!(
+        fills[5].trade_id,
+        TradeId::from(format!("{}-1", fills[3].trade_id).as_str())
+    );
+
+    // Leg fills sum to the parent's total filled quantity
+    let sum_fill_qty = |instrument_id: InstrumentId| {
+        fills
+            .iter()
+            .filter(|fill| fill.instrument_id == instrument_id)
+            .fold(Quantity::from(0), |acc, fill| acc + fill.last_qty)
+    };
+    assert_eq!(sum_fill_qty(spread.id()), Quantity::from(5));
+    assert_eq!(sum_fill_qty(leg_a.id()), Quantity::from(5));
+    assert_eq!(sum_fill_qty(leg_b.id()), Quantity::from(5));
 }
 
 #[rstest]

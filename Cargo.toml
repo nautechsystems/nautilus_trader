@@ -47,6 +47,7 @@ members = [
   "crates/trading",
   "examples/tutorials",
 ]
+exclude = ["patches/pyo3-stub-gen"]
 
 [workspace.package]
 version = "0.61.0"
@@ -191,6 +192,7 @@ log = { version = "0.4.33", features = [
 ] }
 madsim = "0.2.34"
 mimalloc = "0.1.52"
+num-bigint = "0.4.8"
 object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }

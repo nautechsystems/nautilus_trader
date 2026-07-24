@@ -6223,6 +6223,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "num-bigint",
  "proptest",
  "pyo3",
  "pyo3-stub-gen",

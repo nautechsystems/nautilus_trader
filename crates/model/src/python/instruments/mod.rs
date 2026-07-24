@@ -15,6 +15,8 @@
 
 //! Instrument definitions the trading domain model.
 
+pub mod tick_scheme;
+
 use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{
     IntoPyObjectExt, Py, PyAny, PyResult, Python,

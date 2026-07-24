@@ -110,7 +110,7 @@ use nautilus_model::{
     identifiers::{
         ClientId, GENERIC_SPREAD_ID_SEPARATOR, InstrumentId, OptionSeriesId, Symbol, Venue,
     },
-    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument, tick_scheme_rule_from_name},
     orderbook::OrderBook,
     types::{Price, Quantity},
 };
@@ -135,10 +135,11 @@ use crate::defi::engine as _;
 use crate::engine::pool::PoolUpdater;
 use crate::{
     aggregation::{
-        BarAggregator, RenkoBarAggregator, SpreadQuoteAggregator, TickBarAggregator,
-        TickImbalanceBarAggregator, TickRunsBarAggregator, TimeBarAggregator, ValueBarAggregator,
-        ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
-        VolumeImbalanceBarAggregator, VolumeRunsBarAggregator,
+        BarAggregator, RenkoBarAggregator, SpreadPriceRounder, SpreadQuoteAggregator,
+        TickBarAggregator, TickImbalanceBarAggregator, TickRunsBarAggregator,
+        TickSchemePriceRounder, TimeBarAggregator, ValueBarAggregator, ValueImbalanceBarAggregator,
+        ValueRunsBarAggregator, VolumeBarAggregator, VolumeImbalanceBarAggregator,
+        VolumeRunsBarAggregator,
     },
     client::DataClientAdapter,
     option_chains::OptionChainManager,
@@ -1861,6 +1862,15 @@ impl DataEngine {
 
         resp.trim_to_bounds();
 
+        if let Err(e) = apply_instrument_properties(&mut resp) {
+            log::error!(
+                "Failed to apply instrument properties to {} response {}: {e}",
+                resp.kind(),
+                resp.correlation_id(),
+            );
+            return;
+        }
+
         if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
             self.handle_continuous_future_child_response(parent_id, &resp);
             return;
@@ -3243,7 +3253,7 @@ impl DataEngine {
                 .and_then(|params| params.get_u64("vega_pricing_timeout_seconds"))
                 .unwrap_or(60),
             None,
-            None,
+            spread_price_rounder(&instrument),
         )));
 
         let mut handlers = Vec::with_capacity(legs.len());
@@ -5142,6 +5152,12 @@ fn spread_instrument_legs(instrument: &InstrumentAny) -> Option<Vec<(InstrumentI
         .collect()
 }
 
+fn spread_price_rounder(instrument: &InstrumentAny) -> Option<Box<dyn SpreadPriceRounder>> {
+    let tick_scheme = instrument.tick_scheme()?;
+    let rule = tick_scheme_rule_from_name(tick_scheme.as_str())?;
+    Some(Box::new(TickSchemePriceRounder::new(rule)))
+}
+
 fn parse_spread_leg(component: &str, venue: Venue) -> Option<(InstrumentId, i64)> {
     if let Some(rest) = component.strip_prefix("((") {
         let (ratio, symbol) = rest.split_once("))")?;
@@ -5448,6 +5464,38 @@ fn log_if_empty_response<T, I: Display>(data: &[T], id: &I, correlation_id: &UUI
         return true;
     }
     false
+}
+
+fn apply_instrument_properties(resp: &mut DataResponse) -> anyhow::Result<()> {
+    let Some(tick_scheme) = response_tick_scheme(resp) else {
+        return Ok(());
+    };
+
+    match resp {
+        DataResponse::Instrument(response) => response.data.set_tick_scheme(Some(tick_scheme))?,
+        DataResponse::Instruments(response) => {
+            for instrument in &mut response.data {
+                instrument.set_tick_scheme(Some(tick_scheme))?;
+            }
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn response_tick_scheme(resp: &DataResponse) -> Option<Ustr> {
+    let params = match resp {
+        DataResponse::Instrument(response) => response.params.as_ref(),
+        DataResponse::Instruments(response) => response.params.as_ref(),
+        _ => None,
+    }?;
+    let properties = params.get("instrument_properties")?.as_object()?;
+    properties
+        .get("tick_scheme_name")
+        .or_else(|| properties.get("tick_scheme"))
+        .and_then(serde_json::Value::as_str)
+        .map(Ustr::from)
 }
 
 /// Concatenates same-variant leg payloads into a single rebuilt response keyed by `parent_id`.

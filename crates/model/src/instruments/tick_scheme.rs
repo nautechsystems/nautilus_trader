@@ -15,10 +15,16 @@
 
 //! Tick scheme definitions for price-level navigation.
 
-use std::{fmt::Display, str::FromStr, sync::LazyLock};
+use std::{
+    fmt::Display,
+    str::FromStr,
+    sync::{LazyLock, PoisonError, RwLock},
+};
 
+use ahash::AHashMap;
 use nautilus_core::correctness::{
-    CorrectnessError, CorrectnessResult, check_predicate_true, check_valid_string_ascii_optional,
+    CorrectnessError, CorrectnessResult, check_predicate_true, check_valid_string_ascii,
+    check_valid_string_ascii_optional,
 };
 use thiserror::Error;
 
@@ -132,6 +138,19 @@ pub enum TickSchemeError {
         #[source]
         source: CorrectnessError,
     },
+    /// A tick scheme name was invalid.
+    #[error("{source}")]
+    InvalidName {
+        /// The source correctness error.
+        #[source]
+        source: CorrectnessError,
+    },
+    /// A tick scheme name was already registered.
+    #[error("tick scheme {name} is already registered")]
+    DuplicateName {
+        /// The duplicate tick scheme name.
+        name: String,
+    },
     /// Tier expansion produced no ticks.
     #[error("tier expansion produced no ticks")]
     EmptyTickExpansion,
@@ -211,14 +230,55 @@ static FIXED_PRECISION_TICK_SCHEMES: LazyLock<Vec<FixedTickScheme>> = LazyLock::
         .collect()
 });
 
+static TICK_SCHEMES: LazyLock<RwLock<AHashMap<String, &'static TickScheme>>> =
+    LazyLock::new(|| {
+        let mut schemes = AHashMap::new();
+        insert_tick_scheme(
+            &mut schemes,
+            FIXED_TICK_SCHEME_NAME,
+            TickScheme::Fixed(*FIXED_TICK_SCHEME),
+        );
+        insert_tick_scheme(
+            &mut schemes,
+            FOREX_3DECIMAL_TICK_SCHEME_NAME,
+            TickScheme::Fixed(FIXED_PRECISION_TICK_SCHEMES[3]),
+        );
+        insert_tick_scheme(
+            &mut schemes,
+            FOREX_5DECIMAL_TICK_SCHEME_NAME,
+            TickScheme::Fixed(FIXED_PRECISION_TICK_SCHEMES[5]),
+        );
+        insert_tick_scheme(
+            &mut schemes,
+            TOPIX100_TICK_SCHEME_NAME,
+            TickScheme::Tiered(TOPIX100_TICK_SCHEME.clone()),
+        );
+        insert_tick_scheme(&mut schemes, BETFAIR_TICK_SCHEME_NAME, TickScheme::Betfair);
+        insert_tick_scheme(
+            &mut schemes,
+            CRYPTO_0_01_TICK_SCHEME_NAME,
+            TickScheme::Crypto,
+        );
+
+        for (precision, scheme) in FIXED_PRECISION_TICK_SCHEMES.iter().enumerate() {
+            insert_tick_scheme(
+                &mut schemes,
+                &format!("{FIXED_PRECISION_TICK_SCHEME_PREFIX}{precision}"),
+                TickScheme::Fixed(*scheme),
+            );
+        }
+        RwLock::new(schemes)
+    });
+
 #[derive(Clone, Copy, Debug)]
 pub struct FixedTickScheme {
     tick: f64,
+    precision: u8,
 }
 
 impl PartialEq for FixedTickScheme {
     fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick
+        self.tick == other.tick && self.precision == other.precision
     }
 }
 impl Eq for FixedTickScheme {}
@@ -238,7 +298,35 @@ impl FixedTickScheme {
             return Err(TickSchemeError::TickNotPositive { tick });
         }
 
-        Ok(Self { tick })
+        Ok(Self {
+            tick,
+            precision: infer_precision(tick),
+        })
+    }
+
+    /// Creates a new [`FixedTickScheme`] with an explicit output price precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `tick` or `price_precision` is invalid.
+    pub fn new_with_precision(tick: f64, price_precision: u8) -> Result<Self, TickSchemeError> {
+        let mut scheme = Self::new(tick)?;
+        Price::new_checked(0.0, price_precision)
+            .map_err(|source| TickSchemeError::InvalidPrecision { source })?;
+        scheme.precision = price_precision;
+        Ok(scheme)
+    }
+
+    /// Returns the fixed tick size.
+    #[must_use]
+    pub const fn tick(&self) -> f64 {
+        self.tick
+    }
+
+    /// Returns the default output price precision.
+    #[must_use]
+    pub const fn precision(&self) -> u8 {
+        self.precision
     }
 }
 
@@ -529,6 +617,18 @@ pub enum TickScheme {
     Crypto,
 }
 
+impl TickScheme {
+    /// Returns the default output price precision.
+    #[must_use]
+    pub fn precision(&self) -> u8 {
+        match self {
+            Self::Fixed(scheme) => scheme.precision(),
+            Self::Tiered(scheme) => scheme.precision(),
+            Self::Betfair | Self::Crypto => 2,
+        }
+    }
+}
+
 impl TickSchemeRule for TickScheme {
     #[inline(always)]
     fn next_bid_price(&self, value: f64, n: i32, precision: u8) -> Option<Price> {
@@ -566,51 +666,63 @@ impl FromStr for TickScheme {
     type Err = TickSchemeError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.trim().to_ascii_uppercase().as_str() {
-            FIXED_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(1.0)?)),
-            FOREX_3DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(0.001)?)),
-            FOREX_5DECIMAL_TICK_SCHEME_NAME => Ok(Self::Fixed(FixedTickScheme::new(0.00001)?)),
-            TOPIX100_TICK_SCHEME_NAME => Ok(Self::Tiered(TieredTickScheme::topix100())),
-            BETFAIR_TICK_SCHEME_NAME => Ok(Self::Betfair),
-            CRYPTO_0_01_TICK_SCHEME_NAME => Ok(Self::Crypto),
-            name => {
-                if let Some(precision) = parse_fixed_precision_name(name)
-                    && precision <= FIXED_PRECISION
-                {
-                    let tick = 10_f64.powi(-i32::from(precision));
-                    return Ok(Self::Fixed(FixedTickScheme::new(tick)?));
-                }
-                Err(TickSchemeError::UnknownName {
-                    name: s.to_string(),
-                })
-            }
-        }
+        get_tick_scheme(s)
+            .cloned()
+            .ok_or_else(|| TickSchemeError::UnknownName {
+                name: s.to_string(),
+            })
     }
+}
+
+/// Registers a named tick scheme for the lifetime of the process.
+///
+/// Names are matched without regard to ASCII case. A name cannot be replaced once registered.
+///
+/// # Errors
+///
+/// Returns an error if `name` is invalid or already registered.
+pub fn register_tick_scheme(name: &str, tick_scheme: TickScheme) -> Result<(), TickSchemeError> {
+    check_valid_string_ascii(name, "name")
+        .map_err(|source| TickSchemeError::InvalidName { source })?;
+
+    let mut schemes = TICK_SCHEMES.write().unwrap_or_else(PoisonError::into_inner);
+    if schemes
+        .keys()
+        .any(|registered| registered.eq_ignore_ascii_case(name))
+    {
+        return Err(TickSchemeError::DuplicateName {
+            name: name.to_string(),
+        });
+    }
+    insert_tick_scheme(&mut schemes, name, tick_scheme);
+    Ok(())
+}
+
+/// Returns a registered tick scheme by name.
+#[must_use]
+pub fn get_tick_scheme(name: &str) -> Option<&'static TickScheme> {
+    let schemes = TICK_SCHEMES.read().unwrap_or_else(PoisonError::into_inner);
+    schemes.get(name).copied().or_else(|| {
+        schemes
+            .iter()
+            .find(|(registered, _)| registered.eq_ignore_ascii_case(name))
+            .map(|(_, scheme)| *scheme)
+    })
+}
+
+/// Returns all registered tick scheme names in sorted order.
+#[must_use]
+pub fn list_tick_schemes() -> Vec<String> {
+    let schemes = TICK_SCHEMES.read().unwrap_or_else(PoisonError::into_inner);
+    let mut names: Vec<String> = schemes.keys().cloned().collect();
+    names.sort_unstable();
+    names
 }
 
 /// Returns a registered tick scheme rule by name.
 #[must_use]
 pub fn tick_scheme_rule_from_name(name: &str) -> Option<&'static dyn TickSchemeRule> {
-    let name = name.trim();
-    if name.eq_ignore_ascii_case(FIXED_TICK_SCHEME_NAME) {
-        Some(&*FIXED_TICK_SCHEME)
-    } else if name.eq_ignore_ascii_case(FOREX_3DECIMAL_TICK_SCHEME_NAME) {
-        Some(&FIXED_PRECISION_TICK_SCHEMES[3])
-    } else if name.eq_ignore_ascii_case(FOREX_5DECIMAL_TICK_SCHEME_NAME) {
-        Some(&FIXED_PRECISION_TICK_SCHEMES[5])
-    } else if name.eq_ignore_ascii_case(TOPIX100_TICK_SCHEME_NAME) {
-        Some(&*TOPIX100_TICK_SCHEME)
-    } else if name.eq_ignore_ascii_case(BETFAIR_TICK_SCHEME_NAME) {
-        Some(&*BETFAIR_TICK_SCHEME)
-    } else if name.eq_ignore_ascii_case(CRYPTO_0_01_TICK_SCHEME_NAME) {
-        Some(&*CRYPTO_0_01_TICK_SCHEME)
-    } else {
-        parse_fixed_precision_name_ignore_ascii_case(name).and_then(|precision| {
-            FIXED_PRECISION_TICK_SCHEMES
-                .get(usize::from(precision))
-                .map(|scheme| scheme as &dyn TickSchemeRule)
-        })
-    }
+    get_tick_scheme(name).map(|scheme| scheme as &dyn TickSchemeRule)
 }
 
 /// Validates an optional tick scheme name.
@@ -642,19 +754,21 @@ fn f64_to_raw(value: f64, precision: u8) -> PriceRaw {
     }
 }
 
-fn parse_fixed_precision_name(name: &str) -> Option<u8> {
-    name.strip_prefix(FIXED_PRECISION_TICK_SCHEME_PREFIX)
-        .and_then(|precision| precision.parse::<u8>().ok())
+fn infer_precision(value: f64) -> u8 {
+    (0..=FIXED_PRECISION)
+        .find(|precision| {
+            let scaled = value * 10_f64.powi(i32::from(*precision));
+            (scaled - scaled.round()).abs() <= f64::EPSILON * scaled.abs().max(1.0) * 4.0
+        })
+        .unwrap_or(FIXED_PRECISION)
 }
 
-fn parse_fixed_precision_name_ignore_ascii_case(name: &str) -> Option<u8> {
-    let prefix_len = FIXED_PRECISION_TICK_SCHEME_PREFIX.len();
-    let prefix = name.get(..prefix_len)?;
-    if !prefix.eq_ignore_ascii_case(FIXED_PRECISION_TICK_SCHEME_PREFIX) {
-        return None;
-    }
-
-    name.get(prefix_len..)?.parse::<u8>().ok()
+fn insert_tick_scheme(
+    schemes: &mut AHashMap<String, &'static TickScheme>,
+    name: &str,
+    tick_scheme: TickScheme,
+) {
+    schemes.insert(name.to_string(), Box::leak(Box::new(tick_scheme)));
 }
 
 fn fixed_next_bid_price(tick: f64, value: f64, n: i32, precision: u8) -> Option<Price> {
@@ -776,6 +890,43 @@ mod tests {
 
         assert_eq!(scheme.next_bid_price(0.3, 0, 1), Some(Price::new(0.3, 1)));
         assert_eq!(scheme.next_ask_price(0.31, 0, 1), Some(Price::new(0.4, 1)));
+    }
+
+    #[rstest]
+    fn registered_tiered_tick_scheme_is_available_to_rule_lookup_and_from_str() {
+        const NAME: &str = "TEST_ES_OPTIONS_DYNAMIC";
+        let scheme =
+            TieredTickScheme::new(&[(0.05, 10.0, 0.05), (10.0, f64::INFINITY, 0.25)], 2, 1_000)
+                .unwrap();
+        register_tick_scheme(NAME, TickScheme::Tiered(scheme)).unwrap();
+
+        let scheme = tick_scheme_rule_from_name(NAME).unwrap();
+
+        assert_eq!(scheme.next_bid_price(9.99, 0, 2), Some(Price::new(9.95, 2)));
+        assert_eq!(scheme.next_ask_price(9.99, 0, 2), Some(Price::new(10.0, 2)));
+        assert_eq!(
+            scheme.next_bid_price(10.63, 0, 2),
+            Some(Price::new(10.5, 2))
+        );
+        assert_eq!(
+            scheme.next_ask_price(10.63, 0, 2),
+            Some(Price::new(10.75, 2))
+        );
+        assert_eq!(
+            TickScheme::from_str(NAME),
+            get_tick_scheme(NAME)
+                .cloned()
+                .ok_or(TickSchemeError::UnknownName {
+                    name: NAME.to_string(),
+                })
+        );
+        assert!(list_tick_schemes().contains(&NAME.to_string()));
+        assert_eq!(
+            register_tick_scheme(NAME, TickScheme::Fixed(FixedTickScheme::new(0.01).unwrap())),
+            Err(TickSchemeError::DuplicateName {
+                name: NAME.to_string(),
+            })
+        );
     }
 
     #[rstest]

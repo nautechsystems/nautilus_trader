@@ -51,7 +51,7 @@ use nautilus_model::{
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
-        VenueOrderId,
+        VenueOrderId, parse_generic_spread_id_legs,
     },
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
@@ -62,7 +62,8 @@ use nautilus_model::{
         quantity::QuantityRaw,
     },
 };
-use rust_decimal::Decimal;
+use num_bigint::BigInt;
+use rust_decimal::{Decimal, RoundingStrategy};
 use ustr::Ustr;
 
 use crate::{
@@ -142,6 +143,15 @@ impl Debug for OrderMatchingEngine {
             .field("instrument", &self.instrument.id())
             .finish()
     }
+}
+
+struct SpreadLegFill {
+    instrument_id: InstrumentId,
+    quantity: Quantity,
+    price: Price,
+    currency: Currency,
+    side: OrderSide,
+    commission: Money,
 }
 
 impl OrderMatchingEngine {
@@ -5001,12 +5011,10 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
-                && order.order_type() == OrderType::MarketToLimit
-            {
-                self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
-                initial_market_to_limit_fill = true;
-            }
+            let market_to_limit_update_px = (order.filled_qty()
+                == Quantity::zero(order.filled_qty().precision)
+                && order.order_type() == OrderType::MarketToLimit)
+                .then_some(fill_px);
 
             if self.book_type == BookType::L1_MBP && self.fill_model.is_slipped()? {
                 fill_px = match order.order_side().as_specified() {
@@ -5043,6 +5051,16 @@ impl OrderMatchingEngine {
                 effective_fill_qty,
                 order.quantity().saturating_sub(total_filled),
             );
+
+            if capped_fill_qty.is_zero() {
+                continue;
+            }
+            let spread_leg_fills =
+                self.prepare_spread_leg_fills(order, capped_fill_qty, fill_px)?;
+            if let Some(update_px) = market_to_limit_update_px {
+                self.generate_order_updated(order, order.quantity(), Some(update_px), None, None);
+                initial_market_to_limit_fill = true;
+            }
             let reduce_only_exhausts_position = reduce_only_remaining_raw
                 .is_some_and(|remaining_raw| capped_fill_qty.raw >= remaining_raw);
 
@@ -5071,7 +5089,7 @@ impl OrderMatchingEngine {
                     .expect("Overflow occurred when adding reduce-only filled quantity");
             }
 
-            self.fill_order(
+            let fill_ids = self.fill_order(
                 order,
                 fill_px,
                 effective_fill_qty,
@@ -5079,6 +5097,16 @@ impl OrderMatchingEngine {
                 venue_position_id,
                 position,
             )?;
+
+            if let Some((venue_order_id, trade_id)) = fill_ids {
+                self.dispatch_spread_leg_fills(
+                    order,
+                    venue_order_id,
+                    trade_id,
+                    spread_leg_fills,
+                    liquidity_side,
+                );
+            }
             last_fill_px = Some(fill_px);
 
             if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
@@ -5145,26 +5173,30 @@ impl OrderMatchingEngine {
                 if leaves_qty.raw > remaining_raw {
                     leaves_qty = Quantity::from_raw(remaining_raw, leaves_qty.precision);
                 }
-
-                if leaves_qty.raw >= remaining_raw {
-                    let reduce_only_target_raw = reduce_only_filled_raw
-                        .unwrap_or(initial_total_filled.raw)
-                        .checked_add(leaves_qty.raw)
-                        .expect("Overflow occurred when adding reduce-only target quantity");
-                    let reduce_only_target =
-                        Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
-
-                    if order.quantity() != reduce_only_target {
-                        self.generate_order_updated(order, reduce_only_target, None, None, None);
-                    }
-                }
             }
 
             if leaves_qty.is_zero() {
                 return Ok(());
             }
 
-            self.fill_order(
+            let spread_leg_fills =
+                self.prepare_spread_leg_fills(order, leaves_qty, slip_fill_px)?;
+            if reduce_only_remaining_raw
+                .is_some_and(|remaining_raw| leaves_qty.raw >= remaining_raw)
+            {
+                let reduce_only_target_raw = reduce_only_filled_raw
+                    .unwrap_or(initial_total_filled.raw)
+                    .checked_add(leaves_qty.raw)
+                    .expect("Overflow occurred when adding reduce-only target quantity");
+                let reduce_only_target =
+                    Quantity::from_raw(reduce_only_target_raw, order.quantity().precision);
+
+                if order.quantity() != reduce_only_target {
+                    self.generate_order_updated(order, reduce_only_target, None, None, None);
+                }
+            }
+
+            let fill_ids = self.fill_order(
                 order,
                 slip_fill_px,
                 leaves_qty,
@@ -5172,6 +5204,16 @@ impl OrderMatchingEngine {
                 venue_position_id,
                 position,
             )?;
+
+            if let Some((venue_order_id, trade_id)) = fill_ids {
+                self.dispatch_spread_leg_fills(
+                    order,
+                    venue_order_id,
+                    trade_id,
+                    spread_leg_fills,
+                    liquidity_side,
+                );
+            }
             self.purge_cached_filled_qty_if_closed(order.client_order_id());
         }
 
@@ -5221,7 +5263,7 @@ impl OrderMatchingEngine {
         liquidity_side: LiquiditySide,
         venue_position_id: Option<PositionId>,
         _position: Option<&Position>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<(VenueOrderId, TradeId)>> {
         self.check_size_precision(last_qty.precision, "fill quantity")?;
 
         let (last_qty, new_filled_qty) =
@@ -5235,7 +5277,7 @@ impl OrderMatchingEngine {
             };
 
         if last_qty.is_zero() {
-            return Ok(());
+            return Ok(None);
         }
 
         let fee_order;
@@ -5263,7 +5305,7 @@ impl OrderMatchingEngine {
             .insert(order.client_order_id(), new_filled_qty);
 
         let venue_order_id = self.ids_generator.get_venue_order_id(order).unwrap();
-        self.generate_order_filled(
+        let trade_id = self.generate_order_filled(
             order,
             venue_order_id,
             venue_position_id,
@@ -5273,6 +5315,7 @@ impl OrderMatchingEngine {
             commission,
             liquidity_side,
         );
+        let fill_ids = Some((venue_order_id, trade_id));
 
         let post_fill_filled_qty = self
             .cached_filled_qty
@@ -5294,7 +5337,7 @@ impl OrderMatchingEngine {
         }
 
         if !self.config.support_contingent_orders {
-            return Ok(());
+            return Ok(fill_ids);
         }
 
         if let Some(contingency_type) = order.contingency_type() {
@@ -5424,7 +5467,518 @@ impl OrderMatchingEngine {
             }
         }
 
-        Ok(())
+        Ok(fill_ids)
+    }
+
+    fn prepare_spread_leg_fills(
+        &self,
+        order: &OrderAny,
+        spread_fill_qty: Quantity,
+        spread_fill_px: Price,
+    ) -> anyhow::Result<Option<(AccountId, Vec<SpreadLegFill>)>> {
+        if !self.instrument.is_spread() {
+            return Ok(None);
+        }
+
+        let Some(leg_tuples) = parse_generic_spread_id_legs(&order.instrument_id()) else {
+            log::warn!(
+                "Cannot generate spread leg fills: {} is not a generic spread ID",
+                order.instrument_id()
+            );
+            return Ok(None);
+        };
+
+        if leg_tuples.len() <= 1 {
+            return Ok(None);
+        }
+
+        let leg_prices = self.calculate_spread_leg_execution_prices(&leg_tuples, spread_fill_px)?;
+
+        let account_id = order
+            .account_id()
+            .or_else(|| self.account_ids.get(&order.trader_id()).copied())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Account ID not found for trader {}", order.trader_id())
+            })?;
+        let mut fills = Vec::with_capacity(leg_tuples.len());
+
+        for (leg_instrument_id, ratio) in &leg_tuples {
+            anyhow::ensure!(
+                *ratio != 0,
+                "Spread leg {leg_instrument_id} has a zero ratio"
+            );
+            let leg_price = leg_prices[leg_instrument_id];
+
+            let leg_instrument = self
+                .cache
+                .borrow()
+                .instrument(leg_instrument_id)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Leg instrument not found in cache: {leg_instrument_id}")
+                })?;
+
+            let quantity = spread_fill_qty
+                .as_decimal()
+                .checked_mul(Decimal::from(ratio.unsigned_abs()))
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Spread leg quantity overflow for {leg_instrument_id} with ratio {ratio}"
+                    )
+                })?;
+            let quantity = quantity.round_dp_with_strategy(
+                u32::from(leg_instrument.min_size_increment_precision()),
+                RoundingStrategy::ToZero,
+            );
+            anyhow::ensure!(
+                !quantity.is_zero(),
+                "Spread leg quantity rounded to zero for {leg_instrument_id}",
+            );
+            let leg_quantity =
+                Quantity::from_decimal_dp(quantity, leg_instrument.size_precision())?;
+
+            let order_side = match (order.order_side(), *ratio > 0) {
+                (OrderSide::Buy, true) | (OrderSide::Sell, false) => OrderSide::Buy,
+                (OrderSide::Sell, true) | (OrderSide::Buy, false) => OrderSide::Sell,
+                _ => anyhow::bail!(
+                    "Cannot generate spread leg fill: invalid side {} for {}",
+                    order.order_side(),
+                    order.client_order_id()
+                ),
+            };
+
+            let commission = self
+                .fee_model
+                .get_commission(order, leg_quantity, leg_price, &leg_instrument)
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to compute commission for spread leg {leg_instrument_id}: {e}"
+                    )
+                })?;
+
+            fills.push(SpreadLegFill {
+                instrument_id: *leg_instrument_id,
+                quantity: leg_quantity,
+                price: leg_price,
+                currency: leg_instrument.quote_currency(),
+                side: order_side,
+                commission,
+            });
+        }
+
+        Ok(Some((account_id, fills)))
+    }
+
+    fn dispatch_spread_leg_fills(
+        &self,
+        order: &OrderAny,
+        venue_order_id: VenueOrderId,
+        combo_trade_id: TradeId,
+        prepared: Option<(AccountId, Vec<SpreadLegFill>)>,
+        liquidity_side: LiquiditySide,
+    ) {
+        let Some((account_id, fills)) = prepared else {
+            return;
+        };
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        for (leg_position, fill) in fills.into_iter().enumerate() {
+            let leg_client_order_id = ClientOrderId::from(
+                format!(
+                    "{}-LEG-{}",
+                    order.client_order_id(),
+                    fill.instrument_id.symbol
+                )
+                .as_str(),
+            );
+            let leg_venue_order_id =
+                VenueOrderId::from(format!("{venue_order_id}-LEG-{leg_position}").as_str());
+            let event = OrderEventAny::Filled(OrderFilled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                fill.instrument_id,
+                leg_client_order_id,
+                leg_venue_order_id,
+                account_id,
+                TradeId::from(format!("{combo_trade_id}-{leg_position}").as_str()),
+                fill.side,
+                order.order_type(),
+                fill.quantity,
+                fill.price,
+                fill.currency,
+                liquidity_side,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                None,
+                Some(fill.commission),
+                None,
+            ));
+
+            self.dispatch_order_event(event);
+        }
+    }
+
+    fn calculate_spread_leg_execution_prices(
+        &self,
+        leg_tuples: &[(InstrumentId, i64)],
+        spread_execution_price: Price,
+    ) -> anyhow::Result<IndexMap<InstrumentId, Price>> {
+        let mut legs = IndexMap::new();
+
+        for (leg_instrument_id, ratio) in leg_tuples {
+            anyhow::ensure!(
+                *ratio != 0,
+                "Spread leg {leg_instrument_id} has a zero ratio"
+            );
+            let cache = self.cache.borrow();
+            let quote = cache.quote(leg_instrument_id).copied().ok_or_else(|| {
+                anyhow::anyhow!("Quote not found for spread leg {leg_instrument_id}")
+            })?;
+            let instrument = cache
+                .instrument(leg_instrument_id)
+                .cloned()
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Instrument not found for spread leg {leg_instrument_id}")
+                })?;
+            let mid =
+                (quote.bid_price.as_decimal() + quote.ask_price.as_decimal()) / Decimal::from(2);
+            legs.insert(*leg_instrument_id, (*ratio, instrument, mid));
+        }
+        anyhow::ensure!(
+            legs.len() == leg_tuples.len(),
+            "Spread leg identifiers must be unique"
+        );
+
+        let mut anchors = legs
+            .iter()
+            .map(|(instrument_id, (_, _, mid))| (*instrument_id, *mid))
+            .collect::<Vec<_>>();
+        anchors.sort_by_key(|(_, mid)| std::cmp::Reverse(*mid));
+
+        for (anchor_id, _) in anchors {
+            let mut prices = IndexMap::new();
+            let mut weighted_sum = Decimal::ZERO;
+            let mut anchor_valid = true;
+
+            for (instrument_id, (ratio, instrument, mid)) in &legs {
+                if *instrument_id == anchor_id {
+                    continue;
+                }
+                let Ok(price) = Self::make_spread_leg_price(instrument, *mid) else {
+                    anchor_valid = false;
+                    break;
+                };
+                let Some(weighted_price) = price.as_decimal().checked_mul(Decimal::from(*ratio))
+                else {
+                    anchor_valid = false;
+                    break;
+                };
+                let Some(sum) = weighted_sum.checked_add(weighted_price) else {
+                    anchor_valid = false;
+                    break;
+                };
+                weighted_sum = sum;
+                prices.insert(*instrument_id, price);
+            }
+
+            if !anchor_valid {
+                continue;
+            }
+
+            let (anchor_ratio, anchor_instrument, _) = &legs[&anchor_id];
+            let Some(anchor_value) = spread_execution_price
+                .as_decimal()
+                .checked_sub(weighted_sum)
+                .and_then(|value| value.checked_div(Decimal::from(*anchor_ratio)))
+            else {
+                continue;
+            };
+            let Ok(anchor_price) = Self::make_spread_leg_price(anchor_instrument, anchor_value)
+            else {
+                continue;
+            };
+            prices.insert(anchor_id, anchor_price);
+
+            let Some(emitted_sum) = Self::spread_weighted_sum(&prices, leg_tuples) else {
+                continue;
+            };
+
+            if emitted_sum == spread_execution_price.as_decimal() {
+                return Ok(prices);
+            }
+        }
+
+        if let Some(prices) = Self::adjust_spread_prices_on_tick_grid(
+            &legs,
+            leg_tuples,
+            spread_execution_price.as_decimal(),
+        )? {
+            return Ok(prices);
+        }
+
+        anyhow::bail!(
+            "Spread execution price {spread_execution_price} cannot be represented exactly by leg price increments"
+        )
+    }
+
+    fn adjust_spread_prices_on_tick_grid(
+        legs: &IndexMap<InstrumentId, (i64, InstrumentAny, Decimal)>,
+        leg_tuples: &[(InstrumentId, i64)],
+        target: Decimal,
+    ) -> anyhow::Result<Option<IndexMap<InstrumentId, Price>>> {
+        let mut prices = IndexMap::new();
+        let mut weighted_sum = Decimal::ZERO;
+        let mut coefficients = Vec::with_capacity(leg_tuples.len());
+        let mut ticks = Vec::with_capacity(leg_tuples.len());
+        let mut scale = target.scale();
+
+        for (instrument_id, ratio) in leg_tuples {
+            let (_, instrument, mid) = &legs[instrument_id];
+            let price = Self::make_spread_leg_price(instrument, *mid)?;
+            let weighted_price = price
+                .as_decimal()
+                .checked_mul(Decimal::from(*ratio))
+                .ok_or_else(|| anyhow::anyhow!("Spread leg weighted price overflow"))?;
+            weighted_sum = weighted_sum
+                .checked_add(weighted_price)
+                .ok_or_else(|| anyhow::anyhow!("Spread leg weighted sum overflow"))?;
+            let tick = instrument.price_increment().as_decimal();
+            let coefficient = tick
+                .checked_mul(Decimal::from(*ratio))
+                .ok_or_else(|| anyhow::anyhow!("Spread leg tick coefficient overflow"))?;
+            scale = scale.max(coefficient.scale());
+            coefficients.push(coefficient);
+            ticks.push(tick);
+            prices.insert(*instrument_id, price);
+        }
+
+        let residual = target
+            .checked_sub(weighted_sum)
+            .ok_or_else(|| anyhow::anyhow!("Spread leg residual overflow"))?;
+        let residual_units = Self::decimal_units(residual, scale).ok_or_else(|| {
+            anyhow::anyhow!("Spread leg residual cannot use common scale {scale}")
+        })?;
+        let coefficient_units = coefficients
+            .into_iter()
+            .map(|value| Self::decimal_units(value, scale))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| {
+                anyhow::anyhow!("Spread leg coefficients cannot use common scale {scale}")
+            })?;
+        let tick_units = ticks
+            .into_iter()
+            .map(|value| Self::decimal_units(value, scale).and_then(i128::checked_abs))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow::anyhow!("Spread leg ticks cannot use common scale {scale}"))?;
+        let Some(adjustments) =
+            Self::minimum_grid_solution(&coefficient_units, &tick_units, residual_units)
+        else {
+            return Ok(None);
+        };
+
+        for ((instrument_id, _), adjustment) in leg_tuples.iter().zip(adjustments) {
+            let (_, instrument, _) = &legs[instrument_id];
+            let adjustment = instrument
+                .price_increment()
+                .as_decimal()
+                .checked_mul(Decimal::from_i128_with_scale(adjustment, 0))
+                .ok_or_else(|| anyhow::anyhow!("Spread leg price adjustment overflow"))?;
+            let adjusted = prices[instrument_id]
+                .as_decimal()
+                .checked_add(adjustment)
+                .ok_or_else(|| anyhow::anyhow!("Spread leg adjusted price overflow"))?;
+            prices.insert(
+                *instrument_id,
+                Price::from_decimal_dp(adjusted, instrument.price_precision())?,
+            );
+        }
+
+        Ok(Self::spread_weighted_sum(&prices, leg_tuples)
+            .is_some_and(|emitted_sum| emitted_sum == target)
+            .then_some(prices))
+    }
+
+    fn spread_weighted_sum(
+        prices: &IndexMap<InstrumentId, Price>,
+        leg_tuples: &[(InstrumentId, i64)],
+    ) -> Option<Decimal> {
+        leg_tuples
+            .iter()
+            .try_fold(Decimal::ZERO, |sum, (id, ratio)| {
+                prices
+                    .get(id)?
+                    .as_decimal()
+                    .checked_mul(Decimal::from(*ratio))
+                    .and_then(|value| sum.checked_add(value))
+            })
+    }
+
+    fn decimal_units(mut value: Decimal, scale: u32) -> Option<i128> {
+        value.rescale(scale);
+        (value.scale() == scale).then(|| value.mantissa())
+    }
+
+    fn minimum_grid_solution(
+        coefficients: &[i128],
+        tick_units: &[i128],
+        target: i128,
+    ) -> Option<Vec<i128>> {
+        let mut best = None;
+
+        for left in 0..coefficients.len() {
+            for right in (left + 1)..coefficients.len() {
+                let Some((left_value, right_value)) = Self::minimum_pair_solution(
+                    coefficients[left],
+                    coefficients[right],
+                    tick_units[left],
+                    tick_units[right],
+                    target,
+                ) else {
+                    continue;
+                };
+                let mut candidate = vec![0; coefficients.len()];
+                candidate[left] = left_value;
+                candidate[right] = right_value;
+                let objective = Self::grid_solution_objective(&candidate, tick_units);
+
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_objective, _)| objective < *best_objective)
+                {
+                    best = Some((objective, candidate));
+                }
+            }
+        }
+
+        if let Some((_, solution)) = best {
+            return Some(solution);
+        }
+        None
+    }
+
+    fn minimum_pair_solution(
+        left: i128,
+        right: i128,
+        left_tick: i128,
+        right_tick: i128,
+        target: i128,
+    ) -> Option<(i128, i128)> {
+        let (gcd, left_weight, right_weight) =
+            Self::extended_gcd(left.checked_abs()?, right.checked_abs()?)?;
+
+        if gcd == 0 || target % gcd != 0 {
+            return None;
+        }
+        let multiplier = target / gcd;
+        let left_value = left_weight
+            .checked_mul(left.signum())?
+            .checked_mul(multiplier)?;
+        let right_value = right_weight
+            .checked_mul(right.signum())?
+            .checked_mul(multiplier)?;
+        let left_step = right / gcd;
+        let right_step = -(left / gcd);
+        let center = Self::minimum_pair_parameter(
+            left_value,
+            right_value,
+            left_step,
+            right_step,
+            left_tick,
+            right_tick,
+        )?;
+        let mut best = None;
+
+        for parameter in [center.saturating_sub(1), center, center.saturating_add(1)] {
+            let Some(candidate_left) = left_step
+                .checked_mul(parameter)
+                .and_then(|offset| left_value.checked_add(offset))
+            else {
+                continue;
+            };
+            let Some(candidate_right) = right_step
+                .checked_mul(parameter)
+                .and_then(|offset| right_value.checked_add(offset))
+            else {
+                continue;
+            };
+            let objective = Self::grid_solution_objective(
+                &[candidate_left, candidate_right],
+                &[left_tick, right_tick],
+            );
+
+            if best
+                .as_ref()
+                .is_none_or(|(best_objective, _, _)| objective < *best_objective)
+            {
+                best = Some((objective, candidate_left, candidate_right));
+            }
+        }
+        best.map(|(_, left, right)| (left, right))
+    }
+
+    fn minimum_pair_parameter(
+        left_value: i128,
+        right_value: i128,
+        left_step: i128,
+        right_step: i128,
+        left_tick: i128,
+        right_tick: i128,
+    ) -> Option<i128> {
+        let left_step = BigInt::from(left_step);
+        let right_step = BigInt::from(right_step);
+        let left_weight = BigInt::from(left_tick) * BigInt::from(left_tick);
+        let right_weight = BigInt::from(right_tick) * BigInt::from(right_tick);
+        let numerator = -(&left_step * &left_weight * BigInt::from(left_value)
+            + &right_step * &right_weight * BigInt::from(right_value));
+        let denominator =
+            &left_step * &left_step * left_weight + &right_step * &right_step * right_weight;
+
+        if denominator == BigInt::from(0) {
+            return None;
+        }
+        i128::try_from(numerator / denominator).ok()
+    }
+
+    fn grid_solution_objective(solution: &[i128], tick_units: &[i128]) -> BigInt {
+        solution
+            .iter()
+            .zip(tick_units)
+            .fold(BigInt::from(0), |total, (adjustment, tick)| {
+                let distance = BigInt::from(*adjustment) * BigInt::from(*tick);
+                total + &distance * &distance
+            })
+    }
+
+    fn extended_gcd(mut left: i128, mut right: i128) -> Option<(i128, i128, i128)> {
+        let (mut old_s, mut s) = (1_i128, 0_i128);
+        let (mut old_t, mut t) = (0_i128, 1_i128);
+
+        while right != 0 {
+            let quotient = left / right;
+            (left, right) = (right, left.checked_sub(quotient.checked_mul(right)?)?);
+            (old_s, s) = (s, old_s.checked_sub(quotient.checked_mul(s)?)?);
+            (old_t, t) = (t, old_t.checked_sub(quotient.checked_mul(t)?)?);
+        }
+        Some((left, old_s, old_t))
+    }
+
+    fn make_spread_leg_price(instrument: &InstrumentAny, value: Decimal) -> anyhow::Result<Price> {
+        let increment = instrument.price_increment().as_decimal();
+        anyhow::ensure!(
+            increment > Decimal::ZERO,
+            "Spread leg {} has a non-positive price increment {increment}",
+            instrument.id()
+        );
+        let ticks = value
+            .checked_div(increment)
+            .ok_or_else(|| anyhow::anyhow!("Spread leg tick conversion overflow"))?
+            .round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+        let rounded = ticks
+            .checked_mul(increment)
+            .ok_or_else(|| anyhow::anyhow!("Spread leg price rounding overflow"))?;
+        Price::from_decimal_dp(rounded, instrument.price_precision()).map_err(Into::into)
     }
 
     fn fee_underlying_price(&self) -> CorrectnessResult<Option<Price>> {
@@ -6547,7 +7101,7 @@ impl OrderMatchingEngine {
         quote_currency: Currency,
         commission: Money,
         liquidity_side: LiquiditySide,
-    ) {
+    ) -> TradeId {
         debug_assert!(
             last_qty <= order.quantity(),
             "Fill quantity {last_qty} exceeds order quantity {order_qty} for {client_order_id}",
@@ -6559,6 +7113,7 @@ impl OrderMatchingEngine {
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
+        let trade_id = self.ids_generator.generate_trade_id(ts_now);
         let event = OrderEventAny::Filled(OrderFilled::new(
             order.trader_id(),
             order.strategy_id(),
@@ -6566,7 +7121,7 @@ impl OrderMatchingEngine {
             order.client_order_id(),
             venue_order_id,
             account_id,
-            self.ids_generator.generate_trade_id(ts_now),
+            trade_id,
             order.order_side(),
             order.order_type(),
             last_qty,
@@ -6583,6 +7138,7 @@ impl OrderMatchingEngine {
         ));
 
         self.dispatch_order_event(event);
+        trade_id
     }
 }
 
@@ -6701,6 +7257,7 @@ mod tests {
         rc::Rc,
     };
 
+    use indexmap::IndexMap;
     use nautilus_common::{cache::Cache, clock::TestClock};
     use nautilus_core::{UnixNanos, correctness::CorrectnessError};
     use nautilus_model::{
@@ -6710,28 +7267,39 @@ mod tests {
             order::{BookOrder, OrderId},
         },
         enums::{
-            AccountType, AggressorSide, BookAction, BookType, LiquiditySide, OmsType, OrderSide,
-            OrderType, RecordFlag, TimeInForce, TrailingOffsetType, TriggerType,
+            AccountType, AggressorSide, AssetClass, BookAction, BookType, LiquiditySide, OmsType,
+            OptionKind, OrderSide, OrderType, RecordFlag, TimeInForce, TrailingOffsetType,
+            TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ClientOrderId, TradeId, VenueOrderId},
+        identifiers::{
+            AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId,
+            new_generic_spread_id,
+        },
         instruments::{
-            Instrument, InstrumentAny,
-            stubs::{crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es},
+            Instrument, InstrumentAny, OptionContract, OptionSpread,
+            stubs::{
+                crypto_option_btc_deribit, crypto_perpetual_ethusdt, futures_contract_es,
+                option_contract_appl,
+            },
         },
         orderbook::OrderBook,
-        orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-        types::{Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+        orders::{
+            Order, OrderAny, OrderTestBuilder,
+            stubs::{TestOrderEventStubs, TestOrderStubs},
+        },
+        types::{Currency, Money, Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
     };
     use proptest::prelude::*;
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use ustr::Ustr;
 
     use super::{BarTickSizes, OrderMatchingEngine, PostMatchOrderAction, post_match_order_action};
     use crate::{
         matching_engine::config::OrderMatchingEngineConfig,
         models::{
-            fee::{FeeModel, FeeModelAny, FeeModelHandle},
+            fee::{FeeModel, FeeModelAny, FeeModelHandle, PerContractFeeModel},
             fill::{FillModel, FillModelHandle},
         },
     };
@@ -7052,6 +7620,538 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(engine.cached_filled_qty_len(), 0);
         assert!(events.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_spread_order_and_leg_fills_have_per_contract_commission() {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let spread = test_option_spread(&[(call.clone(), 1), (put.clone(), -2)]);
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(call.clone()).unwrap();
+        cache.borrow_mut().add_instrument(put.clone()).unwrap();
+        cache.borrow_mut().add_instrument(spread.clone()).unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                call.id(),
+                Price::from("2.00"),
+                Price::from("2.00"),
+                Quantity::from(10),
+                Quantity::from(10),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                put.id(),
+                Price::from("0.75"),
+                Price::from("0.75"),
+                Quantity::from(10),
+                Quantity::from(10),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        let mut engine = OrderMatchingEngine::new(
+            spread.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelHandle::new(FeeModelAny::PerContract(
+                PerContractFeeModel::new(Money::from("1.25 USD")).unwrap(),
+            )),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            clock,
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(spread.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(2))
+            .submit(true)
+            .build();
+        let order = TestOrderStubs::make_accepted_order(&market_order);
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine
+            .apply_fills(
+                &order,
+                &[(Price::from("0.50"), Quantity::from(2))],
+                LiquiditySide::Taker,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = events.borrow();
+        let parent_fill = events
+            .iter()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) if !fill.client_order_id.as_str().contains("-LEG-") => {
+                    Some(fill)
+                }
+                _ => None,
+            })
+            .expect("expected parent spread fill");
+        let leg_commissions: IndexMap<InstrumentId, Money> = events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) if fill.client_order_id.as_str().contains("-LEG-") => {
+                    Some((
+                        fill.instrument_id,
+                        fill.commission.expect("expected commission"),
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(parent_fill.commission, Some(Money::from("7.50 USD")));
+        assert_eq!(leg_commissions.len(), 2);
+        assert_eq!(leg_commissions[&call.id()], Money::from("2.50 USD"));
+        assert_eq!(leg_commissions[&put.id()], Money::from("5.00 USD"));
+    }
+
+    #[rstest]
+    fn test_spread_leg_prices_preserve_three_leg_weighted_execution_price() {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let wing = test_option_contract(
+            "AAPL211217C00155000.OPRA",
+            "AAPL211217C00155000",
+            OptionKind::Call,
+            "155.00",
+        );
+        let engine = spread_price_engine(
+            &[call.clone(), put.clone(), wing.clone()],
+            &[("2.004", "2.004"), ("0.755", "0.755"), ("0.251", "0.251")],
+        );
+        let legs = [(call.id(), 1), (put.id(), -2), (wing.id(), 3)];
+
+        let prices = engine
+            .calculate_spread_leg_execution_prices(&legs, Price::from("1.24"))
+            .unwrap();
+        let weighted_sum = legs.iter().fold(Decimal::ZERO, |sum, (id, ratio)| {
+            sum + prices[id].as_decimal() * Decimal::from(*ratio)
+        });
+
+        assert_eq!(prices[&call.id()], Price::from("2.01"));
+        assert_eq!(prices[&put.id()], Price::from("0.76"));
+        assert_eq!(prices[&wing.id()], Price::from("0.25"));
+        assert_eq!(weighted_sum, Decimal::new(124, 2));
+    }
+
+    #[rstest]
+    fn test_spread_leg_prices_allocate_residual_across_non_unit_ratios() {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let engine = spread_price_engine(
+            &[call.clone(), put.clone()],
+            &[("2.00", "2.00"), ("1.00", "1.00")],
+        );
+        let legs = [(call.id(), 2), (put.id(), -3)];
+
+        let prices = engine
+            .calculate_spread_leg_execution_prices(&legs, Price::from("1.01"))
+            .unwrap();
+        let weighted_sum = legs.iter().fold(Decimal::ZERO, |sum, (id, ratio)| {
+            sum + prices[id].as_decimal() * Decimal::from(*ratio)
+        });
+
+        assert_eq!(prices[&call.id()], Price::from("1.99"));
+        assert_eq!(prices[&put.id()], Price::from("0.99"));
+        assert_eq!(weighted_sum, Decimal::new(101, 2));
+    }
+
+    #[rstest]
+    fn test_spread_leg_prices_use_non_decimal_tick_grid() {
+        let mut call = InstrumentAny::OptionContract(option_contract_appl());
+        let mut put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let InstrumentAny::OptionContract(call_contract) = &mut call else {
+            unreachable!()
+        };
+        let InstrumentAny::OptionContract(put_contract) = &mut put else {
+            unreachable!()
+        };
+        call_contract.price_increment = Price::from("0.05");
+        put_contract.price_increment = Price::from("0.05");
+        let engine = spread_price_engine(
+            &[call.clone(), put.clone()],
+            &[("1.23", "1.23"), ("0.73", "0.73")],
+        );
+        let legs = [(call.id(), 2), (put.id(), -3)];
+
+        let prices = engine
+            .calculate_spread_leg_execution_prices(&legs, Price::from("0.30"))
+            .unwrap();
+        let weighted_sum = legs.iter().fold(Decimal::ZERO, |sum, (id, ratio)| {
+            sum + prices[id].as_decimal() * Decimal::from(*ratio)
+        });
+
+        assert_eq!(prices[&call.id()], Price::from("1.20"));
+        assert_eq!(prices[&put.id()], Price::from("0.70"));
+        assert_eq!(weighted_sum, Decimal::new(30, 2));
+    }
+
+    #[rstest]
+    fn test_spread_leg_prices_try_later_anchor_after_rounding_overflow() {
+        let mut call = InstrumentAny::OptionContract(option_contract_appl());
+        let mut put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let InstrumentAny::OptionContract(call_contract) = &mut call else {
+            unreachable!()
+        };
+        let InstrumentAny::OptionContract(put_contract) = &mut put else {
+            unreachable!()
+        };
+        call_contract.price_precision = 0;
+        call_contract.price_increment = Price::from("1");
+        put_contract.price_precision = 0;
+        put_contract.price_increment = Price::from("6");
+        #[cfg(feature = "high-precision")]
+        let (put_mid, target) = ("-17014118346046", "-17014118346042");
+        #[cfg(not(feature = "high-precision"))]
+        let (put_mid, target) = ("-9223372036", "-9223372032");
+        let engine = spread_price_engine(
+            &[call.clone(), put.clone()],
+            &[("0", "0"), (put_mid, put_mid)],
+        );
+        let legs = [(call.id(), 1), (put.id(), 1)];
+
+        let prices = engine
+            .calculate_spread_leg_execution_prices(&legs, Price::from(target))
+            .unwrap();
+
+        assert_eq!(prices[&call.id()], Price::from("0"));
+        assert_eq!(prices[&put.id()], Price::from(target));
+    }
+
+    #[rstest]
+    fn test_spread_grid_solution_selects_closest_leg_pair() {
+        let solution = OrderMatchingEngine::minimum_grid_solution(&[2, 4, 3], &[1, 10, 1], 1);
+        let no_solution = OrderMatchingEngine::minimum_grid_solution(&[2, 4], &[1, 1], 1);
+
+        assert_eq!(solution, Some(vec![-1, 0, 1]));
+        assert_eq!(no_solution, None);
+    }
+
+    #[rstest]
+    fn test_spread_grid_solution_ranks_large_ratio_pairs_without_overflow() {
+        let solution = OrderMatchingEngine::minimum_grid_solution(
+            &[18_446_744_073_709_551_612, 18_446_744_073_709_551_614, 3, 5],
+            &[2, 2, 3, 5],
+            2,
+        );
+
+        assert_eq!(solution, Some(vec![-1, 1, 0, 0]));
+    }
+
+    #[rstest]
+    fn test_spread_leg_prices_support_all_negative_mid_prices() {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let engine = spread_price_engine(
+            &[call.clone(), put.clone()],
+            &[("-2.00", "-2.00"), ("-1.00", "-1.00")],
+        );
+        let legs = [(call.id(), 1), (put.id(), -1)];
+
+        let prices = engine
+            .calculate_spread_leg_execution_prices(&legs, Price::from("-1.00"))
+            .unwrap();
+
+        assert_eq!(prices[&call.id()], Price::from("-2.00"));
+        assert_eq!(prices[&put.id()], Price::from("-1.00"));
+    }
+
+    #[rstest]
+    #[case(OrderType::Market)]
+    #[case(OrderType::MarketToLimit)]
+    fn test_spread_fill_fails_before_order_mutation_when_leg_quote_is_missing(
+        #[case] order_type: OrderType,
+    ) {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let spread = test_option_spread(&[(call.clone(), 1), (put.clone(), -1)]);
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(call.clone()).unwrap();
+        cache.borrow_mut().add_instrument(put).unwrap();
+        cache.borrow_mut().add_instrument(spread.clone()).unwrap();
+        cache
+            .borrow_mut()
+            .add_quote(QuoteTick::new(
+                call.id(),
+                Price::from("2.00"),
+                Price::from("2.00"),
+                Quantity::from(10),
+                Quantity::from(10),
+                UnixNanos::default(),
+                UnixNanos::default(),
+            ))
+            .unwrap();
+        let mut engine = OrderMatchingEngine::new(
+            spread.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+        let market_order = OrderTestBuilder::new(order_type)
+            .instrument_id(spread.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .submit(true)
+            .build();
+        let order = TestOrderStubs::make_accepted_order(&market_order);
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        let result = engine.apply_fills(
+            &order,
+            &[(Price::from("1.00"), Quantity::from(1))],
+            LiquiditySide::Taker,
+            None,
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(engine.cached_filled_qty_len(), 0);
+        assert!(events.borrow().is_empty());
+    }
+
+    #[rstest]
+    fn test_venue_native_spread_emits_parent_fill_without_synthetic_legs() {
+        let call = InstrumentAny::OptionContract(option_contract_appl());
+        let put = test_option_contract(
+            "AAPL211217P00145000.OPRA",
+            "AAPL211217P00145000",
+            OptionKind::Put,
+            "145.00",
+        );
+        let mut spread = test_option_spread(&[(call, 1), (put, -1)]);
+        let InstrumentAny::OptionSpread(spread_instrument) = &mut spread else {
+            unreachable!()
+        };
+        spread_instrument.id = InstrumentId::from("AAPL-VERTICAL.OPRA");
+        spread_instrument.raw_symbol = Symbol::from("AAPL-VERTICAL");
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(spread.clone()).unwrap();
+        let mut engine = OrderMatchingEngine::new(
+            spread.clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            Default::default(),
+        );
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let events_handler = Rc::clone(&events);
+        engine.set_event_handler(Rc::new(move |event| {
+            events_handler.borrow_mut().push(event);
+        }));
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(spread.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .submit(true)
+            .build();
+        let order = TestOrderStubs::make_accepted_order(&market_order);
+        engine
+            .account_ids
+            .insert(order.trader_id(), AccountId::from("ACCOUNT-001"));
+
+        engine
+            .apply_fills(
+                &order,
+                &[(Price::from("1.00"), Quantity::from(1))],
+                LiquiditySide::Taker,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            OrderEventAny::Filled(fill) if fill.instrument_id == spread.id()
+        ));
+    }
+
+    fn test_option_contract(
+        instrument_id: &str,
+        symbol: &str,
+        option_kind: OptionKind,
+        strike: &str,
+    ) -> InstrumentAny {
+        InstrumentAny::OptionContract(OptionContract::new(
+            InstrumentId::from(instrument_id),
+            Symbol::from(symbol),
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            option_kind,
+            Price::from(strike),
+            Currency::USD(),
+            UnixNanos::from(1_632_000_000_000_000_000),
+            UnixNanos::from(1_639_699_200_000_000_000),
+            2,
+            Price::from("0.01"),
+            Quantity::from(100),
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn test_option_spread(legs: &[(InstrumentAny, i64)]) -> InstrumentAny {
+        let spread_legs = legs
+            .iter()
+            .map(|(instrument, ratio)| (instrument.id(), *ratio))
+            .collect::<Vec<_>>();
+        let spread_id = new_generic_spread_id(&spread_legs).unwrap();
+        InstrumentAny::OptionSpread(OptionSpread::new(
+            spread_id,
+            spread_id.symbol,
+            AssetClass::Equity,
+            Some(Ustr::from("GMNI")),
+            Ustr::from("AAPL"),
+            Ustr::from("SPREAD"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Quantity::from(100),
+            Quantity::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ))
+    }
+
+    fn spread_price_engine(
+        instruments: &[InstrumentAny],
+        quotes: &[(&str, &str)],
+    ) -> OrderMatchingEngine {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        for (instrument, (bid, ask)) in instruments.iter().zip(quotes) {
+            cache
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+                .unwrap();
+            cache
+                .borrow_mut()
+                .add_quote(QuoteTick::new(
+                    instrument.id(),
+                    Price::from(*bid),
+                    Price::from(*ask),
+                    Quantity::from(10),
+                    Quantity::from(10),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                ))
+                .unwrap();
+        }
+
+        OrderMatchingEngine::new(
+            instruments[0].clone(),
+            1,
+            FillModelHandle::default(),
+            FeeModelAny::default().into(),
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Margin,
+            Rc::new(RefCell::new(TestClock::new())),
+            cache,
+            Default::default(),
+        )
     }
 
     struct RecordingFeeModel {

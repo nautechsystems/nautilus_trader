@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use enum_dispatch::enum_dispatch;
+use nautilus_core::correctness::CorrectnessResult;
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use super::{
     Instrument, betting::BettingInstrument, binary_option::BinaryOption, cfd::Cfd,
@@ -24,7 +26,7 @@ use super::{
     futures_contract::FuturesContract, futures_spread::FuturesSpread,
     index_instrument::IndexInstrument, option_contract::OptionContract,
     option_spread::OptionSpread, perpetual_contract::PerpetualContract,
-    tokenized_asset::TokenizedAsset,
+    tick_scheme::check_tick_scheme, tokenized_asset::TokenizedAsset,
 };
 use crate::types::{Price, Quantity};
 
@@ -53,6 +55,38 @@ pub enum InstrumentAny {
 
 // TODO: Probably move this to the `Instrument` trait too
 impl InstrumentAny {
+    /// Sets the tick scheme after validating that it is registered.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the tick scheme name is invalid or not registered.
+    pub fn set_tick_scheme(&mut self, tick_scheme: Option<Ustr>) -> CorrectnessResult<()> {
+        check_tick_scheme(tick_scheme)?;
+
+        match self {
+            Self::Betting(inst) => inst.tick_scheme = tick_scheme,
+            Self::BinaryOption(inst) => inst.tick_scheme = tick_scheme,
+            Self::Cfd(inst) => inst.tick_scheme = tick_scheme,
+            Self::Commodity(inst) => inst.tick_scheme = tick_scheme,
+            Self::CryptoFuture(inst) => inst.tick_scheme = tick_scheme,
+            Self::CryptoFuturesSpread(inst) => inst.tick_scheme = tick_scheme,
+            Self::CryptoOption(inst) => inst.tick_scheme = tick_scheme,
+            Self::CryptoOptionSpread(inst) => inst.tick_scheme = tick_scheme,
+            Self::CryptoPerpetual(inst) => inst.tick_scheme = tick_scheme,
+            Self::CurrencyPair(inst) => inst.tick_scheme = tick_scheme,
+            Self::Equity(inst) => inst.tick_scheme = tick_scheme,
+            Self::FuturesContract(inst) => inst.tick_scheme = tick_scheme,
+            Self::FuturesSpread(inst) => inst.tick_scheme = tick_scheme,
+            Self::IndexInstrument(inst) => inst.tick_scheme = tick_scheme,
+            Self::OptionContract(inst) => inst.tick_scheme = tick_scheme,
+            Self::OptionSpread(inst) => inst.tick_scheme = tick_scheme,
+            Self::PerpetualContract(inst) => inst.tick_scheme = tick_scheme,
+            Self::TokenizedAsset(inst) => inst.tick_scheme = tick_scheme,
+        }
+
+        Ok(())
+    }
+
     #[must_use]
     pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
         match self {
@@ -107,7 +141,31 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::instruments::stubs::*;
+    use crate::instruments::{stubs::*, tick_scheme::FIXED_TICK_SCHEME_NAME};
+
+    #[rstest]
+    fn test_set_tick_scheme() {
+        let mut instrument = InstrumentAny::OptionContract(option_contract_appl());
+
+        instrument
+            .set_tick_scheme(Some(Ustr::from(FIXED_TICK_SCHEME_NAME)))
+            .unwrap();
+
+        assert_eq!(
+            instrument.tick_scheme(),
+            Some(Ustr::from(FIXED_TICK_SCHEME_NAME))
+        );
+    }
+
+    #[rstest]
+    fn test_set_tick_scheme_rejects_unknown_name() {
+        let mut instrument = InstrumentAny::OptionContract(option_contract_appl());
+
+        let result = instrument.set_tick_scheme(Some(Ustr::from("UNKNOWN")));
+
+        assert!(result.is_err());
+        assert_eq!(instrument.tick_scheme(), None);
+    }
 
     #[rstest]
     #[case::futures_spread(InstrumentAny::FuturesSpread(futures_spread_es()), true)]

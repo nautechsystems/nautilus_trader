@@ -2273,6 +2273,55 @@ impl SpreadPriceRounder for FixedTickSchemeRounder {
     }
 }
 
+/// Rounder backed by a registered tick scheme; mirrors negative prices for tick alignment.
+pub struct TickSchemePriceRounder {
+    scheme: &'static dyn TickSchemeRule,
+}
+
+impl Debug for TickSchemePriceRounder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(TickSchemePriceRounder))
+            .field("scheme", &self.scheme.to_string())
+            .finish()
+    }
+}
+
+impl TickSchemePriceRounder {
+    #[must_use]
+    pub const fn new(scheme: &'static dyn TickSchemeRule) -> Self {
+        Self { scheme }
+    }
+
+    fn round_one(&self, raw: f64, precision: u8, use_bid_rounding: bool) -> Price {
+        if raw >= 0.0 {
+            let price = if use_bid_rounding {
+                self.scheme.next_bid_price(raw, 0, precision)
+            } else {
+                self.scheme.next_ask_price(raw, 0, precision)
+            };
+            price.unwrap_or_else(|| price_from_f64(raw, precision))
+        } else {
+            let price = if use_bid_rounding {
+                self.scheme.next_ask_price(-raw, 0, precision)
+            } else {
+                self.scheme.next_bid_price(-raw, 0, precision)
+            };
+            price.map_or_else(
+                || price_from_f64(raw, precision),
+                |rounded| price_from_f64(-rounded.as_f64(), precision),
+            )
+        }
+    }
+}
+
+impl SpreadPriceRounder for TickSchemePriceRounder {
+    fn round_prices(&self, raw_bid: f64, raw_ask: f64, precision: u8) -> (Price, Price) {
+        let bid = self.round_one(raw_bid, precision, true);
+        let ask = self.round_one(raw_ask, precision, false);
+        (bid, ask)
+    }
+}
+
 /// Spread quote aggregator: builds synthetic quotes from leg quotes (Cython parity).
 ///
 /// Quote-driven mode (`update_interval_seconds == None`): emits when all legs have quotes.
@@ -2801,7 +2850,11 @@ mod tests {
         data::{BarSpecification, BarType, QuoteTick},
         enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
         identifiers::InstrumentId,
-        instruments::{CurrencyPair, Equity, Instrument, InstrumentAny, stubs::*},
+        instruments::{
+            CurrencyPair, Equity, Instrument, InstrumentAny, TickScheme, TieredTickScheme,
+            stubs::*,
+            tick_scheme::{register_tick_scheme, tick_scheme_rule_from_name},
+        },
         types::{Price, Quantity},
     };
     use rstest::rstest;
@@ -7172,7 +7225,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_spread_quote_negative_prices_tick_scheme(equity_aapl: Equity) {
+    fn test_spread_quote_uses_registered_tick_scheme_for_negative_prices(equity_aapl: Equity) {
+        const NAME: &str = "TEST_SPREAD_ES_OPTIONS";
+        let scheme =
+            TieredTickScheme::new(&[(0.05, 10.0, 0.05), (10.0, f64::INFINITY, 0.25)], 2, 1_000)
+                .unwrap();
+        register_tick_scheme(NAME, TickScheme::Tiered(scheme)).unwrap();
+
         let instrument = InstrumentAny::Equity(equity_aapl);
         let leg1 = instrument.id();
         let leg2 = InstrumentId::from("MSFT.XNAS");
@@ -7181,7 +7240,7 @@ mod tests {
         let handler = Arc::new(Mutex::new(Vec::new()));
         let handler_clone = Arc::clone(&handler);
         let clock = Rc::new(RefCell::new(TestClock::new()));
-        let rounder = FixedTickSchemeRounder::new(0.01).unwrap();
+        let rounder = TickSchemePriceRounder::new(tick_scheme_rule_from_name(NAME).unwrap());
 
         let mut agg = SpreadQuoteAggregator::new(
             spread_id,
@@ -7224,9 +7283,8 @@ mod tests {
         let quotes = handler.lock().expect(MUTEX_POISONED);
         assert_eq!(quotes.len(), 1);
         let q = &quotes[0];
-        assert!(q.bid_price.as_f64() < 0.0);
-        assert!(q.ask_price.as_f64() < 0.0);
-        assert!(q.bid_price < q.ask_price);
+        assert_eq!(q.bid_price, Price::from("-10.25"));
+        assert_eq!(q.ask_price, Price::from("-9.90"));
     }
 
     #[rstest]
