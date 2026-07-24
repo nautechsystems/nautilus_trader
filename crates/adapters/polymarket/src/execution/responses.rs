@@ -1073,7 +1073,7 @@ mod tests {
             &[trade],
             &ctx,
             &instruments,
-            None,
+            &crate::execution::reconciliation::FillReconciliationScope::All,
             UnixNanos::from(1_000_000_000u64),
         )
         .expect("non-confirmed trades should be ignored without reconciliation failure");

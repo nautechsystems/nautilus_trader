@@ -125,9 +125,113 @@ pub fn parse_order_status_report(
     size_precision: u8,
     ts_init: UnixNanos,
 ) -> OrderStatusReport {
-    let venue_order_id = VenueOrderId::from(order.id.as_str());
-    let order_side = OrderSide::from(order.side);
-    let time_in_force = TimeInForce::from(order.order_type);
+    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
+        .unwrap_or_else(|_| Quantity::zero(size_precision));
+    let price = Price::from_decimal_dp(order.price, price_precision)
+        .unwrap_or_else(|_| Price::zero(price_precision));
+    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
+    let expire_time = order
+        .expiration
+        .as_deref()
+        .and_then(parse_expiration_nanos)
+        .map(UnixNanos::from);
+
+    build_order_status_report(
+        order,
+        instrument_id,
+        account_id,
+        client_order_id,
+        quantity,
+        raw_filled_qty,
+        price,
+        ts_accepted,
+        ts_init,
+        expire_time,
+    )
+}
+
+/// Strictly parses a venue open order for authoritative reconciliation.
+pub(crate) fn try_parse_order_status_report(
+    order: &PolymarketOpenOrder,
+    instrument_id: InstrumentId,
+    account_id: AccountId,
+    client_order_id: Option<ClientOrderId>,
+    price_precision: u8,
+    size_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderStatusReport> {
+    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent venue open order {} quantity {}: {e}",
+            order.id,
+            order.original_size
+        )
+    })?;
+    let raw_filled_qty =
+        Quantity::from_decimal_dp(order.size_matched, size_precision).map_err(|e| {
+            anyhow::anyhow!(
+                "cannot represent venue open order {} filled quantity {}: {e}",
+                order.id,
+                order.size_matched
+            )
+        })?;
+    let price = Price::from_decimal_dp(order.price, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent venue open order {} price {}: {e}",
+            order.id,
+            order.price
+        )
+    })?;
+    let ts_accepted = UnixNanos::from(
+        order
+            .created_at
+            .checked_mul(NANOSECONDS_IN_SECOND)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "venue open order {} created_at {} overflows nanoseconds",
+                    order.id,
+                    order.created_at
+                )
+            })?,
+    );
+    let expire_time = order
+        .expiration
+        .as_deref()
+        .map(try_parse_expiration_nanos)
+        .transpose()
+        .map_err(|e| anyhow::anyhow!("venue open order {} has invalid expiration: {e}", order.id))?
+        .flatten()
+        .map(UnixNanos::from);
+
+    Ok(build_order_status_report(
+        order,
+        instrument_id,
+        account_id,
+        client_order_id,
+        quantity,
+        raw_filled_qty,
+        price,
+        ts_accepted,
+        ts_init,
+        expire_time,
+    ))
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_order_status_report(
+    order: &PolymarketOpenOrder,
+    instrument_id: InstrumentId,
+    account_id: AccountId,
+    client_order_id: Option<ClientOrderId>,
+    quantity: Quantity,
+    raw_filled_qty: Quantity,
+    price: Price,
+    ts_accepted: UnixNanos,
+    ts_init: UnixNanos,
+    expire_time: Option<UnixNanos>,
+) -> OrderStatusReport {
     let order_status = if order.status == PolymarketOrderStatus::Matched
         && order.order_type == PolymarketOrderType::FAK
         && order.size_matched < order.original_size
@@ -136,37 +240,25 @@ pub fn parse_order_status_report(
     } else {
         OrderStatus::from(order.status)
     };
-    let quantity = Quantity::from_decimal_dp(order.original_size, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
-    let raw_filled_qty = Quantity::from_decimal_dp(order.size_matched, size_precision)
-        .unwrap_or_else(|_| Quantity::zero(size_precision));
     let filled_qty = snap_filled_qty_to_quantity(quantity, raw_filled_qty, order_status);
-    let price = Price::from_decimal_dp(order.price, price_precision)
-        .unwrap_or_else(|_| Price::zero(price_precision));
-
-    let ts_accepted = UnixNanos::from(order.created_at * NANOSECONDS_IN_SECOND);
-
     let mut report = OrderStatusReport::new(
         account_id,
         instrument_id,
         client_order_id,
-        venue_order_id,
-        order_side,
+        VenueOrderId::from(order.id.as_str()),
+        OrderSide::from(order.side),
         OrderType::Limit,
-        time_in_force,
+        TimeInForce::from(order.order_type),
         order_status,
         quantity,
         filled_qty,
         ts_accepted,
-        ts_accepted, // ts_last
+        ts_accepted,
         ts_init,
-        None, // report_id
+        None,
     );
     report.price = Some(price);
-    // CLOB V2 emits `expiration` as Unix seconds; "0" means no expiration.
-    if let Some(nanos) = order.expiration.as_deref().and_then(parse_expiration_nanos) {
-        report.expire_time = Some(UnixNanos::from(nanos));
-    }
+    report.expire_time = expire_time;
     report
 }
 
@@ -175,11 +267,19 @@ pub fn parse_order_status_report(
 /// overflow `u64` when scaled to nanoseconds (e.g. accidentally-passed
 /// millisecond timestamps that exceed Unix-seconds bounds).
 fn parse_expiration_nanos(value: &str) -> Option<u64> {
-    let secs: u64 = value.parse().ok()?;
+    try_parse_expiration_nanos(value).ok().flatten()
+}
+
+fn try_parse_expiration_nanos(value: &str) -> anyhow::Result<Option<u64>> {
+    let secs: u64 = value
+        .parse()
+        .map_err(|e| anyhow::anyhow!("invalid expiration {value}: {e}"))?;
     if secs == 0 {
-        return None;
+        return Ok(None);
     }
     secs.checked_mul(NANOSECONDS_IN_SECOND)
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("expiration {value} overflows nanoseconds"))
 }
 
 /// Parses a [`PolymarketTradeReport`] into a [`FillReport`].
@@ -199,27 +299,111 @@ pub fn parse_fill_report(
     taker_fee_rate: Decimal,
     ts_init: UnixNanos,
 ) -> FillReport {
-    let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
-    let trade_id = TradeId::from(trade.id.as_str());
-    let order_side = OrderSide::from(trade.side);
     let last_qty = Quantity::from_decimal_dp(trade.size, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let last_px = Price::from_decimal_dp(trade.price, price_precision)
         .unwrap_or_else(|_| Price::zero(price_precision));
     let liquidity_side = parse_liquidity_side(trade.trader_side);
-
     let commission_value =
         compute_commission(taker_fee_rate, trade.size, trade.price, liquidity_side);
     let commission = Money::new(commission_value, currency);
-
     let ts_event = parse_timestamp(&trade.match_time).unwrap_or(ts_init);
 
+    build_fill_report(
+        trade,
+        instrument_id,
+        account_id,
+        client_order_id,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        ts_event,
+        ts_init,
+    )
+}
+
+/// Strictly parses a confirmed taker fill for authoritative reconciliation.
+#[expect(clippy::too_many_arguments)]
+pub(crate) fn try_parse_fill_report(
+    trade: &PolymarketTradeReport,
+    instrument_id: InstrumentId,
+    account_id: AccountId,
+    client_order_id: Option<ClientOrderId>,
+    price_precision: u8,
+    size_precision: u8,
+    currency: Currency,
+    taker_fee_rate: Decimal,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    let last_qty = Quantity::from_decimal_dp(trade.size, size_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent confirmed taker fill {} quantity {}: {e}",
+            trade.id,
+            trade.size
+        )
+    })?;
+    let last_px = Price::from_decimal_dp(trade.price, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent confirmed taker fill {} price {}: {e}",
+            trade.id,
+            trade.price
+        )
+    })?;
+    let liquidity_side = parse_liquidity_side(trade.trader_side);
+    let commission = try_compute_commission(
+        taker_fee_rate,
+        trade.size,
+        trade.price,
+        liquidity_side,
+        currency,
+    )
+    .map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent confirmed taker fill {} commission: {e}",
+            trade.id
+        )
+    })?;
+    let ts_event = try_parse_timestamp(&trade.match_time).map_err(|e| {
+        anyhow::anyhow!(
+            "confirmed taker fill {} has invalid match_time: {e}",
+            trade.id
+        )
+    })?;
+
+    Ok(build_fill_report(
+        trade,
+        instrument_id,
+        account_id,
+        client_order_id,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        ts_event,
+        ts_init,
+    ))
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_fill_report(
+    trade: &PolymarketTradeReport,
+    instrument_id: InstrumentId,
+    account_id: AccountId,
+    client_order_id: Option<ClientOrderId>,
+    last_qty: Quantity,
+    last_px: Price,
+    commission: Money,
+    liquidity_side: LiquiditySide,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> FillReport {
     FillReport {
         account_id,
         instrument_id,
-        venue_order_id,
-        trade_id,
-        order_side,
+        venue_order_id: VenueOrderId::from(trade.taker_order_id.as_str()),
+        trade_id: TradeId::from(trade.id.as_str()),
+        order_side: OrderSide::from(trade.side),
         last_qty,
         last_px,
         commission,
@@ -254,14 +438,6 @@ pub fn build_maker_fill_report(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> FillReport {
-    let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
-    let fill_trade_id = make_composite_trade_id(trade_id, &mo.order_id);
-    let order_side = determine_order_side(
-        trader_side,
-        trade_side,
-        taker_asset_id,
-        mo.asset_id.as_str(),
-    );
     let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision)
         .unwrap_or_else(|_| Quantity::zero(size_precision));
     let last_px = Price::from_decimal_dp(mo.price, price_precision)
@@ -271,15 +447,112 @@ pub fn build_maker_fill_report(
     let commission_value =
         compute_commission(Decimal::ZERO, mo.matched_amount, mo.price, liquidity_side);
 
+    build_maker_report(
+        mo,
+        trade_id,
+        trader_side,
+        trade_side,
+        taker_asset_id,
+        account_id,
+        instrument_id,
+        last_qty,
+        last_px,
+        Money::new(commission_value, currency),
+        liquidity_side,
+        ts_event,
+        ts_init,
+    )
+}
+
+/// Strictly builds a confirmed maker fill for authoritative reconciliation.
+#[expect(clippy::too_many_arguments)]
+pub(crate) fn try_build_maker_fill_report(
+    mo: &PolymarketMakerOrder,
+    trade_id: &str,
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: &str,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    size_precision: u8,
+    currency: Currency,
+    liquidity_side: LiquiditySide,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> anyhow::Result<FillReport> {
+    let last_qty = Quantity::from_decimal_dp(mo.matched_amount, size_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent confirmed maker fill {} quantity {}: {e}",
+            trade_id,
+            mo.matched_amount
+        )
+    })?;
+    let last_px = Price::from_decimal_dp(mo.price, price_precision).map_err(|e| {
+        anyhow::anyhow!(
+            "cannot represent confirmed maker fill {} price {}: {e}",
+            trade_id,
+            mo.price
+        )
+    })?;
+    let commission = try_compute_commission(
+        Decimal::ZERO,
+        mo.matched_amount,
+        mo.price,
+        liquidity_side,
+        currency,
+    )
+    .map_err(|e| {
+        anyhow::anyhow!("cannot represent confirmed maker fill {trade_id} commission: {e}")
+    })?;
+
+    Ok(build_maker_report(
+        mo,
+        trade_id,
+        trader_side,
+        trade_side,
+        taker_asset_id,
+        account_id,
+        instrument_id,
+        last_qty,
+        last_px,
+        commission,
+        liquidity_side,
+        ts_event,
+        ts_init,
+    ))
+}
+
+#[expect(clippy::too_many_arguments)]
+fn build_maker_report(
+    mo: &PolymarketMakerOrder,
+    trade_id: &str,
+    trader_side: PolymarketLiquiditySide,
+    trade_side: PolymarketOrderSide,
+    taker_asset_id: &str,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    last_qty: Quantity,
+    last_px: Price,
+    commission: Money,
+    liquidity_side: LiquiditySide,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> FillReport {
     FillReport {
         account_id,
         instrument_id,
-        venue_order_id,
-        trade_id: fill_trade_id,
-        order_side,
+        venue_order_id: VenueOrderId::from(mo.order_id.as_str()),
+        trade_id: make_composite_trade_id(trade_id, &mo.order_id),
+        order_side: determine_order_side(
+            trader_side,
+            trade_side,
+            taker_asset_id,
+            mo.asset_id.as_str(),
+        ),
         last_qty,
         last_px,
-        commission: Money::new(commission_value, currency),
+        commission,
         liquidity_side,
         avg_px: None,
         report_id: UUID4::new(),
@@ -412,25 +685,68 @@ pub fn compute_commission(
     rounded.to_string().parse().unwrap_or(0.0)
 }
 
-/// Sums `last_qty` across fills as a decimal.
-pub(crate) fn sum_filled_quantity(fills: &[FillReport]) -> Decimal {
-    fills.iter().map(|f| f.last_qty.as_decimal()).sum()
+fn try_compute_commission(
+    fee_rate: Decimal,
+    size: Decimal,
+    price: Decimal,
+    liquidity_side: LiquiditySide,
+    currency: Currency,
+) -> anyhow::Result<Money> {
+    if liquidity_side != LiquiditySide::Taker || fee_rate.is_zero() {
+        return Ok(Money::zero(currency));
+    }
+
+    let complement = Decimal::ONE
+        .checked_sub(price)
+        .ok_or_else(|| anyhow::anyhow!("price complement overflow"))?;
+    let commission = size
+        .checked_mul(fee_rate)
+        .and_then(|value| value.checked_mul(price))
+        .and_then(|value| value.checked_mul(complement))
+        .ok_or_else(|| anyhow::anyhow!("commission arithmetic overflow"))?
+        .round_dp(5);
+    Money::from_decimal(commission, currency).map_err(Into::into)
 }
 
-/// Quantity-weighted average price across fills, or `None` when total filled
-/// is zero (avoids divide-by-zero on empty/all-zero fill lists).
-pub(crate) fn weighted_average_price(
+/// Strictly sums fill quantities for authoritative reconciliation.
+pub(crate) fn try_sum_filled_quantity(fills: &[FillReport]) -> anyhow::Result<Decimal> {
+    fills.iter().try_fold(Decimal::ZERO, |total, fill| {
+        total
+            .checked_add(fill.last_qty.as_decimal())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "confirmed fill quantity overflow for venue order {}",
+                    fill.venue_order_id
+                )
+            })
+    })
+}
+
+/// Strictly computes a quantity-weighted average for authoritative reconciliation.
+pub(crate) fn try_weighted_average_price(
     fills: &[FillReport],
     total_filled: Decimal,
-) -> Option<Decimal> {
+) -> anyhow::Result<Option<Decimal>> {
     if total_filled.is_zero() {
-        return None;
+        return Ok(None);
     }
-    let weighted: Decimal = fills
-        .iter()
-        .map(|f| f.last_qty.as_decimal() * f.last_px.as_decimal())
-        .sum();
-    Some(weighted / total_filled)
+
+    let weighted = fills.iter().try_fold(Decimal::ZERO, |total, fill| {
+        fill.last_qty
+            .as_decimal()
+            .checked_mul(fill.last_px.as_decimal())
+            .and_then(|notional| total.checked_add(notional))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "confirmed fill notional overflow for venue order {}",
+                    fill.venue_order_id
+                )
+            })
+    })?;
+    weighted
+        .checked_div(total_filled)
+        .map(Some)
+        .ok_or_else(|| anyhow::anyhow!("confirmed fill average-price division failed"))
 }
 
 /// At terminal `Filled` status, snap `filled_qty` to `quantity` when the
@@ -569,15 +885,29 @@ pub fn calculate_market_price(
 /// Accepts millisecond integers ("1703875200000"), second integers ("1703875200"),
 /// and RFC3339 strings ("2024-01-01T00:00:00Z").
 pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
+    try_parse_timestamp(ts_str).ok()
+}
+
+pub(crate) fn try_parse_timestamp(ts_str: &str) -> anyhow::Result<UnixNanos> {
     if let Ok(n) = ts_str.parse::<u64>() {
-        return if n > 1_000_000_000_000 {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_MILLISECOND))
+        let multiplier = if n > 1_000_000_000_000 {
+            NANOSECONDS_IN_MILLISECOND
         } else {
-            Some(UnixNanos::from(n * NANOSECONDS_IN_SECOND))
+            NANOSECONDS_IN_SECOND
         };
+        return n
+            .checked_mul(multiplier)
+            .map(UnixNanos::from)
+            .ok_or_else(|| anyhow::anyhow!("timestamp {ts_str} overflows nanoseconds"));
     }
-    let dt = chrono::DateTime::parse_from_rfc3339(ts_str).ok()?;
-    Some(UnixNanos::from(dt.timestamp_nanos_opt()? as u64))
+    let dt = chrono::DateTime::parse_from_rfc3339(ts_str)
+        .map_err(|e| anyhow::anyhow!("invalid timestamp {ts_str}: {e}"))?;
+    let nanos = dt
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow::anyhow!("timestamp {ts_str} is outside nanosecond range"))?;
+    let nanos = u64::try_from(nanos)
+        .map_err(|_| anyhow::anyhow!("timestamp {ts_str} is before Unix epoch"))?;
+    Ok(UnixNanos::from(nanos))
 }
 
 #[cfg(test)]
@@ -665,7 +995,7 @@ mod tests {
 
     #[rstest]
     fn test_sum_filled_quantity_empty() {
-        assert_eq!(sum_filled_quantity(&[]), Decimal::ZERO);
+        assert_eq!(try_sum_filled_quantity(&[]).unwrap(), Decimal::ZERO);
     }
 
     #[rstest]
@@ -675,27 +1005,37 @@ mod tests {
             make_test_fill(1.0, 0.60),
             make_test_fill(3.0, 0.55),
         ];
-        assert_eq!(sum_filled_quantity(&fills), dec!(6.5));
+        assert_eq!(try_sum_filled_quantity(&fills).unwrap(), dec!(6.5));
     }
 
     #[rstest]
     fn test_weighted_average_price_zero_total_returns_none() {
-        assert!(weighted_average_price(&[], Decimal::ZERO).is_none());
+        assert!(
+            try_weighted_average_price(&[], Decimal::ZERO)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[rstest]
     fn test_weighted_average_price_single_fill() {
         let fills = vec![make_test_fill(10.0, 0.5)];
-        let total = sum_filled_quantity(&fills);
-        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.5)));
+        let total = try_sum_filled_quantity(&fills).unwrap();
+        assert_eq!(
+            try_weighted_average_price(&fills, total).unwrap(),
+            Some(dec!(0.5))
+        );
     }
 
     #[rstest]
     fn test_weighted_average_price_weighted_by_quantity() {
         // 2 @ 0.40 + 8 @ 0.60 -> (0.8 + 4.8) / 10 = 0.56
         let fills = vec![make_test_fill(2.0, 0.40), make_test_fill(8.0, 0.60)];
-        let total = sum_filled_quantity(&fills);
-        assert_eq!(weighted_average_price(&fills, total), Some(dec!(0.56)));
+        let total = try_sum_filled_quantity(&fills).unwrap();
+        assert_eq!(
+            try_weighted_average_price(&fills, total).unwrap(),
+            Some(dec!(0.56))
+        );
     }
 
     #[rstest]
