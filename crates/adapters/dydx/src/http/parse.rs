@@ -375,7 +375,7 @@ pub fn parse_instrument_any(
     );
 
     // Create the perpetual instrument
-    let instrument = CryptoPerpetual::new(
+    let instrument = CryptoPerpetual::new_checked(
         instrument_id,
         raw_symbol,
         base_currency,
@@ -402,7 +402,7 @@ pub fn parse_instrument_any(
         None, // info: Option<Params>
         ts_init,
         ts_init,
-    );
+    )?;
 
     Ok(InstrumentAny::CryptoPerpetual(instrument))
 }
