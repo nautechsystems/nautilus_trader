@@ -9,6 +9,13 @@ The goal is a published contract that external users and auditors can verify: th
 NautilusTrader claims is backed by source-level evidence and enforced at commit time by a pre-
 commit hook that runs in continuous integration.
 
+:::note
+This guide is the authoritative statement of that contract. A downstream harness that depends on
+NautilusTrader's determinism consumes the version of this document at its pinned NautilusTrader
+commit; a change to this document is a contract change for those consumers and should be reviewed
+as one.
+:::
+
 ## Introduction
 
 ### What DST is
@@ -160,8 +167,9 @@ the commit when it detects any of:
   lack a preceding `#[cfg(test)]`, `#[cfg(not(madsim))]`, or
   `#[cfg(not(all(feature = "simulation", madsim)))]` attribute.
 - `AHashMap` or `AHashSet` in iteration-order-sensitive files on the DST path. The full set
-  of files is under audit; enforcement currently covers `crates/live/src/manager.rs` and
-  `crates/execution/src/matching_engine/engine.rs`, and expands as further files are reviewed.
+  of files is under audit; enforcement currently covers `crates/live/src/execution/manager.rs`
+  and `crates/execution/src/matching_engine/engine.rs`, and expands as further files are
+  reviewed.
 - Direct `tokio::net::TcpStream::connect` / `tokio::net::TcpListener::bind` reaches that
   bypass `nautilus_network::net`. The seam re-exports `tokio::net` types under normal builds
   and swaps to `turmoil::net` under the `turmoil` feature, so all TCP entry points share a
@@ -175,8 +183,8 @@ The hook supports two exception forms:
 - An inline `// dst-ok` marker on a specific line, typically accompanied by a short reason (for
   example, log-only wall-clock timing that does not affect state).
 - A small file-level allowlist in the hook script itself for sites classified as
-  leave-alone in the codebase audit (log timing in the cache module, progress reporting in the
-  DeFi module).
+  leave-alone in the codebase audit (log timing in the cache module, log-record timestamping
+  in the logging bridge and writer, progress reporting in the DeFi module).
 
 Test files, files under `tests/`, `python/`, and `ffi/` directories, and lines inside an inline
 `#[cfg(test)]` module are excluded because they are not part of the DST path.
@@ -235,21 +243,23 @@ when investigating whether a code path is on the DST path and how it routes toda
 Production sites where `AHashMap` / `AHashSet` flipped to `IndexMap` / `IndexSet` because
 the iteration order is observable on the DST path:
 
-- **Matching engine** (`crates/execution/src/matching_engine/engine.rs`): nine fields
+- **Matching engine** (`crates/execution/src/matching_engine/engine.rs`): ten fields
   (`execution_bar_types`, `execution_bar_deltas`, `account_ids`, `cached_filled_qty`,
-  `bid_consumption`, `ask_consumption`, `queue_ahead`, `queue_excess`, `queue_pending`).
-  Iterated removes use `.shift_remove()`. Closes
+  `bid_consumption`, `ask_consumption`, `queue_ahead_orders`, `queue_ahead_total`,
+  `queue_excess`, `queue_pending`). Iterated removes use `.shift_remove()`. Closes
   [#3914](https://github.com/nautechsystems/nautilus_trader/issues/3914).
-- **Reconciliation manager** (`crates/live/src/manager.rs`): hook-enforced, plus
-  `ReconciliationResult.orders` and `ReconciliationResult.fills`.
+- **Reconciliation manager** (`crates/live/src/execution/manager.rs`): hook-enforced; the
+  `ReconciliationResult` report maps (`orders`, `fills`) live in
+  `crates/execution/src/reconciliation/types.rs` as `IndexMap`.
 - **Account trait** (`crates/model/src/accounts/`): `balances`, `balances_total`,
-  `balances_free`, `balances_locked`, `starting_balances` returns. Storage fields on
-  `BaseAccount` and `MarginAccount` are `IndexMap`.
+  `balances_free`, `balances_locked`, `starting_balances` returns. Balance and margin
+  storage fields on `BaseAccount` and `MarginAccount` are `IndexMap`; `commissions` and
+  `leverages` remain `AHashMap`.
 - **Position events** (`crates/model/src/position.rs`): `Position::commissions` flipped
   to `IndexMap` (consumed via `.values()` in `events/position/snapshot.rs`).
 - **Portfolio aggregation** (`crates/portfolio/src/portfolio.rs`): `unrealized_pnls`,
   `realized_pnls`, `net_positions` storage; `accumulate_mark_values` builds
-  `IndexMap<Currency, f64>`.
+  `IndexMap<Currency, Decimal>`.
 - **Data engine** (`crates/data/src/engine/`): `book_snapshot_counts`, `bar_aggregators`,
   `BookSnapshotInfos`. Iterated removes use `.shift_remove()`.
 - **Execution engine** (`crates/execution/src/engine/`): `ExecutionEngine.clients`, plus
@@ -273,11 +283,12 @@ is a regression that the per-area audit guards against.
 inside `#[cfg(test)]`, file-allowlisted in the hook, or carry an inline `// dst-ok`
 marker with a reason:
 
-- `crates/common/src/testing.rs:81,108` `wait_until` / `wait_until_async`
-- `crates/execution/src/engine/mod.rs:822,847` init log timing
-- `crates/common/src/cache/mod.rs:569,904,3895` log and audit timing (file-allowlisted)
-- `crates/model/src/defi/reporting.rs:59,123` progress logging (file-allowlisted)
-- `crates/core/src/time.rs` seam definition site (file-allowlisted)
+- `crates/common/src/testing.rs`: `wait_until` / `wait_until_async` timers
+- `crates/execution/src/engine/mod.rs`: init log timing in `load_cache`
+- `crates/common/src/cache/mod.rs`: timing in `check_integrity` and
+  `audit_own_order_books` (file-allowlisted)
+- `crates/model/src/defi/reporting.rs`: progress logging (file-allowlisted)
+- `crates/core/src/time.rs`: seam definition site (file-allowlisted)
 
 `chrono::Utc::now` is hook-banned in the in-scope crates. The remaining call sites are
 the logging bridge and writer (scoped out under "Logging runs on real OS threads"). The
@@ -298,12 +309,13 @@ Production RNG sites on the DST path:
 - `crates/execution/src/models/fill.rs::default_std_rng()` routes the same way. Called
   from `ProbabilisticFillState::new()` when no seed is provided. With a seed,
   `StdRng::seed_from_u64` is deterministic by construction.
-- `crates/execution/src/matching_engine/ids_generator.rs:167,179` uses
-  `nautilus_core::UUID4::new()` for the `use_random_ids` path. The default ID scheme
-  (`{venue}-{raw_id}-{count}`) is deterministic without it.
+- `crates/execution/src/matching_engine/ids_generator.rs` uses
+  `nautilus_core::UUID4::new()` in the position and venue order id generators for the
+  `use_random_ids` path. The default ID scheme (`{venue}-{raw_id}-{count}`) is
+  deterministic without it.
 
-Allowed-with-marker: `crates/network/src/backoff.rs:105` for reconnect jitter,
-`// dst-ok` (transport layer).
+Allowed-with-marker: jitter sampling in `crates/network/src/backoff.rs` for reconnect
+backoff, `// dst-ok` (transport layer).
 
 ### Tokio submodule split
 
@@ -315,10 +327,12 @@ invasive.
 
 In-scope sites that touch real `tokio::net` / `tokio::io` directly:
 
-- `crates/network/src/net.rs:37` re-exports `tokio::net::{TcpListener, TcpStream}`
-- `crates/network/src/socket/client.rs:46,356` `tokio::io::{AsyncReadExt, AsyncWriteExt}`
-- `crates/network/src/tls.rs:22` `tokio::io::{AsyncRead, AsyncWrite}`
-- `crates/network/src/websocket/types.rs:26,29` aliases `MaybeTlsStream<tokio::net::TcpStream>`
+- `crates/network/src/net.rs` re-exports `tokio::net::{TcpListener, TcpStream}`
+- `crates/network/src/socket/client.rs` uses `tokio::io::{AsyncReadExt, AsyncWriteExt}`
+- `crates/network/src/tls.rs` uses `tokio::io::{AsyncRead, AsyncWrite}`
+- `crates/network/src/socket/types.rs` aliases `MaybeTlsStream<TcpStream>` split halves
+  via `tokio::io::{ReadHalf, WriteHalf}`; the TCP type itself comes through the
+  `crate::net` seam
 
 These run on real sockets even under simulation. Channel delivery order on
 `tokio::sync` stays deterministic because the sender and receiver tasks are scheduled
@@ -344,8 +358,8 @@ events are dropped. Tests that init the file-logging writer would either hang or
 against an empty log file, so the affected submodules are gated out at the module
 boundary:
 
-- `crates/common/src/logging/logger.rs::tests::serial_tests` (eight tests).
-- `crates/common/src/logging/macros.rs::tests` (two tests).
+- `crates/common/src/logging/logger.rs::tests::serial_tests`.
+- `crates/common/src/logging/macros.rs::tests`.
 
 `logger.rs::tests::sim_tests::test_init_under_madsim_skips_writer_thread_and_forces_bypass`
 runs under simulation and pins the gated behaviour.
@@ -407,10 +421,11 @@ through a `cfg`-gated `advance_clock` helper so the same body covers both runtim
 
 ### Signal handling
 
-`nautilus_common::live::dst::signal` exposes a routed `ctrl_c` re-export. The
-`crates/live/src/node.rs` run loop routes through it, so node shutdown driven by `ctrl_c` is
-injectable from test code under `cfg(madsim)` via `madsim::runtime::Handle::send_ctrl_c`.
-Adapter-bin entry points still call `tokio::signal::ctrl_c` directly and remain scoped out.
+`nautilus_common::live::dst::signal` exposes routed `ctrl_c` and `terminate` re-exports. The
+`crates/live/src/node/mod.rs` run loop routes through them, so node shutdown driven by
+`ctrl_c` is injectable from test code under `cfg(madsim)` via
+`madsim::runtime::Handle::send_ctrl_c`. Adapter-bin entry points still call
+`tokio::signal::ctrl_c` directly and remain scoped out.
 
 ### Logging runs on real OS threads
 
@@ -421,10 +436,11 @@ simulation state.
 
 ### Adapters
 
-Adapter crates are out of scope for the initial DST contract. Each adapter has its own set of
-`chrono::Utc::now`, `SystemTime::now`, `Uuid::new_v4`, and transport-layer call sites. An
-adapter that enters the DST path must be audited for direct clock, RNG, and transport usage
-before its behavior can be covered by the contract.
+Adapter crates are out of scope for the initial DST contract. Adapter crates carry their own
+direct clock, RNG, and transport-layer call sites (`chrono::Utc::now`, `SystemTime::now`,
+raw transport clients), varying by adapter. An adapter that enters the DST path must be
+audited for direct clock, RNG, and transport usage before its behavior can be covered by the
+contract.
 
 ### Process-global lazy state consumes RNG bytes on first call
 
@@ -449,28 +465,21 @@ comparison, for example by calling `Ustr::from("")` and constructing one
 `ahash::RandomState` once at process start. Both runs then start with the warmed
 state and consume the RNG sequence identically.
 
-### Adapter factories no longer expose `Rc<RefCell<Cache>>`
+### Adapter factory cache access via `CacheView`
 
 Commit `f0ea66da15` ("Standardize adapter cache access via `CacheView`") replaced
 the mutable `Rc<RefCell<Cache>>` parameter on `DataClientFactory::create` and
 `ExecutionClientFactory::create` with a `CacheView`. `CacheView` exposes
-`borrow()` for read access but does not expose the inner `Rc` handle.
+`borrow()` for read access but does not expose the inner `Rc` handle, and
+`OrderMatchingEngine::new` still takes `Rc<RefCell<Cache>>` with no `CacheView`
+alternative.
 
-This blocks DST-style harness factories that need to construct an
-`OrderMatchingEngine` inline inside the factory, because
-`OrderMatchingEngine::new` still takes `Rc<RefCell<Cache>>` and there is no
-public accessor to recover that handle from a `CacheView`.
-
-Workarounds:
-
-- Pin the harness consumer to a commit before `f0ea66da15`.
-- Refactor the harness so it builds the `OrderMatchingEngine` outside the
-  factory (where the kernel `Cache` handle is still reachable) and passes the
-  constructed engine into the client.
-
-A longer-term escape hatch would be either an accessor on `CacheView` for the
-inner handle or an alternative `OrderMatchingEngine` constructor that accepts a
-`CacheView`. Neither is in the tree today.
+The same commit added `SimulatedExecutionClientFactory`
+(`crates/common/src/factories/client.rs`), whose `create` does pass the mutable
+`Rc<RefCell<Cache>>` because simulated execution clients may host a matching
+engine; the sandbox adapter implements it and builds its `OrderMatchingEngine`
+inline. A harness factory that hosts a matching engine implements this trait
+rather than the read-only factories.
 
 ## Relationship to other testing layers
 
