@@ -44,6 +44,7 @@ logs/
 .coverage*
 htmlcov/
 perf.data
+perf.data.old
 
 # Rust related
 *target/
