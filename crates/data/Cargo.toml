@@ -30,7 +30,10 @@ ffi = [
   "nautilus-persistence/ffi",
   "streaming",
 ]
-high-precision = ["nautilus-model/high-precision"]
+high-precision = [
+  "nautilus-model/high-precision",
+  "nautilus-serialization/high-precision",
+]
 extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
