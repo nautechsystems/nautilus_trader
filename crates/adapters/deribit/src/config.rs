@@ -71,6 +71,9 @@ pub struct DeribitDataClientConfig {
     /// Heartbeat interval in seconds for WebSocket connection.
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// Interval for refreshing instruments (in minutes).
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -93,6 +96,7 @@ nautilus_core::impl_pyo3_config_getters!(DeribitDataClientConfig {
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
     heartbeat_interval_secs: u64,
+    auth_timeout_secs: Option<u64>,
     update_instruments_interval_mins: u64,
     auto_load_missing_instruments: bool,
     transport_backend: TransportBackend,
@@ -183,6 +187,9 @@ pub struct DeribitExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 10_000)]
     pub retry_delay_max_ms: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -200,6 +207,7 @@ nautilus_core::impl_pyo3_config_getters!(DeribitExecClientConfig {
     max_retries: u32,
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
+    auth_timeout_secs: Option<u64>,
     transport_backend: TransportBackend,
 });
 

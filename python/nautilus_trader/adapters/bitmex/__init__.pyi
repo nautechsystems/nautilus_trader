@@ -42,6 +42,8 @@ class BitmexDataClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int | None: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def recv_window_ms(self) -> int: ...
     @property
     def active_only(self) -> bool: ...
@@ -67,6 +69,7 @@ class BitmexDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         recv_window_ms: int | None = None,
         active_only: bool | None = None,
         update_instruments_interval_mins: int | None = None,
@@ -100,6 +103,8 @@ class BitmexExecClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def recv_window_ms(self) -> int: ...
     @property
     def active_only(self) -> bool: ...
@@ -131,6 +136,7 @@ class BitmexExecClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         recv_window_ms: int | None = None,
         active_only: bool | None = None,
         environment: BitmexEnvironment | None = None,

@@ -256,6 +256,9 @@ pub struct OKXExecClientConfig {
     /// Enables margin/leverage for SPOT trading when true.
     #[builder(default)]
     pub use_spot_margin: bool,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
+    pub auth_timeout_secs: Option<u64>,
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -277,6 +280,7 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecClientConfig {
     retry_delay_max_ms: u64,
     margin_mode: Option<OKXMarginMode>,
     load_spreads: bool,
+    auth_timeout_secs: Option<u64>,
     transport_backend: TransportBackend,
 });
 
@@ -476,5 +480,16 @@ region = "eea"
         .unwrap();
 
         assert_eq!(config.region, OKXRegion::Eea);
+    }
+
+    #[rstest]
+    fn test_exec_config_auth_timeout_secs() {
+        assert_eq!(OKXExecClientConfig::default().auth_timeout_secs, None);
+
+        let exec = OKXExecClientConfig::builder().auth_timeout_secs(4).build();
+        assert_eq!(exec.auth_timeout_secs, Some(4));
+
+        let exec: OKXExecClientConfig = toml::from_str("auth_timeout_secs = 8\n").unwrap();
+        assert_eq!(exec.auth_timeout_secs, Some(8));
     }
 }

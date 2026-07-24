@@ -654,6 +654,7 @@ fn create_test_config(addr: SocketAddr) -> DeribitDataClientConfig {
         auto_load_missing_instruments: false,
         proxy_url: None,
         transport_backend: Default::default(),
+        ..Default::default()
     }
 }
 

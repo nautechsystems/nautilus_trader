@@ -118,6 +118,8 @@ class BybitExecClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def recv_window_ms(self) -> int: ...
     @property
     def account_id(self) -> model.AccountId | None: ...
@@ -142,6 +144,7 @@ class BybitExecClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         recv_window_ms: int | None = None,
         account_id: model.AccountId | None = None,
         use_spot_position_reports: bool | None = None,

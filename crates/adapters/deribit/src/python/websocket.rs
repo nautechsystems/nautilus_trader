@@ -93,6 +93,7 @@ impl DeribitWebSocketClient {
         heartbeat_interval=30,
         environment=DeribitEnvironment::Mainnet,
         proxy_url=None,
+        auth_timeout_secs=None,
     ))]
     fn py_new(
         url: Option<String>,
@@ -101,12 +102,14 @@ impl DeribitWebSocketClient {
         heartbeat_interval: u64,
         environment: DeribitEnvironment,
         proxy_url: Option<String>,
+        auth_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
         Self::new(
             url,
             api_key,
             api_secret,
             heartbeat_interval,
+            auth_timeout_secs,
             environment,
             TransportBackend::default(),
             proxy_url,
@@ -139,16 +142,23 @@ impl DeribitWebSocketClient {
     /// Returns an error if neither the argument nor the environment variable
     /// provides a credential.
     #[staticmethod]
-    #[pyo3(name = "with_credentials", signature = (environment, api_key = None, api_secret = None, account_id = None, proxy_url = None))]
+    #[pyo3(name = "with_credentials", signature = (environment, api_key = None, api_secret = None, account_id = None, proxy_url = None, auth_timeout_secs = None))]
     fn py_with_credentials(
         environment: DeribitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
         account_id: Option<AccountId>,
         proxy_url: Option<String>,
+        auth_timeout_secs: Option<u64>,
     ) -> PyResult<Self> {
-        let mut client = Self::with_credentials(environment, api_key, api_secret, proxy_url)
-            .map_err(to_pyvalue_err)?;
+        let mut client = Self::with_credentials(
+            environment,
+            api_key,
+            api_secret,
+            auth_timeout_secs,
+            proxy_url,
+        )
+        .map_err(to_pyvalue_err)?;
 
         if let Some(id) = account_id {
             client.set_account_id(id);

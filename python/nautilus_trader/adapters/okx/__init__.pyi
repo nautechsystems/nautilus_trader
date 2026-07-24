@@ -130,6 +130,8 @@ class OKXExecClientConfig:
     @property
     def load_spreads(self) -> bool: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -151,6 +153,7 @@ class OKXExecClientConfig:
         retry_delay_max_ms: int | None = None,
         margin_mode: OKXMarginMode | None = None,
         load_spreads: bool = False,
+        auth_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property

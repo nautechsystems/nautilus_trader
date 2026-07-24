@@ -282,6 +282,13 @@ impl DeriveWebSocketClient {
         &self.url
     }
 
+    /// Sets the per-operation WebSocket timeout (login, subscribe, reads, writes).
+    ///
+    /// Must be called before `connect()`. Defaults to `WS_REQUEST_TIMEOUT`.
+    pub fn set_request_timeout(&mut self, timeout: Duration) {
+        self.request_timeout = timeout;
+    }
+
     /// Returns `true` when credentials are configured and the venue has
     /// confirmed the latest `public/login`. Cleared on reconnect.
     #[must_use]

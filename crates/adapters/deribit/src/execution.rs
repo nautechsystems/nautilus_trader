@@ -112,6 +112,7 @@ impl DeribitExecutionClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             DERIBIT_WS_HEARTBEAT_SECS,
+            config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),

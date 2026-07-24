@@ -1052,6 +1052,7 @@ fn test_config(rest: SocketAddr, ws: SocketAddr) -> DeriveExecClientConfig {
         max_retries: 1,
         retry_delay_initial_ms: 50,
         retry_delay_max_ms: 500,
+        ws_timeout_secs: Some(30),
         max_fee_per_contract: Some(dec!(1000)),
         transport_backend: TransportBackend::default(),
         domain_separator: Some(TEST_DOMAIN_SEPARATOR.to_string()),

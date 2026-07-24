@@ -22,6 +22,7 @@ use std::{
         Arc, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -140,12 +141,16 @@ impl DeriveDataClient {
             config.currencies.clone(),
             config.include_expired,
         );
-        let ws_client = DeriveWebSocketClient::new(
+        let mut ws_client = DeriveWebSocketClient::new(
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),
         );
+
+        if let Some(secs) = config.ws_timeout_secs {
+            ws_client.set_request_timeout(Duration::from_secs(secs));
+        }
 
         Ok(Self {
             client_id,

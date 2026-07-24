@@ -131,7 +131,7 @@ impl BybitExecutionClient {
             config.proxy_url.clone(),
         )?;
 
-        let ws_private = BybitWebSocketClient::new_private(
+        let mut ws_private = BybitWebSocketClient::new_private(
             config.environment,
             Some(api_key.clone()),
             Some(api_secret.clone()),
@@ -141,7 +141,11 @@ impl BybitExecutionClient {
             config.proxy_url.clone(),
         );
 
-        let ws_trade = BybitWebSocketClient::new_trade(
+        if let Some(secs) = config.auth_timeout_secs {
+            ws_private.set_auth_wait_timeout(Duration::from_secs(secs));
+        }
+
+        let mut ws_trade = BybitWebSocketClient::new_trade(
             config.environment,
             Some(api_key),
             Some(api_secret),
@@ -150,6 +154,10 @@ impl BybitExecutionClient {
             config.transport_backend,
             config.proxy_url.clone(),
         );
+
+        if let Some(secs) = config.auth_timeout_secs {
+            ws_trade.set_auth_wait_timeout(Duration::from_secs(secs));
+        }
 
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(

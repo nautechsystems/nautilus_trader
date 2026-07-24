@@ -119,6 +119,7 @@ impl KrakenFuturesDataClient {
             config.ws_public_url(),
             config.heartbeat_interval_secs,
             None,
+            None,
             config.transport_backend,
             config.proxy_url.clone(),
         );

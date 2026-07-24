@@ -650,7 +650,7 @@ impl DataClient for BitmexDataClient {
                 self.config.api_secret.clone(),
                 None,
                 self.config.heartbeat_interval_secs.unwrap_or(5),
-                None,
+                self.config.auth_timeout_secs,
                 self.config.environment,
                 self.config.transport_backend,
                 self.config.proxy_url.clone(),

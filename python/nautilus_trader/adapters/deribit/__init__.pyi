@@ -47,6 +47,8 @@ class DeribitDataClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def update_instruments_interval_mins(self) -> int: ...
     @property
     def auto_load_missing_instruments(self) -> bool: ...
@@ -66,6 +68,7 @@ class DeribitDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         auto_load_missing_instruments: bool | None = None,
         transport_backend: network.TransportBackend | None = None,
@@ -101,6 +104,8 @@ class DeribitExecClientConfig:
     @property
     def retry_delay_max_ms(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -117,6 +122,7 @@ class DeribitExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        auth_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
@@ -223,6 +229,7 @@ class DeribitWebSocketClient:
         heartbeat_interval: int = 30,
         environment: DeribitEnvironment = ...,
         proxy_url: str | None = None,
+        auth_timeout_secs: int | None = None,
     ) -> None: ...
     @staticmethod
     def new_public(
@@ -235,6 +242,7 @@ class DeribitWebSocketClient:
         api_secret: str | None = None,
         account_id: model.AccountId | None = None,
         proxy_url: str | None = None,
+        auth_timeout_secs: int | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...
