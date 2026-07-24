@@ -30,7 +30,10 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{prelude::*, types::PyType};
 
 use crate::{
-    common::enums::{AxEnvironment, AxMarketDataLevel},
+    common::{
+        consts::{AX, AX_CLIENT_ID, AX_VENUE},
+        enums::{AxEnvironment, AxMarketDataLevel},
+    },
     http::client::AxHttpClient,
     python::websocket::{PyAxMdWebSocketClient, PyAxOrdersWebSocketClient},
 };
@@ -116,6 +119,9 @@ impl AxMarketDataLevel {
 /// Returns a `PyErr` if registering any module components fails.
 #[pymodule]
 pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(AX), AX)?;
+    m.add(stringify!(AX_CLIENT_ID), *AX_CLIENT_ID)?;
+    m.add(stringify!(AX_VENUE), *AX_VENUE)?;
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
     m.add_class::<crate::config::AxDataClientConfig>()?;

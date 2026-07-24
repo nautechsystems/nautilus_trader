@@ -9,6 +9,8 @@ from nautilus_trader import network
 
 __all__ = [
     "DERIVE",
+    "DERIVE_CLIENT_ID",
+    "DERIVE_VENUE",
     "DeriveDataClientConfig",
     "DeriveDataClientFactory",
     "DeriveEnvironment",
@@ -18,6 +20,8 @@ __all__ = [
 ]
 
 DERIVE: str
+DERIVE_CLIENT_ID: model.ClientId
+DERIVE_VENUE: model.Venue
 
 @typing.final
 class DeriveDataClientConfig:
@@ -30,7 +34,7 @@ class DeriveDataClientConfig:
     @property
     def http_timeout_secs(self) -> int: ...
     @property
-    def ws_timeout_secs(self) -> int: ...
+    def ws_timeout_secs(self) -> int | None: ...
     @property
     def update_instruments_interval_mins(self) -> int: ...
     @property
@@ -84,6 +88,8 @@ class DeriveExecClientConfig:
     @property
     def retry_delay_max_ms(self) -> int: ...
     @property
+    def ws_timeout_secs(self) -> int | None: ...
+    @property
     def max_fee_per_contract(self) -> decimal.Decimal | None: ...
     @property
     def domain_separator(self) -> str | None: ...
@@ -112,6 +118,7 @@ class DeriveExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        ws_timeout_secs: int | None = None,
         max_fee_per_contract: decimal.Decimal | None = None,
         domain_separator: str | None = None,
         action_typehash: str | None = None,

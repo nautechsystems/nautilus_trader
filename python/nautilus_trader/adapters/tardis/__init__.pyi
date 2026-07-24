@@ -9,19 +9,8 @@ from nautilus_trader import model
 __all__ = [
     "ReplayNormalizedRequestOptions",
     "StreamNormalizedRequestOptions",
-    "TardisBatchedDeltasStreamIterator",
     "TardisDataClientConfig",
     "TardisDataClientFactory",
-    "TardisDeltaStreamIterator",
-    "TardisDepth10StreamIterator",
-    "TardisFundingRateStreamIterator",
-    "TardisHttpClient",
-    "TardisInstrumentMiniInfo",
-    "TardisMachineClient",
-    "TardisOptionsChainStreamIterator",
-    "TardisQuoteStreamIterator",
-    "TardisTradeStreamIterator",
-    "bar_spec_to_tardis_trade_bar_string",
     "convert_tardis_options_chain_csv",
     "load_tardis_deltas",
     "load_tardis_depth10_from_snapshot5",
@@ -39,11 +28,6 @@ __all__ = [
     "stream_tardis_options_chain",
     "stream_tardis_quotes",
     "stream_tardis_trades",
-    "tardis_exchange_from_venue_str",
-    "tardis_exchange_is_option_exchange",
-    "tardis_exchange_to_venue_str",
-    "tardis_exchanges",
-    "tardis_normalize_symbol_str",
 ]
 
 @typing.final

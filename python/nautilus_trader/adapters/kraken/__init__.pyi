@@ -8,18 +8,20 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "KRAKEN",
+    "KRAKEN_CLIENT_ID",
+    "KRAKEN_VENUE",
     "KrakenDataClientConfig",
     "KrakenDataClientFactory",
     "KrakenEnvironment",
     "KrakenExecClientConfig",
     "KrakenExecutionClientFactory",
-    "KrakenFuturesHttpClient",
-    "KrakenFuturesWebSocketClient",
     "KrakenProductType",
-    "KrakenSpotHttpClient",
-    "KrakenSpotWebSocketClient",
-    "kraken_product_type_from_symbol",
 ]
+
+KRAKEN: str
+KRAKEN_CLIENT_ID: model.ClientId
+KRAKEN_VENUE: model.Venue
 
 @typing.final
 class KrakenDataClientConfig:
@@ -90,6 +92,8 @@ class KrakenExecClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def max_requests_per_second(self) -> int | None: ...
     @property
     def spot_account_type(self) -> model.AccountType: ...
@@ -120,6 +124,7 @@ class KrakenExecClientConfig:
         proxy_url: str | None = None,
         timeout_secs: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         max_requests_per_second: int | None = None,
         spot_account_type: model.AccountType | None = None,
         default_leverage: int | None = None,
@@ -249,6 +254,7 @@ class KrakenFuturesWebSocketClient:
         api_key: str | None = None,
         api_secret: str | None = None,
         proxy_url: str | None = None,
+        auth_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def has_credentials(self) -> bool: ...

@@ -91,6 +91,7 @@ pub struct DeribitWebSocketClient {
     url: String,
     environment: DeribitEnvironment,
     heartbeat_interval: Option<u64>,
+    auth_timeout_secs: u64,
     credential: Option<Credential>,
     auth_state: Arc<tokio::sync::RwLock<Option<AuthState>>>,
     signal: Arc<AtomicBool>,
@@ -136,11 +137,13 @@ impl DeribitWebSocketClient {
     /// # Errors
     ///
     /// Returns an error if only one of `api_key` or `api_secret` is provided.
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         url: Option<String>,
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat_interval: u64,
+        auth_timeout_secs: Option<u64>,
         environment: DeribitEnvironment,
         transport_backend: TransportBackend,
         proxy_url: Option<String>,
@@ -150,6 +153,7 @@ impl DeribitWebSocketClient {
             api_key,
             api_secret,
             heartbeat_interval,
+            auth_timeout_secs,
             environment,
             true,
             transport_backend,
@@ -164,6 +168,7 @@ impl DeribitWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         heartbeat_interval: u64,
+        auth_timeout_secs: Option<u64>,
         environment: DeribitEnvironment,
         env_fallback: bool,
         transport_backend: TransportBackend,
@@ -191,6 +196,7 @@ impl DeribitWebSocketClient {
             url,
             environment,
             heartbeat_interval: Some(heartbeat_interval),
+            auth_timeout_secs: auth_timeout_secs.unwrap_or(AUTHENTICATION_TIMEOUT_SECS),
             credential,
             auth_state: Arc::new(tokio::sync::RwLock::new(None)),
             signal,
@@ -234,6 +240,7 @@ impl DeribitWebSocketClient {
             None,
             None,
             DERIBIT_WS_HEARTBEAT_SECS,
+            None,
             environment,
             false,
             TransportBackend::default(),
@@ -259,6 +266,7 @@ impl DeribitWebSocketClient {
             None,
             None,
             heartbeat_interval,
+            None,
             environment,
             false,
             TransportBackend::default(),
@@ -281,6 +289,7 @@ impl DeribitWebSocketClient {
         environment: DeribitEnvironment,
         api_key: Option<String>,
         api_secret: Option<String>,
+        auth_timeout_secs: Option<u64>,
         proxy_url: Option<String>,
     ) -> anyhow::Result<Self> {
         let (key_env, secret_env) = credential_env_vars(environment);
@@ -295,6 +304,7 @@ impl DeribitWebSocketClient {
             Some(api_key),
             Some(api_secret),
             DERIBIT_WS_HEARTBEAT_SECS,
+            auth_timeout_secs,
             environment,
             TransportBackend::default(),
             proxy_url,
@@ -887,7 +897,7 @@ impl DeribitWebSocketClient {
         // Wait for authentication result with timeout
         match self
             .auth_tracker
-            .wait_for_result::<DeribitWsError>(Duration::from_secs(AUTHENTICATION_TIMEOUT_SECS), rx)
+            .wait_for_result::<DeribitWsError>(Duration::from_secs(self.auth_timeout_secs), rx)
             .await
         {
             Ok(()) => {

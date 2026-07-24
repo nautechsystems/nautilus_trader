@@ -40,7 +40,10 @@ use crate::{
     account::resolve_execution_account_address,
     common::{
         builder_fee::{approve_from_env, revoke_from_env},
-        consts::{HYPERLIQUID, HYPERLIQUID_POST_ONLY_WOULD_MATCH},
+        consts::{
+            HYPERLIQUID, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_POST_ONLY_WOULD_MATCH,
+            HYPERLIQUID_VENUE,
+        },
         enums::{
             HyperliquidConditionalOrderType, HyperliquidEnvironment, HyperliquidProductType,
             HyperliquidTpSl, HyperliquidTrailingOffsetType,
@@ -213,6 +216,9 @@ fn extract_hyperliquid_exec_config(
 /// Loaded as `nautilus_pyo3.hyperliquid`.
 #[pymodule]
 pub fn hyperliquid(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(HYPERLIQUID), HYPERLIQUID)?;
+    m.add(stringify!(HYPERLIQUID_CLIENT_ID), *HYPERLIQUID_CLIENT_ID)?;
+    m.add(stringify!(HYPERLIQUID_VENUE), *HYPERLIQUID_VENUE)?;
     m.add(
         "HYPERLIQUID_POST_ONLY_WOULD_MATCH",
         HYPERLIQUID_POST_ONLY_WOULD_MATCH,

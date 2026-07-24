@@ -38,8 +38,11 @@ use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::BarType,
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    enums::{
+        LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSideSpecified, TimeInForce,
+        TriggerType,
+    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
 };
@@ -98,6 +101,7 @@ struct TestServerState {
     last_cancel_spread_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_cancel_all_spread_orders_body: Arc<tokio::sync::Mutex<Option<Value>>>,
     last_algo_order_body: Arc<tokio::sync::Mutex<Option<Value>>>,
+    positions_response: Arc<tokio::sync::Mutex<Option<Value>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -345,6 +349,7 @@ fn create_router(state: Arc<TestServerState>) -> Router {
     let order_cancel_state = state.clone();
     let algo_pending_state = state.clone();
     let algo_history_state = state.clone();
+    let positions_state = state.clone();
     let algo_order_state = state;
     Router::new()
         .route(
@@ -1026,20 +1031,29 @@ fn create_router(state: Arc<TestServerState>) -> Router {
         )
         .route(
             "/api/v5/account/positions",
-            get(|headers: HeaderMap| async move {
-                if !has_auth_headers(&headers) {
-                    return (
-                        StatusCode::UNAUTHORIZED,
-                        Json(json!({
-                            "code": "401",
-                            "msg": "Missing authentication headers",
-                            "data": [],
-                        })),
-                    )
-                        .into_response();
-                }
+            get(move |headers: HeaderMap| {
+                let state = positions_state.clone();
+                async move {
+                    if !has_auth_headers(&headers) {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(json!({
+                                "code": "401",
+                                "msg": "Missing authentication headers",
+                                "data": [],
+                            })),
+                        )
+                            .into_response();
+                    }
 
-                Json(load_test_data("http_get_positions.json")).into_response()
+                    let response = state
+                        .positions_response
+                        .lock()
+                        .await
+                        .clone()
+                        .unwrap_or_else(|| load_test_data("http_get_positions.json"));
+                    Json(response).into_response()
+                }
             }),
         )
         .route(
@@ -4206,6 +4220,84 @@ async fn test_http_get_positions_returns_data() {
 
     assert!(!positions.is_empty());
     assert_eq!(positions[0].inst_id, Ustr::from("BTC-USDT-SWAP"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_http_request_position_status_reports_preserves_long_short_legs() {
+    let state = Arc::new(TestServerState::default());
+    *state.positions_response.lock().await =
+        Some(load_test_data("http_get_positions_long_short.json"));
+    let addr = start_test_server(state).await;
+    let base_url = format!("http://{addr}");
+    let account_id = AccountId::new("OKX-001");
+    let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let client = OKXHttpClient::with_credentials(
+        Some("test_key".to_string()),
+        Some("test_secret".to_string()),
+        Some("test_passphrase".to_string()),
+        Some(base_url),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    let reports = client
+        .request_position_status_reports(account_id, Some(OKXInstrumentType::Swap), None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    assert_eq!(reports[0].account_id, account_id);
+    assert_eq!(reports[0].instrument_id, instrument_id);
+    assert_eq!(reports[0].position_side, PositionSideSpecified::Long);
+    assert_eq!(reports[0].quantity, Quantity::from("5.00"));
+    assert_eq!(
+        reports[0].signed_decimal_qty,
+        rust_decimal_macros::dec!(5.00)
+    );
+    assert_eq!(
+        reports[0].venue_position_id,
+        Some(PositionId::new("12345-LONG")),
+    );
+    assert_eq!(
+        reports[0].avg_px_open,
+        Some(rust_decimal_macros::dec!(30000)),
+    );
+    assert_eq!(
+        reports[0].ts_last,
+        UnixNanos::from(1_622_559_930_237_000_000),
+    );
+
+    assert_eq!(reports[1].account_id, account_id);
+    assert_eq!(reports[1].instrument_id, instrument_id);
+    assert_eq!(reports[1].position_side, PositionSideSpecified::Short);
+    assert_eq!(reports[1].quantity, Quantity::from("2.00"));
+    assert_eq!(
+        reports[1].signed_decimal_qty,
+        rust_decimal_macros::dec!(-2.00),
+    );
+    assert_eq!(
+        reports[1].venue_position_id,
+        Some(PositionId::new("67890-SHORT")),
+    );
+    assert_eq!(
+        reports[1].avg_px_open,
+        Some(rust_decimal_macros::dec!(31000)),
+    );
+    assert_eq!(
+        reports[1].ts_last,
+        UnixNanos::from(1_622_559_931_237_000_000),
+    );
+    assert_eq!(reports[0].ts_init, reports[1].ts_init);
 }
 
 #[rstest]

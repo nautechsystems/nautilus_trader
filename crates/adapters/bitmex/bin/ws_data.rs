@@ -80,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None,   // No API secret
         None,   // Account ID
         5,      // 5 second heartbeat
+        None,   // Default authentication timeout
         TransportBackend::default(),
         None,
     )

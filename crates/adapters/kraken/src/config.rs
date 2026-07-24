@@ -180,6 +180,9 @@ pub struct KrakenExecClientConfig {
     pub timeout_secs: u64,
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
+    /// Optional WebSocket authentication timeout (seconds), defaulting to
+    /// `AUTHENTICATION_TIMEOUT_SECS` when unset (Kraken Futures login).
+    pub auth_timeout_secs: Option<u64>,
     pub max_requests_per_second: Option<u32>,
     #[builder(default)]
     pub transport_backend: TransportBackend,
@@ -248,6 +251,7 @@ nautilus_core::impl_pyo3_config_getters!(KrakenExecClientConfig {
     base_url: Option<String>,
     timeout_secs: u64,
     heartbeat_interval_secs: u64,
+    auth_timeout_secs: Option<u64>,
     max_requests_per_second: Option<u32>,
     spot_account_type: AccountType,
     default_leverage: Option<u16>,

@@ -9,34 +9,18 @@ from nautilus_trader import network
 
 __all__ = [
     "OKX",
-    "OKXBalanceDetail",
-    "OKXContractType",
+    "OKX_CLIENT_ID",
+    "OKX_VENUE",
     "OKXDataClientConfig",
     "OKXDataClientFactory",
-    "OKXEndpointType",
     "OKXEnvironment",
     "OKXExecClientConfig",
     "OKXExecutionClientFactory",
-    "OKXGreeksType",
-    "OKXHttpClient",
-    "OKXInstrumentType",
-    "OKXMarginMode",
-    "OKXOrderStatus",
-    "OKXPositionMode",
-    "OKXRegion",
-    "OKXTradeMode",
-    "OKXVipLevel",
-    "OKXWebSocketClient",
-    "OKXWebSocketError",
-    "derive_okx_ws_url",
-    "get_okx_http_base_url",
-    "get_okx_ws_url_business",
-    "get_okx_ws_url_private",
-    "get_okx_ws_url_public",
-    "okx_requires_authentication",
 ]
 
 OKX: str
+OKX_CLIENT_ID: model.ClientId
+OKX_VENUE: model.Venue
 
 @typing.final
 class OKXBalanceDetail:
@@ -146,6 +130,8 @@ class OKXExecClientConfig:
     @property
     def load_spreads(self) -> bool: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -167,6 +153,7 @@ class OKXExecClientConfig:
         retry_delay_max_ms: int | None = None,
         margin_mode: OKXMarginMode | None = None,
         load_spreads: bool = False,
+        auth_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property

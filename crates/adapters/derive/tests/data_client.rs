@@ -580,7 +580,7 @@ fn config(rest_addr: SocketAddr, ws_addr: SocketAddr) -> DeriveDataClientConfig 
         proxy_url: None,
         environment: DeriveEnvironment::Mainnet,
         http_timeout_secs: 5,
-        ws_timeout_secs: 5,
+        ws_timeout_secs: Some(5),
         update_instruments_interval_mins: 60,
         currencies: Vec::new(),
         include_expired: false,

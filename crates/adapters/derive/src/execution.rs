@@ -192,7 +192,7 @@ impl DeriveExecutionClient {
             credential.session_key(),
         )
         .context("failed to build Derive WebSocket credentials")?;
-        let ws_client = DeriveWebSocketClient::with_credentials(
+        let mut ws_client = DeriveWebSocketClient::with_credentials(
             Some(config.ws_url()),
             config.environment,
             config.transport_backend,
@@ -200,6 +200,10 @@ impl DeriveExecutionClient {
             ws_credentials,
             config.max_matching_requests_per_second,
         );
+
+        if let Some(secs) = config.ws_timeout_secs {
+            ws_client.set_request_timeout(Duration::from_secs(secs));
+        }
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
         let ws_exec = ws_client.execution_handle();

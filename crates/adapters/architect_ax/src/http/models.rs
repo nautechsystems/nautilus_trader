@@ -16,7 +16,7 @@
 //! Data transfer objects for deserializing Ax HTTP API payloads.
 
 use ahash::AHashMap;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display};
@@ -24,7 +24,8 @@ use ustr::Ustr;
 
 use crate::common::{
     enums::{
-        AxCandleWidth, AxCategory, AxInstrumentState, AxOrderSide, AxOrderStatus, AxTimeInForce,
+        AxCandleWidth, AxCategory, AxFundingSlotStatus, AxFundingVariant, AxInstrumentState,
+        AxOrderSide, AxOrderStatus, AxTimeInForce,
     },
     parse::{
         deserialize_decimal_or_zero, deserialize_optional_decimal,
@@ -814,6 +815,71 @@ pub struct AxFundingRatesResponse {
     pub next_cursor: Option<String>,
 }
 
+/// One funding slot of a trading day, as returned by `GET /funding-slots`.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AxFundingSlot {
+    /// 1-based position within the day's schedule.
+    pub index: i32,
+    /// Scheduled settlement time of the slot.
+    pub funding_time: DateTime<Utc>,
+    /// Slot settlement state.
+    pub status: AxFundingSlotStatus,
+    /// True when the rate was clamped by the symbol's funding rate cap.
+    pub capped: bool,
+    /// Mark-price TWAP over the slot, when available.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub mark_twap: Option<Decimal>,
+    /// Underlying-price TWAP over the slot, when available.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub underlying_twap: Option<Decimal>,
+    /// Premium of the mark TWAP over the underlying TWAP, in basis points.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub premium_bps: Option<Decimal>,
+    /// Slot funding rate in basis points; positive means longs pay shorts.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub funding_rate_bps: Option<Decimal>,
+    /// Why a skipped slot did not settle; present only on skipped slots.
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Response payload returned by `GET /funding-slots`.
+///
+/// A full trading day of funding slots with running totals. `daily_close`
+/// symbols report a single slot.
+///
+/// # References
+/// - <https://docs.architect.exchange/api-reference/marketdata/get-funding-slots>
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AxFundingSlotsResponse {
+    /// Instrument symbol.
+    pub symbol: Ustr,
+    /// Trading day the schedule covers.
+    pub date: NaiveDate,
+    /// IANA name of the funding schedule's timezone.
+    pub timezone: String,
+    /// How the symbol's funding accrues over the day.
+    pub variant: AxFundingVariant,
+    /// Number of funding slots scheduled on `date`; 0 on holidays and weekends.
+    pub interval_count: i32,
+    /// Per-slot cap on the funding rate in basis points, when configured.
+    #[serde(default, deserialize_with = "deserialize_optional_decimal_from_str")]
+    pub cap_bps: Option<Decimal>,
+    /// Funding slots for the day.
+    pub slots: Vec<AxFundingSlot>,
+    /// Sum of realized slot rates so far, in basis points.
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub realized_sum_bps: Decimal,
+    /// Projected end-of-day total in basis points: realized plus remaining projections.
+    #[serde(deserialize_with = "deserialize_decimal_or_zero")]
+    pub projected_eod_bps: Decimal,
+}
+
 /// Per-symbol risk metrics.
 ///
 /// # References
@@ -1289,6 +1355,74 @@ mod tests {
         let response: AxFundingRatesResponse = serde_json::from_str(json).unwrap();
         assert_eq!(response.funding_rates.len(), 2);
         assert_eq!(response.funding_rates[0].symbol, "JPYUSD-PERP");
+    }
+
+    #[rstest]
+    fn test_deserialize_funding_slots_response() {
+        let json = include_str!("../../test_data/http_get_funding_slots.json");
+        let response: AxFundingSlotsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.symbol, "EURUSD-PERP");
+        assert_eq!(response.date, NaiveDate::from_ymd_opt(2026, 7, 6).unwrap());
+        assert_eq!(response.timezone, "America/New_York");
+        assert_eq!(response.variant, AxFundingVariant::IntradayTwap);
+        assert_eq!(response.interval_count, 4);
+        assert_eq!(
+            response.cap_bps.map(|d| d.to_string()),
+            Some("5.0".to_string())
+        );
+        assert_eq!(response.slots.len(), 4);
+
+        let first = &response.slots[0];
+        assert_eq!(first.index, 1);
+        assert_eq!(first.status, AxFundingSlotStatus::Realized);
+        assert!(!first.capped);
+        assert_eq!(
+            first.funding_rate_bps.map(|d| d.to_string()),
+            Some("0.0921".to_string())
+        );
+        assert!(first.reason.is_none());
+
+        let capped = &response.slots[1];
+        assert!(capped.capped);
+        assert_eq!(
+            capped.funding_rate_bps.map(|d| d.to_string()),
+            Some("5.0000".to_string())
+        );
+
+        let projected = &response.slots[2];
+        assert_eq!(projected.status, AxFundingSlotStatus::Projected);
+
+        let skipped = &response.slots[3];
+        assert_eq!(skipped.status, AxFundingSlotStatus::Skipped);
+        assert!(skipped.mark_twap.is_none());
+        assert!(skipped.funding_rate_bps.is_none());
+        assert_eq!(skipped.reason.as_deref(), Some("holiday"));
+
+        assert_eq!(response.realized_sum_bps.to_string(), "5.0921");
+        assert_eq!(response.projected_eod_bps.to_string(), "5.1842");
+    }
+
+    #[rstest]
+    fn test_funding_variant_and_slot_status_deserialization() {
+        let daily: AxFundingVariant =
+            serde_json::from_value(serde_json::json!("daily_close")).unwrap();
+        let twap: AxFundingVariant =
+            serde_json::from_value(serde_json::json!("intraday_twap")).unwrap();
+        assert_eq!(daily, AxFundingVariant::DailyClose);
+        assert_eq!(twap, AxFundingVariant::IntradayTwap);
+
+        let statuses = [
+            ("realized", AxFundingSlotStatus::Realized),
+            ("projected", AxFundingSlotStatus::Projected),
+            ("skipped", AxFundingSlotStatus::Skipped),
+            ("pending", AxFundingSlotStatus::Pending),
+        ];
+
+        for (raw, expected) in statuses {
+            let parsed: AxFundingSlotStatus =
+                serde_json::from_value(serde_json::json!(raw)).unwrap();
+            assert_eq!(parsed, expected);
+        }
     }
 
     #[rstest]

@@ -102,6 +102,13 @@ const ORDERS_GROUP_BLOCK_LENGTH: u16 = 162;
 const PRICE_FILTER_TEMPLATE_ID: u16 = 1;
 const LOT_SIZE_FILTER_TEMPLATE_ID: u16 = 4;
 
+/// WS trading setup timeout for the tests that exercise setup expiry.
+///
+/// Sized to expire quickly while leaving room for the request to reach the
+/// loopback server and be recorded: the timer starts when the command is
+/// queued on the handler channel, not when the frame hits the socket.
+const TEST_WS_SETUP_TIMEOUT_MS: u64 = 250;
+
 fn create_sbe_header(block_length: u16, template_id: u16) -> [u8; 8] {
     let mut header = [0u8; 8];
     header[0..2].copy_from_slice(&block_length.to_le_bytes());
@@ -541,6 +548,7 @@ enum WsSetupBehavior {
     RejectSessionLogon,
     IgnoreSessionLogon,
     RejectUserDataSubscribe,
+    IgnoreUserDataSubscribe,
 }
 
 #[derive(Clone)]
@@ -1137,6 +1145,7 @@ async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
                             break;
                         }
                     }
+                    ("userDataStream.subscribe", WsSetupBehavior::IgnoreUserDataSubscribe) => {}
                     ("userDataStream.subscribe", _) => {
                         match send_ws_setup_result(
                             &mut socket,
@@ -1328,6 +1337,24 @@ fn create_test_execution_client_with_ws_trading(
     create_test_execution_client_with_transport(base_url_http, true, Some(base_url_ws_trading))
 }
 
+fn create_test_execution_client_with_ws_trading_timeout(
+    base_url_http: String,
+    base_url_ws_trading: String,
+    ws_trading_setup_timeout_ms: u64,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
+        base_url_http,
+        true,
+        Some(base_url_ws_trading),
+        true,
+        ws_trading_setup_timeout_ms,
+    )
+}
+
 fn create_test_execution_client_with_transport(
     base_url_http: String,
     use_ws_trading: bool,
@@ -1350,6 +1377,26 @@ fn create_test_execution_client_with_transport_and_gtd(
     use_ws_trading: bool,
     base_url_ws_trading: Option<String>,
     use_gtd: bool,
+) -> (
+    BinanceSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
+    create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
+        base_url_http,
+        use_ws_trading,
+        base_url_ws_trading,
+        use_gtd,
+        BinanceExecClientConfig::default().ws_trading_setup_timeout_ms,
+    )
+}
+
+fn create_test_execution_client_with_transport_and_gtd_and_ws_setup_timeout(
+    base_url_http: String,
+    use_ws_trading: bool,
+    base_url_ws_trading: Option<String>,
+    use_gtd: bool,
+    ws_trading_setup_timeout_ms: u64,
 ) -> (
     BinanceSpotExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1378,6 +1425,7 @@ fn create_test_execution_client_with_transport_and_gtd(
         base_url_http: Some(base_url_http),
         base_url_ws_trading,
         use_ws_trading,
+        ws_trading_setup_timeout_ms,
         use_gtd,
         api_key: Some("test_api_key".to_string()),
         api_secret: Some("test_api_secret".to_string()),
@@ -1852,15 +1900,23 @@ async fn test_ws_trading_reconnect_retries_ws_after_setup_failure() {
 #[rstest]
 #[tokio::test]
 async fn test_ws_trading_session_logon_rejection_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(WsSetupBehavior::RejectSessionLogon, &["session.logon"])
-        .await;
+    assert_ws_setup_failure_uses_http(
+        WsSetupBehavior::RejectSessionLogon,
+        &["session.logon"],
+        None,
+    )
+    .await;
 }
 
 #[rstest]
 #[tokio::test]
 async fn test_ws_trading_auth_timeout_uses_http_only_mode() {
-    assert_ws_setup_failure_uses_http(WsSetupBehavior::IgnoreSessionLogon, &["session.logon"])
-        .await;
+    assert_ws_setup_failure_uses_http(
+        WsSetupBehavior::IgnoreSessionLogon,
+        &["session.logon"],
+        Some(TEST_WS_SETUP_TIMEOUT_MS),
+    )
+    .await;
 }
 
 #[rstest]
@@ -1869,6 +1925,18 @@ async fn test_ws_trading_user_data_subscribe_rejection_uses_http_only_mode() {
     assert_ws_setup_failure_uses_http(
         WsSetupBehavior::RejectUserDataSubscribe,
         &["session.logon", "userDataStream.subscribe"],
+        None,
+    )
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ws_trading_user_data_subscribe_timeout_uses_http_only_mode() {
+    assert_ws_setup_failure_uses_http(
+        WsSetupBehavior::IgnoreUserDataSubscribe,
+        &["session.logon", "userDataStream.subscribe"],
+        Some(TEST_WS_SETUP_TIMEOUT_MS),
     )
     .await;
 }
@@ -3234,15 +3302,25 @@ async fn wait_for_ws_method(state: &WsSetupState, expected_method: &str) {
     .await;
 }
 
-async fn assert_ws_setup_failure_uses_http(behavior: WsSetupBehavior, expected_methods: &[&str]) {
+async fn assert_ws_setup_failure_uses_http(
+    behavior: WsSetupBehavior,
+    expected_methods: &[&str],
+    ws_trading_setup_timeout_ms: Option<u64>,
+) {
     let (http_addr, request_count) =
         start_exec_test_server_with_command_responses(CommandResponses::default()).await;
     let (ws_addr, ws_state) = start_ws_setup_test_server(behavior).await;
     let base_url_http = format!("http://{http_addr}");
     let base_url_ws_trading = format!("ws://{ws_addr}/ws-api/v3");
 
-    let (mut client, mut rx, cache) =
-        create_test_execution_client_with_ws_trading(base_url_http, base_url_ws_trading);
+    let (mut client, mut rx, cache) = match ws_trading_setup_timeout_ms {
+        Some(timeout_ms) => create_test_execution_client_with_ws_trading_timeout(
+            base_url_http,
+            base_url_ws_trading,
+            timeout_ms,
+        ),
+        None => create_test_execution_client_with_ws_trading(base_url_http, base_url_ws_trading),
+    };
     add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
 
     client.start().unwrap();
@@ -3250,7 +3328,9 @@ async fn assert_ws_setup_failure_uses_http(behavior: WsSetupBehavior, expected_m
         WsSetupBehavior::CompleteSetup | WsSetupBehavior::RejectFirstSessionLogon => {
             unreachable!("complete setup is not a setup failure")
         }
-        WsSetupBehavior::IgnoreSessionLogon => Duration::from_secs(12),
+        WsSetupBehavior::IgnoreSessionLogon | WsSetupBehavior::IgnoreUserDataSubscribe => {
+            Duration::from_secs(2)
+        }
         WsSetupBehavior::RejectSessionLogon | WsSetupBehavior::RejectUserDataSubscribe => {
             Duration::from_secs(5)
         }

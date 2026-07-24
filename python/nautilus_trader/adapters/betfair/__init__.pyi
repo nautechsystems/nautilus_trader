@@ -6,11 +6,18 @@ import typing
 from nautilus_trader import model
 
 __all__ = [
+    "BETFAIR",
+    "BETFAIR_CLIENT_ID",
+    "BETFAIR_VENUE",
     "BetfairDataClientFactory",
     "BetfairDataConfig",
     "BetfairExecConfig",
     "BetfairExecutionClientFactory",
 ]
+
+BETFAIR: str
+BETFAIR_CLIENT_ID: model.ClientId
+BETFAIR_VENUE: model.Venue
 
 @typing.final
 class BetfairDataClientFactory:

@@ -125,7 +125,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
-            None,
+            config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
         )
@@ -138,7 +138,7 @@ impl OKXExecutionClient {
             config.api_passphrase.clone(),
             Some(account_id),
             Some(OKX_WS_HEARTBEAT_SECS),
-            None,
+            config.auth_timeout_secs,
             config.transport_backend,
             config.proxy_url.clone(),
         )

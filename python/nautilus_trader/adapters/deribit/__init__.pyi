@@ -8,19 +8,23 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "DERIBIT",
+    "DERIBIT_CLIENT_ID",
+    "DERIBIT_VENUE",
     "DeribitCurrency",
     "DeribitDataClientConfig",
     "DeribitDataClientFactory",
     "DeribitEnvironment",
     "DeribitExecClientConfig",
     "DeribitExecutionClientFactory",
-    "DeribitHttpClient",
     "DeribitProductType",
     "DeribitUpdateInterval",
-    "DeribitWebSocketClient",
-    "get_deribit_http_base_url",
-    "get_deribit_ws_url",
+    "DeribitVolatilityIndex",
 ]
+
+DERIBIT: str
+DERIBIT_CLIENT_ID: model.ClientId
+DERIBIT_VENUE: model.Venue
 
 @typing.final
 class DeribitDataClientConfig:
@@ -43,6 +47,8 @@ class DeribitDataClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def update_instruments_interval_mins(self) -> int: ...
     @property
     def auto_load_missing_instruments(self) -> bool: ...
@@ -62,6 +68,7 @@ class DeribitDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         update_instruments_interval_mins: int | None = None,
         auto_load_missing_instruments: bool | None = None,
         transport_backend: network.TransportBackend | None = None,
@@ -97,6 +104,8 @@ class DeribitExecClientConfig:
     @property
     def retry_delay_max_ms(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def transport_backend(self) -> network.TransportBackend: ...
     def __init__(
         self,
@@ -113,6 +122,7 @@ class DeribitExecClientConfig:
         max_retries: int | None = None,
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
+        auth_timeout_secs: int | None = None,
         transport_backend: network.TransportBackend | None = None,
     ) -> None: ...
     @property
@@ -188,6 +198,28 @@ class DeribitHttpClient:
     ) -> typing.Any: ...
 
 @typing.final
+class DeribitVolatilityIndex:
+    @property
+    def index_name(self) -> str: ...
+    @property
+    def volatility(self) -> float: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    def __new__(
+        cls, index_name: str, volatility: float, ts_event: int, ts_init: int
+    ) -> DeribitVolatilityIndex: ...
+    def to_json(self) -> str: ...
+    @classmethod
+    def from_json(cls, data: typing.Any) -> typing.Any: ...
+    @classmethod
+    def decode_record_batch_py(
+        cls, metadata: typing.Mapping[str, str], py_batch: typing.Any
+    ) -> typing.Any: ...
+    def encode_record_batch_py(self, items: list) -> typing.Any: ...
+
+@typing.final
 class DeribitWebSocketClient:
     def __init__(
         self,
@@ -197,6 +229,7 @@ class DeribitWebSocketClient:
         heartbeat_interval: int = 30,
         environment: DeribitEnvironment = ...,
         proxy_url: str | None = None,
+        auth_timeout_secs: int | None = None,
     ) -> None: ...
     @staticmethod
     def new_public(
@@ -209,6 +242,7 @@ class DeribitWebSocketClient:
         api_secret: str | None = None,
         account_id: model.AccountId | None = None,
         proxy_url: str | None = None,
+        auth_timeout_secs: int | None = None,
     ) -> DeribitWebSocketClient: ...
     @property
     def url(self) -> str: ...

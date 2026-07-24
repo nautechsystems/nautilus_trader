@@ -100,6 +100,7 @@ adapter set. The following limits remain deferred:
 - Added Binance Python v2 constants, instrument loading, order book CSV loading, and client-order-ID decoders
 - Added Blockchain pool analysis to build exact checkpoint snapshots without storing full swap history
 - Added Architect AX dated futures parsing and configurable WebSocket heartbeat and disconnect cancellation
+- Added Architect AX funding-slot schedule requests via `GET /funding-slots`
 - Added Hyperliquid fast-cancel payloads for non-trigger order cancels (#4414), thanks for reporting @magnified103
 - Added Hyperliquid market data stream health warnings for stalled Deltas, Depth10, and Quote subscriptions (#4298)
 - Added Hyperliquid opt-in stale stream recovery with targeted resubscribe and reconnect escalation (#4298)
@@ -185,7 +186,9 @@ adapter set. The following limits remain deferred:
 - Fixed v2 hedging phantom positions (#4424), thanks for reporting @luckykefu and for the patch @akashchakrabortymsc-cmd
 - Fixed v2 matching engine queue position for per-order deltas in L3 books (#4370), thanks for reporting @warmi024
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
+- Fixed v2 order-book average prices losing precision during weighted accumulation
 - Fixed v2 order-book raw exposure and crossed level sizes losing precision through floating-point conversion
+- Fixed v2 option-chain strike selection and rebalance thresholds losing precision
 - Fixed v2 `Quantity` multiplication falsely overflowing before fixed-point scaling
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
 - Fixed v2 position reconciliation grace to measure on the monotonic clock (#4366), thanks @folknor

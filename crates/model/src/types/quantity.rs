@@ -426,6 +426,21 @@ impl Quantity {
         Decimal::from_i128_with_scale(rescaled_raw as i128, u32::from(self.precision))
     }
 
+    /// Returns a raw fixed-point quantity as a `Decimal`.
+    #[must_use]
+    #[allow(
+        clippy::unnecessary_fallible_conversions,
+        reason = "try_from is infallible when QuantityRaw is u64, fallible when u128"
+    )]
+    pub(crate) fn raw_as_decimal(raw: QuantityRaw) -> Decimal {
+        let whole =
+            i128::try_from(raw / FIXED_SCALAR_RAW).expect("Whole raw quantity must fit in Decimal");
+        let fractional = i128::try_from(raw % FIXED_SCALAR_RAW)
+            .expect("Fractional raw quantity must fit in Decimal");
+
+        Decimal::from(whole) + Decimal::from_i128_with_scale(fractional, u32::from(FIXED_PRECISION))
+    }
+
     /// Returns a formatted string representation of this instance.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {

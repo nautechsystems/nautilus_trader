@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 
 use crate::{
     common::{
-        consts::KRAKEN,
+        consts::{KRAKEN, KRAKEN_CLIENT_ID, KRAKEN_VENUE},
         enums::{KrakenEnvironment, KrakenProductType},
     },
     config::{KrakenDataClientConfig, KrakenExecClientConfig},
@@ -116,6 +116,9 @@ fn extract_kraken_exec_config(
 
 #[pymodule]
 pub fn kraken(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(KRAKEN), KRAKEN)?;
+    m.add(stringify!(KRAKEN_CLIENT_ID), *KRAKEN_CLIENT_ID)?;
+    m.add(stringify!(KRAKEN_VENUE), *KRAKEN_VENUE)?;
     m.add_class::<KrakenEnvironment>()?;
     m.add_class::<KrakenProductType>()?;
     m.add_class::<KrakenSpotHttpClient>()?;

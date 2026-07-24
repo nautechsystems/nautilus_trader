@@ -9,14 +9,18 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
+    "AX",
+    "AX_CLIENT_ID",
+    "AX_VENUE",
     "AxDataClientConfig",
     "AxEnvironment",
     "AxExecClientConfig",
-    "AxHttpClient",
     "AxMarketDataLevel",
-    "AxMdWebSocketClient",
-    "AxOrdersWebSocketClient",
 ]
+
+AX: str
+AX_CLIENT_ID: model.ClientId
+AX_VENUE: model.Venue
 
 @typing.final
 class AxDataClientConfig:

@@ -98,6 +98,29 @@ representation. Include the representation only when real sibling formats exist.
 `load_binance_order_book_deltas` is preferable to a stateless
 `BinanceOrderBookDeltaDataLoader.load` class or a generic `load_binance_data` function.
 
+#### Adapter package facades
+
+Each package under `nautilus_trader/adapters/` is a thin facade over the private
+`_libnautilus` extension. Every adapter `__init__.py` declares a deterministic `__all__` that is
+the single source of truth for its public API; `python/generate_stubs.py` copies that list into the
+matching `.pyi` so runtime and stub exports agree exactly.
+
+A venue adapter exposes its canonical identity constants plus the supported public surface:
+
+- `<VENUE>`, `<VENUE>_CLIENT_ID`, `<VENUE>_VENUE`, registered from Rust via `m.add` in the adapter's
+  `python/mod.rs`
+- data types, `*Config`, `*Factory`, user-facing enums (such as `*Environment` and `*ProductType`)
+- stateless loaders (`load_*`, `stream_*`, `convert_*`) and intentional utilities
+  (`decode_*`, `get_*_arrow_schema_map`)
+
+Keep the facade thin. Never add raw HTTP or WebSocket clients, wire models, endpoint helpers
+(`get_*_url`, `*_HTTP_URL`), caches, or other internals to `__all__` merely for structural parity.
+Data providers (such as `databento` and `tardis`), the `blockchain` data client, the `sandbox`
+execution client, and the multi-venue `interactive_brokers` broker omit venue constants because the
+constants would be meaningless for them.
+
+Order `__all__` entries so the `RUF022` pre-commit gate owns sort order; do not hand-order the list.
+
 ### Formatting
 
 1. For longer lines of code, and when passing more than a couple of arguments, you should take a new line which aligns at the next logical indent (rather than attempting a hanging 'vanity' alignment off an opening parenthesis). This practice conserves space to the right, keeps important code more central in view, and survives function/method name changes.

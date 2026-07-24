@@ -667,6 +667,7 @@ fn create_test_exec_config(addr: SocketAddr) -> BybitExecClientConfig {
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     }
 }
 
@@ -1045,6 +1046,7 @@ async fn test_exec_client_demo_mode_skips_trade_ws() {
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1220,6 +1222,7 @@ async fn test_exec_client_submit_order_list_demo() {
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1835,6 +1838,7 @@ async fn test_exec_client_submit_order_list_denies_all_on_invalid_leg() {
         position_mode: None,
         margin_mode: None,
         transport_backend: Default::default(),
+        ..Default::default()
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();

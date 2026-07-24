@@ -23,7 +23,7 @@ use nautilus_architect_ax::{
     http::{
         client::{AxHttpClient, AxRawHttpClient},
         error::AxHttpError,
-        query::GetFundingRatesParams,
+        query::{GetFundingRatesParams, GetFundingSlotsParams},
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -128,6 +128,15 @@ async fn handle_repeated_funding_cursor(
     }))
 }
 
+async fn handle_funding_slots(Query(params): Query<GetFundingSlotsParams>) -> Json<Value> {
+    let mut payload = load_test_data("http_get_funding_slots.json");
+    payload["symbol"] = json!(params.symbol.as_str());
+    if let Some(date) = params.date {
+        payload["date"] = json!(date);
+    }
+    Json(payload)
+}
+
 async fn handle_empty_open_orders_page() -> Json<serde_json::Value> {
     Json(json!({
         "orders": [],
@@ -207,6 +216,7 @@ fn create_router() -> Router {
             }),
         )
         .route("/funding-rates", get(handle_funding_rates))
+        .route("/funding-slots", get(handle_funding_slots))
 }
 
 async fn start_test_server() -> SocketAddr {
@@ -506,6 +516,26 @@ async fn test_domain_http_request_funding_rates_rejects_repeated_cursor() {
         error.to_string(),
         "Parameter validation error: AX funding-rates pagination repeated cursor \"same\""
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_funding_slots_returns_schedule() {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 7, 6).unwrap();
+    let response = client
+        .request_funding_slots(InstrumentId::from("EURUSD-PERP.AX"), Some(date))
+        .await
+        .unwrap();
+
+    assert_eq!(response.symbol, "EURUSD-PERP");
+    assert_eq!(response.date, date);
+    assert_eq!(response.slots.len(), 4);
+    assert_eq!(response.realized_sum_bps, dec!(5.0921));
 }
 
 #[rstest]

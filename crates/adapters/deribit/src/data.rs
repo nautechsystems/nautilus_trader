@@ -137,6 +137,7 @@ impl DeribitDataClient {
             config.api_key.clone(),
             config.api_secret.clone(),
             config.heartbeat_interval_secs,
+            config.auth_timeout_secs,
             config.environment,
             config.transport_backend,
             config.proxy_url.clone(),

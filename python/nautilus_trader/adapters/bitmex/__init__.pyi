@@ -8,22 +8,20 @@ from nautilus_trader import model
 from nautilus_trader import network
 
 __all__ = [
-    "BITMEX_HTTP_URL",
-    "BITMEX_WS_URL",
+    "BITMEX",
+    "BITMEX_CLIENT_ID",
+    "BITMEX_VENUE",
     "BitmexDataClientConfig",
     "BitmexDataClientFactory",
     "BitmexEnvironment",
     "BitmexExecClientConfig",
     "BitmexExecFactoryConfig",
     "BitmexExecutionClientFactory",
-    "BitmexHttpClient",
-    "BitmexWebSocketClient",
-    "CancelBroadcaster",
-    "SubmitBroadcaster",
-    "get_bitmex_http_base_url",
-    "get_bitmex_ws_url",
 ]
 
+BITMEX: str
+BITMEX_CLIENT_ID: model.ClientId
+BITMEX_VENUE: model.Venue
 BITMEX_HTTP_URL: str
 BITMEX_WS_URL: str
 
@@ -43,6 +41,8 @@ class BitmexDataClientConfig:
     def retry_delay_max_ms(self) -> int: ...
     @property
     def heartbeat_interval_secs(self) -> int | None: ...
+    @property
+    def auth_timeout_secs(self) -> int | None: ...
     @property
     def recv_window_ms(self) -> int: ...
     @property
@@ -69,6 +69,7 @@ class BitmexDataClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         recv_window_ms: int | None = None,
         active_only: bool | None = None,
         update_instruments_interval_mins: int | None = None,
@@ -102,6 +103,8 @@ class BitmexExecClientConfig:
     @property
     def heartbeat_interval_secs(self) -> int: ...
     @property
+    def auth_timeout_secs(self) -> int | None: ...
+    @property
     def recv_window_ms(self) -> int: ...
     @property
     def active_only(self) -> bool: ...
@@ -133,6 +136,7 @@ class BitmexExecClientConfig:
         retry_delay_initial_ms: int | None = None,
         retry_delay_max_ms: int | None = None,
         heartbeat_interval_secs: int | None = None,
+        auth_timeout_secs: int | None = None,
         recv_window_ms: int | None = None,
         active_only: bool | None = None,
         environment: BitmexEnvironment | None = None,
@@ -346,6 +350,7 @@ class BitmexWebSocketClient:
         api_secret: str | None = None,
         account_id: model.AccountId | None = None,
         heartbeat: int = 5,
+        auth_timeout_secs: int | None = None,
         environment: BitmexEnvironment = ...,
         proxy_url: str | None = None,
     ) -> None: ...

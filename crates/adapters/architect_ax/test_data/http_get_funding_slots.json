@@ -1,0 +1,49 @@
+{
+  "symbol": "EURUSD-PERP",
+  "date": "2026-07-06",
+  "timezone": "America/New_York",
+  "variant": "intraday_twap",
+  "interval_count": 4,
+  "cap_bps": "5.0",
+  "slots": [
+    {
+      "index": 1,
+      "funding_time": "2026-07-06T17:00:00Z",
+      "status": "realized",
+      "mark_twap": "1.08450",
+      "underlying_twap": "1.08441",
+      "premium_bps": "0.0921",
+      "funding_rate_bps": "0.0921",
+      "capped": false
+    },
+    {
+      "index": 2,
+      "funding_time": "2026-07-06T21:00:00Z",
+      "status": "realized",
+      "mark_twap": "1.08500",
+      "underlying_twap": "1.08481",
+      "premium_bps": "6.5000",
+      "funding_rate_bps": "5.0000",
+      "capped": true
+    },
+    {
+      "index": 3,
+      "funding_time": "2026-07-07T01:00:00Z",
+      "status": "projected",
+      "mark_twap": "1.08520",
+      "underlying_twap": "1.08511",
+      "premium_bps": "0.0921",
+      "funding_rate_bps": "0.0921",
+      "capped": false
+    },
+    {
+      "index": 4,
+      "funding_time": "2026-07-07T05:00:00Z",
+      "status": "skipped",
+      "capped": false,
+      "reason": "holiday"
+    }
+  ],
+  "realized_sum_bps": "5.0921",
+  "projected_eod_bps": "5.1842"
+}

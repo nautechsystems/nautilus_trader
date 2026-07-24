@@ -58,6 +58,8 @@ struct TestServerState {
     last_pong: Arc<tokio::sync::Mutex<Option<Vec<u8>>>>,
     fail_next_subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     auth_response_delay_ms: Arc<tokio::sync::Mutex<Option<u64>>>,
+    auth_response_gate: Arc<tokio::sync::Mutex<Option<Arc<tokio::sync::Semaphore>>>>,
+    ignore_auth_requests: Arc<AtomicBool>,
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
     ping_count: Arc<AtomicUsize>,
     pong_count: Arc<AtomicUsize>,
@@ -74,6 +76,10 @@ impl TestServerState {
 
     async fn set_auth_response_delay_ms(&self, delay_ms: Option<u64>) {
         *self.auth_response_delay_ms.lock().await = delay_ms;
+    }
+
+    async fn set_auth_response_gate(&self, gate: Option<Arc<tokio::sync::Semaphore>>) {
+        *self.auth_response_gate.lock().await = gate;
     }
 
     async fn clear_subscription_events(&self) {
@@ -100,6 +106,8 @@ impl Default for TestServerState {
             last_pong: Arc::new(tokio::sync::Mutex::new(None)),
             fail_next_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             auth_response_delay_ms: Arc::new(tokio::sync::Mutex::new(None)),
+            auth_response_gate: Arc::new(tokio::sync::Mutex::new(None)),
+            ignore_auth_requests: Arc::new(AtomicBool::new(false)),
             subscription_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             ping_count: Arc::new(AtomicUsize::new(0)),
             pong_count: Arc::new(AtomicUsize::new(0)),
@@ -119,9 +127,12 @@ async fn handle_websocket(ws: WebSocketUpgrade, State(state): State<TestServerSt
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
+async fn handle_socket(socket: WebSocket, state: TestServerState) {
     #[allow(unused_imports)]
     use futures_util::{SinkExt, StreamExt};
+
+    let (sink, mut stream) = socket.split();
+    let sink = Arc::new(tokio::sync::Mutex::new(sink));
 
     // Increment connection count
     {
@@ -141,7 +152,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
         }
     });
 
-    if socket
+    if sink
+        .lock()
+        .await
         .send(Message::Text(
             serde_json::to_string(&welcome_msg).unwrap().into(),
         ))
@@ -152,7 +165,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
     }
 
     if state.send_initial_ping.load(Ordering::Relaxed)
-        && socket
+        && sink
+            .lock()
+            .await
             .send(Message::Ping(TEST_PING_PAYLOAD.to_vec().into()))
             .await
             .is_err()
@@ -166,18 +181,18 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             if state.silent_drop.load(Ordering::Relaxed) {
                 break;
             } else {
-                let _ = socket.send(Message::Close(None)).await;
+                let _ = sink.lock().await.send(Message::Close(None)).await;
                 break;
             }
         }
 
         // One-shot drop: auto-resets after dropping one connection
         if state.drop_next_connection.swap(false, Ordering::Relaxed) {
-            let _ = socket.send(Message::Close(None)).await;
+            let _ = sink.lock().await.send(Message::Close(None)).await;
             break;
         }
 
-        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), socket.recv()).await {
+        let msg_opt = match tokio::time::timeout(Duration::from_millis(50), stream.next()).await {
             Ok(opt) => opt,
             Err(_) => continue,
         };
@@ -195,7 +210,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             if state.silent_drop.load(Ordering::Relaxed) {
                 break;
             } else {
-                let _ = socket.send(Message::Close(None)).await;
+                let _ = sink.lock().await.send(Message::Close(None)).await;
                 break;
             }
         }
@@ -214,14 +229,16 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             *auth_calls += 1;
                         }
 
-                        if let Some(delay) = *state.auth_response_delay_ms.lock().await {
-                            tokio::time::sleep(Duration::from_millis(delay)).await;
+                        if state.ignore_auth_requests.load(Ordering::Relaxed) {
+                            continue;
                         }
 
-                        if state.fail_next_auth.load(Ordering::Relaxed) {
-                            state.fail_next_auth.store(false, Ordering::Relaxed);
-
-                            let response = json!({
+                        let auth_response_gate = state.auth_response_gate.lock().await.clone();
+                        let auth_response_is_gated = auth_response_gate.is_some();
+                        let auth_response_delay_ms = *state.auth_response_delay_ms.lock().await;
+                        let auth_failed = state.fail_next_auth.swap(false, Ordering::Relaxed);
+                        let response = if auth_failed {
+                            json!({
                                 "status": 401,
                                 "error": "Authentication failed",
                                 "meta": {},
@@ -229,38 +246,40 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                     "op": "authKeyExpires",
                                     "args": data.get("args")
                                 }
-                            });
+                            })
+                        } else {
+                            json!({
+                                "success": true,
+                                "request": {
+                                    "op": "authKeyExpires",
+                                    "args": data.get("args")
+                                }
+                            })
+                        };
+                        let response =
+                            Message::Text(serde_json::to_string(&response).unwrap().into());
+                        let send_auth_response = {
+                            let sink = sink.clone();
+                            let state = state.clone();
+                            async move {
+                                if let Some(gate) = auth_response_gate {
+                                    gate.acquire().await.unwrap().forget();
+                                }
 
-                            if socket
-                                .send(Message::Text(
-                                    serde_json::to_string(&response).unwrap().into(),
-                                ))
-                                .await
-                                .is_err()
-                            {
-                                break;
+                                if let Some(delay) = auth_response_delay_ms {
+                                    tokio::time::sleep(Duration::from_millis(delay)).await;
+                                }
+
+                                if !auth_failed {
+                                    state.authenticated.store(true, Ordering::Relaxed);
+                                }
+                                sink.lock().await.send(response).await
                             }
-                            continue;
-                        }
+                        };
 
-                        state.authenticated.store(true, Ordering::Relaxed);
-
-                        // Send auth success response
-                        let response = json!({
-                            "success": true,
-                            "request": {
-                                "op": "authKeyExpires",
-                                "args": data.get("args")
-                            }
-                        });
-
-                        if socket
-                            .send(Message::Text(
-                                serde_json::to_string(&response).unwrap().into(),
-                            ))
-                            .await
-                            .is_err()
-                        {
+                        if auth_response_is_gated {
+                            tokio::spawn(send_auth_response);
+                        } else if send_auth_response.await.is_err() {
                             break;
                         }
                         continue;
@@ -280,6 +299,12 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
 
                                     if requires_auth && !state.authenticated.load(Ordering::Relaxed)
                                     {
+                                        state
+                                            .subscription_events
+                                            .lock()
+                                            .await
+                                            .push((topic.to_string(), false));
+
                                         // Send auth error
                                         let error_response = json!({
                                             "status": 401,
@@ -291,7 +316,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                             }
                                         });
 
-                                        if socket
+                                        if sink
+                                            .lock()
+                                            .await
                                             .send(Message::Text(
                                                 serde_json::to_string(&error_response)
                                                     .unwrap()
@@ -325,7 +352,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                             .await
                                             .push((topic.to_string(), false));
 
-                                        if socket
+                                        if sink
+                                            .lock()
+                                            .await
                                             .send(Message::Text(
                                                 serde_json::to_string(&response).unwrap().into(),
                                             ))
@@ -360,7 +389,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         }
                                     });
 
-                                    if socket
+                                    if sink
+                                        .lock()
+                                        .await
                                         .send(Message::Text(
                                             serde_json::to_string(&response).unwrap().into(),
                                         ))
@@ -381,7 +412,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         trade["table"] = json!("trade");
                                         trade["action"] = json!("insert");
 
-                                        if socket
+                                        if sink
+                                            .lock()
+                                            .await
                                             .send(Message::Text(
                                                 serde_json::to_string(&trade).unwrap().into(),
                                             ))
@@ -400,7 +433,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         book["table"] = json!("orderBookL2");
                                         book["action"] = json!("partial");
 
-                                        if socket
+                                        if sink
+                                            .lock()
+                                            .await
                                             .send(Message::Text(
                                                 serde_json::to_string(&book).unwrap().into(),
                                             ))
@@ -425,7 +460,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                             }
                                         });
 
-                                        if socket
+                                        if sink
+                                            .lock()
+                                            .await
                                             .send(Message::Text(
                                                 serde_json::to_string(&auth_success)
                                                     .unwrap()
@@ -447,7 +484,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                                 position["table"] = json!("position");
                                                 position["action"] = json!("partial");
 
-                                                if socket
+                                                if sink
+                                                    .lock()
+                                                    .await
                                                     .send(Message::Text(
                                                         serde_json::to_string(&position)
                                                             .unwrap()
@@ -466,7 +505,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                                 order["table"] = json!("order");
                                                 order["action"] = json!("partial");
 
-                                                if socket
+                                                if sink
+                                                    .lock()
+                                                    .await
                                                     .send(Message::Text(
                                                         serde_json::to_string(&order)
                                                             .unwrap()
@@ -485,7 +526,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                                 exec["table"] = json!("execution");
                                                 exec["action"] = json!("insert");
 
-                                                if socket
+                                                if sink
+                                                    .lock()
+                                                    .await
                                                     .send(Message::Text(
                                                         serde_json::to_string(&exec)
                                                             .unwrap()
@@ -524,7 +567,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         }
                                     });
 
-                                    if socket
+                                    if sink
+                                        .lock()
+                                        .await
                                         .send(Message::Text(
                                             serde_json::to_string(&response).unwrap().into(),
                                         ))
@@ -541,7 +586,9 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                     else if data.get("op") == Some(&json!("ping")) {
                         let pong = json!({"op": "pong"});
 
-                        if socket
+                        if sink
+                            .lock()
+                            .await
                             .send(Message::Text(serde_json::to_string(&pong).unwrap().into()))
                             .await
                             .is_err()
@@ -560,7 +607,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
             Message::Ping(data) => {
                 state.ping_count.fetch_add(1, Ordering::Relaxed);
                 // Respond with pong
-                if socket.send(Message::Pong(data)).await.is_err() {
+                if sink.lock().await.send(Message::Pong(data)).await.is_err() {
                     break;
                 }
             }
@@ -642,6 +689,7 @@ async fn test_bitmex_websocket_client_creation() {
         Some("test_secret".to_string()), // api_secret
         Some(get_test_account_id()),     // account_id
         5,                               // heartbeat,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -662,6 +710,7 @@ async fn test_websocket_connection() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -708,6 +757,7 @@ async fn test_initial_authenticated_connect_subscribes_instrument_once() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -762,6 +812,7 @@ async fn test_client_replies_to_server_ping() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -798,6 +849,7 @@ async fn test_subscribe_to_public_data() {
         None, // No API secret for public data
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -846,6 +898,7 @@ async fn test_subscribe_to_orderbook() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -896,6 +949,7 @@ async fn test_subscribe_to_private_data() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -956,6 +1010,7 @@ async fn test_reconnection_scenario() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1066,6 +1121,7 @@ async fn test_reconnection_emits_reconnected_message() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1128,6 +1184,7 @@ async fn test_unsubscribe() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1194,6 +1251,7 @@ async fn test_wait_until_active_timeout() {
         Some("test_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1218,6 +1276,7 @@ async fn test_multiple_symbols_subscription() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1279,6 +1338,7 @@ async fn test_true_auto_reconnect_with_verification() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1431,6 +1491,7 @@ async fn test_auth_and_subscription_restoration_order() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1489,6 +1550,7 @@ async fn test_subscription_restoration_tracking() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1573,6 +1635,7 @@ async fn test_reconnection_retries_failed_subscriptions() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1687,6 +1750,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1724,13 +1788,15 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     .await;
 
     let baseline_auth_calls = *state.auth_calls.lock().await;
-    state.set_auth_response_delay_ms(Some(3000)).await;
+    let auth_response_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    state
+        .set_auth_response_gate(Some(auth_response_gate.clone()))
+        .await;
 
     // Trigger disconnect using one-shot flag
     trigger_server_disconnect(&state).await;
 
-    // Wait for auth request to be sent (indicates reconnection happened)
-    // The response is delayed by 3s, so auth is pending but not acknowledged
+    // Wait for the server to receive the auth request while its response is gated.
     let state_for_auth = state.clone();
     let expected_calls = baseline_auth_calls + 1;
     wait_until_async(
@@ -1742,11 +1808,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
     )
     .await;
 
-    // Clear events now that reconnection has happened and auth is pending
-    state.clear_subscription_events().await;
-
-    // Auth request sent but response delayed - subscriptions should be waiting
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    // The auth request arrived, but subscriptions must not resume before its acknowledgment.
     {
         let events = state.subscription_events().await;
         assert!(
@@ -1754,6 +1816,8 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
             "subscriptions should wait for the delayed auth acknowledgment; events={events:?}",
         );
     }
+
+    auth_response_gate.add_permits(1);
 
     let events_after_ack = wait_for_subscription_events(&state, Duration::from_secs(8), |events| {
         let instrument_ok = events
@@ -1785,7 +1849,7 @@ async fn test_reconnection_waits_for_delayed_auth_ack() {
         "public subscription should still be included after ack delay; events={events_after_ack:?}",
     );
 
-    state.set_auth_response_delay_ms(None).await;
+    state.set_auth_response_gate(None).await;
     client.close().await.unwrap();
 }
 
@@ -1802,6 +1866,7 @@ async fn test_unauthenticated_private_channel_rejection() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1838,6 +1903,7 @@ async fn test_heartbeat_timeout_reconnection() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         1, // Very short heartbeat interval (1 second),
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1876,6 +1942,7 @@ async fn test_rapid_consecutive_reconnections() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -1991,6 +2058,7 @@ async fn test_multiple_partial_subscription_failures() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2090,6 +2158,7 @@ async fn test_reconnection_race_condition() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2180,6 +2249,7 @@ async fn test_subscribe_after_stream_call() {
         None,
         Some(AccountId::from("TEST-001")),
         1,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2222,6 +2292,7 @@ async fn test_is_active_false_after_close() {
         None,
         Some(AccountId::from("TEST-001")),
         1,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2259,6 +2330,7 @@ async fn test_is_active_lifecycle() {
         Some("test_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2304,6 +2376,7 @@ async fn test_is_active_false_during_reconnection() {
         Some("test_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2354,6 +2427,7 @@ async fn test_unsubscribed_private_channel_not_resubscribed_after_disconnect() {
         Some("test_api_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2465,12 +2539,17 @@ async fn test_login_failure_emits_error() {
         Some("invalid_secret".to_string()),
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )
     .unwrap();
 
-    let _ = client.connect().await;
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Authentication error: Authentication failed"
+    );
 
     wait_until_async(
         || async { *state.connection_count.lock().await > 0 },
@@ -2491,6 +2570,35 @@ async fn test_login_failure_emits_error() {
 
 #[rstest]
 #[tokio::test]
+async fn test_login_times_out_when_server_is_silent() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.ignore_auth_requests.store(true, Ordering::Relaxed);
+    let ws_url = format!("ws://{addr}/realtime");
+
+    let mut client = BitmexWebSocketClient::new(
+        Some(ws_url),
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(AccountId::new("BITMEX-001")),
+        5,
+        Some(1),
+        TransportBackend::default(),
+        None,
+    )
+    .unwrap();
+
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Authentication error: Authentication timed out"
+    );
+    assert_eq!(*state.auth_calls.lock().await, 1);
+
+    let _ = client.close().await;
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_sends_pong_for_text_ping() {
     let (addr, state) = start_test_server().await.unwrap();
     let ws_url = format!("ws://{addr}/realtime");
@@ -2501,6 +2609,7 @@ async fn test_sends_pong_for_text_ping() {
         None,
         Some(AccountId::new("BITMEX-001")),
         1, // 1 second heartbeat,
+        None,
         TransportBackend::default(),
         None,
     )
@@ -2531,6 +2640,7 @@ async fn test_sends_pong_for_control_ping() {
         None,
         Some(AccountId::new("BITMEX-001")),
         5,
+        None,
         TransportBackend::default(),
         None,
     )

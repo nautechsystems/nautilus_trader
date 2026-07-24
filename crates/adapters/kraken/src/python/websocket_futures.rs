@@ -69,7 +69,7 @@ use crate::{
 impl KrakenFuturesWebSocketClient {
     /// WebSocket client for the Kraken Futures v1 streaming API.
     #[new]
-    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None, proxy_url=None))]
+    #[pyo3(signature = (environment=None, base_url=None, heartbeat_secs=60, api_key=None, api_secret=None, proxy_url=None, auth_timeout_secs=None))]
     fn py_new(
         environment: Option<KrakenEnvironment>,
         base_url: Option<String>,
@@ -77,6 +77,7 @@ impl KrakenFuturesWebSocketClient {
         api_key: Option<String>,
         api_secret: Option<String>,
         proxy_url: Option<String>,
+        auth_timeout_secs: Option<u64>,
     ) -> Self {
         let env = environment.unwrap_or(KrakenEnvironment::Live);
         let demo = env == KrakenEnvironment::Demo;
@@ -89,6 +90,7 @@ impl KrakenFuturesWebSocketClient {
             url,
             heartbeat_secs,
             credential,
+            auth_timeout_secs,
             TransportBackend::default(),
             proxy_url,
         )

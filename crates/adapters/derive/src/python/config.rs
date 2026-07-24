@@ -63,7 +63,7 @@ impl DeriveDataClientConfig {
             proxy_url,
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
-            ws_timeout_secs: ws_timeout_secs.unwrap_or(defaults.ws_timeout_secs),
+            ws_timeout_secs,
             update_instruments_interval_mins: update_instruments_interval_mins
                 .unwrap_or(defaults.update_instruments_interval_mins),
             currencies: currencies.unwrap_or(defaults.currencies),
@@ -101,6 +101,7 @@ impl DeriveExecClientConfig {
         max_retries = None,
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
+        ws_timeout_secs = None,
         max_fee_per_contract = None,
         domain_separator = None,
         action_typehash = None,
@@ -123,6 +124,7 @@ impl DeriveExecClientConfig {
         max_retries: Option<u32>,
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
+        ws_timeout_secs: Option<u64>,
         max_fee_per_contract: Option<Decimal>,
         domain_separator: Option<String>,
         action_typehash: Option<String>,
@@ -146,6 +148,7 @@ impl DeriveExecClientConfig {
             retry_delay_initial_ms: retry_delay_initial_ms
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
+            ws_timeout_secs,
             max_fee_per_contract,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             domain_separator,

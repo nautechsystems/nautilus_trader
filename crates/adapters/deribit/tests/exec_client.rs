@@ -568,6 +568,7 @@ fn create_test_exec_config(addr: SocketAddr) -> DeribitExecClientConfig {
         retry_delay_max_ms: 1000,
         proxy_url: None,
         transport_backend: Default::default(),
+        ..Default::default()
     }
 }
 

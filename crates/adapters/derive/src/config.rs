@@ -47,9 +47,9 @@ pub struct DeriveDataClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
-    /// WebSocket timeout in seconds.
-    #[builder(default = 30)]
-    pub ws_timeout_secs: u64,
+    /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
+    /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
+    pub ws_timeout_secs: Option<u64>,
     /// Interval for refreshing instruments in minutes.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
@@ -75,7 +75,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveDataClientConfig {
     base_url_ws: Option<String>,
     environment: DeriveEnvironment,
     http_timeout_secs: u64,
-    ws_timeout_secs: u64,
+    ws_timeout_secs: Option<u64>,
     update_instruments_interval_mins: u64,
     currencies: Vec<String>,
     include_expired: bool,
@@ -160,6 +160,9 @@ pub struct DeriveExecClientConfig {
     /// Maximum retry delay in milliseconds.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
+    /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
+    /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
+    pub ws_timeout_secs: Option<u64>,
     /// Per-contract USDC fee cap signed into every order. Required for
     /// execution and must be greater than zero.
     pub max_fee_per_contract: Option<Decimal>,
@@ -204,6 +207,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecClientConfig {
     max_retries: u32,
     retry_delay_initial_ms: u64,
     retry_delay_max_ms: u64,
+    ws_timeout_secs: Option<u64>,
     max_fee_per_contract: Option<Decimal>,
     domain_separator: Option<String>,
     action_typehash: Option<String>,
@@ -320,7 +324,7 @@ mod tests {
         let config = DeriveDataClientConfig::default();
         assert_eq!(config.environment, DeriveEnvironment::Mainnet);
         assert_eq!(config.http_timeout_secs, 10);
-        assert_eq!(config.ws_timeout_secs, 30);
+        assert_eq!(config.ws_timeout_secs, None);
         assert_eq!(config.update_instruments_interval_mins, 60);
         assert!(config.currencies.is_empty());
         assert!(!config.include_expired);

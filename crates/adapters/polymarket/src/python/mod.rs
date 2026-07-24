@@ -36,7 +36,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
-    common::consts::POLYMARKET,
+    common::consts::{POLYMARKET, POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
     config::{
         PolymarketDataClientConfig, PolymarketExecClientConfig, PolymarketInstrumentProviderConfig,
         PolymarketUpDownEventSlugConfig,
@@ -435,6 +435,9 @@ fn extract_polymarket_exec_config(
 /// Loaded as `nautilus_pyo3.polymarket`.
 #[pymodule]
 pub fn polymarket(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add(stringify!(POLYMARKET), POLYMARKET)?;
+    m.add(stringify!(POLYMARKET_CLIENT_ID), *POLYMARKET_CLIENT_ID)?;
+    m.add(stringify!(POLYMARKET_VENUE), *POLYMARKET_VENUE)?;
     m.add_class::<crate::common::enums::SignatureType>()?;
     m.add_class::<PolymarketUpDownEventSlugConfig>()?;
     m.add_class::<PolymarketInstrumentProviderConfig>()?;

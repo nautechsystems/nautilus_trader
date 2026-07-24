@@ -8,15 +8,18 @@ from nautilus_trader import network
 
 __all__ = [
     "LIGHTER",
+    "LIGHTER_CLIENT_ID",
+    "LIGHTER_VENUE",
     "LighterDataClientConfig",
     "LighterDataClientFactory",
     "LighterEnvironment",
     "LighterExecClientConfig",
     "LighterExecutionClientFactory",
-    "revoke_lighter_integrator",
 ]
 
 LIGHTER: str
+LIGHTER_CLIENT_ID: model.ClientId
+LIGHTER_VENUE: model.Venue
 
 @typing.final
 class LighterDataClientConfig:

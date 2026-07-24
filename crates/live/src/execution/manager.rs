@@ -182,6 +182,7 @@ pub(crate) struct TargetedOrderQuery {
 }
 
 impl TargetedOrderQuery {
+    #[cfg(feature = "node")]
     pub(crate) const fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -351,6 +352,18 @@ struct InflightCheck {
     pub last_query_at: Option<dst::time::Instant>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PositionReportShape {
+    Unambiguous,
+    MultiLeg,
+}
+
+#[derive(Clone, Copy)]
+struct PositionReconciliationState {
+    report_shape: PositionReportShape,
+    retries: u32,
+}
+
 /// Manager for execution state.
 ///
 /// The `ExecutionManager` handles:
@@ -387,7 +400,7 @@ pub struct ExecutionManager {
     // Monotonic (`dst::time`) instants, not `self.clock`; see `record_position_activity`.
     position_local_activity: RecencyMap<InstrumentAccountKey>,
     position_local_activity_revisions: IndexMap<InstrumentAccountKey, u64>,
-    position_recon_retries: IndexMap<InstrumentAccountKey, u32>,
+    position_reconciliation_states: IndexMap<InstrumentAccountKey, PositionReconciliationState>,
     position_reconciliation_tolerances: IndexMap<AccountId, Decimal>,
     recent_fills_cache: RecencyMap<FillKey>,
     missing_order_coverage_warnings: IndexSet<ClientOrderId>,
@@ -426,7 +439,7 @@ impl ExecutionManager {
             order_local_activity: RecencyMap::default(),
             position_local_activity: RecencyMap::default(),
             position_local_activity_revisions: IndexMap::new(),
-            position_recon_retries: IndexMap::new(),
+            position_reconciliation_states: IndexMap::new(),
             position_reconciliation_tolerances: IndexMap::new(),
             recent_fills_cache: RecencyMap::default(),
             missing_order_coverage_warnings: IndexSet::new(),
@@ -1852,14 +1865,18 @@ impl ExecutionManager {
     ) -> Vec<OrderEventAny> {
         log::debug!("Checking position consistency between cached-state and venues");
 
-        let mut venue_positions = IndexMap::new();
+        let mut venue_positions: IndexMap<InstrumentAccountKey, Vec<PositionStatusReport>> =
+            IndexMap::new();
 
         for report in reports {
             if !self.should_reconcile_instrument(&report.instrument_id) {
                 continue;
             }
 
-            venue_positions.insert((report.instrument_id, report.account_id), report);
+            venue_positions
+                .entry((report.instrument_id, report.account_id))
+                .or_default()
+                .push(report);
         }
 
         let mut events = Vec::new();
@@ -1880,9 +1897,12 @@ impl ExecutionManager {
                 continue;
             }
 
-            let venue_report = venue_positions.get(key);
+            let venue_reports = venue_positions
+                .get(key)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
 
-            if venue_report.is_none() {
+            if venue_reports.is_empty() {
                 match check.client_coverage.get(key) {
                     Some(ReportClientCoverage::Resolved(responsible_clients))
                         if !responsible_clients.is_empty()
@@ -1931,16 +1951,18 @@ impl ExecutionManager {
                 }
             }
 
-            if let Some(discrepancy_events) = self.check_position_discrepancy(*key, venue_report) {
+            if let Some(discrepancy_events) = self.check_position_discrepancy(*key, venue_reports) {
                 events.extend(discrepancy_events);
             }
         }
 
         let current_position_keys = self.open_position_keys_for_reconciliation();
 
-        for (key, venue_report) in &venue_positions {
+        for (key, venue_reports) in &venue_positions {
             if check.client_coverage.contains_key(key)
-                || venue_report.signed_decimal_qty == Decimal::ZERO
+                || venue_reports
+                    .iter()
+                    .all(|report| report.signed_decimal_qty == Decimal::ZERO)
             {
                 continue;
             }
@@ -1954,9 +1976,7 @@ impl ExecutionManager {
                 continue;
             }
 
-            if let Some(discrepancy_events) =
-                self.check_position_discrepancy(*key, Some(venue_report))
-            {
+            if let Some(discrepancy_events) = self.check_position_discrepancy(*key, venue_reports) {
                 events.extend(discrepancy_events);
             }
         }
@@ -1968,11 +1988,15 @@ impl ExecutionManager {
             .chain(
                 venue_positions
                     .iter()
-                    .filter(|(_, r)| r.signed_decimal_qty != Decimal::ZERO)
+                    .filter(|(_, reports)| {
+                        reports
+                            .iter()
+                            .any(|report| report.signed_decimal_qty != Decimal::ZERO)
+                    })
                     .map(|(k, _)| *k),
             )
             .collect();
-        self.position_recon_retries
+        self.position_reconciliation_states
             .retain(|k, _| active_keys.contains(k));
 
         events
@@ -2049,6 +2073,7 @@ impl ExecutionManager {
         self.order_local_activity.remove(client_order_id);
     }
 
+    #[cfg(feature = "node")]
     pub(crate) fn remove_targeted_order_queries(&mut self, client_order_ids: &[ClientOrderId]) {
         for client_order_id in client_order_ids {
             self.targeted_order_queries.shift_remove(client_order_id);
@@ -2114,7 +2139,9 @@ impl ExecutionManager {
     /// `(instrument, account)` key, or zero if no entry exists.
     #[must_use]
     pub fn position_recon_retry_count(&self, key: &InstrumentAccountKey) -> u32 {
-        self.position_recon_retries.get(key).copied().unwrap_or(0)
+        self.position_reconciliation_states
+            .get(key)
+            .map_or(0, |state| state.retries)
     }
 
     /// Returns the current missing-order reconciliation retry count for the
@@ -2528,7 +2555,7 @@ impl ExecutionManager {
     fn check_position_discrepancy(
         &mut self,
         key: InstrumentAccountKey,
-        venue_report: Option<&PositionStatusReport>,
+        venue_reports: &[PositionStatusReport],
     ) -> Option<Vec<OrderEventAny>> {
         let (instrument_id, account_id) = key;
 
@@ -2540,15 +2567,30 @@ impl ExecutionManager {
                 .map(|position| (*position).clone())
                 .collect::<Vec<_>>()
         };
-        let cached_signed_qty: Decimal = cached_positions
+        let (cached_signed_qty, cached_long_qty, cached_short_qty) = Self::position_qty_aggregates(
+            cached_positions.iter().map(Position::signed_decimal_qty),
+        );
+        let (venue_signed_qty, venue_long_qty, venue_short_qty) = Self::position_qty_aggregates(
+            venue_reports.iter().map(|report| report.signed_decimal_qty),
+        );
+        let nonflat_count = venue_reports
             .iter()
-            .map(Position::signed_decimal_qty)
-            .sum();
-        let venue_signed_qty = venue_report.map_or(Decimal::ZERO, |r| r.signed_decimal_qty);
+            .filter(|report| report.signed_decimal_qty != Decimal::ZERO)
+            .count();
+        let venue_report = venue_reports
+            .iter()
+            .find(|report| report.signed_decimal_qty != Decimal::ZERO)
+            .or_else(|| venue_reports.last());
 
         let tolerance = self.position_reconciliation_tolerance(account_id);
-        if (cached_signed_qty - venue_signed_qty).abs() <= tolerance {
-            self.position_recon_retries.shift_remove(&key);
+        let venue_has_side_reports = venue_reports.iter().any(PositionStatusReport::is_long)
+            && venue_reports.iter().any(PositionStatusReport::is_short);
+        let net_qty_matches = (cached_signed_qty - venue_signed_qty).abs() <= tolerance;
+        let side_qty_matches = (cached_long_qty - venue_long_qty).abs() <= tolerance
+            && (cached_short_qty - venue_short_qty).abs() <= tolerance;
+
+        if net_qty_matches && (!venue_has_side_reports || side_qty_matches) {
+            self.position_reconciliation_states.shift_remove(&key);
             return None;
         }
 
@@ -2565,9 +2607,34 @@ impl ExecutionManager {
             return None;
         }
 
-        let retries = *self.position_recon_retries.get(&key).unwrap_or(&0);
+        let report_shape = if nonflat_count > 1 || venue_has_side_reports {
+            PositionReportShape::MultiLeg
+        } else {
+            PositionReportShape::Unambiguous
+        };
+        let retries = self
+            .position_reconciliation_states
+            .get(&key)
+            .filter(|state| state.report_shape == report_shape)
+            .map_or(0, |state| state.retries);
 
         if retries >= self.config.position_check_retries {
+            return None;
+        }
+
+        if report_shape == PositionReportShape::MultiLeg {
+            let new_retries = retries + 1;
+            self.set_position_reconciliation_retries(key, report_shape, new_retries);
+            log::warn!(
+                "Deferring position reconciliation for {instrument_id}/{account_id}: venue reports have ambiguous side aggregates (cached net={cached_signed_qty}, long={cached_long_qty}, short={cached_short_qty}; venue net={venue_signed_qty}, long={venue_long_qty}, short={venue_short_qty})"
+            );
+
+            if new_retries >= self.config.position_check_retries {
+                log::error!(
+                    "Position discrepancy for {instrument_id}/{account_id} unresolved after {} attempts; no further reconciliation attempts will be made for the current report shape",
+                    self.config.position_check_retries,
+                );
+            }
             return None;
         }
 
@@ -2578,12 +2645,12 @@ impl ExecutionManager {
         let Some(instrument) = self.cache.borrow().instrument(&instrument_id).cloned() else {
             log::debug!("Cannot reconcile position for {instrument_id}: instrument not in cache");
             let new_retries = retries + 1;
-            self.position_recon_retries.insert(key, new_retries);
+            self.set_position_reconciliation_retries(key, report_shape, new_retries);
             if new_retries >= self.config.position_check_retries {
                 log::error!(
                     "Position discrepancy for {instrument_id} unresolved after {} attempts \
                      (cached_qty={cached_signed_qty}, venue_qty={venue_signed_qty}); \
-                     no further reconciliation attempts will be made",
+                     no further reconciliation attempts will be made for the current report shape",
                     self.config.position_check_retries,
                 );
             }
@@ -2690,12 +2757,12 @@ impl ExecutionManager {
         // Track retries when reconciliation didn't produce events
         if result.is_none() || result.as_ref().is_some_and(|e| e.is_empty()) {
             let new_retries = retries + 1;
-            self.position_recon_retries.insert(key, new_retries);
+            self.set_position_reconciliation_retries(key, report_shape, new_retries);
             if new_retries >= self.config.position_check_retries {
                 log::error!(
                     "Position discrepancy for {} unresolved after {} attempts \
                      (cached_qty={}, venue_qty={}); \
-                     no further reconciliation attempts will be made",
+                     no further reconciliation attempts will be made for the current report shape",
                     instrument_id,
                     self.config.position_check_retries,
                     cached_signed_qty,
@@ -2703,10 +2770,40 @@ impl ExecutionManager {
                 );
             }
         } else {
-            self.position_recon_retries.shift_remove(&key);
+            self.position_reconciliation_states.shift_remove(&key);
         }
 
         result
+    }
+
+    fn set_position_reconciliation_retries(
+        &mut self,
+        key: InstrumentAccountKey,
+        report_shape: PositionReportShape,
+        retries: u32,
+    ) {
+        self.position_reconciliation_states.insert(
+            key,
+            PositionReconciliationState {
+                report_shape,
+                retries,
+            },
+        );
+    }
+
+    fn position_qty_aggregates(
+        signed_quantities: impl Iterator<Item = Decimal>,
+    ) -> (Decimal, Decimal, Decimal) {
+        signed_quantities.fold(
+            (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
+            |(net, long, short), qty| {
+                if qty > Decimal::ZERO {
+                    (net + qty, long + qty, short)
+                } else {
+                    (net + qty, long, short + qty.abs())
+                }
+            },
+        )
     }
 
     /// Handles position reconciliation when position flips sign, splitting into two

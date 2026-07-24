@@ -678,6 +678,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             return Ok(());
         }
 
+        let ws_setup_timeout = Duration::from_millis(self.config.ws_trading_setup_timeout_ms);
+
         // Load instruments if not already done
         if !self.core.instruments_initialized() {
             let instruments = self
@@ -772,7 +774,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                             .await;
                     } else {
                         let auth_result = wait_for_ws_setup_response(
-                            Duration::from_secs(10),
+                            ws_setup_timeout,
                             self.ws_authenticated.notified(),
                             &mut ws_setup_error_rx,
                             "WS session authentication timed out",
@@ -788,7 +790,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                                 .await;
                         } else {
                             let subscribe_result = wait_for_ws_setup_response(
-                                Duration::from_secs(10),
+                                ws_setup_timeout,
                                 self.ws_user_data_subscribed.notified(),
                                 &mut ws_setup_error_rx,
                                 "WS user data subscription timed out",

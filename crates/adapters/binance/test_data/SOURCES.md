@@ -60,3 +60,6 @@ for cases where a docs example is missing or stale.
   `futures/user_data_json/algo_update_new.json` are narrow derived variants of
   a published docs example so we can test alternate parser branches that the
   docs do not show directly.
+- The fixture `futures/http_json/position_risk_hedge.json` is a narrow derived
+  position-risk response used to cover simultaneous long and short hedge-mode
+  rows for one symbol.

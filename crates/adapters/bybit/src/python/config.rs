@@ -128,6 +128,7 @@ impl BybitExecClientConfig {
         retry_delay_initial_ms = None,
         retry_delay_max_ms = None,
         heartbeat_interval_secs = None,
+        auth_timeout_secs = None,
         recv_window_ms = None,
         account_id = None,
         use_spot_position_reports = None,
@@ -149,6 +150,7 @@ impl BybitExecClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         heartbeat_interval_secs: Option<u64>,
+        auth_timeout_secs: Option<u64>,
         recv_window_ms: Option<u64>,
         account_id: Option<AccountId>,
         use_spot_position_reports: Option<bool>,
@@ -172,6 +174,7 @@ impl BybitExecClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             heartbeat_interval_secs: heartbeat_interval_secs
                 .unwrap_or(defaults.heartbeat_interval_secs),
+            auth_timeout_secs,
             recv_window_ms: recv_window_ms.unwrap_or(defaults.recv_window_ms),
             account_id,
             use_spot_position_reports: use_spot_position_reports
