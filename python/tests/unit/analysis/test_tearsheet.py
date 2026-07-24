@@ -203,6 +203,80 @@ def test_create_tearsheet_uses_v2_result_and_report_api(monkeypatch):
     assert captured["run_info"]["Backtest range"] == "1 days 00:00:00"
 
 
+def test_create_tearsheet_accepts_backtest_result_and_node(monkeypatch):
+    captured = {}
+
+    class DummyResult:
+        run_config_id = "run-001"
+        run_id = "R-001"
+        run_started = 1_577_836_800_000_000_000
+        run_finished = 1_577_836_801_000_000_000
+        backtest_start = 1_577_836_800_000_000_000
+        backtest_end = 1_577_923_200_000_000_000
+        elapsed_time_secs = 1.0
+        iterations = 2
+        total_events = 3
+        total_orders = 4
+        total_positions = 5
+        stats_pnls = {"USD": {"PnL (total)": 12.5}}
+        stats_returns = {"Sharpe Ratio (252 days)": 1.23}
+        stats_general = {"Long Ratio": 0.5}
+        returns_series = {
+            1_577_836_800_000_000_000: 0.01,
+            1_577_923_200_000_000_000: -0.02,
+        }
+        summary = {"account.SIM.id": "SIM-001"}
+
+    class DummyNode:
+        @staticmethod
+        def get_engine_cache(run_config_id):
+            assert run_config_id == "run-001"
+            return "cache"
+
+        @staticmethod
+        def generate_account_report(run_config_id, account_id):
+            assert run_config_id == "run-001"
+            assert str(account_id) == "SIM-001"
+            return pd.DataFrame(
+                {
+                    "currency": ["USD", "USD"],
+                    "total": ["100.0", "110.0"],
+                },
+                index=pd.to_datetime(["2020-01-01", "2020-01-02"], utc=True),
+            )
+
+        @staticmethod
+        def generate_fills_report(run_config_id):
+            assert run_config_id == "run-001"
+            return pd.DataFrame()
+
+    def capture_tearsheet_from_stats(**kwargs):
+        captured.update(kwargs)
+        return "<html></html>"
+
+    monkeypatch.setattr(tearsheet, "PLOTLY_AVAILABLE", True)
+    monkeypatch.setattr(tearsheet, "create_tearsheet_from_stats", capture_tearsheet_from_stats)
+
+    html = create_tearsheet(
+        DummyResult(),
+        node=DummyNode(),
+        output_path=None,
+        config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+    )
+
+    assert html == "<html></html>"
+    assert captured["stats_pnls"] == {"USD": {"PnL (total)": 12.5}}
+    assert captured["account_info"] == {
+        "Starting balance (SIM, USD)": "100.0",
+        "Ending balance (SIM, USD)": "110.0",
+    }
+    assert captured["returns"].to_dict() == {
+        pd.Timestamp("2020-01-01T00:00:00Z"): 0.01,
+        pd.Timestamp("2020-01-02T00:00:00Z"): -0.02,
+    }
+    assert captured["engine"].cache == "cache"
+
+
 def test_create_tearsheet_does_not_aggregate_mixed_currency_returns_without_filter(monkeypatch):
     captured = []
 

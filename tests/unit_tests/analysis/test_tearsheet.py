@@ -514,6 +514,89 @@ def test_resolve_tearsheet_returns_falls_back_to_analyzer_returns(monkeypatch):
     pd.testing.assert_series_equal(result, analyzer_returns)
 
 
+def test_create_tearsheet_accepts_pyo3_backtest_result(monkeypatch):
+    # Arrange
+    result = SimpleNamespace(
+        run_config_id="run-001",
+        run_id="11111111-1111-4111-8111-111111111111",
+        run_started=1_704_067_200_000_000_000,
+        run_finished=1_704_067_202_000_000_000,
+        backtest_start=1_704_067_200_000_000_000,
+        backtest_end=1_704_067_201_000_000_000,
+        elapsed_time_secs=2.0,
+        iterations=3,
+        total_events=4,
+        total_orders=5,
+        total_positions=6,
+        stats_pnls={"USD": {"PnL (total)": 10.0}},
+        stats_returns={"Sharpe Ratio (252 days)": 1.5},
+        stats_general={"Win Rate": 0.5},
+        returns_series={
+            1_704_067_200_000_000_000: 0.01,
+            1_704_153_600_000_000_000: -0.02,
+        },
+        summary={"account.XCME.id": "XCME-001"},
+    )
+    cache = object()
+    account_report = pd.DataFrame(
+        {
+            "currency": ["USD", "USD"],
+            "total": ["1000.00", "1010.00"],
+        },
+        index=pd.to_datetime(["2024-01-01", "2024-01-02"], utc=True),
+    )
+
+    class MockNode:
+        def get_engine_cache(self, run_config_id):
+            assert run_config_id == "run-001"
+            return cache
+
+        def generate_account_report(self, run_config_id, account_id):
+            assert run_config_id == "run-001"
+            assert str(account_id) == "XCME-001"
+            return account_report
+
+        def generate_fills_report(self, run_config_id):
+            assert run_config_id == "run-001"
+            return pd.DataFrame({"instrument_id": ["ESM4.XCME"]})
+
+    captured = {}
+
+    def fake_create_tearsheet_from_stats(**kwargs):
+        captured.update(kwargs)
+        return "html"
+
+    monkeypatch.setattr(
+        "nautilus_trader.analysis.tearsheet.create_tearsheet_from_stats",
+        fake_create_tearsheet_from_stats,
+    )
+
+    # Act
+    html = create_tearsheet(
+        result,
+        output_path=None,
+        node=MockNode(),
+        config=TearsheetConfig(charts=[TearsheetStatsTableChart()]),
+    )
+
+    # Assert
+    assert html == "html"
+    assert captured["stats_pnls"] == result.stats_pnls
+    assert captured["run_info"]["Total orders"] == "5"
+    assert captured["account_info"] == {
+        "Starting balance (XCME, USD)": "1000.0",
+        "Ending balance (XCME, USD)": "1010.0",
+    }
+    assert captured["engine"].cache is cache
+    assert captured["engine"].generate_fills_report().to_dict("records") == [
+        {"instrument_id": "ESM4.XCME"},
+    ]
+    assert captured["returns"].to_dict() == {
+        pd.Timestamp("2024-01-01T00:00:00Z"): 0.01,
+        pd.Timestamp("2024-01-02T00:00:00Z"): -0.02,
+    }
+
+
 def test_resolve_tearsheet_returns_prefers_analyzer_portfolio_returns(monkeypatch):
     # Arrange
     portfolio_returns = pd.Series([0.02], index=pd.to_datetime(["2024-01-31"]))

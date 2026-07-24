@@ -17,6 +17,7 @@ import pandas as pd
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.core.nautilus_pyo3.model import OrderFilled as Pyo3OrderFilled
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.orders import Order
@@ -100,8 +101,14 @@ class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
+        order_events = [
+            order.events() if callable(order.events) else order.events for order in orders
+        ]
         fills = [
-            OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)
+            event.to_dict() if isinstance(event, Pyo3OrderFilled) else OrderFilled.to_dict(event)
+            for events in order_events
+            for event in events
+            if isinstance(event, (OrderFilled, Pyo3OrderFilled))
         ]
 
         if not fills:
@@ -188,7 +195,10 @@ class ReportProvider:
         if not states:
             return pd.DataFrame()
 
-        account_states = [AccountState.to_dict(s) for s in states]
+        account_states = [
+            AccountState.to_dict(state) if isinstance(state, AccountState) else state.to_dict()
+            for state in states
+        ]
         balances = [
             {**balance, **state}
             for state in account_states
