@@ -13,6 +13,12 @@ NautilusTrader is officially supported for Python 3.12-3.14 on the following 64-
 NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
 :::
 
+NautilusTrader follows the
+[Python support window in Scientific Python SPEC 0](https://scientific-python.org/specs/spec-0000/).
+Each Python minor version is supported for three years after its initial release. Support normally
+ends in the first NautilusTrader release after that window and after the replacement Python version
+passes compatibility checks.
+
 Continuous CI coverage comes from the GitHub Actions runners we build on:
 
 - `Linux (Ubuntu)` builds currently pin to `ubuntu-22.04` to keep glibc 2.35 compatibility even as `ubuntu-latest` moves ahead.
