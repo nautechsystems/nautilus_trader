@@ -141,7 +141,7 @@ impl DataType {
         self.topic()
     }
 
-    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
+    /// Returns the optional catalog path identifier.
     #[getter]
     #[pyo3(name = "identifier")]
     fn py_identifier(&self) -> Option<&str> {

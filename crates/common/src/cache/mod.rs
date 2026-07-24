@@ -65,8 +65,9 @@ use nautilus_model::defi::{Pool, PoolProfiler};
 use nautilus_model::{
     accounts::{Account, AccountAny},
     data::{
-        Bar, BarType, FundingRateUpdate, GreeksData, IndexPriceUpdate, InstrumentStatus,
-        MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData, option_chain::OptionGreeks,
+        Bar, BarType, CustomData, DataType, FundingRateUpdate, GreeksData, IndexPriceUpdate,
+        InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick, YieldCurveData,
+        option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
@@ -1593,6 +1594,18 @@ impl<'a> CacheApi<'a> {
         self.cache().bar_at_index(bar_type, index).copied()
     }
 
+    /// Returns the custom data at `index` for the `data_type` (if found).
+    ///
+    /// Index 0 is the most recent.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn custom_data_at_index(&self, data_type: &DataType, index: usize) -> Option<CustomData> {
+        self.cache().custom_data_at_index(data_type, index).cloned()
+    }
+
     /// Returns the order book update count for the `instrument_id`.
     ///
     /// # Panics
@@ -2130,6 +2143,7 @@ pub struct Cache {
     funding_rates: AHashMap<InstrumentId, BoundedVecDeque<FundingRateUpdate>>,
     instrument_statuses: AHashMap<InstrumentId, BoundedVecDeque<InstrumentStatus>>,
     bars: AHashMap<BarType, BoundedVecDeque<Bar>>,
+    custom_data: AHashMap<String, BoundedVecDeque<CustomData>>,
     greeks: AHashMap<InstrumentId, GreeksData>,
     option_greeks: AHashMap<InstrumentId, OptionGreeks>,
     yield_curves: AHashMap<String, YieldCurveData>,
@@ -2161,6 +2175,7 @@ impl Debug for Cache {
             .field("funding_rates", &self.funding_rates)
             .field("instrument_statuses", &self.instrument_statuses)
             .field("bars", &self.bars)
+            .field("custom_data", &self.custom_data)
             .field("greeks", &self.greeks)
             .field("option_greeks", &self.option_greeks)
             .field("yield_curves", &self.yield_curves)
@@ -2215,6 +2230,7 @@ impl Cache {
             funding_rates: AHashMap::new(),
             instrument_statuses: AHashMap::new(),
             bars: AHashMap::new(),
+            custom_data: AHashMap::new(),
             greeks: AHashMap::new(),
             option_greeks: AHashMap::new(),
             yield_curves: AHashMap::new(),
@@ -3585,6 +3601,7 @@ impl Cache {
         self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
+        self.custom_data.clear();
         self.greeks.clear();
         self.yield_curves.clear();
 
@@ -3951,6 +3968,28 @@ impl Cache {
         for bar in bars {
             bars_deque.push_front(*bar);
         }
+        Ok(())
+    }
+
+    /// Adds custom data to the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the custom data to the backing database fails.
+    pub fn add_custom_data(&mut self, data: CustomData) -> anyhow::Result<()> {
+        log::debug!("Adding custom data {}", data.data_type.topic());
+
+        if self.config.save_market_data
+            && let Some(database) = &mut self.database
+        {
+            database.add_custom_data(&data)?;
+        }
+
+        let key = data.data_type.topic().to_string();
+        self.custom_data
+            .entry(key)
+            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity))
+            .push_front(data);
         Ok(())
     }
 
@@ -7219,6 +7258,15 @@ impl Cache {
             .map(|bars| bars.iter().copied().collect())
     }
 
+    /// Gets cached custom data history for the `data_type`, newest first.
+    #[must_use]
+    pub fn custom_data_history(&self, data_type: &DataType) -> Vec<CustomData> {
+        self.custom_data
+            .get(data_type.topic())
+            .map(|data| data.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Gets a reference to the order book for the `instrument_id`.
     #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
@@ -7355,6 +7403,24 @@ impl Cache {
     #[must_use]
     pub fn bar_at_index(&self, bar_type: &BarType, index: usize) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.get(index))
+    }
+
+    /// Gets the newest custom data for the `data_type`.
+    #[must_use]
+    pub fn custom_data(&self, data_type: &DataType) -> Option<&CustomData> {
+        self.custom_data
+            .get(data_type.topic())
+            .and_then(BoundedVecDeque::front)
+    }
+
+    /// Gets custom data at `index` for the `data_type`.
+    ///
+    /// Index 0 is the most recent.
+    #[must_use]
+    pub fn custom_data_at_index(&self, data_type: &DataType, index: usize) -> Option<&CustomData> {
+        self.custom_data
+            .get(data_type.topic())
+            .and_then(|data| data.get(index))
     }
 
     /// Gets the order book update count for the `instrument_id`.

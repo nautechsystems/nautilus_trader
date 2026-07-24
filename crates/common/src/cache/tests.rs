@@ -31,6 +31,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentStatus,
         MarkPriceUpdate, QuoteTick, TradeTick,
+        stubs::{StubCustomData, stub_custom_data},
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BookType, ContingencyType,
@@ -7888,4 +7889,100 @@ fn test_view_returns_borrowed_when_unfiltered(mut cache: Cache, audusd_sim: Curr
     check_borrow!(position_ids_view, positions);
     check_borrow!(position_open_ids_view, positions_open);
     check_borrow!(position_closed_ids_view, positions_closed);
+}
+
+#[rstest]
+fn test_custom_data_cache_keeps_topic_histories(mut cache: Cache) {
+    cache
+        .add_custom_data(stub_custom_data(1, 10, None, None))
+        .unwrap();
+    cache
+        .add_custom_data(stub_custom_data(2, 20, None, None))
+        .unwrap();
+    cache
+        .add_custom_data(stub_custom_data(3, 30, None, Some("A".to_string())))
+        .unwrap();
+
+    let data_type = DataType::new("StubCustomData", None, None);
+    let history = cache.custom_data_history(&data_type);
+    let values: Vec<i64> = history
+        .iter()
+        .map(|custom| {
+            custom
+                .data
+                .as_any()
+                .downcast_ref::<StubCustomData>()
+                .unwrap()
+                .value
+        })
+        .collect();
+    assert_eq!(values, vec![20, 10]);
+
+    let identified_data_type = DataType::new("StubCustomData", None, Some("A".to_string()));
+    let identified_history = cache.custom_data_history(&identified_data_type);
+    assert_eq!(identified_history.len(), 1);
+    assert_eq!(
+        identified_history[0]
+            .data
+            .as_any()
+            .downcast_ref::<StubCustomData>()
+            .unwrap()
+            .value,
+        30,
+    );
+}
+
+#[rstest]
+fn test_custom_data_cache_key_uses_topic_only(mut cache: Cache) {
+    cache
+        .add_custom_data(stub_custom_data(1, 10, None, Some("A".to_string())))
+        .unwrap();
+
+    let data_type = DataType::from_parts("StubCustomData", "StubCustomData.identifier=A", None);
+    let history = cache.custom_data_history(&data_type);
+
+    assert_eq!(history.len(), 1);
+    assert_eq!(
+        history[0]
+            .data
+            .as_any()
+            .downcast_ref::<StubCustomData>()
+            .unwrap()
+            .value,
+        10,
+    );
+}
+
+#[rstest]
+fn test_custom_data_at_index_returns_requested_history_item(mut cache: Cache) {
+    cache
+        .add_custom_data(stub_custom_data(1, 10, None, None))
+        .unwrap();
+    cache
+        .add_custom_data(stub_custom_data(2, 20, None, None))
+        .unwrap();
+
+    let data_type = DataType::new("StubCustomData", None, None);
+    let newest = cache.custom_data_at_index(&data_type, 0).unwrap();
+    let previous = cache.custom_data_at_index(&data_type, 1).unwrap();
+
+    assert_eq!(
+        newest
+            .data
+            .as_any()
+            .downcast_ref::<StubCustomData>()
+            .unwrap()
+            .value,
+        20,
+    );
+    assert_eq!(
+        previous
+            .data
+            .as_any()
+            .downcast_ref::<StubCustomData>()
+            .unwrap()
+            .value,
+        10,
+    );
+    assert!(cache.custom_data_at_index(&data_type, 2).is_none());
 }

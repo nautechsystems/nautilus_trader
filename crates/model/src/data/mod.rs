@@ -599,6 +599,54 @@ fn value_to_topic_string(v: &JsonValue) -> String {
     serde_json::to_string(v).unwrap_or_default()
 }
 
+fn topic_string_to_value(s: &str) -> JsonValue {
+    serde_json::from_str(s).unwrap_or_else(|_| JsonValue::String(s.to_string()))
+}
+
+fn parse_topic_metadata(metadata_topic: &str) -> anyhow::Result<Params> {
+    let mut metadata = Params::new();
+    if metadata_topic.is_empty() {
+        return Ok(metadata);
+    }
+
+    // Values may contain dots: a segment with '=' starts a new pair, otherwise it
+    // extends the current value (or the first key before any pair has started).
+    let mut pending_key: Option<String> = None;
+    let mut current: Option<(String, String)> = None;
+
+    for segment in metadata_topic.split('.') {
+        if let Some((key, value)) = segment.split_once('=') {
+            let key = if let Some(prefix) = pending_key.take() {
+                format!("{prefix}.{key}")
+            } else {
+                if key.is_empty() {
+                    anyhow::bail!("Invalid empty metadata topic key");
+                }
+                key.to_string()
+            };
+
+            if let Some((prev_key, prev_value)) = current.replace((key, value.to_string())) {
+                metadata.insert(prev_key, topic_string_to_value(&prev_value));
+            }
+        } else if let Some((_, value)) = current.as_mut() {
+            value.push('.');
+            value.push_str(segment);
+        } else if let Some(prefix) = pending_key.as_mut() {
+            prefix.push('.');
+            prefix.push_str(segment);
+        } else {
+            pending_key = Some(segment.to_string());
+        }
+    }
+
+    let Some((key, value)) = current else {
+        anyhow::bail!("Invalid metadata topic pair: {metadata_topic}");
+    };
+    metadata.insert(key, topic_string_to_value(&value));
+
+    Ok(metadata)
+}
+
 /// Builds the topic suffix from Params (string-only view: key=value joined by ".").
 fn params_to_topic_suffix(params: &Params) -> String {
     let mut entries = params.iter().collect::<Vec<_>>();
@@ -610,6 +658,8 @@ fn params_to_topic_suffix(params: &Params) -> String {
         .collect::<Vec<_>>()
         .join(".")
 }
+
+const IDENTIFIER_TOPIC_SUFFIX: &str = ".identifier=";
 
 /// Represents a data type including metadata.
 #[derive(Clone, Serialize, Deserialize)]
@@ -629,12 +679,17 @@ pub struct DataType {
     identifier: Option<String>,
 }
 
+fn calculate_hash(topic: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    topic.hash(&mut hasher);
+    hasher.finish()
+}
+
 impl DataType {
     /// Creates a new [`DataType`] instance.
     #[must_use]
     pub fn new(type_name: &str, metadata: Option<Params>, identifier: Option<String>) -> Self {
-        // Precompute topic from type_name + metadata (string-only view for backward compatibility)
-        let topic = if let Some(ref meta) = metadata {
+        let base_topic = if let Some(ref meta) = metadata {
             if meta.is_empty() {
                 type_name.to_string()
             } else {
@@ -643,16 +698,19 @@ impl DataType {
         } else {
             type_name.to_string()
         };
+        let topic = identifier
+            .as_ref()
+            .map_or(base_topic.clone(), |identifier| {
+                format!("{base_topic}{IDENTIFIER_TOPIC_SUFFIX}{identifier}")
+            });
 
-        // Precompute hash
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        topic.hash(&mut hasher);
+        let hash = calculate_hash(&topic);
 
         Self {
             type_name: type_name.to_owned(),
             metadata,
             topic,
-            hash: hasher.finish(),
+            hash,
             identifier,
         }
     }
@@ -662,13 +720,11 @@ impl DataType {
     /// Identifier is set to None.
     #[must_use]
     pub fn from_parts(type_name: &str, topic: &str, metadata: Option<Params>) -> Self {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        topic.hash(&mut hasher);
         Self {
             type_name: type_name.to_owned(),
             metadata,
             topic: topic.to_owned(),
-            hash: hasher.finish(),
+            hash: calculate_hash(topic),
             identifier: None,
         }
     }
@@ -785,7 +841,7 @@ impl DataType {
         self.topic.as_str()
     }
 
-    /// Returns the optional catalog path identifier (can contain subdirs, e.g. `"venue//symbol"`).
+    /// Returns the optional catalog path identifier.
     #[must_use]
     pub fn identifier(&self) -> Option<&str> {
         self.identifier.as_deref()
@@ -886,6 +942,27 @@ impl Ord for DataType {
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.hash.hash(state);
+    }
+}
+
+impl FromStr for DataType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let (base_topic, identifier) = s
+            .rsplit_once(IDENTIFIER_TOPIC_SUFFIX)
+            .map_or((s, None), |(base, identifier)| {
+                (base, Some(identifier.to_string()))
+            });
+        let (type_name, metadata) = match base_topic.split_once('.') {
+            None => (base_topic, None),
+            Some((type_name, metadata_topic)) => {
+                let metadata = parse_topic_metadata(metadata_topic)?;
+                (type_name, Some(metadata))
+            }
+        };
+
+        Ok(Self::new(type_name, metadata, identifier))
     }
 }
 
@@ -1038,6 +1115,24 @@ mod tests {
     }
 
     #[rstest]
+    fn test_data_type_identifier_is_part_of_topic_identity_and_hash() {
+        let data_type1 = DataType::new("ExampleType", None, Some("A".to_string()));
+        let data_type2 = DataType::new("ExampleType", None, Some("B".to_string()));
+
+        let mut hasher1 = DefaultHasher::new();
+        data_type1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+        let mut hasher2 = DefaultHasher::new();
+        data_type2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_eq!(data_type1.topic(), "ExampleType.identifier=A");
+        assert_eq!(data_type2.topic(), "ExampleType.identifier=B");
+        assert_ne!(data_type1, data_type2);
+        assert_ne!(hash1, hash2);
+    }
+
+    #[rstest]
     fn test_data_type_display() {
         let metadata = Some(params_from_json(json!({"key1": "value1"})));
         let data_type = DataType::new("ExampleType", metadata, None);
@@ -1118,14 +1213,35 @@ mod tests {
 
     #[rstest]
     fn test_data_type_persistence_json_with_identifier() {
-        let data_type = DataType::new("MyCustomType", None, Some("venue//symbol".to_string()));
+        let data_type = DataType::new("MyCustomType", None, Some("SYMBOL.VENUE".to_string()));
         let json = data_type.to_persistence_json().unwrap();
         assert!(!json.contains("topic"));
-        assert!(json.contains("\"identifier\":\"venue//symbol\""));
+        assert!(json.contains("\"identifier\":\"SYMBOL.VENUE\""));
         let restored = DataType::from_persistence_json(&json).unwrap();
         assert_eq!(restored.type_name(), "MyCustomType");
-        assert_eq!(restored.identifier(), Some("venue//symbol"));
-        assert_eq!(restored.topic(), "MyCustomType");
+        assert_eq!(restored.identifier(), Some("SYMBOL.VENUE"));
+        assert_eq!(restored.topic(), "MyCustomType.identifier=SYMBOL.VENUE");
+    }
+
+    #[rstest]
+    fn test_data_type_from_str_parses_metadata_and_identifier() {
+        let data_type = DataType::from_str(
+            "MyCustomType.instrument_id=SYMBOL.VENUE.strike=1.23.identifier=SYMBOL.VENUE",
+        )
+        .unwrap();
+
+        assert_eq!(data_type.type_name(), "MyCustomType");
+        assert_eq!(
+            data_type.metadata(),
+            Some(&params_from_json(
+                json!({"instrument_id": "SYMBOL.VENUE", "strike": 1.23})
+            ))
+        );
+        assert_eq!(data_type.identifier(), Some("SYMBOL.VENUE"));
+        assert_eq!(
+            data_type.topic(),
+            "MyCustomType.instrument_id=SYMBOL.VENUE.strike=1.23.identifier=SYMBOL.VENUE"
+        );
     }
 
     #[rstest]
