@@ -900,10 +900,10 @@ async fn test_multiple_subscriptions() {
 }
 
 #[rstest]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_wait_until_active_timeout() {
     // Create a client but don't start a server
-    let mut client = BybitWebSocketClient::new_public_with(
+    let client = BybitWebSocketClient::new_public_with(
         BybitProductType::Linear,
         BybitEnvironment::Mainnet,
         Some("ws://127.0.0.1:9999/invalid".to_string()),
@@ -911,9 +911,6 @@ async fn test_wait_until_active_timeout() {
         TransportBackend::default(),
         None,
     );
-
-    // Connect will fail, but we won't await it
-    let _result = client.connect().await;
 
     // wait_until_active should timeout
     let result = client.wait_until_active(0.5).await;
