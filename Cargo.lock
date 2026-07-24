@@ -1764,6 +1764,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "bin"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dotenvy",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-dydx",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-trading",
+ "rust_decimal",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
+]
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

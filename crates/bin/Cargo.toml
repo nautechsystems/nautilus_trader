@@ -1,0 +1,28 @@
+[package]
+name = "bin"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+
+[lints]
+workspace = true
+
+[dependencies]
+nautilus-trading = { path = "../trading", features = ["examples"] }
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-model = { path = "../model" }
+# nautilus-common = { path = "../common" }
+nautilus-live = { workspace = true, features = ["node"]}
+nautilus-core = { workspace = true }
+nautilus-dydx = { workspace = true }
+
+dotenvy = { workspace = true }
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tokio-util = { workspace = true }
+anyhow.workspace = true
+log.workspace = true
+rust_decimal.workspace = true

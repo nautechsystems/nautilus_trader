@@ -23,6 +23,7 @@ members = [
   "crates/adapters/tardis",
   "crates/analysis",
   "crates/backtest",
+  "crates/bin",
   "crates/cli",
   "crates/common",
   "crates/core",
