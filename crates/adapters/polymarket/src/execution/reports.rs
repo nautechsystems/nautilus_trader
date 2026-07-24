@@ -563,7 +563,7 @@ impl PolymarketExecutionClient {
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
-        let mut reports = build_position_reports(&positions, self.core.account_id, ts_now);
+        let mut reports = build_position_reports(&positions, self.core.account_id, ts_now)?;
 
         if let Some(ref filter_id) = cmd.instrument_id {
             reports.retain(|r| &r.instrument_id == filter_id);

@@ -225,48 +225,51 @@ pub(crate) fn build_position_reports(
     positions: &[DataApiPosition],
     account_id: AccountId,
     ts: UnixNanos,
-) -> Vec<PositionStatusReport> {
-    positions
-        .iter()
-        .filter(|p| {
-            if p.size > Decimal::ZERO && p.size < DUST_POSITION_THRESHOLD {
-                log::debug!(
-                    "Filtering dust position: {}-{}, size={}",
-                    p.condition_id,
-                    p.asset,
-                    p.size
-                );
-            }
-            p.size >= DUST_POSITION_THRESHOLD
-        })
-        .filter_map(|p| {
-            let instrument_id =
-                InstrumentId::from(format!("{}-{}.POLYMARKET", p.condition_id, p.asset).as_str());
-            let quantity = match Quantity::from_decimal_dp(p.size, USDC_DECIMALS as u8) {
-                Ok(quantity) => quantity,
-                Err(e) => {
-                    log::warn!(
-                        "Skipping invalid Data API position {}-{} size {}: {e}",
-                        p.condition_id,
-                        p.asset,
-                        p.size,
-                    );
-                    return None;
-                }
-            };
-            Some(PositionStatusReport::new(
-                account_id,
-                instrument_id,
-                PositionSideSpecified::Long,
-                quantity,
-                ts,
-                ts,
-                None,
-                None,
-                p.avg_price,
-            ))
-        })
-        .collect()
+) -> anyhow::Result<Vec<PositionStatusReport>> {
+    let mut reports = Vec::new();
+    for position in positions {
+        if position.size > Decimal::ZERO && position.size < DUST_POSITION_THRESHOLD {
+            log::debug!(
+                "Filtering dust position: {}-{}, size={}",
+                position.condition_id,
+                position.asset,
+                position.size
+            );
+        }
+        if position.size < DUST_POSITION_THRESHOLD {
+            continue;
+        }
+
+        let instrument_id = InstrumentId::from(
+            format!("{}-{}.POLYMARKET", position.condition_id, position.asset).as_str(),
+        );
+        let quantity = position_quantity(
+            position.size,
+            position.condition_id.as_str(),
+            position.asset.as_str(),
+        )?;
+        reports.push(PositionStatusReport::new(
+            account_id,
+            instrument_id,
+            PositionSideSpecified::Long,
+            quantity,
+            ts,
+            ts,
+            None,
+            None,
+            position.avg_price,
+        ));
+    }
+    Ok(reports)
+}
+
+fn position_quantity(size: Decimal, condition_id: &str, asset: &str) -> anyhow::Result<Quantity> {
+    Quantity::from_decimal_dp(size, USDC_DECIMALS as u8).with_context(|| {
+        format!(
+            "Polymarket reconciliation cannot represent Data API position \
+             {condition_id}-{asset} size {size}"
+        )
+    })
 }
 
 /// Full reconciliation mass status generation.
@@ -312,7 +315,7 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch positions for mass status")?;
 
-    let position_reports = build_position_reports(&positions, ctx.account_id, ts_init);
+    let position_reports = build_position_reports(&positions, ctx.account_id, ts_init)?;
 
     // Apply lookback filter
     if let Some(mins) = lookback_mins {
@@ -460,6 +463,18 @@ mod tests {
                     .contains("complete open-order universe")
             );
         }
+    }
+
+    #[rstest]
+    fn rejects_unrepresentable_current_position() {
+        let error = position_quantity(Decimal::MAX, "condition-1", "token-1")
+            .expect_err("an unrepresentable current position must fail reconciliation");
+
+        assert!(
+            error
+                .to_string()
+                .contains("cannot represent Data API position")
+        );
     }
 
     #[rstest]
