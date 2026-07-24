@@ -1251,27 +1251,45 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let reconciliation = self.exec_manager.reconcile_open_order_reports(
-                                &result.check,
-                                result.reports,
-                                &result.queried_clients,
-                                &result.failed_clients,
-                            );
-                            self.process_reconciliation_events(&reconciliation.events);
-                            if !reconciliation.targeted_queries.is_empty() {
-                                targeted_order_report_task = Some(
-                                    self.start_targeted_order_report_check(
-                                        reconciliation.targeted_queries,
-                                    ),
+                            if self.config.exec_engine.reconciliation_fail_closed
+                                && !result.failed_clients.is_empty()
+                            {
+                                log::error!(
+                                    "Stopping after incomplete open-order reconciliation; failed clients: {:?}",
+                                    result.failed_clients,
                                 );
+                                self.initiate_shutdown();
+                            } else {
+                                let reconciliation = self.exec_manager.reconcile_open_order_reports(
+                                    &result.check,
+                                    result.reports,
+                                    &result.queried_clients,
+                                    &result.failed_clients,
+                                );
+                                self.process_reconciliation_events(&reconciliation.events);
+                                if !reconciliation.targeted_queries.is_empty() {
+                                    targeted_order_report_task = Some(
+                                        self.start_targeted_order_report_check(
+                                            reconciliation.targeted_queries,
+                                        ),
+                                    );
+                                }
                             }
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
-                            log::warn!(
-                                "Open-order report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
+                            if self.config.exec_engine.reconciliation_fail_closed {
+                                log::error!(
+                                    "Stopping after open-order report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                                self.initiate_shutdown();
+                            } else {
+                                log::warn!(
+                                    "Open-order report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                            }
                         }
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
@@ -1292,15 +1310,34 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let events = self.exec_manager.reconcile_targeted_order_reports(result);
-                            self.process_reconciliation_events(&events);
+                            if self.config.exec_engine.reconciliation_fail_closed
+                                && result.iter().any(|item| !item.coverage_complete())
+                            {
+                                self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+                                log::error!(
+                                    "Stopping after incomplete targeted order reconciliation",
+                                );
+                                self.initiate_shutdown();
+                            } else {
+                                let events =
+                                    self.exec_manager.reconcile_targeted_order_reports(result);
+                                self.process_reconciliation_events(&events);
+                            }
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
-                            log::warn!(
-                                "Targeted order report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
+                            if self.config.exec_engine.reconciliation_fail_closed {
+                                log::error!(
+                                    "Stopping after targeted order report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                                self.initiate_shutdown();
+                            } else {
+                                log::warn!(
+                                    "Targeted order report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                            }
                         }
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
@@ -1317,20 +1354,38 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
-                            let events = self.exec_manager.reconcile_position_reports(
-                                &result.check,
-                                result.reports,
-                                &result.queried_clients,
-                                &result.failed_clients,
-                            );
-                            self.process_reconciliation_events(&events);
+                            if self.config.exec_engine.reconciliation_fail_closed
+                                && !result.failed_clients.is_empty()
+                            {
+                                log::error!(
+                                    "Stopping after incomplete position reconciliation; failed clients: {:?}",
+                                    result.failed_clients,
+                                );
+                                self.initiate_shutdown();
+                            } else {
+                                let events = self.exec_manager.reconcile_position_reports(
+                                    &result.check,
+                                    result.reports,
+                                    &result.queried_clients,
+                                    &result.failed_clients,
+                                );
+                                self.process_reconciliation_events(&events);
+                            }
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
-                            log::warn!(
-                                "Position report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
+                            if self.config.exec_engine.reconciliation_fail_closed {
+                                log::error!(
+                                    "Stopping after position report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                                self.initiate_shutdown();
+                            } else {
+                                log::warn!(
+                                    "Position report collection expired after {:?}",
+                                    self.config.timeout_reconciliation,
+                                );
+                            }
                         }
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);

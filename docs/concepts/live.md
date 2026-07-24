@@ -239,6 +239,11 @@ The loop waits for startup reconciliation to finish before starting periodic che
 The `reconciliation_startup_delay_secs` parameter adds a further delay *after* startup
 reconciliation completes, giving the system time to stabilize.
 
+When `reconciliation_fail_closed=True`, any continuous open-order or position report
+error, collection timeout, or incomplete targeted-order query stops the trader and
+live node before partial reports are applied. The default remains best-effort so
+transient venue query failures do not stop existing deployments.
+
 | Scenario                            | Description                                                | System behavior                                      |
 | ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
 | **Explicit submit API refusal**     | API refuses create‑order before acceptance.                | Emits `OrderRejected`.                               |

@@ -879,8 +879,12 @@ mod serial_tests {
         state: BlockingReportClientState,
         order_reports: Vec<OrderStatusReport>,
         order_reports_complete: bool,
+        fail_order_reports: bool,
         block_every_second_order_report: bool,
         position_reports_complete: bool,
+        fail_position_reports: bool,
+        block_targeted_reports: bool,
+        fail_targeted_reports: bool,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
@@ -895,8 +899,12 @@ mod serial_tests {
                 state: factory.state.clone(),
                 order_reports: factory.order_reports.clone(),
                 order_reports_complete: factory.order_reports_complete,
+                fail_order_reports: factory.fail_order_reports,
                 block_every_second_order_report: factory.block_every_second_order_report,
                 position_reports_complete: factory.position_reports_complete,
+                fail_position_reports: factory.fail_position_reports,
+                block_targeted_reports: factory.block_targeted_reports,
+                fail_targeted_reports: factory.fail_targeted_reports,
                 block_every_second_targeted_report: factory.block_every_second_targeted_report,
                 report_release: factory.report_release.clone(),
             }
@@ -920,8 +928,12 @@ mod serial_tests {
         state: BlockingReportClientState,
         order_reports: Vec<OrderStatusReport>,
         order_reports_complete: bool,
+        fail_order_reports: bool,
         block_every_second_order_report: bool,
         position_reports_complete: bool,
+        fail_position_reports: bool,
+        block_targeted_reports: bool,
+        fail_targeted_reports: bool,
         block_every_second_targeted_report: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
@@ -947,8 +959,12 @@ mod serial_tests {
                 },
                 order_reports: Vec::new(),
                 order_reports_complete: false,
+                fail_order_reports: false,
                 block_every_second_order_report: false,
                 position_reports_complete: false,
+                fail_position_reports: false,
+                block_targeted_reports: false,
+                fail_targeted_reports: false,
                 block_every_second_targeted_report: false,
                 report_release,
             }
@@ -966,8 +982,12 @@ mod serial_tests {
                 state,
                 order_reports: Vec::new(),
                 order_reports_complete: false,
+                fail_order_reports: false,
                 block_every_second_order_report: false,
                 position_reports_complete: false,
+                fail_position_reports: false,
+                block_targeted_reports: false,
+                fail_targeted_reports: false,
                 block_every_second_targeted_report: false,
                 report_release: None,
             }
@@ -976,6 +996,11 @@ mod serial_tests {
         fn with_order_reports(mut self, reports: Vec<OrderStatusReport>) -> Self {
             self.order_reports = reports;
             self.order_reports_complete = true;
+            self
+        }
+
+        fn with_failed_order_reports(mut self) -> Self {
+            self.fail_order_reports = true;
             self
         }
 
@@ -989,6 +1014,11 @@ mod serial_tests {
             self
         }
 
+        fn with_failed_position_reports(mut self) -> Self {
+            self.fail_position_reports = true;
+            self
+        }
+
         fn with_block_every_second_order_report(mut self) -> Self {
             self.block_every_second_order_report = true;
             self
@@ -996,6 +1026,16 @@ mod serial_tests {
 
         fn with_block_every_second_targeted_report(mut self) -> Self {
             self.block_every_second_targeted_report = true;
+            self
+        }
+
+        fn with_blocked_targeted_reports(mut self) -> Self {
+            self.block_targeted_reports = true;
+            self
+        }
+
+        fn with_failed_targeted_reports(mut self) -> Self {
+            self.fail_targeted_reports = true;
             self
         }
     }
@@ -1134,6 +1174,10 @@ mod serial_tests {
                 .fetch_add(1, Ordering::Relaxed)
                 + 1;
 
+            if self.fail_order_reports {
+                anyhow::bail!("order report generation failed");
+            }
+
             if self.block_every_second_order_report && request_count.is_multiple_of(2) {
                 return std::future::pending::<anyhow::Result<Vec<OrderStatusReport>>>().await;
             }
@@ -1163,6 +1207,14 @@ mod serial_tests {
                 ids.len()
             };
 
+            if self.block_targeted_reports {
+                return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
+            }
+
+            if self.fail_targeted_reports {
+                anyhow::bail!("targeted order report generation failed");
+            }
+
             if self.block_every_second_targeted_report && request_count.is_multiple_of(2) {
                 return std::future::pending::<anyhow::Result<Option<OrderStatusReport>>>().await;
             }
@@ -1180,6 +1232,10 @@ mod serial_tests {
             self.state
                 .position_report_count
                 .fetch_add(1, Ordering::Relaxed);
+
+            if self.fail_position_reports {
+                anyhow::bail!("position report generation failed");
+            }
 
             if self.position_reports_complete {
                 return Ok(Vec::new());
@@ -2476,6 +2532,98 @@ mod serial_tests {
     }
 
     #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_order_report_error() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("FAILING-ORDER-REPORT"),
+            AccountId::from("FAILING-ORDER-REPORT-001"),
+            state.clone(),
+        )
+        .with_failed_order_reports();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedOrderReportNode")
+            .add_exec_client(
+                Some("failing-order-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop without an external stop signal"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_position_report_error() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("FAILING-POSITION-REPORT"),
+            AccountId::from("FAILING-POSITION-REPORT-001"),
+            state.clone(),
+        )
+        .with_failed_position_reports();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedPositionReportNode")
+            .add_exec_client(
+                Some("failing-position-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop without an external stop signal"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
     #[tokio::test(flavor = "current_thread")]
     async fn test_continuous_report_reconciliation_serializes_open_and_position_requests() {
         let config = LiveNodeConfig {
@@ -2914,6 +3062,51 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_open_report_timeout() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-ORDER-REPORT"),
+            AccountId::from("BLOCKING-ORDER-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedOpenReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-order-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop after an open-report timeout"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
     async fn test_hung_position_report_task_times_out_and_open_check_starts() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
@@ -2966,6 +3159,183 @@ mod serial_tests {
         assert!(result.unwrap().is_ok());
         assert!(state.position_report_requested.load(Ordering::Relaxed));
         assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_position_report_timeout() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                position_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("BLOCKING-POSITION-REPORT"),
+            AccountId::from("BLOCKING-POSITION-REPORT-001"),
+            state.clone(),
+        );
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedPositionReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-position-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop after a position-report timeout"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(state.position_report_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_targeted_report_timeout() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                open_check_lookback_mins: None,
+                open_check_threshold_ms: 0,
+                open_check_missing_retries: 1,
+                open_check_open_only: false,
+                max_single_order_queries_per_cycle: 1,
+                single_order_query_delay_ms: 0,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let client_id = ClientId::from("BLOCKING-TARGETED-REPORT");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            client_id,
+            AccountId::from("BLOCKING-TARGETED-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_position_reports_complete()
+        .with_blocked_targeted_reports();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedTargetedReportTimeoutNode")
+            .add_exec_client(
+                Some("blocking-targeted-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        add_accepted_test_order(
+            &node,
+            ClientOrderId::from("O-FAIL-CLOSED-TARGETED"),
+            VenueOrderId::from("V-FAIL-CLOSED-TARGETED"),
+            client_id,
+        );
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop after a targeted-report timeout"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(!state.targeted_order_report_ids.lock().unwrap().is_empty());
+        assert_eq!(handle.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_incomplete_targeted_coverage() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                open_check_lookback_mins: None,
+                open_check_threshold_ms: 0,
+                open_check_missing_retries: 1,
+                open_check_open_only: false,
+                max_single_order_queries_per_cycle: 1,
+                single_order_query_delay_ms: 0,
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let client_id = ClientId::from("FAILING-TARGETED-REPORT");
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            client_id,
+            AccountId::from("FAILING-TARGETED-REPORT-001"),
+            state.clone(),
+        )
+        .with_order_reports(Vec::new())
+        .with_position_reports_complete()
+        .with_failed_targeted_reports();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedIncompleteTargetedCoverageNode")
+            .add_exec_client(
+                Some("failing-targeted-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            .unwrap();
+        add_accepted_test_order(
+            &node,
+            ClientOrderId::from("O-FAIL-CLOSED-INCOMPLETE-TARGETED"),
+            VenueOrderId::from("V-FAIL-CLOSED-INCOMPLETE-TARGETED"),
+            client_id,
+        );
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "fail-closed reconciliation should stop after incomplete targeted coverage"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(!state.targeted_order_report_ids.lock().unwrap().is_empty());
         assert_eq!(handle.state(), NodeState::Stopped);
     }
 

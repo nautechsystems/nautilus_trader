@@ -195,6 +195,12 @@ pub(crate) struct TargetedOrderReportResult {
     coverage_complete: bool,
 }
 
+impl TargetedOrderReportResult {
+    pub(crate) const fn coverage_complete(&self) -> bool {
+        self.coverage_complete
+    }
+}
+
 /// Snapshot and command for one continuous open-order reconciliation check.
 #[derive(Debug, Clone)]
 pub(crate) struct OpenOrderReportCheck {

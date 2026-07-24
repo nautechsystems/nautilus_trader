@@ -90,6 +90,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     ----------
     reconciliation : bool, default True
         If execution reconciliation is active at start-up.
+    reconciliation_fail_closed : bool, default False
+        If incomplete continuous reconciliation should stop the live node instead
+        of continuing with an unverified execution cache.
     reconciliation_lookback_mins : NonNegativeInt, optional
         The maximum lookback minutes to reconcile execution state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
@@ -175,6 +178,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     """
 
     reconciliation: bool = True
+    reconciliation_fail_closed: bool = False
     reconciliation_lookback_mins: NonNegativeInt | None = None
     reconciliation_instrument_ids: list[InstrumentId] | None = None
     filter_unclaimed_external_orders: bool = False

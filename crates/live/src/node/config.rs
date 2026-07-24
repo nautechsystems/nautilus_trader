@@ -404,6 +404,12 @@ pub struct LiveExecEngineConfig {
     /// If reconciliation is active at start-up.
     #[builder(default = true)]
     pub reconciliation: bool,
+    /// If incomplete continuous reconciliation should stop the live node.
+    ///
+    /// When enabled, report errors, timeouts, or incomplete targeted-query coverage
+    /// stop trading instead of allowing the node to continue with an unverified cache.
+    #[builder(default)]
+    pub reconciliation_fail_closed: bool,
     /// The delay (seconds) before starting reconciliation at startup.
     #[builder(default = 10.0)]
     pub reconciliation_startup_delay_secs: f64,
@@ -1749,6 +1755,7 @@ mod tests {
         assert!(!config.manage_own_order_books);
         assert!(!config.allow_overfills);
         assert!(config.reconciliation);
+        assert!(!config.reconciliation_fail_closed);
         assert_eq!(config.reconciliation_startup_delay_secs, 10.0);
         assert_eq!(config.reconciliation_lookback_mins, None);
         assert_eq!(config.reconciliation_instrument_ids, None);
@@ -1768,6 +1775,18 @@ mod tests {
         assert_eq!(config.position_check_retries, 3);
         assert!(!config.purge_from_database);
         assert_eq!(config.qsize, 100_000);
+    }
+
+    #[rstest]
+    fn test_live_exec_engine_config_deserializes_fail_closed_reconciliation() {
+        let config: LiveExecEngineConfig =
+            serde_json::from_str(r#"{"reconciliation_fail_closed":true}"#)
+                .expect("fail-closed reconciliation should be a supported execution setting");
+
+        assert_eq!(
+            serde_json::to_value(config).expect("serialize")["reconciliation_fail_closed"],
+            serde_json::json!(true),
+        );
     }
 
     #[rstest]
