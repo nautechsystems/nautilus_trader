@@ -102,10 +102,6 @@ async fn repay_coin(http_client: &BybitHttpClient, coin: Ustr, bought: Quantity)
     }
 
     let repay = outstanding.min(bought.as_decimal());
-    if repay.is_zero() {
-        return;
-    }
-
     let repay_qty = match Quantity::from_decimal_dp(repay, bought.precision) {
         Ok(qty) => qty,
         Err(e) => {
@@ -113,6 +109,10 @@ async fn repay_coin(http_client: &BybitHttpClient, coin: Ustr, bought: Quantity)
             return;
         }
     };
+
+    if repay_qty.is_zero() {
+        return;
+    }
 
     // The BUY fee is charged in the base coin, so the received amount is a touch
     // below the borrow. Use the converting repay so that small shortfall is
@@ -264,16 +264,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case::no_outstanding_borrow("0")]
+    #[case::outstanding_below_one_tick("0.000000012")]
     #[tokio::test]
-    async fn test_repay_coin_skips_when_no_outstanding_borrow() {
-        let (base_url, repay_bodies) = spawn_mock_venue(Some(wallet_with_borrow("ETH", "0"))).await;
+    async fn test_repay_coin_skips_when_nothing_to_repay(#[case] outstanding: &str) {
+        let (base_url, repay_bodies) =
+            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding))).await;
         let client = test_client(base_url);
 
         repay_coin(&client, Ustr::from("ETH"), Quantity::new(1.0, 3)).await;
 
         assert!(
             repay_bodies.lock().unwrap().is_empty(),
-            "Should not repay without an outstanding borrow"
+            "Should not repay an outstanding borrow of {outstanding}"
         );
     }
 
