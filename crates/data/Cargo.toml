@@ -90,3 +90,8 @@ tokio = { workspace = true, features = ["test-util", "macros", "rt"] }
 [[bench]]
 name = "engine"
 harness = false
+
+# Run with `cargo bench -p nautilus-data --bench aggregation`
+[[bench]]
+name = "aggregation"
+harness = false
