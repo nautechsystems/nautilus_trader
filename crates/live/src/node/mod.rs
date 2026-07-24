@@ -1278,6 +1278,7 @@ impl LiveNode {
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
+
                             if self.config.exec_engine.reconciliation_fail_closed {
                                 log::error!(
                                     "Stopping after open-order report collection expired after {:?}",
@@ -1326,6 +1327,7 @@ impl LiveNode {
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
+
                             if self.config.exec_engine.reconciliation_fail_closed {
                                 log::error!(
                                     "Stopping after targeted order report collection expired after {:?}",
@@ -1374,6 +1376,7 @@ impl LiveNode {
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
+
                             if self.config.exec_engine.reconciliation_fail_closed {
                                 log::error!(
                                     "Stopping after position report collection expired after {:?}",
