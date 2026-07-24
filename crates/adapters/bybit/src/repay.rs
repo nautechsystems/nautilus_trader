@@ -130,10 +130,166 @@ async fn repay_coin(http_client: &BybitHttpClient, coin: Ustr, bought: Quantity)
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    use axum::{
+        Json, Router,
+        extract::State,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+    };
     use nautilus_core::UnixNanos;
     use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
     use rstest::rstest;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    type RepayBodies = Arc<Mutex<Vec<Value>>>;
+
+    #[derive(Clone, Default)]
+    struct MockVenue {
+        repay_bodies: RepayBodies,
+    }
+
+    fn wallet_with_borrow(coin: &str, spot_borrow: &str) -> Value {
+        let mut wallet: Value =
+            serde_json::from_str(include_str!("../test_data/http_get_wallet_balance.json"))
+                .expect("valid wallet balance fixture");
+
+        let coins = wallet["result"]["list"][0]["coin"]
+            .as_array_mut()
+            .expect("fixture has a coin list");
+        let entry = coins
+            .iter_mut()
+            .find(|entry| entry["coin"] == coin)
+            .expect("fixture has the requested coin");
+        entry["spotBorrow"] = json!(spot_borrow);
+
+        wallet
+    }
+
+    async fn spawn_mock_venue(wallet: Option<Value>) -> (String, RepayBodies) {
+        let state = MockVenue::default();
+        let repay_bodies = state.repay_bodies.clone();
+
+        let router = Router::new()
+            .route(
+                "/v5/account/wallet-balance",
+                get(move || {
+                    let wallet = wallet.clone();
+                    async move {
+                        match wallet {
+                            Some(wallet) => Json(wallet).into_response(),
+                            None => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+                        }
+                    }
+                }),
+            )
+            .route("/v5/account/repay", post(handle_repay))
+            .with_state(state);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        (format!("http://{addr}"), repay_bodies)
+    }
+
+    async fn handle_repay(State(state): State<MockVenue>, body: axum::body::Bytes) -> Response {
+        let params: Value = serde_json::from_slice(&body).expect("valid repay body");
+        state.repay_bodies.lock().unwrap().push(params);
+
+        Json(json!({
+            "retCode": 0,
+            "retMsg": "OK",
+            "result": {"resultStatus": "SU"},
+            "retExtInfo": {},
+            "time": 1704470400123i64
+        }))
+        .into_response()
+    }
+
+    fn test_client(base_url: String) -> BybitHttpClient {
+        BybitHttpClient::with_credentials(
+            "test_api_key".to_string(),
+            "test_api_secret".to_string(),
+            Some(base_url),
+            60,
+            0,
+            1_000,
+            10_000,
+            5_000,
+            None,
+        )
+        .unwrap()
+    }
+
+    fn single_repay_amount(bodies: &RepayBodies, coin: &str) -> Decimal {
+        let bodies = bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 1, "Expected exactly one repay request");
+
+        let body = &bodies[0];
+        assert_eq!(body["coin"], coin);
+
+        body["amount"]
+            .as_str()
+            .expect("repay request has an amount")
+            .parse()
+            .expect("repay amount parses as a decimal")
+    }
+
+    #[rstest]
+    #[case::capped_at_outstanding("5.0", 10.0, dec!(5.0))]
+    #[case::capped_at_bought("10.0", 0.25, dec!(0.25))]
+    #[tokio::test]
+    async fn test_repay_coin_repays_lesser_of_outstanding_and_bought(
+        #[case] outstanding: &str,
+        #[case] bought: f64,
+        #[case] expected: Decimal,
+    ) {
+        let (base_url, repay_bodies) =
+            spawn_mock_venue(Some(wallet_with_borrow("ETH", outstanding))).await;
+        let client = test_client(base_url);
+
+        repay_coin(&client, Ustr::from("ETH"), Quantity::new(bought, 3)).await;
+
+        assert_eq!(single_repay_amount(&repay_bodies, "ETH"), expected);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_repay_coin_skips_when_no_outstanding_borrow() {
+        let (base_url, repay_bodies) = spawn_mock_venue(Some(wallet_with_borrow("ETH", "0"))).await;
+        let client = test_client(base_url);
+
+        repay_coin(&client, Ustr::from("ETH"), Quantity::new(1.0, 3)).await;
+
+        assert!(
+            repay_bodies.lock().unwrap().is_empty(),
+            "Should not repay without an outstanding borrow"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_repay_coin_skips_when_borrow_query_fails() {
+        let (base_url, repay_bodies) = spawn_mock_venue(None).await;
+        let client = test_client(base_url);
+
+        repay_coin(&client, Ustr::from("ETH"), Quantity::new(1.0, 3)).await;
+
+        assert!(
+            repay_bodies.lock().unwrap().is_empty(),
+            "Should not repay when the borrow amount is unknown"
+        );
+    }
 
     fn ns_at(minute: u64, second: u64) -> UnixNanos {
         // Anchor at an arbitrary whole hour, then offset within it.
