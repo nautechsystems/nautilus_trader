@@ -291,6 +291,7 @@ pub(crate) async fn generate_mass_status(
 
     let (mut order_reports, orders_filtered) =
         build_order_reports_from_orders(&orders, instruments, ctx.account_id, None, ts_init);
+    ensure_no_unmapped_open_orders(orders_filtered)?;
 
     // Fetch and parse fill reports
     let trades = http_client
@@ -357,6 +358,16 @@ pub(crate) async fn generate_mass_status(
     mass_status.add_fill_reports(fill_reports);
 
     Ok(Some(mass_status))
+}
+
+fn ensure_no_unmapped_open_orders(orders_filtered: usize) -> anyhow::Result<()> {
+    if orders_filtered > 0 {
+        anyhow::bail!(
+            "Polymarket reconciliation cannot prove a complete open-order universe: \
+             {orders_filtered} venue open order(s) reference instruments absent from the NT instrument map"
+        );
+    }
+    Ok(())
 }
 
 fn cap_order_reports_to_confirmed_fills(
@@ -429,6 +440,27 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::complete(0, true)]
+    #[case::one_unmapped(1, false)]
+    #[case::multiple_unmapped(3, false)]
+    fn rejects_incomplete_open_order_universe(
+        #[case] orders_filtered: usize,
+        #[case] accepted: bool,
+    ) {
+        let result = ensure_no_unmapped_open_orders(orders_filtered);
+
+        assert_eq!(result.is_ok(), accepted);
+        if !accepted {
+            assert!(
+                result
+                    .expect_err("unmapped open orders must fail reconciliation")
+                    .to_string()
+                    .contains("complete open-order universe")
+            );
+        }
+    }
 
     #[rstest]
     fn caps_order_report_to_confirmed_companion_fills() {
