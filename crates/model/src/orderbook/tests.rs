@@ -22,8 +22,6 @@ use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
-#[cfg(not(feature = "high-precision"))]
-use crate::types::quantity::QUANTITY_RAW_MAX;
 use crate::{
     data::{
         OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, depth::OrderBookDepth10,
@@ -40,7 +38,11 @@ use crate::{
         own::{OwnBookLadder, OwnBookLevel, OwnOrderBook},
     },
     stubs::TestDefault,
-    types::{Price, Quantity, fixed::FIXED_PRECISION, quantity::QuantityRaw},
+    types::{
+        Price, Quantity,
+        fixed::FIXED_PRECISION,
+        quantity::{QUANTITY_RAW_MAX, QuantityRaw},
+    },
 };
 
 #[rstest]
@@ -239,7 +241,7 @@ fn test_book_midpoint_with_orders() {
 }
 
 #[rstest]
-fn test_book_get_price_for_quantity_no_market() {
+fn test_book_get_avg_px_for_quantity_no_market() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -261,7 +263,7 @@ fn test_book_get_quantity_for_price_no_market() {
 }
 
 #[rstest]
-fn test_book_get_price_for_quantity() {
+fn test_book_get_avg_px_for_quantity() {
     let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
     let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
@@ -304,6 +306,46 @@ fn test_book_get_price_for_quantity() {
         book.get_avg_px_for_quantity(qty, OrderSide::Sell),
         0.996_666_666_666_666_7
     );
+}
+
+#[rstest]
+fn test_book_get_avg_px_for_quantity_exact_accumulation() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let size = Quantity::from_raw(1, FIXED_PRECISION);
+    let ask1 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("9007199253.999000000"),
+        size,
+        1,
+    );
+    let ask2 = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("9007199253.999000001"),
+        size,
+        2,
+    );
+    book.add(ask1, 0, 1, 1.into());
+    book.add(ask2, 0, 2, 2.into());
+
+    let result =
+        book.get_avg_px_for_quantity(Quantity::from_raw(2, FIXED_PRECISION), OrderSide::Buy);
+
+    assert_eq!(result.to_bits(), 4_756_019_973_358_353_908);
+}
+
+#[cfg(feature = "high-precision")]
+#[rstest]
+fn test_book_get_avg_px_for_quantity_max_raw_size() {
+    let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+    let size = Quantity::from_raw(QUANTITY_RAW_MAX, FIXED_PRECISION);
+    let ask = BookOrder::new(OrderSide::Sell, Price::from("1.0"), size, 1);
+    book.add(ask, 0, 1, 1.into());
+
+    let result = book.get_avg_px_for_quantity(size, OrderSide::Buy);
+
+    assert_eq!(result, 1.0);
 }
 
 #[rstest]

@@ -185,6 +185,7 @@ adapter set. The following limits remain deferred:
 - Fixed v2 hedging phantom positions (#4424), thanks for reporting @luckykefu and for the patch @akashchakrabortymsc-cmd
 - Fixed v2 matching engine queue position for per-order deltas in L3 books (#4370), thanks for reporting @warmi024
 - Fixed v2 own order book sizes to track remaining quantity after partial fills
+- Fixed v2 order-book average prices losing precision during weighted accumulation
 - Fixed v2 order-book raw exposure and crossed level sizes losing precision through floating-point conversion
 - Fixed v2 `Quantity` multiplication falsely overflowing before fixed-point scaling
 - Fixed v2 interval book snapshots blocking order submission from `on_book` handlers
