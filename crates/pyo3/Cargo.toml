@@ -83,6 +83,7 @@ ffi = [
 high-precision = [
   "nautilus-model/high-precision",
   "nautilus-serialization/high-precision",
+  "nautilus-testkit/high-precision",
   "nautilus-betfair?/high-precision",
   "nautilus-binance/high-precision",
   "nautilus-bitmex/high-precision",
