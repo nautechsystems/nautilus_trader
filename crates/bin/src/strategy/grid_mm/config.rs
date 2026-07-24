@@ -19,20 +19,22 @@ use nautilus_model::{
     identifiers::{InstrumentId, StrategyId},
     types::Quantity,
 };
+use nautilus_trading::StrategyConfig;
 
-use crate::strategy::StrategyConfig;
+// use crate::strategy::StrategyConfig;
 
 /// Configuration for the grid market making strategy.
+
+// #[cfg_attr(
+//     feature = "python",
+//     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
+// )]
+// #[cfg_attr(
+//     feature = "python",
+//     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
+// )]
 #[derive(Debug, Clone, bon::Builder)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.trading", from_py_object)
-)]
-#[cfg_attr(
-    feature = "python",
-    pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.trading")
-)]
-pub struct GridMarketMakerConfig {
+pub(crate) struct GridMarketMakerConfig {
     /// Base strategy configuration.
     #[builder(default = StrategyConfig {
         strategy_id: Some(StrategyId::from("GRID_MM-001")),

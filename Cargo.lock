@@ -1767,9 +1767,12 @@ dependencies = [
 name = "bin"
 version = "0.1.0"
 dependencies = [
+ "ahash 0.8.12",
  "anyhow",
+ "bon",
  "dotenvy",
  "log",
+ "nautilus-bybit",
  "nautilus-common",
  "nautilus-core",
  "nautilus-dydx",
@@ -1778,7 +1781,7 @@ dependencies = [
  "nautilus-trading",
  "rust_decimal",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.30.0",
  "tokio-util",
 ]
 

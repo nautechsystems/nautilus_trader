@@ -15,10 +15,13 @@ nautilus-trading = { path = "../trading", features = ["examples"] }
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-model = { path = "../model" }
 # nautilus-common = { path = "../common" }
-nautilus-live = { workspace = true, features = ["node"]}
+nautilus-live = { workspace = true, features = ["node"] }
 nautilus-core = { workspace = true }
 nautilus-dydx = { workspace = true }
+nautilus-bybit = { workspace = true }
 
+ahash = { workspace = true }
+bon = { workspace = true }
 dotenvy = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }

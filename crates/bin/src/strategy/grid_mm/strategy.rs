@@ -28,13 +28,12 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
+use nautilus_trading::{Strategy, StrategyCore, nautilus_strategy};
 use rust_decimal::Decimal;
 
-use super::config::GridMarketMakerConfig;
-use crate::{
-    nautilus_strategy,
-    strategy::{Strategy, StrategyCore},
-};
+use crate::strategy::grid_mm::config::GridMarketMakerConfig;
+
+
 
 /// Grid market making strategy with inventory-based skewing.
 ///
@@ -42,7 +41,7 @@ use crate::{
 /// Orders persist across ticks and are only replaced when the mid-price moves
 /// by at least `requote_threshold_bps`. The grid is shifted by a skew proportional
 /// to the current net position to discourage inventory buildup.
-pub struct GridMarketMaker {
+pub (crate) struct GridMarketMaker {
     pub(super) core: StrategyCore,
     pub(super) config: GridMarketMakerConfig,
     pub(super) instrument: Option<InstrumentAny>,
@@ -55,7 +54,7 @@ pub struct GridMarketMaker {
 impl GridMarketMaker {
     /// Creates a new [`GridMarketMaker`] instance from config.
     #[must_use]
-    pub fn new(config: GridMarketMakerConfig) -> Self {
+    pub(crate) fn new(config: GridMarketMakerConfig) -> Self {
         Self {
             core: StrategyCore::new(config.base.clone()),
             instrument: None,
