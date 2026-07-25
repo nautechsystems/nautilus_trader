@@ -1165,6 +1165,10 @@ mod tests {
     }
 
     #[rstest]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "try_from is a no-op when QuantityRaw is u64, and narrows when u128 (high-precision)"
+    )]
     fn test_from_u64_exact() {
         let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
         let values = [0, 1, max];
@@ -1216,6 +1220,10 @@ mod tests {
     #[cfg_attr(
         not(feature = "high-precision"),
         should_panic(expected = "Raw value exceeds QuantityRaw range")
+    )]
+    #[allow(
+        clippy::useless_conversion,
+        reason = "try_from is a no-op when QuantityRaw is u64, and narrows when u128 (high-precision)"
     )]
     fn test_from_u64_overflow_panics() {
         let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
