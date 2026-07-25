@@ -330,6 +330,20 @@ repos:
         files: "Cargo\\.toml$"
         pass_filenames: false
 
+      - id: check-workspace-test-coverage
+        name: check workspace test coverage
+        description: Reconciles workspace members with Rust test selection
+        entry: bash scripts/ci/check-workspace-test-coverage.sh
+        language: system
+        files: >-
+          (?x)^(
+            (?:.*/)?Cargo\.toml|
+            .*\.rs|
+            Makefile|
+            scripts/ci/check-workspace-test-coverage\.sh
+          )$
+        pass_filenames: false
+
       - id: check-cargo-crates-publish
         name: check mocked cargo publish plan
         description: Checks mocked Cargo publish-plan logic, not the real workspace crate graph

@@ -224,19 +224,26 @@ ifneq ($(strip $(NEXTEST_TEST_THREADS_FOR_RUST)),)
 $(NEXTEST_ENV_TARGETS): export NEXTEST_TEST_THREADS=$(NEXTEST_TEST_THREADS_FOR_RUST)
 endif
 
-# Core crates (excludes adapters/*, nautilus-pyo3, nautilus-cli)
+# Core crates (excludes adapters/* and workspace members without tests)
 CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core \
-    nautilus-cryptography nautilus-data nautilus-execution nautilus-indicators \
-    nautilus-infrastructure nautilus-live nautilus-model nautilus-network \
-    nautilus-persistence nautilus-portfolio nautilus-risk nautilus-serialization \
+    nautilus-cryptography nautilus-data nautilus-event-store nautilus-execution \
+    nautilus-indicators nautilus-infrastructure nautilus-live nautilus-model \
+    nautilus-network nautilus-persistence nautilus-persistence-macros \
+    nautilus-plugin nautilus-portfolio nautilus-risk nautilus-serialization \
     nautilus-system nautilus-testkit nautilus-trading
 
-# Adapter crates (crates/adapters/*)
+# Crates tested in the workspace-compiled adapter lane
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
-    nautilus-bitmex nautilus-blockchain nautilus-bybit nautilus-databento \
-    nautilus-deribit nautilus-dydx nautilus-hyperliquid nautilus-kraken \
-    nautilus-lighter nautilus-okx nautilus-polymarket nautilus-sandbox \
-    nautilus-tardis
+    nautilus-bitmex nautilus-blockchain nautilus-bybit nautilus-cli \
+    nautilus-coinbase nautilus-databento nautilus-deribit nautilus-derive \
+    nautilus-dydx nautilus-hyperliquid nautilus-interactive-brokers \
+    nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket \
+    nautilus-sandbox nautilus-tardis
+
+# Workspace members without Rust test functions:
+# nautilus-trader is the container library, nautilus-pyo3 owns generated bindings,
+# and nautilus-tutorials has a binary target with test = false.
+NO_TEST_CRATES := nautilus-trader nautilus-pyo3 nautilus-tutorials
 
 # > Colors
 # Use ANSI escape codes directly for cross-platform compatibility (Git Bash on Windows doesn't have tput)
@@ -844,12 +851,12 @@ endif
 .PHONY: cargo-test-adapters
 cargo-test-adapters: export RUST_BACKTRACE=1
 cargo-test-adapters: check-nextest-installed
-cargo-test-adapters:  #-- Run Rust tests for adapter crates with workspace compilation
+cargo-test-adapters:  #-- Run Rust tests for the workspace-compiled adapter lane
 ifeq ($(VERBOSE),true)
-	$(info $(M) Running Rust tests for adapter crates...)
+	$(info $(M) Running Rust tests for the workspace-compiled adapter lane...)
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --verbose
 else
-	$(info $(M) Running Rust tests for adapter crates (showing summary and failures only)...)
+	$(info $(M) Running Rust tests for the workspace-compiled adapter lane (showing summary and failures only)...)
 	cargo nextest run --workspace --lib --tests --features "$(CARGO_FEATURES)" -E '$(ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) --status-level fail --final-status-level flaky
 endif
 
