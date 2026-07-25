@@ -414,18 +414,25 @@ impl PolymarketDataClient {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::Ordering};
+    use std::{
+        cell::RefCell,
+        rc::Rc,
+        sync::{Arc, atomic::Ordering},
+    };
 
     use nautilus_common::{
-        clients::DataClient,
-        live::runner::replace_data_event_sender,
+        cache::Cache,
+        clients::{DataClient, ExecutionClient},
+        clock::{Clock, TestClock},
+        live::runner::{replace_data_event_sender, replace_exec_event_sender},
         messages::{
-            DataEvent,
+            DataEvent, ExecutionEvent,
             data::{SubscribeCustomData, UnsubscribeCustomData},
         },
         testing::wait_until_async,
     };
-    use nautilus_core::{Params, UUID4, UnixNanos};
+    use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
+    use nautilus_execution::client::core::ExecutionClientCore;
     use nautilus_model::{
         data::{DataType, QuoteTick},
         enums::BookType,
@@ -438,13 +445,14 @@ mod tests {
         retry::RetryConfig,
         websocket::{TransportBackend, proxy::ProxyUrl},
     };
+    use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
     use rstest::rstest;
     use serde_json::Value;
     use ustr::Ustr;
 
     use super::{super::NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP, *};
     use crate::{
-        common::consts::{POLYMARKET_CLIENT_ID, WS_DEFAULT_SUBSCRIPTIONS},
+        common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
         config::PolymarketDataClientConfig,
         data::{instruments::cache_instrument, runtime::retire_local_instrument_state},
         http::{
@@ -560,18 +568,29 @@ mod tests {
         raw_symbol: &str,
         condition_id: &str,
     ) -> InstrumentAny {
-        let mut binary = binary_option();
-        binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
-        binary.raw_symbol = Symbol::new(raw_symbol);
-        binary.currency = Currency::pUSD();
-        binary.activation_ns = UnixNanos::default();
-        binary.expiration_ns = UnixNanos::from(
+        let expiration_ns = UnixNanos::from(
             client
                 .clock
                 .get_time_ns()
                 .as_u64()
                 .saturating_sub(1_000_000_000),
         );
+
+        seed_instrument(client, raw_symbol, condition_id, expiration_ns)
+    }
+
+    fn seed_instrument(
+        client: &PolymarketDataClient,
+        raw_symbol: &str,
+        condition_id: &str,
+        expiration_ns: UnixNanos,
+    ) -> InstrumentAny {
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from(format!("{raw_symbol}.POLYMARKET").as_str());
+        binary.raw_symbol = Symbol::new(raw_symbol);
+        binary.currency = Currency::pUSD();
+        binary.activation_ns = UnixNanos::default();
+        binary.expiration_ns = expiration_ns;
 
         let mut info = Params::new();
         info.insert(
@@ -1097,5 +1116,238 @@ mod tests {
                 "message-handler startup #{startup} must not re-seed token_meta for retained expired instruments",
             );
         }
+    }
+
+    // Matches EXPIRED_ENGINE_SWEEP_INTERVAL_NS in crates/adapters/sandbox/src/execution.rs.
+    const SANDBOX_SWEEP_INTERVAL_NS: u64 = 60 * NANOSECONDS_IN_SECOND;
+    const CHURN_CYCLES: u64 = 5;
+    const CHURN_INSTRUMENTS_PER_CYCLE: usize = 4;
+
+    struct ChurnSandbox {
+        client: SandboxExecutionClient,
+        cache: Rc<RefCell<Cache>>,
+        test_clock: Rc<RefCell<TestClock>>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    }
+
+    fn setup_churn_sandbox() -> ChurnSandbox {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        let clock: Rc<RefCell<dyn Clock>> = test_clock.clone();
+
+        let config = SandboxExecutionClientConfig::builder()
+            .venue(*POLYMARKET_VENUE)
+            .build();
+        let core = ExecutionClientCore::new(
+            config.trader_id,
+            ClientId::new("SANDBOX"),
+            config.venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        let mut client = SandboxExecutionClient::new(core, config, clock, cache.clone());
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        replace_exec_event_sender(tx);
+        client.start().expect("sandbox client should start");
+
+        ChurnSandbox {
+            client,
+            cache,
+            test_clock,
+            rx,
+        }
+    }
+
+    fn churn_quote(instrument_id: InstrumentId) -> QuoteTick {
+        QuoteTick::new(
+            instrument_id,
+            Price::from("0.504"),
+            Price::from("0.506"),
+            Quantity::from("5.00"),
+            Quantity::from("8.00"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+    }
+
+    // The data-runtime maps and sets that a retired Polymarket instrument must vacate, labelled so
+    // a count mismatch names the owner that retained state.
+    fn data_runtime_owner_counts(client: &PolymarketDataClient) -> Vec<(&'static str, usize)> {
+        vec![
+            ("instruments", client.instruments.len()),
+            ("token_meta", client.token_meta.len()),
+            ("order_books", client.order_books.len()),
+            ("last_quotes", client.last_quotes.len()),
+            ("active_quote_subs", client.active_quote_subs.len()),
+            ("active_delta_subs", client.active_delta_subs.len()),
+            ("active_trade_subs", client.active_trade_subs.len()),
+            ("ws_open_tokens", client.ws_open_tokens.len()),
+            (
+                "pending_snapshot_after_tick_change",
+                client.pending_snapshot_after_tick_change.len(),
+            ),
+            (
+                "pending_auto_loads",
+                client
+                    .pending_auto_loads
+                    .lock()
+                    .expect("pending_auto_loads mutex poisoned")
+                    .len(),
+            ),
+        ]
+    }
+
+    // Deterministic owner-count regression for the reported high-churn topology: Polymarket data
+    // plus Sandbox execution, streaming quote-only short-lived instruments. Each cycle loads a
+    // fresh batch, creates Sandbox matching engines from quotes, advances past expiry, and runs
+    // both the Sandbox periodic sweep and the Polymarket expiry retirement. Owner counts (not
+    // allocator RSS) are the assertion: `develop` enables mimalloc, whose segment caching means a
+    // logical release need not lower resident memory.
+    #[rstest]
+    #[tokio::test]
+    async fn instrument_churn_returns_data_runtime_cache_and_engine_owners_to_baseline() {
+        let client = make_client_for_reset_test();
+        let mut sandbox = setup_churn_sandbox();
+
+        for cycle in 0..CHURN_CYCLES {
+            let sweep_ns = SANDBOX_SWEEP_INTERVAL_NS * (cycle + 1);
+            let mut cycle_ids = Vec::with_capacity(CHURN_INSTRUMENTS_PER_CYCLE);
+
+            for index in 0..CHURN_INSTRUMENTS_PER_CYCLE {
+                let raw_symbol = format!("0xTOKEN_CHURN_{cycle}_{index}");
+                let condition_id = format!("0xCOND-CHURN-{cycle}-{index}");
+                let instrument = seed_instrument(
+                    &client,
+                    &raw_symbol,
+                    &condition_id,
+                    UnixNanos::from(sweep_ns - 1),
+                );
+                let instrument_id = instrument.id();
+
+                seed_expired_runtime_state(&client, &instrument);
+
+                let quote = churn_quote(instrument_id);
+                sandbox
+                    .cache
+                    .borrow_mut()
+                    .add_instrument(instrument)
+                    .expect("instrument should enter the global cache");
+                sandbox
+                    .client
+                    .process_quote_tick(&quote)
+                    .expect("quote should create a sandbox matching engine");
+                sandbox
+                    .cache
+                    .borrow_mut()
+                    .add_quote(quote)
+                    .expect("quote should enter the global cache");
+
+                cycle_ids.push(instrument_id);
+            }
+
+            assert_eq!(
+                sandbox.client.matching_engine_count(),
+                CHURN_INSTRUMENTS_PER_CYCLE,
+                "cycle {cycle} should hold one matching engine per streamed instrument",
+            );
+            assert_eq!(
+                sandbox.cache.borrow().instrument_ids(None).len(),
+                CHURN_INSTRUMENTS_PER_CYCLE,
+                "cycle {cycle} global-cache instruments must not carry earlier cycles",
+            );
+
+            // Pins the quote before the sweep so the post-sweep absence check cannot pass vacuously.
+            for instrument_id in &cycle_ids {
+                assert_eq!(
+                    sandbox.cache.borrow().quote(instrument_id),
+                    Some(&churn_quote(*instrument_id)),
+                    "cycle {cycle} cache should hold the streamed quote for {instrument_id}",
+                );
+            }
+
+            for (owner, count) in data_runtime_owner_counts(&client) {
+                assert_eq!(
+                    count, CHURN_INSTRUMENTS_PER_CYCLE,
+                    "cycle {cycle} data-runtime {owner} should hold one entry per streamed instrument",
+                );
+            }
+
+            // Quote-only churn opens no position, so nothing reaches the resolution watchlist and
+            // no instrument is retained as watchlist metadata.
+            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+
+            let sweep_events = sandbox
+                .test_clock
+                .borrow_mut()
+                .advance_time(UnixNanos::from(sweep_ns), true);
+            assert_eq!(
+                sweep_events.len(),
+                1,
+                "cycle {cycle} should release exactly one sandbox expiry sweep",
+            );
+
+            for handler in sandbox.test_clock.borrow().match_handlers(sweep_events) {
+                handler.run();
+            }
+
+            assert_eq!(
+                sandbox.client.matching_engine_count(),
+                0,
+                "cycle {cycle} sandbox sweep should retire every expired quote-only engine",
+            );
+            assert_eq!(
+                sandbox.cache.borrow().instrument_ids(None).len(),
+                0,
+                "cycle {cycle} sandbox sweep should purge every expired instrument from the cache",
+            );
+
+            for instrument_id in &cycle_ids {
+                assert!(
+                    sandbox.cache.borrow().quote(instrument_id).is_none(),
+                    "cycle {cycle} cache quotes should be purged with {instrument_id}",
+                );
+            }
+
+            retire_expired_local_instruments(
+                UnixNanos::from(sweep_ns),
+                &client.instruments,
+                &client.token_meta,
+                &client.order_books,
+                &client.last_quotes,
+                &client.active_quote_subs,
+                &client.active_delta_subs,
+                &client.active_trade_subs,
+                &client.resolve_poll_watchlist,
+                &client.pending_snapshot_after_tick_change,
+                &client.pending_auto_loads,
+                &client.ws_open_tokens,
+                &client.ws_sub_mutex,
+                &client.ws_client.handle(),
+            )
+            .await;
+
+            for (owner, count) in data_runtime_owner_counts(&client) {
+                assert_eq!(
+                    count, 0,
+                    "cycle {cycle} retirement should release data-runtime {owner}",
+                );
+            }
+
+            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+        }
+
+        // Neither sweep settles: an expired quote-only instrument has no exposure to close.
+        let execution_events: Vec<ExecutionEvent> =
+            std::iter::from_fn(|| sandbox.rx.try_recv().ok()).collect();
+        assert!(
+            execution_events.is_empty(),
+            "quote-only churn must not emit execution events, was {execution_events:?}",
+        );
+
+        sandbox.client.stop().expect("sandbox client should stop");
     }
 }

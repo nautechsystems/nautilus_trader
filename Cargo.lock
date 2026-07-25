@@ -6731,6 +6731,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence-macros",
+ "nautilus-sandbox",
  "nautilus-system",
  "nautilus-testkit",
  "nautilus-trading",
