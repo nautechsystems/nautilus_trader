@@ -42,15 +42,15 @@ NautilusTrader integration guide.
 
 The production catalog currently contains perpetual contracts across these venue categories:
 
-| Venue category   | Examples                         | Nautilus asset class |
-| ---------------- | -------------------------------- | -------------------- |
-| Foreign exchange | `EURUSD-PERP`, `JPYUSD-PERP`     | FX                   |
-| Equities         | `AAPL-PERP`, `NVDA-PERP`         | Equity               |
-| Energy ETFs      | `USO-PERP`, `UNG-PERP`           | Equity               |
-| Metals           | `XAU-PERP`, `XAG-PERP`           | Commodity            |
-| Energy           | `WTI-PERP`                       | Commodity            |
-| Treasuries       | `UST10Y-PERP`                    | Debt                 |
-| Compute          | `OCPI-H100-PERP`                 | Alternative          |
+| Venue category   | Examples                     | Nautilus asset class |
+| ---------------- | ---------------------------- | -------------------- |
+| Foreign exchange | `EURUSD-PERP`, `JPYUSD-PERP` | FX                   |
+| Equities         | `AAPL-PERP`, `NVDA-PERP`     | Equity               |
+| Energy ETFs      | `USO-PERP`, `UNG-PERP`       | Equity               |
+| Metals           | `XAU-PERP`, `XAG-PERP`       | Commodity            |
+| Energy           | `WTI-PERP`                   | Commodity            |
+| Treasuries       | `UST10Y-PERP`                | Debt                 |
+| Compute          | `OCPI-H100-PERP`             | Alternative          |
 
 The sandbox also lists dated gold contracts such as `XAU-2026-SEP` and `XAU-2026-DEC`.
 
@@ -80,11 +80,11 @@ asset class. The adapter uses `MARGIN` account type and `NETTING` order manageme
 The adapter preserves each AX symbol and appends the Nautilus venue identifier `.AX`. Perpetual
 symbols use the `-PERP` suffix. Dated symbols include their year and contract month.
 
-| Contract     | AX Symbol        | Nautilus InstrumentId |
-| ------------ | ---------------- | --------------------- |
-| EUR/USD perp | `EURUSD-PERP`    | `EURUSD-PERP.AX`      |
-| Gold perp    | `XAU-PERP`       | `XAU-PERP.AX`         |
-| Dated gold   | `XAU-2026-SEP`   | `XAU-2026-SEP.AX`     |
+| Contract     | AX Symbol      | Nautilus InstrumentId |
+| ------------ | -------------- | --------------------- |
+| EUR/USD perp | `EURUSD-PERP`  | `EURUSD-PERP.AX`      |
+| Gold perp    | `XAU-PERP`     | `XAU-PERP.AX`         |
+| Dated gold   | `XAU-2026-SEP` | `XAU-2026-SEP.AX`     |
 
 The venue identifier is `AX`. To construct a Nautilus `InstrumentId`:
 
@@ -168,16 +168,16 @@ for historical data backfill.
 
 ### Data types
 
-| AX Data           | Nautilus Data Type   | Notes                                                              |
-| ----------------- | -------------------- | ------------------------------------------------------------------ |
-| Order book (L1)   | `QuoteTick`          | Best bid/ask top‑of‑book from L1 book subscription.                |
-| Order book (L2)   | `OrderBookDelta`     | Aggregated price levels.                                           |
-| Order book (L3)   | `OrderBookDelta`     | Per‑snapshot order quantities with synthetic IDs.                  |
-| Trades            | `TradeTick`          | Real‑time trade events from trade‑only WebSocket subscription.     |
-| Mark price        | `MarkPriceUpdate`    | Extracted from L1 ticker subscription.                             |
-| Bars/candles      | `Bar`                | OHLCV data (total volume only, no buy/sell breakdown).             |
-| Funding rates     | `FundingRateUpdate`  | Polled via HTTP; interval configurable.                            |
-| Instrument status | `InstrumentStatus`   | State changes (open, halted, closed) from L1 ticker subscription.  |
+| AX Data           | Nautilus Data Type  | Notes                                                             |
+| ----------------- | ------------------- | ----------------------------------------------------------------- |
+| Order book (L1)   | `QuoteTick`         | Best bid/ask top‑of‑book from L1 book subscription.               |
+| Order book (L2)   | `OrderBookDelta`    | Aggregated price levels.                                          |
+| Order book (L3)   | `OrderBookDelta`    | Per‑snapshot order quantities with synthetic IDs.                 |
+| Trades            | `TradeTick`         | Real‑time trade events from trade‑only WebSocket subscription.    |
+| Mark price        | `MarkPriceUpdate`   | Extracted from L1 ticker subscription.                            |
+| Bars/candles      | `Bar`               | OHLCV data (total volume only, no buy/sell breakdown).            |
+| Funding rates     | `FundingRateUpdate` | Polled via HTTP; interval configurable.                           |
+| Instrument status | `InstrumentStatus`  | State changes (open, halted, closed) from L1 ticker subscription. |
 
 :::note
 Historical quote tick requests are not supported by AX Exchange. Only real-time quote
@@ -255,15 +255,15 @@ configured trigger, then sends a plain limit order to this adapter.
 
 ### Nautilus order types
 
-| Order Type             | Supported | Notes                                             |
-| ---------------------- | --------- | ------------------------------------------------- |
-| `MARKET`               | ✓         | Adapter‑simulated with an aggressive IOC price.   |
-| `LIMIT`                | ✓         | Maps to the native AX priced order shape.         |
-| `STOP_LIMIT`           | -         | *Not supported by AX Exchange*.                   |
-| `LIMIT_IF_TOUCHED`     | -         | *Not supported by AX Exchange*.                   |
-| `STOP_MARKET`          | -         | *Not supported by AX Exchange*.                   |
-| `MARKET_IF_TOUCHED`    | -         | *Not supported by AX Exchange*.                   |
-| `TRAILING_STOP_MARKET` | -         | *Not supported by AX Exchange*.                   |
+| Order Type             | Supported | Notes                                           |
+| ---------------------- | --------- | ----------------------------------------------- |
+| `MARKET`               | ✓         | Adapter‑simulated with an aggressive IOC price. |
+| `LIMIT`                | ✓         | Maps to the native AX priced order shape.       |
+| `STOP_LIMIT`           | -         | *Not supported by AX Exchange*.                 |
+| `LIMIT_IF_TOUCHED`     | -         | *Not supported by AX Exchange*.                 |
+| `STOP_MARKET`          | -         | *Not supported by AX Exchange*.                 |
+| `MARKET_IF_TOUCHED`    | -         | *Not supported by AX Exchange*.                 |
+| `TRAILING_STOP_MARKET` | -         | *Not supported by AX Exchange*.                 |
 
 ### Execution instructions
 
@@ -299,21 +299,21 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 
 ### Advanced order features
 
-| Feature            | Supported | Notes                                                               |
-| ------------------ | --------- | ------------------------------------------------------------------- |
-| Order modification | ✓         | Rust client only; the Python client rejects modification requests.  |
-| Cancel order       | ✓         | Single order cancellation.                                          |
-| Cancel all orders  | ✓         | Cancel all open orders for an instrument.                           |
-| Batch cancel       | -         | The adapter sends individual cancels.                               |
-| Order lists        | ✓         | Sequential submission (orders submitted individually, non‑atomic).  |
+| Feature            | Supported | Notes                                                              |
+| ------------------ | --------- | ------------------------------------------------------------------ |
+| Order modification | ✓         | Rust client only; the Python client rejects modification requests. |
+| Cancel order       | ✓         | Single order cancellation.                                         |
+| Cancel all orders  | ✓         | Cancel all open orders for an instrument.                          |
+| Batch cancel       | -         | The adapter sends individual cancels.                              |
+| Order lists        | ✓         | Sequential submission (orders submitted individually, non‑atomic). |
 
 ### Position management
 
-| Feature          | Supported | Notes                                |
-| ---------------- | --------- | ------------------------------------ |
-| Query positions  | ✓         | Real‑time position updates.          |
-| Position mode    | -         | Netting mode only.                   |
-| Cross margin     | ✓         | Cross‑margin across all instruments. |
+| Feature         | Supported | Notes                                |
+| --------------- | --------- | ------------------------------------ |
+| Query positions | ✓         | Real‑time position updates.          |
+| Position mode   | -         | Netting mode only.                   |
+| Cross margin    | ✓         | Cross‑margin across all instruments. |
 
 ### Order querying
 

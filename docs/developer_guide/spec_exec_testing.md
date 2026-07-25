@@ -134,14 +134,14 @@ Test IDs use spaced numbering to allow insertion without renumbering.
 
 Test market order submission and fills. Market orders should execute immediately.
 
-| TC     | Name                          | Description                                         | Skip when           |
-| ------ | ----------------------------- | --------------------------------------------------- | ------------------- |
-| TC-E01 | Market BUY - submit and fill  | Open long position via market buy.                  | No market orders.   |
-| TC-E02 | Market SELL - submit and fill | Open short position via market sell.                | No market orders.   |
-| TC-E03 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.             |
-| TC-E04 | Market order with FOK TIF     | Market order explicitly using FOK time in force.    | No FOK.             |
-| TC-E05 | Market order with quote qty   | Market order using quote currency quantity.         | No quote quantity.  |
-| TC-E06 | Close position via market     | Close an open position with a market order on stop. | No market orders.   |
+| TC     | Name                          | Description                                         | Skip when          |
+| ------ | ----------------------------- | --------------------------------------------------- | ------------------ |
+| TC-E01 | Market BUY - submit and fill  | Open long position via market buy.                  | No market orders.  |
+| TC-E02 | Market SELL - submit and fill | Open short position via market sell.                | No market orders.  |
+| TC-E03 | Market order with IOC TIF     | Market order explicitly using IOC time in force.    | No IOC.            |
+| TC-E04 | Market order with FOK TIF     | Market order explicitly using FOK time in force.    | No FOK.            |
+| TC-E05 | Market order with quote qty   | Market order using quote currency quantity.         | No quote quantity. |
+| TC-E06 | Close position via market     | Close an open position with a market order on stop. | No market orders.  |
 
 ### TC-E01: Market BUY - submit and fill
 
@@ -409,18 +409,18 @@ ExecTesterConfig::builder()
 
 Test limit order submission, acceptance, and behavior across time-in-force options.
 
-| TC     | Name                       | Description                                      | Skip when          |
-| ------ | -------------------------- | ------------------------------------------------ | ------------------ |
-| TC-E10 | Limit BUY GTC              | Place GTC limit buy below TOB, verify accepted.  | Never.             |
-| TC-E11 | Limit SELL GTC             | Place GTC limit sell above TOB, verify accepted. | Never.             |
-| TC-E12 | Limit BUY and SELL pair    | Both sides simultaneously, verify both accepted. | Never.             |
-| TC-E13 | Limit IOC aggressive fill  | Limit IOC at aggressive price, expect fill.      | No IOC.            |
-| TC-E14 | Limit IOC passive no fill  | Limit IOC away from market, expect cancel.       | No IOC.            |
-| TC-E15 | Limit FOK fill             | Limit FOK at aggressive price, expect fill.      | No FOK.            |
-| TC-E16 | Limit FOK no fill          | Limit FOK away from market, expect cancel.       | No FOK.            |
-| TC-E17 | Limit GTD                  | Limit with expiry time, verify accepted.         | No GTD.            |
-| TC-E18 | Limit GTD expiry           | Verify documented terminal event at expiry.      | No GTD.            |
-| TC-E19 | Limit DAY                  | Limit with DAY TIF, verify accepted.             | No DAY.            |
+| TC     | Name                      | Description                                      | Skip when |
+| ------ | ------------------------- | ------------------------------------------------ | --------- |
+| TC-E10 | Limit BUY GTC             | Place GTC limit buy below TOB, verify accepted.  | Never.    |
+| TC-E11 | Limit SELL GTC            | Place GTC limit sell above TOB, verify accepted. | Never.    |
+| TC-E12 | Limit BUY and SELL pair   | Both sides simultaneously, verify both accepted. | Never.    |
+| TC-E13 | Limit IOC aggressive fill | Limit IOC at aggressive price, expect fill.      | No IOC.   |
+| TC-E14 | Limit IOC passive no fill | Limit IOC away from market, expect cancel.       | No IOC.   |
+| TC-E15 | Limit FOK fill            | Limit FOK at aggressive price, expect fill.      | No FOK.   |
+| TC-E16 | Limit FOK no fill         | Limit FOK away from market, expect cancel.       | No FOK.   |
+| TC-E17 | Limit GTD                 | Limit with expiry time, verify accepted.         | No GTD.   |
+| TC-E18 | Limit GTD expiry          | Verify documented terminal event at expiry.      | No GTD.   |
+| TC-E19 | Limit DAY                 | Limit with DAY TIF, verify accepted.             | No DAY.   |
 
 ### TC-E10: Limit BUY GTC - submit and accept
 
@@ -671,16 +671,16 @@ Test stop and conditional order types. These orders rest on the venue until a tr
 Adapters that support venue-native conditional orders should also verify that open trigger
 orders appear in restart reconciliation, not only in the normal open-order endpoint.
 
-| TC     | Name                   | Description                                           | Skip when           |
-| ------ | ---------------------- | ----------------------------------------------------- | ------------------- |
-| TC-E20 | StopMarket BUY         | Stop buy above ask, verify accepted.                  | No `STOP_MARKET`.   |
-| TC-E21 | StopMarket SELL        | Stop sell below bid, verify accepted.                 | No `STOP_MARKET`.   |
-| TC-E22 | StopLimit BUY          | Stop‑limit buy with trigger + limit price.            | No `STOP_LIMIT`.    |
-| TC-E23 | StopLimit SELL         | Stop‑limit sell with trigger + limit price.           | No `STOP_LIMIT`.    |
-| TC-E24 | MarketIfTouched BUY    | MIT buy below bid.                                    | No `MIT`.           |
-| TC-E25 | MarketIfTouched SELL   | MIT sell above ask.                                   | No `MIT`.           |
-| TC-E26 | LimitIfTouched BUY     | LIT buy with trigger + limit price.                   | No `LIT`.           |
-| TC-E27 | LimitIfTouched SELL    | LIT sell with trigger + limit price.                  | No `LIT`.           |
+| TC     | Name                 | Description                                 | Skip when         |
+| ------ | -------------------- | ------------------------------------------- | ----------------- |
+| TC-E20 | StopMarket BUY       | Stop buy above ask, verify accepted.        | No `STOP_MARKET`. |
+| TC-E21 | StopMarket SELL      | Stop sell below bid, verify accepted.       | No `STOP_MARKET`. |
+| TC-E22 | StopLimit BUY        | Stop‑limit buy with trigger + limit price.  | No `STOP_LIMIT`.  |
+| TC-E23 | StopLimit SELL       | Stop‑limit sell with trigger + limit price. | No `STOP_LIMIT`.  |
+| TC-E24 | MarketIfTouched BUY  | MIT buy below bid.                          | No `MIT`.         |
+| TC-E25 | MarketIfTouched SELL | MIT sell above ask.                         | No `MIT`.         |
+| TC-E26 | LimitIfTouched BUY   | LIT buy with trigger + limit price.         | No `LIT`.         |
+| TC-E27 | LimitIfTouched SELL  | LIT sell with trigger + limit price.        | No `LIT`.         |
 
 ### TC-E20: StopMarket BUY
 
@@ -1446,23 +1446,23 @@ ExecTesterConfig::builder()
 
 ### TC-E51: Bracket SELL
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                  |
-| **Action**         | ExecTester submits bracket: limit sell entry + TP buy + SL buy.        |
-| **Event sequence** | Same pattern as TC-E50 but for sell side.                              |
-| **Pass criteria**  | Three orders created and accepted on sell side.                        |
-| **Skip when**      | Adapter does not support bracket orders.                               |
+| Field              | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.           |
+| **Action**         | ExecTester submits bracket: limit sell entry + TP buy + SL buy. |
+| **Event sequence** | Same pattern as TC-E50 but for sell side.                       |
+| **Pass criteria**  | Three orders created and accepted on sell side.                 |
+| **Skip when**      | Adapter does not support bracket orders.                        |
 
 ### TC-E52: Bracket entry fill activates TP/SL
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                     |
-| **Action**         | Entry order fills; verify contingent TP and SL orders activate.        |
-| **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active.  |
-| **Pass criteria**  | After entry fill, TP and SL orders are live on the venue.              |
-| **Skip when**      | Adapter does not support bracket orders.                               |
+| Field              | Value                                                                 |
+| ------------------ | --------------------------------------------------------------------- |
+| **Prerequisite**   | Bracket order from TC-E50 where entry order fills.                    |
+| **Action**         | Entry order fills; verify contingent TP and SL orders activate.       |
+| **Event sequence** | Entry: `OrderFilled`; TP and SL transition from contingent to active. |
+| **Pass criteria**  | After entry fill, TP and SL orders are live on the venue.             |
+| **Skip when**      | Adapter does not support bracket orders.                              |
 
 **Considerations:**
 
@@ -1634,17 +1634,17 @@ ExecTesterConfig::builder()
 
 Test that the adapter correctly handles and reports order rejections.
 
-| TC     | Name                    | Description                                      | Skip when        |
-| ------ | ----------------------- | ------------------------------------------------ | ---------------- |
-| TC-E70 | PostOnly rejection      | Post‑only order that would cross the spread.     | No post‑only.    |
-| TC-E71 | ReduceOnly rejection    | Reduce‑only order with no position to reduce.    | No reduce‑only.  |
-| TC-E72 | Unsupported order type  | Submit order type not supported by adapter.      | Never.           |
-| TC-E73 | Unsupported TIF         | Submit order with unsupported time in force.     | Never.           |
-| TC-E74 | Ambiguous submit fail   | Transport, timeout, or send failure on submit.   | No mock path.    |
-| TC-E75 | Ambiguous cancel fail   | Transport, timeout, or send failure on cancel.   | No cancel.       |
-| TC-E76 | Ambiguous modify fail   | Transport, timeout, or send failure on modify.   | No modify.       |
-| TC-E77 | Ambiguous batch fail    | Whole‑batch failure without per‑order result.    | No batch.        |
-| TC-E78 | Per‑order batch reject  | Batch response has explicit per‑order rejection. | No batch.        |
+| TC     | Name                   | Description                                      | Skip when       |
+| ------ | ---------------------- | ------------------------------------------------ | --------------- |
+| TC-E70 | PostOnly rejection     | Post‑only order that would cross the spread.     | No post‑only.   |
+| TC-E71 | ReduceOnly rejection   | Reduce‑only order with no position to reduce.    | No reduce‑only. |
+| TC-E72 | Unsupported order type | Submit order type not supported by adapter.      | Never.          |
+| TC-E73 | Unsupported TIF        | Submit order with unsupported time in force.     | Never.          |
+| TC-E74 | Ambiguous submit fail  | Transport, timeout, or send failure on submit.   | No mock path.   |
+| TC-E75 | Ambiguous cancel fail  | Transport, timeout, or send failure on cancel.   | No cancel.      |
+| TC-E76 | Ambiguous modify fail  | Transport, timeout, or send failure on modify.   | No modify.      |
+| TC-E77 | Ambiguous batch fail   | Whole‑batch failure without per‑order result.    | No batch.       |
+| TC-E78 | Per‑order batch reject | Batch response has explicit per‑order rejection. | No batch.       |
 
 TC-E74 through TC-E78 are specified collectively below because they usually require a mock HTTP or
 WebSocket boundary rather than a live venue.
@@ -1773,13 +1773,13 @@ ExecTesterConfig::builder()
 
 ### TC-E72: Unsupported order type
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, order type not in adapter's supported set.          |
-| **Action**         | Submit an order type the adapter does not support.                     |
-| **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                   |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**      | Never (every adapter has unsupported order types to test).             |
+| Field              | Value                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, order type not in adapter's supported set.        |
+| **Action**         | Submit an order type the adapter does not support.                   |
+| **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                 |
+| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason. |
+| **Skip when**      | Never (every adapter has unsupported order types to test).           |
 
 **Considerations:**
 
@@ -1789,13 +1789,13 @@ ExecTesterConfig::builder()
 
 ### TC-E73: Unsupported TIF
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.                 |
-| **Action**         | Submit an order with a TIF the adapter does not support.               |
-| **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                   |
-| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason.   |
-| **Skip when**      | Never (every adapter has unsupported TIF options to test).             |
+| Field              | Value                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, TIF not in adapter's supported set.               |
+| **Action**         | Submit an order with a TIF the adapter does not support.             |
+| **Event sequence** | `OrderDenied` (pre‑submission rejection by adapter).                 |
+| **Pass criteria**  | Order denied before reaching venue; `OrderDenied` event with reason. |
+| **Skip when**      | Never (every adapter has unsupported TIF options to test).           |
 
 **Considerations:**
 
@@ -1876,13 +1876,13 @@ ExecTesterConfig::builder()
 
 ### TC-E83: Unsubscribe on stop
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
-| **Action**         | Stop the strategy with `can_unsubscribe=True` (default).               |
-| **Event sequence** | Data subscriptions removed.                                            |
-| **Pass criteria**  | No further data events received after stop; clean disconnection.       |
-| **Skip when**      | Adapter does not support unsubscribe.                                  |
+| Field              | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                |
+| **Action**         | Stop the strategy with `can_unsubscribe=True` (default).         |
+| **Event sequence** | Data subscriptions removed.                                      |
+| **Pass criteria**  | No further data events received after stop; clean disconnection. |
+| **Skip when**      | Adapter does not support unsubscribe.                            |
 
 **Python config:**
 
@@ -2157,52 +2157,52 @@ ExecTesterConfig(
 Quick reference for all `ExecTesterConfig` parameters. Defaults shown are for the Python config;
 the Rust builder uses equivalent defaults.
 
-| Parameter                                       | Type              | Default         | Affects groups |
-| ----------------------------------------------- | ----------------- | --------------- | -------------- |
-| `instrument_id`                                 | InstrumentId      | *required*      | All            |
-| `order_qty`                                     | Decimal           | *required*      | All            |
-| `order_display_qty`                             | Decimal?          | None            | 2, 7           |
-| `order_expire_time_delta_mins`                  | PositiveInt?      | None            | 2              |
-| `order_params`                                  | dict?             | None            | 7, 10          |
-| `client_id`                                     | ClientId?         | None            | All            |
-| `subscribe_quotes`                              | bool              | True            |                |
-| `subscribe_trades`                              | bool              | True            |                |
-| `subscribe_book`                                | bool              | False           |                |
-| `book_type`                                     | BookType          | L2_MBP          |                |
-| `book_depth`                                    | PositiveInt?      | None            |                |
-| `book_interval_ms`                              | PositiveInt       | 1000            |                |
-| `book_levels_to_print`                          | PositiveInt       | 10              |                |
-| `open_position_on_start_qty`                    | Decimal?          | None            | 1, 9           |
-| `open_position_time_in_force`                   | TimeInForce       | GTC             | 1              |
-| `enable_limit_buys`                             | bool              | True            | 2, 4, 5, 6     |
-| `enable_limit_sells`                            | bool              | True            | 2, 4, 5, 6     |
-| `enable_stop_buys`                              | bool              | False           | 3, 4           |
-| `enable_stop_sells`                             | bool              | False           | 3, 4           |
-| `limit_time_in_force`                           | TimeInForce?      | None            | 2, 6           |
-| `tob_offset_ticks`                              | PositiveInt       | 500             | 2, 4           |
-| `stop_order_type`                               | OrderType         | STOP_MARKET     | 3              |
-| `stop_offset_ticks`                             | PositiveInt       | 100             | 3              |
-| `stop_limit_offset_ticks`                       | PositiveInt?      | None            | 3              |
-| `stop_time_in_force`                            | TimeInForce?      | None            | 3              |
-| `stop_trigger_type`                             | TriggerType?      | None            | 3              |
-| `enable_brackets`                               | bool              | False           | 6              |
-| `bracket_entry_order_type`                      | OrderType         | LIMIT           | 6              |
-| `bracket_offset_ticks`                          | PositiveInt       | 500             | 6              |
-| `modify_orders_to_maintain_tob_offset`          | bool              | False           | 4              |
-| `modify_stop_orders_to_maintain_offset`         | bool              | False           | 4              |
-| `cancel_replace_orders_to_maintain_tob_offset`  | bool              | False           | 4              |
-| `cancel_replace_stop_orders_to_maintain_offset` | bool              | False           | 4              |
-| `use_post_only`                                 | bool              | False           | 2, 6, 7, 8     |
-| `use_quote_quantity`                            | bool              | False           | 1, 7           |
-| `emulation_trigger`                             | TriggerType?      | None            | 2, 3           |
-| `cancel_orders_on_stop`                         | bool              | True            | 5, 9           |
-| `close_positions_on_stop`                       | bool              | True            | 9              |
-| `close_positions_time_in_force`                 | TimeInForce?      | None            | 9              |
-| `reduce_only_on_stop`                           | bool              | True            | 7, 9           |
-| `use_individual_cancels_on_stop`                | bool              | False           | 5              |
-| `use_batch_cancel_on_stop`                      | bool              | False           | 5              |
-| `dry_run`                                       | bool              | False           |                |
-| `log_data`                                      | bool              | True            |                |
-| `test_reject_post_only`                         | bool              | False           | 8              |
-| `test_reject_reduce_only`                       | bool              | False           | 8              |
-| `can_unsubscribe`                               | bool              | True            | 9              |
+| Parameter                                       | Type         | Default     | Affects groups |
+| ----------------------------------------------- | ------------ | ----------- | -------------- |
+| `instrument_id`                                 | InstrumentId | *required*  | All            |
+| `order_qty`                                     | Decimal      | *required*  | All            |
+| `order_display_qty`                             | Decimal?     | None        | 2, 7           |
+| `order_expire_time_delta_mins`                  | PositiveInt? | None        | 2              |
+| `order_params`                                  | dict?        | None        | 7, 10          |
+| `client_id`                                     | ClientId?    | None        | All            |
+| `subscribe_quotes`                              | bool         | True        |                |
+| `subscribe_trades`                              | bool         | True        |                |
+| `subscribe_book`                                | bool         | False       |                |
+| `book_type`                                     | BookType     | L2_MBP      |                |
+| `book_depth`                                    | PositiveInt? | None        |                |
+| `book_interval_ms`                              | PositiveInt  | 1000        |                |
+| `book_levels_to_print`                          | PositiveInt  | 10          |                |
+| `open_position_on_start_qty`                    | Decimal?     | None        | 1, 9           |
+| `open_position_time_in_force`                   | TimeInForce  | GTC         | 1              |
+| `enable_limit_buys`                             | bool         | True        | 2, 4, 5, 6     |
+| `enable_limit_sells`                            | bool         | True        | 2, 4, 5, 6     |
+| `enable_stop_buys`                              | bool         | False       | 3, 4           |
+| `enable_stop_sells`                             | bool         | False       | 3, 4           |
+| `limit_time_in_force`                           | TimeInForce? | None        | 2, 6           |
+| `tob_offset_ticks`                              | PositiveInt  | 500         | 2, 4           |
+| `stop_order_type`                               | OrderType    | STOP_MARKET | 3              |
+| `stop_offset_ticks`                             | PositiveInt  | 100         | 3              |
+| `stop_limit_offset_ticks`                       | PositiveInt? | None        | 3              |
+| `stop_time_in_force`                            | TimeInForce? | None        | 3              |
+| `stop_trigger_type`                             | TriggerType? | None        | 3              |
+| `enable_brackets`                               | bool         | False       | 6              |
+| `bracket_entry_order_type`                      | OrderType    | LIMIT       | 6              |
+| `bracket_offset_ticks`                          | PositiveInt  | 500         | 6              |
+| `modify_orders_to_maintain_tob_offset`          | bool         | False       | 4              |
+| `modify_stop_orders_to_maintain_offset`         | bool         | False       | 4              |
+| `cancel_replace_orders_to_maintain_tob_offset`  | bool         | False       | 4              |
+| `cancel_replace_stop_orders_to_maintain_offset` | bool         | False       | 4              |
+| `use_post_only`                                 | bool         | False       | 2, 6, 7, 8     |
+| `use_quote_quantity`                            | bool         | False       | 1, 7           |
+| `emulation_trigger`                             | TriggerType? | None        | 2, 3           |
+| `cancel_orders_on_stop`                         | bool         | True        | 5, 9           |
+| `close_positions_on_stop`                       | bool         | True        | 9              |
+| `close_positions_time_in_force`                 | TimeInForce? | None        | 9              |
+| `reduce_only_on_stop`                           | bool         | True        | 7, 9           |
+| `use_individual_cancels_on_stop`                | bool         | False       | 5              |
+| `use_batch_cancel_on_stop`                      | bool         | False       | 5              |
+| `dry_run`                                       | bool         | False       |                |
+| `log_data`                                      | bool         | True        |                |
+| `test_reject_post_only`                         | bool         | False       | 8              |
+| `test_reject_reduce_only`                       | bool         | False       | 8              |
+| `can_unsubscribe`                               | bool         | True        | 9              |

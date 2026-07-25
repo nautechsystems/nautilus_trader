@@ -53,11 +53,11 @@ integration guide.
 
 Kraken supports two primary product categories:
 
-| Product Type             | Supported | Notes                                                     |
-| ------------------------ | --------- | --------------------------------------------------------- |
-| Spot                     | ✓         | Standard cryptocurrency pairs with margin support.        |
-| Futures (Perpetual)      | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
-| Futures (Dated/Flex)     | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
+| Product Type         | Supported | Notes                                                     |
+| -------------------- | --------- | --------------------------------------------------------- |
+| Spot                 | ✓         | Standard cryptocurrency pairs with margin support.        |
+| Futures (Perpetual)  | ✓         | Inverse (`PI_`) and USD-margined (`PF_`) perpetual swaps. |
+| Futures (Dated/Flex) | ✓         | Fixed maturity (`FI_`) and flex (`FF_`) contracts.        |
 
 :::note
 **Single product type per client**: Each Kraken data or execution client is
@@ -265,16 +265,16 @@ more events per instrument than L2. Recommended settings:
 
 ### Order types
 
-| Order type             | Spot | Futures | Notes                                         |
-| ---------------------- | ---- | ------- | --------------------------------------------- |
-| `MARKET`               | ✓    | ✓       | Immediate execution at market price.          |
-| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.       |
-| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).         |
-| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take‑profit).       |
-| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop‑loss‑limit).    |
-| `LIMIT_IF_TOUCHED`     | ✓    | ✓       | Maps to `take_profit` with `limit_price`.     |
-| `TRAILING_STOP_MARKET` | ✓    | -       | Trailing stop with `trailing_offset`.         |
-| `TRAILING_STOP_LIMIT`  | ✓    | -       | Trailing stop‑limit with `limit_offset`.      |
+| Order type             | Spot | Futures | Notes                                      |
+| ---------------------- | ---- | ------- | ------------------------------------------ |
+| `MARKET`               | ✓    | ✓       | Immediate execution at market price.       |
+| `LIMIT`                | ✓    | ✓       | Execution at specified price or better.    |
+| `STOP_MARKET`          | ✓    | ✓       | Conditional market order (stop‑loss).      |
+| `MARKET_IF_TOUCHED`    | ✓    | ✓       | Conditional market order (take‑profit).    |
+| `STOP_LIMIT`           | ✓    | ✓       | Conditional limit order (stop‑loss‑limit). |
+| `LIMIT_IF_TOUCHED`     | ✓    | ✓       | Maps to `take_profit` with `limit_price`.  |
+| `TRAILING_STOP_MARKET` | ✓    | -       | Trailing stop with `trailing_offset`.      |
+| `TRAILING_STOP_LIMIT`  | ✓    | -       | Trailing stop‑limit with `limit_offset`.   |
 
 ### Time in force
 
@@ -292,23 +292,23 @@ more events per instrument than L2. Recommended settings:
 
 ### Execution instructions
 
-| Instruction      | Spot | Futures | Notes                                                                |
-| ---------------- | ---- | ------- | -------------------------------------------------------------------- |
-| `post_only`      | ✓    | ✓       | Available for limit orders.                                          |
-| `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only).       |
-| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`).                        |
-| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                            |
+| Instruction      | Spot | Futures | Notes                                                          |
+| ---------------- | ---- | ------- | -------------------------------------------------------------- |
+| `post_only`      | ✓    | ✓       | Available for limit orders.                                    |
+| `reduce_only`    | ✓    | ✓       | Spot requires `spot_account_type=Margin` (margin orders only). |
+| `quote_quantity` | ✓    | -       | Spot only. Volume in quote currency (`viqc`).                  |
+| `display_qty`    | ✓    | -       | Spot only. Iceberg orders (`displayvol`).                      |
 
 ### Trigger types
 
 Conditional orders (stop, take-profit, trailing stop) support a trigger price
 reference on Spot:
 
-| Trigger Type  | Spot | Futures | Notes                                      |
-| ------------- | ---- | ------- | ------------------------------------------ |
-| `LAST_PRICE`  | ✓    | ✓       | Default. Last traded price.                |
-| `INDEX_PRICE` | ✓    | ✓       | Broader market index price.                |
-| `MARK_PRICE`  | -    | ✓       | Futures only.                              |
+| Trigger Type  | Spot | Futures | Notes                       |
+| ------------- | ---- | ------- | --------------------------- |
+| `LAST_PRICE`  | ✓    | ✓       | Default. Last traded price. |
+| `INDEX_PRICE` | ✓    | ✓       | Broader market index price. |
+| `MARK_PRICE`  | -    | ✓       | Futures only.               |
 
 :::note
 The adapter rejects unsupported trigger types (e.g., `BID_ASK`) at submission
@@ -317,11 +317,11 @@ time rather than silently coercing them.
 
 ### Batch operations
 
-| Operation    | Spot | Futures | Notes                                                   |
-| ------------ | ---- | ------- | ------------------------------------------------------- |
-| Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.         |
-| Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command.  |
-| Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                         |
+| Operation    | Spot | Futures | Notes                                                  |
+| ------------ | ---- | ------- | ------------------------------------------------------ |
+| Batch Submit | ✓    | ✓       | Spot chunks at 15 orders. Futures chunks at 10.        |
+| Batch Modify | -    | ✓       | Futures HTTP helper only. Execution sends one command. |
+| Batch Cancel | ✓    | ✓       | Auto‑chunks into batches of 50.                        |
 
 :::note
 **Cancel all orders**:
@@ -334,12 +334,12 @@ time rather than silently coercing them.
 
 ### Position management
 
-| Feature          | Spot | Futures | Notes                                                   |
-| ---------------- | ---- | ------- | ------------------------------------------------------- |
-| Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.      |
-| Position mode    | -    | -       | Single position per instrument.                         |
-| Leverage control | ✓    | ✓       | Spot tiers; per‑order `params={"leverage": N}`.         |
-| Margin mode      | ✓    | ✓       | Spot/Futures cross margin; no isolated spot margin.     |
+| Feature          | Spot | Futures | Notes                                               |
+| ---------------- | ---- | ------- | --------------------------------------------------- |
+| Query positions  | ✓    | ✓       | Spot margin via `OpenPositions`; spot cash opt‑in.  |
+| Position mode    | -    | -       | Single position per instrument.                     |
+| Leverage control | ✓    | ✓       | Spot tiers; per‑order `params={"leverage": N}`.     |
+| Margin mode      | ✓    | ✓       | Spot/Futures cross margin; no isolated spot margin. |
 
 ### Order querying
 
@@ -352,12 +352,12 @@ time rather than silently coercing them.
 
 ### Contingent orders
 
-| Feature             | Spot | Futures | Notes                                    |
-| ------------------- | ---- | ------- | ---------------------------------------- |
-| Order lists         | -    | -       | *Not supported*.                         |
-| OCO orders          | -    | -       | *Not supported*.                         |
-| Bracket orders      | -    | -       | *Not supported*.                         |
-| Conditional orders  | ✓    | ✓       | Stop and take‑profit orders.             |
+| Feature            | Spot | Futures | Notes                        |
+| ------------------ | ---- | ------- | ---------------------------- |
+| Order lists        | -    | -       | *Not supported*.             |
+| OCO orders         | -    | -       | *Not supported*.             |
+| Bracket orders     | -    | -       | *Not supported*.             |
+| Conditional orders | ✓    | ✓       | Stop and take‑profit orders. |
 
 ## Order routing (Spot)
 
@@ -375,19 +375,19 @@ the WS API supports but this adapter does not yet encode.
 
 **Kraken WS v2 limitation:**
 
-| Shape                     | Reason                                                       |
-| ------------------------- | ------------------------------------------------------------ |
-| Unsupported trigger types | `triggers.reference` accepts only `last` and `index`.        |
-| Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.                 |
+| Shape                     | Reason                                                |
+| ------------------------- | ----------------------------------------------------- |
+| Unsupported trigger types | `triggers.reference` accepts only `last` and `index`. |
+| Mixed‑symbol order lists  | `batch_add` requires a single shared symbol.          |
 
 **Not yet encoded by this adapter (follow-up work, currently REST):**
 
-| Shape                       | Notes                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------ |
-| `FOK` time in force         | Encodable as the `FOK` time in force, but the builder routes REST.                   |
-| Trailing stop / stop‑limit  | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
-| Iceberg (`display_qty`)     | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
-| Quote‑quantity orders       | Buy market quote‑qty maps to `cash_order_qty`; routed REST today.                    |
+| Shape                      | Notes                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| `FOK` time in force        | Encodable as the `FOK` time in force, but the builder routes REST.                   |
+| Trailing stop / stop‑limit | Encodable via `triggers.price` + `triggers.price_type`, but the builder routes REST. |
+| Iceberg (`display_qty`)    | Encodable as `order_type: "iceberg"` + `display_qty`, but the builder routes REST.   |
+| Quote‑quantity orders      | Buy market quote‑qty maps to `cash_order_qty`; routed REST today.                    |
 
 The per-call `params={"use_ws_trade": False}` override forces a single
 command through REST regardless of the configured default. Set it on
@@ -618,10 +618,10 @@ specify a fixed funding period.
 
 The adapter implements automatic rate limiting to comply with Kraken's API requirements.
 
-| Endpoint Type         | Limit (requests/sec) | Notes                                |
-| --------------------- | -------------------- | ------------------------------------ |
-| Spot REST (global)    | 5                    | Global rate limit for Spot API.      |
-| Futures REST (global) | 5                    | Global rate limit for Futures API.   |
+| Endpoint Type         | Limit (requests/sec) | Notes                              |
+| --------------------- | -------------------- | ---------------------------------- |
+| Spot REST (global)    | 5                    | Global rate limit for Spot API.    |
+| Futures REST (global) | 5                    | Global rate limit for Futures API. |
 
 :::info
 Kraken uses a counter-based rate limiting system with tier-dependent limits:

@@ -14,11 +14,11 @@ configuration (starting balances, margin-model selection per venue), see
 When you attach a venue to the engine for either live trading or a backtest, you
 pick one of three accounting modes via `account_type`:
 
-| Account type | Typical use case                                 | What the engine locks                                                     |
-| ------------ | ------------------------------------------------ | ------------------------------------------------------------------------- |
-| Cash         | Spot trading (e.g., BTC/USDT, stocks)            | Notional value for every position a pending order would open.             |
-| Margin       | Derivatives or any product that allows leverage  | Initial margin for each order plus maintenance margin for open positions. |
-| Betting      | Sports betting, bookmaking                       | Stake required by the venue; no leverage.                                 |
+| Account type | Typical use case                                | What the engine locks                                                     |
+| ------------ | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| Cash         | Spot trading (e.g., BTC/USDT, stocks)           | Notional value for every position a pending order would open.             |
+| Margin       | Derivatives or any product that allows leverage | Initial margin for each order plus maintenance margin for open positions. |
+| Betting      | Sports betting, bookmaking                      | Stake required by the venue; no leverage.                                 |
 
 ### Cash accounts
 

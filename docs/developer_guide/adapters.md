@@ -111,17 +111,17 @@ one. Complete the Rust client and factory contracts before exposing them through
 
 Build the low-level networking and parsing foundation.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 1.1  | HTTP error types           | Define HTTP‑specific error enum with retryable/non‑retryable variants (`http/error.rs`).     |
-| 1.2  | HTTP client                | Implement credentials, request signing, rate limiting, and retry logic.                      |
-| 1.3  | HTTP API models            | Define request/response structs for REST endpoints (`http/models.rs`, `http/query.rs`).      |
-| 1.4  | HTTP parsing               | Convert venue responses to Nautilus domain models (`http/parse.rs`, `common/parse.rs`).      |
-| 1.5  | WebSocket error types      | Define WebSocket‑specific error enum (`websocket/error.rs`).                                 |
-| 1.6  | WebSocket client           | Implement connection lifecycle, authentication, heartbeat, and reconnection.                 |
-| 1.7  | WebSocket messages         | Define streaming payload types (`websocket/messages.rs`).                                    |
-| 1.8  | WebSocket parsing          | Convert stream messages to Nautilus domain models (`websocket/parse.rs`).                    |
-| 1.9  | Python bindings            | Expose required Rust types via PyO3 (`python/mod.rs`).                                       |
+| Step | Component             | Description                                                                              |
+| ---- | --------------------- | ---------------------------------------------------------------------------------------- |
+| 1.1  | HTTP error types      | Define HTTP‑specific error enum with retryable/non‑retryable variants (`http/error.rs`). |
+| 1.2  | HTTP client           | Implement credentials, request signing, rate limiting, and retry logic.                  |
+| 1.3  | HTTP API models       | Define request/response structs for REST endpoints (`http/models.rs`, `http/query.rs`).  |
+| 1.4  | HTTP parsing          | Convert venue responses to Nautilus domain models (`http/parse.rs`, `common/parse.rs`).  |
+| 1.5  | WebSocket error types | Define WebSocket‑specific error enum (`websocket/error.rs`).                             |
+| 1.6  | WebSocket client      | Implement connection lifecycle, authentication, heartbeat, and reconnection.             |
+| 1.7  | WebSocket messages    | Define streaming payload types (`websocket/messages.rs`).                                |
+| 1.8  | WebSocket parsing     | Convert stream messages to Nautilus domain models (`websocket/parse.rs`).                |
+| 1.9  | Python bindings       | Expose required Rust types via PyO3 (`python/mod.rs`).                                   |
 
 **Milestone**: Rust crate compiles, unit tests pass, HTTP/WebSocket clients can authenticate and stream/request raw data.
 
@@ -129,11 +129,11 @@ Build the low-level networking and parsing foundation.
 
 Instruments are the foundation: both data and execution clients depend on them.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 2.1  | Instrument parsing         | Parse venue instrument definitions into Nautilus types (spot, perpetual, future, option).    |
-| 2.2  | Instrument loading         | Load, filter, cache, and emit instruments through the Rust clients.                          |
-| 2.3  | Symbol mapping             | Handle venue‑specific symbol formats and Nautilus `InstrumentId` conversion.                 |
+| Step | Component          | Description                                                                               |
+| ---- | ------------------ | ----------------------------------------------------------------------------------------- |
+| 2.1  | Instrument parsing | Parse venue instrument definitions into Nautilus types (spot, perpetual, future, option). |
+| 2.2  | Instrument loading | Load, filter, cache, and emit instruments through the Rust clients.                       |
+| 2.3  | Symbol mapping     | Handle venue‑specific symbol formats and Nautilus `InstrumentId` conversion.              |
 
 **Milestone**: The data client loads valid instruments, caches them at each parsing boundary, and
 serves instrument requests through `DataClient`.
@@ -142,11 +142,11 @@ serves instrument requests through `DataClient`.
 
 Build data subscriptions and historical data requests.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 3.1  | Public WebSocket streams   | Subscribe to order books, trades, tickers, and other public channels.                        |
-| 3.2  | Historical data requests   | Fetch historical bars, trades, and order book snapshots via HTTP.                            |
-| 3.3  | Data client (Rust)         | Implement `DataClient`, emitting `DataEvent` values to the data engine.                      |
+| Step | Component                | Description                                                             |
+| ---- | ------------------------ | ----------------------------------------------------------------------- |
+| 3.1  | Public WebSocket streams | Subscribe to order books, trades, tickers, and other public channels.   |
+| 3.2  | Historical data requests | Fetch historical bars, trades, and order book snapshots via HTTP.       |
+| 3.3  | Data client (Rust)       | Implement `DataClient`, emitting `DataEvent` values to the data engine. |
 
 **Milestone**: Data client connects, subscribes to instruments, and emits market data to the platform.
 
@@ -154,13 +154,13 @@ Build data subscriptions and historical data requests.
 
 Build order management and account state.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 4.1  | Private WebSocket streams  | Subscribe to order updates, fills, positions, and account balance changes.                   |
-| 4.2  | Basic order submission     | Implement market and limit orders via HTTP or WebSocket.                                     |
-| 4.3  | Order modification/cancel  | Implement order amendment and cancellation.                                                  |
-| 4.4  | Execution client (Rust)    | Implement `ExecutionClient` using `ExecutionClientCore` and `ExecutionEventEmitter`.         |
-| 4.5  | Execution reconciliation   | Generate order, fill, and position status reports for startup reconciliation.                |
+| Step | Component                 | Description                                                                          |
+| ---- | ------------------------- | ------------------------------------------------------------------------------------ |
+| 4.1  | Private WebSocket streams | Subscribe to order updates, fills, positions, and account balance changes.           |
+| 4.2  | Basic order submission    | Implement market and limit orders via HTTP or WebSocket.                             |
+| 4.3  | Order modification/cancel | Implement order amendment and cancellation.                                          |
+| 4.4  | Execution client (Rust)   | Implement `ExecutionClient` using `ExecutionClientCore` and `ExecutionEventEmitter`. |
+| 4.5  | Execution reconciliation  | Generate order, fill, and position status reports for startup reconciliation.        |
 
 **Milestone**: Execution client submits orders, receives fills, and reconciles state on connect.
 
@@ -168,11 +168,11 @@ Build order management and account state.
 
 Extend coverage based on venue capabilities.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 5.1  | Advanced order types       | Conditional orders, stop‑loss, take‑profit, trailing stops, iceberg, etc.                    |
-| 5.2  | Batch operations           | Batch order submission, batch cancellation, mass cancel.                                     |
-| 5.3  | Venue‑specific features    | Options chains, funding rates, liquidations, or other venue‑specific data.                   |
+| Step | Component               | Description                                                                |
+| ---- | ----------------------- | -------------------------------------------------------------------------- |
+| 5.1  | Advanced order types    | Conditional orders, stop‑loss, take‑profit, trailing stops, iceberg, etc.  |
+| 5.2  | Batch operations        | Batch order submission, batch cancellation, mass cancel.                   |
+| 5.3  | Venue‑specific features | Options chains, funding rates, liquidations, or other venue‑specific data. |
 
 ### Phase 6: Configuration and factories
 
@@ -189,14 +189,14 @@ Wire everything together for production usage.
 
 Validate the integration and document usage.
 
-| Step | Component                  | Description                                                                                  |
-| ---- | -------------------------- | -------------------------------------------------------------------------------------------- |
-| 7.1  | Rust unit tests            | Test parsers, signing helpers, and business logic in `#[cfg(test)]` blocks.                  |
-| 7.2  | Rust integration tests     | Test HTTP/WebSocket clients against mock Axum servers in `tests/`.                           |
-| 7.3  | Python boundary tests      | Test v2 factory/config extraction under `python/tests/unit/adapters/<adapter>/`.             |
-| 7.4  | Acceptance tests           | Run every applicable `DataTester` and `ExecTester` spec case.                                |
-| 7.5  | Example scripts            | Add Rust node testers and Python v2 `LiveNode` tester scripts.                               |
-| 7.6  | Integration guide          | Document capabilities, configuration, venue behavior, and spec exceptions.                   |
+| Step | Component              | Description                                                                      |
+| ---- | ---------------------- | -------------------------------------------------------------------------------- |
+| 7.1  | Rust unit tests        | Test parsers, signing helpers, and business logic in `#[cfg(test)]` blocks.      |
+| 7.2  | Rust integration tests | Test HTTP/WebSocket clients against mock Axum servers in `tests/`.               |
+| 7.3  | Python boundary tests  | Test v2 factory/config extraction under `python/tests/unit/adapters/<adapter>/`. |
+| 7.4  | Acceptance tests       | Run every applicable `DataTester` and `ExecTester` spec case.                    |
+| 7.5  | Example scripts        | Add Rust node testers and Python v2 `LiveNode` tester scripts.                   |
+| 7.6  | Integration guide      | Document capabilities, configuration, venue behavior, and spec exceptions.       |
 
 See the [Testing](#testing) section for detailed test organization guidelines.
 
@@ -572,14 +572,14 @@ let data_sender = get_data_event_sender();
 
 The `DataEvent` enum carries all data types the client produces:
 
-| Variant                       | Usage                                                 |
-| ----------------------------- | ----------------------------------------------------- |
-| `DataEvent::Instrument`       | Instrument definitions during bootstrap and updates.  |
-| `DataEvent::InstrumentStatus` | Market status changes from polling or WS streams.     |
-| `DataEvent::Data`             | Market data (trades, quotes, book deltas, bars).      |
-| `DataEvent::Response`         | Responses to historical data requests.                |
-| `DataEvent::FundingRate`      | Funding rate updates for derivatives.                 |
-| `DataEvent::OptionGreeks`     | Venue‑provided option greeks.                         |
+| Variant                       | Usage                                                |
+| ----------------------------- | ---------------------------------------------------- |
+| `DataEvent::Instrument`       | Instrument definitions during bootstrap and updates. |
+| `DataEvent::InstrumentStatus` | Market status changes from polling or WS streams.    |
+| `DataEvent::Data`             | Market data (trades, quotes, book deltas, bars).     |
+| `DataEvent::Response`         | Responses to historical data requests.               |
+| `DataEvent::FundingRate`      | Funding rate updates for derivatives.                |
+| `DataEvent::OptionGreeks`     | Venue‑provided option greeks.                        |
 
 Send events with `self.data_sender.send(DataEvent::Instrument(instrument))`. Log warnings
 on send failure but do not propagate the error since a closed receiver means the system
@@ -1278,12 +1278,12 @@ replay restores it.
 
 Adapters use venue-specific delimiters to structure subscription topics:
 
-| Adapter      | Delimiter | Example                | Pattern                      |
-| ------------ | --------- | ---------------------- | ---------------------------- |
-| **BitMEX**   | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
-| **OKX**      | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
-| **Bybit**    | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
-| **Lighter**  | `:` / `/` | `order_book:0`         | `{channel}:{market_index}`   |
+| Adapter     | Delimiter | Example                | Pattern                      |
+| ----------- | --------- | ---------------------- | ---------------------------- |
+| **BitMEX**  | `:`       | `trade:XBTUSD`         | `{channel}:{symbol}`         |
+| **OKX**     | `:`       | `trades:BTC-USDT-SWAP` | `{channel}:{symbol}`         |
+| **Bybit**   | `.`       | `orderbook.50.BTCUSDT` | `{channel}.{depth}.{symbol}` |
+| **Lighter** | `:` / `/` | `order_book:0`         | `{channel}:{market_index}`   |
 
 Parse topics using `split_once()` with the appropriate delimiter to extract channel and symbol components.
 
@@ -1585,13 +1585,13 @@ pub struct WsDispatchState {
 }
 ```
 
-| Field               | Purpose                                                         |
-| ------------------- | --------------------------------------------------------------- |
-| `order_identities`  | Maps client order ID to identity metadata set at submission.    |
-| `emitted_accepted`  | Prevents duplicate `OrderAccepted` events.                      |
-| `triggered_orders`  | Tracks conditional orders that have triggered.                  |
-| `filled_orders`     | Prevents duplicate `OrderFilled` events on reconnect replay.    |
-| `clearing`          | Guards concurrent eviction when sets reach capacity.            |
+| Field              | Purpose                                                      |
+| ------------------ | ------------------------------------------------------------ |
+| `order_identities` | Maps client order ID to identity metadata set at submission. |
+| `emitted_accepted` | Prevents duplicate `OrderAccepted` events.                   |
+| `triggered_orders` | Tracks conditional orders that have triggered.               |
+| `filled_orders`    | Prevents duplicate `OrderFilled` events on reconnect replay. |
+| `clearing`         | Guards concurrent eviction when sets reach capacity.         |
 
 Each `DashSet` is bounded by a `DEDUP_CAPACITY` constant (typically 10,000). When a set
 reaches capacity, `evict_if_full()` clears it atomically using a compare-exchange on the
@@ -1940,10 +1940,10 @@ handler dispatches both market data and user data events from the combined conne
 
 Type names include the submodule qualifier to avoid ambiguity:
 
-| Submodule    | Command type                         | Message type                        |
-| ------------ | ------------------------------------ | ----------------------------------- |
-| `streams/`   | `{Venue}WsStreamsCommand`            | `{Venue}WsMessage` (venue types)    |
-| `trading/`   | `{Venue}WsTradingCommand`            | `{Venue}WsTradingMessage`           |
+| Submodule  | Command type              | Message type                     |
+| ---------- | ------------------------- | -------------------------------- |
+| `streams/` | `{Venue}WsStreamsCommand` | `{Venue}WsMessage` (venue types) |
+| `trading/` | `{Venue}WsTradingCommand` | `{Venue}WsTradingMessage`        |
 
 The `{Venue}Ws` prefix follows the standard type naming convention. The qualifier
 (`Streams`, `Trading`) distinguishes types that would otherwise collide across
@@ -2252,34 +2252,34 @@ Data (`tests/data_client.rs`) and execution (`tests/exec_client.rs`) client inte
 
 **Test infrastructure:**
 
-| Component                    | Purpose                                                                             |
-| ---------------------------- | ----------------------------------------------------------------------------------- |
-| Mock Axum server             | Serves HTTP endpoints (instruments, fee rates, positions) and WebSocket channels.   |
-| `TestServerState`            | Tracks connections, subscriptions, and authentication state for assertions.         |
-| Thread‑local event channels  | `set_data_event_sender()` / `set_exec_event_sender()` for capturing emitted events. |
-| `wait_until_async`           | Polls conditions with timeout for deterministic async assertions.                   |
+| Component                   | Purpose                                                                             |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| Mock Axum server            | Serves HTTP endpoints (instruments, fee rates, positions) and WebSocket channels.   |
+| `TestServerState`           | Tracks connections, subscriptions, and authentication state for assertions.         |
+| Thread‑local event channels | `set_data_event_sender()` / `set_exec_event_sender()` for capturing emitted events. |
+| `wait_until_async`          | Polls conditions with timeout for deterministic async assertions.                   |
 
 **Data client coverage:**
 
-| Test scenario                | Validates                                                      |
-| ---------------------------- | -------------------------------------------------------------- |
-| Connect/disconnect           | Connection lifecycle, WebSocket establishment, clean shutdown. |
-| Subscribe trades             | Trade tick events emitted to data channel.                     |
-| Subscribe quotes             | Quote events from ticker (LINEAR) or orderbook (SPOT).         |
-| Subscribe book deltas        | OrderBookDeltas events from orderbook snapshots/updates.       |
-| Subscribe mark/index prices  | Filtered by subscription state (only emit when subscribed).    |
-| Reset state                  | Subscription tracking cleared, connection terminated.          |
-| Instruments on connect       | Instrument events emitted during connection setup.             |
+| Test scenario               | Validates                                                      |
+| --------------------------- | -------------------------------------------------------------- |
+| Connect/disconnect          | Connection lifecycle, WebSocket establishment, clean shutdown. |
+| Subscribe trades            | Trade tick events emitted to data channel.                     |
+| Subscribe quotes            | Quote events from ticker (LINEAR) or orderbook (SPOT).         |
+| Subscribe book deltas       | OrderBookDeltas events from orderbook snapshots/updates.       |
+| Subscribe mark/index prices | Filtered by subscription state (only emit when subscribed).    |
+| Reset state                 | Subscription tracking cleared, connection terminated.          |
+| Instruments on connect      | Instrument events emitted during connection setup.             |
 
 **Execution client coverage:**
 
-| Test scenario                | Validates                                                      |
-| ---------------------------- | -------------------------------------------------------------- |
-| Connect/disconnect           | Auth handshake, private + trade WS connections, subscriptions. |
-| Demo mode                    | Only private WS connects (trade WS skipped for HTTP fallback). |
-| Order submission             | Order accepted/rejected events, venue ID correlation.          |
-| Order modification/cancel    | Update and cancel acknowledgment events.                       |
-| Position/wallet updates      | PositionStatusReport and AccountState events.                  |
+| Test scenario             | Validates                                                      |
+| ------------------------- | -------------------------------------------------------------- |
+| Connect/disconnect        | Auth handshake, private + trade WS connections, subscriptions. |
+| Demo mode                 | Only private WS connects (trade WS skipped for HTTP fallback). |
+| Order submission          | Order accepted/rejected events, venue ID correlation.          |
+| Order modification/cancel | Update and cancel acknowledgment events.                       |
+| Position/wallet updates   | PositionStatusReport and AccountState events.                  |
 
 **Key patterns:**
 

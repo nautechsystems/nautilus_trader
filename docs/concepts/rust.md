@@ -24,28 +24,28 @@ you choose the right one for your use case.
 
 ### Capability matrix
 
-| Component             | v1 legacy (Cython) | v2 Rust        | v2 PyO3 (Python on Rust) |
-| --------------------- | ------------------ | -------------- | ------------------------ |
-| Strategy              | ✓                  | ✓              | ✓                        |
-| Actor                 | ✓                  | ✓              | ✓                        |
-| DataEngine            | ✓                  | ✓              | ✓                        |
-| ExecutionEngine       | ✓                  | ✓              | ✓                        |
-| RiskEngine            | ✓                  | ✓              | ✓                        |
-| BacktestEngine        | ✓                  | ✓              | ✓                        |
-| BacktestNode          | ✓                  | ✓              | ✓                        |
-| LiveNode              | ✓                  | ✓              | ✓                        |
-| OrderEmulator         | ✓                  | ✓              | ✓                        |
-| Matching engine       | ✓                  | ✓              | ✓                        |
-| Portfolio             | ✓                  | ✓              | ✓                        |
-| Accounts              | ✓                  | ✓              | ✓                        |
-| Cache                 | ✓                  | ✓              | ✓                        |
-| MessageBus            | ✓                  | ✓              | ✓                        |
-| Data catalog          | ✓                  | ✓              | ✓                        |
-| Indicators            | ✓                  | ✓              | ✓                        |
-| Exec algorithms       | TWAP               | TWAP           | TWAP                     |
-| Controller            | ✓                  | -              | ✓                        |
-| Tearsheets            | ✓                  | -              | ✓                        |
-| Config serialization  | ✓                  | -              | -                        |
+| Component            | v1 legacy (Cython) | v2 Rust | v2 PyO3 (Python on Rust) |
+| -------------------- | ------------------ | ------- | ------------------------ |
+| Strategy             | ✓                  | ✓       | ✓                        |
+| Actor                | ✓                  | ✓       | ✓                        |
+| DataEngine           | ✓                  | ✓       | ✓                        |
+| ExecutionEngine      | ✓                  | ✓       | ✓                        |
+| RiskEngine           | ✓                  | ✓       | ✓                        |
+| BacktestEngine       | ✓                  | ✓       | ✓                        |
+| BacktestNode         | ✓                  | ✓       | ✓                        |
+| LiveNode             | ✓                  | ✓       | ✓                        |
+| OrderEmulator        | ✓                  | ✓       | ✓                        |
+| Matching engine      | ✓                  | ✓       | ✓                        |
+| Portfolio            | ✓                  | ✓       | ✓                        |
+| Accounts             | ✓                  | ✓       | ✓                        |
+| Cache                | ✓                  | ✓       | ✓                        |
+| MessageBus           | ✓                  | ✓       | ✓                        |
+| Data catalog         | ✓                  | ✓       | ✓                        |
+| Indicators           | ✓                  | ✓       | ✓                        |
+| Exec algorithms      | TWAP               | TWAP    | TWAP                     |
+| Controller           | ✓                  | -       | ✓                        |
+| Tearsheets           | ✓                  | -       | ✓                        |
+| Config serialization | ✓                  | -       | -                        |
 
 ### Adapters
 
@@ -245,11 +245,11 @@ The `OrderApi` (accessed via `self.order()`) builds orders and order lists:
 Rust actors, strategies, and execution algorithms keep their runtime core as a
 struct field. The macros tell the traits where that field lives.
 
-| Macro                                          | Core field               | Generates                       |
-| ---------------------------------------------- | ------------------------ | ------------------------------- |
-| `nautilus_actor!(Type)`                        | `DataActorCore`          | Runtime wiring.                 |
-| `nautilus_strategy!(Type)`                     | `StrategyCore`           | Runtime wiring and `Strategy`.  |
-| `nautilus_execution_algorithm!(Type, { ... })` | `ExecutionAlgorithmCore` | Runtime wiring and algorithm.   |
+| Macro                                          | Core field               | Generates                      |
+| ---------------------------------------------- | ------------------------ | ------------------------------ |
+| `nautilus_actor!(Type)`                        | `DataActorCore`          | Runtime wiring.                |
+| `nautilus_strategy!(Type)`                     | `StrategyCore`           | Runtime wiring and `Strategy`. |
+| `nautilus_execution_algorithm!(Type, { ... })` | `ExecutionAlgorithmCore` | Runtime wiring and algorithm.  |
 
 The macros expect a field named `core`; pass a field name as the second
 argument when needed. They do not make the actor, strategy, or `StrategyCore`
@@ -323,20 +323,20 @@ for normal strategy order construction. Reach for
 
 #### `StrategyNative` methods
 
-| Native method         | Return shape                 | Use when                          |
-| --------------------- | ---------------------------- | --------------------------------- |
-| `strategy_core()`     | `&StrategyCore`              | Read strategy internals.          |
-| `strategy_core_mut()` | `&mut StrategyCore`          | Mutate strategy internals.        |
-| `order_factory()`     | `RefMut<'_, OrderFactory>`   | Need raw mutable factory borrow.  |
-| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>`  | Store or pass the factory.        |
-| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`     | Store or pass the portfolio.      |
+| Native method         | Return shape                | Use when                         |
+| --------------------- | --------------------------- | -------------------------------- |
+| `strategy_core()`     | `&StrategyCore`             | Read strategy internals.         |
+| `strategy_core_mut()` | `&mut StrategyCore`         | Mutate strategy internals.       |
+| `order_factory()`     | `RefMut<'_, OrderFactory>`  | Need raw mutable factory borrow. |
+| `order_factory_rc()`  | `Rc<RefCell<OrderFactory>>` | Store or pass the factory.       |
+| `portfolio_rc()`      | `Rc<RefCell<Portfolio>>`    | Store or pass the portfolio.     |
 
 #### `ExecutionAlgorithmNative` methods
 
-| Native method               | Return shape                   | Use when                              |
-| --------------------------- | ------------------------------ | ------------------------------------- |
-| `exec_algorithm_core()`     | `&ExecutionAlgorithmCore`      | Read execution algorithm internals.   |
-| `exec_algorithm_core_mut()` | `&mut ExecutionAlgorithmCore`  | Mutate execution algorithm internals. |
+| Native method               | Return shape                  | Use when                              |
+| --------------------------- | ----------------------------- | ------------------------------------- |
+| `exec_algorithm_core()`     | `&ExecutionAlgorithmCore`     | Read execution algorithm internals.   |
+| `exec_algorithm_core_mut()` | `&mut ExecutionAlgorithmCore` | Mutate execution algorithm internals. |
 
 For a step-by-step walkthrough, see the
 [Write a Strategy (Rust)](../how_to/write_rust_strategy.md) how-to guide.
@@ -389,24 +389,24 @@ node.add_builtin_strategy("GridMarketMaker", config)
 
 Built-in strategy configs:
 
-| Config                         | Strategy                 |
-| ------------------------------ | ------------------------ |
-| `CompositeMarketMakerConfig`   | `CompositeMarketMaker`   |
-| `DeltaNeutralVolConfig`        | `DeltaNeutralVol`        |
-| `EmaCrossConfig`               | `EmaCross`               |
-| `ExecTesterConfig`             | `ExecTester`             |
-| `GridMarketMakerConfig`        | `GridMarketMaker`        |
-| `HurstVpinDirectionalConfig`   | `HurstVpinDirectional`   |
+| Config                       | Strategy               |
+| ---------------------------- | ---------------------- |
+| `CompositeMarketMakerConfig` | `CompositeMarketMaker` |
+| `DeltaNeutralVolConfig`      | `DeltaNeutralVol`      |
+| `EmaCrossConfig`             | `EmaCross`             |
+| `ExecTesterConfig`           | `ExecTester`           |
+| `GridMarketMakerConfig`      | `GridMarketMaker`      |
+| `HurstVpinDirectionalConfig` | `HurstVpinDirectional` |
 
 `add_builtin_actor` follows the same bundled-only rule for actors used by
 examples and tests.
 
 Built-in actor configs (via `add_builtin_actor`):
 
-| Config                     | Actor                 |
-| -------------------------- | --------------------- |
-| `BookImbalanceActorConfig` | `BookImbalanceActor`  |
-| `DataTesterConfig`         | `DataTester`          |
+| Config                     | Actor                |
+| -------------------------- | -------------------- |
+| `BookImbalanceActorConfig` | `BookImbalanceActor` |
+| `DataTesterConfig`         | `DataTester`         |
 
 ## Backtesting
 
@@ -447,27 +447,27 @@ The `LiveNode` connects to real venues and data sources through adapter clients.
 pattern configures data and execution clients, then `run()` starts the async
 event loop. Each adapter provides its own factory and config types.
 
-| Adapter             | Example                                                |
-| ------------------- | ------------------------------------------------------ |
-| Architect AX        | `crates/adapters/architect_ax/examples/`               |
-| Betfair             | `crates/adapters/betfair/examples/`                    |
-| Binance             | `crates/adapters/binance/examples/`                    |
-| BitMEX              | `crates/adapters/bitmex/examples/`                     |
-| Blockchain          | `crates/adapters/blockchain/examples/`                 |
-| Bybit               | `crates/adapters/bybit/examples/`                      |
-| Coinbase            | `crates/adapters/coinbase/examples/`                   |
-| Databento           | `crates/adapters/databento/examples/`                  |
-| Deribit             | `crates/adapters/deribit/examples/`                    |
-| Derive              | `crates/adapters/derive/examples/`                     |
-| dYdX                | `crates/adapters/dydx/examples/`                       |
-| Hyperliquid         | `crates/adapters/hyperliquid/examples/`                |
-| Interactive Brokers | `crates/adapters/interactive_brokers/examples/`        |
-| Kraken              | `crates/adapters/kraken/examples/`                     |
-| Lighter             | `crates/adapters/lighter/examples/`                    |
-| OKX                 | `crates/adapters/okx/examples/`                        |
-| Polymarket          | `crates/adapters/polymarket/examples/`                 |
-| Sandbox             | `crates/adapters/sandbox/examples/`                    |
-| Tardis              | `crates/adapters/tardis/examples/`                     |
+| Adapter             | Example                                         |
+| ------------------- | ----------------------------------------------- |
+| Architect AX        | `crates/adapters/architect_ax/examples/`        |
+| Betfair             | `crates/adapters/betfair/examples/`             |
+| Binance             | `crates/adapters/binance/examples/`             |
+| BitMEX              | `crates/adapters/bitmex/examples/`              |
+| Blockchain          | `crates/adapters/blockchain/examples/`          |
+| Bybit               | `crates/adapters/bybit/examples/`               |
+| Coinbase            | `crates/adapters/coinbase/examples/`            |
+| Databento           | `crates/adapters/databento/examples/`           |
+| Deribit             | `crates/adapters/deribit/examples/`             |
+| Derive              | `crates/adapters/derive/examples/`              |
+| dYdX                | `crates/adapters/dydx/examples/`                |
+| Hyperliquid         | `crates/adapters/hyperliquid/examples/`         |
+| Interactive Brokers | `crates/adapters/interactive_brokers/examples/` |
+| Kraken              | `crates/adapters/kraken/examples/`              |
+| Lighter             | `crates/adapters/lighter/examples/`             |
+| OKX                 | `crates/adapters/okx/examples/`                 |
+| Polymarket          | `crates/adapters/polymarket/examples/`          |
+| Sandbox             | `crates/adapters/sandbox/examples/`             |
+| Tardis              | `crates/adapters/tardis/examples/`              |
 
 Most adapters include `node_data_tester.rs` and `node_exec_tester.rs`
 examples. These test data requests, streaming, and order execution

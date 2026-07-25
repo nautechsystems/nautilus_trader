@@ -52,10 +52,10 @@ which explains why the APIs remain distinct rather than unified.
 
 ### Bitcoin symbol format
 
-| Market  | Format | Example      | Notes                                            |
-| ------- | ------ | ------------ | ------------------------------------------------ |
-| Spot    | `BTC`  | `BTC/USD`    | XBT normalized to BTC (base or quote position).  |
-| Futures | `XBT`  | `PI_XBTUSD`  | Uses Kraken's native XBT format.                 |
+| Market  | Format | Example     | Notes                                           |
+| ------- | ------ | ----------- | ----------------------------------------------- |
+| Spot    | `BTC`  | `BTC/USD`   | XBT normalized to BTC (base or quote position). |
+| Futures | `XBT`  | `PI_XBTUSD` | Uses Kraken's native XBT format.                |
 
 ## Examples
 

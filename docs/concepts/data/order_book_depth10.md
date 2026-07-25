@@ -6,17 +6,17 @@ snapshot rather than incremental deltas.
 
 ## Fields
 
-| Field           | Rust type          | Python type       | Required/default | Notes                                      |
-| --------------- | ------------------ | ----------------- | ---------------- | ------------------------------------------ |
-| `instrument_id` | `InstrumentId`     | `InstrumentId`    | Required         | Instrument whose book is represented.      |
-| `bids`          | `[BookOrder; 10]`  | `list[BookOrder]` | Required         | Exactly 10 bid levels.                     |
-| `asks`          | `[BookOrder; 10]`  | `list[BookOrder]` | Required         | Exactly 10 ask levels.                     |
-| `bid_counts`    | `[u32; 10]`        | `list[int]`       | Required         | Number of bid orders at each level.        |
-| `ask_counts`    | `[u32; 10]`        | `list[int]`       | Required         | Number of ask orders at each level.        |
-| `flags`         | `u8`               | `int`             | Required         | `RecordFlag` bit field for event metadata. |
-| `sequence`      | `u64`              | `int`             | Required         | Venue sequence number, or zero if absent.  |
-| `ts_event`      | `UnixNanos`        | `int`             | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`       | `UnixNanos`        | `int`             | Required         | Initialization timestamp in nanoseconds.   |
+| Field           | Rust type         | Python type       | Required/default | Notes                                      |
+| --------------- | ----------------- | ----------------- | ---------------- | ------------------------------------------ |
+| `instrument_id` | `InstrumentId`    | `InstrumentId`    | Required         | Instrument whose book is represented.      |
+| `bids`          | `[BookOrder; 10]` | `list[BookOrder]` | Required         | Exactly 10 bid levels.                     |
+| `asks`          | `[BookOrder; 10]` | `list[BookOrder]` | Required         | Exactly 10 ask levels.                     |
+| `bid_counts`    | `[u32; 10]`       | `list[int]`       | Required         | Number of bid orders at each level.        |
+| `ask_counts`    | `[u32; 10]`       | `list[int]`       | Required         | Number of ask orders at each level.        |
+| `flags`         | `u8`              | `int`             | Required         | `RecordFlag` bit field for event metadata. |
+| `sequence`      | `u64`             | `int`             | Required         | Venue sequence number, or zero if absent.  |
+| `ts_event`      | `UnixNanos`       | `int`             | Required         | Event timestamp in nanoseconds.            |
+| `ts_init`       | `UnixNanos`       | `int`             | Required         | Initialization timestamp in nanoseconds.   |
 
 ## Behavior
 

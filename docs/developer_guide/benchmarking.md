@@ -131,13 +131,13 @@ allocation-free functions.
 
 ## Running benches locally
 
-| Goal                                | Command                                                              |
-| ----------------------------------- | -------------------------------------------------------------------- |
-| All benches in one crate            | `cargo bench -p nautilus-execution`                                  |
-| One bench module                    | `cargo bench -p nautilus-execution --bench matching_core`            |
-| One specific bench by name pattern  | `cargo bench -p nautilus-execution --bench matching_core -- iterate` |
-| Quick smoke run (low sample count)  | `cargo bench ... -- --quick`                                         |
-| All CI-tracked benches              | `make cargo-ci-benches`                                              |
+| Goal                               | Command                                                              |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| All benches in one crate           | `cargo bench -p nautilus-execution`                                  |
+| One bench module                   | `cargo bench -p nautilus-execution --bench matching_core`            |
+| One specific bench by name pattern | `cargo bench -p nautilus-execution --bench matching_core -- iterate` |
+| Quick smoke run (low sample count) | `cargo bench ... -- --quick`                                         |
+| All CI-tracked benches             | `make cargo-ci-benches`                                              |
 
 Criterion writes HTML reports to `target/criterion/`. Open
 `target/criterion/report/index.html`. The report includes per-bench violin

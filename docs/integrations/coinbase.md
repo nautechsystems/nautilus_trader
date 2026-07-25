@@ -61,22 +61,22 @@ A product is an umbrella term for a group of related instrument types.
 
 The following product types are supported:
 
-| Product Type        | Supported | Notes                                                    |
-| ------------------- | --------- | -------------------------------------------------------- |
-| Spot                | ✓         | USD, USDC, and USDT-quoted spot pairs.                   |
-| Perpetual contracts | ✓         | USD-margined perpetual swaps on the FCM venue.           |
-| Futures contracts   | ✓         | Dated delivery futures (nano BTC, nano ETH, etc).        |
+| Product Type        | Supported | Notes                                             |
+| ------------------- | --------- | ------------------------------------------------- |
+| Spot                | ✓         | USD, USDC, and USDT-quoted spot pairs.            |
+| Perpetual contracts | ✓         | USD-margined perpetual swaps on the FCM venue.    |
+| Futures contracts   | ✓         | Dated delivery futures (nano BTC, nano ETH, etc). |
 
 ## Symbology
 
 Coinbase uses the venue's native `product_id` field directly as the Nautilus
 symbol. The instrument ID is `{product_id}.COINBASE`.
 
-| Product          | Format                             | Examples                           |
-| ---------------- | ---------------------------------- | ---------------------------------- |
-| Spot             | `{base}-{quote}`                   | `BTC-USD`, `ETH-USDC`, `SOL-USDT`. |
-| Perpetual        | `{contract_code}-{ddMMMyy}-CDE`    | `BIP-20DEC30-CDE` (BTC PERP).      |
-| Dated future     | `{contract_code}-{ddMMMyy}-CDE`    | `BIT-24APR26-CDE` (BTC Apr 2026).  |
+| Product      | Format                          | Examples                           |
+| ------------ | ------------------------------- | ---------------------------------- |
+| Spot         | `{base}-{quote}`                | `BTC-USD`, `ETH-USDC`, `SOL-USDT`. |
+| Perpetual    | `{contract_code}-{ddMMMyy}-CDE` | `BIP-20DEC30-CDE` (BTC PERP).      |
+| Dated future | `{contract_code}-{ddMMMyy}-CDE` | `BIT-24APR26-CDE` (BTC Apr 2026).  |
 
 The `-CDE` suffix denotes the Coinbase Derivatives Exchange (FCM venue).
 Perpetuals carry an exchange-assigned far-future expiry (e.g. `20DEC30`) but
@@ -124,10 +124,10 @@ determined by the submitted `product_id`, so an order placed on
 Coinbase provides two trading environments. Configure the appropriate
 environment using the `environment` field in your client configuration.
 
-| Environment | `environment` value             | REST base URL                      |
-| ----------- | ------------------------------- | ---------------------------------- |
-| Live        | `CoinbaseEnvironment.LIVE`      | `https://api.coinbase.com`         |
-| Sandbox     | `CoinbaseEnvironment.SANDBOX`   | `https://api-sandbox.coinbase.com` |
+| Environment | `environment` value           | REST base URL                      |
+| ----------- | ----------------------------- | ---------------------------------- |
+| Live        | `CoinbaseEnvironment.LIVE`    | `https://api.coinbase.com`         |
+| Sandbox     | `CoinbaseEnvironment.SANDBOX` | `https://api-sandbox.coinbase.com` |
 
 ### Live (production)
 
@@ -228,10 +228,10 @@ For full details see the Coinbase
 
 ### Environment variables
 
-| Variable              | Description                                               |
-| --------------------- | --------------------------------------------------------- |
-| `COINBASE_API_KEY`    | Key name (`organizations/{org_id}/apiKeys/{key_id}`).     |
-| `COINBASE_API_SECRET` | PEM‑encoded EC private key (full multi‑line string).      |
+| Variable              | Description                                           |
+| --------------------- | ----------------------------------------------------- |
+| `COINBASE_API_KEY`    | Key name (`organizations/{org_id}/apiKeys/{key_id}`). |
+| `COINBASE_API_SECRET` | PEM‑encoded EC private key (full multi‑line string).  |
 
 Example:
 
@@ -388,10 +388,10 @@ and noted there as *Not yet supported* by the adapter.
 
 ### Execution instructions
 
-| Instruction   | Spot | Perpetual | Future | Notes                                                              |
-| ------------- | ---- | --------- | ------ | ------------------------------------------------------------------ |
-| `post_only`   | ✓    | ✓         | ✓      | LIMIT GTC and LIMIT GTD only.                                      |
-| `reduce_only` | -    | ✓         | ✓      | Derivatives only.                                                  |
+| Instruction   | Spot | Perpetual | Future | Notes                         |
+| ------------- | ---- | --------- | ------ | ----------------------------- |
+| `post_only`   | ✓    | ✓         | ✓      | LIMIT GTC and LIMIT GTD only. |
+| `reduce_only` | -    | ✓         | ✓      | Derivatives only.             |
 
 ### Time in force
 
@@ -422,11 +422,11 @@ for the underlying venue specification.
 
 ### Position controls (derivatives)
 
-| Control       | Notes                                                                |
-| ------------- | -------------------------------------------------------------------- |
-| Leverage      | Set per order; default `1.0`.                                        |
-| Margin type   | Set per order: cross (default) or isolated.                          |
-| Position mode | One‑way only; hedge mode is not exposed.                             |
+| Control       | Notes                                       |
+| ------------- | ------------------------------------------- |
+| Leverage      | Set per order; default `1.0`.               |
+| Margin type   | Set per order: cross (default) or isolated. |
+| Position mode | One‑way only; hedge mode is not exposed.    |
 
 ### Batch operations
 
@@ -689,19 +689,19 @@ fill deltas remain correct.
 
 ### Data client configuration options
 
-| Option                             | Default     | Description                                                                       |
-| ---------------------------------- | ----------- | --------------------------------------------------------------------------------- |
-| `api_key`                          | `None`      | Falls back to `COINBASE_API_KEY` env var.                                         |
-| `api_secret`                       | `None`      | Falls back to `COINBASE_API_SECRET` env var.                                      |
-| `base_url_rest`                    | `None`      | Override for the REST base URL.                                                   |
-| `base_url_ws`                      | `None`      | Override for the WebSocket market data URL.                                       |
-| `proxy_url`                        | `None`      | Optional proxy URL for HTTP and WebSocket transports.                             |
-| `environment`                      | `Live`      | `Live` or `Sandbox`.                                                              |
-| `http_timeout_secs`                | `10`        | HTTP request timeout (seconds).                                                   |
-| `ws_timeout_secs`                  | `30`        | WebSocket timeout (seconds).                                                      |
-| `update_instruments_interval_mins` | `60`        | Interval between instrument catalogue refreshes.                                  |
-| `derivatives_poll_interval_secs`   | `15`        | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
-| `transport_backend`                | `Sockudo`   | WebSocket transport backend.                                                      |
+| Option                             | Default   | Description                                                                       |
+| ---------------------------------- | --------- | --------------------------------------------------------------------------------- |
+| `api_key`                          | `None`    | Falls back to `COINBASE_API_KEY` env var.                                         |
+| `api_secret`                       | `None`    | Falls back to `COINBASE_API_SECRET` env var.                                      |
+| `base_url_rest`                    | `None`    | Override for the REST base URL.                                                   |
+| `base_url_ws`                      | `None`    | Override for the WebSocket market data URL.                                       |
+| `proxy_url`                        | `None`    | Optional proxy URL for HTTP and WebSocket transports.                             |
+| `environment`                      | `Live`    | `Live` or `Sandbox`.                                                              |
+| `http_timeout_secs`                | `10`      | HTTP request timeout (seconds).                                                   |
+| `ws_timeout_secs`                  | `30`      | WebSocket timeout (seconds).                                                      |
+| `update_instruments_interval_mins` | `60`      | Interval between instrument catalogue refreshes.                                  |
+| `derivatives_poll_interval_secs`   | `15`      | Interval between REST polls that emit `IndexPriceUpdate` and `FundingRateUpdate`. |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend.                                                      |
 
 ### Execution client configuration options
 

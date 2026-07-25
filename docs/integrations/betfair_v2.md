@@ -55,11 +55,11 @@ Rust currently also accepts `LIMIT` orders in `AT_THE_OPEN` mode and routes them
 
 ### Batch operations
 
-| Operation    | Supported | Notes                                      |
-| ------------ | --------- | ------------------------------------------ |
-| Batch Submit | ✓         | Implemented through `SubmitOrderList`.     |
-| Batch Modify | -         | Not supported.                             |
-| Batch Cancel | ✓         | Implemented through `BatchCancelOrders`.   |
+| Operation    | Supported | Notes                                    |
+| ------------ | --------- | ---------------------------------------- |
+| Batch Submit | ✓         | Implemented through `SubmitOrderList`.   |
+| Batch Modify | -         | Not supported.                           |
+| Batch Cancel | ✓         | Implemented through `BatchCancelOrders`. |
 
 ## Execution control flow
 
@@ -260,33 +260,33 @@ When multiple trading nodes share a single Betfair account across different mark
 
 ### Data client configuration
 
-| Option                              | Default  | Notes                                         |
-| ----------------------------------- | -------- | --------------------------------------------- |
-| `account_currency`                  | Required | Betfair account currency.                     |
-| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.             |
-| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.             |
-| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.              |
-| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.         |
-| `request_rate_per_second`           | `5`      | General HTTP rate limit.                      |
-| `default_min_notional`              | `None`   | Optional minimum notional override.           |
-| `event_type_ids`                    | `None`   | Optional navigation filter.                   |
-| `event_type_names`                  | `None`   | Optional navigation filter.                   |
-| `event_ids`                         | `None`   | Optional navigation filter.                   |
-| `country_codes`                     | `None`   | Optional navigation filter.                   |
-| `market_types`                      | `None`   | Optional navigation filter.                   |
-| `market_ids`                        | `None`   | Optional navigation filter.                   |
-| `min_market_start_time`             | `None`   | Optional navigation filter.                   |
-| `max_market_start_time`             | `None`   | Optional navigation filter.                   |
-| `stream_host`                       | `None`   | Optional stream host override.                |
-| `stream_port`                       | `None`   | Optional stream port override.                |
-| `stream_heartbeat_ms`               | `5,000`  | Required in Rust today.                       |
-| `stream_idle_timeout_ms`            | `60,000` | Idle timeout before reconnect.                |
-| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                      |
-| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                      |
-| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.            |
-| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                  |
-| `subscription_delay_secs`           | `3`      | Delay before the first market subscription.   |
-| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                     |
+| Option                              | Default  | Notes                                       |
+| ----------------------------------- | -------- | ------------------------------------------- |
+| `account_currency`                  | Required | Betfair account currency.                   |
+| `username`                          | `None`   | Falls back to `BETFAIR_USERNAME`.           |
+| `password`                          | `None`   | Falls back to `BETFAIR_PASSWORD`.           |
+| `app_key`                           | `None`   | Falls back to `BETFAIR_APP_KEY`.            |
+| `proxy_url`                         | `None`   | Optional proxy URL for HTTP requests.       |
+| `request_rate_per_second`           | `5`      | General HTTP rate limit.                    |
+| `default_min_notional`              | `None`   | Optional minimum notional override.         |
+| `event_type_ids`                    | `None`   | Optional navigation filter.                 |
+| `event_type_names`                  | `None`   | Optional navigation filter.                 |
+| `event_ids`                         | `None`   | Optional navigation filter.                 |
+| `country_codes`                     | `None`   | Optional navigation filter.                 |
+| `market_types`                      | `None`   | Optional navigation filter.                 |
+| `market_ids`                        | `None`   | Optional navigation filter.                 |
+| `min_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `max_market_start_time`             | `None`   | Optional navigation filter.                 |
+| `stream_host`                       | `None`   | Optional stream host override.              |
+| `stream_port`                       | `None`   | Optional stream port override.              |
+| `stream_heartbeat_ms`               | `5,000`  | Required in Rust today.                     |
+| `stream_idle_timeout_ms`            | `60,000` | Idle timeout before reconnect.              |
+| `stream_reconnect_delay_initial_ms` | `2,000`  | Initial reconnect delay.                    |
+| `stream_reconnect_delay_max_ms`     | `30,000` | Maximum reconnect delay.                    |
+| `stream_use_tls`                    | `True`   | Use TLS for the stream connection.          |
+| `stream_conflate_ms`                | `None`   | Explicit conflation setting.                |
+| `subscription_delay_secs`           | `3`      | Delay before the first market subscription. |
+| `subscribe_race_data`               | `False`  | Subscribe to RCM updates.                   |
 
 Rust does not yet expose `certs_dir` or `instrument_config`. Rust also uses a fixed 36,000 second
 keep-alive interval.

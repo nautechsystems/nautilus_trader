@@ -1151,11 +1151,11 @@ The adapter supports most Interactive Brokers order types:
 
 #### Batch operations
 
-| Operation          | Supported | Notes                                        |
-| ------------------ | --------- | -------------------------------------------- |
-| Batch Submit       | ✓         | Submit multiple orders in single request.    |
-| Batch Modify       | ✓         | Modify multiple orders in single request.    |
-| Batch Cancel       | ✓         | Cancel multiple orders in single request.    |
+| Operation    | Supported | Notes                                     |
+| ------------ | --------- | ----------------------------------------- |
+| Batch Submit | ✓         | Submit multiple orders in single request. |
+| Batch Modify | ✓         | Modify multiple orders in single request. |
+| Batch Cancel | ✓         | Cancel multiple orders in single request. |
 
 #### Position management
 

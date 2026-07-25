@@ -50,15 +50,15 @@ NautilusTrader integration guide.
 
 ## Product support
 
-| Product Type      | Data Feed | Trading | Notes                                               |
-| ----------------- | --------- | ------- | --------------------------------------------------- |
-| Spot              | ✓         | ✓       | Limited pairs, unified wallet with derivatives.     |
-| Perpetual Swaps   | ✓         | ✓       | Inverse and linear contracts available.             |
-| Stock Perpetuals  | -         | -       | *Not yet supported*. Currently on testnet only.     |
-| Futures           | ✓         | ✓       | Traditional fixed expiration contracts.             |
-| Quanto Futures    | ✓         | ✓       | Settled in different currency than underlying.      |
-| Prediction Markets| ✓         | ✓       | Event‑based contracts, 0-100 pricing, USDT settled. |
-| Options           | -         | -       | *Not provided by BitMEX*.                           |
+| Product Type       | Data Feed | Trading | Notes                                               |
+| ------------------ | --------- | ------- | --------------------------------------------------- |
+| Spot               | ✓         | ✓       | Limited pairs, unified wallet with derivatives.     |
+| Perpetual Swaps    | ✓         | ✓       | Inverse and linear contracts available.             |
+| Stock Perpetuals   | -         | -       | *Not yet supported*. Currently on testnet only.     |
+| Futures            | ✓         | ✓       | Traditional fixed expiration contracts.             |
+| Quanto Futures     | ✓         | ✓       | Settled in different currency than underlying.      |
+| Prediction Markets | ✓         | ✓       | Event‑based contracts, 0-100 pricing, USDT settled. |
+| Options            | -         | -       | *Not provided by BitMEX*.                           |
 
 :::note
 BitMEX has discontinued their options products to focus on their core derivatives and spot offerings.
@@ -83,16 +83,16 @@ BitMEX has discontinued their options products to focus on their core derivative
 BitMEX uses CFI (Classification of Financial Instruments) codes following the ISO 10962 standard.
 The adapter recognizes the following instrument type codes:
 
-| Code     | Type                 | Status      | Description                                     |
-| -------- | -------------------- | ----------- | ----------------------------------------------- |
-| `FFWCSX` | Perpetual Contract   | Supported   | Crypto‑based perpetual swaps (e.g., XBTUSD).    |
-| `FFWCSF` | Perpetual FX         | Supported   | FX‑based perpetual contracts.                   |
-| `FFCCSX` | Futures              | Supported   | Calendar futures with fixed expiration.         |
-| `FFICSX` | Prediction Market    | Supported   | Event‑based prediction contracts.               |
-| `IFXXXP` | Spot                 | Supported   | Spot trading pairs.                             |
-| `FFSCSX` | Stock Perpetual      | Unsupported | Stock/equity‑based perpetuals. Testnet only.    |
-| `SRMCSX` | Swap Rate            | Unsupported | Yield‑based swap products (historical).         |
-| `MR****` | Index                | Reference   | BitMEX indices (non‑tradeable, for price ref).  |
+| Code     | Type               | Status      | Description                                    |
+| -------- | ------------------ | ----------- | ---------------------------------------------- |
+| `FFWCSX` | Perpetual Contract | Supported   | Crypto‑based perpetual swaps (e.g., XBTUSD).   |
+| `FFWCSF` | Perpetual FX       | Supported   | FX‑based perpetual contracts.                  |
+| `FFCCSX` | Futures            | Supported   | Calendar futures with fixed expiration.        |
+| `FFICSX` | Prediction Market  | Supported   | Event‑based prediction contracts.              |
+| `IFXXXP` | Spot               | Supported   | Spot trading pairs.                            |
+| `FFSCSX` | Stock Perpetual    | Unsupported | Stock/equity‑based perpetuals. Testnet only.   |
+| `SRMCSX` | Swap Rate          | Unsupported | Yield‑based swap products (historical).        |
+| `MR****` | Index              | Reference   | BitMEX indices (non‑tradeable, for price ref). |
 
 See [BitMEX Typ Values](https://support.bitmex.com/hc/en-gb/articles/6299296145565-What-are-the-Typ-Values-for-Instrument-endpoint) for more details.
 
@@ -221,11 +221,11 @@ BitMEX supports multiple reference prices to evaluate stop/conditional order tri
 
 Choose the trigger type that matches your strategy and/or risk preferences.
 
-| Reference price | Nautilus `TriggerType` | BitMEX value  | Notes                                                                           |
-| --------------- | ---------------------- | ------------- | ------------------------------------------------------------------------------- |
-| Last trade      | `LAST_PRICE`           | `LastPrice`   | BitMEX default; triggers on the last traded price.                              |
-| Mark price      | `MARK_PRICE`           | `MarkPrice`   | Recommended for many stop‑loss use cases to reduce stop‑outs from price spikes. |
-| Index price     | `INDEX_PRICE`          | `IndexPrice`  | Tracks the external index; useful for some contracts.                           |
+| Reference price | Nautilus `TriggerType` | BitMEX value | Notes                                                                           |
+| --------------- | ---------------------- | ------------ | ------------------------------------------------------------------------------- |
+| Last trade      | `LAST_PRICE`           | `LastPrice`  | BitMEX default; triggers on the last traded price.                              |
+| Mark price      | `MARK_PRICE`           | `MarkPrice`  | Recommended for many stop‑loss use cases to reduce stop‑outs from price spikes. |
+| Index price     | `INDEX_PRICE`          | `IndexPrice` | Tracks the external index; useful for some contracts.                           |
 
 - If no `trigger_type` is provided, BitMEX uses its venue default (`LastPrice`).
 - These trigger references are exchange-evaluated; the order remains resting at the venue until triggered.
@@ -323,13 +323,13 @@ for pegged orders and instead continuously tracks the reference price plus offse
 
 ### Time in force
 
-| Time in force  | Supported | Notes                                               |
-| -------------- | --------- | --------------------------------------------------- |
-| `GTC`          | ✓         | Good Till Canceled (default).                       |
-| `GTD`          | -         | *Not supported by BitMEX*.                          |
-| `FOK`          | ✓         | Fill or Kill - fills entire order or cancels.       |
-| `IOC`          | ✓         | Immediate or Cancel - partial fill allowed.         |
-| `DAY`          | ✓         | Expires at 00:00 UTC (BitMEX trading day boundary). |
+| Time in force | Supported | Notes                                               |
+| ------------- | --------- | --------------------------------------------------- |
+| `GTC`         | ✓         | Good Till Canceled (default).                       |
+| `GTD`         | -         | *Not supported by BitMEX*.                          |
+| `FOK`         | ✓         | Fill or Kill - fills entire order or cancels.       |
+| `IOC`         | ✓         | Immediate or Cancel - partial fill allowed.         |
+| `DAY`         | ✓         | Expires at 00:00 UTC (BitMEX trading day boundary). |
 
 :::note
 `DAY` orders expire at 12:00am UTC, which marks the BitMEX trading day boundary (end of trading hours for that day).
@@ -348,19 +348,19 @@ See the [BitMEX Exchange Rules](https://www.bitmex.com/exchange-rules) and [API 
 
 ### Batch operations
 
-| Operation          | Supported | Notes                                       |
-| ------------------ | --------- | ------------------------------------------- |
-| Batch Submit       | -         | *Not supported by BitMEX*.                  |
-| Batch Modify       | -         | *Not supported by BitMEX*.                  |
-| Batch Cancel       | ✓         | Cancel multiple orders in a single request. |
+| Operation    | Supported | Notes                                       |
+| ------------ | --------- | ------------------------------------------- |
+| Batch Submit | -         | *Not supported by BitMEX*.                  |
+| Batch Modify | -         | *Not supported by BitMEX*.                  |
+| Batch Cancel | ✓         | Cancel multiple orders in a single request. |
 
 ### Position management
 
-| Feature             | Supported | Notes                                              |
-| ------------------- | --------- | -------------------------------------------------- |
-| Query positions     | ✓         | REST and real‑time position updates via WebSocket. |
-| Cross margin        | ✓         | Default margin mode.                               |
-| Isolated margin     | ✓         |                                                    |
+| Feature         | Supported | Notes                                              |
+| --------------- | --------- | -------------------------------------------------- |
+| Query positions | ✓         | REST and real‑time position updates via WebSocket. |
+| Cross margin    | ✓         | Default margin mode.                               |
+| Isolated margin | ✓         |                                                    |
 
 ### Order querying
 
@@ -479,10 +479,10 @@ Exceeding BitMEX rate limits returns HTTP 429 and may trigger temporary IP bans;
 
 The rate limits can be configured if your account has different limits than the defaults:
 
-| Parameter                  | Default (authenticated) | Default (unauthenticated) | Description                                         |
-| -------------------------- | ----------------------- | ------------------------- | --------------------------------------------------- |
-| `max_requests_per_second`  | 10                      | 10                        | Maximum requests per second (burst limit).          |
-| `max_requests_per_minute`  | 120                     | 30                        | Maximum requests per minute (rolling window).       |
+| Parameter                 | Default (authenticated) | Default (unauthenticated) | Description                                   |
+| ------------------------- | ----------------------- | ------------------------- | --------------------------------------------- |
+| `max_requests_per_second` | 10                      | 10                        | Maximum requests per second (burst limit).    |
+| `max_requests_per_minute` | 120                     | 30                        | Maximum requests per minute (rolling window). |
 
 :::info
 For more details on rate limiting, see the [BitMEX API documentation on rate limits](https://www.bitmex.com/app/restAPI#Limits).
@@ -560,14 +560,14 @@ The broadcaster exposes metrics including total submits, successful submits, fai
 
 #### Tracked metrics
 
-| Metric                   | Type   | Description                                                                                                           |
-| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| `total_submits`          | `u64`  | Total number of submit operations initiated.                                                                          |
-| `successful_submits`     | `u64`  | Number of submit operations that successfully received acknowledgement from BitMEX.                                   |
-| `failed_submits`         | `u64`  | Number of submit operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
-| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., duplicate clOrdID from parallel submissions).                   |
-| `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
-| `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`submitter_pool_size`).                                          |
+| Metric               | Type    | Description                                                                                                        |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `total_submits`      | `u64`   | Total number of submit operations initiated.                                                                       |
+| `successful_submits` | `u64`   | Number of submit operations that successfully received acknowledgement from BitMEX.                                |
+| `failed_submits`     | `u64`   | Number of submit operations where all HTTP clients in the pool failed (no healthy clients or all requests failed). |
+| `expected_rejects`   | `u64`   | Number of expected rejection patterns detected (e.g., duplicate clOrdID from parallel submissions).                |
+| `healthy_clients`    | `usize` | Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                     |
+| `total_clients`      | `usize` | Total number of HTTP clients configured in the pool (`submitter_pool_size`).                                       |
 
 These metrics can be accessed programmatically via the `get_metrics()` method on the `SubmitBroadcaster` instance.
 
@@ -627,15 +627,15 @@ The broadcaster exposes metrics including total cancels, successful cancels, fai
 
 #### Tracked metrics
 
-| Metric                   | Type   | Description                                                                                                           |
-| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| `total_cancels`          | `u64`  | Total number of cancel operations initiated (includes single, batch, and cancel‑all requests).                        |
-| `successful_cancels`     | `u64`  | Number of cancel operations that successfully received acknowledgement from BitMEX.                                   |
-| `failed_cancels`         | `u64`  | Number of cancel operations where all HTTP clients in the pool failed (no healthy clients or all requests failed).    |
-| `expected_rejects`       | `u64`  | Number of expected rejection patterns detected (e.g., post‑only order rejections).                                    |
-| `idempotent_successes`   | `u64`  | Number of idempotent success responses (order already cancelled, order not found, unable to cancel due to state).     |
-| `healthy_clients`        | `usize`| Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                        |
-| `total_clients`          | `usize`| Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                          |
+| Metric                 | Type    | Description                                                                                                        |
+| ---------------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| `total_cancels`        | `u64`   | Total number of cancel operations initiated (includes single, batch, and cancel‑all requests).                     |
+| `successful_cancels`   | `u64`   | Number of cancel operations that successfully received acknowledgement from BitMEX.                                |
+| `failed_cancels`       | `u64`   | Number of cancel operations where all HTTP clients in the pool failed (no healthy clients or all requests failed). |
+| `expected_rejects`     | `u64`   | Number of expected rejection patterns detected (e.g., post‑only order rejections).                                 |
+| `idempotent_successes` | `u64`   | Number of idempotent success responses (order already cancelled, order not found, unable to cancel due to state).  |
+| `healthy_clients`      | `usize` | Current number of healthy HTTP clients in the pool (clients that passed recent health checks).                     |
+| `total_clients`        | `usize` | Total number of HTTP clients configured in the pool (`canceller_pool_size`).                                       |
 
 These metrics can be accessed programmatically via the `get_metrics()` method on the `CancelBroadcaster` instance.
 

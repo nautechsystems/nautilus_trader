@@ -19,23 +19,23 @@ The DeFi domain model lives in `nautilus_model::defi`.
 
 `Chain` defines the target blockchain and its default service endpoints.
 
-| Field                       | Type         | Description                                                        |
-| --------------------------- | ------------ | ------------------------------------------------------------------ |
-| `name`                      | `Blockchain` | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
-| `chain_id`                  | `u32`        | EVM chain ID, such as `1` for Ethereum.                            |
-| `hypersync_url`             | `String`     | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
-| `rpc_url`                   | `Option`     | Optional direct RPC endpoint stored on the chain model.            |
-| `native_currency_decimals`  | `u8`         | Native gas token decimal precision, usually `18`.                  |
+| Field                      | Type         | Description                                                        |
+| -------------------------- | ------------ | ------------------------------------------------------------------ |
+| `name`                     | `Blockchain` | Chain enum value, such as `Ethereum` or `Arbitrum`.                |
+| `chain_id`                 | `u32`        | EVM chain ID, such as `1` for Ethereum.                            |
+| `hypersync_url`            | `String`     | HyperSync endpoint, by default `https://{chain_id}.hypersync.xyz`. |
+| `rpc_url`                  | `Option`     | Optional direct RPC endpoint stored on the chain model.            |
+| `native_currency_decimals` | `u8`         | Native gas token decimal precision, usually `18`.                  |
 
 Chains can be loaded by numeric ID with `Chain::from_chain_id` or by name with
 `Chain::from_chain_name`.
 
-| Chain family                | Code | Name         | Decimals |
-| --------------------------- | ---- | ------------ | -------- |
-| Ethereum and L2s            | ETH  | Ethereum     | 18       |
-| Polygon                     | POL  | Polygon      | 18       |
-| Avalanche                   | AVAX | Avalanche    | 18       |
-| BSC                         | BNB  | Binance Coin | 18       |
+| Chain family     | Code | Name         | Decimals |
+| ---------------- | ---- | ------------ | -------- |
+| Ethereum and L2s | ETH  | Ethereum     | 18       |
+| Polygon          | POL  | Polygon      | 18       |
+| Avalanche        | AVAX | Avalanche    | 18       |
+| BSC              | BNB  | Binance Coin | 18       |
 
 ### DEX and pools
 

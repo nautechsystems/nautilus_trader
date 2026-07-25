@@ -172,12 +172,12 @@ net positions automatically.
 
 The platform allows different OMS configurations for strategies and venues:
 
-| Strategy OMS | Venue OMS | Behavior                                                    |
-| ------------ | --------- | ----------------------------------------------------------- |
-| `NETTING`    | `NETTING` | Single position per instrument at both strategy and venue.  |
-| `HEDGING`    | `HEDGING` | Multiple positions supported at both levels.                |
-| `NETTING`    | `HEDGING` | Venue tracks multiple, Nautilus maintains single position.  |
-| `HEDGING`    | `NETTING` | Venue tracks single, Nautilus maintains virtual positions.  |
+| Strategy OMS | Venue OMS | Behavior                                                   |
+| ------------ | --------- | ---------------------------------------------------------- |
+| `NETTING`    | `NETTING` | Single position per instrument at both strategy and venue. |
+| `HEDGING`    | `HEDGING` | Multiple positions supported at both levels.               |
+| `NETTING`    | `HEDGING` | Venue tracks multiple, Nautilus maintains single position. |
+| `HEDGING`    | `NETTING` | Venue tracks single, Nautilus maintains virtual positions. |
 
 :::tip
 For most trading scenarios, keeping strategy and venue OMS types aligned simplifies

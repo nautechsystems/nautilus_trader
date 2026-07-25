@@ -45,20 +45,20 @@ and collection into the public return shape. No async runtime and no channel.
 The benches use the same compressed fixtures as the Databento tests and seed
 `ESM4.GLBX` with price precision `2`.
 
-| Bench                           | Median   | Throughput |
-| ------------------------------- | -------- | ---------- |
-| `historical_loader/mbo_deltas`  | 2.14 µs  | 934 k/s    |
-| `historical_loader/mbp1_quotes` | 2.21 µs  | 905 k/s    |
-| `historical_loader/mbp10_depth` | 3.97 µs  | 504 k/s    |
-| `historical_loader/bbo_quotes`  | 3.66 µs  | 1.09 M/s   |
-| `historical_loader/cmbp_quotes` | 2.28 µs  | 879 k/s    |
-| `historical_loader/cbbo_quotes` | 2.18 µs  | 916 k/s    |
-| `historical_loader/tbbo_trades` | 3.46 µs  | 578 k/s    |
-| `historical_loader/trades`      | 2.16 µs  | 924 k/s    |
-| `historical_loader/bars`        | 2.30 µs  | 871 k/s    |
-| `historical_loader/status`      | 2.13 µs  | 1.87 M/s   |
-| `historical_loader/imbalance`   | 9.06 µs  | 221 k/s    |
-| `historical_loader/statistics`  | 1.89 µs  | 1.06 M/s   |
+| Bench                           | Median  | Throughput |
+| ------------------------------- | ------- | ---------- |
+| `historical_loader/mbo_deltas`  | 2.14 µs | 934 k/s    |
+| `historical_loader/mbp1_quotes` | 2.21 µs | 905 k/s    |
+| `historical_loader/mbp10_depth` | 3.97 µs | 504 k/s    |
+| `historical_loader/bbo_quotes`  | 3.66 µs | 1.09 M/s   |
+| `historical_loader/cmbp_quotes` | 2.28 µs | 879 k/s    |
+| `historical_loader/cbbo_quotes` | 2.18 µs | 916 k/s    |
+| `historical_loader/tbbo_trades` | 3.46 µs | 578 k/s    |
+| `historical_loader/trades`      | 2.16 µs | 924 k/s    |
+| `historical_loader/bars`        | 2.30 µs | 871 k/s    |
+| `historical_loader/status`      | 2.13 µs | 1.87 M/s   |
+| `historical_loader/imbalance`   | 9.06 µs | 221 k/s    |
+| `historical_loader/statistics`  | 1.89 µs | 1.06 M/s   |
 
 ## Large MBO fixture diagnostics (`data.rs`)
 
@@ -104,22 +104,22 @@ localise where time goes when a loader bench regresses.
 `record_decode` measures already-decoded Databento records converted into
 Nautilus domain values.
 
-| Bench                         | Median  |
-| ----------------------------- | ------- |
-| `record_decode/mbo_delta`     | 13.0 ns |
-| `record_decode/mbo_trade`     | 24.9 ns |
-| `record_decode/trade`         | 25.0 ns |
-| `record_decode/mbp1_quote`    | 32.3 ns |
-| `record_decode/mbp1_trade`    | 48.4 ns |
-| `record_decode/mbp10_depth`   | 187 ns  |
-| `record_decode/bbo_quote`     | 19.4 ns |
-| `record_decode/cmbp_quote`    | 32.2 ns |
-| `record_decode/cmbp_trade`    | 81.4 ns |
-| `record_decode/tbbo`          | 47.2 ns |
-| `record_decode/ohlcv`         | 16.4 ns |
-| `record_decode/status`        | 11.3 ns |
-| `record_decode/imbalance`     | 16.3 ns |
-| `record_decode/statistics`    | 5.34 ns |
+| Bench                       | Median  |
+| --------------------------- | ------- |
+| `record_decode/mbo_delta`   | 13.0 ns |
+| `record_decode/mbo_trade`   | 24.9 ns |
+| `record_decode/trade`       | 25.0 ns |
+| `record_decode/mbp1_quote`  | 32.3 ns |
+| `record_decode/mbp1_trade`  | 48.4 ns |
+| `record_decode/mbp10_depth` | 187 ns  |
+| `record_decode/bbo_quote`   | 19.4 ns |
+| `record_decode/cmbp_quote`  | 32.2 ns |
+| `record_decode/cmbp_trade`  | 81.4 ns |
+| `record_decode/tbbo`        | 47.2 ns |
+| `record_decode/ohlcv`       | 16.4 ns |
+| `record_decode/status`      | 11.3 ns |
+| `record_decode/imbalance`   | 16.3 ns |
+| `record_decode/statistics`  | 5.34 ns |
 
 `record_dispatch` measures the generic `RecordRef` branch chain used by the
 loader and live feed handler.

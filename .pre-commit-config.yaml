@@ -484,8 +484,8 @@ repos:
   - repo: local
     hooks:
       - id: check-markdown-tables
-        name: check markdown table padding
-        description: Requires spaces inside GFM table delimiter cells
+        name: normalize markdown table padding
+        description: Pads GFM table columns to their widest cell, which MD060 does not check
         entry: python3 -B scripts/check-markdown-tables.py
         language: system
         types: [markdown]

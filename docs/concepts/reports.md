@@ -40,24 +40,24 @@ orders_report = ReportProvider.generate_orders_report(orders)
 
 **Returns `pd.DataFrame`. Key columns include:**
 
-| Column             | Description                                             |
-| ------------------ | ------------------------------------------------------- |
-| `client_order_id`  | Index - unique order identifier.                        |
-| `instrument_id`    | Trading instrument.                                     |
-| `strategy_id`      | Strategy that created the order.                        |
-| `trader_id`        | Trader identifier.                                      |
-| `account_id`       | Account identifier (if assigned).                       |
-| `venue_order_id`   | Venue‑assigned order ID (if accepted).                  |
-| `side`             | BUY or SELL.                                            |
-| `type`             | MARKET, LIMIT, etc.                                     |
-| `status`           | Current order status.                                   |
-| `quantity`         | Original order quantity (string).                       |
-| `filled_qty`       | Amount filled (string).                                 |
-| `price`            | Limit price (order‑type dependent).                     |
-| `avg_px`           | Average fill price (if filled).                         |
-| `time_in_force`    | Time‑in‑force instruction.                              |
-| `ts_init`          | Order initialization timestamp (Unix nanoseconds).      |
-| `ts_last`          | Last update timestamp (Unix nanoseconds).               |
+| Column            | Description                                        |
+| ----------------- | -------------------------------------------------- |
+| `client_order_id` | Index - unique order identifier.                   |
+| `instrument_id`   | Trading instrument.                                |
+| `strategy_id`     | Strategy that created the order.                   |
+| `trader_id`       | Trader identifier.                                 |
+| `account_id`      | Account identifier (if assigned).                  |
+| `venue_order_id`  | Venue‑assigned order ID (if accepted).             |
+| `side`            | BUY or SELL.                                       |
+| `type`            | MARKET, LIMIT, etc.                                |
+| `status`          | Current order status.                              |
+| `quantity`        | Original order quantity (string).                  |
+| `filled_qty`      | Amount filled (string).                            |
+| `price`           | Limit price (order‑type dependent).                |
+| `avg_px`          | Average fill price (if filled).                    |
+| `time_in_force`   | Time‑in‑force instruction.                         |
+| `ts_init`         | Order initialization timestamp (Unix nanoseconds). |
+| `ts_last`         | Last update timestamp (Unix nanoseconds).          |
 
 Additional columns vary by order type (e.g., `trigger_price` for stop orders, `expire_time` for
 GTD orders). See `Order.to_dict()` for the complete field list.
@@ -94,24 +94,24 @@ fills_report = ReportProvider.generate_fills_report(orders)
 
 **Returns `pd.DataFrame`. Key columns include:**
 
-| Column             | Description                              |
-| ------------------ | ---------------------------------------- |
-| `client_order_id`  | Index - order identifier.                |
-| `trade_id`         | Unique trade/fill identifier.            |
-| `venue_order_id`   | Venue‑assigned order ID.                 |
-| `instrument_id`    | Trading instrument.                      |
-| `strategy_id`      | Strategy that created the order.         |
-| `account_id`       | Account identifier.                      |
-| `position_id`      | Associated position ID (if applicable).  |
-| `order_side`       | BUY or SELL.                             |
-| `order_type`       | Order type (MARKET, LIMIT, etc.).        |
-| `last_px`          | Fill execution price (string).           |
-| `last_qty`         | Fill execution quantity (string).        |
-| `currency`         | Currency of the fill.                    |
-| `liquidity_side`   | MAKER or TAKER.                          |
-| `commission`       | Commission amount and currency.          |
-| `ts_event`         | Fill timestamp (datetime).               |
-| `ts_init`          | Initialization timestamp (datetime).     |
+| Column            | Description                             |
+| ----------------- | --------------------------------------- |
+| `client_order_id` | Index - order identifier.               |
+| `trade_id`        | Unique trade/fill identifier.           |
+| `venue_order_id`  | Venue‑assigned order ID.                |
+| `instrument_id`   | Trading instrument.                     |
+| `strategy_id`     | Strategy that created the order.        |
+| `account_id`      | Account identifier.                     |
+| `position_id`     | Associated position ID (if applicable). |
+| `order_side`      | BUY or SELL.                            |
+| `order_type`      | Order type (MARKET, LIMIT, etc.).       |
+| `last_px`         | Fill execution price (string).          |
+| `last_qty`        | Fill execution quantity (string).       |
+| `currency`        | Currency of the fill.                   |
+| `liquidity_side`  | MAKER or TAKER.                         |
+| `commission`      | Commission amount and currency.         |
+| `ts_event`        | Fill timestamp (datetime).              |
+| `ts_init`         | Initialization timestamp (datetime).    |
 
 See `OrderFilled.to_dict()` for the complete field list.
 
@@ -135,30 +135,30 @@ positions_report = ReportProvider.generate_positions_report(
 
 **Returns `pd.DataFrame`. Key columns include:**
 
-| Column             | Description                              |
-| ------------------ | ---------------------------------------- |
-| `position_id`      | Index - unique position identifier.      |
-| `instrument_id`    | Trading instrument.                      |
-| `strategy_id`      | Strategy that managed the position.      |
-| `trader_id`        | Trader identifier.                       |
-| `account_id`       | Account identifier.                      |
-| `opening_order_id` | Order ID that opened the position.       |
-| `closing_order_id` | Order ID that closed the position.       |
-| `entry`            | Entry side (BUY or SELL).                |
-| `side`             | Position side (LONG, SHORT, or FLAT).    |
-| `quantity`         | Current position size.                   |
-| `peak_qty`         | Maximum size reached.                    |
-| `avg_px_open`      | Average entry price.                     |
-| `avg_px_close`     | Average exit price (if closed).          |
-| `commissions`      | List of commissions paid.                |
-| `realized_pnl`     | Realized profit/loss.                    |
-| `realized_return`  | Return percentage.                       |
-| `ts_init`          | Position initialization timestamp.       |
-| `ts_opened`        | Opening timestamp (datetime).            |
-| `ts_last`          | Last update timestamp.                   |
-| `ts_closed`        | Closing timestamp (datetime or NA).      |
-| `duration_ns`      | Position duration in nanoseconds.        |
-| `is_snapshot`      | Whether this is a historical snapshot.   |
+| Column             | Description                            |
+| ------------------ | -------------------------------------- |
+| `position_id`      | Index - unique position identifier.    |
+| `instrument_id`    | Trading instrument.                    |
+| `strategy_id`      | Strategy that managed the position.    |
+| `trader_id`        | Trader identifier.                     |
+| `account_id`       | Account identifier.                    |
+| `opening_order_id` | Order ID that opened the position.     |
+| `closing_order_id` | Order ID that closed the position.     |
+| `entry`            | Entry side (BUY or SELL).              |
+| `side`             | Position side (LONG, SHORT, or FLAT).  |
+| `quantity`         | Current position size.                 |
+| `peak_qty`         | Maximum size reached.                  |
+| `avg_px_open`      | Average entry price.                   |
+| `avg_px_close`     | Average exit price (if closed).        |
+| `commissions`      | List of commissions paid.              |
+| `realized_pnl`     | Realized profit/loss.                  |
+| `realized_return`  | Return percentage.                     |
+| `ts_init`          | Position initialization timestamp.     |
+| `ts_opened`        | Opening timestamp (datetime).          |
+| `ts_last`          | Last update timestamp.                 |
+| `ts_closed`        | Closing timestamp (datetime or NA).    |
+| `duration_ns`      | Position duration in nanoseconds.      |
+| `is_snapshot`      | Whether this is a historical snapshot. |
 
 ### Account report
 

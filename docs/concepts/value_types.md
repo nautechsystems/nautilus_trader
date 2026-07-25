@@ -71,12 +71,12 @@ print(type(result))       # <class 'Price'>
 Multiplication, division, floor division, and modulo between two values of the
 same type return `Decimal`:
 
-| Operation             | Result    |
-| --------------------- | --------- |
-| `Price * Price`       | `Decimal` |
-| `Price / Price`       | `Decimal` |
-| `Price // Price`      | `Decimal` |
-| `Price % Price`       | `Decimal` |
+| Operation        | Result    |
+| ---------------- | --------- |
+| `Price * Price`  | `Decimal` |
+| `Price / Price`  | `Decimal` |
+| `Price // Price` | `Decimal` |
+| `Price % Price`  | `Decimal` |
 
 The same pattern applies to `Quantity` and `Money`.
 
@@ -90,14 +90,14 @@ misinterpretation of the result as a value with the original unit.
 
 Unary operators preserve the value type where the result is valid for that type:
 
-| Operation    | `Price`   | `Quantity` | `Money`   |
-| ------------ | --------- | ---------- | --------- |
-| `-x` (neg)   | `Price`   | `Decimal`  | `Money`   |
-| `+x` (pos)   | `Price`   | `Quantity` | `Money`   |
-| `abs(x)`     | `Price`   | `Quantity` | `Money`   |
-| `int(x)`     | `int`     | `int`      | `int`     |
-| `float(x)`   | `float`   | `float`    | `float`   |
-| `round(x)`   | `Decimal` | `Decimal`  | `Decimal` |
+| Operation  | `Price`   | `Quantity` | `Money`   |
+| ---------- | --------- | ---------- | --------- |
+| `-x` (neg) | `Price`   | `Decimal`  | `Money`   |
+| `+x` (pos) | `Price`   | `Quantity` | `Money`   |
+| `abs(x)`   | `Price`   | `Quantity` | `Money`   |
+| `int(x)`   | `int`     | `int`      | `int`     |
+| `float(x)` | `float`   | `float`    | `float`   |
+| `round(x)` | `Decimal` | `Decimal`  | `Decimal` |
 
 `Quantity.__neg__` returns `Decimal` rather than `Quantity` because `Quantity` is
 unsigned and cannot represent a negative value.

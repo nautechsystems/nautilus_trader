@@ -66,11 +66,11 @@ The adapter communicates through three independent transport layers:
                          └─────────────────────────────────────────────┘
 ```
 
-| Layer     | Target    | Direction  | Purpose                                              |
-| --------- | --------- | ---------- | ---------------------------------------------------- |
-| HTTP      | Indexer   | Read‑only  | Instrument metadata, historical data, account state. |
-| WebSocket | Indexer   | Read‑only  | Real‑time market data, order/fill/position updates.  |
-| gRPC      | Validator | Write      | Order placement, cancellation, and batch operations. |
+| Layer     | Target    | Direction | Purpose                                              |
+| --------- | --------- | --------- | ---------------------------------------------------- |
+| HTTP      | Indexer   | Read‑only | Instrument metadata, historical data, account state. |
+| WebSocket | Indexer   | Read‑only | Real‑time market data, order/fill/position updates.  |
+| gRPC      | Validator | Write     | Order placement, cancellation, and batch operations. |
 
 ### Block-based settlement
 
@@ -273,13 +273,13 @@ dYdX v4 applies two sequential risk mechanisms:
 The indexer exposes the classification via the `type` field on each `Fill`
 record (`DydxFillType`):
 
-| `type`         | Meaning                                               |
-| -------------- | ----------------------------------------------------- |
-| `LIMIT`        | Normal fill.                                          |
-| `LIQUIDATED`   | Taker side of a liquidation (undercollateralised).    |
-| `LIQUIDATION`  | Maker side of a liquidation (insurance fund).         |
-| `DELEVERAGED`  | Taker side of a deleveraging (ADL closure).           |
-| `OFFSETTING`   | Maker side of a deleveraging (offsetting account).    |
+| `type`        | Meaning                                            |
+| ------------- | -------------------------------------------------- |
+| `LIMIT`       | Normal fill.                                       |
+| `LIQUIDATED`  | Taker side of a liquidation (undercollateralised). |
+| `LIQUIDATION` | Maker side of a liquidation (insurance fund).      |
+| `DELEVERAGED` | Taker side of a deleveraging (ADL closure).        |
+| `OFFSETTING`  | Maker side of a deleveraging (offsetting account). |
 
 The adapter logs a warning with instrument, side, size, and price for each
 liquidation / deleveraging fill, then emits the `FillReport` through the
@@ -434,10 +434,10 @@ Long-term and conditional orders require proper Cosmos SDK sequence management:
 
 ### Sequence mismatch detection
 
-| Error code | Source               | Meaning                                          |
-| ---------- | -------------------- | ------------------------------------------------ |
-| `code=32`  | Cosmos SDK           | Account sequence mismatch                        |
-| `code=104` | dYdX authenticator   | Signature verification failed (sequence‑related) |
+| Error code | Source             | Meaning                                          |
+| ---------- | ------------------ | ------------------------------------------------ |
+| `code=32`  | Cosmos SDK         | Account sequence mismatch                        |
+| `code=104` | dYdX authenticator | Signature verification failed (sequence‑related) |
 
 Both trigger automatic resync + retry via the `RetryManager`.
 
@@ -506,12 +506,12 @@ automatically via `OrderMessageBuilder`, but understanding the parameters helps 
 
 ### Market parameters
 
-| Parameter                      | Description                                              |
-| ------------------------------ | -------------------------------------------------------- |
-| `atomic_resolution`            | Exponent for converting human‑readable size to quantums  |
-| `quantum_conversion_exponent`  | Exponent for converting quantums to tokens               |
-| `step_base_quantums`           | Minimum order size step in quantums                      |
-| `subticks_per_tick`            | Price granularity within each tick                       |
+| Parameter                     | Description                                             |
+| ----------------------------- | ------------------------------------------------------- |
+| `atomic_resolution`           | Exponent for converting human‑readable size to quantums |
+| `quantum_conversion_exponent` | Exponent for converting quantums to tokens              |
+| `step_base_quantums`          | Minimum order size step in quantums                     |
+| `subticks_per_tick`           | Price granularity within each tick                      |
 
 ### Market order pricing
 
@@ -701,40 +701,40 @@ wallet credentials.
 
 ### Data client configuration options
 
-| Option                    | Default   | Description                                                                                 |
-| ------------------------- | --------- | ------------------------------------------------------------------------------------------- |
-| `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.         |
-| `network`                 | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                             |
-| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time.  |
-| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.            |
-| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.           |
-| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                       |
-| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                       |
-| `retry_delay_initial_ms`  | `100`     | Initial delay (milliseconds) between retries.                                               |
-| `retry_delay_max_ms`      | `5,000`   | Maximum delay (milliseconds) between retries.                                               |
-| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                                |
+| Option                    | Default   | Description                                                                                |
+| ------------------------- | --------- | ------------------------------------------------------------------------------------------ |
+| `wallet_address`          | `None`    | Legacy Python config field. The public data client does not use wallet credentials.        |
+| `network`                 | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                            |
+| `bars_timestamp_on_close` | `True`    | If bar `ts_event` should be the bar close time. Set `False` to use venue‑native open time. |
+| `base_url_http`           | `None`    | HTTP API endpoint override. `None` selects the default for the selected network.           |
+| `base_url_ws`             | `None`    | WebSocket endpoint override. `None` selects the default for the selected network.          |
+| `proxy_url`               | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                      |
+| `max_retries`             | `3`       | Maximum retry attempts for REST / WebSocket recovery.                                      |
+| `retry_delay_initial_ms`  | `100`     | Initial delay (milliseconds) between retries.                                              |
+| `retry_delay_max_ms`      | `5,000`   | Maximum delay (milliseconds) between retries.                                              |
+| `transport_backend`       | `Sockudo` | WebSocket transport backend.                                                               |
 
 `base_url_http` and `base_url_ws` are config-struct fields and are not parameters of the
 Python `DydxDataClientConfig` constructor.
 
 ### Execution client configuration options
 
-| Option                         | Default   | Description                                                                                        |
-| ------------------------------ | --------- | -------------------------------------------------------------------------------------------------- |
-| `wallet_address`               | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.  |
-| `subaccount_number`            | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                            |
-| `private_key`                  | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`.|
-| `authenticator_ids`            | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                     |
-| `network`                      | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                    |
-| `http_endpoint`                | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.         |
-| `ws_endpoint`                  | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.    |
-| `grpc_endpoint`                | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.         |
-| `proxy_url`                    | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                              |
-| `max_retries`                  | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                  |
-| `retry_delay_initial_ms`       | `1,000`   | Initial delay (milliseconds) between retries.                                                      |
-| `retry_delay_max_ms`           | `10,000`  | Maximum delay (milliseconds) between retries.                                                      |
-| `grpc_rate_limit_per_second`   | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                        |
-| `transport_backend`            | `Sockudo` | WebSocket transport backend.                                                                       |
+| Option                       | Default   | Description                                                                                         |
+| ---------------------------- | --------- | --------------------------------------------------------------------------------------------------- |
+| `wallet_address`             | `None`    | dYdX wallet address. Falls back to `DYDX_WALLET_ADDRESS` / `DYDX_TESTNET_WALLET_ADDRESS` env var.   |
+| `subaccount_number`          | `0`       | Subaccount number (0-127). Subaccount 0 is the default.                                             |
+| `private_key`                | `None`    | Hex‑encoded private key for signing. Falls back to `DYDX_PRIVATE_KEY` / `DYDX_TESTNET_PRIVATE_KEY`. |
+| `authenticator_ids`          | `None`    | List of authenticator IDs for permissioned key trading (institutional setups).                      |
+| `network`                    | `None`    | `DydxNetwork.MAINNET` or `DydxNetwork.TESTNET`.                                                     |
+| `http_endpoint`              | `None`    | HTTP client custom endpoint override. `None` selects the default for the selected network.          |
+| `ws_endpoint`                | `None`    | WebSocket client custom endpoint override. `None` selects the default for the selected network.     |
+| `grpc_endpoint`              | `None`    | gRPC client custom endpoint override. `None` selects the default for the selected network.          |
+| `proxy_url`                  | `None`    | Optional proxy URL for HTTP and WebSocket transports.                                               |
+| `max_retries`                | `3`       | Maximum retry attempts for submit/cancel/modify order operations.                                   |
+| `retry_delay_initial_ms`     | `1,000`   | Initial delay (milliseconds) between retries.                                                       |
+| `retry_delay_max_ms`         | `10,000`  | Maximum delay (milliseconds) between retries.                                                       |
+| `grpc_rate_limit_per_second` | `4`       | Maximum gRPC requests per second. Set to `None` to disable.                                         |
+| `transport_backend`          | `Sockudo` | WebSocket transport backend.                                                                        |
 
 `http_endpoint`, `ws_endpoint`, and `grpc_endpoint` are config-struct fields and are not
 parameters of the Python `DydxExecClientConfig` constructor.
@@ -795,12 +795,12 @@ resolved automatically from environment variables based on the configured `netwo
 
 #### Environment variables
 
-| Variable                        | Network  | Description                                    |
-| ------------------------------- | -------- | ---------------------------------------------- |
-| `DYDX_WALLET_ADDRESS`           | Mainnet  | Bech32-encoded wallet address (`dydx1...`).    |
-| `DYDX_PRIVATE_KEY`              | Mainnet  | Hex‑encoded secp256k1 private key for signing. |
-| `DYDX_TESTNET_WALLET_ADDRESS`   | Testnet  | Testnet wallet address (`dydx1...`).           |
-| `DYDX_TESTNET_PRIVATE_KEY`      | Testnet  | Testnet private key.                           |
+| Variable                      | Network | Description                                    |
+| ----------------------------- | ------- | ---------------------------------------------- |
+| `DYDX_WALLET_ADDRESS`         | Mainnet | Bech32-encoded wallet address (`dydx1...`).    |
+| `DYDX_PRIVATE_KEY`            | Mainnet | Hex‑encoded secp256k1 private key for signing. |
+| `DYDX_TESTNET_WALLET_ADDRESS` | Testnet | Testnet wallet address (`dydx1...`).           |
+| `DYDX_TESTNET_PRIVATE_KEY`    | Testnet | Testnet private key.                           |
 
 #### Resolution priority
 

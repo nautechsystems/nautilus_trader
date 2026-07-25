@@ -648,12 +648,12 @@ flowchart BT
 
 **Feature flags:**
 
-| Feature     | Crates                     | Effect                                                     |
-| ----------- | -------------------------- | ---------------------------------------------------------- |
-| `streaming` | `data`, `system`, `live`   | Enables `persistence` dependency for catalog streaming.    |
-| `cloud`     | `persistence`              | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
-| `python`    | most crates                | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
-| `defi`      | `common`, `model`, `data`  | Enables DeFi/blockchain data types.                        |
+| Feature     | Crates                    | Effect                                                     |
+| ----------- | ------------------------- | ---------------------------------------------------------- |
+| `streaming` | `data`, `system`, `live`  | Enables `persistence` dependency for catalog streaming.    |
+| `cloud`     | `persistence`             | Enables cloud storage backends (S3, Azure, GCP, HTTP).     |
+| `python`    | most crates               | Enables PyO3 bindings (auto‑enables `streaming`, `cloud`). |
+| `defi`      | `common`, `model`, `data` | Enables DeFi/blockchain data types.                        |
 
 :::note
 Both Rust and Cython are build dependencies. The binary wheels produced from a build do not require

@@ -36,14 +36,14 @@ PyO3 bindings expose the same implementation through `nautilus_trader`.
 
 Use `127.0.0.1` unless you are connecting to a remote host.
 
-| Endpoint              | Trading mode | Default port  |
-| --------------------- | ------------ | ------------: |
-| IB Gateway            | Paper        |        `4002` |
-| IB Gateway            | Live         |        `4001` |
-| TWS                   | Paper        |        `7497` |
-| TWS                   | Live         |        `7496` |
-| Dockerized IB Gateway | Paper        |        `4002` |
-| Dockerized IB Gateway | Live         |        `4001` |
+| Endpoint              | Trading mode | Default port |
+| --------------------- | ------------ | -----------: |
+| IB Gateway            | Paper        |       `4002` |
+| IB Gateway            | Live         |       `4001` |
+| TWS                   | Paper        |       `7497` |
+| TWS                   | Live         |       `7496` |
+| Dockerized IB Gateway | Paper        |       `4002` |
+| Dockerized IB Gateway | Live         |       `4001` |
 
 This crate defaults to `4002`, which matches paper-trading IB Gateway and the
 default Dockerized IB Gateway paper setup. If you are connecting to TWS or to a

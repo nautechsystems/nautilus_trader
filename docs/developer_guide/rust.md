@@ -411,12 +411,12 @@ with the bindings.
 
 **Annotation types:**
 
-| PyO3 construct    | Stub annotation                                  |
-| ----------------- | ------------------------------------------------ |
-| `#[pyclass]`      | `pyo3_stub_gen::derive::gen_stub_pyclass`        |
-| enum `#[pyclass]` | `pyo3_stub_gen::derive::gen_stub_pyclass_enum`   |
-| `#[pymethods]`    | `pyo3_stub_gen::derive::gen_stub_pymethods`      |
-| `#[pyfunction]`   | `pyo3_stub_gen::derive::gen_stub_pyfunction`     |
+| PyO3 construct    | Stub annotation                                |
+| ----------------- | ---------------------------------------------- |
+| `#[pyclass]`      | `pyo3_stub_gen::derive::gen_stub_pyclass`      |
+| enum `#[pyclass]` | `pyo3_stub_gen::derive::gen_stub_pyclass_enum` |
+| `#[pymethods]`    | `pyo3_stub_gen::derive::gen_stub_pymethods`    |
+| `#[pyfunction]`   | `pyo3_stub_gen::derive::gen_stub_pyfunction`   |
 
 **Placement rules:**
 
@@ -597,11 +597,11 @@ input. Treat these as compatibility surfaces and do not copy the pattern into ne
 
 Use decimal values for discrete financial quantities:
 
-| Value                                    | Type and construction                                      |
-| ---------------------------------------- | ---------------------------------------------------------- |
-| Price or quantity.                       | `Price::from_decimal_dp` or `Quantity::from_decimal_dp`.   |
-| Money, fee, margin, or balance.          | `Decimal`, then `Money::from_decimal` or `Money::zero`.    |
-| Continuous signal ratio or timing curve. | `f64` when decimal precision has no domain meaning.        |
+| Value                                    | Type and construction                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| Price or quantity.                       | `Price::from_decimal_dp` or `Quantity::from_decimal_dp`. |
+| Money, fee, margin, or balance.          | `Decimal`, then `Money::from_decimal` or `Money::zero`.  |
+| Continuous signal ratio or timing curve. | `f64` when decimal precision has no domain meaning.      |
 
 In tests, compare `.as_decimal()` with `dec!(value)`. Do not convert financial values to `f64` for
 assertions. Legacy float constructors remain in the codebase, but use decimal paths in new code.
@@ -626,13 +626,13 @@ pub const BAR_SPEC_1_MINUTE_LAST: BarSpecification = BarSpecification {
 
 Choose a hash collection by determinism, trust boundary, performance, and access pattern:
 
-| Requirement                                      | Collection                     |
-| ------------------------------------------------ | ------------------------------ |
-| Observable insertion‑order iteration.            | `IndexMap` or `IndexSet`.      |
-| Hot lookup with no observable iteration order.   | `AHashMap` or `AHashSet`.      |
-| Untrusted keys or a network‑facing boundary.     | `HashMap` or `HashSet`.        |
-| External API requires a standard collection.     | `HashMap` or `HashSet`.        |
-| Simple, non‑critical storage.                    | `HashMap` or `HashSet`.        |
+| Requirement                                    | Collection                |
+| ---------------------------------------------- | ------------------------- |
+| Observable insertion‑order iteration.          | `IndexMap` or `IndexSet`. |
+| Hot lookup with no observable iteration order. | `AHashMap` or `AHashSet`. |
+| Untrusted keys or a network‑facing boundary.   | `HashMap` or `HashSet`.   |
+| External API requires a standard collection.   | `HashMap` or `HashSet`.   |
+| Simple, non‑critical storage.                  | `HashMap` or `HashSet`.   |
 
 #### Iteration-order determinism
 
@@ -1251,10 +1251,10 @@ The codebase uses unsafe Rust for these purposes:
 
 `Send` and `Sync` have different obligations:
 
-| Trait  | Safe code may                                              |
-| ------ | ---------------------------------------------------------- |
-| `Send` | Move ownership of the value to another thread.             |
-| `Sync` | Share `&T` between threads.                                |
+| Trait  | Safe code may                                  |
+| ------ | ---------------------------------------------- |
+| `Send` | Move ownership of the value to another thread. |
+| `Sync` | Share `&T` between threads.                    |
 
 An unsafe implementation must make every permitted safe use sound. The proof covers all reachable
 state, aliases, callbacks, generic parameters, safe methods, cloning, and destruction. Documentation
@@ -1334,14 +1334,14 @@ let handler = TypedHandler::from(move |quote: &QuoteTick| {
 
 The repository combines standard Rust tools with project-specific pre-commit checks:
 
-| Area                       | Source of truth                                                 |
-| -------------------------- | --------------------------------------------------------------- |
-| Formatting and imports.    | `rustfmt.toml`.                                                 |
-| Workspace lints.           | `Cargo.toml` and `clippy.toml`.                                 |
-| Rust layout conventions.   | `.pre-commit-hooks/check_formatting_rs.sh`.                     |
-| Nautilus type conventions. | `.pre-commit-hooks/check_nautilus_conventions.sh`.              |
-| Tokio and DST usage.       | `check_tokio_usage.sh` and `check_dst_conventions.sh` hooks.    |
-| PyO3 bindings.             | `.pre-commit-hooks/check_pyo3_conventions.sh`.                  |
+| Area                       | Source of truth                                              |
+| -------------------------- | ------------------------------------------------------------ |
+| Formatting and imports.    | `rustfmt.toml`.                                              |
+| Workspace lints.           | `Cargo.toml` and `clippy.toml`.                              |
+| Rust layout conventions.   | `.pre-commit-hooks/check_formatting_rs.sh`.                  |
+| Nautilus type conventions. | `.pre-commit-hooks/check_nautilus_conventions.sh`.           |
+| Tokio and DST usage.       | `check_tokio_usage.sh` and `check_dst_conventions.sh` hooks. |
+| PyO3 bindings.             | `.pre-commit-hooks/check_pyo3_conventions.sh`.               |
 
 Every workspace crate inherits the workspace lints through `[lints] workspace = true`. When
 suppressing `missing_panics_doc` or `missing_errors_doc`, include a `reason` that explains why the

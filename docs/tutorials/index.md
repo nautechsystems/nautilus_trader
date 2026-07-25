@@ -36,37 +36,37 @@ New to NautilusTrader? Work through these in sequence:
 
 ## Backtesting
 
-| Tutorial                                                                            | Description                                    | Data          |
-| :---------------------------------------------------------------------------------- | :--------------------------------------------- | :------------ |
-| [Backtest with FX Bar Data][backtest_fx_bars]                                       | EMA cross on FX bars with rollover simulation. | Bundled       |
-| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance]         | Order book imbalance strategy on depth data.   | User‑provided |
-| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]             | Order book imbalance strategy on depth data.   | User‑provided |
+| Tutorial                                                                    | Description                                    | Data          |
+| :-------------------------------------------------------------------------- | :--------------------------------------------- | :------------ |
+| [Backtest with FX Bar Data][backtest_fx_bars]                               | EMA cross on FX bars with rollover simulation. | Bundled       |
+| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance] | Order book imbalance strategy on depth data.   | User‑provided |
+| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]     | Order book imbalance strategy on depth data.   | User‑provided |
 
 ## Data workflows
 
 For task-oriented data recipes, see the [how-to guides](../how_to/):
 
-| Guide                                                                               | Description                                       | Data              |
-| :---------------------------------------------------------------------------------- | :------------------------------------------------ | :---------------- |
-| [Loading external data][loading_external_data]                                      | Load external data into the `ParquetDataCatalog`. | User‑provided     |
-| [Data catalog with Databento][data_catalog_databento]                               | Set up a catalog with Databento schemas.          | Databento API key |
+| Guide                                                 | Description                                       | Data              |
+| :---------------------------------------------------- | :------------------------------------------------ | :---------------- |
+| [Loading external data][loading_external_data]        | Load external data into the `ParquetDataCatalog`. | User‑provided     |
+| [Data catalog with Databento][data_catalog_databento] | Set up a catalog with Databento schemas.          | Databento API key |
 
 ## Strategy patterns
 
-| Tutorial                                                                            | Description                                       | Data              |
-| :---------------------------------------------------------------------------------- | :------------------------------------------------ | :---------------- |
-| [Mean Reversion with Proxy FX Data (AX Exchange)](fx_mean_reversion_ax)             | Bollinger Band mean reversion on EURUSD‑PERP.     | TrueFX proxy      |
-| [Gold Perpetual Book Imbalance (AX Exchange)](gold_book_imbalance_ax)               | Order book imbalance on XAU‑PERP.                 | Databento API key |
-| [Grid Market Making with a Deadman's Switch (BitMEX)](grid_market_maker_bitmex)     | Grid MM with server‑side safety on XBTUSD.        | Tardis.dev        |
-| [On‑Chain Grid Market Making with Short‑Term Orders (dYdX)](grid_market_maker_dydx) | Grid MM on dYdX v4 perpetuals.                    | User‑provided     |
+| Tutorial                                                                            | Description                                   | Data              |
+| :---------------------------------------------------------------------------------- | :-------------------------------------------- | :---------------- |
+| [Mean Reversion with Proxy FX Data (AX Exchange)](fx_mean_reversion_ax)             | Bollinger Band mean reversion on EURUSD‑PERP. | TrueFX proxy      |
+| [Gold Perpetual Book Imbalance (AX Exchange)](gold_book_imbalance_ax)               | Order book imbalance on XAU‑PERP.             | Databento API key |
+| [Grid Market Making with a Deadman's Switch (BitMEX)](grid_market_maker_bitmex)     | Grid MM with server‑side safety on XBTUSD.    | Tardis.dev        |
+| [On‑Chain Grid Market Making with Short‑Term Orders (dYdX)](grid_market_maker_dydx) | Grid MM on dYdX v4 perpetuals.                | User‑provided     |
 
 ## Options
 
-| Tutorial                                                                            | Description                                       | Data              |
-| :---------------------------------------------------------------------------------- | :------------------------------------------------ | :---------------- |
-| [Options Data and Greeks (Bybit)](options_data_bybit)                               | Stream Greeks and option chain snapshots.         | Live API          |
-| [Delta‑Neutral Options Strategy (Bybit)](delta_neutral_options_bybit)               | Short strangle with perpetual delta hedging.      | Live API          |
-| [Delta‑Neutral Options Strategy (Derive)](delta_neutral_options_derive)             | Derive ETH strangle hedger with premium entry.    | Live API          |
+| Tutorial                                                                | Description                                    | Data     |
+| :---------------------------------------------------------------------- | :--------------------------------------------- | :------- |
+| [Options Data and Greeks (Bybit)](options_data_bybit)                   | Stream Greeks and option chain snapshots.      | Live API |
+| [Delta‑Neutral Options Strategy (Bybit)](delta_neutral_options_bybit)   | Short strangle with perpetual delta hedging.   | Live API |
+| [Delta‑Neutral Options Strategy (Derive)](delta_neutral_options_derive) | Derive ETH strangle hedger with premium entry. | Live API |
 
 ## Rust
 

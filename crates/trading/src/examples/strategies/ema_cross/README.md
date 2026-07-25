@@ -30,11 +30,11 @@ faster to price changes; a longer `slow_period` smooths out noise.
 
 Common period pairs:
 
-| Style        | Fast | Slow | Crossover frequency |
-| ------------ | ---- | ---- | ------------------- |
-| Scalping     | 5    | 20   | High                |
-| Intraday     | 10   | 50   | Medium              |
-| Swing        | 20   | 100  | Low                 |
+| Style    | Fast | Slow | Crossover frequency |
+| -------- | ---- | ---- | ------------------- |
+| Scalping | 5    | 20   | High                |
+| Intraday | 10   | 50   | Medium              |
+| Swing    | 20   | 100  | Low                 |
 
 ## Parameters
 

@@ -296,10 +296,10 @@ cents); a too-tight offset produces spurious `11051` rejections.
 
 #### Execution instructions
 
-| Instruction   | Supported | Derive value  | Notes                                                         |
-| ------------- | --------- | ------------- | ------------------------------------------------------------- |
-| `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.    |
-| `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied.   |
+| Instruction   | Supported | Derive value  | Notes                                                       |
+| ------------- | --------- | ------------- | ----------------------------------------------------------- |
+| `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.  |
+| `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied. |
 
 #### Time in force
 

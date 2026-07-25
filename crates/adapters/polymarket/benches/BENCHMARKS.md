@@ -69,34 +69,34 @@ so there is no `modify` row.
 Decomposes the exec-pipeline signature cost into its components and
 covers the L2 HMAC path used by every authenticated REST call.
 
-| Bench                       | Median  |
-| --------------------------- | ------- |
-| `sign_order`                | 44.3 µs |
-| `sign_order_neg_risk`       | 44.0 µs |
-| `order_hash`                | 2.60 µs |
-| `signer_construction`       | 31.5 µs |
-| `sign_clob_auth`            | 77.6 µs |
-| `hmac_l2_sign`              | 332 ns  |
+| Bench                 | Median  |
+| --------------------- | ------- |
+| `sign_order`          | 44.3 µs |
+| `sign_order_neg_risk` | 44.0 µs |
+| `order_hash`          | 2.60 µs |
+| `signer_construction` | 31.5 µs |
+| `sign_clob_auth`      | 77.6 µs |
+| `hmac_l2_sign`        | 332 ns  |
 
 ## Component breakdown (`micros.rs`)
 
 Diagnostic benches that decompose the pipeline numbers above. Use these
 to localise where time goes when a pipeline bench regresses.
 
-| Bench                            | Median  |
-| -------------------------------- | ------- |
-| `decode_only/trade`              | 384 ns  |
-| `decode_only/book`               | 1.56 µs |
-| `parse_only/trade`               | 150 ns  |
-| `parse_only/book_snapshot`       | 350 ns  |
-| `atom/decimal_from_str`          | 6.94 ns |
-| `atom/price_from_decimal_dp`     | 10.7 ns |
-| `atom/quantity_from_decimal_dp`  | 7.41 ns |
-| `atom/price_combined`            | 16.8 ns |
-| `atom/trade_id_determine`        | 99.5 ns |
-| `atom/uuid4_new`                 | 59.9 ns |
-| `atom/event_filled_construct`    | 64.4 ns |
-| `atom/event_accepted_construct`  | 60.4 ns |
+| Bench                           | Median  |
+| ------------------------------- | ------- |
+| `decode_only/trade`             | 384 ns  |
+| `decode_only/book`              | 1.56 µs |
+| `parse_only/trade`              | 150 ns  |
+| `parse_only/book_snapshot`      | 350 ns  |
+| `atom/decimal_from_str`         | 6.94 ns |
+| `atom/price_from_decimal_dp`    | 10.7 ns |
+| `atom/quantity_from_decimal_dp` | 7.41 ns |
+| `atom/price_combined`           | 16.8 ns |
+| `atom/trade_id_determine`       | 99.5 ns |
+| `atom/uuid4_new`                | 59.9 ns |
+| `atom/event_filled_construct`   | 64.4 ns |
+| `atom/event_accepted_construct` | 60.4 ns |
 
 ## Notes
 

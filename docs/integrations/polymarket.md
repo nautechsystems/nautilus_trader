@@ -251,12 +251,12 @@ published by bootstrap, configured refreshes, new-market discovery, and tick-siz
 
 ### Generic subscription commands
 
-| Test ID | Command                    | Disposition | Matrix |
-| ------- | -------------------------- | ----------- | ------ |
-| TC-D02  | Singular instrument        | Supported   | Run    |
-| TC-D12  | `OrderBookDepth10`         | Unsupported | Skip   |
-| TC-D60  | Instrument status          | Unsupported | Skip   |
-| TC-D61  | Instrument close           | Unsupported | Skip   |
+| Test ID | Command             | Disposition | Matrix |
+| ------- | ------------------- | ----------- | ------ |
+| TC-D02  | Singular instrument | Supported   | Run    |
+| TC-D12  | `OrderBookDepth10`  | Unsupported | Skip   |
+| TC-D60  | Instrument status   | Unsupported | Skip   |
+| TC-D61  | Instrument close    | Unsupported | Skip   |
 
 - TC-D02 receives live definition publications from the shared instrument sources. It does not
   replay a cached definition. Unsubscribe removes the per-instrument data-engine handler without
@@ -368,11 +368,11 @@ reports expiry as an `OrderCanceled` event, not `OrderExpired`.
 
 ### Advanced order features
 
-| Feature            | Binary Options | Notes                              |
-| ------------------ | -------------- | ---------------------------------- |
-| Order modification | -              | Cancellation functionality only.   |
-| Bracket/OCO orders | -              | *Not supported by Polymarket.*     |
-| Iceberg orders     | -              | *Not supported by Polymarket.*     |
+| Feature            | Binary Options | Notes                            |
+| ------------------ | -------------- | -------------------------------- |
+| Order modification | -              | Cancellation functionality only. |
+| Bracket/OCO orders | -              | *Not supported by Polymarket.*   |
+| Iceberg orders     | -              | *Not supported by Polymarket.*   |
 
 ### Batch operations
 

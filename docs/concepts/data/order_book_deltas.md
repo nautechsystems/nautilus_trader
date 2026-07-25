@@ -6,14 +6,14 @@ or produce multiple book changes at once.
 
 ## Fields
 
-| Field           | Rust type             | Python type            | Required/default | Notes                                     |
-| --------------- | --------------------- | ---------------------- | ---------------- | ----------------------------------------- |
-| `instrument_id` | `InstrumentId`        | `InstrumentId`         | Required         | Instrument whose book is changing.        |
-| `deltas`        | `Vec<OrderBookDelta>` | `list[OrderBookDelta]` | Required         | Non‑empty batch of deltas.                |
-| `flags`         | `u8`                  | `int`                  | From last delta  | Last delta flags.                         |
-| `sequence`      | `u64`                 | `int`                  | From last delta  | Last delta sequence number.               |
-| `ts_event`      | `UnixNanos`           | `int`                  | From last delta  | Last delta event timestamp.               |
-| `ts_init`       | `UnixNanos`           | `int`                  | From last delta  | Last delta initialization timestamp.      |
+| Field           | Rust type             | Python type            | Required/default | Notes                                |
+| --------------- | --------------------- | ---------------------- | ---------------- | ------------------------------------ |
+| `instrument_id` | `InstrumentId`        | `InstrumentId`         | Required         | Instrument whose book is changing.   |
+| `deltas`        | `Vec<OrderBookDelta>` | `list[OrderBookDelta]` | Required         | Non‑empty batch of deltas.           |
+| `flags`         | `u8`                  | `int`                  | From last delta  | Last delta flags.                    |
+| `sequence`      | `u64`                 | `int`                  | From last delta  | Last delta sequence number.          |
+| `ts_event`      | `UnixNanos`           | `int`                  | From last delta  | Last delta event timestamp.          |
+| `ts_init`       | `UnixNanos`           | `int`                  | From last delta  | Last delta initialization timestamp. |
 
 ## Behavior
 

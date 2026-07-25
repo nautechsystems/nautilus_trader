@@ -92,10 +92,10 @@ statement the value you want the synthetic to produce.
 The expression engine enforces the following compile-time limits. Formulas that exceed them
 produce a clear error at construction time.
 
-| Limit            | Value | Description                                                    |
-| ---------------- | ----- | -------------------------------------------------------------- |
-| Stack depth      | 32    | Maximum number of intermediate values on the evaluation stack. |
-| Local variables  | 16    | Maximum number of distinct local variable names.               |
+| Limit           | Value | Description                                                    |
+| --------------- | ----- | -------------------------------------------------------------- |
+| Stack depth     | 32    | Maximum number of intermediate values on the evaluation stack. |
+| Local variables | 16    | Maximum number of distinct local variable names.               |
 
 These limits are generous for any realistic pricing formula. A weighted sum of 8 components
 uses a peak stack depth of 3 and zero locals.
@@ -212,13 +212,13 @@ Measured on Apple M4 Pro, rustc 1.94.1, release profile (opt-level 3):
 
 ### Compilation (cold path)
 
-| Formula pattern    | Time   |
-| ------------------ | ------ |
-| Simple average     | 675 ns |
-| 4-input weighted   | 1.4 us |
-| Conditional        | 1.0 us |
-| With locals        | 1.3 us |
-| Hyphenated IDs     | 755 ns |
+| Formula pattern  | Time   |
+| ---------------- | ------ |
+| Simple average   | 675 ns |
+| 4-input weighted | 1.4 us |
+| Conditional      | 1.0 us |
+| With locals      | 1.3 us |
+| Hyphenated IDs   | 755 ns |
 
 ## Error handling
 

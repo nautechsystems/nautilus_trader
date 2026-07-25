@@ -49,18 +49,18 @@ coincide with the bar boundaries.
 
 ## Parameters
 
-| Parameter          | Type             | Default          | Description                                             |
-| ------------------ | ---------------- | ---------------- | ------------------------------------------------------- |
-| `instrument_id`    | `InstrumentId`   | required         | Instrument to subscribe to and trade.                   |
-| `bar_type`         | `BarType`        | required         | Dollar bar type (`VALUE` aggregation, `LAST` prices).   |
-| `trade_size`       | `Quantity`       | required         | Order quantity for each entry.                          |
-| `hurst_window`     | `usize`          | `128`            | Rolling window of dollar bar log returns.               |
-| `hurst_lags`       | `Vec<usize>`     | `[4, 8, 16, 32]` | Lag set used in the R/S regression.                     |
-| `hurst_enter`      | `f64`            | `0.55`           | Above this, the regime is treated as trending.          |
-| `hurst_exit`       | `f64`            | `0.50`           | Below this, open positions are flattened.               |
-| `vpin_window`      | `usize`          | `50`             | Number of volume buckets averaged for VPIN.             |
-| `vpin_threshold`   | `f64`            | `0.30`           | Minimum VPIN for flow to be considered informed.        |
-| `max_holding_secs` | `u64`            | `3600`           | Maximum seconds a position may be held.                 |
+| Parameter          | Type           | Default          | Description                                           |
+| ------------------ | -------------- | ---------------- | ----------------------------------------------------- |
+| `instrument_id`    | `InstrumentId` | required         | Instrument to subscribe to and trade.                 |
+| `bar_type`         | `BarType`      | required         | Dollar bar type (`VALUE` aggregation, `LAST` prices). |
+| `trade_size`       | `Quantity`     | required         | Order quantity for each entry.                        |
+| `hurst_window`     | `usize`        | `128`            | Rolling window of dollar bar log returns.             |
+| `hurst_lags`       | `Vec<usize>`   | `[4, 8, 16, 32]` | Lag set used in the R/S regression.                   |
+| `hurst_enter`      | `f64`          | `0.55`           | Above this, the regime is treated as trending.        |
+| `hurst_exit`       | `f64`          | `0.50`           | Below this, open positions are flattened.             |
+| `vpin_window`      | `usize`        | `50`             | Number of volume buckets averaged for VPIN.           |
+| `vpin_threshold`   | `f64`          | `0.30`           | Minimum VPIN for flow to be considered informed.      |
+| `max_holding_secs` | `u64`          | `3600`           | Maximum seconds a position may be held.               |
 
 ## Rust usage
 

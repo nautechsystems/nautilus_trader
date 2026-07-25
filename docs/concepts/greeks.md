@@ -253,27 +253,27 @@ On the legacy Python surface, `GreeksData` is a Python custom data class
 computation. It extends `Data` and supports Arrow serialization, cache storage, and
 catalog persistence. The v2/PyO3 surface exposes the same core fields from Rust.
 
-| Field               | Type            | Description                                            |
-| ------------------- | --------------- | ------------------------------------------------------ |
-| `instrument_id`     | `InstrumentId`  | The instrument.                                        |
-| `is_call`           | `bool`          | True for call, False for put.                          |
-| `strike`            | `float`         | Strike price.                                          |
-| `expiry`            | `int`           | Expiry date as YYYYMMDD integer.                       |
-| `expiry_in_days`    | `int`           | Days to expiry.                                        |
-| `expiry_in_years`   | `float`         | Years to expiry (days / 365.25).                       |
-| `multiplier`        | `float`         | Contract multiplier.                                   |
-| `quantity`          | `float`         | Position quantity (always 1 from `instrument_greeks`). |
-| `underlying_price`  | `float`         | Underlying price used in calculation.                  |
-| `interest_rate`     | `float`         | Interest rate used.                                    |
-| `cost_of_carry`     | `float`         | Cost of carry (r - dividend yield; 0 for futures).     |
-| `vol`               | `float`         | Implied volatility.                                    |
-| `pnl`               | `float`         | PnL relative to position entry (if position provided). |
-| `price`             | `float`         | Model price.                                           |
-| `delta`             | `float`         | Delta.                                                 |
-| `gamma`             | `float`         | Gamma.                                                 |
-| `vega`              | `float`         | Vega (dV / 1% vol change).                             |
-| `theta`             | `float`         | Theta (daily decay).                                   |
-| `itm_prob`          | `float`         | In‑the‑money probability.                              |
+| Field              | Type           | Description                                            |
+| ------------------ | -------------- | ------------------------------------------------------ |
+| `instrument_id`    | `InstrumentId` | The instrument.                                        |
+| `is_call`          | `bool`         | True for call, False for put.                          |
+| `strike`           | `float`        | Strike price.                                          |
+| `expiry`           | `int`          | Expiry date as YYYYMMDD integer.                       |
+| `expiry_in_days`   | `int`          | Days to expiry.                                        |
+| `expiry_in_years`  | `float`        | Years to expiry (days / 365.25).                       |
+| `multiplier`       | `float`        | Contract multiplier.                                   |
+| `quantity`         | `float`        | Position quantity (always 1 from `instrument_greeks`). |
+| `underlying_price` | `float`        | Underlying price used in calculation.                  |
+| `interest_rate`    | `float`        | Interest rate used.                                    |
+| `cost_of_carry`    | `float`        | Cost of carry (r - dividend yield; 0 for futures).     |
+| `vol`              | `float`        | Implied volatility.                                    |
+| `pnl`              | `float`        | PnL relative to position entry (if position provided). |
+| `price`            | `float`        | Model price.                                           |
+| `delta`            | `float`        | Delta.                                                 |
+| `gamma`            | `float`        | Gamma.                                                 |
+| `vega`             | `float`        | Vega (dV / 1% vol change).                             |
+| `theta`            | `float`        | Theta (daily decay).                                   |
+| `itm_prob`         | `float`        | In‑the‑money probability.                              |
 
 `GreeksData` scales to portfolio level via its `to_portfolio_greeks()` method, which
 multiplies all values by the contract `multiplier`. The `*` operator applies position
@@ -321,17 +321,17 @@ rate = curve(0.75)  # quadratic interpolation
 
 ## Choosing between the two paths
 
-| Criterion                    | Venue‑provided (`OptionGreeks`)        | Local calculator (`GreeksCalculator`)    |
-| ---------------------------- | -------------------------------------- | ---------------------------------------- |
-| Computation                  | Done by the venue                      | Local Black‑Scholes                      |
-| Latency                      | Arrives with market data               | Computed on demand                       |
-| Venues                       | Deribit, Bybit, OKX                    | Any venue with option instruments        |
-| Shock scenarios              | Not supported                          | Spot, vol, and time shocks               |
-| Portfolio aggregation        | Manual (iterate `OptionChainSlice`)    | Built‑in via `portfolio_greeks()`        |
-| Beta weighting               | Not supported                          | Built‑in                                 |
-| Backtest support             | Via recorded `OptionGreeks` data       | From cached prices at any point in time  |
-| Greeks available             | delta, gamma, vega, theta, rho, IV, OI | delta, gamma, vega, theta, itm_prob, vol |
-| Data type                    | `OptionGreeks` (Rust/PyO3)             | `GreeksData` / `PortfolioGreeks`         |
+| Criterion             | Venue‑provided (`OptionGreeks`)        | Local calculator (`GreeksCalculator`)    |
+| --------------------- | -------------------------------------- | ---------------------------------------- |
+| Computation           | Done by the venue                      | Local Black‑Scholes                      |
+| Latency               | Arrives with market data               | Computed on demand                       |
+| Venues                | Deribit, Bybit, OKX                    | Any venue with option instruments        |
+| Shock scenarios       | Not supported                          | Spot, vol, and time shocks               |
+| Portfolio aggregation | Manual (iterate `OptionChainSlice`)    | Built‑in via `portfolio_greeks()`        |
+| Beta weighting        | Not supported                          | Built‑in                                 |
+| Backtest support      | Via recorded `OptionGreeks` data       | From cached prices at any point in time  |
+| Greeks available      | delta, gamma, vega, theta, rho, IV, OI | delta, gamma, vega, theta, itm_prob, vol |
+| Data type             | `OptionGreeks` (Rust/PyO3)             | `GreeksData` / `PortfolioGreeks`         |
 
 ## Greek definitions
 

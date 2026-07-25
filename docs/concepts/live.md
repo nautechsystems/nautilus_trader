@@ -45,11 +45,11 @@ submit rejects and API refusals where venue semantics guarantee non‑acceptance
 HTTP 400, 401, 403, and 429 status responses. A status code is definitive
 only when venue‑specific semantics prove non‑acceptance.
 
-| Command type                         | Rejection event       | When it appears                                                   |
-| ------------------------------------ | --------------------- | ----------------------------------------------------------------- |
-| Submit and submit order list         | `OrderRejected`       | A venue or API response proves an order was not accepted.         |
-| Modify                               | `OrderModifyRejected` | The venue returns a command‑specific modify reject.               |
-| Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order cancel reject.  |
+| Command type                         | Rejection event       | When it appears                                                  |
+| ------------------------------------ | --------------------- | ---------------------------------------------------------------- |
+| Submit and submit order list         | `OrderRejected`       | A venue or API response proves an order was not accepted.        |
+| Modify                               | `OrderModifyRejected` | The venue returns a command‑specific modify reject.              |
+| Cancel, cancel‑all, and batch‑cancel | `OrderCancelRejected` | The venue returns a command‑specific or per‑order cancel reject. |
 
 A successful response can still contain per‑order failure fields, and those fields are
 definitive command outcomes. A whole‑request failure without per‑order results remains
@@ -239,15 +239,15 @@ The loop waits for startup reconciliation to finish before starting periodic che
 The `reconciliation_startup_delay_secs` parameter adds a further delay *after* startup
 reconciliation completes, giving the system time to stabilize.
 
-| Scenario                            | Description                                                | System behavior                                      |
-| ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
-| **Explicit submit API refusal**     | API refuses create‑order before acceptance.                | Emits `OrderRejected`.                               |
-| **Ambiguous submit failure**        | Submit fails without confirmed venue refusal.              | Logs failure and waits for reconciliation.           |
-| **In‑flight submit timeout**        | `SUBMITTED` remains unconfirmed beyond retry exhaustion.   | Resolves to `REJECTED`.                              |
-| **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries.  | Logs warning and remains unresolved.                 |
-| **Open orders check discrepancy**   | Periodic poll detects a venue state change.                | Confirms status and applies transitions.             |
-| **Position check discrepancy**      | Periodic poll detects a position mismatch.                 | Generates reconciliation events when eligible.       |
-| **Own books audit mismatch**        | Own order books diverge from venue public books.           | Audits and logs inconsistencies.                     |
+| Scenario                            | Description                                               | System behavior                                |
+| ----------------------------------- | --------------------------------------------------------- | ---------------------------------------------- |
+| **Explicit submit API refusal**     | API refuses create‑order before acceptance.               | Emits `OrderRejected`.                         |
+| **Ambiguous submit failure**        | Submit fails without confirmed venue refusal.             | Logs failure and waits for reconciliation.     |
+| **In‑flight submit timeout**        | `SUBMITTED` remains unconfirmed beyond retry exhaustion.  | Resolves to `REJECTED`.                        |
+| **In‑flight cancel/update timeout** | `PENDING_CANCEL` or `PENDING_UPDATE` exceeds the retries. | Logs warning and remains unresolved.           |
+| **Open orders check discrepancy**   | Periodic poll detects a venue state change.               | Confirms status and applies transitions.       |
+| **Position check discrepancy**      | Periodic poll detects a position mismatch.                | Generates reconciliation events when eligible. |
+| **Own books audit mismatch**        | Own order books diverge from venue public books.          | Audits and logs inconsistencies.               |
 
 **In‑flight order timeout resolution** (venue does not respond after max retries):
 
@@ -354,14 +354,14 @@ These hold even when:
 When `reconciliation_lookback_mins` limits the window, the system analyzes position lifecycles
 from fills and adjusts to reconstruct positions accurately.
 
-| Scenario                                   | Description                                                                  | System behavior                                                             |
-| ------------------------------------------ | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **Complete lifecycle**                     | All fills from opening to current state are captured.                        | No adjustment.                                                              |
-| **Incomplete single lifecycle**            | Window misses opening fills, no zero‑crossings.                              | Adds synthetic opening fill with calculated price.                          |
-| **Multiple lifecycles, current matches**   | Zero‑crossings detected, current lifecycle matches venue.                    | Filters out old lifecycles, returns current only.                           |
-| **Multiple lifecycles, current mismatch**  | Zero‑crossings detected, current lifecycle differs from venue.               | Replaces current lifecycle with a single synthetic fill.                    |
-| **Flat position**                          | Venue reports FLAT regardless of fill history.                               | No adjustment.                                                              |
-| **No fills**                               | Window contains no fill reports.                                             | No adjustment, empty result.                                                |
+| Scenario                                  | Description                                                    | System behavior                                          |
+| ----------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------- |
+| **Complete lifecycle**                    | All fills from opening to current state are captured.          | No adjustment.                                           |
+| **Incomplete single lifecycle**           | Window misses opening fills, no zero‑crossings.                | Adds synthetic opening fill with calculated price.       |
+| **Multiple lifecycles, current matches**  | Zero‑crossings detected, current lifecycle matches venue.      | Filters out old lifecycles, returns current only.        |
+| **Multiple lifecycles, current mismatch** | Zero‑crossings detected, current lifecycle differs from venue. | Replaces current lifecycle with a single synthetic fill. |
+| **Flat position**                         | Venue reports FLAT regardless of fill history.                 | No adjustment.                                           |
+| **No fills**                              | Window contains no fill reports.                               | No adjustment, empty result.                             |
 
 **Key concepts:**
 

@@ -80,27 +80,27 @@ The adapter decodes DBN data to Nautilus objects. The same Rust decoder handles:
 
 The following Databento schemas are supported by NautilusTrader:
 
-| Databento schema                                                              | Nautilus data type                | Description                     |
-| :---------------------------------------------------------------------------- | :-------------------------------- | :------------------------------ |
-| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)                | `OrderBookDelta`                  | Market by order (L3).           |
-| [MBP_1](https://databento.com/docs/schemas-and-data-formats/mbp-1)            | `(QuoteTick, TradeTick \| None)`  | Market by price (L1).           |
-| [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)          | `OrderBookDepth10`                | Market depth (L2).              |
-| [BBO_1S](https://databento.com/docs/schemas-and-data-formats/bbo-1s)          | `QuoteTick`                       | 1-second best bid/offer.        |
-| [BBO_1M](https://databento.com/docs/schemas-and-data-formats/bbo-1m)          | `QuoteTick`                       | 1-minute best bid/offer.        |
-| [CMBP_1](https://databento.com/docs/schemas-and-data-formats/cmbp-1)          | `(QuoteTick, TradeTick \| None)`  | Consolidated MBP across venues. |
-| [CBBO_1S](https://databento.com/docs/schemas-and-data-formats/cbbo-1s)        | `QuoteTick`                       | Consolidated 1-second BBO.      |
-| [CBBO_1M](https://databento.com/docs/schemas-and-data-formats/cbbo-1m)        | `QuoteTick`                       | Consolidated 1-minute BBO.      |
-| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)            | `(QuoteTick, TradeTick)`          | Trade‑sampled consolidated BBO. |
-| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)              | `(QuoteTick, TradeTick)`          | Trade‑sampled best bid/offer.   |
-| [TRADES](https://databento.com/docs/schemas-and-data-formats/trades)          | `TradeTick`                       | Trade ticks.                    |
-| [OHLCV_1S](https://databento.com/docs/schemas-and-data-formats/ohlcv-1s)      | `Bar`                             | 1-second bars.                  |
-| [OHLCV_1M](https://databento.com/docs/schemas-and-data-formats/ohlcv-1m)      | `Bar`                             | 1-minute bars.                  |
-| [OHLCV_1H](https://databento.com/docs/schemas-and-data-formats/ohlcv-1h)      | `Bar`                             | 1-hour bars.                    |
-| [OHLCV_1D](https://databento.com/docs/schemas-and-data-formats/ohlcv-1d)      | `Bar`                             | Daily bars.                     |
-| [DEFINITION](https://databento.com/docs/schemas-and-data-formats/definition)  | `Instrument` (various types)      | Instrument definitions.         |
-| [IMBALANCE](https://databento.com/docs/schemas-and-data-formats/imbalance)    | `DatabentoImbalance`              | Auction imbalance data.         |
-| [STATISTICS](https://databento.com/docs/schemas-and-data-formats/statistics)  | `DatabentoStatistics`             | Market statistics.              |
-| [STATUS](https://databento.com/docs/schemas-and-data-formats/status)          | `InstrumentStatus`                | Market status updates.          |
+| Databento schema                                                             | Nautilus data type               | Description                     |
+| :--------------------------------------------------------------------------- | :------------------------------- | :------------------------------ |
+| [MBO](https://databento.com/docs/schemas-and-data-formats/mbo)               | `OrderBookDelta`                 | Market by order (L3).           |
+| [MBP_1](https://databento.com/docs/schemas-and-data-formats/mbp-1)           | `(QuoteTick, TradeTick \| None)` | Market by price (L1).           |
+| [MBP_10](https://databento.com/docs/schemas-and-data-formats/mbp-10)         | `OrderBookDepth10`               | Market depth (L2).              |
+| [BBO_1S](https://databento.com/docs/schemas-and-data-formats/bbo-1s)         | `QuoteTick`                      | 1-second best bid/offer.        |
+| [BBO_1M](https://databento.com/docs/schemas-and-data-formats/bbo-1m)         | `QuoteTick`                      | 1-minute best bid/offer.        |
+| [CMBP_1](https://databento.com/docs/schemas-and-data-formats/cmbp-1)         | `(QuoteTick, TradeTick \| None)` | Consolidated MBP across venues. |
+| [CBBO_1S](https://databento.com/docs/schemas-and-data-formats/cbbo-1s)       | `QuoteTick`                      | Consolidated 1-second BBO.      |
+| [CBBO_1M](https://databento.com/docs/schemas-and-data-formats/cbbo-1m)       | `QuoteTick`                      | Consolidated 1-minute BBO.      |
+| [TCBBO](https://databento.com/docs/schemas-and-data-formats/tcbbo)           | `(QuoteTick, TradeTick)`         | Trade‑sampled consolidated BBO. |
+| [TBBO](https://databento.com/docs/schemas-and-data-formats/tbbo)             | `(QuoteTick, TradeTick)`         | Trade‑sampled best bid/offer.   |
+| [TRADES](https://databento.com/docs/schemas-and-data-formats/trades)         | `TradeTick`                      | Trade ticks.                    |
+| [OHLCV_1S](https://databento.com/docs/schemas-and-data-formats/ohlcv-1s)     | `Bar`                            | 1-second bars.                  |
+| [OHLCV_1M](https://databento.com/docs/schemas-and-data-formats/ohlcv-1m)     | `Bar`                            | 1-minute bars.                  |
+| [OHLCV_1H](https://databento.com/docs/schemas-and-data-formats/ohlcv-1h)     | `Bar`                            | 1-hour bars.                    |
+| [OHLCV_1D](https://databento.com/docs/schemas-and-data-formats/ohlcv-1d)     | `Bar`                            | Daily bars.                     |
+| [DEFINITION](https://databento.com/docs/schemas-and-data-formats/definition) | `Instrument` (various types)     | Instrument definitions.         |
+| [IMBALANCE](https://databento.com/docs/schemas-and-data-formats/imbalance)   | `DatabentoImbalance`             | Auction imbalance data.         |
+| [STATISTICS](https://databento.com/docs/schemas-and-data-formats/statistics) | `DatabentoStatistics`            | Market statistics.              |
+| [STATUS](https://databento.com/docs/schemas-and-data-formats/status)         | `InstrumentStatus`               | Market status updates.          |
 
 :::note
 Databento also documents reference schemas, including corporate actions,
@@ -1003,20 +1003,20 @@ node.build()
 
 ### Configuration parameters
 
-| Option                    | Default | Description                                                           |
-| ------------------------- | ------- | --------------------------------------------------------------------- |
-| `api_key`                 | `None`  | Databento API secret; falls back to `DATABENTO_API_KEY`.              |
-| `http_gateway`            | `None`  | Historical HTTP endpoint override, mainly for tests.                  |
-| `live_gateway`            | `None`  | Live TCP endpoint override, mainly for tests.                         |
-| `instrument_provider`     | default | Provider settings; use `load_ids`, not `load_all=True`.               |
-| `use_exchange_as_venue`   | `True`  | Use exchange MIC venues for GLBX definitions.                         |
-| `timeout_initial_load`    | `15.0`  | Definition load timeout per dataset, in seconds.                      |
-| `mbo_subscriptions_delay` | `3.0`   | Delay before starting MBO/L3 streams, in seconds.                     |
-| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event`; `False` uses open.                 |
-| `reconnect_timeout_mins`  | `10`    | Retry window in minutes; `None` retries indefinitely.                 |
-| `venue_dataset_map`       | `None`  | Override venue‑to‑dataset mappings.                                   |
-| `parent_symbols`          | `None`  | Preload parent definition trees by dataset.                           |
-| `instrument_ids`          | `None`  | Definitions to preload at startup.                                    |
+| Option                    | Default | Description                                              |
+| ------------------------- | ------- | -------------------------------------------------------- |
+| `api_key`                 | `None`  | Databento API secret; falls back to `DATABENTO_API_KEY`. |
+| `http_gateway`            | `None`  | Historical HTTP endpoint override, mainly for tests.     |
+| `live_gateway`            | `None`  | Live TCP endpoint override, mainly for tests.            |
+| `instrument_provider`     | default | Provider settings; use `load_ids`, not `load_all=True`.  |
+| `use_exchange_as_venue`   | `True`  | Use exchange MIC venues for GLBX definitions.            |
+| `timeout_initial_load`    | `15.0`  | Definition load timeout per dataset, in seconds.         |
+| `mbo_subscriptions_delay` | `3.0`   | Delay before starting MBO/L3 streams, in seconds.        |
+| `bars_timestamp_on_close` | `True`  | Use bar close time for `ts_event`; `False` uses open.    |
+| `reconnect_timeout_mins`  | `10`    | Retry window in minutes; `None` retries indefinitely.    |
+| `venue_dataset_map`       | `None`  | Override venue‑to‑dataset mappings.                      |
+| `parent_symbols`          | `None`  | Preload parent definition trees by dataset.              |
+| `instrument_ids`          | `None`  | Definitions to preload at startup.                       |
 
 :::tip
 Use environment variables for credentials.

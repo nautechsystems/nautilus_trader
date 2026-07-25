@@ -115,11 +115,11 @@ The configured `product_types` must include the product suffix in each instrumen
 Bybit provides three trading environments. Configure the appropriate
 environment with the `environment` enum on your client configuration.
 
-| Environment  | Config                                | Description                                                      |
-| ------------ | ------------------------------------- | ---------------------------------------------------------------- |
-| **Mainnet**  | `BybitEnvironment.MAINNET`            | Production trading with real funds.                              |
-| **Demo**     | `BybitEnvironment.DEMO`               | Practice trading with simulated funds on mainnet infrastructure. |
-| **Testnet**  | `BybitEnvironment.TESTNET`            | Separate test network for development and integration testing.   |
+| Environment | Config                     | Description                                                      |
+| ----------- | -------------------------- | ---------------------------------------------------------------- |
+| **Mainnet** | `BybitEnvironment.MAINNET` | Production trading with real funds.                              |
+| **Demo**    | `BybitEnvironment.DEMO`    | Practice trading with simulated funds on mainnet infrastructure. |
+| **Testnet** | `BybitEnvironment.TESTNET` | Separate test network for development and integration testing.   |
 
 ### Mainnet (Production)
 
@@ -251,12 +251,12 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Time in force
 
-| Time in force | Spot | Linear | Inverse | Option | Notes                        |
-| ------------- | ---- | ------ | ------- | ------ | ---------------------------- |
-| `GTC`         | ✓    | ✓      | ✓       | ✓      | Good Till Canceled.          |
-| `GTD`         | -    | -      | -       | -      | *Not supported*.             |
-| `FOK`         | ✓    | ✓      | ✓       | ✓      | Fill or Kill.                |
-| `IOC`         | ✓    | ✓      | ✓       | ✓      | Immediate or Cancel.         |
+| Time in force | Spot | Linear | Inverse | Option | Notes                |
+| ------------- | ---- | ------ | ------- | ------ | -------------------- |
+| `GTC`         | ✓    | ✓      | ✓       | ✓      | Good Till Canceled.  |
+| `GTD`         | -    | -      | -       | -      | *Not supported*.     |
+| `FOK`         | ✓    | ✓      | ✓       | ✓      | Fill or Kill.        |
+| `IOC`         | ✓    | ✓      | ✓       | ✓      | Immediate or Cancel. |
 
 ### Advanced order features
 
@@ -268,20 +268,20 @@ All the order types listed below can be used as *either* entries or exits, excep
 
 ### Batch operations
 
-| Operation          | Spot | Linear | Inverse | Option | Notes                                     |
-| ------------------ | ---- | ------ | ------- | ------ | ----------------------------------------- |
-| Batch Submit       | ✓    | ✓      | ✓       | ✓      | Submit multiple orders in single request. |
-| Batch Modify       | ✓    | ✓      | ✓       | ✓      | Modify multiple orders in single request. |
-| Batch Cancel       | ✓    | ✓      | ✓       | ✓      | Cancel multiple orders in single request. |
+| Operation    | Spot | Linear | Inverse | Option | Notes                                     |
+| ------------ | ---- | ------ | ------- | ------ | ----------------------------------------- |
+| Batch Submit | ✓    | ✓      | ✓       | ✓      | Submit multiple orders in single request. |
+| Batch Modify | ✓    | ✓      | ✓       | ✓      | Modify multiple orders in single request. |
+| Batch Cancel | ✓    | ✓      | ✓       | ✓      | Cancel multiple orders in single request. |
 
 ### Position management
 
-| Feature             | Spot | Linear | Inverse | Option | Notes                                    |
-| ------------------- | ---- | ------ | ------- | ------ | ---------------------------------------- |
-| Query positions     | -    | ✓      | ✓       | ✓      | Real‑time position updates.              |
-| Position mode       | -    | ✓      | ✓       | -      | One‑Way only for Options.                |
-| Leverage control    | -    | ✓      | ✓       | -      | Not applicable for Options.              |
-| Margin mode         | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin.    |
+| Feature          | Spot | Linear | Inverse | Option | Notes                                 |
+| ---------------- | ---- | ------ | ------- | ------ | ------------------------------------- |
+| Query positions  | -    | ✓      | ✓       | ✓      | Real‑time position updates.           |
+| Position mode    | -    | ✓      | ✓       | -      | One‑Way only for Options.             |
+| Leverage control | -    | ✓      | ✓       | -      | Not applicable for Options.           |
+| Margin mode      | -    | ✓      | ✓       | ✓      | Cross, Isolated, or Portfolio Margin. |
 
 #### Hedge mode (BothSides)
 
@@ -354,43 +354,43 @@ Upstream references:
 
 ### Order querying
 
-| Feature             | Spot | Linear | Inverse | Option | Notes                                   |
-| ------------------- | ---- | ------ | ------- | ------ | --------------------------------------- |
-| Query open orders   | ✓    | ✓      | ✓       | ✓      | List all active orders.                 |
-| Query order history | ✓    | ✓      | ✓       | ✓      | Historical order data.                  |
-| Order status updates| ✓    | ✓      | ✓       | ✓      | Real‑time order state changes.          |
-| Trade history       | ✓    | ✓      | ✓       | ✓      | Execution and fill reports.             |
+| Feature              | Spot | Linear | Inverse | Option | Notes                          |
+| -------------------- | ---- | ------ | ------- | ------ | ------------------------------ |
+| Query open orders    | ✓    | ✓      | ✓       | ✓      | List all active orders.        |
+| Query order history  | ✓    | ✓      | ✓       | ✓      | Historical order data.         |
+| Order status updates | ✓    | ✓      | ✓       | ✓      | Real‑time order state changes. |
+| Trade history        | ✓    | ✓      | ✓       | ✓      | Execution and fill reports.    |
 
 ### Contingent orders
 
-| Feature             | Spot | Linear | Inverse | Option | Notes                                   |
-| ------------------- | ---- | ------ | ------- | ------ | --------------------------------------- |
-| Order lists         | ✓    | ✓      | ✓       | ✓      | Submitted as a batch via WebSocket.     |
-| OCO orders          | ✓    | ✓      | ✓       | -      | UI only; API users implement manually.  |
-| Bracket orders      | ✓    | ✓      | ✓       | -      | UI only; API users implement manually.  |
-| Conditional orders  | ✓    | ✓      | ✓       | -      | Stop and limit‑if‑touched orders.       |
+| Feature            | Spot | Linear | Inverse | Option | Notes                                  |
+| ------------------ | ---- | ------ | ------- | ------ | -------------------------------------- |
+| Order lists        | ✓    | ✓      | ✓       | ✓      | Submitted as a batch via WebSocket.    |
+| OCO orders         | ✓    | ✓      | ✓       | -      | UI only; API users implement manually. |
+| Bracket orders     | ✓    | ✓      | ✓       | -      | UI only; API users implement manually. |
+| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit‑if‑touched orders.      |
 
 ### Order parameters
 
 Individual orders can be customized using the `params` dictionary when submitting orders:
 
-| Parameter          | Type                   | Description                                                             |
-| ------------------ | ---------------------- | ----------------------------------------------------------------------- |
-| `is_leverage`      | `bool`                 | Spot only. Enables margin trading (borrowing). Default: `False`.        |
-| `take_profit`      | `str` or `float`       | TP trigger price. Attaches a native TP to the order.                    |
-| `stop_loss`        | `str` or `float`       | SL trigger price. Attaches a native SL to the order.                    |
-| `tp_trigger_by`    | `str`                  | TP trigger type: `"LastPrice"`, `"IndexPrice"`, or `"MarkPrice"`.       |
-| `sl_trigger_by`    | `str`                  | SL trigger type: `"LastPrice"`, `"IndexPrice"`, or `"MarkPrice"`.       |
-| `tp_order_type`    | `str`                  | TP execution type: `"Market"` or `"Limit"`. Default: `"Market"`.        |
-| `sl_order_type`    | `str`                  | SL execution type: `"Market"` or `"Limit"`. Default: `"Market"`.        |
-| `tp_limit_price`   | `str` or `float`       | Limit price for TP when `tp_order_type` is `"Limit"`.                   |
-| `sl_limit_price`   | `str` or `float`       | Limit price for SL when `sl_order_type` is `"Limit"`.                   |
-| `tp_trigger_price` | `str` or `float`       | Custom TP trigger price (overrides `take_profit`).                      |
-| `sl_trigger_price` | `str` or `float`       | Custom SL trigger price (overrides `stop_loss`).                        |
-| `close_on_trigger` | `bool`                 | Close the position when TP/SL triggers. Default: `False`.               |
-| `position_idx`     | `int`                  | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides).     |
-| `bbo_side_type`    | `str`                  | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.                 |
-| `bbo_level`        | `str` or `int`         | Linear/inverse BBO book level: `"1"` through `"5"`.                     |
+| Parameter          | Type             | Description                                                         |
+| ------------------ | ---------------- | ------------------------------------------------------------------- |
+| `is_leverage`      | `bool`           | Spot only. Enables margin trading (borrowing). Default: `False`.    |
+| `take_profit`      | `str` or `float` | TP trigger price. Attaches a native TP to the order.                |
+| `stop_loss`        | `str` or `float` | SL trigger price. Attaches a native SL to the order.                |
+| `tp_trigger_by`    | `str`            | TP trigger type: `"LastPrice"`, `"IndexPrice"`, or `"MarkPrice"`.   |
+| `sl_trigger_by`    | `str`            | SL trigger type: `"LastPrice"`, `"IndexPrice"`, or `"MarkPrice"`.   |
+| `tp_order_type`    | `str`            | TP execution type: `"Market"` or `"Limit"`. Default: `"Market"`.    |
+| `sl_order_type`    | `str`            | SL execution type: `"Market"` or `"Limit"`. Default: `"Market"`.    |
+| `tp_limit_price`   | `str` or `float` | Limit price for TP when `tp_order_type` is `"Limit"`.               |
+| `sl_limit_price`   | `str` or `float` | Limit price for SL when `sl_order_type` is `"Limit"`.               |
+| `tp_trigger_price` | `str` or `float` | Custom TP trigger price (overrides `take_profit`).                  |
+| `sl_trigger_price` | `str` or `float` | Custom SL trigger price (overrides `stop_loss`).                    |
+| `close_on_trigger` | `bool`           | Close the position when TP/SL triggers. Default: `False`.           |
+| `position_idx`     | `int`            | Hedge‑mode position index. See [Hedge mode](#hedge-mode-bothsides). |
+| `bbo_side_type`    | `str`            | Linear/inverse BBO side: `"Queue"` or `"Counterparty"`.             |
+| `bbo_level`        | `str` or `int`   | Linear/inverse BBO book level: `"1"` through `"5"`.                 |
 
 :::note
 On demo, native TP/SL params route through the HTTP create-order endpoint, with one exception:
@@ -617,15 +617,15 @@ suffix. See the [symbology section](#symbology) for the full symbol format.
 The adapter supports real-time options market data through the WebSocket ticker
 channel:
 
-| Data type                  | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
-| Quotes (bid/ask)           | Top‑of‑book prices and sizes for each option contract.   |
-| Greeks                     | Delta, gamma, vega, theta, plus bid/ask/mark IV.         |
-| Mark price                 | Exchange mark price for each option contract.            |
-| Index price                | Underlying index price.                                  |
-| Underlying (forward) price | Per‑expiry forward price, used for ATM determination.    |
-| Open interest              | Per‑contract open interest.                              |
-| Order book deltas          | L2 MBP updates from the option orderbook stream.         |
+| Data type                  | Description                                            |
+| -------------------------- | ------------------------------------------------------ |
+| Quotes (bid/ask)           | Top‑of‑book prices and sizes for each option contract. |
+| Greeks                     | Delta, gamma, vega, theta, plus bid/ask/mark IV.       |
+| Mark price                 | Exchange mark price for each option contract.          |
+| Index price                | Underlying index price.                                |
+| Underlying (forward) price | Per‑expiry forward price, used for ATM determination.  |
+| Open interest              | Per‑contract open interest.                            |
+| Order book deltas          | L2 MBP updates from the option orderbook stream.       |
 
 Subscribe to per-instrument Greeks or aggregate them into option chain
 snapshots with ATM-relative strike filtering. See the
@@ -689,16 +689,16 @@ funding timestamps.
 
 Every HTTP call consumes the global token bucket as well as any keyed quota(s). When usage exceeds a bucket, requests are queued automatically, so manual throttling is rarely required.
 
-| Key / Endpoint            | Limit (requests/sec) | Notes                                              |
-| ------------------------- | -------------------- | -------------------------------------------------- |
-| `bybit:global`            | 120                  | Exchange‑wide 600 req / 5 s ceiling.               |
-| `/v5/market/kline`        | 20                   | Historical sweeps throttled slightly below global. |
-| `/v5/market/trades`       | 24                   | Matches the global quota.                          |
-| `/v5/order/create`        | 10                   | Standard order placement.                          |
-| `/v5/order/cancel`        | 10                   | Single‑order cancellation.                         |
-| `/v5/order/create-batch`  | 5                    | Batch placement endpoints.                         |
-| `/v5/order/cancel-batch`  | 5                    | Batch cancellation endpoints.                      |
-| `/v5/order/cancel-all`    | 2                    | Full book cancel to mirror Bybit guidance.         |
+| Key / Endpoint           | Limit (requests/sec) | Notes                                              |
+| ------------------------ | -------------------- | -------------------------------------------------- |
+| `bybit:global`           | 120                  | Exchange‑wide 600 req / 5 s ceiling.               |
+| `/v5/market/kline`       | 20                   | Historical sweeps throttled slightly below global. |
+| `/v5/market/trades`      | 24                   | Matches the global quota.                          |
+| `/v5/order/create`       | 10                   | Standard order placement.                          |
+| `/v5/order/cancel`       | 10                   | Single‑order cancellation.                         |
+| `/v5/order/create-batch` | 5                    | Batch placement endpoints.                         |
+| `/v5/order/cancel-batch` | 5                    | Batch cancellation endpoints.                      |
+| `/v5/order/cancel-all`   | 2                    | Full book cancel to mirror Bybit guidance.         |
 
 :::warning
 Bybit responds with error code `10016` when the rate limit is exceeded and may temporarily block the IP if requests continue without back-off.
@@ -773,11 +773,11 @@ When maker fees are negative (rebates), the currency logic is **inverted**:
 
 For all derivatives products (LINEAR, INVERSE, OPTION), fees are always charged in the **settlement currency**:
 
-| Product Type | Settlement Currency                   | Fee Currency |
-| ------------ | ------------------------------------- | ------------ |
-| LINEAR       | USDT (typically)                      | USDT         |
-| INVERSE      | Base coin (e.g., BTC for BTCUSD)      | Base coin    |
-| OPTION       | USDT                                  | USDT         |
+| Product Type | Settlement Currency              | Fee Currency |
+| ------------ | -------------------------------- | ------------ |
+| LINEAR       | USDT (typically)                 | USDT         |
+| INVERSE      | Base coin (e.g., BTC for BTCUSD) | Base coin    |
+| OPTION       | USDT                             | USDT         |
 
 ### Fee calculation
 

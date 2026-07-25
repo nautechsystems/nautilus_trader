@@ -29,25 +29,25 @@ Use the user-fetched model when any of the following apply:
 Every curated dataset that stores or redistributes a concrete artifact must include a
 `metadata.json` with at minimum:
 
-| Field          | Description                                                       |
-| -------------- | ----------------------------------------------------------------- |
-| `file`         | Filename of the dataset.                                          |
-| `sha256`       | SHA-256 hash of the file.                                         |
-| `size_bytes`   | File size in bytes.                                               |
-| `original_url` | Download URL of the original source data.                         |
-| `licence`      | License terms and any redistribution constraints.                 |
-| `added_at`     | ISO 8601 timestamp when the dataset was curated.                  |
+| Field          | Description                                       |
+| -------------- | ------------------------------------------------- |
+| `file`         | Filename of the dataset.                          |
+| `sha256`       | SHA-256 hash of the file.                         |
+| `size_bytes`   | File size in bytes.                               |
+| `original_url` | Download URL of the original source data.         |
+| `licence`      | License terms and any redistribution constraints. |
+| `added_at`     | ISO 8601 timestamp when the dataset was curated.  |
 
 These fields match the output of `scripts/curate-dataset.sh`. Additional recommended
 fields for richer provenance:
 
-| Field           | Description                                                      |
-| --------------- | ---------------------------------------------------------------- |
-| `instrument`    | Instrument symbol(s) covered.                                    |
-| `date`          | Trading date(s) covered.                                         |
-| `format`        | Storage format (e.g., "Nautilus OrderBookDelta Parquet").        |
-| `original_file` | Original vendor filename before transformation.                  |
-| `parser`        | Parser used for transformation (e.g., "itchy 0.3.4").            |
+| Field           | Description                                               |
+| --------------- | --------------------------------------------------------- |
+| `instrument`    | Instrument symbol(s) covered.                             |
+| `date`          | Trading date(s) covered.                                  |
+| `format`        | Storage format (e.g., "Nautilus OrderBookDelta Parquet"). |
+| `original_file` | Original vendor filename before transformation.           |
+| `parser`        | Parser used for transformation (e.g., "itchy 0.3.4").     |
 
 User-fetched datasets use the same metadata fields where they apply. They should also include:
 
@@ -324,14 +324,14 @@ These datasets predate this policy and use raw vendor formats (CSV/CSV.gz)
 without `metadata.json`. They remain valid for existing tests. New datasets
 should follow the Parquet standard above.
 
-| Dataset                       | Source   | Format           | Location                  | Status   |
-| ----------------------------- | -------- | ---------------- | ------------------------- | -------- |
-| Tardis Deribit L2 deltas      | Tardis   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
-| ITCH AAPL L3 deltas           | NASDAQ   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
-| HISTDATA EURUSD.SIM quotes    | HISTDATA | Parquet (large)  | `tests/test_data/large/`  | Migrated |
-| Tardis Deribit L2             | Tardis   | CSV (checked in) | `tests/test_data/tardis/` | Legacy   |
-| Tardis Binance snapshots      | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
-| Tardis Bitmex trades          | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
+| Dataset                    | Source   | Format           | Location                  | Status   |
+| -------------------------- | -------- | ---------------- | ------------------------- | -------- |
+| Tardis Deribit L2 deltas   | Tardis   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
+| ITCH AAPL L3 deltas        | NASDAQ   | Parquet (large)  | `tests/test_data/large/`  | Curated  |
+| HISTDATA EURUSD.SIM quotes | HISTDATA | Parquet (large)  | `tests/test_data/large/`  | Migrated |
+| Tardis Deribit L2          | Tardis   | CSV (checked in) | `tests/test_data/tardis/` | Legacy   |
+| Tardis Binance snapshots   | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
+| Tardis Bitmex trades       | Tardis   | CSV.gz (large)   | `tests/test_data/large/`  | Legacy   |
 
 The former `nautechsystems/nautilus_data` catalog maps to the HISTDATA EURUSD.SIM Parquet
 files above. Raw HISTDATA CSV files remain user-fetched.

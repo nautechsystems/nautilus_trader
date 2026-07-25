@@ -11,20 +11,20 @@ trades, bars, derivative reference prices, funding rates, and instrument lifecyc
 events. Each type has a dedicated guide with its fields, behavior, and construction
 examples.
 
-| Data type                                      | Category             | Description                                          |
-| ---------------------------------------------- | -------------------- | ---------------------------------------------------- |
-| [`OrderBookDelta`](order_book_delta.md)        | Order book           | Single incremental order book change.                |
-| [`OrderBookDeltas`](order_book_deltas.md)      | Order book           | Batch of related order book deltas.                  |
-| [`OrderBookDepth10`](order_book_depth10.md)    | Order book           | Fixed top 10 bid and ask levels.                     |
-| [`QuoteTick`](quote_tick.md)                   | Top‑of‑book          | Best bid and ask prices and sizes.                   |
-| [`TradeTick`](trade_tick.md)                   | Trades               | Single venue trade or match event.                   |
-| [`Bar`](bar.md)                                | Aggregation          | OHLCV bar for a specific `BarType`.                  |
-| [`MarkPriceUpdate`](mark_price_update.md)      | Derivative reference | Mark price for a derivatives instrument.             |
-| [`IndexPriceUpdate`](index_price_update.md)    | Derivative reference | Index price used by a derivatives market.            |
-| [`FundingRateUpdate`](funding_rate_update.md)  | Derivative reference | Funding rate and next funding metadata.              |
-| [`OptionGreeks`](option_greeks.md)             | Options              | Venue‑provided Greeks and implied volatility.        |
-| [`InstrumentStatus`](instrument_status.md)     | Instrument event     | Trading, quoting, and halt status changes.           |
-| [`InstrumentClose`](instrument_close.md)       | Instrument event     | Close, settlement, or other venue close price event. |
+| Data type                                     | Category             | Description                                          |
+| --------------------------------------------- | -------------------- | ---------------------------------------------------- |
+| [`OrderBookDelta`](order_book_delta.md)       | Order book           | Single incremental order book change.                |
+| [`OrderBookDeltas`](order_book_deltas.md)     | Order book           | Batch of related order book deltas.                  |
+| [`OrderBookDepth10`](order_book_depth10.md)   | Order book           | Fixed top 10 bid and ask levels.                     |
+| [`QuoteTick`](quote_tick.md)                  | Top‑of‑book          | Best bid and ask prices and sizes.                   |
+| [`TradeTick`](trade_tick.md)                  | Trades               | Single venue trade or match event.                   |
+| [`Bar`](bar.md)                               | Aggregation          | OHLCV bar for a specific `BarType`.                  |
+| [`MarkPriceUpdate`](mark_price_update.md)     | Derivative reference | Mark price for a derivatives instrument.             |
+| [`IndexPriceUpdate`](index_price_update.md)   | Derivative reference | Index price used by a derivatives market.            |
+| [`FundingRateUpdate`](funding_rate_update.md) | Derivative reference | Funding rate and next funding metadata.              |
+| [`OptionGreeks`](option_greeks.md)            | Options              | Venue‑provided Greeks and implied volatility.        |
+| [`InstrumentStatus`](instrument_status.md)    | Instrument event     | Trading, quoting, and halt status changes.           |
+| [`InstrumentClose`](instrument_close.md)      | Instrument event     | Close, settlement, or other venue close price event. |
 
 When data flows over the message bus, topic-addressable data stays under the `data`
 root. Live streams use `data.<kind>...`; the data pipeline path uses
@@ -104,26 +104,26 @@ Data aggregation in NautilusTrader transforms granular market data into structur
 
 The platform implements various aggregation methods:
 
-| Name               | Description                                                                | Category     |
-| :----------------- | :------------------------------------------------------------------------- | :----------- |
-| `TICK`             | Aggregation of a number of ticks.                                          | Threshold    |
-| `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold    |
-| `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information  |
-| `VOLUME`           | Aggregation of traded volume.                                              | Threshold    |
-| `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold    |
-| `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information  |
-| `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
-| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Threshold    |
-| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Information  |
-| `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold    |
-| `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
-| `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
-| `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time         |
-| `HOUR`             | Aggregation of time intervals with hour granularity.                       | Time         |
-| `DAY`              | Aggregation of time intervals with day granularity.                        | Time         |
-| `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
-| `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
-| `YEAR`             | Aggregation of time intervals with year granularity.                       | Time         |
+| Name               | Description                                                                | Category    |
+| :----------------- | :------------------------------------------------------------------------- | :---------- |
+| `TICK`             | Aggregation of a number of ticks.                                          | Threshold   |
+| `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold   |
+| `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information |
+| `VOLUME`           | Aggregation of traded volume.                                              | Threshold   |
+| `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold   |
+| `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information |
+| `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold   |
+| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Threshold   |
+| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Information |
+| `RENKO`            | Aggregation based on fixed price movements (brick size in ticks).          | Threshold   |
+| `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time        |
+| `SECOND`           | Aggregation of time intervals with second granularity.                     | Time        |
+| `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time        |
+| `HOUR`             | Aggregation of time intervals with hour granularity.                       | Time        |
+| `DAY`              | Aggregation of time intervals with day granularity.                        | Time        |
+| `WEEK`             | Aggregation of time intervals with week granularity.                       | Time        |
+| `MONTH`            | Aggregation of time intervals with month granularity.                      | Time        |
+| `YEAR`             | Aggregation of time intervals with year granularity.                       | Time        |
 
 ### Information-driven bars
 

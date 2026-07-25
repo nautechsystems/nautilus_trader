@@ -186,30 +186,30 @@ Betfair `LIMIT_ON_CLOSE` instructions.
 
 ### Position management
 
-| Feature             | Supported | Notes                                   |
-| ------------------- | --------- | --------------------------------------- |
-| Query positions     | -         | Betting exchange model differs.         |
-| Position mode       | -         | Not applicable to betting exchange.     |
-| Leverage control    | -         | No leverage in betting exchange.        |
-| Margin mode         | -         | No margin in betting exchange.          |
+| Feature          | Supported | Notes                               |
+| ---------------- | --------- | ----------------------------------- |
+| Query positions  | -         | Betting exchange model differs.     |
+| Position mode    | -         | Not applicable to betting exchange. |
+| Leverage control | -         | No leverage in betting exchange.    |
+| Margin mode      | -         | No margin in betting exchange.      |
 
 ### Order querying
 
-| Feature              | Supported | Notes                                  |
-| -------------------- | --------- | -------------------------------------- |
-| Query open orders    | ✓         | List all active bets.                  |
-| Query order history  | ✓         | Historical betting data.               |
-| Order status updates | ✓         | Real‑time bet state changes.           |
-| Trade history        | ✓         | Bet matching and settlement reports.   |
+| Feature              | Supported | Notes                                |
+| -------------------- | --------- | ------------------------------------ |
+| Query open orders    | ✓         | List all active bets.                |
+| Query order history  | ✓         | Historical betting data.             |
+| Order status updates | ✓         | Real‑time bet state changes.         |
+| Trade history        | ✓         | Bet matching and settlement reports. |
 
 ### Contingent orders
 
-| Feature             | Supported | Notes                                   |
-| ------------------- | --------- | --------------------------------------- |
-| Order lists         | -         | *Not supported*.                        |
-| OCO orders          | -         | *Not supported*.                        |
-| Bracket orders      | -         | *Not supported*.                        |
-| Conditional orders  | -         | Basic bet conditions only.              |
+| Feature            | Supported | Notes                      |
+| ------------------ | --------- | -------------------------- |
+| Order lists        | -         | *Not supported*.           |
+| OCO orders         | -         | *Not supported*.           |
+| Bracket orders     | -         | *Not supported*.           |
+| Conditional orders | -         | Basic bet conditions only. |
 
 ## Tick scheme and pricing
 
@@ -279,11 +279,11 @@ does not yet perform the same full-image cache check.
 
 When `ignore_external_orders=True`, the Python adapter skips orders and fills not found in cache:
 
-| Scenario                       | Description                                         |
-| ------------------------------ | --------------------------------------------------- |
-| Unknown order in stream update | No venue‑to‑client order ID mapping exists.         |
-| Unknown order in full image    | Order not found in cache during image sync.         |
-| Unknown fill in full image     | Fill does not match any known order during sync.    |
+| Scenario                       | Description                                      |
+| ------------------------------ | ------------------------------------------------ |
+| Unknown order in stream update | No venue‑to‑client order ID mapping exists.      |
+| Unknown order in full image    | Order not found in cache during image sync.      |
+| Unknown fill in full image     | Fill does not match any known order during sync. |
 
 :::info
 For multi-node setups sharing a Betfair account, set both `stream_market_ids_filter` (your markets only)
@@ -312,10 +312,10 @@ The adapter handles several edge cases when processing fills from the stream:
 The adapter uses separate rate limit buckets so that account state polling and
 reconciliation do not throttle order placement:
 
-| Bucket  | Default | Endpoints                                            | Configurable                     |
-| ------- | ------- | ---------------------------------------------------- | -------------------------------- |
-| General | 5/s     | Account state, reconciliation, keep‑alive.           |                                  |
-| Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`.      | `order_request_rate_per_second`. |
+| Bucket  | Default | Endpoints                                       | Configurable                     |
+| ------- | ------- | ----------------------------------------------- | -------------------------------- |
+| General | 5/s     | Account state, reconciliation, keep‑alive.      |                                  |
+| Orders  | 20/s    | `placeOrders`, `replaceOrders`, `cancelOrders`. | `order_request_rate_per_second`. |
 
 Order status and fill report queries retry once on `TOO_MANY_REQUESTS` errors
 after a 1-second delay; order operations reject with the error message.
@@ -343,13 +343,13 @@ though strategies can register handlers for specific data types.
 
 Real-time ticker data for a betting selection.
 
-| Field                 | Type    | Description                     |
-| --------------------- | ------- | ------------------------------- |
-| `instrument_id`       | str     | Nautilus instrument identifier. |
-| `last_traded_price`   | float   | Last matched price (odds).      |
-| `traded_volume`       | float   | Total matched volume.           |
-| `starting_price_near` | float   | Near‑side BSP indicator.        |
-| `starting_price_far`  | float   | Far‑side BSP indicator.         |
+| Field                 | Type  | Description                     |
+| --------------------- | ----- | ------------------------------- |
+| `instrument_id`       | str   | Nautilus instrument identifier. |
+| `last_traded_price`   | float | Last matched price (odds).      |
+| `traded_volume`       | float | Total matched volume.           |
+| `starting_price_near` | float | Near‑side BSP indicator.        |
+| `starting_price_far`  | float | Far‑side BSP indicator.         |
 
 ### BetfairStartingPrice
 

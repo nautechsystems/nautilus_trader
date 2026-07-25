@@ -15,15 +15,15 @@ should maintain the book state locally.
 
 ## Fields
 
-| Field           | Rust type      | Python type        | Required/default | Notes                                      |
-| --------------- | -------------- | ------------------ | ---------------- | ------------------------------------------ |
-| `instrument_id` | `InstrumentId` | `InstrumentId`     | Required         | Instrument whose book is changing.         |
-| `action`        | `BookAction`   | `BookAction`       | Required         | `ADD`, `UPDATE`, `DELETE`, or `CLEAR`.     |
-| `order`         | `BookOrder`    | `BookOrder`        | Required         | Price, size, side, and order ID payload.   |
-| `flags`         | `u8`           | `int`              | Required         | `RecordFlag` bit field for event metadata. |
-| `sequence`      | `u64`          | `int`              | Required         | Venue sequence number, or zero if absent.  |
-| `ts_event`      | `UnixNanos`    | `int`              | Required         | Event timestamp in nanoseconds.            |
-| `ts_init`       | `UnixNanos`    | `int`              | Required         | Initialization timestamp in nanoseconds.   |
+| Field           | Rust type      | Python type    | Required/default | Notes                                      |
+| --------------- | -------------- | -------------- | ---------------- | ------------------------------------------ |
+| `instrument_id` | `InstrumentId` | `InstrumentId` | Required         | Instrument whose book is changing.         |
+| `action`        | `BookAction`   | `BookAction`   | Required         | `ADD`, `UPDATE`, `DELETE`, or `CLEAR`.     |
+| `order`         | `BookOrder`    | `BookOrder`    | Required         | Price, size, side, and order ID payload.   |
+| `flags`         | `u8`           | `int`          | Required         | `RecordFlag` bit field for event metadata. |
+| `sequence`      | `u64`          | `int`          | Required         | Venue sequence number, or zero if absent.  |
+| `ts_event`      | `UnixNanos`    | `int`          | Required         | Event timestamp in nanoseconds.            |
+| `ts_init`       | `UnixNanos`    | `int`          | Required         | Initialization timestamp in nanoseconds.   |
 
 ## BookOrder fields
 

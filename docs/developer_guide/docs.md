@@ -19,12 +19,12 @@ Most pages should fit one of four types
 ([Divio documentation system](https://docs.divio.com/documentation-system/)).
 Mixing types in a single page makes it harder to read and harder to maintain.
 
-| Type             | Purpose                          | Section          |
-| ---------------- | -------------------------------- | ---------------- |
-| **Tutorial**     | Teach by walking through a task  | `tutorials/`     |
-| **How‑to guide** | Solve a specific problem         | `how_to/`        |
-| **Explanation**  | Clarify design and architecture  | `concepts/`      |
-| **Reference**    | Describe the machinery           | `api_reference/` |
+| Type             | Purpose                         | Section          |
+| ---------------- | ------------------------------- | ---------------- |
+| **Tutorial**     | Teach by walking through a task | `tutorials/`     |
+| **How‑to guide** | Solve a specific problem        | `how_to/`        |
+| **Explanation**  | Clarify design and architecture | `concepts/`      |
+| **Reference**    | Describe the machinery          | `api_reference/` |
 
 Two sections are exceptions: `getting_started/` is an onboarding path that
 combines tutorial-style walkthroughs with setup instructions, and

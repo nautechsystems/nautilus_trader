@@ -15,12 +15,12 @@ normal bar aggregation path.
 `ContinuousFutureAdjustmentType` combines direction (backward or forward) with operation
 (spread or ratio):
 
-| Mode              | Operation       | Anchor segment       |
-| ----------------- | --------------- | -------------------- |
-| `BACKWARD_SPREAD` | Additive        | Most recent contract |
-| `FORWARD_SPREAD`  | Additive        | First contract       |
-| `BACKWARD_RATIO`  | Multiplicative  | Most recent contract |
-| `FORWARD_RATIO`   | Multiplicative  | First contract       |
+| Mode              | Operation      | Anchor segment       |
+| ----------------- | -------------- | -------------------- |
+| `BACKWARD_SPREAD` | Additive       | Most recent contract |
+| `FORWARD_SPREAD`  | Additive       | First contract       |
+| `BACKWARD_RATIO`  | Multiplicative | Most recent contract |
+| `FORWARD_RATIO`   | Multiplicative | First contract       |
 
 The cumulative adjustment at segment `k` of `N` transitions is:
 

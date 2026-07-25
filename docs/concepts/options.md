@@ -365,12 +365,12 @@ single option contract:
 
 Properties:
 
-| Property     | Type                 | Description                         |
-| ------------ | -------------------- | ----------------------------------- |
-| `series_id`  | `OptionSeriesId`     | The option series identifier.       |
-| `atm_strike` | `Price` or None      | Current ATM strike (if determined). |
-| `ts_event`   | `int`                | UNIX timestamp (nanoseconds).       |
-| `ts_init`    | `int`                | UNIX timestamp (nanoseconds).       |
+| Property     | Type             | Description                         |
+| ------------ | ---------------- | ----------------------------------- |
+| `series_id`  | `OptionSeriesId` | The option series identifier.       |
+| `atm_strike` | `Price` or None  | Current ATM strike (if determined). |
+| `ts_event`   | `int`            | UNIX timestamp (nanoseconds).       |
+| `ts_init`    | `int`            | UNIX timestamp (nanoseconds).       |
 
 Call and put data are accessed through methods, not as direct properties.
 Each `OptionStrikeData` returned by these methods contains a `quote` (`QuoteTick`)

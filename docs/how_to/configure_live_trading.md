@@ -211,12 +211,12 @@ venue reconciliation. For full details see the
 
 Recovers missed order and position events to keep system state consistent with the venue.
 
-| Setting                         | Default | Description                                                                     |
-| ------------------------------- | ------- | ------------------------------------------------------------------------------- |
-| `reconciliation`                | True    | Activate reconciliation at startup to align internal state with the venue.      |
-| `reconciliation_lookback_mins`  | None    | How far back (minutes) to request past events for reconciling uncached state.   |
-| `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                    |
-| `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue‑side duplicates).     |
+| Setting                         | Default | Description                                                                   |
+| ------------------------------- | ------- | ----------------------------------------------------------------------------- |
+| `reconciliation`                | True    | Activate reconciliation at startup to align internal state with the venue.    |
+| `reconciliation_lookback_mins`  | None    | How far back (minutes) to request past events for reconciling uncached state. |
+| `reconciliation_instrument_ids` | None    | Include list of instrument IDs to reconcile.                                  |
+| `filtered_client_order_ids`     | None    | Client order IDs to skip during reconciliation (for venue‑side duplicates).   |
 
 See [Execution reconciliation](../concepts/live.md#execution-reconciliation) for details.
 
@@ -225,10 +225,10 @@ See [Execution reconciliation](../concepts/live.md#execution-reconciliation) for
 Controls which order events and reports the system processes, preventing conflicts
 across trading nodes.
 
-| Setting                            | Default | Description                                                                   |
-| ---------------------------------- | ------- | ----------------------------------------------------------------------------- |
-| `filter_unclaimed_external_orders` | False   | Drop unclaimed external orders so they do not affect the strategy.            |
-| `filter_position_reports`          | False   | Drop position status reports. Useful when multiple nodes trade one account.   |
+| Setting                            | Default | Description                                                                 |
+| ---------------------------------- | ------- | --------------------------------------------------------------------------- |
+| `filter_unclaimed_external_orders` | False   | Drop unclaimed external orders so they do not affect the strategy.          |
+| `filter_position_reports`          | False   | Drop position status reports. Useful when multiple nodes trade one account. |
 
 :::note[Order tagging behavior]
 Reconciliation tags orders by origin:
@@ -323,10 +323,10 @@ For a complete parameter list see the `StrategyConfig`
 
 ### Identification
 
-| Setting        | Default | Description                                                   |
-| -------------- | ------- | ------------------------------------------------------------- |
-| `strategy_id`  | None    | Unique strategy identifier.                                   |
-| `order_id_tag` | None    | Unique tag appended to this strategy's order IDs.             |
+| Setting        | Default | Description                                       |
+| -------------- | ------- | ------------------------------------------------- |
+| `strategy_id`  | None    | Unique strategy identifier.                       |
+| `order_id_tag` | None    | Unique tag appended to this strategy's order IDs. |
 
 ### Order management
 

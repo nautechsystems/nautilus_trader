@@ -74,11 +74,11 @@ Test IDs use spaced numbering to allow insertion without renumbering.
 
 Verify instrument loading and subscription before testing market data streams.
 
-| TC      | Name                        | Description                                          | Skip when            |
-| ------- | --------------------------- | ---------------------------------------------------- | -------------------- |
-| TC-D01  | Request instruments         | Load all instruments for a venue.                    | Never.               |
-| TC-D02  | Subscribe instrument        | Subscribe to instrument updates.                     | No instrument sub.   |
-| TC-D03  | Load specific instrument    | Load a single instrument by ID.                      | Never.               |
+| TC     | Name                     | Description                       | Skip when          |
+| ------ | ------------------------ | --------------------------------- | ------------------ |
+| TC-D01 | Request instruments      | Load all instruments for a venue. | Never.             |
+| TC-D02 | Subscribe instrument     | Subscribe to instrument updates.  | No instrument sub. |
+| TC-D03 | Load specific instrument | Load a single instrument by ID.   | Never.             |
 
 ### TC-D01: Request instruments
 
@@ -111,13 +111,13 @@ DataTesterConfig::builder()
 
 ### TC-D02: Subscribe instrument
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to instrument updates.                           |
-| **Event sequence** | `on_instrument` callback receives instrument.                          |
-| **Pass criteria**  | Instrument received with correct `instrument_id`, valid fields.        |
-| **Skip when**      | Adapter does not support instrument subscriptions.                     |
+| Field              | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                           |
+| **Action**         | DataTester subscribes to instrument updates.                    |
+| **Event sequence** | `on_instrument` callback receives instrument.                   |
+| **Pass criteria**  | Instrument received with correct `instrument_id`, valid fields. |
+| **Skip when**      | Adapter does not support instrument subscriptions.              |
 
 **Python config:**
 
@@ -159,14 +159,14 @@ DataTesterConfig::builder()
 
 Test order book subscription modes and snapshot requests.
 
-| TC      | Name                           | Description                                        | Skip when              |
-| ------- | ------------------------------ | -------------------------------------------------- | ---------------------- |
-| TC-D10  | Subscribe book deltas          | Stream `OrderBookDeltas` updates.                  | No book support.       |
-| TC-D11  | Subscribe book at interval     | Periodic `OrderBook` snapshots.                    | No book support.       |
-| TC-D12  | Subscribe book depth           | `OrderBookDepth10` snapshots.                      | No book depth.         |
-| TC-D13  | Request book snapshot          | One‑time book snapshot request.                    | No book snapshot.      |
-| TC-D14  | Managed book from deltas       | Build local book from delta stream.                | No book support.       |
-| TC-D15  | Request historical book deltas | Historical book deltas request.                    | No historical deltas.  |
+| TC     | Name                           | Description                         | Skip when             |
+| ------ | ------------------------------ | ----------------------------------- | --------------------- |
+| TC-D10 | Subscribe book deltas          | Stream `OrderBookDeltas` updates.   | No book support.      |
+| TC-D11 | Subscribe book at interval     | Periodic `OrderBook` snapshots.     | No book support.      |
+| TC-D12 | Subscribe book depth           | `OrderBookDepth10` snapshots.       | No book depth.        |
+| TC-D13 | Request book snapshot          | One‑time book snapshot request.     | No book snapshot.     |
+| TC-D14 | Managed book from deltas       | Build local book from delta stream. | No book support.      |
+| TC-D15 | Request historical book deltas | Historical book deltas request.     | No historical deltas. |
 
 ### TC-D10: Subscribe book deltas
 
@@ -259,13 +259,13 @@ DataTesterConfig(
 
 ### TC-D13: Request book snapshot
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests a one‑time order book snapshot.                    |
-| **Event sequence** | Book snapshot received via historical data callback.                   |
-| **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes.          |
-| **Skip when**      | Adapter does not support book snapshot requests.                       |
+| Field              | Value                                                         |
+| ------------------ | ------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                         |
+| **Action**         | DataTester requests a one‑time order book snapshot.           |
+| **Event sequence** | Book snapshot received via historical data callback.          |
+| **Pass criteria**  | Snapshot contains bid/ask levels with valid prices and sizes. |
+| **Skip when**      | Adapter does not support book snapshot requests.              |
 
 **Python config:**
 
@@ -329,13 +329,13 @@ DataTesterConfig::builder()
 
 ### TC-D15: Request historical book deltas
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical order book deltas.                      |
-| **Event sequence** | Historical deltas received via callback.                               |
-| **Pass criteria**  | Deltas received with valid timestamps and book actions.                |
-| **Skip when**      | Adapter does not support historical book delta requests.               |
+| Field              | Value                                                    |
+| ------------------ | -------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                    |
+| **Action**         | DataTester requests historical order book deltas.        |
+| **Event sequence** | Historical deltas received via callback.                 |
+| **Pass criteria**  | Deltas received with valid timestamps and book actions.  |
+| **Skip when**      | Adapter does not support historical book delta requests. |
 
 **Python config:**
 
@@ -354,10 +354,10 @@ DataTesterConfig(
 
 Test quote tick subscriptions and historical requests.
 
-| TC      | Name                      | Description                                     | Skip when              |
-| ------- | ------------------------- | ----------------------------------------------- | ---------------------- |
-| TC-D20  | Subscribe quotes          | Verify `QuoteTick` events flow after start.     | Never.                 |
-| TC-D21  | Request historical quotes | Request historical quote ticks.                 | No historical quotes.  |
+| TC     | Name                      | Description                                 | Skip when             |
+| ------ | ------------------------- | ------------------------------------------- | --------------------- |
+| TC-D20 | Subscribe quotes          | Verify `QuoteTick` events flow after start. | Never.                |
+| TC-D21 | Request historical quotes | Request historical quote ticks.             | No historical quotes. |
 
 ### TC-D20: Subscribe quotes
 
@@ -390,13 +390,13 @@ DataTesterConfig::builder()
 
 ### TC-D21: Request historical quotes
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical quote ticks.                            |
-| **Event sequence** | Historical quotes received via `on_historical_data` callback.          |
-| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices and sizes.       |
-| **Skip when**      | Adapter does not support historical quote requests.                    |
+| Field              | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                            |
+| **Action**         | DataTester requests historical quote ticks.                      |
+| **Event sequence** | Historical quotes received via `on_historical_data` callback.    |
+| **Pass criteria**  | Quotes received with valid timestamps, bid/ask prices and sizes. |
+| **Skip when**      | Adapter does not support historical quote requests.              |
 
 **Python config:**
 
@@ -414,10 +414,10 @@ DataTesterConfig(
 
 Test trade tick subscriptions and historical requests.
 
-| TC     | Name                      | Description                                     | Skip when              |
-| ------ | ------------------------- | ----------------------------------------------- | ---------------------- |
-| TC-D30 | Subscribe trades          | Verify `TradeTick` events flow after start.     | Never.                 |
-| TC-D31 | Request historical trades | Request historical trade ticks.                 | No historical trades.  |
+| TC     | Name                      | Description                                 | Skip when             |
+| ------ | ------------------------- | ------------------------------------------- | --------------------- |
+| TC-D30 | Subscribe trades          | Verify `TradeTick` events flow after start. | Never.                |
+| TC-D31 | Request historical trades | Request historical trade ticks.             | No historical trades. |
 
 ### TC-D30: Subscribe trades
 
@@ -450,13 +450,13 @@ DataTesterConfig::builder()
 
 ### TC-D31: Request historical trades
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester requests historical trade ticks.                            |
-| **Event sequence** | Historical trades received via `on_historical_data` callback.          |
-| **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs.   |
-| **Skip when**      | Adapter does not support historical trade requests.                    |
+| Field              | Value                                                                |
+| ------------------ | -------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                                |
+| **Action**         | DataTester requests historical trade ticks.                          |
+| **Event sequence** | Historical trades received via `on_historical_data` callback.        |
+| **Pass criteria**  | Trades received with valid timestamps, prices, sizes, and trade IDs. |
+| **Skip when**      | Adapter does not support historical trade requests.                  |
 
 **Python config:**
 
@@ -484,10 +484,10 @@ DataTesterConfig::builder()
 
 Test bar subscriptions and historical requests.
 
-| TC      | Name                    | Description                                       | Skip when           |
-| ------- | ----------------------- | ------------------------------------------------- | ------------------- |
-| TC-D40  | Subscribe bars          | Verify `Bar` events flow after start.             | No bar support.     |
-| TC-D41  | Request historical bars | Request historical OHLCV bars.                    | No historical bars. |
+| TC     | Name                    | Description                           | Skip when           |
+| ------ | ----------------------- | ------------------------------------- | ------------------- |
+| TC-D40 | Subscribe bars          | Verify `Bar` events flow after start. | No bar support.     |
+| TC-D41 | Request historical bars | Request historical OHLCV bars.        | No historical bars. |
 
 ### TC-D40: Subscribe bars
 
@@ -522,13 +522,13 @@ DataTesterConfig::builder()
 
 ### TC-D41: Request historical bars
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.             |
-| **Action**         | DataTester requests historical bars for a configured `BarType`.        |
-| **Event sequence** | Historical bars received via callback.                                 |
-| **Pass criteria**  | Bars received with valid OHLCV values and ascending timestamps.        |
-| **Skip when**      | Adapter does not support historical bar requests.                      |
+| Field              | Value                                                           |
+| ------------------ | --------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, bar type configured.      |
+| **Action**         | DataTester requests historical bars for a configured `BarType`. |
+| **Event sequence** | Historical bars received via callback.                          |
+| **Pass criteria**  | Bars received with valid OHLCV values and ascending timestamps. |
+| **Skip when**      | Adapter does not support historical bar requests.               |
 
 **Python config:**
 
@@ -558,12 +558,12 @@ DataTesterConfig::builder()
 
 Test derivatives-specific data streams: mark prices, index prices, and funding rates.
 
-| TC     | Name                             | Description                                 | Skip when             |
-| ------ | -------------------------------- | ------------------------------------------- | --------------------- |
-| TC-D50 | Subscribe mark prices            | `MarkPriceUpdate` events.                   | Not a derivative.     |
-| TC-D51 | Subscribe index prices           | `IndexPriceUpdate` events.                  | Not a derivative.     |
-| TC-D52 | Subscribe funding rates          | `FundingRateUpdate` events.                 | Not a perpetual.      |
-| TC-D53 | Request historical funding rates | Historical funding rate data.               | Not a perpetual.      |
+| TC     | Name                             | Description                   | Skip when         |
+| ------ | -------------------------------- | ----------------------------- | ----------------- |
+| TC-D50 | Subscribe mark prices            | `MarkPriceUpdate` events.     | Not a derivative. |
+| TC-D51 | Subscribe index prices           | `IndexPriceUpdate` events.    | Not a derivative. |
+| TC-D52 | Subscribe funding rates          | `FundingRateUpdate` events.   | Not a perpetual.  |
+| TC-D53 | Request historical funding rates | Historical funding rate data. | Not a perpetual.  |
 
 ### TC-D50: Subscribe mark prices
 
@@ -687,10 +687,10 @@ DataTesterConfig::builder()
 
 Test instrument status and close event subscriptions.
 
-| TC     | Name                        | Description                                    | Skip when             |
-| ------ | --------------------------- | ---------------------------------------------- | --------------------- |
-| TC-D60 | Subscribe instrument status | `InstrumentStatus` events.                     | No status support.    |
-| TC-D61 | Subscribe instrument close  | `InstrumentClose` events.                      | No close support.     |
+| TC     | Name                        | Description                | Skip when          |
+| ------ | --------------------------- | -------------------------- | ------------------ |
+| TC-D60 | Subscribe instrument status | `InstrumentStatus` events. | No status support. |
+| TC-D61 | Subscribe instrument close  | `InstrumentClose` events.  | No close support.  |
 
 ### TC-D60: Subscribe instrument status
 
@@ -728,13 +728,13 @@ DataTesterConfig::builder()
 
 ### TC-D61: Subscribe instrument close
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded.                                  |
-| **Action**         | DataTester subscribes to instrument close events.                      |
-| **Event sequence** | `InstrumentClose` events received in `on_instrument_close`.            |
-| **Pass criteria**  | Close event received with valid close price and close type.            |
-| **Skip when**      | Adapter does not support instrument close subscriptions.               |
+| Field              | Value                                                       |
+| ------------------ | ----------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded.                       |
+| **Action**         | DataTester subscribes to instrument close events.           |
+| **Event sequence** | `InstrumentClose` events received in `on_instrument_close`. |
+| **Pass criteria**  | Close event received with valid close price and close type. |
+| **Skip when**      | Adapter does not support instrument close subscriptions.    |
 
 **Considerations:**
 
@@ -766,20 +766,20 @@ DataTesterConfig::builder()
 
 Test option greeks and option chain subscriptions.
 
-| TC     | Name                        | Description                                    | Skip when              |
-| ------ | --------------------------- | ---------------------------------------------- | ---------------------- |
-| TC-D62 | Subscribe option greeks     | `OptionGreeks` data for a single instrument.   | No greeks support.     |
-| TC-D63 | Subscribe option chain      | `OptionChainSlice` snapshots for a series.     | No chain support.      |
+| TC     | Name                    | Description                                  | Skip when          |
+| ------ | ----------------------- | -------------------------------------------- | ------------------ |
+| TC-D62 | Subscribe option greeks | `OptionGreeks` data for a single instrument. | No greeks support. |
+| TC-D63 | Subscribe option chain  | `OptionChainSlice` snapshots for a series.   | No chain support.  |
 
 ### TC-D62: Subscribe option greeks
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, option instrument loaded.                           |
-| **Action**         | DataTester subscribes to option greeks updates.                        |
-| **Event sequence** | `OptionGreeks` events received in `on_option_greeks`.                  |
-| **Pass criteria**  | Greeks received with valid delta, gamma, vega, theta values.           |
-| **Skip when**      | Adapter does not support option greeks subscriptions.                  |
+| Field              | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| **Prerequisite**   | Adapter connected, option instrument loaded.                 |
+| **Action**         | DataTester subscribes to option greeks updates.              |
+| **Event sequence** | `OptionGreeks` events received in `on_option_greeks`.        |
+| **Pass criteria**  | Greeks received with valid delta, gamma, vega, theta values. |
+| **Skip when**      | Adapter does not support option greeks subscriptions.        |
 
 **Considerations:**
 
@@ -833,21 +833,21 @@ DataTesterConfig::builder()
 
 Test actor lifecycle behavior: unsubscribe handling and custom parameters.
 
-| TC     | Name                    | Description                                        | Skip when            |
-| ------ | ----------------------- | -------------------------------------------------- | -------------------- |
-| TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop.         | No unsub support.    |
-| TC-D71 | Custom subscribe params | Adapter‑specific subscription parameters.          | N/A.                 |
-| TC-D72 | Custom request params   | Adapter‑specific request parameters.               | N/A.                 |
+| TC     | Name                    | Description                                | Skip when         |
+| ------ | ----------------------- | ------------------------------------------ | ----------------- |
+| TC-D70 | Unsubscribe on stop     | Unsubscribe from data feeds on actor stop. | No unsub support. |
+| TC-D71 | Custom subscribe params | Adapter‑specific subscription parameters.  | N/A.              |
+| TC-D72 | Custom request params   | Adapter‑specific request parameters.       | N/A.              |
 
 ### TC-D70: Unsubscribe on stop
 
-| Field              | Value                                                                  |
-| ------------------ | ---------------------------------------------------------------------- |
-| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                      |
-| **Action**         | Stop the actor with `can_unsubscribe=True` (default).                  |
-| **Event sequence** | Data subscriptions removed; no further data events received.           |
-| **Pass criteria**  | Clean unsubscribe; no errors in logs; no data events after stop.       |
-| **Skip when**      | Adapter does not support unsubscribe.                                  |
+| Field              | Value                                                            |
+| ------------------ | ---------------------------------------------------------------- |
+| **Prerequisite**   | Active data subscriptions (quotes, trades, book).                |
+| **Action**         | Stop the actor with `can_unsubscribe=True` (default).            |
+| **Event sequence** | Data subscriptions removed; no further data events received.     |
+| **Pass criteria**  | Clean unsubscribe; no errors in logs; no data events after stop. |
+| **Skip when**      | Adapter does not support unsubscribe.                            |
 
 **Python config:**
 
@@ -909,41 +909,41 @@ DataTesterConfig::builder()
 Quick reference for all `DataTesterConfig` parameters. Defaults shown are for the Python config.
 Note: the Rust `DataTesterConfig` builder defaults `manage_book` to `true`, while Python defaults it to `False`.
 
-| Parameter                    | Type              | Default         | Affects groups |
-| ---------------------------- | ----------------- | --------------- | -------------- |
-| `instrument_ids`             | list[InstrumentId]| *required*      | All            |
-| `client_id`                  | ClientId?         | None            | All            |
-| `bar_types`                  | list[BarType]?    | None            | 5              |
-| `subscribe_book_deltas`      | bool              | False           | 2              |
-| `subscribe_book_depth`       | bool              | False           | 2              |
-| `subscribe_book_at_interval` | bool              | False           | 2              |
-| `subscribe_quotes`           | bool              | False           | 3              |
-| `subscribe_trades`           | bool              | False           | 4              |
-| `subscribe_mark_prices`      | bool              | False           | 6              |
-| `subscribe_index_prices`     | bool              | False           | 6              |
-| `subscribe_funding_rates`    | bool              | False           | 6              |
-| `subscribe_bars`             | bool              | False           | 5              |
-| `subscribe_instrument`       | bool              | False           | 1              |
-| `subscribe_instrument_status`| bool              | False           | 7              |
-| `subscribe_instrument_close` | bool              | False           | 7              |
-| `subscribe_option_greeks`    | bool              | False           | 8              |
-| `subscribe_params`           | dict?             | None            | 9              |
-| `can_unsubscribe`            | bool              | True            | 9              |
-| `request_instruments`        | bool              | False           | 1              |
-| `request_book_snapshot`      | bool              | False           | 2              |
-| `request_book_deltas`        | bool              | False           | 2              |
-| `request_quotes`             | bool              | False           | 3              |
-| `request_trades`             | bool              | False           | 4              |
-| `request_bars`               | bool              | False           | 5              |
-| `request_funding_rates`      | bool              | False           | 6              |
-| `request_params`             | dict?             | None            | 9              |
-| `requests_start_delta`       | Timedelta?        | 1 hour          | 3, 4, 5        |
-| `book_type`                  | BookType          | L2_MBP          | 2              |
-| `book_depth`                 | PositiveInt?      | None            | 2              |
-| `book_interval_ms`           | PositiveInt       | 1000            | 2              |
-| `book_levels_to_print`       | PositiveInt       | 10              | 2              |
-| `manage_book`                | bool              | False           | 2              |
-| `use_pyo3_book`              | bool              | False           | 2              |
-| `log_data`                   | bool              | True            | All            |
+| Parameter                     | Type               | Default    | Affects groups |
+| ----------------------------- | ------------------ | ---------- | -------------- |
+| `instrument_ids`              | list[InstrumentId] | *required* | All            |
+| `client_id`                   | ClientId?          | None       | All            |
+| `bar_types`                   | list[BarType]?     | None       | 5              |
+| `subscribe_book_deltas`       | bool               | False      | 2              |
+| `subscribe_book_depth`        | bool               | False      | 2              |
+| `subscribe_book_at_interval`  | bool               | False      | 2              |
+| `subscribe_quotes`            | bool               | False      | 3              |
+| `subscribe_trades`            | bool               | False      | 4              |
+| `subscribe_mark_prices`       | bool               | False      | 6              |
+| `subscribe_index_prices`      | bool               | False      | 6              |
+| `subscribe_funding_rates`     | bool               | False      | 6              |
+| `subscribe_bars`              | bool               | False      | 5              |
+| `subscribe_instrument`        | bool               | False      | 1              |
+| `subscribe_instrument_status` | bool               | False      | 7              |
+| `subscribe_instrument_close`  | bool               | False      | 7              |
+| `subscribe_option_greeks`     | bool               | False      | 8              |
+| `subscribe_params`            | dict?              | None       | 9              |
+| `can_unsubscribe`             | bool               | True       | 9              |
+| `request_instruments`         | bool               | False      | 1              |
+| `request_book_snapshot`       | bool               | False      | 2              |
+| `request_book_deltas`         | bool               | False      | 2              |
+| `request_quotes`              | bool               | False      | 3              |
+| `request_trades`              | bool               | False      | 4              |
+| `request_bars`                | bool               | False      | 5              |
+| `request_funding_rates`       | bool               | False      | 6              |
+| `request_params`              | dict?              | None       | 9              |
+| `requests_start_delta`        | Timedelta?         | 1 hour     | 3, 4, 5        |
+| `book_type`                   | BookType           | L2_MBP     | 2              |
+| `book_depth`                  | PositiveInt?       | None       | 2              |
+| `book_interval_ms`            | PositiveInt        | 1000       | 2              |
+| `book_levels_to_print`        | PositiveInt        | 10         | 2              |
+| `manage_book`                 | bool               | False      | 2              |
+| `use_pyo3_book`               | bool               | False      | 2              |
+| `log_data`                    | bool               | True       | All            |
 
 ---

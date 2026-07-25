@@ -595,11 +595,11 @@ DYDX_LOG=/tmp/dydx_main.log \
 
 ### High vs low volatility
 
-| Condition       | Adjustment                                                               |
-| --------------- | ------------------------------------------------------------------------ |
-| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`.|
-| Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`.|
-| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.             |
+| Condition       | Adjustment                                                                |
+| --------------- | ------------------------------------------------------------------------- |
+| High volatility | Wider `grid_step_bps` (100-200), fewer `num_levels`, lower `skew_factor`. |
+| Low volatility  | Tighter `grid_step_bps` (10-30), more `num_levels`, higher `skew_factor`. |
+| Thin liquidity  | Increase `requote_threshold_bps` to reduce cancel frequency.              |
 
 ### Multiple instruments
 

@@ -694,18 +694,21 @@ mod tests {
             .iter()
             .map(|code| (format!("`{code}`"), code.description()))
             .collect();
+        // Width counts characters, matching the padding applied by `format!` and the
+        // column width the Markdown table hook normalizes to. Descriptions carry
+        // non-breaking hyphens, so byte length would over-pad the column.
         let code_w = rows
             .iter()
-            .map(|(code, _)| code.len())
+            .map(|(code, _)| code.chars().count())
             .max()
             .unwrap_or(0)
-            .max(CODE_HEADER.len());
+            .max(CODE_HEADER.chars().count());
         let desc_w = rows
             .iter()
-            .map(|(_, desc)| desc.len())
+            .map(|(_, desc)| desc.chars().count())
             .max()
             .unwrap_or(0)
-            .max(DESC_HEADER.len());
+            .max(DESC_HEADER.chars().count());
 
         let mut lines = vec![
             format!("| {CODE_HEADER:<code_w$} | {DESC_HEADER:<desc_w$} |"),

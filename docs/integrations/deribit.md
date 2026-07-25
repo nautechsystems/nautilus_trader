@@ -474,12 +474,12 @@ This provides several advantages:
 
 ### Order querying
 
-| Feature              | Supported | Notes                             |
-| -------------------- | --------- | --------------------------------- |
-| Query open orders    | ✓         | List all active orders.           |
-| Query order history  | ✓         | Historical order data.            |
-| Order status updates | ✓         | Real‑time order state changes.    |
-| Trade history        | ✓         | Execution and fill reports.       |
+| Feature              | Supported | Notes                          |
+| -------------------- | --------- | ------------------------------ |
+| Query open orders    | ✓         | List all active orders.        |
+| Query order history  | ✓         | Historical order data.         |
+| Order status updates | ✓         | Real‑time order state changes. |
+| Trade history        | ✓         | Execution and fill reports.    |
 
 ### Contingent orders
 
@@ -558,18 +558,18 @@ server-side checks.
 
 ### HTTP limits
 
-| Bucket / key       | Adapter bucket          | Notes                                              |
-| ------------------ | ----------------------- | -------------------------------------------------- |
-| `deribit:global`   | 20 req/sec, 100 burst   | Default bucket for non‑matching HTTP requests.     |
-| `deribit:orders`   | 5 req/sec, 20 burst     | Matching‑engine HTTP bucket for low‑level clients. |
-| `deribit:account`  | 5 req/sec, no burst     | Account information endpoints.                     |
+| Bucket / key      | Adapter bucket        | Notes                                              |
+| ----------------- | --------------------- | -------------------------------------------------- |
+| `deribit:global`  | 20 req/sec, 100 burst | Default bucket for non‑matching HTTP requests.     |
+| `deribit:orders`  | 5 req/sec, 20 burst   | Matching‑engine HTTP bucket for low‑level clients. |
+| `deribit:account` | 5 req/sec, no burst   | Account information endpoints.                     |
 
 ### WebSocket limits
 
-| Operation             | Adapter bucket        | Notes                                      |
-| --------------------- | --------------------- | ------------------------------------------ |
-| Subscribe/unsubscribe | 3 req/sec, 10 burst   | Subscription operations.                   |
-| Order operations      | 5 req/sec, 20 burst   | Buy, sell, edit, and cancel via WebSocket. |
+| Operation             | Adapter bucket      | Notes                                      |
+| --------------------- | ------------------- | ------------------------------------------ |
+| Subscribe/unsubscribe | 3 req/sec, 10 burst | Subscription operations.                   |
+| Order operations      | 5 req/sec, 20 burst | Buy, sell, edit, and cancel via WebSocket. |
 
 :::note
 The Nautilus adapter uses WebSocket for order submission (not HTTP) for lower latency.

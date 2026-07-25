@@ -100,12 +100,12 @@ Accepted rows preserve the v1 DataFrame values and column order. File-open failu
 
 ### Product support
 
-| Product Type                            | Supported | Notes                                      |
-| --------------------------------------- | --------- | ------------------------------------------ |
-| Spot Markets (incl. Binance US)         | ✓         |                                            |
-| Margin Accounts (Cross & Isolated)      | -         | *Not implemented.* Planned for v2.         |
-| USDT-Margined Futures (PERP & Delivery) | ✓         | Monthly and quarterly delivery contracts.  |
-| Coin‑Margined Futures (PERP & Delivery) | ✓         | Quarterly delivery contracts.              |
+| Product Type                            | Supported | Notes                                     |
+| --------------------------------------- | --------- | ----------------------------------------- |
+| Spot Markets (incl. Binance US)         | ✓         |                                           |
+| Margin Accounts (Cross & Isolated)      | -         | *Not implemented.* Planned for v2.        |
+| USDT-Margined Futures (PERP & Delivery) | ✓         | Monthly and quarterly delivery contracts. |
+| Coin‑Margined Futures (PERP & Delivery) | ✓         | Quarterly delivery contracts.             |
 
 :::note
 Margin account features (borrow, repay, isolated margin management) are not implemented.
@@ -195,19 +195,19 @@ time-in-force options across Binance account types.
 
 Only *limit* order types support `post_only`.
 
-| Order Type               | Spot | Margin | USDT Futures | Coin Futures | Notes                                               |
-| ------------------------ | ---- | ------ | ------------ | ------------ | --------------------------------------------------- |
-| `LIMIT`                  | ✓    | -      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot, `GTX` TIF for Futures. |
-| `STOP_LIMIT`             | -    | -      | ✓            | ✓            | Futures only.                                       |
+| Order Type   | Spot | Margin | USDT Futures | Coin Futures | Notes                                               |
+| ------------ | ---- | ------ | ------------ | ------------ | --------------------------------------------------- |
+| `LIMIT`      | ✓    | -      | ✓            | ✓            | Uses `LIMIT_MAKER` for Spot, `GTX` TIF for Futures. |
+| `STOP_LIMIT` | -    | -      | ✓            | ✓            | Futures only.                                       |
 
 ### Time in force
 
-| Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                          |
-| ------------- | ---- | ------ | ------------ | ------------ | ---------------------------------------------- |
-| `GTC`         | ✓    | -      | ✓            | ✓            | Good Till Canceled.                            |
-| `GTD`         | ✓*   | -      | ✓            | ✓*           | *Non‑default local mapping through `GTC`.      |
-| `FOK`         | ✓    | -      | ✓            | ✓            | Fill or Kill.                                  |
-| `IOC`         | ✓    | -      | ✓            | ✓            | Immediate or Cancel.                           |
+| Time in force | Spot | Margin | USDT Futures | Coin Futures | Notes                                     |
+| ------------- | ---- | ------ | ------------ | ------------ | ----------------------------------------- |
+| `GTC`         | ✓    | -      | ✓            | ✓            | Good Till Canceled.                       |
+| `GTD`         | ✓*   | -      | ✓            | ✓*           | *Non‑default local mapping through `GTC`. |
+| `FOK`         | ✓    | -      | ✓            | ✓            | Fill or Kill.                             |
+| `IOC`         | ✓    | -      | ✓            | ✓            | Immediate or Cancel.                      |
 
 #### GTD policy
 
@@ -235,12 +235,12 @@ the v1 locally managed Spot policy without claiming venue-native GTD support.
 
 ### Advanced order features
 
-| Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-| ------------------ | ---- | ------ | ------------ | ------------ | -------------------------------------------- |
-| Order Modification | ✓    | -      | ✓            | ✓            | Price and quantity for `LIMIT` orders only.  |
-| OCO Orders         | ✓    | -      | -            | -            | Spot OCO submitted via `orderList/oco`.      |
-| Bracket Orders     | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
-| Iceberg Orders     | ✓    | -      | ✓            | ✓            | Large orders split into visible portions.    |
+| Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
+| ------------------ | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
+| Order Modification | ✓    | -      | ✓            | ✓            | Price and quantity for `LIMIT` orders only. |
+| OCO Orders         | ✓    | -      | -            | -            | Spot OCO submitted via `orderList/oco`.     |
+| Bracket Orders     | -    | -      | -            | -            | *Planned*. Currently denied at submission.  |
+| Iceberg Orders     | ✓    | -      | ✓            | ✓            | Large orders split into visible portions.   |
 
 ### Batch operations
 
@@ -298,19 +298,19 @@ behavior.
 
 ### Position management
 
-| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-| ------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
-| Query positions     | -    | -      | ✓            | ✓            | Real‑time position updates.                 |
-| Position mode       | -    | -      | ✓            | ✓            | One‑Way vs Hedge mode (position IDs).       |
-| Leverage control    | -    | -      | ✓            | ✓            | Dynamic leverage adjustment per symbol.     |
-| Margin mode         | -    | -      | ✓            | ✓            | Cross vs Isolated margin per symbol.        |
+| Feature          | Spot | Margin | USDT Futures | Coin Futures | Notes                                   |
+| ---------------- | ---- | ------ | ------------ | ------------ | --------------------------------------- |
+| Query positions  | -    | -      | ✓            | ✓            | Real‑time position updates.             |
+| Position mode    | -    | -      | ✓            | ✓            | One‑Way vs Hedge mode (position IDs).   |
+| Leverage control | -    | -      | ✓            | ✓            | Dynamic leverage adjustment per symbol. |
+| Margin mode      | -    | -      | ✓            | ✓            | Cross vs Isolated margin per symbol.    |
 
 ### Risk events
 
-| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-| -------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
-| Liquidation handling | -    | -      | ✓            | ✓            | Exchange‑forced position closures.          |
-| ADL handling         | -    | -      | ✓            | ✓            | Auto‑Deleveraging events.                   |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                              |
+| -------------------- | ---- | ------ | ------------ | ------------ | ---------------------------------- |
+| Liquidation handling | -    | -      | ✓            | ✓            | Exchange‑forced position closures. |
+| ADL handling         | -    | -      | ✓            | ✓            | Auto‑Deleveraging events.          |
 
 Binance Futures can trigger exchange-generated orders in response to risk events:
 
@@ -371,21 +371,21 @@ the bundled fills is closed with an inferred fill from the status report's
 
 ### Order querying
 
-| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                       |
-| ------------------- | ---- | ------ | ------------ | ------------ | ------------------------------------------- |
-| Query open orders   | ✓    | ✓      | ✓            | ✓            | List all active orders.                     |
-| Query order history | ✓    | ✓      | ✓            | ✓            | Historical order data.                      |
-| Order status updates| ✓    | ✓      | ✓            | ✓            | Real‑time order state changes.              |
-| Trade history       | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.                 |
+| Feature              | Spot | Margin | USDT Futures | Coin Futures | Notes                          |
+| -------------------- | ---- | ------ | ------------ | ------------ | ------------------------------ |
+| Query open orders    | ✓    | ✓      | ✓            | ✓            | List all active orders.        |
+| Query order history  | ✓    | ✓      | ✓            | ✓            | Historical order data.         |
+| Order status updates | ✓    | ✓      | ✓            | ✓            | Real‑time order state changes. |
+| Trade history        | ✓    | ✓      | ✓            | ✓            | Execution and fill reports.    |
 
 ### Contingent orders
 
-| Feature             | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
-| ------------------- | ---- | ------ | ------------ | ------------ | -------------------------------------------- |
-| Order lists         | ✓    | -      | ✓            | ✓            | Spot OCO lists; Futures independent batches. |
-| OCO orders          | ✓    | -      | -            | -            | Spot only, via `orderList/oco`.              |
-| Bracket orders      | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
-| Conditional orders  | ✓    | ✓      | ✓            | ✓            | Stop and market‑if‑touched orders.           |
+| Feature            | Spot | Margin | USDT Futures | Coin Futures | Notes                                        |
+| ------------------ | ---- | ------ | ------------ | ------------ | -------------------------------------------- |
+| Order lists        | ✓    | -      | ✓            | ✓            | Spot OCO lists; Futures independent batches. |
+| OCO orders         | ✓    | -      | -            | -            | Spot only, via `orderList/oco`.              |
+| Bracket orders     | -    | -      | -            | -            | *Planned*. Currently denied at submission.   |
+| Conditional orders | ✓    | ✓      | ✓            | ✓            | Stop and market‑if‑touched orders.           |
 
 ### Order parameters
 
@@ -814,52 +814,52 @@ the task, and reconnect starts one replacement task with a new cancellation toke
 
 #### Spot
 
-| Binance status     | MarketStatusAction         |
-| ------------------ | -------------------------- |
-| Trading            | Trading                    |
-| EndOfDay           | Close                      |
-| Halt               | Halt                       |
-| Break              | Pause                      |
-| NonRepresentable   | NotAvailableForTrading     |
+| Binance status   | MarketStatusAction     |
+| ---------------- | ---------------------- |
+| Trading          | Trading                |
+| EndOfDay         | Close                  |
+| Halt             | Halt                   |
+| Break            | Pause                  |
+| NonRepresentable | NotAvailableForTrading |
 
 #### Futures (USD-M)
 
-| Binance status     | MarketStatusAction         |
-| ------------------ | -------------------------- |
-| Trading            | Trading                    |
-| PendingTrading     | PreOpen                    |
-| PreTrading         | PreOpen                    |
-| PostTrading        | PostClose                  |
-| EndOfDay           | Close                      |
-| Halt               | Halt                       |
-| AuctionMatch       | Cross                      |
-| Break              | Pause                      |
-| PreDelivering      | PreClose                   |
-| Delivering         | Close                      |
-| Delivered          | Close                      |
-| PreSettle          | PreClose                   |
-| Settling           | Close                      |
-| Close              | Close                      |
-| TradingHalt        | Halt                       |
-| TradingCancelOnly  | Halt                       |
+| Binance status    | MarketStatusAction |
+| ----------------- | ------------------ |
+| Trading           | Trading            |
+| PendingTrading    | PreOpen            |
+| PreTrading        | PreOpen            |
+| PostTrading       | PostClose          |
+| EndOfDay          | Close              |
+| Halt              | Halt               |
+| AuctionMatch      | Cross              |
+| Break             | Pause              |
+| PreDelivering     | PreClose           |
+| Delivering        | Close              |
+| Delivered         | Close              |
+| PreSettle         | PreClose           |
+| Settling          | Close              |
+| Close             | Close              |
+| TradingHalt       | Halt               |
+| TradingCancelOnly | Halt               |
 
 #### Futures (COIN-M)
 
-| Binance status     | MarketStatusAction         |
-| ------------------ | -------------------------- |
-| Trading            | Trading                    |
-| PendingTrading     | PreOpen                    |
-| PreDelivering      | PreClose                   |
-| Delivering         | Close                      |
-| Delivered          | Close                      |
-| PreSettle          | PreClose                   |
-| Settling           | Close                      |
-| Close              | Close                      |
-| PreDelisting       | PreClose                   |
-| Delisting          | Suspend                    |
-| Down               | NotAvailableForTrading     |
-| TradingHalt        | Halt                       |
-| TradingCancelOnly  | Halt                       |
+| Binance status    | MarketStatusAction     |
+| ----------------- | ---------------------- |
+| Trading           | Trading                |
+| PendingTrading    | PreOpen                |
+| PreDelivering     | PreClose               |
+| Delivering        | Close                  |
+| Delivered         | Close                  |
+| PreSettle         | PreClose               |
+| Settling          | Close                  |
+| Close             | Close                  |
+| PreDelisting      | PreClose               |
+| Delisting         | Suspend                |
+| Down              | NotAvailableForTrading |
+| TradingHalt       | Halt                   |
+| TradingCancelOnly | Halt                   |
 
 :::note
 Only instruments that are in a tradable state at connect time are tracked.
@@ -1279,11 +1279,11 @@ Binance provides three trading environments, each with separate API
 credentials and endpoints. The `environment` config option selects which to
 use.
 
-| Environment | Config                  | Description                                                            |
-| ----------- | ----------------------- | ---------------------------------------------------------------------- |
-| **Live**    | `environment="LIVE"`    | Production trading with real funds (default).                          |
-| **Demo**    | `environment="DEMO"`    | Demo Trading with simulated Spot and Futures funds.                    |
-| **Testnet** | `environment="TESTNET"` | Legacy Spot and Futures test network.                                  |
+| Environment | Config                  | Description                                         |
+| ----------- | ----------------------- | --------------------------------------------------- |
+| **Live**    | `environment="LIVE"`    | Production trading with real funds (default).       |
+| **Demo**    | `environment="DEMO"`    | Demo Trading with simulated Spot and Futures funds. |
+| **Testnet** | `environment="TESTNET"` | Legacy Spot and Futures test network.               |
 
 #### Live (production)
 
@@ -1301,10 +1301,10 @@ config = BinanceExecClientConfig(
 )
 ```
 
-| Variable             | Description         |
-| -------------------- | ------------------- |
-| `BINANCE_API_KEY`    | Live API key.       |
-| `BINANCE_API_SECRET` | Live API secret.    |
+| Variable             | Description      |
+| -------------------- | ---------------- |
+| `BINANCE_API_KEY`    | Live API key.    |
+| `BINANCE_API_SECRET` | Live API secret. |
 
 #### Demo trading
 
@@ -1318,14 +1318,14 @@ virtual balances.
 2. Go to **API Management** and create a demo API key.
 3. Demo keys work for Spot and Futures demo endpoints.
 
-| Endpoint       | URL                           |
-| -------------- | ----------------------------- |
-| Spot HTTP      | `demo-api.binance.com`        |
-| Spot WS        | `demo-stream.binance.com`     |
-| USD-M HTTP     | `demo-fapi.binance.com`       |
-| USD-M WS       | `demo-fstream.binance.com`    |
-| COIN-M HTTP    | `demo-dapi.binance.com`       |
-| COIN-M WS      | `demo-dstream.binance.com`    |
+| Endpoint    | URL                        |
+| ----------- | -------------------------- |
+| Spot HTTP   | `demo-api.binance.com`     |
+| Spot WS     | `demo-stream.binance.com`  |
+| USD-M HTTP  | `demo-fapi.binance.com`    |
+| USD-M WS    | `demo-fstream.binance.com` |
+| COIN-M HTTP | `demo-dapi.binance.com`    |
+| COIN-M WS   | `demo-dstream.binance.com` |
 
 ```python
 config = BinanceExecClientConfig(
@@ -1370,12 +1370,12 @@ config = BinanceExecClientConfig(
 )
 ```
 
-| Variable                             | Description                                        |
-| ------------------------------------ | -------------------------------------------------- |
-| `BINANCE_TESTNET_API_KEY`            | Spot testnet API key.                              |
-| `BINANCE_TESTNET_API_SECRET`         | Spot testnet API secret.                           |
-| `BINANCE_FUTURES_TESTNET_API_KEY`    | Futures testnet API key.                           |
-| `BINANCE_FUTURES_TESTNET_API_SECRET` | Futures testnet API secret.                        |
+| Variable                             | Description                 |
+| ------------------------------------ | --------------------------- |
+| `BINANCE_TESTNET_API_KEY`            | Spot testnet API key.       |
+| `BINANCE_TESTNET_API_SECRET`         | Spot testnet API secret.    |
+| `BINANCE_FUTURES_TESTNET_API_KEY`    | Futures testnet API key.    |
+| `BINANCE_FUTURES_TESTNET_API_SECRET` | Futures testnet API secret. |
 
 :::note
 Testnet credentials are completely separate from your live account. Market

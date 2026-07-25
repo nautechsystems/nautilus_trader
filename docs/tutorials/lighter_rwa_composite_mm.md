@@ -137,10 +137,10 @@ your own project.
 perpetual to `NVDA-PERP.LIGHTER`. This pairs a licensed Databento signal with a
 Lighter traded market:
 
-| Role              | Instrument ID       | Source    | Notes                                      |
-| ----------------- | ------------------- | --------- | ------------------------------------------ |
-| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.       |
-| Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter.      |
+| Role              | Instrument ID       | Source    | Notes                                 |
+| ----------------- | ------------------- | --------- | ------------------------------------- |
+| Signal instrument | `NVDA.EQUS`         | Databento | EQUS.MINI top‑of‑book quote updates.  |
+| Target instrument | `NVDA-PERP.LIGHTER` | Lighter   | RWA perpetual traded through Lighter. |
 
 Subscribing to `NVDA.EQUS` requests top-of-book (`mbp-1`) quotes for `NVDA` from
 Databento's `EQUS.MINI` dataset by default, delivered as a single `QuoteTick`

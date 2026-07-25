@@ -104,17 +104,17 @@ backtests so return charts use the selected currency.
 
 The tearsheet can include any combination of the following built-in charts:
 
-| Chart Name         | Type         | Description                                              |
-| ------------------ | ------------ | -------------------------------------------------------- |
-| `run_info`         | Table        | Run metadata and account balances.                       |
-| `stats_table`      | Table        | Performance statistics (PnL, returns, general metrics).  |
-| `equity`           | Line         | Cumulative returns over time with optional benchmark.    |
-| `drawdown`         | Area         | Drawdown percentage from peak equity.                    |
-| `monthly_returns`  | Heatmap      | Monthly portfolio return percentages organized by year.  |
-| `distribution`     | Histogram    | Distribution of individual return values.                |
-| `rolling_sharpe`   | Line         | 60-day rolling Sharpe ratio.                             |
-| `yearly_returns`   | Bar          | Annual return percentages.                               |
-| `bars_with_fills`  | Candlestick  | Price bars (OHLC) with order fills overlaid as markers.  |
+| Chart Name        | Type        | Description                                             |
+| ----------------- | ----------- | ------------------------------------------------------- |
+| `run_info`        | Table       | Run metadata and account balances.                      |
+| `stats_table`     | Table       | Performance statistics (PnL, returns, general metrics). |
+| `equity`          | Line        | Cumulative returns over time with optional benchmark.   |
+| `drawdown`        | Area        | Drawdown percentage from peak equity.                   |
+| `monthly_returns` | Heatmap     | Monthly portfolio return percentages organized by year. |
+| `distribution`    | Histogram   | Distribution of individual return values.               |
+| `rolling_sharpe`  | Line        | 60-day rolling Sharpe ratio.                            |
+| `yearly_returns`  | Bar         | Annual return percentages.                              |
+| `bars_with_fills` | Candlestick | Price bars (OHLC) with order fills overlaid as markers. |
 
 All charts are registered in the chart registry and are configured via chart objects in
 `TearsheetConfig.charts` (each chart object maps to a built-in chart name).
@@ -196,12 +196,12 @@ current equity; otherwise later periods inflate as the running balance grows.
 Themes control the visual styling of charts including colors, fonts, and backgrounds.
 NautilusTrader provides four built-in themes:
 
-| Theme Name      | Description                                    | Use Case                       |
-| --------------- | ---------------------------------------------- | ------------------------------ |
-| `plotly_white`  | Clean light theme with dark gray headers.      | Default, professional reports. |
-| `plotly_dark`   | Dark background with standard Plotly colors.   | Low‑light environments.        |
-| `nautilus`      | Light theme with NautilusTrader brand colors.  | Official light mode.           |
-| `nautilus_dark` | Dark theme with teal/cyan signature colors.    | Official dark mode.            |
+| Theme Name      | Description                                   | Use Case                       |
+| --------------- | --------------------------------------------- | ------------------------------ |
+| `plotly_white`  | Clean light theme with dark gray headers.     | Default, professional reports. |
+| `plotly_dark`   | Dark background with standard Plotly colors.  | Low‑light environments.        |
+| `nautilus`      | Light theme with NautilusTrader brand colors. | Official light mode.           |
+| `nautilus_dark` | Dark theme with teal/cyan signature colors.   | Official dark mode.            |
 
 ### Selecting a theme
 

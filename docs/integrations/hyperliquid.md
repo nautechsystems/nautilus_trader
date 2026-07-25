@@ -682,12 +682,12 @@ self.subscribe_data(
 perpetual instrument. Subscribe with the canonical Nautilus `instrument_id`
 in `metadata["instrument_id"]`:
 
-| Field           | Type           | Description                                                                 |
-| --------------- | -------------- | --------------------------------------------------------------------------- |
-| `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.                                           |
-| `open_interest` | `Decimal`      | Open interest parsed for direct arithmetic use.                             |
-| `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`.  |
-| `ts_init`       | `int`          | UNIX timestamp in nanoseconds when the object was built.                    |
+| Field           | Type           | Description                                                                |
+| --------------- | -------------- | -------------------------------------------------------------------------- |
+| `instrument_id` | `InstrumentId` | Canonical Nautilus instrument ID.                                          |
+| `open_interest` | `Decimal`      | Open interest parsed for direct arithmetic use.                            |
+| `ts_event`      | `int`          | UNIX timestamp in nanoseconds when the update occurred. Mirrors `ts_init`. |
+| `ts_init`       | `int`          | UNIX timestamp in nanoseconds when the object was built.                   |
 
 ```python
 from nautilus_trader.adapters.hyperliquid import HYPERLIQUID_CLIENT_ID
@@ -928,14 +928,14 @@ ALO (Add-Liquidity-Only) lane.
 
 ### Order operations
 
-| Operation         | Perpetuals | Spot | Notes                                                 |
-| ----------------- | ---------- | ---- | ----------------------------------------------------- |
-| Submit order      | ✓          | ✓    | Single order submission.                              |
-| Submit order list | ✓          | ✓    | Batch order submission (single API call).             |
-| Modify order      | ✓          | ✓    | Requires venue order ID.                              |
-| Cancel order      | ✓          | ✓    | Cancel by client order ID.                            |
-| Cancel all orders | ✓          | ✓    | Batched `cancelByCloid` for open orders.              |
-| Batch cancel      | ✓          | ✓    | Batched `cancelByCloid` for the provided list.        |
+| Operation         | Perpetuals | Spot | Notes                                          |
+| ----------------- | ---------- | ---- | ---------------------------------------------- |
+| Submit order      | ✓          | ✓    | Single order submission.                       |
+| Submit order list | ✓          | ✓    | Batch order submission (single API call).      |
+| Modify order      | ✓          | ✓    | Requires venue order ID.                       |
+| Cancel order      | ✓          | ✓    | Cancel by client order ID.                     |
+| Cancel all orders | ✓          | ✓    | Batched `cancelByCloid` for open orders.       |
+| Batch cancel      | ✓          | ✓    | Batched `cancelByCloid` for the provided list. |
 
 :::info
 Cancels prefer `cancelByCloid` and fall back to `cancel` by numeric OID when no CLOID is cached;

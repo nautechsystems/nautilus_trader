@@ -74,8 +74,13 @@ Example:
 - Use GFM pipe tables for tabular content.
 - Include leading and trailing pipes.
 - Align pipe characters vertically.
-- Pad delimiter cells with spaces (`| ----- |`, not `|-----|`); MD060 enforces pipe alignment
-  but not delimiter padding. The padded form matches Prettier's default table output.
+- Pad each column to its widest cell plus one space either side, which matches Prettier's
+  default table output. MD060 checks that pipes line up but ignores cell content, so it
+  accepts a column padded far wider than anything in it.
+- Pad delimiter cells with spaces (`| ----- |`, not `|-----|`); MD060 does not check this
+  either.
+- The `normalize markdown table padding` pre-commit hook rewrites tables to this form, so
+  there is no need to count characters by hand.
 - Left-align text columns and right-align numeric columns where appropriate.
 - Keep the delimiter row consistent with the intended rendered alignment.
 - Avoid HTML tables unless Markdown cannot express the required structure or the repository

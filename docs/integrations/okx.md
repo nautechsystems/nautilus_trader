@@ -324,12 +324,12 @@ strategy.submit_order(order)
 
 ### Time in force
 
-| Time in force | Linear perpetual swap | Notes                                             |
-| ------------- | --------------------- | ------------------------------------------------- |
-| `GTC`         | ✓                     | Good Till Canceled.                               |
-| `FOK`         | ✓                     | Fill or Kill.                                     |
-| `IOC`         | ✓                     | Immediate or Cancel.                              |
-| `GTD`         | -                     | *No native OKX order time‑in‑force.*              |
+| Time in force | Linear perpetual swap | Notes                                |
+| ------------- | --------------------- | ------------------------------------ |
+| `GTC`         | ✓                     | Good Till Canceled.                  |
+| `FOK`         | ✓                     | Fill or Kill.                        |
+| `IOC`         | ✓                     | Immediate or Cancel.                 |
+| `GTD`         | -                     | *No native OKX order time‑in‑force.* |
 
 :::note
 **GTD (Good Till Date) time in force**: OKX supports request expiry through `expTime`,
@@ -341,20 +341,20 @@ order expiration by canceling the order at the specified expiry time.
 
 ### Batch operations
 
-| Operation          | Linear perpetual swap | Notes                                     |
-| ------------------ | --------------------- | ----------------------------------------- |
-| Batch Submit       | ✓                     | Submit multiple orders in single request. |
-| Batch Modify       | ✓                     | Modify multiple orders in single request. |
-| Batch Cancel       | ✓                     | Cancel multiple orders in single request. |
+| Operation    | Linear perpetual swap | Notes                                     |
+| ------------ | --------------------- | ----------------------------------------- |
+| Batch Submit | ✓                     | Submit multiple orders in single request. |
+| Batch Modify | ✓                     | Modify multiple orders in single request. |
+| Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
 ### Position management
 
-| Feature           | Linear perpetual swap | Notes                                                |
-| ----------------- | --------------------- | ---------------------------------------------------- |
-| Query positions   | ✓                     | Real‑time position updates.                          |
-| Position mode     | ✓                     | Net vs Long/Short mode (see below).                  |
-| Leverage control  | ✓                     | Dynamic leverage adjustment per instrument.          |
-| Margin mode       | ✓                     | Supports cash, isolated, and cross modes.            |
+| Feature          | Linear perpetual swap | Notes                                       |
+| ---------------- | --------------------- | ------------------------------------------- |
+| Query positions  | ✓                     | Real‑time position updates.                 |
+| Position mode    | ✓                     | Net vs Long/Short mode (see below).         |
+| Leverage control | ✓                     | Dynamic leverage adjustment per instrument. |
+| Margin mode      | ✓                     | Supports cash, isolated, and cross modes.   |
 
 #### Position modes
 
@@ -499,12 +499,12 @@ Only use manual override for requirements that cannot be met through configurati
 
 ### Order querying
 
-| Feature              | Linear perpetual swap | Notes                                     |
-| -------------------- | --------------------- | ----------------------------------------- |
-| Query open orders    | ✓                     | List all active orders.                   |
-| Query order history  | ✓                     | Historical order data.                    |
-| Order status updates | ✓                     | Real‑time order state changes.            |
-| Trade history        | ✓                     | Execution and fill reports.               |
+| Feature              | Linear perpetual swap | Notes                          |
+| -------------------- | --------------------- | ------------------------------ |
+| Query open orders    | ✓                     | List all active orders.        |
+| Query order history  | ✓                     | Historical order data.         |
+| Order status updates | ✓                     | Real‑time order state changes. |
+| Trade history        | ✓                     | Execution and fill reports.    |
 
 ### Contingent orders
 
@@ -575,13 +575,13 @@ The OKX adapter detects exchange-initiated risk management events:
 Detection is driven by the `category` field on the order record. The
 recognized values are:
 
-| `category`              | Meaning                                              |
-| ----------------------- | ---------------------------------------------------- |
-| `full_liquidation`      | Full position liquidation.                           |
-| `partial_liquidation`   | Partial position liquidation.                        |
-| `adl`                   | Auto‑deleveraging close.                             |
-| `delivery`              | Contract delivery at expiry.                         |
-| `normal` / other values | Regular order flow.                                  |
+| `category`              | Meaning                       |
+| ----------------------- | ----------------------------- |
+| `full_liquidation`      | Full position liquidation.    |
+| `partial_liquidation`   | Partial position liquidation. |
+| `adl`                   | Auto‑deleveraging close.      |
+| `delivery`              | Contract delivery at expiry.  |
+| `normal` / other values | Regular order flow.           |
 
 Detection runs on both paths:
 
@@ -615,10 +615,10 @@ For full API details see the
 
 Only limit-style orders are supported. OKX does not allow market orders for options.
 
-| Order type | Supported | Notes                                             |
-| ---------- | --------- | ------------------------------------------------- |
-| `LIMIT`    | ✓         | Standard limit order.                             |
-| `MARKET`   | -         | Rejected by the adapter before reaching the API.  |
+| Order type | Supported | Notes                                            |
+| ---------- | --------- | ------------------------------------------------ |
+| `LIMIT`    | ✓         | Standard limit order.                            |
+| `MARKET`   | -         | Rejected by the adapter before reaching the API. |
 
 Options support FOK and IOC time-in-force. OKX uses a dedicated `op_fok` order type for
 options FOK orders; the adapter handles this mapping automatically.
@@ -631,11 +631,11 @@ Conditional/algo orders (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`,
 Options orders can be priced in three mutually exclusive ways. Pass the pricing mode via
 order `params`:
 
-| Mode  | Parameter | Description                                             |
-| ----- | --------- | ------------------------------------------------------- |
-| Price | (default) | Standard limit price in the contract's currency.        |
-| USD   | `px_usd`  | Price in USD terms.                                     |
-| IV    | `px_vol`  | Price in implied volatility (1.0 = 100%).               |
+| Mode  | Parameter | Description                                      |
+| ----- | --------- | ------------------------------------------------ |
+| Price | (default) | Standard limit price in the contract's currency. |
+| USD   | `px_usd`  | Price in USD terms.                              |
+| IV    | `px_vol`  | Price in implied volatility (1.0 = 100%).        |
 
 ```python
 # Price in USD
@@ -908,11 +908,11 @@ OKX serves distinct endpoints per region, and an API key is only valid against t
 where it was registered (using a key against another region's endpoints returns
 `API key doesn't exist`). Set `region` to select the correct endpoint set:
 
-| Region   | Registered on | REST            | WebSocket host       |
-| -------- | ------------- | --------------- | -------------------- |
-| `GLOBAL` | `www.okx.com` | `www.okx.com`   | `ws.okx.com`         |
-| `EEA`    | `my.okx.com`  | `eea.okx.com`   | `wseea.okx.com`      |
-| `US`     | `app.okx.com` | `us.okx.com`    | `wsus.okx.com`       |
+| Region   | Registered on | REST          | WebSocket host  |
+| -------- | ------------- | ------------- | --------------- |
+| `GLOBAL` | `www.okx.com` | `www.okx.com` | `ws.okx.com`    |
+| `EEA`    | `my.okx.com`  | `eea.okx.com` | `wseea.okx.com` |
+| `US`     | `app.okx.com` | `us.okx.com`  | `wsus.okx.com`  |
 
 `region` defaults to `GLOBAL`. For example, an EEA account:
 
@@ -986,47 +986,47 @@ OKX enforces per-endpoint and per-account quotas. Exceeding them leads to HTTP 4
 responses and temporary throttling on that key.
 :::
 
-| Key / endpoint                          | Limit (req/sec) | Notes                                             |
-| --------------------------------------- | --------------- | ------------------------------------------------- |
-| `okx:global`                            | 250             | Adapter‑level shared bucket.                      |
-| `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down.         |
-| `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down.         |
-| `/api/v5/account/positions`             | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/account/positions-history`     | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/public/position-tiers`         | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/event-contract/series`  | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/event-contract/events`  | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/event-contract/markets` | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/opt-summary`            | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/public/price-limit`            | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/public/time`                   | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/mark-price`             | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/public/funding-rate-history`   | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/market/index-tickers`          | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/market/books`                  | 20              | OKX 40 requests / 2 seconds.                      |
-| `/api/v5/market/candles`                | 20              | OKX 40 requests / 2 seconds.                      |
-| `/api/v5/market/history-candles`        | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/market/history-trades`         | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/sprd/spreads`                  | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/sprd/order`                    | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/sprd/cancel-order`             | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/sprd/mass-cancel`              | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/sprd/orders-pending`           | 5               | OKX 10 requests / 2 seconds.                      |
-| `/api/v5/sprd/orders-history`           | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/sprd/trades`                   | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                      |
-| `/api/v5/trade/cancel-batch-orders`     | 7               | OKX 300 orders / 2 seconds, rounded down.         |
-| `/api/v5/trade/orders-pending`          | 30              | OKX 60 requests / 2 seconds.                      |
-| `/api/v5/trade/orders-history`          | 20              | OKX 40 requests / 2 seconds.                      |
-| `/api/v5/trade/fills`                   | 30              | OKX 60 requests / 2 seconds.                      |
-| `/api/v5/trade/order-algo`              | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/trade/cancel-algos`            | 1               | OKX 20 orders / 2 seconds.                        |
-| `/api/v5/trade/cancel-advance-algos`    | 1               | Conservative bucket for advance algo cancels.     |
-| `/api/v5/trade/amend-algos`             | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/trade/orders-algo-pending`     | 10              | OKX 20 requests / 2 seconds.                      |
-| `/api/v5/trade/orders-algo-history`     | 10              | OKX 20 requests / 2 seconds.                      |
+| Key / endpoint                          | Limit (req/sec) | Notes                                         |
+| --------------------------------------- | --------------- | --------------------------------------------- |
+| `okx:global`                            | 250             | Adapter‑level shared bucket.                  |
+| `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down.     |
+| `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down.     |
+| `/api/v5/account/positions`             | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/account/positions-history`     | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/instruments`            | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/public/position-tiers`         | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/event-contract/series`  | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/event-contract/events`  | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/event-contract/markets` | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/opt-summary`            | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/public/price-limit`            | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/public/time`                   | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/mark-price`             | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/public/funding-rate-history`   | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/market/index-tickers`          | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/market/books`                  | 20              | OKX 40 requests / 2 seconds.                  |
+| `/api/v5/market/candles`                | 20              | OKX 40 requests / 2 seconds.                  |
+| `/api/v5/market/history-candles`        | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/market/history-trades`         | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/sprd/spreads`                  | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/sprd/order`                    | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/sprd/cancel-order`             | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/sprd/mass-cancel`              | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/sprd/orders-pending`           | 5               | OKX 10 requests / 2 seconds.                  |
+| `/api/v5/sprd/orders-history`           | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/sprd/trades`                   | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/trade/order`                   | 30              | OKX 60 requests / 2 seconds.                  |
+| `/api/v5/trade/cancel-batch-orders`     | 7               | OKX 300 orders / 2 seconds, rounded down.     |
+| `/api/v5/trade/orders-pending`          | 30              | OKX 60 requests / 2 seconds.                  |
+| `/api/v5/trade/orders-history`          | 20              | OKX 40 requests / 2 seconds.                  |
+| `/api/v5/trade/fills`                   | 30              | OKX 60 requests / 2 seconds.                  |
+| `/api/v5/trade/order-algo`              | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/trade/cancel-algos`            | 1               | OKX 20 orders / 2 seconds.                    |
+| `/api/v5/trade/cancel-advance-algos`    | 1               | Conservative bucket for advance algo cancels. |
+| `/api/v5/trade/amend-algos`             | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/trade/orders-algo-pending`     | 10              | OKX 20 requests / 2 seconds.                  |
+| `/api/v5/trade/orders-algo-history`     | 10              | OKX 20 requests / 2 seconds.                  |
 
 All keys include the `okx:global` bucket. URLs are normalized with query strings removed
 before rate limiting, so requests with different filters share the same quota.
@@ -1051,31 +1051,31 @@ monitor fields below.
 
 #### Data client
 
-| Option                             | Default                     | Description                                  |
-| ---------------------------------- | --------------------------- | -------------------------------------------- |
-| `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.                |
-| `contract_types`                   | `None`                      | Contract styles to load.                     |
-| `load_spreads`                     | `False`                     | Loads live spread instruments.               |
-| `instrument_families`              | `None`                      | Families or event `seriesId` values.         |
-| `base_url_http`                    | `None`                      | Override for the OKX REST endpoint.          |
-| `base_url_ws_public`               | `None`                      | Override for the public WebSocket URL.       |
-| `base_url_ws_business`             | `None`                      | Override for the business WebSocket URL.     |
-| `api_key`                          | `None`                      | Falls back to `OKX_API_KEY` when unset.      |
-| `api_secret`                       | `None`                      | Falls back to `OKX_API_SECRET` when unset.   |
-| `api_passphrase`                   | `None`                      | Falls back to `OKX_API_PASSPHRASE`.          |
-| `environment`                      | `None`                      | Environment enum (`LIVE` or `DEMO`).         |
-| `region`                           | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).      |
-| `http_timeout_secs`                | `60`                        | REST market data request timeout.            |
-| `max_retries`                      | `3`                         | Retry attempts for recoverable REST errors.  |
-| `retry_delay_initial_ms`           | `1,000`                     | Initial delay before retrying.               |
-| `retry_delay_max_ms`               | `10,000`                    | Maximum exponential backoff delay.           |
-| `update_instruments_interval_mins` | `60`                        | Background instrument refresh interval.      |
-| `book_stale_check_interval_secs`   | `5`                         | Stale book check interval.                   |
-| `book_stale_threshold_secs`        | `30`                        | Idle time before a stale book warning.       |
-| `book_snapshot_timeout_secs`       | `3`                         | Post‑reconnect snapshot wait.                |
-| `vip_level`                        | `None`                      | Enables higher‑depth books by VIP tier.      |
-| `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.       |
-| `transport_backend`                | `Sockudo`                   | WebSocket transport backend.                 |
+| Option                             | Default                     | Description                                 |
+| ---------------------------------- | --------------------------- | ------------------------------------------- |
+| `instrument_types`                 | `(OKXInstrumentType.SPOT,)` | OKX instrument types to load.               |
+| `contract_types`                   | `None`                      | Contract styles to load.                    |
+| `load_spreads`                     | `False`                     | Loads live spread instruments.              |
+| `instrument_families`              | `None`                      | Families or event `seriesId` values.        |
+| `base_url_http`                    | `None`                      | Override for the OKX REST endpoint.         |
+| `base_url_ws_public`               | `None`                      | Override for the public WebSocket URL.      |
+| `base_url_ws_business`             | `None`                      | Override for the business WebSocket URL.    |
+| `api_key`                          | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
+| `api_secret`                       | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
+| `api_passphrase`                   | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
+| `environment`                      | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
+| `region`                           | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).     |
+| `http_timeout_secs`                | `60`                        | REST market data request timeout.           |
+| `max_retries`                      | `3`                         | Retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms`           | `1,000`                     | Initial delay before retrying.              |
+| `retry_delay_max_ms`               | `10,000`                    | Maximum exponential backoff delay.          |
+| `update_instruments_interval_mins` | `60`                        | Background instrument refresh interval.     |
+| `book_stale_check_interval_secs`   | `5`                         | Stale book check interval.                  |
+| `book_stale_threshold_secs`        | `30`                        | Idle time before a stale book warning.      |
+| `book_snapshot_timeout_secs`       | `3`                         | Post‑reconnect snapshot wait.               |
+| `vip_level`                        | `None`                      | Enables higher‑depth books by VIP tier.     |
+| `proxy_url`                        | `None`                      | Optional HTTP and WebSocket proxy URL.      |
+| `transport_backend`                | `Sockudo`                   | WebSocket transport backend.                |
 
 Set `book_stale_check_interval_secs`, `book_stale_threshold_secs`, or
 `book_snapshot_timeout_secs` to `0` to disable that health monitor. Quiet markets can idle
@@ -1093,31 +1093,31 @@ The OKX execution client provides the following configuration options:
 
 #### Execution client
 
-| Option                            | Default                     | Description                                 |
-| --------------------------------- | --------------------------- | ------------------------------------------- |
-| `instrument_types`                | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
-| `contract_types`                  | `None`                      | Tradable contract styles to load.           |
-| `load_spreads`                    | `False`                     | Loads live spread instruments.              |
-| `instrument_families`             | `None`                      | Families or event `seriesId` values.        |
-| `base_url_http`                   | `None`                      | Override for the OKX trading REST endpoint. |
-| `base_url_ws_private`             | `None`                      | Override for the private WebSocket URL.     |
-| `base_url_ws_business`            | `None`                      | Override for the business WebSocket URL.    |
-| `api_key`                         | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
-| `api_secret`                      | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
-| `api_passphrase`                  | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
-| `environment`                     | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
-| `region`                          | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).     |
-| `margin_mode`                     | `None`                      | Margin mode (`ISOLATED` or `CROSS`).        |
-| `use_spot_margin`                 | `False`                     | Enables spot‑style margin or leverage.      |
-| `http_timeout_secs`               | `60`                        | REST trading request timeout.               |
-| `use_fills_channel`               | `False`                     | Subscribes to fills channel (VIP5+).        |
-| `use_mm_mass_cancel`              | `False`                     | Uses the market‑maker bulk cancel endpoint. |
-| `max_retries`                     | `3`                         | Retry attempts for recoverable REST errors. |
-| `retry_delay_initial_ms`          | `1,000`                     | Initial delay before retrying.              |
-| `retry_delay_max_ms`              | `10,000`                    | Maximum exponential backoff delay.          |
-| `use_spot_cash_position_reports`  | `False`                     | Generates SPOT cash positions from wallet.  |
-| `proxy_url`                       | `None`                      | Optional HTTP and WebSocket proxy URL.      |
-| `transport_backend`               | `Sockudo`                   | WebSocket transport backend.                |
+| Option                           | Default                     | Description                                 |
+| -------------------------------- | --------------------------- | ------------------------------------------- |
+| `instrument_types`               | `(OKXInstrumentType.SPOT,)` | Tradable OKX instrument types.              |
+| `contract_types`                 | `None`                      | Tradable contract styles to load.           |
+| `load_spreads`                   | `False`                     | Loads live spread instruments.              |
+| `instrument_families`            | `None`                      | Families or event `seriesId` values.        |
+| `base_url_http`                  | `None`                      | Override for the OKX trading REST endpoint. |
+| `base_url_ws_private`            | `None`                      | Override for the private WebSocket URL.     |
+| `base_url_ws_business`           | `None`                      | Override for the business WebSocket URL.    |
+| `api_key`                        | `None`                      | Falls back to `OKX_API_KEY` when unset.     |
+| `api_secret`                     | `None`                      | Falls back to `OKX_API_SECRET` when unset.  |
+| `api_passphrase`                 | `None`                      | Falls back to `OKX_API_PASSPHRASE`.         |
+| `environment`                    | `None`                      | Environment enum (`LIVE` or `DEMO`).        |
+| `region`                         | `None`                      | Region enum (`GLOBAL`, `EEA`, or `US`).     |
+| `margin_mode`                    | `None`                      | Margin mode (`ISOLATED` or `CROSS`).        |
+| `use_spot_margin`                | `False`                     | Enables spot‑style margin or leverage.      |
+| `http_timeout_secs`              | `60`                        | REST trading request timeout.               |
+| `use_fills_channel`              | `False`                     | Subscribes to fills channel (VIP5+).        |
+| `use_mm_mass_cancel`             | `False`                     | Uses the market‑maker bulk cancel endpoint. |
+| `max_retries`                    | `3`                         | Retry attempts for recoverable REST errors. |
+| `retry_delay_initial_ms`         | `1,000`                     | Initial delay before retrying.              |
+| `retry_delay_max_ms`             | `10,000`                    | Maximum exponential backoff delay.          |
+| `use_spot_cash_position_reports` | `False`                     | Generates SPOT cash positions from wallet.  |
+| `proxy_url`                      | `None`                      | Optional HTTP and WebSocket proxy URL.      |
+| `transport_backend`              | `Sockudo`                   | WebSocket transport backend.                |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`.
