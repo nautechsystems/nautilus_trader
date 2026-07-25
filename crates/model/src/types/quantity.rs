@@ -1140,7 +1140,7 @@ mod tests {
 
     #[rstest]
     fn test_from_i64_exact() {
-        let max = i64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+        let max = quantity_max_i64();
         let values = [0, 1, max];
         let quantities = values.map(Quantity::from);
         let expected =
@@ -1165,12 +1165,8 @@ mod tests {
     }
 
     #[rstest]
-    #[allow(
-        clippy::useless_conversion,
-        reason = "try_from is a no-op when QuantityRaw is u64, and narrows when u128 (high-precision)"
-    )]
     fn test_from_u64_exact() {
-        let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+        let max = quantity_max_u64();
         let values = [0, 1, max];
         let quantities = values.map(Quantity::from);
         let expected = values.map(|value| (QuantityRaw::from(value) * FIXED_SCALAR_RAW, 0));
@@ -1207,7 +1203,7 @@ mod tests {
         should_panic(expected = "Raw value exceeds QuantityRaw range")
     )]
     fn test_from_i64_overflow_panics() {
-        let max = i64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
+        let max = quantity_max_i64();
 
         let _ = Quantity::from(max + 1);
     }
@@ -1221,14 +1217,22 @@ mod tests {
         not(feature = "high-precision"),
         should_panic(expected = "Raw value exceeds QuantityRaw range")
     )]
+    fn test_from_u64_overflow_panics() {
+        let max = quantity_max_u64();
+
+        let _ = Quantity::from(max + 1);
+    }
+
+    fn quantity_max_i64() -> i64 {
+        i64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap()
+    }
+
     #[allow(
         clippy::useless_conversion,
         reason = "try_from is a no-op when QuantityRaw is u64, and narrows when u128 (high-precision)"
     )]
-    fn test_from_u64_overflow_panics() {
-        let max = u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap();
-
-        let _ = Quantity::from(max + 1);
+    fn quantity_max_u64() -> u64 {
+        u64::try_from(QUANTITY_RAW_MAX / FIXED_SCALAR_RAW).unwrap()
     }
 
     #[rstest] // Test does not panic rather than exact value

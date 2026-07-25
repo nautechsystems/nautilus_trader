@@ -91,7 +91,10 @@ pub struct OKXWebSocketError {
 }
 
 #[derive(Debug, Clone)]
-#[expect(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the variant size gap only crosses the threshold when high-precision widens the raw types"
+)]
 pub enum ExecutionReport {
     Order(OrderStatusReport),
     Fill(FillReport),

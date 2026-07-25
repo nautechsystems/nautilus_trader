@@ -184,8 +184,19 @@ endif
 CORE_SELECTED_FEATURE_LIST := $(filter-out hypersync,$(subst $(comma),$(space),$(CARGO_FEATURES)))
 CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEATURE_LIST)))
 
+# Standard-precision (64-bit) selection, shared by the test and clippy targets.
+# Two independent routes re-enable high precision, and both must be closed or the build
+# silently runs high precision under a standard-precision name:
+#   --no-default-features       most adapters declare default = [..., "high-precision"]
+#   --exclude nautilus-blockchain   it depends on nautilus-model/defi, which implies high-precision
+# `cargo tree` does not reflect either route reliably here. Verify a change by deleting an
+# `#[allow(clippy::useless_conversion)]` in crates/model/src/types/quantity.rs and confirming
+# clippy reports it under this selection.
+STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
+
 CARGO_BUILD_JOB_TARGETS := install install-debug build build-debug \
 	build-debug-pyo3 build-wheel build-wheel-debug build-dry-run check-code \
+	check-code-standard-precision \
 	check-all-targets clippy clippy-fix clippy-fix-nightly clippy-pedantic-crate-% \
 	docs docs-rust docsrs-check cargo-build cargo-check check-features hawk cargo-test \
 	cargo-test-extras cargo-test-doc cargo-test-core-local cargo-test-core-selected \
@@ -391,6 +402,15 @@ check-code:  #-- Run clippy on lib/test targets and ruff --fix (use HYPERSYNC=tr
 	@cargo clippy --workspace --lib --tests --features "$(CARGO_FEATURES)" --profile nextest -- -D warnings
 	@uv run --active --no-sync ruff check . --fix --force-exclude
 	@printf "$(GREEN)Checks passed$(RESET)\n"
+
+.PHONY: check-code-standard-precision
+# Keep the generated Cython/C bindings on their committed high-precision setting; the Rust
+# compilation is driven by the cargo feature, so only binding generation would drift here.
+check-code-standard-precision: export HIGH_PRECISION=1
+check-code-standard-precision:  #-- Run clippy on lib/test targets with standard precision
+	$(info $(M) Running standard-precision code quality checks...)
+	@cargo clippy $(STANDARD_PRECISION_ARGS) --profile nextest -- -D warnings
+	@printf "$(GREEN)Standard-precision checks passed$(RESET)\n"
 
 .PHONY: check-all-targets
 check-all-targets:  #-- Run clippy on all targets including bins and examples (nightly)
@@ -883,9 +903,11 @@ cargo-test-lib:  #-- Run Rust library tests only with high precision
 
 .PHONY: cargo-test-standard-precision
 cargo-test-standard-precision: export RUST_BACKTRACE=1
+# See check-code-standard-precision: keep generated bindings off the standard-precision setting.
+cargo-test-standard-precision: export HIGH_PRECISION=1
 cargo-test-standard-precision: check-nextest-installed
 cargo-test-standard-precision:  #-- Run Rust tests with standard precision (debug profile)
-	cargo nextest run --workspace --lib --tests --features "ffi,python" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
+	cargo nextest run $(STANDARD_PRECISION_ARGS) $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE)
 
 .PHONY: cargo-test-debug
 cargo-test-debug: export RUST_BACKTRACE=1

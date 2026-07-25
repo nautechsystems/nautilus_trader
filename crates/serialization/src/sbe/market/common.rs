@@ -116,9 +116,9 @@ pub(super) fn validate_header(
 
 #[inline]
 pub(super) fn encode_price(writer: &mut SbeWriter<'_>, price: &Price) {
-    #[expect(
+    #[allow(
         clippy::useless_conversion,
-        reason = "conversion is required when high precision changes the raw type"
+        reason = "from is a no-op when PriceRaw is i128 (high-precision), and widens when i64"
     )]
     let raw = i128::from(price.raw);
 
@@ -144,9 +144,9 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
 
 #[inline]
 pub(super) fn encode_quantity(writer: &mut SbeWriter<'_>, quantity: &Quantity) {
-    #[expect(
+    #[allow(
         clippy::useless_conversion,
-        reason = "conversion is required when high precision changes the raw type"
+        reason = "from is a no-op when QuantityRaw is u128 (high-precision), and widens when u64"
     )]
     let raw = u128::from(quantity.raw);
 
