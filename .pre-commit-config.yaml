@@ -479,7 +479,7 @@ repos:
           - .markdownlint.jsonc
           - --fix
         files: "\\.md$"
-        exclude: "^(CLA\\.md|CONTRIBUTING\\.md|RELEASES\\.md)$"
+        exclude: "^(CLA\\.md|RELEASES\\.md)$"
 
   - repo: local
     hooks:

@@ -582,7 +582,7 @@ MARKDOWNLINT ?= npx --yes markdownlint-cli2@$(MARKDOWNLINT_VERSION)
 # plus the markdownlint hook's own exclusions for the linter.
 MARKDOWN_FILES = $(shell git ls-files '*.md' | grep -v '^patches/pyo3-stub-gen/')
 MARKDOWNLINT_FILES = $(shell git ls-files '*.md' | \
-	grep -vE '^(patches/pyo3-stub-gen/|CLA\.md$$|CONTRIBUTING\.md$$|RELEASES\.md$$)')
+	grep -vE '^(patches/pyo3-stub-gen/|CLA\.md$$|RELEASES\.md$$)')
 
 .PHONY: check-markdown
 check-markdown:  #-- Lint Markdown with markdownlint-cli2 and check table delimiter padding

@@ -47,29 +47,32 @@ pip install -U nautilus_trader --pre --index-url https://packages.nautechsystems
 
 See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for more details.
 
-### Expected Behavior
+## Expected behavior
 
 Add here...
 
-### Actual Behavior
+## Actual behavior
 
 Add here...
 
-### Steps to Reproduce the Problem
+## Steps to reproduce
 
 1.
 2.
 3.
 
-### Code Snippets or Logs
+Consider starting from our
+[Minimal Reproducible Example](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/other/minimal_reproducible_example)
+template, which generates its own data so you do not need to attach market data files.
+
+## Code snippets or logs
 
 <!-- If applicable, provide relevant code snippets, error logs, or stack traces. Use code blocks for clarity. -->
 
-<!-- Consider starting from our Minimal Reproducible Example template: -->
-<!-- https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/other/minimal_reproducible_example -->
-
-### Specifications
+## Specifications
 
 - OS platform:
 - Python version:
 - `nautilus_trader` version:
+- Installed from (PyPI wheel, package index wheel, or built from source):
+- Adapter/venue (if applicable):
