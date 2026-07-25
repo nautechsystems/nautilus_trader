@@ -33,7 +33,7 @@ use async_trait::async_trait;
 use nautilus_common::{
     actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
     cache::CacheView,
-    clients::{DataClient, ExecutionClient},
+    clients::{DataClient, ExecutionClient, ExecutionReconciliationCapabilities},
     clock::Clock,
     component::Component,
     enums::Environment,
@@ -289,6 +289,7 @@ mod serial_tests {
 
     #[derive(Clone, Copy, Debug)]
     enum StartupMassStatusBehavior {
+        Unsupported,
         Unavailable,
         Error,
         Pending,
@@ -667,6 +668,20 @@ mod serial_tests {
             None
         }
 
+        fn reconciliation_capabilities(&self) -> ExecutionReconciliationCapabilities {
+            match self.behavior {
+                StartupMassStatusBehavior::Unsupported => {
+                    ExecutionReconciliationCapabilities::default()
+                }
+                StartupMassStatusBehavior::Unavailable
+                | StartupMassStatusBehavior::Error
+                | StartupMassStatusBehavior::Pending => ExecutionReconciliationCapabilities {
+                    mass_status: true,
+                    ..ExecutionReconciliationCapabilities::default()
+                },
+            }
+        }
+
         fn generate_account_state(
             &self,
             _balances: Vec<AccountBalance>,
@@ -707,7 +722,9 @@ mod serial_tests {
                 .store(true, Ordering::Relaxed);
 
             match self.behavior {
-                StartupMassStatusBehavior::Unavailable => Ok(None),
+                StartupMassStatusBehavior::Unsupported | StartupMassStatusBehavior::Unavailable => {
+                    Ok(None)
+                }
                 StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
                 StartupMassStatusBehavior::Pending => {
                     std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
@@ -886,6 +903,7 @@ mod serial_tests {
         block_targeted_reports: bool,
         fail_targeted_reports: bool,
         block_every_second_targeted_report: bool,
+        declares_reconciliation_capabilities: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
@@ -906,6 +924,7 @@ mod serial_tests {
                 block_targeted_reports: factory.block_targeted_reports,
                 fail_targeted_reports: factory.fail_targeted_reports,
                 block_every_second_targeted_report: factory.block_every_second_targeted_report,
+                declares_reconciliation_capabilities: factory.declares_reconciliation_capabilities,
                 report_release: factory.report_release.clone(),
             }
         }
@@ -935,6 +954,7 @@ mod serial_tests {
         block_targeted_reports: bool,
         fail_targeted_reports: bool,
         block_every_second_targeted_report: bool,
+        declares_reconciliation_capabilities: bool,
         report_release: Option<Arc<tokio::sync::Notify>>,
     }
 
@@ -966,6 +986,7 @@ mod serial_tests {
                 block_targeted_reports: false,
                 fail_targeted_reports: false,
                 block_every_second_targeted_report: false,
+                declares_reconciliation_capabilities: true,
                 report_release,
             }
         }
@@ -989,6 +1010,7 @@ mod serial_tests {
                 block_targeted_reports: false,
                 fail_targeted_reports: false,
                 block_every_second_targeted_report: false,
+                declares_reconciliation_capabilities: true,
                 report_release: None,
             }
         }
@@ -1036,6 +1058,11 @@ mod serial_tests {
 
         fn with_failed_targeted_reports(mut self) -> Self {
             self.fail_targeted_reports = true;
+            self
+        }
+
+        fn without_reconciliation_capabilities(mut self) -> Self {
+            self.declares_reconciliation_capabilities = false;
             self
         }
     }
@@ -1113,6 +1140,19 @@ mod serial_tests {
 
         fn get_account(&self) -> Option<AccountAny> {
             None
+        }
+
+        fn reconciliation_capabilities(&self) -> ExecutionReconciliationCapabilities {
+            if self.declares_reconciliation_capabilities {
+                ExecutionReconciliationCapabilities {
+                    order_status_reports: true,
+                    order_status_report: true,
+                    position_status_reports: true,
+                    ..ExecutionReconciliationCapabilities::default()
+                }
+            } else {
+                ExecutionReconciliationCapabilities::default()
+            }
         }
 
         fn generate_account_state(
@@ -2155,6 +2195,76 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
+    async fn test_fail_closed_start_aborts_when_mass_status_unavailable() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                reconciliation_fail_closed: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "FailClosedStartupMassStatusUnavailableNode",
+            config,
+            StartupMassStatusBehavior::Unavailable,
+        );
+        let handle = node.handle();
+
+        let error = node
+            .start()
+            .await
+            .expect_err("strict reconciliation cannot certify unavailable mass status");
+
+        assert!(
+            error.to_string().contains("mass status unavailable"),
+            "unexpected error: {error:#}"
+        );
+        assert!(state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_fail_closed_start_aborts_when_mass_status_is_unsupported() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: true,
+                reconciliation_fail_closed: true,
+                ..Default::default()
+            },
+            delay_post_stop: Duration::ZERO,
+            timeout_disconnection: Duration::from_millis(50),
+            ..Default::default()
+        };
+        let (mut node, state) = live_node_with_startup_mass_status_client(
+            "FailClosedStartupMassStatusUnsupportedNode",
+            config,
+            StartupMassStatusBehavior::Unsupported,
+        );
+        let handle = node.handle();
+
+        let error = node
+            .start()
+            .await
+            .expect_err("strict reconciliation requires declared mass-status support");
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not support complete mass-status reconciliation"),
+            "unexpected error: {error:#}"
+        );
+        assert!(!state.mass_status_requested.load(Ordering::Relaxed));
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(!state.connected.load(Ordering::Relaxed));
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn test_strategy_start_failure_stops_partial_start_and_disposes_resources() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecEngineConfig {
@@ -2575,6 +2685,67 @@ mod serial_tests {
         assert!(result.unwrap().is_ok());
         assert!(state.bulk_order_report_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(
+            node.kernel()
+                .exec_engine
+                .borrow()
+                .reconciliation_authority_lost()
+        );
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_fail_closed_continuous_reconciliation_stops_on_unsupported_order_reports() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecEngineConfig {
+                reconciliation: false,
+                reconciliation_fail_closed: true,
+                inflight_check_interval_ms: 0,
+                open_check_interval_secs: Some(0.1),
+                ..Default::default()
+            },
+            timeout_reconciliation: Duration::from_millis(250),
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let state = BlockingReportClientState::default();
+        let factory = BlockingReportExecutionClientFactory::configurable(
+            ClientId::from("UNSUPPORTED-ORDER-REPORT"),
+            AccountId::from("UNSUPPORTED-ORDER-REPORT-001"),
+            state.clone(),
+        )
+        .without_reconciliation_capabilities();
+        let mut node = LiveNodeBuilder::from_config(config)
+            .unwrap()
+            .with_name("FailClosedUnsupportedOrderReportNode")
+            .add_exec_client(
+                Some("unsupported-order-report".to_string()),
+                Box::new(factory),
+                Box::new(BlockingReportExecutionClientConfig),
+            )
+            .unwrap()
+            .build()
+            .unwrap();
+        let handle = node.handle();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), node.run()).await;
+
+        assert!(
+            result.is_ok(),
+            "unsupported strict reconciliation should stop without an external signal"
+        );
+        assert!(result.unwrap().is_ok());
+        assert!(
+            !state.bulk_order_report_requested.load(Ordering::Relaxed),
+            "an unsupported default report method must not be treated as an empty venue"
+        );
+        assert_eq!(handle.state(), NodeState::Stopped);
+        assert!(
+            node.kernel()
+                .exec_engine
+                .borrow()
+                .reconciliation_authority_lost()
+        );
     }
 
     #[rstest]

@@ -40,6 +40,31 @@ use crate::messages::execution::{
 pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
     Decimal::from_parts(1, 0, 0, false, 8);
 
+/// Declares which reconciliation report surfaces an execution client implements completely.
+///
+/// Empty report collections are meaningful only when the corresponding capability is declared.
+/// The default is deliberately unsupported so strict reconciliation cannot mistake a trait
+/// default for proof that the venue is empty.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionReconciliationCapabilities {
+    pub mass_status: bool,
+    pub order_status_reports: bool,
+    pub order_status_report: bool,
+    pub position_status_reports: bool,
+}
+
+impl ExecutionReconciliationCapabilities {
+    #[must_use]
+    pub const fn complete() -> Self {
+        Self {
+            mass_status: true,
+            order_status_reports: true,
+            order_status_report: true,
+            position_status_reports: true,
+        }
+    }
+}
+
 /// Defines the interface for an execution client managing order operations.
 ///
 /// # Thread Safety
@@ -54,6 +79,11 @@ pub trait ExecutionClient {
     fn venue(&self) -> Venue;
     fn oms_type(&self) -> OmsType;
     fn get_account(&self) -> Option<AccountAny>;
+
+    /// Returns the reconciliation report surfaces implemented completely by this client.
+    fn reconciliation_capabilities(&self) -> ExecutionReconciliationCapabilities {
+        ExecutionReconciliationCapabilities::default()
+    }
 
     /// Returns the maximum absolute position difference tolerated during reconciliation.
     fn position_reconciliation_tolerance(&self) -> Decimal {

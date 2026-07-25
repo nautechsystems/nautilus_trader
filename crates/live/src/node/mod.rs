@@ -699,6 +699,18 @@ impl LiveNode {
         let client_ids = self.kernel.exec_engine.borrow().client_ids();
 
         for client_id in client_ids {
+            let capabilities = self
+                .kernel
+                .exec_engine
+                .borrow()
+                .reconciliation_capabilities(&client_id)?;
+
+            if self.config.exec_engine.reconciliation_fail_closed && !capabilities.mass_status {
+                anyhow::bail!(
+                    "Execution client {client_id} does not support complete mass-status reconciliation"
+                );
+            }
+
             let elapsed = start.elapsed();
             if elapsed >= timeout {
                 anyhow::bail!("Startup reconciliation timeout reached");
@@ -772,6 +784,11 @@ impl LiveNode {
                     }
                 }
                 Ok(None) => {
+                    if self.config.exec_engine.reconciliation_fail_closed {
+                        anyhow::bail!(
+                            "Execution client {client_id} mass status unavailable during strict startup reconciliation"
+                        );
+                    }
                     log::warn!(
                         "No mass status available from {client_id} \
                          (likely adapter error when generating reports)"
@@ -1252,13 +1269,17 @@ impl LiveNode {
                     match result {
                         ReportTaskOutcome::Completed(result) => {
                             if self.config.exec_engine.reconciliation_fail_closed
-                                && !result.failed_clients.is_empty()
+                                && (!result.failed_clients.is_empty()
+                                    || !result.check.coverage_complete(
+                                        &result.queried_clients,
+                                        &result.failed_clients,
+                                    ))
                             {
                                 log::error!(
                                     "Stopping after incomplete open-order reconciliation; failed clients: {:?}",
                                     result.failed_clients,
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 let reconciliation = self.exec_manager.reconcile_open_order_reports(
                                     &result.check,
@@ -1284,7 +1305,7 @@ impl LiveNode {
                                     "Stopping after open-order report collection expired after {:?}",
                                     self.config.timeout_reconciliation,
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 log::warn!(
                                     "Open-order report collection expired after {:?}",
@@ -1318,7 +1339,7 @@ impl LiveNode {
                                 log::error!(
                                     "Stopping after incomplete targeted order reconciliation",
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 let events =
                                     self.exec_manager.reconcile_targeted_order_reports(result);
@@ -1333,7 +1354,7 @@ impl LiveNode {
                                     "Stopping after targeted order report collection expired after {:?}",
                                     self.config.timeout_reconciliation,
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 log::warn!(
                                     "Targeted order report collection expired after {:?}",
@@ -1357,13 +1378,17 @@ impl LiveNode {
                     match result {
                         ReportTaskOutcome::Completed(result) => {
                             if self.config.exec_engine.reconciliation_fail_closed
-                                && !result.failed_clients.is_empty()
+                                && (!result.failed_clients.is_empty()
+                                    || !result.check.coverage_complete(
+                                        &result.queried_clients,
+                                        &result.failed_clients,
+                                    ))
                             {
                                 log::error!(
                                     "Stopping after incomplete position reconciliation; failed clients: {:?}",
                                     result.failed_clients,
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 let events = self.exec_manager.reconcile_position_reports(
                                     &result.check,
@@ -1382,7 +1407,7 @@ impl LiveNode {
                                     "Stopping after position report collection expired after {:?}",
                                     self.config.timeout_reconciliation,
                                 );
-                                self.initiate_shutdown();
+                                self.initiate_reconciliation_failure_shutdown();
                             } else {
                                 log::warn!(
                                     "Position report collection expired after {:?}",
@@ -1819,6 +1844,14 @@ impl LiveNode {
                  {stop_err}; failed to finalize startup abort: {finalize_err}"
             ),
         }
+    }
+
+    fn initiate_reconciliation_failure_shutdown(&mut self) {
+        self.kernel
+            .exec_engine
+            .borrow()
+            .lose_reconciliation_authority();
+        self.initiate_shutdown();
     }
 
     fn initiate_shutdown(&mut self) {
@@ -2338,13 +2371,17 @@ impl LiveNode {
             .prepare_open_order_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
+        let require_declared_capability = self.config.exec_engine.reconciliation_fail_closed;
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(OpenOrderReportTask {
             future: Box::pin(async move {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_open_order_reports(clients, command))
-                    .await
+                match dst::time::timeout(
+                    remaining,
+                    request_open_order_reports(clients, command, require_declared_capability),
+                )
+                .await
                 {
                     Ok(result) => ReportTaskOutcome::Completed(OpenOrderReportResult {
                         check,
@@ -2366,6 +2403,7 @@ impl LiveNode {
         let query_delay = Duration::from_millis(u64::from(
             self.config.exec_engine.single_order_query_delay_ms,
         ));
+        let require_declared_capability = self.config.exec_engine.reconciliation_fail_closed;
         let planned_client_order_ids = queries
             .iter()
             .map(TargetedOrderQuery::client_order_id)
@@ -2381,7 +2419,12 @@ impl LiveNode {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
                 match dst::time::timeout(
                     remaining,
-                    request_targeted_order_reports(&client_refs, queries, query_delay),
+                    request_targeted_order_reports(
+                        &client_refs,
+                        queries,
+                        query_delay,
+                        require_declared_capability,
+                    ),
                 )
                 .await
                 {
@@ -2409,13 +2452,17 @@ impl LiveNode {
             .prepare_position_report_check(UUID4::new(), &client_refs);
         let command = check.command.clone();
         let clients = self.exec_clients.clone();
+        let require_declared_capability = self.config.exec_engine.reconciliation_fail_closed;
         let deadline = dst::time::Instant::now() + self.config.timeout_reconciliation;
 
         Some(PositionReportTask {
             future: Box::pin(async move {
                 let remaining = deadline.saturating_duration_since(dst::time::Instant::now());
-                match dst::time::timeout(remaining, request_position_reports(clients, command))
-                    .await
+                match dst::time::timeout(
+                    remaining,
+                    request_position_reports(clients, command, require_declared_capability),
+                )
+                .await
                 {
                     Ok(result) => ReportTaskOutcome::Completed(PositionReportResult {
                         check,
@@ -2509,6 +2556,7 @@ async fn recv_external_msgbus_message(
 async fn request_open_order_reports(
     clients: Vec<LiveExecutionClient>,
     command: GenerateOrderStatusReports,
+    require_declared_capability: bool,
 ) -> OpenOrderReportQueryResult {
     let mut all_reports = Vec::new();
     let mut queried_clients = IndexSet::new();
@@ -2517,6 +2565,15 @@ async fn request_open_order_reports(
     for client in clients {
         let client_id = client.client_id();
         queried_clients.insert(client_id);
+
+        if require_declared_capability && !client.reconciliation_capabilities().order_status_reports
+        {
+            failed_clients.insert(client_id);
+            log::warn!(
+                "Execution client {client_id} does not declare bulk order reconciliation support"
+            );
+            continue;
+        }
 
         match client.generate_order_status_reports(&command).await {
             Ok(reports) => {
@@ -2542,6 +2599,7 @@ async fn request_open_order_reports(
 async fn request_position_reports(
     clients: Vec<LiveExecutionClient>,
     command: GeneratePositionStatusReports,
+    require_declared_capability: bool,
 ) -> PositionReportQueryResult {
     let mut all_reports = Vec::new();
     let mut queried_clients = IndexSet::new();
@@ -2550,6 +2608,16 @@ async fn request_position_reports(
     for client in clients {
         let client_id = client.client_id();
         queried_clients.insert(client_id);
+
+        if require_declared_capability
+            && !client.reconciliation_capabilities().position_status_reports
+        {
+            failed_clients.insert(client_id);
+            log::warn!(
+                "Execution client {client_id} does not declare position reconciliation support"
+            );
+            continue;
+        }
 
         match client.generate_position_status_reports(&command).await {
             Ok(reports) => {

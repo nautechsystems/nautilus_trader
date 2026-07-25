@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex, atomic::AtomicBool};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReconciliationCapabilities},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -280,6 +280,10 @@ impl ExecutionClient for PolymarketExecutionClient {
 
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
+    }
+
+    fn reconciliation_capabilities(&self) -> ExecutionReconciliationCapabilities {
+        ExecutionReconciliationCapabilities::complete()
     }
 
     fn position_reconciliation_tolerance(&self) -> Decimal {

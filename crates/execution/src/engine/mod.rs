@@ -37,7 +37,7 @@ use futures::future::join_all;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
     cache::{Cache, CacheSnapshotRef, PositionRef},
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReconciliationCapabilities},
     clock::Clock,
     enums::LogColor,
     generators::position_id::PositionIdGenerator,
@@ -69,8 +69,8 @@ use nautilus_model::{
     },
     events::{
         OrderAccepted, OrderDenied, OrderDeniedReason, OrderEvent, OrderEventAny, OrderFillVoided,
-        OrderFilled, OrderInitialized, PositionChanged, PositionClosed, PositionEvent,
-        PositionOpened,
+        OrderFilled, OrderInitialized, OrderModifyRejected, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
@@ -135,6 +135,7 @@ pub struct ExecutionEngine {
     report_count: u64,
     filtered_unclaimed_external_order_count: u64,
     snapshot_anchorer: Option<SnapshotAnchorer>,
+    reconciliation_authority_lost: Cell<bool>,
 }
 
 impl Debug for ExecutionEngine {
@@ -174,6 +175,7 @@ impl ExecutionEngine {
             report_count: 0,
             filtered_unclaimed_external_order_count: 0,
             snapshot_anchorer: None,
+            reconciliation_authority_lost: Cell::new(false),
         }
     }
 
@@ -248,6 +250,19 @@ impl ExecutionEngine {
     #[must_use]
     pub const fn filtered_unclaimed_external_order_count(&self) -> u64 {
         self.filtered_unclaimed_external_order_count
+    }
+
+    /// Irreversibly revokes risk-increasing execution commands for this engine instance.
+    ///
+    /// Cancellation and query commands remain available so shutdown can reduce exposure.
+    pub fn lose_reconciliation_authority(&self) {
+        self.reconciliation_authority_lost.set(true);
+    }
+
+    /// Returns whether reconciliation authority has been revoked.
+    #[must_use]
+    pub fn reconciliation_authority_lost(&self) -> bool {
+        self.reconciliation_authority_lost.get()
     }
 
     /// Subscribes to instrument updates for a venue via the message bus.
@@ -413,6 +428,20 @@ impl ExecutionEngine {
     /// Returns a reference to the execution client registered with the given ID.
     pub fn get_client(&self, client_id: &ClientId) -> Option<&dyn ExecutionClient> {
         self.clients.get(client_id).map(|a| a.client.as_ref())
+    }
+
+    /// Returns the reconciliation capabilities declared by the given client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client is not registered.
+    pub fn reconciliation_capabilities(
+        &self,
+        client_id: &ClientId,
+    ) -> anyhow::Result<ExecutionReconciliationCapabilities> {
+        self.get_client(client_id)
+            .map(ExecutionClient::reconciliation_capabilities)
+            .ok_or_else(|| anyhow::anyhow!("Client {client_id} not found"))
     }
 
     #[must_use]
@@ -1840,6 +1869,12 @@ impl ExecutionEngine {
             log::debug!("{RECV}{CMD} {command:?}");
         }
 
+        if self.reconciliation_authority_lost.get()
+            && self.reject_risk_increasing_command_after_reconciliation_loss(&command)
+        {
+            return;
+        }
+
         if let Some(cid) = command.client_id()
             && self.external_clients.contains(&cid)
         {
@@ -1906,6 +1941,86 @@ impl ExecutionEngine {
             TradingCommand::CancelAllOrders(cmd) => self.handle_cancel_all_orders(client, cmd),
             TradingCommand::QueryOrder(cmd) => self.handle_query_order(client, cmd),
             TradingCommand::QueryAccount(cmd) => self.handle_query_account(client, cmd),
+        }
+    }
+
+    fn reject_risk_increasing_command_after_reconciliation_loss(
+        &self,
+        command: &TradingCommand,
+    ) -> bool {
+        const REASON: &str = "Reconciliation authority lost";
+
+        match command {
+            TradingCommand::SubmitOrder(cmd) => {
+                let order = {
+                    self.cache
+                        .borrow()
+                        .order(&cmd.client_order_id)
+                        .map(|order| order.clone())
+                };
+
+                if let Some(order) = order {
+                    self.deny_order(&order, REASON);
+                } else {
+                    log::error!(
+                        "Rejected submit after reconciliation authority loss: order {} not found",
+                        cmd.client_order_id
+                    );
+                }
+                true
+            }
+            TradingCommand::SubmitOrderList(cmd) => {
+                let orders = self
+                    .cache
+                    .borrow()
+                    .orders_for_ids(&cmd.order_list.client_order_ids, cmd);
+
+                for order in &orders {
+                    self.deny_order(order, REASON);
+                }
+                true
+            }
+            TradingCommand::ModifyOrder(cmd) => {
+                let order = {
+                    self.cache
+                        .borrow()
+                        .order(&cmd.client_order_id)
+                        .map(|order| order.clone())
+                };
+
+                if let Some(order) = order {
+                    self.reject_modify_order(&order, REASON);
+                } else {
+                    log::error!(
+                        "Rejected modify after reconciliation authority loss: order {} not found",
+                        cmd.client_order_id
+                    );
+                }
+                true
+            }
+            TradingCommand::ModifyOrders(cmd) => {
+                let orders: Vec<OrderAny> = {
+                    let cache = self.cache.borrow();
+                    cmd.modifies
+                        .iter()
+                        .filter_map(|modify| {
+                            cache
+                                .order(&modify.client_order_id)
+                                .map(|order| order.clone())
+                        })
+                        .collect()
+                };
+
+                for order in &orders {
+                    self.reject_modify_order(order, REASON);
+                }
+                true
+            }
+            TradingCommand::CancelOrder(_)
+            | TradingCommand::CancelOrders(_)
+            | TradingCommand::CancelAllOrders(_)
+            | TradingCommand::QueryOrder(_)
+            | TradingCommand::QueryAccount(_) => false,
         }
     }
 
@@ -3946,6 +4061,37 @@ impl ExecutionEngine {
             Ok(order) => order,
             Err(e) => {
                 log::error!("Failed to apply denied event to order: {e}");
+                return;
+            }
+        };
+
+        let topic = switchboard::get_event_order_topic(order.strategy_id());
+        msgbus::publish_order_event(topic, &event);
+
+        if self.config.snapshot_orders {
+            self.create_order_state_snapshot(&order);
+        }
+    }
+
+    fn reject_modify_order(&self, order: &OrderAny, reason: &str) {
+        let ts_event = self.clock.borrow().timestamp_ns();
+        let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+        ));
+        let order = match self.cache.borrow_mut().update_order(&event) {
+            Ok(order) => order,
+            Err(e) => {
+                log::error!("Failed to apply modify-rejected event to order: {e}");
                 return;
             }
         };

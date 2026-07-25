@@ -140,6 +140,22 @@ pub(crate) enum ReportClientCoverage {
     Unresolved,
 }
 
+#[cfg(feature = "node")]
+fn report_client_coverage_complete<'a>(
+    mut coverage: impl Iterator<Item = &'a ReportClientCoverage>,
+    queried_clients: &IndexSet<ClientId>,
+    failed_clients: &IndexSet<ClientId>,
+) -> bool {
+    coverage.all(|coverage| {
+        let ReportClientCoverage::Resolved(responsible_clients) = coverage else {
+            return false;
+        };
+        !responsible_clients.is_empty()
+            && responsible_clients.is_subset(queried_clients)
+            && responsible_clients.is_disjoint(failed_clients)
+    })
+}
+
 /// Metadata for an external order that needs to be registered with the execution client.
 #[derive(Debug, Clone)]
 pub struct ExternalOrderMetadata {
@@ -196,6 +212,7 @@ pub(crate) struct TargetedOrderReportResult {
 }
 
 impl TargetedOrderReportResult {
+    #[cfg(feature = "node")]
     pub(crate) const fn coverage_complete(&self) -> bool {
         self.coverage_complete
     }
@@ -210,12 +227,42 @@ pub(crate) struct OpenOrderReportCheck {
     pub start: Option<UnixNanos>,
 }
 
+impl OpenOrderReportCheck {
+    #[cfg(feature = "node")]
+    pub(crate) fn coverage_complete(
+        &self,
+        queried_clients: &IndexSet<ClientId>,
+        failed_clients: &IndexSet<ClientId>,
+    ) -> bool {
+        report_client_coverage_complete(
+            self.client_coverage.values(),
+            queried_clients,
+            failed_clients,
+        )
+    }
+}
+
 /// Prepare-time state and command for one continuous position reconciliation check.
 #[derive(Debug, Clone)]
 pub(crate) struct PositionReportCheck {
     pub command: GeneratePositionStatusReports,
     pub client_coverage: IndexMap<InstrumentAccountKey, ReportClientCoverage>,
     pub activity_revisions: IndexMap<InstrumentAccountKey, u64>,
+}
+
+impl PositionReportCheck {
+    #[cfg(feature = "node")]
+    pub(crate) fn coverage_complete(
+        &self,
+        queried_clients: &IndexSet<ClientId>,
+        failed_clients: &IndexSet<ClientId>,
+    ) -> bool {
+        report_client_coverage_complete(
+            self.client_coverage.values(),
+            queried_clients,
+            failed_clients,
+        )
+    }
 }
 
 struct RetainedFillState {
@@ -1455,8 +1502,13 @@ impl ExecutionManager {
         if !result.targeted_queries.is_empty() {
             let query_delay =
                 Duration::from_millis(u64::from(self.config.single_order_query_delay_ms));
-            let query_results =
-                request_targeted_order_reports(clients, result.targeted_queries, query_delay).await;
+            let query_results = request_targeted_order_reports(
+                clients,
+                result.targeted_queries,
+                query_delay,
+                false,
+            )
+            .await;
             events.extend(self.reconcile_targeted_order_reports(query_results));
         }
 
@@ -3914,6 +3966,7 @@ pub(crate) async fn request_targeted_order_reports(
     clients: &[&dyn ExecutionClient],
     queries: Vec<TargetedOrderQuery>,
     query_delay: Duration,
+    require_declared_capability: bool,
 ) -> Vec<TargetedOrderReportResult> {
     let mut results = Vec::with_capacity(queries.len());
     let mut request_count = 0usize;
@@ -3935,6 +3988,17 @@ pub(crate) async fn request_targeted_order_reports(
                 );
                 continue;
             };
+
+            if require_declared_capability
+                && !client.reconciliation_capabilities().order_status_report
+            {
+                coverage_complete = false;
+                log::warn!(
+                    "Cannot run targeted order status query for {}: execution client {client_id} does not declare targeted-order reconciliation support",
+                    query.client_order_id,
+                );
+                continue;
+            }
 
             if request_count > 0 && !query_delay.is_zero() {
                 dst::time::sleep(query_delay).await;
@@ -4009,6 +4073,47 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(
+        ReportClientCoverage::Unresolved,
+        IndexSet::new(),
+        IndexSet::new(),
+        false
+    )]
+    #[case(
+        ReportClientCoverage::Resolved(IndexSet::new()),
+        IndexSet::new(),
+        IndexSet::new(),
+        false
+    )]
+    #[case(
+        ReportClientCoverage::Resolved(IndexSet::from([ClientId::from("CLIENT")])),
+        IndexSet::from([ClientId::from("CLIENT")]),
+        IndexSet::from([ClientId::from("CLIENT")]),
+        false
+    )]
+    #[case(
+        ReportClientCoverage::Resolved(IndexSet::from([ClientId::from("CLIENT")])),
+        IndexSet::from([ClientId::from("CLIENT")]),
+        IndexSet::new(),
+        true
+    )]
+    fn test_report_client_coverage_requires_resolved_successful_queries(
+        #[case] coverage: ReportClientCoverage,
+        #[case] queried_clients: IndexSet<ClientId>,
+        #[case] failed_clients: IndexSet<ClientId>,
+        #[case] expected: bool,
+    ) {
+        assert_eq!(
+            report_client_coverage_complete(
+                std::iter::once(&coverage),
+                &queried_clients,
+                &failed_clients,
+            ),
+            expected
+        );
+    }
 
     #[rstest]
     fn test_clear_recon_tracking_removes_targeted_query() {

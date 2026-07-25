@@ -3275,6 +3275,143 @@ fn test_submit_order_successfully_processes_and_caches_order(
 }
 
 #[rstest]
+fn test_reconciliation_authority_loss_rejects_submit_and_preserves_cancel(
+    mut execution_engine: ExecutionEngine,
+) {
+    let trader_id = TraderId::test_default();
+    let strategy_id = StrategyId::test_default();
+    let instrument = audusd_sim();
+    let client_id = ClientId::from("STUB");
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::from("TEST-ACCOUNT"),
+        instrument.id.venue,
+        OmsType::Netting,
+        None,
+    );
+    let submitted_order_ids = stub_client.submitted_order_ids();
+    let modified_order_ids = stub_client.modified_order_ids();
+    let canceled_order_ids = stub_client.canceled_order_ids();
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-RECONCILIATION-FENCE-SUBMIT"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let accepted_order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id)
+        .client_order_id(ClientOrderId::from("O-RECONCILIATION-FENCE-MODIFY"))
+        .quantity(Quantity::from(100_000))
+        .price(Price::from_str("1.00000").unwrap())
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(client_id), true)
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(accepted_order.clone(), None, Some(client_id), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &accepted_order,
+        AccountId::from("TEST-ACCOUNT"),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &accepted_order,
+        AccountId::from("TEST-ACCOUNT"),
+        VenueOrderId::from("V-RECONCILIATION-FENCE"),
+    ));
+
+    execution_engine.lose_reconciliation_authority();
+    execution_engine.execute(TradingCommand::SubmitOrder(SubmitOrder {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: order.client_order_id(),
+        order_init: order.init_event().clone(),
+        exec_algorithm_id: None,
+        position_id: None,
+        params: None,
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        correlation_id: None,
+        causation_id: None,
+    }));
+
+    assert!(execution_engine.reconciliation_authority_lost());
+    assert!(submitted_order_ids.borrow().is_empty());
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Denied
+    );
+
+    execution_engine.execute(TradingCommand::ModifyOrder(ModifyOrder::new(
+        trader_id,
+        Some(client_id),
+        strategy_id,
+        instrument.id,
+        accepted_order.client_order_id(),
+        None,
+        Some(Quantity::from(90_000)),
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )));
+    assert!(modified_order_ids.borrow().is_empty());
+    assert_eq!(
+        execution_engine
+            .cache()
+            .borrow()
+            .order(&accepted_order.client_order_id())
+            .unwrap()
+            .status(),
+        OrderStatus::Accepted
+    );
+
+    execution_engine.execute(TradingCommand::CancelOrder(CancelOrder {
+        trader_id,
+        client_id: Some(client_id),
+        strategy_id,
+        instrument_id: instrument.id,
+        client_order_id: accepted_order.client_order_id(),
+        venue_order_id: accepted_order.venue_order_id(),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    }));
+
+    assert_eq!(
+        canceled_order_ids.borrow().as_slice(),
+        &[accepted_order.client_order_id()]
+    );
+}
+
+#[rstest]
 fn test_submit_order_denies_when_client_does_not_handle_instrument_venue(
     mut execution_engine: ExecutionEngine,
 ) {

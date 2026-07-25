@@ -210,6 +210,10 @@ The tables below cover startup reconciliation (mass status) and runtime checks
 
 #### Startup reconciliation
 
+In strict mode (`reconciliation_fail_closed=True`), every execution client must explicitly
+declare complete mass-status reconciliation support. An unsupported client or an unavailable
+mass-status result aborts startup; neither condition is interpreted as an empty venue.
+
 | Scenario                               | Description                                                                     | System behavior                                                                 |
 | -------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | **Order state discrepancy**            | Local state differs from venue (e.g., local `SUBMITTED`, venue `REJECTED`).     | Updates local order to match venue state, emits missing events.                 |
@@ -241,8 +245,12 @@ reconciliation completes, giving the system time to stabilize.
 
 When `reconciliation_fail_closed=True`, any continuous open-order or position report
 error, collection timeout, or incomplete targeted-order query stops the trader and
-live node before partial reports are applied. The default remains best-effort so
-transient venue query failures do not stop existing deployments.
+live node before partial reports are applied. Strict checks also require each responsible
+execution client to declare the report capability being used; an unsupported trait default
+is never treated as an empty venue response. Reconciliation failure irreversibly rejects new
+submissions and modifications for that engine instance before client routing, while cancellation
+and query commands remain available for risk reduction and shutdown. The default remains
+best-effort so transient venue query failures do not stop existing deployments.
 
 | Scenario                            | Description                                                | System behavior                                      |
 | ----------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
