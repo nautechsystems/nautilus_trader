@@ -360,6 +360,9 @@ pub struct AxMdBookL1 {
 
 /// Level 2 order book update (aggregated price levels).
 ///
+/// AX flags every observed frame as a full snapshot (`st: true`), so the parser rebuilds the book
+/// from each message. Incremental frames (`st: false`) are not handled.
+///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -380,6 +383,9 @@ pub struct AxMdBookL2 {
 }
 
 /// Level 3 order book update (individual order quantities).
+///
+/// AX flags every observed frame as a full snapshot (`st: true`), so the parser rebuilds the book
+/// from each message. Incremental frames (`st: false`) are not handled.
 ///
 /// # References
 /// - <https://docs.architect.exchange/api-reference/marketdata/md-ws>

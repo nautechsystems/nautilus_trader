@@ -1954,7 +1954,9 @@ async fn test_submit_market_order_uses_preview_price() {
 
         assert_eq!(place.get("s").and_then(|v| v.as_str()), Some("EURUSD-PERP"));
         assert_eq!(place.get("q").and_then(|v| v.as_i64()), Some(100));
-        assert_eq!(place.get("p").and_then(|v| v.as_str()), Some("50001.00"));
+        // The preview returns "50001.00" but EURUSD-PERP has a 0.0001 tick, so the take-through
+        // price carries the instrument's precision rather than the venue string's
+        assert_eq!(place.get("p").and_then(|v| v.as_str()), Some("50001.0000"));
         // Market orders route as IOC
         assert_eq!(place.get("tif").and_then(|v| v.as_str()), Some("IOC"));
     }

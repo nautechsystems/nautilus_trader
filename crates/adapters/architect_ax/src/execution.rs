@@ -212,11 +212,7 @@ impl AxExecutionClient {
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
-        let http_client = if order_type == OrderType::Market {
-            Some(self.http_client.clone())
-        } else {
-            None
-        };
+        let http_client = self.http_client.clone();
 
         self.spawn_task("submit_order", async move {
             // AX emulates market orders with preview-priced IOC limits, so book moves
@@ -230,10 +226,13 @@ impl AxExecutionClient {
                         .map_err(|e| anyhow::anyhow!("Invalid order side: {e}"))?;
                     let qty_contracts = quantity_to_contracts(quantity)?;
 
+                    let instrument = http_client.get_instrument(&symbol).ok_or_else(|| {
+                        anyhow::anyhow!("Instrument {instrument_id} not found in cache")
+                    })?;
+
                     let request =
                         PreviewAggressiveLimitOrderRequest::new(symbol, qty_contracts, ax_side);
                     let response = http_client
-                        .expect("HTTP client should be set for market orders")
                         .inner
                         .preview_aggressive_limit_order(&request)
                         .await
@@ -256,7 +255,13 @@ impl AxExecutionClient {
                         )
                     })?;
 
-                    let price = Price::from(limit_price_decimal.to_string().as_str());
+                    let price =
+                        Price::from_decimal_dp(limit_price_decimal, instrument.price_precision())
+                            .with_context(|| {
+                                format!(
+                                    "Failed to convert AX take-through price {limit_price_decimal} for {instrument_id}"
+                                )
+                            })?;
                     log::debug!("Market order take-through price: {price} for {instrument_id}",);
                     Ok(price)
                 }

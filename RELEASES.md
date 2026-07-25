@@ -265,6 +265,10 @@ adapter set. The following limits remain deferred:
 - Fixed Architect AX market data streams emitting unrequested trade and ticker events
 - Fixed Architect AX `/transactions` requests omitting the required bounded time range
 - Fixed Architect AX REST ticker, order, transaction models, and query parameters (#4402)
+- Fixed Architect AX simulated market orders pricing at the venue string precision instead of the instrument's price precision
+- Fixed Architect AX order book snapshots omitting the snapshot record flag
+- Fixed Architect AX order book snapshots falling back to venue-precision prices when conversion failed
+- Fixed Architect AX REST trade and book-snapshot timestamps wrapping instead of rejecting negative seconds
 - Fixed Betfair v2 voids without reversing unapplied exposure from reconnect snapshots
 - Fixed Betfair matched sizes and v2 mass-status fill IDs, commissions, and gaps
 - Fixed Binance Futures hedge-mode tracking with configurable `oms_type` (#4422), thanks for reporting @luckykefu

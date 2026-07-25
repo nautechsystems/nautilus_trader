@@ -79,7 +79,7 @@ use crate::common::{
     consts::{AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_URL, AX_ORDERS_URL},
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
-    parse::{cid_to_client_order_id, client_order_id_to_cid},
+    parse::{ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, client_order_id_to_cid},
 };
 
 /// Default Ax REST API rate limit.
@@ -1460,14 +1460,18 @@ impl AxHttpClient {
 
         let price_precision = instrument.price_precision();
         let size_precision = instrument.size_precision();
-        let ts_event = UnixNanos::from(resp.book.ts as u64 * 1_000_000_000 + resp.book.tn as u64);
+        let ts_event = ax_timestamp_stn_to_unix_nanos(resp.book.ts, resp.book.tn)?;
 
         for (i, level) in resp.book.b.iter().enumerate() {
             if depth.is_some_and(|d| i >= d) {
                 break;
             }
-            let price = Price::from_decimal_dp(level.p, price_precision)
-                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let price = Price::from_decimal_dp(level.p, price_precision).with_context(|| {
+                format!(
+                    "Failed to convert AX book bid price {} for {symbol}",
+                    level.p
+                )
+            })?;
             let size = Quantity::new(level.q as f64, size_precision);
             let order = BookOrder::new(OrderSide::Buy, price, size, i as u64);
             book.add(order, 0, i as u64, ts_event);
@@ -1478,8 +1482,12 @@ impl AxHttpClient {
             if depth.is_some_and(|d| i >= d) {
                 break;
             }
-            let price = Price::from_decimal_dp(level.p, price_precision)
-                .unwrap_or_else(|_| Price::from(level.p.to_string().as_str()));
+            let price = Price::from_decimal_dp(level.p, price_precision).with_context(|| {
+                format!(
+                    "Failed to convert AX book ask price {} for {symbol}",
+                    level.p
+                )
+            })?;
             let size = Quantity::new(level.q as f64, size_precision);
             let order = BookOrder::new(OrderSide::Sell, price, size, (bids_len + i) as u64);
             book.add(order, 0, (bids_len + i) as u64, ts_event);

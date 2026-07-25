@@ -40,7 +40,10 @@ use super::models::{
 use crate::common::{
     consts::AX_VENUE,
     enums::AxCandleWidth,
-    parse::{ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos, cid_to_client_order_id},
+    parse::{
+        ax_timestamp_ns_to_unix_nanos, ax_timestamp_s_to_unix_nanos,
+        ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id,
+    },
 };
 
 fn decimal_to_price(value: Decimal, field_name: &str) -> anyhow::Result<Price> {
@@ -707,10 +710,11 @@ pub fn parse_trade_tick(
     let size = Quantity::new(trade.q as f64, instrument.size_precision());
     let aggressor_side: AggressorSide = trade.d.into();
 
-    // Combine seconds + nanoseconds into full timestamp
-    let ts_event = UnixNanos::from(trade.ts as u64 * 1_000_000_000 + trade.tn as u64);
+    let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
 
-    // Use nanosecond timestamp as trade ID (unique per trade)
+    // AX publishes no trade identifier, and `tn` is the nanosecond component of the timestamp
+    // rather than a sequence number, so the composed timestamp is the only identity available.
+    // It is not unique: a sweep across several levels reports multiple prints at one timestamp.
     let mut buf = itoa::Buffer::new();
     let trade_id =
         TradeId::new_checked(buf.format(ts_event.as_u64())).context("Failed to create TradeId")?;
@@ -1497,6 +1501,91 @@ mod tests {
                 result.err()
             );
         }
+    }
+
+    fn create_rest_trade() -> AxRestTrade {
+        AxRestTrade {
+            ts: 1_766_193_240,
+            tn: 334_589_144,
+            p: dec!(1.1719),
+            q: 400,
+            s: Ustr::from("EURUSD-PERP"),
+            d: AxOrderSide::Buy,
+        }
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_derives_trade_id_from_composed_timestamp() {
+        // AX publishes no trade identifier, and `tn` is the nanosecond component rather than a
+        // sequence number, so the identity must come from the full composed timestamp
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let trade = create_rest_trade();
+
+        let tick = parse_trade_tick(&trade, &instrument, UnixNanos::from(7u64)).unwrap();
+
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.trade_id.to_string(), "1766193240334589144");
+        assert_eq!(tick.price, Price::from("1.1719"));
+        assert_eq!(tick.size, Quantity::from(400));
+        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+        assert_eq!(tick.ts_event, UnixNanos::from(1_766_193_240_334_589_144u64));
+        assert_eq!(tick.ts_init, UnixNanos::from(7u64));
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_trade_id_collides_within_one_timestamp() {
+        // Documents a venue limitation, not a desired property. AX publishes no trade identifier,
+        // so a sweep across several levels produces prints sharing `ts` and `tn` that the composed
+        // identity cannot separate. Sampling 100 sandbox trades for GBPUSD-PERP yielded 62 distinct
+        // IDs. Replacing the derivation must update this test, the comment above
+        // `parse_trade_tick`, and the adapter guide together.
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let first = create_rest_trade();
+        let mut second = create_rest_trade();
+        second.p = dec!(1.1720);
+        second.q = 100;
+
+        let first_tick = parse_trade_tick(&first, &instrument, UnixNanos::default()).unwrap();
+        let second_tick = parse_trade_tick(&second, &instrument, UnixNanos::default()).unwrap();
+
+        assert_ne!(first_tick.price, second_tick.price);
+        assert_ne!(first_tick.size, second_tick.size);
+        assert_eq!(first_tick.trade_id, second_tick.trade_id);
+    }
+
+    #[rstest]
+    fn test_parse_trade_tick_rejects_negative_timestamp() {
+        let instrument = parse_instrument(
+            &create_eurusd_instrument(),
+            Decimal::ZERO,
+            Decimal::ZERO,
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let mut trade = create_rest_trade();
+        trade.ts = -1;
+
+        let error = parse_trade_tick(&trade, &instrument, UnixNanos::default()).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "AX timestamp must be non-negative, was -1"
+        );
     }
 
     #[rstest]

@@ -27,6 +27,7 @@ use nautilus_architect_ax::{
     },
 };
 use nautilus_common::testing::wait_until_async;
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::InstrumentAny,
@@ -171,6 +172,10 @@ fn create_router() -> Router {
         .route(
             "/whoami",
             get(|| async { Json(load_test_data("http_get_whoami.json")) }),
+        )
+        .route(
+            "/book",
+            get(|| async { Json(load_test_data("http_get_book.json")) }),
         )
         .route(
             "/tickers",
@@ -406,6 +411,72 @@ async fn test_domain_http_request_instruments_returns_nautilus_types() {
         .unwrap();
 
     assert_eq!(instruments.len(), 3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_book_snapshot_composes_event_timestamp() {
+    let addr = start_test_server().await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+
+    let symbol = Ustr::from("EURUSD-PERP");
+    let instrument = client.request_instrument(symbol, None, None).await.unwrap();
+    client.cache_instrument(instrument);
+
+    let book = client.request_book_snapshot(symbol, None).await.unwrap();
+
+    // Fixture carries ts=1704067200 and tn=500000000
+    assert_eq!(book.ts_last, UnixNanos::from(1_704_067_200_500_000_000u64));
+    assert_eq!(book.instrument_id, InstrumentId::from("EURUSD-PERP.AX"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_domain_http_request_book_snapshot_rejects_unrepresentable_price() {
+    // A price beyond the fixed-point range must surface an error rather than silently
+    // falling back to a wire-precision price
+    let router = Router::new()
+        .route(
+            "/instrument",
+            get(|| async {
+                let data = load_test_data("http_get_instruments.json");
+                Json(data["instruments"][0].clone())
+            }),
+        )
+        .route(
+            "/book",
+            get(|| async {
+                let mut data = load_test_data("http_get_book.json");
+                data["book"]["b"][0]["p"] = json!("999999999999999999999999999");
+                Json(data)
+            }),
+        );
+    let addr = start_server(router).await;
+    let base_url = format!("http://{addr}");
+
+    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
+    client.set_session_token("test_session_token".to_string());
+    let symbol = Ustr::from("EURUSD-PERP");
+    let instrument = client
+        .request_instrument(symbol, Some(Decimal::ZERO), Some(Decimal::ZERO))
+        .await
+        .unwrap();
+    client.cache_instrument(instrument);
+
+    let error = client
+        .request_book_snapshot(symbol, None)
+        .await
+        .expect_err("unrepresentable price should error");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Failed to convert AX book bid price"),
+        "unexpected error: {error}"
+    );
 }
 
 #[rstest]

@@ -207,7 +207,7 @@ pub fn parse_book_l2_deltas(
         let (price, size) = parse_book_level(level, price_precision, size_precision)?;
         processed += 1;
 
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -232,7 +232,7 @@ pub fn parse_book_l2_deltas(
         let (price, size) = parse_book_level(level, price_precision, size_precision)?;
         processed += 1;
 
-        let mut flags = RecordFlag::F_MBP as u8;
+        let mut flags = RecordFlag::F_MBP as u8 | RecordFlag::F_SNAPSHOT as u8;
 
         if processed == total_levels {
             flags |= RecordFlag::F_LAST as u8;
@@ -316,7 +316,7 @@ pub fn parse_book_l3_deltas(
         for &order_qty in &level.o {
             processed += 1;
 
-            let mut flags = 0_u8;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
 
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
@@ -347,7 +347,7 @@ pub fn parse_book_l3_deltas(
         for &order_qty in &level.o {
             processed += 1;
 
-            let mut flags = 0_u8;
+            let mut flags = RecordFlag::F_SNAPSHOT as u8;
 
             if processed == total_orders {
                 flags |= RecordFlag::F_LAST as u8;
@@ -659,6 +659,20 @@ mod tests {
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
         assert_eq!(deltas.deltas[1].order.side, OrderSide::Buy);
         assert_eq!(deltas.deltas[3].order.side, OrderSide::Sell);
+
+        // Every delta in the snapshot sequence carries F_SNAPSHOT, and only the last F_LAST
+        for delta in &deltas.deltas {
+            assert_ne!(delta.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        }
+
+        for delta in &deltas.deltas[..deltas.deltas.len() - 1] {
+            assert_eq!(delta.flags & RecordFlag::F_LAST as u8, 0);
+        }
+
+        assert_ne!(
+            deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
+            0
+        );
     }
 
     #[rstest]
@@ -688,6 +702,15 @@ mod tests {
         // 1 clear + 4 individual orders
         assert_eq!(deltas.deltas.len(), 5);
         assert_eq!(deltas.deltas[0].action, BookAction::Clear);
+
+        // Every delta in the snapshot sequence carries F_SNAPSHOT, and L3 orders are not MBP
+        for delta in &deltas.deltas {
+            assert_ne!(delta.flags & RecordFlag::F_SNAPSHOT as u8, 0);
+        }
+
+        for delta in &deltas.deltas[1..] {
+            assert_eq!(delta.flags & RecordFlag::F_MBP as u8, 0);
+        }
     }
 
     #[rstest]
