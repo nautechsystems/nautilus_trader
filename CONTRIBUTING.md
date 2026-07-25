@@ -38,6 +38,8 @@ To contribute, follow these steps:
 ## Tips
 
 - Follow the established coding practices in the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html).
+- Do NOT use [Conventional Commits](https://www.conventionalcommits.org/) syntax for commit messages or PR
+  titles. Follow [Commit messages](docs/developer_guide/coding_standards.md#commit-messages) instead.
 - For documentation changes, follow the style guide in `docs/developer_guide/docs.md` (use sentence case for headings H2 and below).
 - For v2 PyO3 bindings or wrapped Rust docs, run `make py-stubs-v2` and commit the
   generated output. See [Generated Python artifacts](docs/developer_guide/rust.md#generated-python-artifacts).
