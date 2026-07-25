@@ -311,6 +311,15 @@ jobs:
             echo "::warning::Only ${avail_gb}G free, the Rust build may run out of space, re-run if it fails."
           fi
 
+      # Doctests share this job with the nextest steps so both reuse the same
+      # workspace artifacts (`cargo nextest` cannot run doctests). They run
+      # first because rustdoc links one throwaway binary per doc example: those
+      # transient files are released before the nextest test-binary set lands,
+      # keeping peak disk below what a GitHub-hosted runner provides.
+      - name: Run Rust doctests
+        if: needs.plan.outputs.run-rust-tests == 'true'
+        run: make cargo-test-doc EXTRA_FEATURES="capnp,hypersync"
+
       - name: Run Rust tests (core)
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-core-selected EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
@@ -319,15 +328,12 @@ jobs:
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: make cargo-test-adapters EXTRA_FEATURES="capnp,hypersync" NEXTEST_PROFILE=ci
 
-      # Doctests run here rather than in their own job so they reuse the
-      # artifacts the nextest steps just built. `cargo nextest` cannot run them.
-      - name: Run Rust doctests
-        if: needs.plan.outputs.run-rust-tests == 'true'
-        run: make cargo-test-doc EXTRA_FEATURES="capnp,hypersync"
-
       - name: Clean Rust test artifacts
         if: needs.plan.outputs.run-rust-tests == 'true'
         run: |
+          echo "::group::Disk space after Rust tests"
+          df -h . "${CARGO_TARGET_DIR}"
+          echo "::endgroup::"
           rm -rf "${CARGO_TARGET_DIR}/nextest"
           rm -rf "${CARGO_TARGET_DIR}/${CARGO_CI_PROFILE:-nextest}"
           df -h . "${CARGO_TARGET_DIR}"
