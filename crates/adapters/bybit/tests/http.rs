@@ -1250,6 +1250,100 @@ async fn test_rate_limiting_returns_error() {
     assert!(error.to_string().contains("10006") || error.to_string().contains("Too many"));
 }
 
+/// Rejects the first two requests with a retryable status, then serves the order history.
+#[allow(dead_code)]
+async fn handle_get_orders_realtime_retry(State(state): State<TestServerState>) -> Response {
+    let mut count = state.request_count.lock().await;
+    *count += 1;
+
+    if *count <= 2 {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "retCode": 10006,
+                "retMsg": "Too many requests. Please retry after 1 second.",
+                "result": {},
+                "retExtInfo": {},
+                "time": 1704470400123i64
+            })),
+        )
+            .into_response();
+    }
+
+    let orders = load_test_data("http_get_orders_history.json");
+    Json(orders).into_response()
+}
+
+#[allow(dead_code)]
+fn create_retry_test_router(state: TestServerState) -> Router {
+    Router::new()
+        .route("/v5/market/time", get(handle_get_server_time))
+        .route("/v5/order/realtime", get(handle_get_orders_realtime_retry))
+        .with_state(state)
+}
+
+#[allow(dead_code)]
+async fn start_retry_test_server()
+-> Result<(SocketAddr, TestServerState), Box<dyn std::error::Error + Send + Sync>> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let state = TestServerState::default();
+    let router = create_retry_test_router(state.clone());
+
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    wait_for_server(addr, "/v5/market/time").await;
+    Ok((addr, state))
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rate_limiting_retries_then_succeeds() {
+    let (addr, state) = start_retry_test_server().await.unwrap();
+    let base_url = format!("http://{addr}");
+
+    // The 1ms delay bounds cap the jittered backoff, so both retries land immediately
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(base_url),
+        60,
+        2,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let response = client
+        .get_open_orders(
+            BybitProductType::Linear,
+            Some("BTCUSDT".to_owned()),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let request_count = *state.request_count.lock().await;
+
+    assert_eq!(request_count, 3);
+    assert_eq!(response.ret_code, 0);
+    assert_eq!(response.ret_msg, "OK");
+    assert_eq!(response.result.list.len(), 1);
+    assert_eq!(response.result.list[0].order_id.as_str(), "abcdef123456");
+    assert_eq!(response.result.list[0].order_link_id.as_str(), "client-1");
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_get_open_orders_with_symbol() {
