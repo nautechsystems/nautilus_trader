@@ -66,6 +66,7 @@ use nautilus_polymarket::{
     },
     websocket::pool::PolymarketMarketConnectionPool,
 };
+use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
 use serde_json::Value;
 
@@ -269,48 +270,6 @@ enum UnsupportedGenericSubscription {
     BookDepth10,
     InstrumentStatus,
     InstrumentClose,
-}
-
-async fn drain_data_events(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    timeout: Duration,
-) -> Vec<DataEvent> {
-    let mut events = Vec::new();
-    let deadline = tokio::time::Instant::now() + timeout;
-    while let Ok(Some(event)) = tokio::time::timeout_at(deadline, rx.recv()).await {
-        events.push(event);
-    }
-    events
-}
-
-async fn collect_data_events_until_response(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-    request_id: UUID4,
-    timeout: Duration,
-) -> Vec<DataEvent> {
-    let mut events = Vec::new();
-    tokio::time::timeout(timeout, async {
-        loop {
-            let event = rx.recv().await.expect("data event channel closed");
-            let is_correlated_response = matches!(
-                &event,
-                DataEvent::Response(response) if response.correlation_id() == &request_id
-            );
-            events.push(event);
-
-            if is_correlated_response {
-                break;
-            }
-        }
-    })
-    .await
-    .unwrap_or_else(|_| panic!("timed out waiting for data response {request_id}"));
-
-    while let Ok(event) = rx.try_recv() {
-        events.push(event);
-    }
-
-    events
 }
 
 async fn wait_for_market_payload_count(
