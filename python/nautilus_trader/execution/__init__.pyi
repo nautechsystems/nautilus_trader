@@ -78,6 +78,8 @@ class ExecutionEngineConfig:
     @property
     def snapshot_positions_interval_secs(self) -> float | None: ...
     @property
+    def carry_replay_events_on_reopen(self) -> bool: ...
+    @property
     def allow_overfills(self) -> bool: ...
     @property
     def external_clients(self) -> list[model.ClientId] | None: ...
@@ -104,6 +106,7 @@ class ExecutionEngineConfig:
         snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
         snapshot_positions_interval_secs: float | None = None,
+        carry_replay_events_on_reopen: bool | None = None,
         allow_overfills: bool | None = None,
         external_clients: typing.Sequence[model.ClientId] | None = None,
         purge_closed_orders_interval_mins: int | None = None,

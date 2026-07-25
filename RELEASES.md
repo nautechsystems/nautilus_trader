@@ -116,6 +116,7 @@ adapter set. The following limits remain deferred:
 - Added Polymarket v2 WS `hash` and `transaction_hash` field decoding (#4377), thanks for reporting @SebastianPartarrieu
 - Added Polymarket v2 `PolymarketDataLoader` v2 for public discovery and historical trades
 - Added Tardis MEXC spot and futures market data support
+- Added v2 `ExecutionEngineConfig.carry_replay_events_on_reopen` to carry position replay state across NETTING close/reopen cycles (#4546), thanks @HungNgo4444
 
 ### Breaking Changes
 - Changed v2 `PortfolioConfig.use_mark_prices` to prefer marks by default; set `false` to skip marks
@@ -364,6 +365,7 @@ adapter set. The following limits remain deferred:
 - Fixed Tardis replay bars directory to `bars/` (#4378), thanks @AdvancedUno
 - Fixed Tardis replay trades directory to `trades/` (#4373), thanks @AdvancedUno
 - Fixed v2 sandbox execution retaining matching engines and cache state for expired quote-only instruments
+- Fixed v2 quadratic NETTING backtest CPU and memory growth from position replay logs retained in snapshot blobs and per-fill account event-log clones (#4546), thanks @HungNgo4444
 
 ### Internal Improvements
 - Added Binance SAPI base URL and path constants for upcoming margin support (#4447), thanks @akashchakrabortymsc-cmd

@@ -217,6 +217,27 @@ For `submit_order_list`, the engine additionally denies any mixed-instrument lis
 so the combination is rejected with an explicit `OrderDenied` reason. See
 [Order lists](orders/advanced.md#order-lists) for the broader set of mixed-instrument caveats.
 
+### Position replay across NETTING cycles
+
+Under `NETTING` the engine reuses one position ID across close and reopen cycles, so a position's
+replay log can accumulate every fill ever applied to that ID. The
+`ExecutionEngineConfig.carry_replay_events_on_reopen` option controls whether that log survives a
+reopen:
+
+| `carry_replay_events_on_reopen` | Behavior                                                                                                    |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `False` (default)               | Position state is bounded to the current cycle, so the cost of each fill stays flat over long runs.          |
+| `True`                          | Fills from earlier cycles stay correctable, at the cost of position state growing with every fill.           |
+
+Live trading pins the option `True`: `LiveExecEngineConfig` always carries the replay log, so a venue
+[`OrderFillVoided`](events/order_fill_voided.md) referencing an earlier cycle still resolves. The
+simulated venue never emits fill voids, so backtests take the bounded default. Enable it explicitly
+for a custom or external execution client that can correct a fill from a prior cycle; without the
+carried log the engine finds no matching position fragment and rejects the correction.
+
+Realized-PnL snapshots are unaffected either way. See
+[Position snapshotting](positions.md#position-snapshotting).
+
 ## Risk engine
 
 The `RiskEngine` is a component of every Nautilus system, including backtest, sandbox, and live

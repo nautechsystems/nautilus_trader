@@ -56,6 +56,11 @@ pub struct ExecutionEngineConfig {
     /// If `None` then no additional snapshots will be taken.
     #[serde(default)]
     pub snapshot_positions_interval_secs: Option<f64>,
+    /// If position replay events and fill voids are carried across NETTING close/reopen cycles.
+    /// Enable to keep fills from earlier cycles correctable by an `OrderFillVoided`.
+    #[serde(default)]
+    #[builder(default)]
+    pub carry_replay_events_on_reopen: bool,
     /// If order fills exceeding order quantity are allowed (logs warning instead of raising).
     /// Useful when position reconciliation races with exchange fill events.
     #[serde(default)]
@@ -180,6 +185,21 @@ mod tests {
     #[rstest]
     fn test_default_config_is_valid() {
         assert!(ExecutionEngineConfig::builder().build().is_ok());
+    }
+
+    #[rstest]
+    fn test_carry_replay_events_on_reopen_defaults_false() {
+        assert!(!ExecutionEngineConfig::default().carry_replay_events_on_reopen);
+
+        let config: ExecutionEngineConfig =
+            serde_json::from_str("{}").expect("empty config should deserialize");
+        assert!(!config.carry_replay_events_on_reopen);
+
+        let config = ExecutionEngineConfig::builder()
+            .carry_replay_events_on_reopen(true)
+            .build()
+            .unwrap();
+        assert!(config.carry_replay_events_on_reopen);
     }
 
     #[rstest]

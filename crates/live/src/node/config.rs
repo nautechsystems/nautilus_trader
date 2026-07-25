@@ -508,6 +508,8 @@ impl From<LiveExecEngineConfig> for ExecutionEngineConfig {
             snapshot_orders: config.snapshot_orders,
             snapshot_positions: config.snapshot_positions,
             snapshot_positions_interval_secs: config.snapshot_positions_interval_secs,
+            // Live must carry replay state so prior-cycle void corrections still resolve
+            carry_replay_events_on_reopen: true,
             allow_overfills: config.allow_overfills,
             filter_unclaimed_external_orders: config.filter_unclaimed_external_orders,
             external_clients: config.external_clients,
@@ -1321,6 +1323,8 @@ mod tests {
         assert_eq!(converted.purge_closed_positions_buffer_mins, Some(2));
         assert_eq!(converted.purge_account_events_interval_mins, Some(15));
         assert_eq!(converted.purge_account_events_lookback_mins, Some(3));
+        // Pinned on for live regardless of the `ExecutionEngineConfig` default
+        assert!(converted.carry_replay_events_on_reopen);
     }
 
     #[rstest]

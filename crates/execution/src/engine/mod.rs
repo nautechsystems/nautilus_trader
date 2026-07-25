@@ -3640,10 +3640,15 @@ impl ExecutionEngine {
             self.reopen_position(position, oms_type)?;
         }
 
-        let prior_position = position.cloned().or_else(|| {
-            fill.position_id
-                .and_then(|position_id| self.cache.borrow().position_owned(&position_id))
-        });
+        // The prior-position clone exists only to carry replay state across the reopen
+        let prior_position = if self.config.carry_replay_events_on_reopen {
+            position.cloned().or_else(|| {
+                fill.position_id
+                    .and_then(|position_id| self.cache.borrow().position_owned(&position_id))
+            })
+        } else {
+            None
+        };
         let mut position = Position::new(instrument, fill.clone());
         if let Some(prior) = prior_position
             && prior.id == position.id

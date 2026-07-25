@@ -59,7 +59,7 @@ use nautilus_model::{
         builder::OrderTestBuilder,
         stubs::{TestOrderEventStubs, TestOrdersGenerator},
     },
-    position::Position,
+    position::{Position, PositionReplayEvent},
     stubs::TestDefault,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
@@ -5737,6 +5737,38 @@ fn test_position_snapshots_round_trip(mut cache: Cache) {
             .position_snapshots(None, Some(&AccountId::new("OTHER-000")))
             .is_empty(),
     );
+}
+
+#[rstest]
+fn test_position_snapshot_blobs_exclude_replay_state(mut cache: Cache) {
+    let mut position = snapshot_test_position();
+    let position_id = position.id;
+    let fill = position.events[0].clone();
+
+    cache.snapshot_position(&position).unwrap();
+
+    // Grow the replay log as NETTING close/reopen cycles would
+    for _ in 0..1000 {
+        position
+            .replay_events
+            .push(PositionReplayEvent::Filled(fill.clone()));
+    }
+    cache.snapshot_position(&position).unwrap();
+
+    // Blob size is independent of the replay-log length
+    let frames = cache.position_snapshot_bytes(&position_id).unwrap();
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0].len(), frames[1].len());
+
+    let snapshots = cache.position_snapshots(Some(&position_id), None);
+    assert_eq!(snapshots.len(), 2);
+    for snapshot in &snapshots {
+        assert!(snapshot.replay_events.is_empty());
+        assert!(snapshot.fill_voids.is_empty());
+        assert_eq!(snapshot.realized_pnl, position.realized_pnl);
+        assert_eq!(snapshot.account_id, position.account_id);
+        assert_eq!(snapshot.quantity, position.quantity);
+    }
 }
 
 fn snapshot_test_position() -> Position {

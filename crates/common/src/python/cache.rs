@@ -1693,6 +1693,9 @@ impl Cache {
     /// Creates a snapshot of the `position` by cloning it, assigning a new ID,
     /// serializing it, and storing it in the position snapshots.
     ///
+    /// The copy excludes `replay_events` and `fill_voids`, which no snapshot consumer reads,
+    /// so blob size stays independent of the fills applied to the position ID.
+    ///
     /// # Errors
     ///
     /// Returns an error if serializing or storing the position snapshot fails.

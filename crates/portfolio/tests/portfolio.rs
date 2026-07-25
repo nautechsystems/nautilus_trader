@@ -7370,6 +7370,79 @@ fn test_update_position_with_calculate_account_state_does_not_panic(
 }
 
 #[rstest]
+fn test_update_position_without_account_state_restores_account(
+    mut simple_cache: Cache,
+    clock: TestClock,
+    instrument_audusd: InstrumentAny,
+) {
+    // An EUR-base account on a USD-settled instrument has no xrate, so the recompute produces
+    // no new state and must move the account back rather than drop it.
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_audusd.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .build();
+    let mut fill = fill_order(&order);
+    fill.position_id = Some(PositionId::new("P-RESTORE"));
+    let account_id = fill.account_id;
+
+    let account_state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::new(1_000_000.0, Currency::EUR()),
+            Money::zero(Currency::EUR()),
+            Money::new(1_000_000.0, Currency::EUR()),
+        )],
+        vec![],
+        true,
+        uuid4(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        Some(Currency::EUR()),
+    );
+    let mut account = AccountAny::from(account_state);
+    account.set_calculate_account_state(true);
+    let starting_balances = account.balances();
+
+    simple_cache
+        .add_instrument(instrument_audusd.clone())
+        .unwrap();
+    simple_cache.add_account(account).unwrap();
+
+    let position = Position::new(&instrument_audusd, fill);
+    simple_cache
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let cache = Rc::new(RefCell::new(simple_cache));
+    let mut portfolio = Portfolio::new(Rc::new(RefCell::new(clock)), cache.clone(), None);
+
+    let opened = get_open_position(&position);
+    portfolio.update_position(&PositionEvent::PositionOpened(opened));
+
+    let cache_ref = cache.borrow();
+    let cached = cache_ref
+        .account(&account_id)
+        .expect("account must be returned to the cache after a no-op recompute")
+        .clone();
+    assert_eq!(cached.balances(), starting_balances);
+    // The moved-back account keeps its runtime state; an entry rebuilt from the republished
+    // `AccountState` instead would lose `calculate_account_state`.
+    match cached {
+        AccountAny::Margin(margin) => assert!(margin.base.calculate_account_state),
+        _ => panic!("Expected MarginAccount"),
+    }
+    assert_eq!(
+        cache_ref
+            .account_for_venue(&instrument_audusd.id().venue)
+            .unwrap()
+            .id(),
+        account_id
+    );
+}
+
+#[rstest]
 fn test_update_position_margin_state_across_multiple_open_positions(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
