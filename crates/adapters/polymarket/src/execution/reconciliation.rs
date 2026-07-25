@@ -129,10 +129,9 @@ pub(crate) fn build_fill_reports_from_trades(
         let is_maker = trade.trader_side == PolymarketLiquiditySide::Maker;
 
         if is_maker {
+            let mut relevant_maker_order_seen = matches!(scope, FillReconciliationScope::All);
+            let mut owned_maker_order_seen = false;
             for mo in &trade.maker_orders {
-                if mo.maker_address != ctx.user_address && mo.owner != ctx.api_key {
-                    continue;
-                }
                 let venue_order_id = VenueOrderId::from(mo.order_id.as_str());
 
                 if target_order_ids
@@ -140,6 +139,9 @@ pub(crate) fn build_fill_reports_from_trades(
                     .is_some_and(|target_ids| !target_ids.contains(&venue_order_id))
                 {
                     continue;
+                }
+                if target_order_ids.is_some() {
+                    relevant_maker_order_seen = true;
                 }
 
                 if filter_token.is_some_and(|token_id| mo.asset_id != token_id) {
@@ -153,6 +155,13 @@ pub(crate) fn build_fill_reports_from_trades(
                     }
                     continue;
                 }
+                if filter_token.is_some() {
+                    relevant_maker_order_seen = true;
+                }
+                if mo.maker_address != ctx.user_address && mo.owner != ctx.api_key {
+                    continue;
+                }
+                owned_maker_order_seen = true;
                 let token_id = Ustr::from(mo.asset_id.as_str());
                 let instrument = instruments.get_cloned(&token_id);
                 let (instrument_id, price_prec, size_prec) = match instrument {
@@ -189,6 +198,12 @@ pub(crate) fn build_fill_reports_from_trades(
                     ts_init,
                 )?;
                 reports.push(report);
+            }
+            if relevant_maker_order_seen && !owned_maker_order_seen {
+                anyhow::bail!(
+                    "Polymarket reconciliation confirmed maker trade {} has no owned maker order",
+                    trade.id
+                );
             }
         } else {
             let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
@@ -808,6 +823,73 @@ mod tests {
                 .to_string()
                 .contains("cannot represent confirmed maker fill")
         );
+    }
+
+    #[rstest]
+    fn rejects_confirmed_maker_fill_without_owned_maker_order() {
+        let (instruments, instrument) = mapped_instrument();
+        let mut trade = confirmed_trade_for(&instrument);
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        for maker_order in &mut trade.maker_orders {
+            maker_order.maker_address = "0x-unrelated-maker".to_string();
+            maker_order.owner = "unrelated-owner".to_string();
+        }
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &fill_context(),
+            &instruments,
+            &FillReconciliationScope::All,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect_err("a confirmed maker trade must contain an owned maker order");
+
+        assert!(error.to_string().contains("no owned maker order"));
+    }
+
+    #[rstest]
+    fn targeted_maker_fill_rejects_target_order_ownership_mismatch() {
+        let (instruments, instrument) = mapped_instrument();
+        let mut trade = confirmed_trade_for(&instrument);
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        let target_order_id = VenueOrderId::from(trade.maker_orders[0].order_id.as_str());
+        for maker_order in &mut trade.maker_orders {
+            maker_order.maker_address = "0x-unrelated-maker".to_string();
+            maker_order.owner = "unrelated-owner".to_string();
+        }
+
+        let error = build_fill_reports_from_trades(
+            &[trade],
+            &fill_context(),
+            &instruments,
+            &FillReconciliationScope::VenueOrder(target_order_id),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect_err("a targeted maker order with mismatched ownership must fail");
+
+        assert!(error.to_string().contains("no owned maker order"));
+    }
+
+    #[rstest]
+    fn targeted_maker_fill_ignores_unrelated_trade_without_owned_order() {
+        let (instruments, instrument) = mapped_instrument();
+        let mut trade = confirmed_trade_for(&instrument);
+        trade.trader_side = PolymarketLiquiditySide::Maker;
+        for maker_order in &mut trade.maker_orders {
+            maker_order.maker_address = "0x-unrelated-maker".to_string();
+            maker_order.owner = "unrelated-owner".to_string();
+        }
+
+        let reports = build_fill_reports_from_trades(
+            &[trade],
+            &fill_context(),
+            &instruments,
+            &FillReconciliationScope::VenueOrder(VenueOrderId::from("unrelated-target")),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .expect("a targeted query must ignore a trade that does not contain its order");
+
+        assert!(reports.is_empty());
     }
 
     #[rstest]
