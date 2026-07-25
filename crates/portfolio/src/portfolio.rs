@@ -17,7 +17,12 @@
 
 #![warn(clippy::clone_on_ref_ptr)]
 
-use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, VecDeque},
+    fmt::Debug,
+    rc::Rc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use indexmap::{IndexMap, IndexSet};
@@ -1550,7 +1555,10 @@ impl Portfolio {
             let cache = self.cache.borrow();
 
             let mut instruments_with_orders = Vec::new();
-            let mut instruments = AHashSet::new();
+
+            // Ordered so margin recalculation materializes any unreported balance currency
+            // in a stable sequence; the account balance map preserves insertion order.
+            let mut instruments = BTreeSet::new();
 
             for client_order_id in cache.iter_client_order_ids_open(None, None, None, None) {
                 if let Some(order) = cache.order(&client_order_id) {
@@ -1649,7 +1657,9 @@ impl Portfolio {
         self.inner.borrow_mut().unrealized_pnls.clear();
         self.inner.borrow_mut().realized_pnls.clear();
         let all_positions_open: Vec<Position>;
-        let mut instruments = AHashSet::new();
+
+        // Ordered for the same reason as `initialize_orders`
+        let mut instruments = BTreeSet::new();
         {
             let cache = self.cache.borrow();
             all_positions_open = cache
