@@ -224,10 +224,10 @@ replay log can accumulate every fill ever applied to that ID. The
 `ExecutionEngineConfig.carry_replay_events_on_reopen` option controls whether that log survives a
 reopen:
 
-| `carry_replay_events_on_reopen` | Behavior                                                                                                    |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `False` (default)               | Position state is bounded to the current cycle, so the cost of each fill stays flat over long runs.          |
-| `True`                          | Fills from earlier cycles stay correctable, at the cost of position state growing with every fill.           |
+| `carry_replay_events_on_reopen` | Behavior                                                                                            |
+| ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `False` (default)               | Position state is bounded to the current cycle, so the cost of each fill stays flat over long runs. |
+| `True`                          | Fills from earlier cycles stay correctable, at the cost of position state growing with every fill.  |
 
 Live trading pins the option `True`: `LiveExecEngineConfig` always carries the replay log, so a venue
 [`OrderFillVoided`](events/order_fill_voided.md) referencing an earlier cycle still resolves. The
