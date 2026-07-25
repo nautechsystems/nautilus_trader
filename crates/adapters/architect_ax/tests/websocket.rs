@@ -22,7 +22,7 @@ use std::{sync::atomic::Ordering, time::Duration};
 use nautilus_architect_ax::{
     common::enums::{AxCandleWidth, AxMarketDataLevel},
     websocket::{
-        data::AxMdWebSocketClient,
+        data::{AxMdWebSocketClient, AxWsClientError},
         orders::{AxOrdersWebSocketClient, AxOrdersWsClientError},
     },
 };
@@ -95,16 +95,29 @@ async fn test_md_client_not_active_before_connect() {
 #[rstest]
 #[tokio::test(start_paused = true)]
 async fn test_md_connection_failure_to_invalid_url() {
+    let url = "ws://127.0.0.1:9999/invalid".to_string();
     let mut client = AxMdWebSocketClient::new(
-        "ws://127.0.0.1:9999/invalid".to_string(),
+        url.clone(),
         "test_token".to_string(),
         30,
         TransportBackend::default(),
         None,
     );
 
-    let result = client.connect().await;
-    assert!(result.is_err());
+    let err = client.connect().await.unwrap_err();
+    let message = err.to_string();
+
+    assert!(matches!(err, AxWsClientError::Transport(_)));
+    assert!(
+        message.starts_with(&format!(
+            "Transport error: Failed to connect to {url} after 5 attempts: "
+        )),
+        "expected the retry ladder to run to exhaustion, was: {message}"
+    );
+    assert!(
+        !message.contains("Connection timeout"),
+        "expected a refused dial rather than a virtual-clock timeout, was: {message}"
+    );
 }
 
 #[rstest]
@@ -1062,8 +1075,9 @@ async fn test_orders_client_not_active_before_connect() {
 async fn test_orders_connection_failure_to_invalid_url() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");
+    let url = "ws://127.0.0.1:9999/invalid".to_string();
     let mut client = AxOrdersWebSocketClient::new(
-        "ws://127.0.0.1:9999/invalid".to_string(),
+        url.clone(),
         account_id,
         trader_id,
         30,
@@ -1071,8 +1085,20 @@ async fn test_orders_connection_failure_to_invalid_url() {
         None,
     );
 
-    let result = client.connect("test_token").await;
-    assert!(result.is_err());
+    let err = client.connect("test_token").await.unwrap_err();
+    let message = err.to_string();
+
+    assert!(matches!(err, AxOrdersWsClientError::Transport(_)));
+    assert!(
+        message.starts_with(&format!(
+            "Transport error: Failed to connect to {url} after 5 attempts: "
+        )),
+        "expected the retry ladder to run to exhaustion, was: {message}"
+    );
+    assert!(
+        !message.contains("Connection timeout"),
+        "expected a refused dial rather than a virtual-clock timeout, was: {message}"
+    );
 }
 
 #[rstest]
