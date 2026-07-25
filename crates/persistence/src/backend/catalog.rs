@@ -46,12 +46,12 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use std::path::PathBuf;
+//! use std::path::Path;
 //! use nautilus_persistence::backend::catalog::ParquetDataCatalog;
 //!
 //! // Create a new catalog
 //! let catalog = ParquetDataCatalog::new(
-//!     PathBuf::from("/path/to/data"),
+//!     Path::new("/path/to/data"),
 //!     None,        // storage_options
 //!     Some(5000),  // batch_size
 //!     None,        // compression (defaults to SNAPPY)
@@ -59,7 +59,7 @@
 //! );
 //!
 //! // Write data to the catalog
-//! // catalog.write_to_parquet(&data, None, None)?;
+//! // catalog.write_to_parquet(&data, None, None, None)?;
 //! ```
 
 use std::{
@@ -201,11 +201,11 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use std::path::PathBuf;
+    /// use std::path::Path;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
     /// let catalog = ParquetDataCatalog::new(
-    ///     PathBuf::from("/tmp/nautilus_data"),
+    ///     Path::new("/tmp/nautilus_data"),
     ///     None,        // no storage options
     ///     Some(1000),  // smaller batch size
     ///     None,        // default compression
@@ -289,11 +289,11 @@ impl ParquetDataCatalog {
     /// // Azure Blob Storage
     /// let azure_catalog = ParquetDataCatalog::from_uri(
     ///     "az://container/nautilus-data",
-    ///     storage_options, None, None, None
+    ///     None, None, None, None
     /// )?;
     ///
     /// // S3 with custom endpoint and credentials
-    /// let mut storage_options = HashMap::new();
+    /// let mut storage_options = AHashMap::new();
     /// storage_options.insert("endpoint_url".to_string(), "https://my-s3-endpoint.com".to_string());
     /// storage_options.insert("access_key_id".to_string(), "my-key".to_string());
     /// storage_options.insert("secret_access_key".to_string(), "my-secret".to_string());
@@ -373,10 +373,11 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::Data;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let mixed_data: Vec<Data> = vec![/* mixed data types */];
     ///
-    /// catalog.write_data_enum(mixed_data, None, None)?;
+    /// catalog.write_data_enum(&mixed_data, None, None, None)?;
+    /// # Ok::<(), anyhow::Error>(())
     /// ```
     #[allow(
         clippy::match_wildcard_for_single_variants,
@@ -571,10 +572,10 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::QuoteTick;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let quotes: Vec<QuoteTick> = vec![/* quote data */];
     ///
-    /// let path = catalog.write_to_parquet(&quotes, None, None)?;
+    /// let path = catalog.write_to_parquet(&quotes, None, None, None)?;
     /// println!("Data written to: {:?}", path);
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -783,7 +784,7 @@ impl ParquetDataCatalog {
     /// use nautilus_model::instruments::InstrumentAny;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let instruments: Vec<InstrumentAny> = vec![/* instruments */];
     ///
     /// let paths = catalog.write_instruments(instruments)?;
@@ -912,13 +913,13 @@ impl ParquetDataCatalog {
     /// use nautilus_model::instruments::InstrumentAny;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Query all instruments
     /// let instruments = catalog.query_instruments(None)?;
     ///
     /// // Query specific instruments
-    /// let instruments = catalog.query_instruments(Some(vec!["EUR/USD.SIM".to_string()]))?;
+    /// let instruments = catalog.query_instruments(Some(&["EUR/USD.SIM".to_string()]))?;
     /// # Ok::<(), anyhow::Error>(())
     /// ```
     pub fn query_instruments(
@@ -1063,7 +1064,7 @@ impl ParquetDataCatalog {
     /// use nautilus_model::data::TradeTick;
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let trades: Vec<TradeTick> = vec![/* trade data */];
     ///
     /// let path = catalog.write_to_json(
@@ -1247,12 +1248,12 @@ impl ParquetDataCatalog {
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Extend a file's range backwards or forwards
     /// catalog.extend_file_name(
     ///     "quotes",
-    ///     Some("BTC/USD.SIM".to_string()),
+    ///     Some("BTC/USD.SIM"),
     ///     UnixNanos::from(1609459200000000000),
     ///     UnixNanos::from(1609545600000000000)
     /// )?;
@@ -1327,7 +1328,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let files = catalog.list_parquet_files("data/quotes/EURUSD")?;
     ///
     /// for file in files {
@@ -1617,15 +1618,15 @@ impl ParquetDataCatalog {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use nautilus_model::data::QuoteTick;
+    /// use nautilus_model::data::{Data, QuoteTick};
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
+    /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Query all quote data (uses directory-based registration by default)
     /// let result = catalog.query::<QuoteTick>(None, None, None, None, None, true)?;
-    /// let quotes = result.collect();
+    /// let quotes: Vec<Data> = result.collect();
     ///
     /// // Query specific instruments within a time range
     /// let result = catalog.query::<QuoteTick>(
@@ -1778,7 +1779,7 @@ impl ParquetDataCatalog {
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
+    /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Query all quotes for a specific instrument
     /// let quotes: Vec<QuoteTick> = catalog.query_typed_data(
@@ -2076,7 +2077,7 @@ impl ParquetDataCatalog {
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Query all quote files
     /// let files = catalog.query_files("quotes", None, None, None)?;
@@ -2333,7 +2334,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let files = catalog.get_file_list_from_data_cls("quotes")?;
     ///
     /// for file in files {
@@ -2404,7 +2405,7 @@ impl ParquetDataCatalog {
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     /// use nautilus_core::UnixNanos;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let all_files = catalog.get_file_list_from_data_cls("quotes")?;
     ///
     /// let filtered = catalog.filter_files(
@@ -2517,14 +2518,14 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Find missing intervals for quote data
     /// let missing = catalog.get_missing_intervals_for_request(
     ///     1609459200000000000,  // start
     ///     1609545600000000000,  // end
     ///     "quotes",
-    ///     Some("BTCUSD".to_string())
+    ///     Some("BTCUSD")
     /// )?;
     ///
     /// for (start, end) in missing {
@@ -2580,10 +2581,10 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Get the first timestamp for quote data
-    /// if let Some(first_ts) = catalog.query_first_timestamp("quotes", Some("BTCUSD".to_string()))? {
+    /// if let Some(first_ts) = catalog.query_first_timestamp("quotes", Some("BTCUSD"))? {
     ///     println!("First quote timestamp: {}", first_ts);
     /// } else {
     ///     println!("No quote data found");
@@ -2640,10 +2641,10 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Get the last timestamp for quote data
-    /// if let Some(last_ts) = catalog.query_last_timestamp("quotes", Some("BTCUSD".to_string()))? {
+    /// if let Some(last_ts) = catalog.query_last_timestamp("quotes", Some("BTCUSD"))? {
     ///     println!("Last quote timestamp: {}", last_ts);
     /// } else {
     ///     println!("No quote data found");
@@ -2692,10 +2693,10 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Get all intervals for quote data
-    /// let intervals = catalog.get_intervals("quotes", Some("BTCUSD".to_string()))?;
+    /// let intervals = catalog.get_intervals("quotes", Some("BTCUSD"))?;
     /// for (start, end) in intervals {
     ///     println!("Data available from {} to {}", start, end);
     /// }
@@ -2814,7 +2815,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     /// let intervals = catalog.get_directory_intervals("data/quotes/EURUSD")?;
     ///
     /// for (start, end) in intervals {
@@ -2888,18 +2889,18 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Path for all quote data
     /// let quotes_path = catalog.make_path("quotes", None)?;
     /// // Returns: "/base/path/data/quotes"
     ///
     /// // Path for specific instrument quotes
-    /// let eurusd_quotes = catalog.make_path("quotes", Some("EUR/USD".to_string()))?;
+    /// let eurusd_quotes = catalog.make_path("quotes", Some("EUR/USD"))?;
     /// // Returns: "/base/path/data/quotes/EURUSD" (slash removed)
     ///
     /// // Path for bar data with complex instrument ID
-    /// let bars_path = catalog.make_path("bars", Some("BTC/USD-1H".to_string()))?;
+    /// let bars_path = catalog.make_path("bars", Some("BTC/USD-1H"))?;
     /// // Returns: "/base/path/data/bars/BTCUSD-1H"
     /// # Ok::<(), anyhow::Error>(())
     /// ```
@@ -3176,7 +3177,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // List all data types
     /// let data_types = catalog.list_directory_stems("data")?;
@@ -3267,7 +3268,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // List all data types
     /// let data_types = catalog.list_data_types()?;
@@ -3306,7 +3307,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // List all backtest runs
     /// let runs = catalog.list_backtest_runs()?;
@@ -3339,7 +3340,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // List all live runs
     /// let runs = catalog.list_live_runs()?;
@@ -3383,7 +3384,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Read data from a live run
     /// let data = catalog.read_live_run("instance-123")?;
@@ -3422,7 +3423,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let catalog = ParquetDataCatalog::new(/* ... */);
+    /// let catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Read data from a backtest run
     /// let data = catalog.read_backtest("instance-123")?;
@@ -3710,7 +3711,7 @@ impl ParquetDataCatalog {
     /// ```rust,no_run
     /// use nautilus_persistence::backend::catalog::ParquetDataCatalog;
     ///
-    /// let mut catalog = ParquetDataCatalog::new(/* ... */);
+    /// let mut catalog = ParquetDataCatalog::from_uri("/tmp/nautilus_data", None, None, None, None)?;
     ///
     /// // Convert backtest stream data to parquet
     /// catalog.convert_stream_to_data(
@@ -4418,14 +4419,6 @@ pub fn timestamps_to_filename(timestamp_1: UnixNanos, timestamp_2: UnixNanos) ->
 /// # Returns
 ///
 /// Returns a filesystem-safe timestamp string (e.g., "2023-10-26T07-30-50-123456789Z").
-///
-/// # Examples
-///
-/// ```rust
-/// # use nautilus_persistence::backend::catalog::iso_timestamp_to_file_timestamp;
-/// let safe_timestamp = iso_timestamp_to_file_timestamp("2023-10-26T07:30:50.123456789Z");
-/// assert_eq!(safe_timestamp, "2023-10-26T07-30-50-123456789Z");
-/// ```
 fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
     iso_timestamp.replace([':', '.'], "-")
 }
@@ -4442,14 +4435,6 @@ fn iso_timestamp_to_file_timestamp(iso_timestamp: &str) -> String {
 /// # Returns
 ///
 /// Returns an ISO 8601 timestamp string (e.g., "2023-10-26T07:30:50.123456789Z").
-///
-/// # Examples
-///
-/// ```rust
-/// # use nautilus_persistence::backend::catalog::file_timestamp_to_iso_timestamp;
-/// let iso_timestamp = file_timestamp_to_iso_timestamp("2023-10-26T07-30-50-123456789Z");
-/// assert_eq!(iso_timestamp, "2023-10-26T07:30:50.123456789Z");
-/// ```
 fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
     let (date_part, time_part) = file_timestamp
         .split_once('T')
@@ -4484,14 +4469,6 @@ fn file_timestamp_to_iso_timestamp(file_timestamp: &str) -> String {
 /// # Returns
 ///
 /// Returns `Ok(u64)` with the Unix nanoseconds timestamp, or an error if parsing fails.
-///
-/// # Examples
-///
-/// ```rust
-/// # use nautilus_persistence::backend::catalog::iso_to_unix_nanos;
-/// let nanos = iso_to_unix_nanos("2021-01-01T00:00:00.000000000Z").unwrap();
-/// assert_eq!(nanos, 1609459200000000000);
-/// ```
 fn iso_to_unix_nanos(iso_timestamp: &str) -> anyhow::Result<u64> {
     Ok(iso8601_to_unix_nanos(iso_timestamp)?.into())
 }
@@ -4808,18 +4785,6 @@ pub fn extract_path_components(path_str: &str) -> Vec<String> {
 ///
 /// Returns `true` if the file's time range intersects with the query range,
 /// `false` otherwise. Returns `true` if the filename cannot be parsed.
-///
-/// # Examples
-///
-/// ```rust
-/// # use nautilus_persistence::backend::catalog::query_intersects_filename;
-/// // Example with ISO format filenames
-/// assert!(query_intersects_filename(
-///     "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
-///     Some(1609459200000000000),
-///     Some(1609545600000000000)
-/// ));
-/// ```
 fn query_intersects_filename(filename: &str, start: Option<u64>, end: Option<u64>) -> bool {
     if let Some((file_start, file_end)) = parse_filename_timestamps(filename) {
         (start.is_none() || start.unwrap() <= file_end)
@@ -4977,15 +4942,6 @@ pub fn are_intervals_contiguous(intervals: &[(u64, u64)]) -> bool {
 ///
 /// Returns a vector of (start, end) tuples representing the gaps in coverage.
 /// Returns an empty vector if the query range is invalid or fully covered.
-///
-/// # Examples
-///
-/// ```rust
-/// # use nautilus_persistence::backend::catalog::query_interval_diff;
-/// // Query 1-100, have data for 10-30 and 60-80
-/// let gaps = query_interval_diff(1, 100, &[(10, 30), (60, 80)]);
-/// assert_eq!(gaps, vec![(1, 9), (31, 59), (81, 100)]);
-/// ```
 fn query_interval_diff(start: u64, end: u64, closed_intervals: &[(u64, u64)]) -> Vec<(u64, u64)> {
     if start > end {
         return Vec::new();
@@ -5136,5 +5092,46 @@ mod tests {
 
         assert!(!convert_bar_type_metadata_to_external(&mut metadata));
         assert!(metadata.is_empty());
+    }
+
+    #[rstest]
+    fn test_iso_timestamp_to_file_timestamp() {
+        assert_eq!(
+            iso_timestamp_to_file_timestamp("2023-10-26T07:30:50.123456789Z"),
+            "2023-10-26T07-30-50-123456789Z"
+        );
+    }
+
+    #[rstest]
+    fn test_file_timestamp_to_iso_timestamp() {
+        assert_eq!(
+            file_timestamp_to_iso_timestamp("2023-10-26T07-30-50-123456789Z"),
+            "2023-10-26T07:30:50.123456789Z"
+        );
+    }
+
+    #[rstest]
+    fn test_iso_to_unix_nanos() {
+        assert_eq!(
+            iso_to_unix_nanos("2021-01-01T00:00:00.000000000Z").unwrap(),
+            1_609_459_200_000_000_000
+        );
+    }
+
+    #[rstest]
+    fn test_query_intersects_filename() {
+        assert!(query_intersects_filename(
+            "2021-01-01T00-00-00-000000000Z_2021-01-02T00-00-00-000000000Z.parquet",
+            Some(1_609_459_200_000_000_000),
+            Some(1_609_545_600_000_000_000)
+        ));
+    }
+
+    #[rstest]
+    fn test_query_interval_diff() {
+        assert_eq!(
+            query_interval_diff(1, 100, &[(10, 30), (60, 80)]),
+            vec![(1, 9), (31, 59), (81, 100)]
+        );
     }
 }
