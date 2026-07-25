@@ -48,6 +48,12 @@ def make_words(lines: list[str], name: str) -> list[str]:
     raise ValueError(f"Makefile does not define {name}")
 
 
+def is_cache_dir(path: Path) -> bool:
+    # Cargo target directories, virtual environments, and tool caches all carry this marker, and
+    # the generated `.rs` files under them are build output rather than crate sources
+    return (path / "CACHEDIR.TAG").exists()
+
+
 def rust_sources(package: dict, package_roots: set[Path]) -> set[Path]:
     package_root = Path(package["manifest_path"]).parent
     nested_roots = package_roots - {package_root}
@@ -55,7 +61,10 @@ def rust_sources(package: dict, package_roots: set[Path]) -> set[Path]:
     for current, dirnames, filenames in os.walk(package_root):
         current_path = Path(current)
         dirnames[:] = [
-            dirname for dirname in dirnames if current_path / dirname not in nested_roots
+            dirname
+            for dirname in dirnames
+            if current_path / dirname not in nested_roots
+            and not is_cache_dir(current_path / dirname)
         ]
         sources.update(current_path / filename for filename in filenames if filename.endswith(".rs"))
     return sources
