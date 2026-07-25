@@ -1209,9 +1209,9 @@ async fn test_rate_limiting_returns_error() {
         "test_api_secret".to_string(),
         Some(base_url),
         60,
-        3,
-        1000,
-        10_000,
+        0,
+        1,
+        1,
         5_000,
         None,
     )
